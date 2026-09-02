@@ -1,0 +1,120 @@
+{
+  "audit_id": "TASK-OBS-AUDIT",
+  "generated_at": "2026-08-31T21:45:00+03:30",
+  "agent": "Hermes-ObsForensic",
+  "baseline_head": "1f60832",
+  "delivery_head": "dcc80d7",
+  "mandate": "audit-only; zero runtime code changed; findings + recommendations only",
+  "method": {
+    "black_box_first": true,
+    "black_box_scenarios": 10,
+    "runtime_evidence_channels": ["logs/severity-split", "audit.db", "candle_intel.db", "news.db", "strategies.db", "artifacts/forensics/*.json", "artifacts/incidents/*", "%LOCALAPPDATA%/NexusScalpEngine/update/update-state.json", "live HTTP probes :8081", "CLI real execution"],
+    "code_sweeps": "6 parallel read-only sweeps (evidence inventory, identity chain, ML pipeline, decision chain, process/web, log quality)"
+  },
+  "evidence_inventory": {
+    "logs": {
+      "layout": "logs/{critical,error,warning,info}/YYYY/MM/YYYY-MM-DD[.part-NNN].log",
+      "rotation_mb": 10,
+      "retention_days": {"info": 30, "warning": 30, "error": 90, "critical": 365},
+      "coverage_days_present": ["2026-08-29", "2026-08-31"],
+      "gap_days": ["2026-08-30"],
+      "volume_2026_08_31": "~190MB (error 131MB, info 50MB, warning 4MB, critical 284B)",
+      "timestamp_format": "ISO-8601 +03:30 local",
+      "correlation_id_binding": "NEVER (bind_correlation_id at logging.py:691 has zero callers)",
+      "error_code_field": "absent from file records",
+      "tracebacks_2026_08_31_error": 60
+    },
+    "audit_db": {
+      "tables": 61,
+      "size_mb": 114,
+      "time_dialect": "UTC ISO strings",
+      "key_id_columns": {"audit_signals.request_id": "100% filled", "audit_orders.execution_id": "43/8372 rows (all EXEC-20260820-*)", "audit_experiences.execution_id": "0/441 rows", "model_governance_events.correlation_id": "0/981", "settings_audit": "0 rows"},
+      "latency": {"audit_orders.latency": "81% zeros (6779/8369)"},
+      "test_rows_in_prod_db": "audit_executions: 801/801 rows are test_req_N"
+    },
+    "candle_intel_db": "event time (bar_ts) vs processing time (ts) explicitly separated; per-bar veto/decision/regime evidence",
+    "broker_time_dialect": "raw epoch ints, MT5 server-local GMT+3 (BUG-070 class)",
+    "update_state_json": {"state": "FAILED_SAFE", "correlation_id": "upd-20260831T181436910170-cbc0e1b0", "correlation_in_logs": 0}
+  },
+  "identity_chain": {
+    "chain": "request_id(uuid) -> TradeProposal -> EXEC_TRACE(log, REDACTED) -> audit_signals -> execution_id -> audit_orders.reason+column -> /api/debug/trace -> ticket -> position_lifecycle_events(sequence) -> audit_ledger -> trade_autopsies; experience_id=exp_request_id",
+    "per_boot_correlation": "NONE",
+    "verdict": "PARTIAL - strong DB-side, log-side destroyed by redaction"
+  },
+  "corridor_verdicts": {
+    "web_request": {"middleware": "X-Request-ID echo LIVE (probed 200)", "survives_to_log": false, "survives_to_db": false},
+    "tick_to_execution": {"db_side": "PRESERVED (execution_id join verified on live SELL_LIMIT)", "log_side": "LOST (ids redacted)"},
+    "cli_to_service": {"operation_id": "MISSING", "exit_codes": "CONTRACTED 0/1/2/3/4/5", "json_parity": "verified live"},
+    "update_chain": {"correlation": "json-only", "stages_logged": false}
+  },
+  "timestamp_quality": {
+    "dialects": ["logs +03:30", "audit DB UTC ISO", "broker epoch GMT+3"],
+    "event_vs_processing": "distinguished only in candle_intel.db (bar_ts vs ts)",
+    "audit_signals": "processing time only (no market/event time column)"
+  },
+  "reconstruction_score": {
+    "STARTUP": "YELLOW", "PROCESS": "RED", "DATABASE": "RED", "MARKET DATA": "YELLOW",
+    "CANDLES": "GREEN", "FEATURES": "YELLOW", "50D": "YELLOW", "70D": "YELLOW",
+    "TENSOR": "RED", "MODEL": "GREEN", "REGIME": "GREEN", "LIQUIDITY": "GREEN",
+    "STRATEGY": "YELLOW", "RISK": "YELLOW", "EXECUTION": "YELLOW", "WORKERS": "GREEN",
+    "ASYNC": "RED", "CLI": "YELLOW", "WEB/API": "GREEN", "SSE": "YELLOW",
+    "UPDATER": "RED", "ROLLBACK": "YELLOW", "RELEASE": "YELLOW", "SHUTDOWN": "RED"
+  },
+  "overall": "PARTIALLY OBSERVABLE",
+  "black_box_results": [
+    {"scenario": "startup 19:26 boot", "verdict": "YES", "evidence": "boot trail: config/mode/scaler(70)/MODEL REGISTERED fingerprint 2b98f333cf1e3f77/MT5/reconciliation"},
+    {"scenario": "failed startup MT5 auth 16:59", "verdict": "YES-PARTIAL", "evidence": "3x error retcode(-6 'Terminal: Authorization failed') + critical; no attempt/boot id"},
+    {"scenario": "one inference", "verdict": "PARTIAL", "evidence": "EXEC_TRACE + audit_signals rich; ids redacted in log; no inference started/finished events"},
+    {"scenario": "failed inference", "verdict": "PARTIAL", "evidence": "'Async retrain failed: mat and mat shapes cannot be multiplied' - no shapes/dtype/device/op-id"},
+    {"scenario": "one update", "verdict": "NO", "evidence": "update-state.json only; correlation id in zero log lines; stages unlogged; release_metadata 0 rows"},
+    {"scenario": "failed update", "verdict": "PARTIAL", "evidence": "FAILED_SAFE state + upd-correlation + timestamp; nothing before terminal"},
+    {"scenario": "one CLI op", "verdict": "PARTIAL", "evidence": "status --json + forensic --snapshot --json strong; no op id; CLI self-identity stale (commit 53317de vs HEAD)"},
+    {"scenario": "one API op", "verdict": "YES-PARTIAL", "evidence": "X-Request-ID echo live; /api/live/state freshness+sequences+provenance; /api/debug/trace DEAD (audit_db import)"},
+    {"scenario": "one worker failure", "verdict": "YES", "evidence": "WORKER_KICK per worker + research_worker_heartbeat/news_worker_state/intelligence_worker_state + news_health"},
+    {"scenario": "one order lifecycle", "verdict": "YES-via-DB", "evidence": "EXEC-20260831-175500-a92169: signal 247063 -> order 8364 -> lifecycle seq 83-87 -> ledger CLOSED +6.24 (log-side NOT reconstructable)"},
+    {"scenario": "black-box 'SELL then disappeared'", "verdict": "YES-via-DB/NO-via-logs", "evidence": "17:55:00Z SELL_LIMIT -> POSITION_EXITED 17:56:38Z -> +6.24, exit_reason_source=BROKER_DEAL_REASON conf 0.8; broker_orders/deals rows absent for ticket (history sync gap)"}
+  ],
+  "gaps": [
+    {"id": "OBS-001", "severity": "P1", "class": "O1", "subsystem": "WEB/API", "problem": "/api/debug/trace/{execution_id} - the flagship one-id-across-pipeline join - fails at runtime with 'No module named nexus_scalp.adapters.audit_db' while /health reports READY", "evidence": "live probe 2026-08-31: {available:false, reason:'TRACE_LOOKUP_ERROR: No module named nexus_scalp.adapters.audit_db'}; src/nexus_scalp/web/server.py:4769; module absent at HEAD"},
+    {"id": "OBS-002", "severity": "P0", "class": "O7", "subsystem": "LOGGING/CORRELATION", "problem": "High-entropy redactor destroys correlation ids in logs: EXEC-YYYYMMDD-HHMMSS-xxxxxx matches the >=24-char entropy catcher; 2,631/2,631 EXEC_TRACE lines carry execution_id=[REDACTED_SECRET]; log<->DB join by id impossible", "evidence": "observability/logging.py:161-163 (_redact_value), signals/policy.py EXEC_TRACE emission; log census 2026-08-31"},
+    {"id": "OBS-003", "severity": "P0", "class": "O7", "subsystem": "CORRELATION", "problem": "Correlation context is never bound: bind_correlation_id() has zero callers; no boot id; TELEGRAM lines carry correlation_id='-' placeholder; 0 real correlation ids in a day of info/error logs", "evidence": "observability/logging.py:691; log census 2026-08-31"},
+    {"id": "OBS-004", "severity": "P1", "class": "O3", "subsystem": "DATABASE", "problem": "Audit background writer failure logging is generic: 'Audit Background Worker failed to insert batch' - no table/rows/duration/commit/rollback identity; failed batches silently dropped; queue-full drops logged per-site without counters", "evidence": "adapters/database/audit_repository.py:1422-1431, 1583-1792"},
+    {"id": "OBS-005", "severity": "P1", "class": "O7", "subsystem": "EXPERIENCE/LEARNING", "problem": "audit_experiences rows are written with empty execution_id/decision_id (0/441), so learning records cannot be joined to the execution chain", "evidence": "experience/intelligence.py:556-573; DB census"},
+    {"id": "OBS-006", "severity": "P1", "class": "O5", "subsystem": "UPDATER/RELEASE", "problem": "Update lifecycle leaves only a terminal update-state.json; check/download/validate/install stages unlogged; upd-correlation id never appears in logs; release_metadata table empty - update chain not reconstructable", "evidence": "%LOCALAPPDATA%/NexusScalpEngine/update/update-state.json; log grep 0 hits; release_metadata rows=0"},
+    {"id": "OBS-007", "severity": "P2", "class": "O5", "subsystem": "PROCESS/SHUTDOWN", "problem": "No shutdown/stop evidence: no STOPPING->STOPPED logs found on 2026-08-31 despite two observed boots (19:26, 21:01); predecessors die silently", "evidence": "log grep shutdown/stop/stopped: 0 hits in info stream parts"},
+    {"id": "OBS-008", "severity": "P2", "class": "O1", "subsystem": "PROCESS", "problem": "Engine runs started outside `nexus start` (dev-run python NexusTradingForexBot.py) leave no pidfile and no start id - process identity unprovable from evidence", "evidence": "live check 2026-08-31: pid 12204 running, data/nexus.pid absent (BUG-170 O_EXCL covers nexus start path only)"},
+    {"id": "OBS-009", "severity": "P2", "class": "O6", "subsystem": "TIMESTAMPS", "problem": "Three time dialects (logs +03:30, DB UTC, broker epoch GMT+3 undocumented); audit_signals carries processing time only - event vs processing time indistinguishable outside candle_intel.db", "evidence": "logs format; audit.db columns; audit_broker_deals.time raw epoch (BUG-070 class)"},
+    {"id": "OBS-010", "severity": "P2", "class": "O6", "subsystem": "EXECUTION LATENCY", "problem": "audit_orders.latency is zero in 81% of rows; no queue/dispatch/broker-ack latency breakdown - market-event-to-execution timeline not computable", "evidence": "DB census: 6779/8369 zeros"},
+    {"id": "OBS-011", "severity": "P2", "class": "O3", "subsystem": "ASYNC", "problem": "Spawned asyncio tasks carry no task id/parent correlation; failures surface only as unstructured 'Task exception was never retrieved' or component text", "evidence": "logs/error 2026-08-31 head; asyncio usage sweeps"},
+    {"id": "OBS-012", "severity": "P2", "class": "O3", "subsystem": "SSE", "problem": "SSE events lack per-event id/producer/op correlation (aggregate diag counters exist: connection, event_count, reconnect_count)", "evidence": "/api/debug/state sse section live probe"},
+    {"id": "OBS-013", "severity": "P3", "class": "O8", "subsystem": "LOG QUALITY", "problem": "Flood hotspots: 15,289 identical STRATEGY_FACTORY 'provider network failure' lines and 20,373 identical DATASET_REJECTED lines per day; ASCII panel borders land in error severity; WORKER_KICK repeats without escalation", "evidence": "warning/error dedup census 2026-08-31"},
+    {"id": "OBS-014", "severity": "P3", "class": "O4", "subsystem": "IDENTITY", "problem": "Running CLI/engine self-identity stale vs repo (version 9.0.3, commit 53317de while HEAD is 9.0.5/dcc80d7) - provenance fields can mislead an investigator into attributing behavior to the wrong build", "evidence": "nexus status --json + /health live probe vs git HEAD"},
+    {"id": "OBS-015", "severity": "P3", "class": "O7", "subsystem": "WEB/API", "problem": "X-Request-ID survives header->response but never reaches server logs or DB; cross-layer join header<->log impossible", "evidence": "live probe echo 200; 0 req_ ids in logs"},
+    {"id": "OBS-016", "severity": "P3", "class": "O10", "subsystem": "CLI", "problem": "CLI operations expose no operation id/start/finish timestamps in JSON output; only exit codes and panels", "evidence": "nexus status --json / forensic --snapshot --json live output"}
+  ],
+  "privacy": {
+    "redaction_working": "23,933 REDACTED_SECRET occurrences in one legacy log; key-fragment + entropy layers active",
+    "risks": [
+      {"location": "observability/logging.py:161-163 entropy catch-all", "risk": "over-redaction class (BUG-177 precedent): benign observability values destroyed; also silently trains operators to ignore REDACTED tokens"},
+      {"location": "legacy pre-redaction logs + artifacts/engine_restart_*.log on disk", "risk": "older logs predate redaction; retained 90-365 days"}
+    ],
+    "plaintext_secrets_found": "none in sampled current logs"
+  },
+  "noise": {
+    "error_volume_2026_08_31_mb": 131,
+    "top_floods": [{"sig": "STRATEGY_FACTORY provider network failure", "count": 15289}, {"sig": "DATASET_REJECTED MISSING_OUTCOME", "count": 20373}, {"sig": "WORKER_KICK TIMEOUT (all workers)", "count": "news 62 / intelligence 48 / history 14 / accounting 14 / training 13"}],
+    "level_mismatches": ["WORKER_KICK hung-call detach at ERROR (operational churn)", "TELEGRAM BLOCKED_NOT_CONFIGURED severity=INFO inside WARNING line", "scaler refit schema mismatch at WARNING while it changes runtime model identity"]
+  },
+  "recommended_future_fixes": [
+    "OBS-002: allowlist id-shaped values (EXEC-/req_/upd-/fh-/INC- prefixes) in _redact_value",
+    "OBS-003: bind correlation context per boot + per decision; add boot_id",
+    "OBS-001: fix adapters.audit_db import in /api/debug/trace or surface endpoint unavailability in /health",
+    "OBS-006: persist update stage transitions to logs + release_metadata",
+    "OBS-004: structured DB-write failure events with table/rows/duration/drop counters",
+    "OBS-005: thread execution_id into audit_experiences writes",
+    "OBS-007: emit STARTUP_COMPLETE / SHUTDOWN markers",
+    "OBS-013: deduplicate/escalate flood hotspots; move WORKER_KICK repeats to state rows"
+  ],
+  "not_examined": ["candle_intel/news/strategies DB deep row-level audit", "WAL crash-recovery state", "legacy flat-log content audit", "Web UI app.js full provenance read (off-limits, audit-only)"],
+  "contract": {"name": "OBSERVABILITY_AUDIT", "version": "v1", "kind": "documentation-artifact"}
+}

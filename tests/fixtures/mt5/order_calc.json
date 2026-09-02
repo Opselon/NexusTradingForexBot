@@ -1,0 +1,14 @@
+{
+  "operation": "order_calc_*",
+  "symbol": "XAUUSD",
+  "captured_at": "2026-08-17T05:41:13.436980+00:00",
+  "order_calc_profit": {
+    "ok": true,
+    "value": 1.5,
+    "args": "positional (0, XAUUSD, 0.01, 2000.0, 2001.5)"
+  },
+  "order_calc_margin": {
+    "ok": true,
+    "value": 20.0
+  }
+}

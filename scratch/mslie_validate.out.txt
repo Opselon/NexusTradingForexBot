@@ -1,0 +1,39 @@
+[TREND]
+    regime: TRENDING
+    trend_strength: 100.0
+    volatility: 0.6667
+    structure: BULLISH
+    bias: BULLISH
+    confidence: 55.0
+    swings: (0, 0)
+    zones: 3
+    sweeps: []
+    latency_ms: 19.981
+    memory: 3
+[RANGE]
+    regime: MIXED
+    trend_strength: 9.68
+    volatility: 0.6673
+    structure: RANGING
+    bias: NEUTRAL
+    confidence: 45.0
+    swings: (8, 7)
+    zones: 9
+    sweeps: []
+    latency_ms: 9.352
+    memory: 9
+[SWEEP]
+    regime: MIXED
+    trend_strength: 9.59
+    volatility: 0.6783
+    structure: BULLISH
+    bias: BULLISH
+    confidence: 61.92
+    swings: (3, 4)
+    zones: 12
+    sweeps: ['SELL_SIDE:REVERSAL']
+    latency_ms: 12.628
+    memory: 12
+
+PROBE ASSERTIONS PASS: regime-distinct perception verified
+latency (ms): {'trend': 19.981, 'range': 9.352, 'sweep': 12.628}

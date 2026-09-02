@@ -1,0 +1,23 @@
+[TASK5] raw bars: 2500 range 1741745100..1742872800
+2026-08-19 06:38:13 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=139 embargo_bars=3 evaluated_samples=586 friction_usd=$0.35 no_trade_labels=2197 sell_labels=110 skipped_invalid_atr=0 total_samples=2446
+2026-08-19 06:38:13 [info     ] [DATASET] event=BUILT dataset_id=ds_task5_real70d_2500 rows=2446
+2026-08-19 06:38:13 [info     ] [SCHEMA_70D] event=DATASET_BUILT dataset_id=ds_task5_real70d_2500 rows=2446
+[TASK5] built in 441s
+{
+  "dataset_id": "ds_task5_real70d_2500",
+  "dataset_hash": null,
+  "source": "data\\raw\\XAUUSD_M5.parquet",
+  "time_range": null,
+  "row_counts": {
+    "total": 2446,
+    "train": 1712,
+    "val": 366,
+    "test": 368
+  },
+  "feature_schema_id": null,
+  "feature_schema_hash": null,
+  "feature_dimension": 70,
+  "label_schema_id": null,
+  "build_seconds": 441.5
+}
+EXIT 0

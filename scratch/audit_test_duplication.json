@@ -1,0 +1,45 @@
+{
+  "cross_file_duplicate_groups": [
+    {
+      "body_hash": "deftest_phaseN_experience_intact(self,temp_audit_repo):ledger=ExperienceLedger(audit_repo=temp_audit_repo)rec=make_recor",
+      "locations": [
+        [
+          "tests\\unit\\test_model_lifecycle_phase10.py",
+          "test_phase08_experience_intact"
+        ],
+        [
+          "tests\\unit\\test_research_phase09b.py",
+          "test_phase08_experience_intact"
+        ]
+      ],
+      "file_count": 2
+    },
+    {
+      "body_hash": "deftest_accounting_intact(self,temp_audit_repo):fromnexus_scalp.accounting.coreimportAccountingCoreassertAccountingCore(",
+      "locations": [
+        [
+          "tests\\unit\\test_model_lifecycle_phase10.py",
+          "test_accounting_intact"
+        ],
+        [
+          "tests\\unit\\test_shadow_phase11.py",
+          "test_accounting_intact"
+        ]
+      ],
+      "file_count": 2
+    }
+  ],
+  "cross_file_group_count": 2,
+  "intra_file_duplicate_groups": [
+    {
+      "file": "tests\\unit\\test_htf_warmup_gate.py",
+      "body_hash": "asyncdeftest_N_insufficient_hN_history_results_in_not_ready(base_config):adapter=FakeMTNAdapter(hN_count=N,hN_count=N,mN",
+      "names": [
+        "test_1_insufficient_h1_history_results_in_not_ready",
+        "test_2_insufficient_h4_history_results_in_not_ready"
+      ],
+      "count": 2
+    }
+  ],
+  "intra_file_group_count": 1
+}

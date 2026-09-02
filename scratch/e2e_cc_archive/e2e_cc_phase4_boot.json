@@ -1,0 +1,16 @@
+{
+  "out": {
+    "bootLog": [
+      "addEventListener DOMContentLoaded registered on document",
+      "addEventListener DOMContentLoaded registered on document",
+      "addEventListener DOMContentLoaded registered on other",
+      "DOMContentLoaded FIRED",
+      "DOMContentLoaded FIRED",
+      "DOMContentLoaded FIRED"
+    ],
+    "fleetRows": 0,
+    "total": "—",
+    "lastFleet": 0
+  },
+  "consoleAll": []
+}

@@ -1,0 +1,26 @@
+=== audit_orders actions census (top 20) ===
+    5092  action='BREAKEVEN_FAILED' mode='PROTECTION'
+      21  action='PROFIT_GIVEBACK_CLOSE_FAILED' mode='PROTECTION'
+      21  action='PROFIT_GIVEBACK_PROTECTION' mode='PROTECTION'
+      13  action='Executed order' mode='STANDARD'
+       2  action='Generated candidate' mode='STANDARD'
+       2  action='Modified order' mode='STANDARD'
+
+=== First rows mentioning 'Executed' in ANY action ===
+id=1243 ts=2026-08-17 03:14:27 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1244 ts=2026-08-17 03:14:27 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1245 ts=2026-08-17 03:14:27 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1258 ts=2026-08-17 03:17:41 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1259 ts=2026-08-17 03:17:41 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1260 ts=2026-08-17 03:17:41 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1261 ts=2026-08-17 03:19:50 ticket=12345 action='Executed order' price=2000.0 vol=1.5 mode=STANDARD
+id=1262 ts=2026-08-17 03:19:50 ticket=67890 action='Generated candidate' price=2000.0 vol=2.0 mode=STANDARD
+id=1263 ts=2026-08-17 03:19:50 ticket=12345 action='Executed order' price=0.0 vol=0.0 mode=STANDARD
+id=1529 ts=2026-08-17 04:05:12 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1530 ts=2026-08-17 04:05:12 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+id=1531 ts=2026-08-17 04:05:12 ticket=0 action='Executed order' price=2000.0 vol=1.0 mode=STANDARD
+
+=== audit_orders with order_id matching the FIRST experience's request id ===
+
+=== audit_signals for the first experience request id (decision + entry signal) ===
+id=863 gen=2026-08-17T05:10:00+00:00 request=3e8bcc1b-77d6-4e77-962c-0b28ea357832 action=SELL_MARKET conf=0.66 entry=4395.27 sl=4400.11 tp=4373.41 mode=STANDARD reason=FAST_LIQUIDITY_SWEEP_REVERSAL_SELL (OFI: +0.01) | HTF:[H4=+1.0, H1_Mom=+7.1, M30_Str=+1.0, M15_Conf=+1.0] | S_Dist=6.98, R_Dist=0.32

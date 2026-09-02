@@ -1,0 +1,10 @@
+{
+ "dataset_live_parity": {
+  "mismatches": 0,
+  "worst": 0.0,
+  "verdict": "PASS"
+ },
+ "model_input_parity": {
+  "float32_roundtrip_max_err": 8.625837555342741e-08
+ }
+}

@@ -1,0 +1,79 @@
+{
+  "bsl_distance_atr": {
+    "best_pearson_with": "dist_to_swing_high_20",
+    "pearson": 0.7623,
+    "best_spearman_with": "dist_to_swing_high_20",
+    "spearman": 0.7436,
+    "near_duplicate": false
+  },
+  "ssl_distance_atr": {
+    "best_pearson_with": "dist_to_ema_50",
+    "pearson": 0.7747,
+    "best_spearman_with": "dist_to_ema_50",
+    "spearman": 0.7708,
+    "near_duplicate": false
+  },
+  "eqh_strength": {
+    "best_pearson_with": "stop_hunt_depth",
+    "pearson": -0.4384,
+    "best_spearman_with": "htf_m15_confirmation",
+    "spearman": 0.3678,
+    "near_duplicate": false
+  },
+  "eql_strength": {
+    "best_pearson_with": "norm_kumo_width",
+    "pearson": 0.5097,
+    "best_spearman_with": "norm_kumo_width",
+    "spearman": 0.4254,
+    "near_duplicate": false
+  },
+  "htf_liquidity_score": {
+    "best_pearson_with": "htf_h1_momentum",
+    "pearson": 0.728,
+    "best_spearman_with": "htf_h1_momentum",
+    "spearman": 0.8108,
+    "near_duplicate": false
+  },
+  "internal_liquidity_distance": {
+    "best_pearson_with": "norm_displacement",
+    "pearson": -0.9018,
+    "best_spearman_with": "norm_displacement",
+    "spearman": -0.5644,
+    "near_duplicate": true
+  },
+  "external_liquidity_distance": {
+    "best_pearson_with": "norm_displacement",
+    "pearson": 0.6107,
+    "best_spearman_with": "norm_displacement",
+    "spearman": 0.6333,
+    "near_duplicate": false
+  },
+  "liquidity_confluence": {
+    "best_pearson_with": "norm_displacement",
+    "pearson": 0.6147,
+    "best_spearman_with": "norm_displacement",
+    "spearman": 0.4749,
+    "near_duplicate": false
+  },
+  "liquidity_sweep_state": {
+    "best_pearson_with": "feat_ob_liquidity_swept",
+    "pearson": 0.3729,
+    "best_spearman_with": "feat_ob_liquidity_swept",
+    "spearman": 0.5021,
+    "near_duplicate": false
+  },
+  "post_sweep_displacement": {
+    "best_pearson_with": "lag_2_log_return",
+    "pearson": -0.1562,
+    "best_spearman_with": "session_tokyo",
+    "spearman": 0.9976,
+    "near_duplicate": true
+  },
+  "_meta": {
+    "probe": "TASK-04 brief-9 liquidity-vs-base redundancy audit",
+    "vectors": 94,
+    "flag_threshold_abs_corr": 0.85,
+    "note": "SYNTHETIC deterministic regimes \u2014 structure informative; real market rates need the 70D dataset (TASK-3).",
+    "generated_at_utc": "2026-08-19T00:18:38.233446+00:00"
+  }
+}

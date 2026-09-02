@@ -1,0 +1,73 @@
+name: Security
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [ci-tests]
+  schedule:
+    - cron: "0 6 * * 1"   # Every Monday at 06:00 UTC
+  workflow_dispatch:
+
+# All third-party actions are pinned to immutable commit SHAs
+# (supply-chain hardening). Update deliberately, never via
+# floating tags.
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  USER_ID: ${{ secrets.USER_ID }}
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938
+        with:
+          languages: python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938
+
+  trivy:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: Telegram - security scan complete
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py security --scan Trivy --status "${{ job.status }}" || true

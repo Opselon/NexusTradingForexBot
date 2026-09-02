@@ -1,0 +1,90 @@
+name: QA Deep Assurance
+
+# CHG-0045 / TASK-QA-DEEP-ASSURANCE — OSS-grade adversarial QA layer.
+# INDEPENDENT lane: does NOT touch ci.yml, security.yml, or beforePush.
+# fast lane  = --fast  (property + state machines + execution safety)
+# deep lane  = --json full layer + mutation proof (scheduled / dispatch)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # weekly, Sundays 03:30 UTC (off-peak; Iran local ~07:00)
+    - cron: "30 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      run_mutations:
+        description: "Also run the mutation proof (slower)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-deep-assurance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deep-assurance:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Deep assurance (fast lane)
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        run: |
+          python scripts/qa/deep_assurance.py --fast --json > qa-deep-fast.json
+          Get-Content qa-deep-fast.json
+
+      - name: Deep assurance (full lane)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          python scripts/qa/deep_assurance.py --json > qa-deep-full.json
+          Get-Content qa-deep-full.json
+
+      - name: Mutation proof (deep lane / dispatch opt-in)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_mutations)
+        run: |
+          python scripts/qa/run_mutations.py > qa-deep-mutations.json
+          Get-Content qa-deep-mutations.json
+
+      - name: Upload deep-assurance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-deep-assurance-${{ github.run_number }}
+          path: |
+            qa-deep-fast.json
+            qa-deep-full.json
+            qa-deep-mutations.json
+          if-no-files-found: ignore
+
+      - name: Job summary
+        if: always()
+        shell: pwsh
+        run: |
+          $file = if (Test-Path qa-deep-full.json) { "qa-deep-full.json" } else { "qa-deep-fast.json" }
+          if (Test-Path $file) {
+            $j = Get-Content $file -Raw | ConvertFrom-Json
+            Add-Content $env:GITHUB_STEP_SUMMARY "## QA Deep Assurance"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Status: **$($j.status)**"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Tests: $($j.tests_run) run, $($j.tests_passed) passed, $($j.tests_xfailed) xfail (owner-routed), $($j.tests_failed) failed"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Duration: $($j.duration_ms) ms"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Live trading actions: $($j.live_trading_actions)"
+          }

@@ -1,0 +1,3 @@
+bars=100000
+i=1000: slice=0.000s lists=0.001s atr=0.000s engine=0.167s total=0.168s
+i=10000: slice=0.000s lists=0.003s atr=0.002s engine=6.502s total=6.506s

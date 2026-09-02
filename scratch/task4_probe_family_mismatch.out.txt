@@ -1,0 +1,33 @@
+2026-08-18 21:41:35 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/audit.db
+discovered candidates: 0 (top families only, floor 20)
+
+fam n= 20 exp_family=-0.0861 exp_whole_dataset=-0.0758  fp=XAUUSD|M1|LONDON|RANGING_MEAN_REVERSION|NORMAL|BULLISH
+    family winrate=0.150 (wins 3/losses 4) vs whole winrate=0.230
+
+fam n= 12 exp_family=-0.0140 exp_whole_dataset=-0.0758  fp=XAUUSD|M1|TOKYO|RANGING_MEAN_REVERSION|NORMAL|BULLISH
+    family winrate=0.083 (wins 1/losses 4) vs whole winrate=0.230
+
+fam n=  5 exp_family=-0.4037 exp_whole_dataset=-0.0758  fp=XAUUSD|M1|LONDON|TRENDING_MOMENTUM|HIGH|BULLISH
+    family winrate=0.000 (wins 0/losses 2) vs whole winrate=0.230
+
+=== OOS + WALK-FORWARD on whole dataset for a single-family candidate ===
+2026-08-18 21:41:35 [info     ] [OOS] event=RESULT             oos_expectancy_r=-0.014545 status=FAIL strategy_id=STRAT-X
+2026-08-18 21:41:35 [info     ] [OOS] event=RESULT             oos_expectancy_r=-0.203889 status=FAIL strategy_id=STRAT-X
+fp=XAUUSD|M1|LONDON|RANGING_MEAN_REVERSION| n=20
+  OOS whole: in=-0.0914 oos=-0.0145 status=FAIL
+  OOS family: in=-0.0567 oos=-0.2039 status=FAIL
+2026-08-18 21:41:35 [info     ] [OOS] event=RESULT             oos_expectancy_r=-0.014545 status=FAIL strategy_id=STRAT-X
+2026-08-18 21:41:35 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.02554 status=PASS strategy_id=STRAT-X
+fp=XAUUSD|M1|TOKYO|RANGING_MEAN_REVERSION|N n=12
+  OOS whole: in=-0.0914 oos=-0.0145 status=FAIL
+  OOS family: in=-0.0219 oos=+0.0255 status=PASS
+
+=== REGISTRY UPSERT OVERWRITE CHECK (in-memory test DB) ===
+2026-08-18 21:41:35 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\tmpkt3e6p4h.db
+after DISCOVERED upsert: lifecycle= DISCOVERED sample_count= 10
+after VALIDATED upsert (same id+version): lifecycle= VALIDATED sample_count= 99
+=> same (id,version) silently OVERWRITES prior results (definition mutation not guarded)
+2026-08-18 21:41:37 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-08-18 21:41:38 [info     ] Audit Database safely closed.
+2026-08-18 21:41:38 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-08-18 21:41:39 [info     ] Audit Database safely closed.

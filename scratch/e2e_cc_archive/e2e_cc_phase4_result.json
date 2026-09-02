@@ -1,0 +1,320 @@
+{
+  "meta": {
+    "base": "http://127.0.0.1:8082",
+    "url": "http://127.0.0.1:8082/command_center.html"
+  },
+  "tests": {
+    "T12_browser_open": {
+      "httpStatus": 200,
+      "title": "NEXUS — Strategy Command Center (Visual)",
+      "url": "http://127.0.0.1:8082/command_center.html",
+      "dom": {
+        "hasCanvas": true,
+        "canvasW": 896,
+        "canvasH": 844,
+        "canvasDrawn": true,
+        "bodyTextSample": "🛰 STRATEGY COMMAND CENTER\nTOTAL —\nACTIVE —\nVALIDATED —\nBLOCKED —\nFleet: — strategies\nFILTER\nALL LIFECYCLES\nDISCOVERED\nBACKTESTING\nVALIDATING\nOOS_TESTING\nROBUSTNESS_TESTING\nVALIDATED\nSHADOW\nACTIVE\nREJECTED\nDEGRADED\nRETIRED\nCAMERA\nFIT ALL\nRESET CAM\nFOCUS SEL\nVIEW\nSTAGE\nLIVE\nBLOCKED\nREFRESH\nPLAY\nFri, 21 Aug 2026 08:13:36 GMT\n\nLIFECYCLE LEGEND\n\nDISCOVERED\nBACKTESTING\nVALIDATING\nOOS_TESTING\nROBUSTNESS_TESTING\nVALIDATED\nSHADOW\nACTIVE (LIVE)\nREJECTED (square)\nDEGRADED (square)\nRETIRED (square)\n\nSize=evidence · Health=stem · Gates=rings · Eval=dark dots (BT/WF/OOS/ROB/SCR) · ?=unmeasured\n\nSTRATEGY FL",
+        "buttonCount": 13,
+        "hasInspector": true,
+        "hasConsole": true,
+        "hasTimeline": false,
+        "hasZones": false
+      }
+    },
+    "T01_overview_shape": {
+      "available": true,
+      "total": 500,
+      "by_lifecycle": {
+        "DISCOVERED": 55,
+        "BACKTESTING": 0,
+        "VALIDATING": 0,
+        "OOS_TESTING": 0,
+        "ROBUSTNESS_TESTING": 0,
+        "VALIDATED": 0,
+        "SHADOW": 0,
+        "ACTIVE": 0
+      },
+      "terminal": {
+        "REJECTED": 445,
+        "DEGRADED": 0,
+        "RETIRED": 0
+      },
+      "has_eval_pipeline": true,
+      "has_eval_metrics": true,
+      "eval_pipeline": {
+        "BACKTEST_RUN": 498,
+        "WALK_FORWARD_TESTED": 498,
+        "WALK_FORWARD_PASSED": 5,
+        "OOS_TESTED": 498,
+        "OOS_PASSED": 53,
+        "ROBUSTNESS_TESTED": 498,
+        "ROBUSTNESS_PASSED": 498,
+        "SCORING_COMPLETED": 498
+      },
+      "eval_metrics": {
+        "BACKTEST": {
+          "pass": 498,
+          "fail": 0,
+          "running": 0,
+          "inconclusive": 0,
+          "total": 500,
+          "pass_rate": 0.996,
+          "fail_rate": 0
+        },
+        "WALK_FORWARD": {
+          "pass": 5,
+          "fail": 493,
+          "running": 0,
+          "inconclusive": 0,
+          "total": 500,
+          "pass_rate": 0.01,
+          "fail_rate": 0.986
+        },
+        "OOS": {
+          "pass": 53,
+          "fail": 445,
+          "running": 0,
+          "inconclusive": 0,
+          "total": 500,
+          "pass_rate": 0.106,
+          "fail_rate": 0.89
+        },
+        "ROBUSTNESS": {
+          "pass": 498,
+          "fail": 0,
+          "running": 0,
+          "inconclusive": 0,
+          "total": 500,
+          "pass_rate": 0.996,
+          "fail_rate": 0
+        },
+        "SCORE": {
+          "pass": 0,
+          "fail": 445,
+          "running": 0,
+          "inconclusive": 53,
+          "total": 500,
+          "pass_rate": 0,
+          "fail_rate": 0.89
+        }
+      },
+      "running_evals": 0,
+      "eligible": 0,
+      "blocked": 500
+    },
+    "T04_spatial": {
+      "available": true,
+      "nodes": 500,
+      "zones": 11,
+      "rawHasError": false,
+      "sampleNodeEval": {
+        "id": "STRAT-ICHIMILI-FINAL",
+        "eval": {
+          "gates": {
+            "BACKTEST": "NOT_RUN",
+            "WALK_FORWARD": "NOT_RUN",
+            "OOS": "NOT_RUN",
+            "ROBUSTNESS": "NOT_RUN",
+            "SCORE": "NOT_RUN"
+          },
+          "current_stage": "BACKTEST",
+          "passed_gates": 0,
+          "resolved_gates": 0,
+          "progress": 0,
+          "is_running": false,
+          "running_stage": null
+        }
+      }
+    },
+    "T01_discovered_count": 55,
+    "T02_successful_candidate": {
+      "strategy_id": "SF-7443D4BB68",
+      "lifecycle": "DISCOVERED",
+      "gates": {
+        "BACKTEST": "PASS",
+        "WALK_FORWARD": "FAIL",
+        "OOS": "PASS",
+        "ROBUSTNESS": "PASS",
+        "SCORE": "INCONCLUSIVE"
+      },
+      "passed_gates": 3,
+      "current_stage": "WALK_FORWARD",
+      "reached_VALIDATED": false,
+      "eligibility_state": "BLOCKED",
+      "timeline_events": 2,
+      "timeline_sample": [
+        {
+          "event_type": "LIFECYCLE_TRANSITION",
+          "to_state": "DISCOVERED",
+          "actor": "research_pipeline",
+          "reason": "",
+          "timestamp": "2026-08-23T12:33:06.811252+00:00",
+          "timestamp_iso": "2026-08-23T12:33:06.811252+00:00",
+          "correlation_id": "",
+          "evidence_ref": "",
+          "strategy_id": "SF-7443D4BB68",
+          "strategy_version": ""
+        },
+        {
+          "event_type": "VALIDATION_RUN",
+          "run_id": "RUN-3E1122",
+          "strategy_id": "SF-7443D4BB68",
+          "status": "COMPLETED",
+          "run_outcome": "INCONCLUSIVE",
+          "snapshot_id": "6aa16b51f1bd31e6c594be9025bdf8bc75c76f42db4194e59050230bf8e7df60",
+          "gates": [],
+          "executed_at": "2026-08-23T12:33:06.816770+00:00",
+          "result_summary": {
+            "lifecycle": "DISCOVERED",
+            "expectancy_r": -0.20909,
+            "oos_expectancy_r": 0.361502,
+            "oos_status": "PASS",
+            "robustness_status": "PASS",
+            "score": 0.5947,
+            "verdict": "INCONCLUSIVE",
+            "family_samples": 6,
+            "primary_failure": "WALK_FORWARD",
+            "rejection_reason": "OOS evidence confirms positive edge"
+          },
+          "correlation_id": "RUN-3E1122"
+        }
+      ]
+    },
+    "T03_failed_candidate": {
+      "strategy_id": "SF-B48EC2F9D0",
+      "lifecycle": "REJECTED",
+      "eligibility_state": "BLOCKED",
+      "can_trade": false,
+      "reason": "Strategy lifecycle REJECTED has not reached validation gates.",
+      "blockers": [
+        "lifecycle_at_rejected"
+      ],
+      "invariant_check": {
+        "strategy_id": "SF-B48EC2F9D0",
+        "lifecycle": "REJECTED",
+        "valid": true,
+        "problems": []
+      },
+      "gate_statuses": [],
+      "has_rejection_reason": true
+    },
+    "T05_eval_internal": {
+      "strategy_id": "STRAT-ICHIMILI-FINAL",
+      "lifecycle": "DISCOVERED",
+      "evaluation_present": true,
+      "evaluation_gates": {
+        "BACKTEST": "NOT_RUN",
+        "WALK_FORWARD": "NOT_RUN",
+        "OOS": "NOT_RUN",
+        "ROBUSTNESS": "NOT_RUN",
+        "SCORE": "NOT_RUN"
+      },
+      "lifecycle_changed_to_fake_zone": false
+    },
+    "T06_exec_safety": {
+      "audited": 30,
+      "false_can_trade_non_active": 0,
+      "false_yes_non_active": 0,
+      "violations": [],
+      "allNonActiveBlocked": true,
+      "sample": [
+        {
+          "id": "STRAT-ICHIMILI-FINAL",
+          "lifecycle": "DISCOVERED",
+          "eligibility": "BLOCKED",
+          "can_trade": false
+        },
+        {
+          "id": "STRAT-ICHIMILI-SPACED",
+          "lifecycle": "DISCOVERED",
+          "eligibility": "BLOCKED",
+          "can_trade": false
+        },
+        {
+          "id": "SF-B48EC2F9D0",
+          "lifecycle": "REJECTED",
+          "eligibility": "BLOCKED",
+          "can_trade": false
+        },
+        {
+          "id": "SF-FF5CA37DA4",
+          "lifecycle": "REJECTED",
+          "eligibility": "BLOCKED",
+          "can_trade": false
+        },
+        {
+          "id": "SF-EC0E82FCA1",
+          "lifecycle": "REJECTED",
+          "eligibility": "BLOCKED",
+          "can_trade": false
+        }
+      ]
+    },
+    "T10_metric_scope": {
+      "overview_by_lifecycle_is_persistent": true,
+      "overview_eval_pipeline_is_transient": true,
+      "eval_metrics_present": true,
+      "eval_metrics_scope_note": "scope=current_evaluation (transient runs)",
+      "no_hardcoded_zero_middle": {
+        "DISCOVERED": 55,
+        "BACKTESTING": 0,
+        "VALIDATING": 0,
+        "OOS_TESTING": 0,
+        "ROBUSTNESS_TESTING": 0,
+        "VALIDATED": 0,
+        "SHADOW": 0,
+        "ACTIVE": 0
+      },
+      "eval_pipeline_counts": {
+        "BACKTEST_RUN": 498,
+        "WALK_FORWARD_TESTED": 498,
+        "WALK_FORWARD_PASSED": 5,
+        "OOS_TESTED": 498,
+        "OOS_PASSED": 53,
+        "ROBUSTNESS_TESTED": 498,
+        "ROBUSTNESS_PASSED": 498,
+        "SCORING_COMPLETED": 498
+      }
+    },
+    "T11_adversarial_lifecycle": {
+      "total_rows": 500,
+      "discovered_without_validated": 55,
+      "spurious_terminal_states": 0,
+      "detail": [],
+      "note": "No mutation endpoint exists; domain protection is structural (read-only API + invariant_check)."
+    },
+    "T07_event_order": {
+      "events": 2,
+      "monotonic": true,
+      "sorted": true
+    },
+    "T09_gen_vs_candidate": {
+      "note": "research_runs=transient sweeps (GENERATION), strategy_registry=persistent candidates (CANDIDATE). They are distinct tables; UI reads registry only for lifecycle.",
+      "rejected_persistent": 445,
+      "discovered_persistent": 55,
+      "eval_pipeline_backtest_run": 498
+    },
+    "T08_restart": {
+      "note": "Server process stable; re-fetch reconstructs state from audit.db (authoritative).",
+      "re_total": 500,
+      "re_by_lifecycle": {
+        "DISCOVERED": 55,
+        "BACKTESTING": 0,
+        "VALIDATING": 0,
+        "OOS_TESTING": 0,
+        "ROBUSTNESS_TESTING": 0,
+        "VALIDATED": 0,
+        "SHADOW": 0,
+        "ACTIVE": 0
+      },
+      "state_reconstructed": true
+    }
+  },
+  "errors": {
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "failedRequests": []
+  }
+}

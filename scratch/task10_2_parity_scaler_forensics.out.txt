@@ -1,0 +1,30 @@
+P1. ds_cb30f87520e9e6a4: rows=99946 feat_cols=50
+P1. ds_b64513f79687824a: rows=99946 feat_cols=60
+   b645 manifest keys: dataset_id_dataset_version_source_identity_hash_row_counts_temporal_range_symbol_timeframe_feature_schema_id_label_schem
+P2. scaler bench_a_v1: 50D
+P2. scaler bench_b_v1: 62D
+P2. scaler bench_c_v1: 50D
+P2. scaler bench_d_v1: 62D
+P2. scaler cand_241f9cf5ac52575f: 6D
+P2. scaler cand_331e81b3c5604ed7: 6D
+P2. scaler cand_6f4090b06d2975d3: 6D
+P2. scaler cand_75a4028e4d3eba16: 6D
+P2. scaler cand_data_gate_ep20: 50D
+P2. scaler cand_data_gate_ep30: 50D
+P2. scaler cand_data_gate_v1: 50D
+P2. scaler cand_data_gate_v2: 50D
+P2. scaler task5_a_v1: 50D
+P2. scaler task5_b_v1: 62D
+P2. scaler task5_c_v1: 60D
+P2. scaler task5_d_v1: 72D
+P3. canonical names: 70 | hash=235b8fccc96b7e0e
+   50..59: ('active_high_impact_events', 'xauusd_relevance', 'usd_relevance', 'bullish_pressure', 'bearish_pressure', 'conflict_score', 'novelty', 'freshness', 'confidence', 'news_state')
+   60..69: ('bsl_distance_atr', 'ssl_distance_atr', 'eqh_strength', 'eql_strength', 'htf_liquidity_score', 'internal_liquidity_distance', 'external_liquidity_distance', 'liquidity_confluence', 'liquidity_sweep_state', 'post_sweep_displacement')
+P4. champion hash now=9105cef7d93e23b8... baseline=f0f70efb1b55855b...
+
+FINDINGS:
+ - P2: unexpected scaler dim 6 at C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\cand_241f9cf5ac52575f\scaler.npz
+ - P2: unexpected scaler dim 6 at C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\cand_331e81b3c5604ed7\scaler.npz
+ - P2: unexpected scaler dim 6 at C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\cand_6f4090b06d2975d3\scaler.npz
+ - P2: unexpected scaler dim 6 at C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\cand_75a4028e4d3eba16\scaler.npz
+ - P4: champion artifact hash CHANGED vs baseline (frozen 50D)

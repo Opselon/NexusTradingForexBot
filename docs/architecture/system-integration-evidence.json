@@ -1,0 +1,139 @@
+{
+  "mission": "Nexus system integration & production readiness evidence pass",
+  "date": "2026-09-02",
+  "agent": "Nexus-Main",
+  "repo_head_at_pass_start": "57d6b69",
+  "repo_head_at_evidence_time": "see git log (parallel swarm active)",
+  "gates": {
+    "GATE-01_BOOTSTRAP": {
+      "verdict": "PASS_WITH_NOTE",
+      "evidence": [
+        "git archive HEAD src -> isolated -E -s -B import probe: 13 modules, 0 fails",
+        "installer protocol suite: 42 pass / 1 skip (managed-uv absent)",
+        "NOTE: repo-root build-info.json (stale 9.0.3/53317de, untracked) captures source-run identity; pinned by test, precedence fix owned by TASK-RUNTIME-TRUTH"
+      ]
+    },
+    "GATE-02_STARTUP": {
+      "verdict": "PASS",
+      "evidence": [
+        "tests/integration/test_engine_runtime_launch.py CLI form: [RUNTIME_TEST] PASS, 0 errors / 47 warnings, rc=0",
+        "live engine restart observed 2026-09-02 03:00 (PID pair launcher+child), post-restart signature lines present (MODE/runtime_mode, SYNC_COMPLETE)"
+      ]
+    },
+    "GATE-03_IDENTITY": {
+      "verdict": "FAIL_OPEN_REGISTERED",
+      "evidence": [
+        "BUG-193: deploy gate CHECK-NWS-03 false CRITICAL on healthy system (split reference-registry singletons); doctor READY vs gate BLOCK = observability contradiction",
+        "doctor MODEL check probes first-match artifact v1.0.0 (50D) while runtime serves 70d_liquidity (70D): doctor PASSES but does not prove the SERVING artifact",
+        "model registry: CHAMPION row scalp_v1_50d AND CANDIDATE row scalp_v3_70d point at the SAME artifact path+fingerprint (763a25f61fe6b7d3); known BUG-125/BUG-140 labeling-artifact class; routed to governance",
+        "CLI version from neutral CWD: 9.0.6/pyproject OK; from repo root: captured by stale build-info.json (pinned by test)"
+      ]
+    },
+    "GATE-04_CONFIGURATION": {
+      "verdict": "PASS",
+      "evidence": [
+        "settings DB -> RuntimeConfigStore hydration override verified by test (settings execution.mode=PAPER + risk.risk_per_trade_pct=0.33 override bootstrap)",
+        "POST /api/config path: yaml persist + settings-store apply + notifier rebuild (BUG-080 routing intact)",
+        "validate_field bounds: invalid mode/risk values rejected (BOGUS mode, 999 pct); string coercion handled at API layer before validate (0.4 float passes, '0.4' str rejected pre-coercion)"
+      ]
+    },
+    "GATE-05_06_07_DATA_MODEL_DECISION_FLOW": {
+      "verdict": "PASS_WITH_RISKS",
+      "evidence": [
+        "runtime /api/status: model scalp_v3/70D loaded, scaler_ready, inference FRESH (pre-restart probe)",
+        "error log: INFERENCE 70D contract violation value 24.0 at index 50 (news family) out of [-3,+3] - isolated, positions still managed (fail-safe containment worked)",
+        "BUG-192 (foreign WIP, QA owner) closes the bool/str/None validation holes in schema_contract + inference_validator + checks_features"
+      ]
+    },
+    "GATE-08_PERSISTENCE": {
+      "verdict": "PASS",
+      "evidence": [
+        "audit_experiences 643 rows / 643 distinct idempotency_key; audit_experience_outcomes 400/400 distinct",
+        "broker resync dedupe: duplicates=41 inserted=0 (idempotent restart continuity)",
+        "audit.db integrity ok (doctor DATABASE row), phase table gap: shadow_runs missing (WARNING with repair path)"
+      ]
+    },
+    "GATE-09_10_API_UI": {
+      "verdict": "PASS",
+      "evidence": [
+        "openapi 252 paths; /api/status exposes health.overall + per-subsystem verdicts (READY/STALE observed live)",
+        "Web/app.js badge map preserves distinct semantics (STALE amber != UNAVAILABLE rose != DISABLED slate); UI shows raw overall token (no collapse-to-generic found)",
+        "settings-vs-launcher mode precedence: launcher --mode paper did NOT mask settings LIVE (runtime_mode=LIVE in logs+API) - contract test added"
+      ]
+    },
+    "GATE-11_OBSERVABILITY": {
+      "verdict": "PARTIAL",
+      "evidence": [
+        "positive: HTTP 404 root + /health 404 on port captured by 8004; engine 404-after-death behavior consistent",
+        "negative: BUG-193 doctor-vs-gate contradiction; prior OBS-001..016 ledger (redactor correlation-id break, dead /api/debug/trace) remains open"
+      ]
+    },
+    "GATE-12_13_RESTART_RECOVERY": {
+      "verdict": "PASS",
+      "evidence": [
+        "live restart 03:00: engine re-seeded strategies, resync dedupe inserted=0, no duplicate experiences",
+        "degraded states visible in API (STALE subsystem verdicts) rather than hidden"
+      ]
+    },
+    "GATE-14_15_REPLAY_SHADOW": {
+      "verdict": "PASS_WITH_NOTE",
+      "evidence": [
+        "tests: research_execution_stack + runtime_70d_warmup 12 pass; forward_test_freeze + provenance_immutable + runtime_70d_contract_probe 18 pass",
+        "shadow70 live tables: 2 observations (08-19 smoke); shadow worker active but produces no rows on current runtime - parity evidence is test-local, not live"
+      ]
+    },
+    "GATE-16_17_18_UPDATE_ROLLBACK_RELEASE": {
+      "verdict": "PASS_WITH_NOTE",
+      "evidence": [
+        "workflows: ci.yml (integrity classifier + gates + critical suite), tests-os.yml (windows/macos), release.yml (validate->gates->build->publish, 4 asset classes)",
+        "installer protocol suite local PASS; E2E env-gated not run here (NEXUS_INSTALLER_E2E)",
+        "NOTE: deploy gate BLOCK (BUG-193) currently fails-closed every local release gate run - release-cutting blocked until BUG-193 fixed or gate verdict arbitrated (BUG-162 semantics: read decision fields, not exit code)"
+      ]
+    },
+    "GATE-19_DOCTOR": {
+      "verdict": "PARTIAL",
+      "evidence": [
+        "doctor READY on healthy tree (correct); doctor does NOT detect BUG-193-class gate contradiction (different code path); doctor MODEL row checks wrong artifact instance (v1.0.0 vs serving 70d_liquidity)",
+        "TASK-RUNTIME-TRUTH (parallel owner) is fixing doctor truth semantics; no overlap taken"
+      ]
+    },
+    "GATE-20_END_TO_END": {
+      "verdict": "PASS_WITH_RISKS",
+      "evidence": [
+        "critical-suite replica (64 files, filtered manifest): 1358 tests RC=0 (18 skips env-conditional)",
+        "engine launch gate PASS; CLI subprocess harness PASS; installer suite PASS",
+        "E2E golden decision trace exists via probes (feature->model->persist->API verified live), no live orders at any point"
+      ]
+    }
+  },
+  "defects_filed": [
+    {
+      "id": "BUG-193",
+      "severity": "P1",
+      "category": "Observability/Release",
+      "owner": "forensics domain (CHG-0032-A1 Step-2 slice owner)",
+      "repro": "fresh interpreter: ForensicHealthEngine().references -> 10; checks_news.FEATURE_REF_REGISTRY -> 0; deploy gate BLOCK CHECK-NWS-03"
+    },
+    {
+      "id": "IDENTITY-STALE-BUILDINFO (pinned, owned by TASK-RUNTIME-TRUTH)",
+      "severity": "P2",
+      "category": "Identity",
+      "owner": "Nexus-Main (TASK-RUNTIME-TRUTH)",
+      "repro": "nexus version at repo root reports 9.0.3/53317de vs pyproject 9.0.6"
+    },
+    {
+      "id": "REGISTRY-DUAL-ROWS (documented)",
+      "severity": "P3",
+      "category": "Identity/governance",
+      "owner": "governance domain",
+      "repro": "experience_model_registry rows 3545/3546 same artifact_fingerprint, schemas v1(50D) CHAMPION vs v3(70D) CANDIDATE"
+    }
+  ],
+  "tests_added": [
+    "tests/integration/test_system_integration_boundaries.py (4 tests: 2 PASS, 1 RED-by-design BUG-193 net, 1 pin)"
+  ],
+  "verdict": "SYSTEM_INTEGRATION_CERTIFIED_WITH_RISKS",
+  "blockers": [
+    "BUG-193 must be fixed before next release cut (deploy gate fails-closed on healthy trees)"
+  ]
+}

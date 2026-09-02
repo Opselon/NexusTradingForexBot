@@ -1,0 +1,85 @@
+{
+  "operation": "symbol_info_tick",
+  "symbol": "XAUUSD",
+  "captured_at": "2026-08-17T05:41:13.436980+00:00",
+  "object": {
+    "ask": {
+      "type": "float",
+      "value": 4395.34,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "bid": {
+      "type": "float",
+      "value": 4394.91,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "count": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method count of Tick object at 0x000001953D563610>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "flags": {
+      "type": "int",
+      "value": 1028,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "index": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method index of Tick object at 0x000001953D563610>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "last": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_fields": {
+      "type": "int",
+      "value": 8,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_sequence_fields": {
+      "type": "int",
+      "value": 8,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_unnamed_fields": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "time": {
+      "type": "int",
+      "value": 1786956073,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "time_msc": {
+      "type": "int",
+      "value": 1786956073149,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume_real": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    }
+  }
+}

@@ -1,0 +1,79 @@
+account login=10011755849 balance=40973.77 equity=41094.13
+terminal connected=True
+
+TOTAL deals 48h: 42
+deal ticket range: 152341241432 .. 152341473974
+position_id range: 152486859966 .. 152487091510
+
+CURRENT positions: 6
+  ticket=152488471589 magic=888101 symbol=XAUUSD type=1 vol=0.59 open=4393.47 profit=20.06 open_time=2026-08-17 07:26:07+00:00 comment=NSE_PENDING
+  ticket=152488471603 magic=888101 symbol=XAUUSD type=1 vol=0.59 open=4393.47 profit=20.06 open_time=2026-08-17 07:26:07+00:00 comment=NSE_PENDING
+  ticket=152488471687 magic=888101 symbol=XAUUSD type=1 vol=0.59 open=4393.47 profit=20.06 open_time=2026-08-17 07:26:07+00:00 comment=NSE_PENDING
+  ticket=152488471841 magic=888101 symbol=XAUUSD type=1 vol=0.59 open=4393.47 profit=20.06 open_time=2026-08-17 07:26:07+00:00 comment=NSE_PENDING
+  ticket=152488471852 magic=888101 symbol=XAUUSD type=1 vol=0.59 open=4393.47 profit=20.06 open_time=2026-08-17 07:26:07+00:00 comment=NSE_PENDING
+  ticket=152488471867 magic=888101 symbol=XAUUSD type=1 vol=0.59 open=4393.47 profit=20.06 open_time=2026-08-17 07:26:07+00:00 comment=NSE_PENDING
+
+CURRENT pending orders: 0
+
+HISTORY ORDERS 48h: 60
+  order=152486859966 type=2 vol=0.08 price=4376.94 state=4 reason=3 time_setup=2026-08-17 01:11:01+00:00 time_done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486859992 type=2 vol=0.08 price=4376.94 state=4 reason=3 time_setup=2026-08-17 01:11:01+00:00 time_done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486860004 type=2 vol=0.08 price=4377.04 state=4 reason=3 time_setup=2026-08-17 01:11:02+00:00 time_done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486860012 type=2 vol=0.08 price=4377.04 state=4 reason=3 time_setup=2026-08-17 01:11:02+00:00 time_done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486866214 type=1 vol=0.08 price=0.0 state=4 reason=3 time_setup=2026-08-17 01:13:00+00:00 time_done=2026-08-17 01:13:00+00:00 comment=NSE_CLOSE
+  order=152486866412 type=1 vol=0.08 price=0.0 state=4 reason=3 time_setup=2026-08-17 01:13:03+00:00 time_done=2026-08-17 01:13:03+00:00 comment=NSE_CLOSE
+  order=152486866449 type=1 vol=0.08 price=0.0 state=4 reason=3 time_setup=2026-08-17 01:13:03+00:00 time_done=2026-08-17 01:13:03+00:00 comment=NSE_CLOSE
+  order=152486866520 type=1 vol=0.08 price=0.0 state=4 reason=3 time_setup=2026-08-17 01:13:05+00:00 time_done=2026-08-17 01:13:05+00:00 comment=NSE_CLOSE
+  order=152486906832 type=1 vol=0.91 price=0.0 state=4 reason=3 time_setup=2026-08-17 01:29:00+00:00 time_done=2026-08-17 01:29:00+00:00 comment=NSE_MARKET
+  order=152486908051 type=0 vol=0.91 price=0.0 state=4 reason=3 time_setup=2026-08-17 01:29:39+00:00 time_done=2026-08-17 01:29:39+00:00 comment=NSE_CLOSE
+  order=152486910279 type=3 vol=0.48 price=4376.59 state=4 reason=3 time_setup=2026-08-17 01:30:14+00:00 time_done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910300 type=3 vol=0.48 price=4376.59 state=4 reason=3 time_setup=2026-08-17 01:30:15+00:00 time_done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910317 type=3 vol=0.48 price=4376.59 state=4 reason=3 time_setup=2026-08-17 01:30:15+00:00 time_done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910332 type=3 vol=0.48 price=4376.59 state=4 reason=3 time_setup=2026-08-17 01:30:15+00:00 time_done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910359 type=3 vol=0.48 price=4376.59 state=4 reason=3 time_setup=2026-08-17 01:30:16+00:00 time_done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910376 type=3 vol=0.48 price=4376.59 state=4 reason=3 time_setup=2026-08-17 01:30:16+00:00 time_done=2026-08-17 01:30:17+00:00 comment=NSE_PENDING
+  order=152486916729 type=0 vol=0.48 price=4376.34 state=4 reason=4 time_setup=2026-08-17 01:32:05+00:00 time_done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916730 type=0 vol=0.48 price=4376.34 state=4 reason=4 time_setup=2026-08-17 01:32:05+00:00 time_done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916731 type=0 vol=0.48 price=4376.34 state=4 reason=4 time_setup=2026-08-17 01:32:05+00:00 time_done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916732 type=0 vol=0.48 price=4376.34 state=4 reason=4 time_setup=2026-08-17 01:32:05+00:00 time_done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916733 type=0 vol=0.48 price=4376.34 state=4 reason=4 time_setup=2026-08-17 01:32:05+00:00 time_done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916734 type=0 vol=0.48 price=4376.34 state=4 reason=4 time_setup=2026-08-17 01:32:05+00:00 time_done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486919298 type=2 vol=0.65 price=4376.79 state=4 reason=3 time_setup=2026-08-17 01:33:00+00:00 time_done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919320 type=2 vol=0.65 price=4376.79 state=4 reason=3 time_setup=2026-08-17 01:33:01+00:00 time_done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919343 type=2 vol=0.65 price=4376.79 state=4 reason=3 time_setup=2026-08-17 01:33:01+00:00 time_done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919365 type=2 vol=0.65 price=4376.79 state=4 reason=3 time_setup=2026-08-17 01:33:01+00:00 time_done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919378 type=2 vol=0.65 price=4376.79 state=4 reason=3 time_setup=2026-08-17 01:33:02+00:00 time_done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919392 type=2 vol=0.65 price=4376.79 state=4 reason=3 time_setup=2026-08-17 01:33:02+00:00 time_done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486922805 type=1 vol=0.65 price=4377.22 state=4 reason=4 time_setup=2026-08-17 01:34:11+00:00 time_done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922806 type=1 vol=0.65 price=4377.22 state=4 reason=4 time_setup=2026-08-17 01:34:11+00:00 time_done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922807 type=1 vol=0.65 price=4377.22 state=4 reason=4 time_setup=2026-08-17 01:34:11+00:00 time_done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922808 type=1 vol=0.65 price=4377.22 state=4 reason=4 time_setup=2026-08-17 01:34:11+00:00 time_done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922809 type=1 vol=0.65 price=4377.22 state=4 reason=4 time_setup=2026-08-17 01:34:11+00:00 time_done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922810 type=1 vol=0.65 price=4377.22 state=4 reason=4 time_setup=2026-08-17 01:34:11+00:00 time_done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152487082680 type=3 vol=0.46 price=4376.3 state=2 reason=3 time_setup=2026-08-17 02:30:15+00:00 time_done=2026-08-17 02:32:19+00:00 comment=NSE_PENDING
+  order=152487082723 type=3 vol=0.46 price=4376.3 state=2 reason=3 time_setup=2026-08-17 02:30:16+00:00 time_done=2026-08-17 02:32:19+00:00 comment=NSE_PENDING
+  order=152487082732 type=3 vol=0.46 price=4376.3 state=2 reason=3 time_setup=2026-08-17 02:30:16+00:00 time_done=2026-08-17 02:32:20+00:00 comment=NSE_PENDING
+  order=152487082741 type=3 vol=0.46 price=4376.3 state=2 reason=3 time_setup=2026-08-17 02:30:16+00:00 time_done=2026-08-17 02:32:20+00:00 comment=NSE_PENDING
+  order=152487082748 type=3 vol=0.46 price=4376.3 state=2 reason=3 time_setup=2026-08-17 02:30:17+00:00 time_done=2026-08-17 02:32:20+00:00 comment=NSE_PENDING
+  order=152487082775 type=3 vol=0.46 price=4376.3 state=2 reason=3 time_setup=2026-08-17 02:30:17+00:00 time_done=2026-08-17 02:32:21+00:00 comment=NSE_PENDING
+
+=== engine experience decision timestamps (engine clock) ===
+  key=exp_3e8bcc1b-77d6-4e decision=2026-08-17T05:10:00+00:00 ticket=152487837184
+  key=exp_a2e56cad-b9a8-43 decision=2026-08-17T05:17:07+00:00 ticket=152487871361
+  key=exp_f81b6fa6-0f6e-47 decision=2026-08-17T05:31:00+00:00 ticket=152487935198
+  key=exp_5f37a172-a4a2-4f decision=2026-08-17T05:32:01+00:00 ticket=152487940044
+  key=exp_dbf2e246-6e96-44 decision=2026-08-17T05:34:00+00:00 ticket=152487952111
+  key=exp_182def13-3c9f-48 decision=2026-08-17T05:36:00+00:00 ticket=152487963500
+  key=exp_791bd03a-a149-41 decision=2026-08-17T05:38:10+00:00 ticket=152487972919
+  key=exp_d48c1bf5-9f96-41 decision=2026-08-17T05:45:00+00:00 ticket=152488008537
+  key=exp_a9a31d1c-5fd6-41 decision=2026-08-17T05:52:11+00:00 ticket=152488042923
+  key=exp_c861ee9f-4ad1-4b decision=2026-08-17T05:57:00+00:00 ticket=152488070720
+  key=exp_21f30b9d-9c2b-4b decision=2026-08-17T06:06:00+00:00 ticket=152488118287
+  key=exp_caf09c96-8762-4e decision=2026-08-17T06:12:00+00:00 ticket=152488144048
+  key=exp_893cbd14-4abc-40 decision=2026-08-17T06:26:51+00:00 ticket=152488200885
+  key=exp_0c5a4aab-3622-43 decision=2026-08-17T06:29:05+00:00 ticket=152488210631
+  key=exp_2bc3fcde-34ea-4d decision=2026-08-17T06:40:00+00:00 ticket=152488260802
+  key=exp_700efca1-415d-4a decision=2026-08-17T07:00:00+00:00 ticket=152488352047
+  key=exp_a2f8db24-e115-44 decision=2026-08-17T07:03:07+00:00 ticket=152488371966
+  key=exp_d20d52af-7c51-4e decision=2026-08-17T07:06:07+00:00 ticket=152488384977
+  key=exp_b635e813-034c-42 decision=2026-08-17T07:21:11+00:00 ticket=152488450000

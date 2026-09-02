@@ -1,0 +1,29 @@
+=== CANONICAL CONTRACT (schema_contract.py) ===
+SCHEMA_ID: scalp_v3 | DIMENSION: 70
+names len: 70
+50..59: ('active_high_impact_events', 'xauusd_relevance', 'usd_relevance', 'bullish_pressure', 'bearish_pressure', 'conflict_score', 'novelty', 'freshness', 'confidence', 'news_state')
+60..69: ('bsl_distance_atr', 'ssl_distance_atr', 'eqh_strength', 'eql_strength', 'htf_liquidity_score', 'internal_liquidity_distance', 'external_liquidity_distance', 'liquidity_confluence', 'liquidity_sweep_state', 'post_sweep_displacement')
+hash: 235b8fccc96b7e0e
+
+=== REGISTRY (features/schema.py) ===
+  scalp_v1: dim=50 active=True supersedes=
+  scalp_v2: dim=60 active=False supersedes=scalp_v1
+  scalp_liquidity_v1: dim=60 active=False supersedes=scalp_v1
+  scalp_v3: dim=70 active=False supersedes=scalp_v1
+  scalp_v4: dim=70 active=False supersedes=scalp_v1
+
+=== scalp_v3 vs scalp_v4 DESCRIPTION DIFF (registry) ===
+same dimension: True
+v3 desc: CANONICAL 70D contract (TASK-03-70D-PARITY): Base 50D (scalp_v1, indices 0..49) + News 10D (canonical news_context_v1 first-10, indices 50..59) + Liquidity 10D (features/liquidity_
+v4 desc: scalp_v1 50D Base + 10 slot-50..59 family features (TASK-5 scalp_v2 momentum extras or TASK-1 liquidity at 50..59 under their own schema ids) + 10 TASK-01-60D-LIQUIDITY Liquidity I
+
+=== ACTIVE RUNTIME USAGE ===
+liquidity_runtime.SCHEMA_70D: scalp_v4 (ACTIVE_RUNTIME)
+shadow70.SHADOW70_SCHEMA_ID: scalp_v3 (SHADOW)
+schema_v2.SEVENTY_D_SCHEMA_ID: scalp_v3 (DATASET)
+
+=== DATASET MANIFEST PROVENANCE ===
+  ds_d3f35b12d63148da: schema=scalp_v3 schema_hash=235b8fccc96b7e0e rows=1146 tf=M5
+  ds_d3886c503d6c0901: schema=scalp_v3 schema_hash=235b8fccc96b7e0e rows=66 tf=M1
+
+EXIT: 0

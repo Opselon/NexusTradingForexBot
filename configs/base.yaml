@@ -1,0 +1,96 @@
+execution:
+  symbol: "XAUUSD"
+  mode: "PAPER"
+  timeframe: "M1"
+  magic_number: 999101
+  max_slippage_points: 30
+
+risk:
+  max_account_drawdown_pct: 2.0
+  risk_per_trade_pct: 0.5
+  max_concurrent_positions: 1
+  max_spread_points: 60
+  enforce_stop_loss: true
+  max_margin_usage_pct: 10.0
+  max_allowed_lots: 2.0
+
+mt5:
+  timeout_ms: 5000
+  retries: 3
+  portable_mode: false
+
+model:
+  confidence_threshold: 0.35
+  feature_schema_version: "v1.0"
+  model_artifact_path: "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
+  # TASK-01-60D-LIQUIDITY: explicit switch. false -> existing 50D behavior;
+  # true -> 60D liquidity feature layer for candidate pipelines.
+  liquidity_features_enabled: true
+
+algo:
+  atr_sl_buffer_multiplier: 1.5
+  min_risk_reward_ratio: 1.8
+  ai_zone_confidence_threshold: 0.60
+  fvg_mitigation_sensitivity: 0.5
+  order_block_lookback_bars: 30
+
+candle_intel:
+  enabled: true
+  entry_min_confidence: 0.62
+  strong_body_ratio: 0.60
+  weak_close_blocks_entry: true
+  db_path: "artifacts/candle_intel.db"
+
+news:
+  enabled: true
+  db_path: "artifacts/news.db"
+  worker_interval_sec: 60
+  polling:
+    fast_interval_sec: 300
+    medium_interval_sec: 900
+    slow_interval_sec: 3600
+  analysis:
+    mode: "HYBRID"
+    provider: ""
+    api_base_url: ""
+    model: ""
+    max_api_per_cycle: 5
+    api_importance_floor: 0.55
+    request_timeout_sec: 20.0
+    enabled: true
+
+# TASK-12: periodic forensic Telegram report (bounded, dedup, config-driven).
+# enabled=false by default — operators opt in. interval_sec = min time between
+# reports; aggregation_window_sec = per-check cooldown (identical alerts
+# aggregate, never spam).
+# TASK-22: runtime DATABASE HYGIENE engine (continuous, config-driven).
+# enabled: master switch for the background cycle. interval_minutes: light
+# cycle cadence (default 30). deep_maintenance_interval_hours: heavier cycle
+# (index health + WAL/VACUUM-in-maint-window + full audit). Cleanup NEVER
+# blocks trading: cycles run async, small batches, bounded budgets. SAFE_CLEAN
+# deletes only when apply_deletes=true AND execution.mode != LIVE.
+database_hygiene:
+  enabled: true
+  interval_minutes: 30
+  deep_maintenance_interval_hours: 6
+  aggressive_cleanup: false
+  dry_run: true
+  apply_deletes: false
+  batch_size: 200
+  telegram_report: true
+  telegram_min_interval_sec: 3600
+  retention:
+    telemetry_days: 7
+    cache_hours: 24
+    failed_jobs_days: 14
+    audit_days: 0
+
+forensic_report:
+  enabled: false
+  interval_sec: 21600
+  minimum_severity: "WARNING"
+  aggregation_window_sec: 3600
+  experience_gap:
+    gap_rate_warning: 0.20
+    gap_rate_degraded: 0.50
+    recoverable_min: 5

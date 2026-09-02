@@ -1,0 +1,17 @@
+feature                     best-base                     pearson spearman  flag
+bsl_distance_atr            dist_to_swing_high_20          0.7623   0.7436  
+ssl_distance_atr            dist_to_ema_50                 0.7747   0.7708  
+eqh_strength                stop_hunt_depth               -0.4384   0.3678  
+eql_strength                norm_kumo_width                0.5097   0.4254  
+htf_liquidity_score         htf_h1_momentum                 0.728   0.8108  
+internal_liquidity_distance norm_displacement             -0.9018  -0.5644  NEAR-DUP
+external_liquidity_distance norm_displacement              0.6107   0.6333  
+liquidity_confluence        norm_displacement              0.6147   0.4749  
+liquidity_sweep_state       feat_ob_liquidity_swept        0.3729   0.5021  
+post_sweep_displacement     lag_2_log_return              -0.1562   0.9976  NEAR-DUP
+
+vectors: 94
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+  return _methods._mean(a, axis=axis, dtype=dtype,
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)

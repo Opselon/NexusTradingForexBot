@@ -1,0 +1,12 @@
+{
+  "artifact_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\wf_candidate",
+  "model_pt_hash_sha256": "80b6d159e98a2975c7fb452bb733e82b1940a45cd4ebb4d2ee1b9a9c115a36f0",
+  "scaler_hash_sha256": "0bbe342ae9f28e55aaf098785eed2dbed0b3dd8f4940279cbefbd1ad50193588",
+  "dataset": "ds_task5_real70d_2500",
+  "feature_schema_id": "scalp_v3",
+  "dimension": 70,
+  "fold_count": 4,
+  "purge_gap_bars": 15,
+  "embargo_bars": 15,
+  "elapsed_sec": 2.23
+}

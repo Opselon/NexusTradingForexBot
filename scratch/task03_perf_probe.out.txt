@@ -1,0 +1,35 @@
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+  return _methods._mean(a, axis=axis, dtype=dtype,
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)
+== 70D TASK-3 PERF (brief 49) ==
+50D base construction   : {'p50_ms': 3.064, 'p95_ms': 9.014, 'max_ms': 19.228}
+70D assembly+validate   : {'p50_ms': 4.074, 'p95_ms': 9.313, 'max_ms': 11.193}
+validator per-tick      : {'p50_ms': 0.147, 'p95_ms': 0.895, 'max_ms': 1.841}
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=14.3
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=20.9
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=20.7
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=19.1
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=18.8
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=20.9
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=16.9
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=24.1
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=21.0
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=21.9
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=11.5
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=24.0
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=23.4
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=31.7
+2026-08-19 04:35:36 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=27.2
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=26.7
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=22.1
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=24.2
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=21.6
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=21.4
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=15.1
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=25.2
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=21.3
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=17.5
+2026-08-19 04:35:37 [info     ] [FEATURE_CONTRACT] schema=scalp_v3 dimension=70 schema_hash=235b8fccc96b7e0e news=FEATURE_AVAILABLE liquidity=FEATURE_AVAILABLE status=VALID total_ms=14.2
+runtime70 live snapshot : {'p50_ms': 27.264, 'p95_ms': 33.928, 'max_ms': 39.918}
+replay_70d full rebuild : {'p50_ms': 19.412, 'p95_ms': 108.611, 'max_ms': 108.611}

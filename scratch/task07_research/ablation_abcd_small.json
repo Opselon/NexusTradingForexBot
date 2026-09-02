@@ -1,0 +1,64 @@
+{
+  "research_run_id": "task07_ablation_small_01",
+  "research_baseline_id": "e85de540e09d3339",
+  "algorithm_version": "liquidity-v1.0 (committed engine) \u2014 v1.1 version isolation recorded separately",
+  "method": "small-sample exploratory ablation; identical timestamps/labels/split across cells; logistic regression (feature-information probe, architecture-agnostic); tail-20% val",
+  "samples": 900,
+  "time_range": [
+    "2025-03-21T07:45:00+00:00",
+    "2026-08-12T09:45:00+00:00"
+  ],
+  "label_contract": "forward 5-bar return vs 0.5*ATR (identical across cells)",
+  "cells": {
+    "A": {
+      "dim": 50,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3889,
+      "macro_f1": 0.387,
+      "ece": 0.0989,
+      "brier": 0.229,
+      "fit_seconds": 0.07
+    },
+    "B": {
+      "dim": 60,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3889,
+      "macro_f1": 0.387,
+      "ece": 0.0989,
+      "brier": 0.229,
+      "fit_seconds": 0.05
+    },
+    "C": {
+      "dim": 60,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3889,
+      "macro_f1": 0.3864,
+      "ece": 0.1448,
+      "brier": 0.2358,
+      "fit_seconds": 0.06
+    },
+    "D": {
+      "dim": 70,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3833,
+      "macro_f1": 0.3816,
+      "ece": 0.1393,
+      "brier": 0.2359,
+      "fit_seconds": 0.06
+    }
+  },
+  "verdict": {
+    "outcome": "NEUTRAL",
+    "delta_D_minus_B_f1": -0.0054,
+    "delta_C_minus_A_f1": -0.0006
+  },
+  "limitations": [
+    "small n (LOW_EVIDENCE unless n>=100)",
+    "news block NEUTRAL (no aligned news)",
+    "linear model \u2014 measures feature information, not the production architecture"
+  ]
+}

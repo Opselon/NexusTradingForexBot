@@ -1,0 +1,9 @@
+{
+  "r": {
+    "fleetRowsRaw": 500,
+    "afterRenderFleetRows": 500,
+    "afterRenderTotal": "500",
+    "afterRenderEvalMetrics": "EVALUATION PIPELINE (SCOPE: TRANSIENT RUNS)0 runningBACKTEST"
+  },
+  "consoleAll": []
+}

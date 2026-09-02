@@ -1,0 +1,4036 @@
+{
+  "check": "anti_crash_static",
+  "repo": "NexusTradingForexBot",
+  "files_scanned": 360,
+  "violations": [
+    {
+      "file": "src/nexus_scalp/adapters/mt5/mt5_adapter.py",
+      "line": "202",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/mt5_adapter.py",
+      "line": "209",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/mt5_adapter.py",
+      "line": "212",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/mt5_adapter.py",
+      "line": "1159",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/providers.py",
+      "line": "376",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/providers.py",
+      "line": "382",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/providers.py",
+      "line": "406",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/providers.py",
+      "line": "418",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "167",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "235",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "253",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "854",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "898",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "916",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1022",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1083",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1287",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1300",
+      "kind": "SILENT_HANDLER",
+      "text": "except NotImplementedError:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1314",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1323",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1386",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1565",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1747",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1798",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1964",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2032",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2130",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2136",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2142",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2148",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2154",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2160",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2166",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2172",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2178",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2187",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2192",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2197",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2204",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2209",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2294",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2320",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2329",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2337",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2375",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2733",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2758",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "2836",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "3994",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4299",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4466",
+      "kind": "SILENT_HANDLER",
+      "text": "except RuntimeError:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4935",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5518",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5559",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5571",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5580",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "385",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "389",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "391",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "447",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "474",
+      "kind": "SILENT_HANDLER",
+      "text": "except queue.Full:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "482",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "500",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "508",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "573",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "585",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "594",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/cli/db_commands.py",
+      "line": "75",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/cli/doctor.py",
+      "line": "77",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/cli/engine_boot.py",
+      "line": "200",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/cli/wizard.py",
+      "line": "182",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/config.py",
+      "line": "284",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/config.py",
+      "line": "290",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/base.py",
+      "line": "209",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/base.py",
+      "line": "215",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "138",
+      "kind": "SILENT_HANDLER",
+      "text": "except ImportError:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "181",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "271",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "373",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "385",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "475",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "494",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/proxy.py",
+      "line": "75",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/proxy.py",
+      "line": "147",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/sqlite_driver.py",
+      "line": "286",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/sqlite_driver.py",
+      "line": "305",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "152",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "286",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "405",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "454",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "470",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "502",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "563",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "756",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "776",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "804",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/database/health.py",
+      "line": "198",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_copier.py",
+      "line": "70",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_engine.py",
+      "line": "111",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_engine.py",
+      "line": "302",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_engine.py",
+      "line": "382",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_engine.py",
+      "line": "396",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/dependency_intelligence/analyzers/di.py",
+      "line": "108",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/dependency_intelligence/scanner.py",
+      "line": "354",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/diagnostics/runner.py",
+      "line": "48",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/diagnostics/runner.py",
+      "line": "60",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "1265",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "2221",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "2645",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "4705",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "5289",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "5549",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "6209",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "6225",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/ledger.py",
+      "line": "696",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/outcome_recovery_sweep.py",
+      "line": "315",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/outcome_repair.py",
+      "line": "141",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/outcome_repair.py",
+      "line": "340",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/features/liquidity_runtime.py",
+      "line": "870",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/features/schema_contract.py",
+      "line": "266",
+      "kind": "SILENT_HANDLER",
+      "text": "except KeyError:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_accounting.py",
+      "line": "512",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_news.py",
+      "line": "281",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_news.py",
+      "line": "333",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_observability.py",
+      "line": "250",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_observability.py",
+      "line": "306",
+      "kind": "SILENT_HANDLER",
+      "text": "except TypeError:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_observability.py",
+      "line": "371",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "49",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "147",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "239",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "357",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "445",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "453",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "463",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "473",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/deploy_gate.py",
+      "line": "75",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/experience_gap.py",
+      "line": "62",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/telegram_report.py",
+      "line": "175",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/engine.py",
+      "line": "572",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/engine.py",
+      "line": "707",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/engine.py",
+      "line": "735",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/engine.py",
+      "line": "849",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/evidence.py",
+      "line": "107",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/load_gate.py",
+      "line": "79",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/load_gate.py",
+      "line": "396",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/lock.py",
+      "line": "98",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/reporting.py",
+      "line": "83",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/shadow_runtime.py",
+      "line": "318",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/store.py",
+      "line": "429",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/store.py",
+      "line": "443",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/store.py",
+      "line": "456",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/store.py",
+      "line": "521",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/store.py",
+      "line": "597",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/store.py",
+      "line": "621",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/verify.py",
+      "line": "290",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/consistency.py",
+      "line": "86",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/consistency.py",
+      "line": "100",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/consistency.py",
+      "line": "105",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/index_health.py",
+      "line": "92",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.OperationalError:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/retention.py",
+      "line": "655",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker.py",
+      "line": "316",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker.py",
+      "line": "324",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker.py",
+      "line": "330",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker.py",
+      "line": "336",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker.py",
+      "line": "342",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker_runner.py",
+      "line": "53",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker_runner.py",
+      "line": "60",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/occurrences.py",
+      "line": "49",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/occurrences.py",
+      "line": "199",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/store.py",
+      "line": "596",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/store.py",
+      "line": "645",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/store.py",
+      "line": "663",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/store.py",
+      "line": "683",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/timebase.py",
+      "line": "94",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/timebase.py",
+      "line": "125",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/trace.py",
+      "line": "290",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/trace.py",
+      "line": "621",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/trace.py",
+      "line": "693",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/trace_lineage.py",
+      "line": "40",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/worker.py",
+      "line": "343",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/intelligence/behavior.py",
+      "line": "1002",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/intelligence/store.py",
+      "line": "43",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/intelligence/store.py",
+      "line": "299",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/intelligence/store.py",
+      "line": "313",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/benchmark.py",
+      "line": "305",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/dataset_factory.py",
+      "line": "83",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/news_bridge.py",
+      "line": "426",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/sample_factory.py",
+      "line": "187",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/sample_factory.py",
+      "line": "273",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/sequence.py",
+      "line": "137",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/three_model.py",
+      "line": "65",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/three_model.py",
+      "line": "298",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_lifecycle/champion.py",
+      "line": "212",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/model_lifecycle/integrity.py",
+      "line": "54",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "186",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "190",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "719",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "754",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "762",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "801",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "810",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/analysis/pipeline.py",
+      "line": "163",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/analysis/pipeline.py",
+      "line": "276",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/analysis/pipeline.py",
+      "line": "300",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/analysis/pipeline.py",
+      "line": "509",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/analysis/pipeline.py",
+      "line": "537",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/context.py",
+      "line": "209",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/context.py",
+      "line": "297",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "407",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "823",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "944",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "968",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "1000",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "1007",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "1420",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/engine.py",
+      "line": "230",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/engine.py",
+      "line": "238",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/engine.py",
+      "line": "300",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ingest/fetcher.py",
+      "line": "222",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ingest/fetcher.py",
+      "line": "308",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/memory/post_event.py",
+      "line": "206",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "124",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "129",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "136",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "142",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "166",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "372",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "659",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "661",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "737",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "752",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "839",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "910",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "934",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/worker.py",
+      "line": "151",
+      "kind": "SILENT_HANDLER",
+      "text": "except queue.Empty:"
+    },
+    {
+      "file": "src/nexus_scalp/news/worker.py",
+      "line": "267",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/worker.py",
+      "line": "279",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/worker.py",
+      "line": "318",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/ci_telegram_reporter.py",
+      "line": "139",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/ci_telegram_reporter.py",
+      "line": "183",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/ci_telegram_reporter.py",
+      "line": "205",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/ci_telegram_reporter.py",
+      "line": "220",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/logging.py",
+      "line": "461",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/logging.py",
+      "line": "538",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/logging.py",
+      "line": "562",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/telegram_notifier.py",
+      "line": "366",
+      "kind": "SILENT_HANDLER",
+      "text": "except queue.Full:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/telegram_notifier.py",
+      "line": "437",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/telegram_transport.py",
+      "line": "93",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/telegram_transport.py",
+      "line": "233",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/cli_shim.py",
+      "line": "27",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/diagnostics.py",
+      "line": "139",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "88",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "120",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "128",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "146",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "187",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "215",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "244",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "246",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "259",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "270",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/health.py",
+      "line": "310",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/health.py",
+      "line": "440",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/release/health.py",
+      "line": "817",
+      "kind": "SILENT_HANDLER",
+      "text": "except RuntimeError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/metadata.py",
+      "line": "49",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/metadata.py",
+      "line": "63",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/metadata.py",
+      "line": "80",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/metadata.py",
+      "line": "91",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/metadata.py",
+      "line": "102",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/metadata.py",
+      "line": "159",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/metadata.py",
+      "line": "174",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaged_main.py",
+      "line": "25",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "81",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "95",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "146",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "161",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "191",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "304",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "325",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "974",
+      "kind": "SILENT_HANDLER",
+      "text": "except ProcessLookupError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1012",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1064",
+      "kind": "SILENT_HANDLER",
+      "text": "except ProcessLookupError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1498",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1731",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1804",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "2231",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "2579",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/verify.py",
+      "line": "95",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/verify.py",
+      "line": "262",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/verify.py",
+      "line": "269",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/verify.py",
+      "line": "309",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/verify.py",
+      "line": "456",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/versioning.py",
+      "line": "44",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/versioning.py",
+      "line": "132",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/versioning.py",
+      "line": "153",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/versioning.py",
+      "line": "206",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/dataset.py",
+      "line": "250",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/event_projection.py",
+      "line": "220",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/event_projection.py",
+      "line": "272",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/event_projection.py",
+      "line": "283",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/event_projection.py",
+      "line": "291",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/evidence.py",
+      "line": "169",
+      "kind": "SILENT_HANDLER",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/research/observability.py",
+      "line": "70",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/observability.py",
+      "line": "1036",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/observability.py",
+      "line": "1045",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/registry.py",
+      "line": "228",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/registry.py",
+      "line": "463",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/store.py",
+      "line": "42",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/store.py",
+      "line": "393",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/time_machine.py",
+      "line": "45",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/settings/secret_store.py",
+      "line": "59",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/settings/secret_store.py",
+      "line": "178",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/settings/service.py",
+      "line": "364",
+      "kind": "SILENT_HANDLER",
+      "text": "except sqlite3.Error:"
+    },
+    {
+      "file": "src/nexus_scalp/settings/service.py",
+      "line": "790",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/shadow/shadow70/liq_provider.py",
+      "line": "169",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/shadow/shadow70/store.py",
+      "line": "435",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/shadow/shadow70/store.py",
+      "line": "476",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/evolution.py",
+      "line": "203",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/evolution.py",
+      "line": "332",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/evolution.py",
+      "line": "397",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "117",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "891",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "1168",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "1274",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "1278",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/ranking.py",
+      "line": "86",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "64",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "599",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "661",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "676",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/summarizer.py",
+      "line": "148",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/research_store.py",
+      "line": "258",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/research_store.py",
+      "line": "416",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/research_store.py",
+      "line": "697",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/research_store.py",
+      "line": "732",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/research_store.py",
+      "line": "739",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/training/walk_forward_trainer.py",
+      "line": "1169",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/training/walk_forward_trainer.py",
+      "line": "1237",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/db_console.py",
+      "line": "91",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/db_console.py",
+      "line": "98",
+      "kind": "SILENT_HANDLER",
+      "text": "except OSError:"
+    },
+    {
+      "file": "src/nexus_scalp/web/db_console.py",
+      "line": "108",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/db_console.py",
+      "line": "220",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/db_console.py",
+      "line": "239",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "142",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "190",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "211",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "749",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "797",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1000",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1146",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1165",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1197",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1228",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1240",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1444",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1559",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1612",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1671",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1684",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/factory_routes.py",
+      "line": "242",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/model_governance_routes.py",
+      "line": "402",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/model_governance_routes.py",
+      "line": "518",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/news_intelligence_routes.py",
+      "line": "41",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/news_intelligence_routes.py",
+      "line": "48",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/news_intelligence_routes.py",
+      "line": "54",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/news_intelligence_routes.py",
+      "line": "74",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "189",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "806",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "947",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "970",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1023",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1038",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1064",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1174",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1251",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1515",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "4640",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6869",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6892",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "NexusTradingForexBot.py",
+      "line": "215",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "NexusTradingForexBot.py",
+      "line": "329",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    },
+    {
+      "file": "NexusTradingForexBot.py",
+      "line": "356",
+      "kind": "SILENT_HANDLER",
+      "text": "except Exception:"
+    }
+  ],
+  "warnings": [
+    {
+      "file": "src/nexus_scalp/accounting/core.py",
+      "line": "879",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/accounting/periods.py",
+      "line": "198",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/accounting/periods.py",
+      "line": "203",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "105",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "209",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "219",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "283",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "390",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "614",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "696",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "734",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "794",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "803",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "849",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "856",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "884",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "893",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "941",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "952",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "979",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1041",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1126",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1170",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1199",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1342",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1357",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1390",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "self._worker_thread = threading.Thread("
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1410",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except queue.Empty:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "1718",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except queue.Full:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/audit_repository.py",
+      "line": "2658",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/broker_history_sync.py",
+      "line": "110",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/database/broker_history_sync.py",
+      "line": "186",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/diagnostics.py",
+      "line": "168",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/mt5/providers.py",
+      "line": "565",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/paper/paper_adapter.py",
+      "line": "178",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/adapters/paper/paper_adapter.py",
+      "line": "197",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1054",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1299",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "loop.add_signal_handler(sig, lambda: asyncio.create_task(self.stop()))"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1402",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1579",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1776",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "1831",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "3710",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4133",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4162",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4381",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4465",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "self._retrain_task = loop.create_task(self._trigger_async_online_fine_tune())"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4521",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4529",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4693",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4855",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "4914",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5065",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5077",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5085",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5398",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5402",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/application/live_engine.py",
+      "line": "5411",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "368",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/candle_intelligence/store.py",
+      "line": "409",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "self._worker = threading.Thread("
+    },
+    {
+      "file": "src/nexus_scalp/cli/wizard.py",
+      "line": "134",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/cli/wizard.py",
+      "line": "164",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/drivers/postgres_driver.py",
+      "line": "350",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/engine.py",
+      "line": "765",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/health.py",
+      "line": "97",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/health.py",
+      "line": "105",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_copier.py",
+      "line": "155",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_engine.py",
+      "line": "218",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/database/migrate_engine.py",
+      "line": "276",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/dependency_intelligence/scanner.py",
+      "line": "196",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/dependency_intelligence/scanner.py",
+      "line": "454",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/diagnostics/runner.py",
+      "line": "45",
+      "kind": "CHECK_FALSE_DISCARDED",
+      "text": "check=False,"
+    },
+    {
+      "file": "src/nexus_scalp/diagnostics/runner.py",
+      "line": "70",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/diagnostics/runner.py",
+      "line": "73",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "808",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "813",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "1779",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "5823",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "6077",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "6167",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/execution/order_manager.py",
+      "line": "6174",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/intelligence.py",
+      "line": "801",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/lifecycle.py",
+      "line": "143",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/outcome_recovery.py",
+      "line": "351",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/outcome_recovery.py",
+      "line": "483",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/outcome_recovery.py",
+      "line": "523",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/experience/outcome_repair.py",
+      "line": "119",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/features/liquidity_runtime.py",
+      "line": "878",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/features/liquidity_runtime.py",
+      "line": "884",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/features/liquidity_runtime.py",
+      "line": "896",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_features.py",
+      "line": "272",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_features.py",
+      "line": "286",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_features.py",
+      "line": "510",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_features.py",
+      "line": "565",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_features.py",
+      "line": "579",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_observability.py",
+      "line": "364",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "158",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "182",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "194",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "223",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/checks_support.py",
+      "line": "292",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/telegram_report.py",
+      "line": "76",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/forensics/trend.py",
+      "line": "112",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/engine.py",
+      "line": "611",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/evidence.py",
+      "line": "78",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/load_gate.py",
+      "line": "57",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/load_gate.py",
+      "line": "327",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/load_gate.py",
+      "line": "418",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/governance/lock.py",
+      "line": "91",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/quarantine.py",
+      "line": "269",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/state.py",
+      "line": "113",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker.py",
+      "line": "145",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker.py",
+      "line": "205",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/hygiene/worker_runner.py",
+      "line": "278",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/impact.py",
+      "line": "77",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/impact.py",
+      "line": "110",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/telemetry.py",
+      "line": "122",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/incidents/trace.py",
+      "line": "196",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/intelligence/behavior.py",
+      "line": "1041",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/intelligence/behavior.py",
+      "line": "1214",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/artifact_store.py",
+      "line": "60",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/dataset_factory.py",
+      "line": "68",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/news_bridge.py",
+      "line": "79",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/news_bridge.py",
+      "line": "88",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/news_bridge.py",
+      "line": "226",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/news_bridge.py",
+      "line": "328",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/news_bridge.py",
+      "line": "388",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/news_bridge.py",
+      "line": "522",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/training.py",
+      "line": "305",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/model_generation/training.py",
+      "line": "323",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ai_service.py",
+      "line": "226",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/context.py",
+      "line": "150",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/database.py",
+      "line": "858",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ingest/deduplicator.py",
+      "line": "195",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/ingest/fetcher.py",
+      "line": "84",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "97",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "253",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "271",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "279",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "306",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/pro_auto.py",
+      "line": "875",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/news/sources/base.py",
+      "line": "72",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/ci_telegram_reporter.py",
+      "line": "162",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/ci_telegram_reporter.py",
+      "line": "181",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/ci_telegram_reporter.py",
+      "line": "446",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/observability/telegram_notifier.py",
+      "line": "302",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "self._worker_thread = threading.Thread("
+    },
+    {
+      "file": "src/nexus_scalp/observability/telegram_notifier.py",
+      "line": "358",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:  # logging pipeline closed (test teardown) \u2014 not fatal"
+    },
+    {
+      "file": "src/nexus_scalp/release/diagnostics.py",
+      "line": "55",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/diagnostics.py",
+      "line": "73",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/environment.py",
+      "line": "95",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/health.py",
+      "line": "268",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/health.py",
+      "line": "389",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/model_artifacts.py",
+      "line": "186",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/model_artifacts.py",
+      "line": "222",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/model_artifacts.py",
+      "line": "355",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "106",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/packaging.py",
+      "line": "128",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/update.py",
+      "line": "168",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "969",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1058",
+      "kind": "CHECK_FALSE_DISCARDED",
+      "text": "check=False,"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1190",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1527",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1612",
+      "kind": "EXPECTED_MIGRATION_PASS",
+      "text": "except ValueError:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "1672",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/updater.py",
+      "line": "2373",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/verify.py",
+      "line": "113",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/verify.py",
+      "line": "143",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/versioning.py",
+      "line": "88",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/versioning.py",
+      "line": "169",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/release/versioning.py",
+      "line": "203",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/event_projection.py",
+      "line": "75",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/event_projection.py",
+      "line": "179",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/event_projection.py",
+      "line": "250",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/evidence.py",
+      "line": "299",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/observability.py",
+      "line": "54",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/registry.py",
+      "line": "366",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/registry.py",
+      "line": "454",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/store.py",
+      "line": "252",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/research/store.py",
+      "line": "360",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/shadow/shadow70/liq_provider.py",
+      "line": "92",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/shadow/shadow70/liq_provider.py",
+      "line": "123",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/shadow/shadow70/worker.py",
+      "line": "82",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "self._thread = threading.Thread(target=self._run, name=\"shadow70-writer\", daemon=True)"
+    },
+    {
+      "file": "src/nexus_scalp/shadow/shadow70/worker.py",
+      "line": "99",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/benchmark.py",
+      "line": "93",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "348",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "523",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "528",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "543",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "1146",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "1454",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "1621",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/orchestrator.py",
+      "line": "1728",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/provider.py",
+      "line": "137",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:  # pragma: no cover - defensive"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/provider.py",
+      "line": "222",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/provider.py",
+      "line": "313",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/ranking.py",
+      "line": "288",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/ranking.py",
+      "line": "298",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "76",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "519",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "525",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/factory/store.py",
+      "line": "555",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/research_store.py",
+      "line": "245",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/strategies/research_store.py",
+      "line": "363",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/command_center_routes.py",
+      "line": "196",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/command_center_routes.py",
+      "line": "210",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/db_console.py",
+      "line": "282",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "146",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "176",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "200",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "276",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "300",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "320",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "461",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "469",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "483",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "489",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "555",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "572",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "654",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "659",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "672",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "680",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "828",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "876",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "940",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1038",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1060",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1099",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1309",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1376",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1380",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1384",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1388",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1392",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1396",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1400",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1412",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1430",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1477",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1484",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1487",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1493",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1501",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1526",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1577",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1593",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/debug_snapshot.py",
+      "line": "1628",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/errors.py",
+      "line": "217",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:  # pragma: no cover - defensive"
+    },
+    {
+      "file": "src/nexus_scalp/web/factory_routes.py",
+      "line": "219",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/factory_routes.py",
+      "line": "463",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "_threading.Thread("
+    },
+    {
+      "file": "src/nexus_scalp/web/model_governance_routes.py",
+      "line": "930",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/model_governance_routes.py",
+      "line": "977",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/news_intelligence_routes.py",
+      "line": "290",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "538",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "560",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "591",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "795",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "916",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "921",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "957",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1209",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1480",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "1664",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "2630",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "2951",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "2968",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "2978",
+      "kind": "SPAWN_NO_DONE_CALLBACK",
+      "text": "t = threading.Thread(target=_run, daemon=True, name=\"nse_db_migrate\")"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "3463",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "3467",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "3650",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "4010",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "4021",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "4141",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "4508",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "4565",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "4861",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "5091",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6419",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6431",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6792",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6808",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6826",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6841",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6853",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6940",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "src/nexus_scalp/web/server.py",
+      "line": "6951",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    },
+    {
+      "file": "NexusTradingForexBot.py",
+      "line": "78",
+      "kind": "HANDLER_NO_TRACE",
+      "text": "except Exception:"
+    }
+  ],
+  "violation_count": 381,
+  "warning_count": 287,
+  "allowlist": {
+    "base_exception_files": [
+      "src/nexus_scalp/diagnostics/runner.py"
+    ],
+    "expected_pass_prefixes": [
+      "src/nexus_scalp/adapters/database/audit_repository.py",
+      "src/nexus_scalp/strategies/factory/store.py"
+    ],
+    "expected_silent_handlers": [
+      "src/nexus_scalp/application/live_engine.py :: _eff_dim0 = 0",
+      "src/nexus_scalp/application/live_engine.py :: return int(self.__class__.FEATURE_DIM)",
+      "src/nexus_scalp/application/live_engine.py :: return int(self.mean.shape[0])",
+      "src/nexus_scalp/application/live_engine.py :: return str(self.__class__.FEATURE_SCHEMA_ID)"
+    ],
+    "inline_marker": "anti-crash: allow"
+  },
+  "exit_code": 1
+}

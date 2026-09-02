@@ -1,0 +1,22 @@
+{
+  "real_m1_bar_close": {
+    "decisions": 0,
+    "event_hash": "4b2df92af93b82a7aaf0d7ad686f64b0",
+    "events_seen": 1500,
+    "first": "2026-05-01T17:15:00+00:00",
+    "last": "2026-05-04T20:14:00+00:00",
+    "ledger_hash": "090684df07b6002c3d3a02b7e2269915",
+    "orders": 251,
+    "pnl": -118.38,
+    "trades": 148
+  },
+  "synthetic_every_tick": {
+    "decisions": 900,
+    "event_hash": "2bdb9c3d37bc6060027722b1fd5fb951",
+    "events_seen": 900,
+    "ledger_hash": "cd8134343b759e9bc8920bfe65f939f8",
+    "orders": 0,
+    "pnl": 0.0,
+    "trades": 0
+  }
+}

@@ -1,0 +1,2 @@
+{'rows': 1000, 'canonical_s': 82.72, 'canonical_rows_per_s': 12, 'fast_s': 25.18, 'fast_rows_per_s': 40, 'speedup': 3.3, 'out_rows': 946}
+EXIT=1

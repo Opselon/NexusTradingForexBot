@@ -1,0 +1,229 @@
+{
+  "research_run_id": "task07_consolidated_02",
+  "research_baseline_id": "e85de540e09d3339",
+  "schema_id": "scalp_liquidity_v1",
+  "source": "HISTORICAL",
+  "sample": {
+    "n": 500,
+    "stride_bars": 200,
+    "time_range": [
+      "2025-03-12T06:35:00+00:00",
+      "2026-08-17T07:15:00+00:00"
+    ]
+  },
+  "full_task1_n": 29946,
+  "features_sample": {
+    "bsl_distance_atr": {
+      "n": 500,
+      "mean": 0.6153,
+      "median": 0.3397,
+      "std": 0.7414,
+      "q1": 0.1234,
+      "q3": 0.7813,
+      "min": 0.0017,
+      "max": 3.0,
+      "saturation_frac_abs_ge_3": 0.028,
+      "neutral_sentinel_frac_3": 0.028,
+      "zero_frac": 0.0
+    },
+    "ssl_distance_atr": {
+      "n": 500,
+      "mean": 0.7502,
+      "median": 0.3602,
+      "std": 0.8801,
+      "q1": 0.1352,
+      "q3": 1.0735,
+      "min": 0.0016,
+      "max": 3.0,
+      "saturation_frac_abs_ge_3": 0.058,
+      "neutral_sentinel_frac_3": 0.058,
+      "zero_frac": 0.0
+    },
+    "eqh_strength": {
+      "n": 500,
+      "mean": 0.7871,
+      "median": 0.7921,
+      "std": 0.1431,
+      "q1": 0.6704,
+      "q3": 0.9118,
+      "min": 0.4044,
+      "max": 1.0,
+      "saturation_frac_abs_ge_3": 0.0,
+      "neutral_sentinel_frac_3": 0.0,
+      "zero_frac": 0.0
+    },
+    "eql_strength": {
+      "n": 500,
+      "mean": 0.3861,
+      "median": 0.2652,
+      "std": 0.3383,
+      "q1": 0.0889,
+      "q3": 0.7001,
+      "min": 0.0001,
+      "max": 1.0,
+      "saturation_frac_abs_ge_3": 0.0,
+      "neutral_sentinel_frac_3": 0.0,
+      "zero_frac": 0.0
+    },
+    "htf_liquidity_score": {
+      "n": 500,
+      "mean": 0.2019,
+      "median": 1.5697,
+      "std": 2.8227,
+      "q1": -2.9997,
+      "q3": 2.9999,
+      "min": -3.0,
+      "max": 3.0,
+      "saturation_frac_abs_ge_3": 0.568,
+      "neutral_sentinel_frac_3": 0.016,
+      "zero_frac": 0.0
+    },
+    "internal_liquidity_distance": {
+      "n": 500,
+      "mean": 0.7474,
+      "median": 0.4368,
+      "std": 0.7948,
+      "q1": 0.169,
+      "q3": 1.0499,
+      "min": 0.0,
+      "max": 3.0,
+      "saturation_frac_abs_ge_3": 0.04,
+      "neutral_sentinel_frac_3": 0.04,
+      "zero_frac": 0.004
+    },
+    "external_liquidity_distance": {
+      "n": 500,
+      "mean": 2.7865,
+      "median": 3.0,
+      "std": 0.6451,
+      "q1": 3.0,
+      "q3": 3.0,
+      "min": 0.0077,
+      "max": 3.0,
+      "saturation_frac_abs_ge_3": 0.87,
+      "neutral_sentinel_frac_3": 0.87,
+      "zero_frac": 0.0
+    },
+    "liquidity_confluence": {
+      "n": 500,
+      "mean": 2.9991,
+      "median": 3.0,
+      "std": 0.0201,
+      "q1": 3.0,
+      "q3": 3.0,
+      "min": 2.5493,
+      "max": 3.0,
+      "saturation_frac_abs_ge_3": 0.998,
+      "neutral_sentinel_frac_3": 0.998,
+      "zero_frac": 0.0
+    },
+    "liquidity_sweep_state": {
+      "n": 500,
+      "mean": -0.646,
+      "median": -1.0,
+      "std": 1.1067,
+      "q1": -1.0,
+      "q3": -1.0,
+      "min": -2.0,
+      "max": 2.0,
+      "saturation_frac_abs_ge_3": 0.0,
+      "neutral_sentinel_frac_3": 0.0,
+      "zero_frac": 0.0
+    },
+    "post_sweep_displacement": {
+      "n": 500,
+      "mean": 0.0877,
+      "median": 0.0,
+      "std": 0.3545,
+      "q1": 0.0,
+      "q3": 0.0,
+      "min": 0.0,
+      "max": 3.0,
+      "saturation_frac_abs_ge_3": 0.006,
+      "neutral_sentinel_frac_3": 0.006,
+      "zero_frac": 0.882
+    }
+  },
+  "features_full_task1": {
+    "bsl_distance_atr": {
+      "n": 29946,
+      "mean": 1.563,
+      "std": 1.0349,
+      "saturation_rate_pct": 20.28,
+      "missing_rate": 0.0,
+      "zero_rate": 0.0
+    },
+    "ssl_distance_atr": {
+      "n": 29946,
+      "mean": 1.7415,
+      "std": 1.0503,
+      "saturation_rate_pct": 27.5,
+      "missing_rate": 0.0,
+      "zero_rate": 0.0
+    },
+    "eqh_strength": {
+      "n": 29946,
+      "mean": 0.8507,
+      "std": 0.1453,
+      "saturation_rate_pct": 0.0,
+      "missing_rate": 0.0,
+      "zero_rate": 0.5109
+    },
+    "eql_strength": {
+      "n": 29946,
+      "mean": 0.5853,
+      "std": 0.3678,
+      "saturation_rate_pct": 0.0,
+      "missing_rate": 0.0,
+      "zero_rate": 0.9217
+    },
+    "htf_liquidity_score": {
+      "n": 29946,
+      "mean": 0.2624,
+      "std": 2.3207,
+      "saturation_rate_pct": 0.0,
+      "missing_rate": 0.0,
+      "zero_rate": 0.0301
+    },
+    "internal_liquidity_distance": {
+      "n": 29946,
+      "mean": 1.019,
+      "std": 0.9309,
+      "saturation_rate_pct": 9.28,
+      "missing_rate": 0.0,
+      "zero_rate": 0.344
+    },
+    "external_liquidity_distance": {
+      "n": 29946,
+      "mean": 1.7265,
+      "std": 0.9741,
+      "saturation_rate_pct": 20.15,
+      "missing_rate": 0.0,
+      "zero_rate": 0.4909
+    },
+    "liquidity_confluence": {
+      "n": 29946,
+      "mean": 2.7498,
+      "std": 0.2247,
+      "saturation_rate_pct": 34.28,
+      "missing_rate": 0.0,
+      "zero_rate": 0.0
+    },
+    "liquidity_sweep_state": {
+      "n": 29946,
+      "mean": 0.2277,
+      "std": 1.2964,
+      "saturation_rate_pct": 0.0,
+      "missing_rate": 0.0,
+      "zero_rate": 0.0
+    },
+    "post_sweep_displacement": {
+      "n": 29946,
+      "mean": 0.0406,
+      "std": 0.1997,
+      "saturation_rate_pct": 0.04,
+      "missing_rate": 0.0,
+      "zero_rate": 92.5499
+    }
+  }
+}

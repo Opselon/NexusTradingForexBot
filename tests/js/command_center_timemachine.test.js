@@ -1,0 +1,104 @@
+/**
+ * Command Center Time Machine + Debug Console Frontend Tests
+ *
+ * Run:  node --test tests/js/command_center_timemachine.test.js
+ */
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+function makeEl() { return { value: '', textContent: '', innerHTML: '', style: {}, min: 0, max: 0, appendChild() {}, insertBefore() {}, querySelectorAll() { return []; }, addEventListener() {} }; }
+
+function loadModule(srcFile, dom) {
+  global.window = {
+    addEventListener() {},
+    NX: {
+      api: {
+        async get(url) {
+          if (url.includes('bounds')) return { ok: true, body: { available: true, earliest: '2026-08-20T00:00:00Z', latest: '2026-08-23T00:00:00Z' } };
+          if (url.includes('frame')) return { ok: true, body: { available: true, nodes: [{ strategy_id: 'A', zone: 'VALIDATED' }] } };
+          return { ok: false };
+        },
+      },
+      spatial: { update() {} },
+    },
+  };
+  global.document = {
+    getElementById(id) { return dom[id] || null; },
+    createElement() {
+      return makeEl();
+    },
+    addEventListener() {},
+  };
+  global.navigator = { clipboard: { writeText() {} } };
+  const src = fs.readFileSync(path.join(__dirname, '../../Web/' + srcFile), 'utf8');
+  const fn = new Function('window', 'document', 'navigator', src + '\nreturn window.NX;');
+  return fn(global.window, global.document, global.navigator);
+}
+
+test('time machine initializes bounds and clamps slider', () => {
+  const slider = makeEl();
+  const label = makeEl();
+  const nx = loadModule('command_center_timemachine.js', { 'scc-tm-slider': slider, 'scc-tm-label': label });
+  return nx.tm.init().then(() => {
+    assert.ok(slider.min && Number(slider.min) > 0);
+    assert.ok(slider.max && Number(slider.max) > Number(slider.min));
+    assert.ok(label.textContent.length > 0);
+  });
+});
+
+test('time machine scrub fetches frame and updates spatial payload (historical mode)', async () => {
+  let updatedPayload = null;
+  let historicalSet = false;
+  const slider = makeEl();
+  const label = makeEl();
+  const nx = loadModule('command_center_timemachine.js', { 'scc-tm-slider': slider, 'scc-tm-label': label });
+  global.window.NX.spatial.update = (p) => { updatedPayload = p; };
+  global.window.NX.spatial.setHistorical = (v) => { historicalSet = v; };
+  await nx.tm.init();
+  nx.tm.scrub(slider.max);
+  await new Promise(r => setTimeout(r, 30));
+  assert.ok(updatedPayload && updatedPayload.nodes && updatedPayload.nodes[0].strategy_id === 'A');
+  // Strict LIVE vs HISTORICAL separation must be flagged during replay.
+  assert.strictEqual(updatedPayload.historical, true);
+  assert.strictEqual(historicalSet, true);
+});
+
+test('time machine supports speed multipliers', async () => {
+  const slider = makeEl();
+  const label = makeEl();
+  const nx = loadModule('command_center_timemachine.js', { 'scc-tm-slider': slider, 'scc-tm-label': label });
+  const speed = makeEl();
+  assert.strictEqual(typeof nx.tm.setSpeed, 'function');
+  nx.tm.setSpeed(5);
+  // No crash; speed select updated if present.
+  assert.ok(true);
+});
+
+test('debug console classifies and stores events without DOM crash', () => {
+  const dom = { 'scc-console-body': makeEl(), 'scc-console-search': makeEl(), 'scc-console-sev': makeEl() };
+  const nx = loadModule('command_center_console.js', dom);
+  const ev = { event_type: 'WALK_FORWARD_FAILURE', strategy_id: 'B48', correlation_id: 'corr-1', severity: 'WARN' };
+  assert.doesNotThrow(() => nx.console.add(ev));
+  assert.ok(Array.isArray(nx.console.getEvents()));
+  assert.ok(nx.console.getEvents().length >= 1);
+  // Spec requirement: WALK_FORWARD_FAILURE must be its OWN distinct class and
+  // NOT be collapsed into VALIDATION_FAILURE (so it never looks like a generic
+  // validation failure).
+  const stored = nx.console.getEvents()[nx.console.getEvents().length - 1];
+  assert.strictEqual(stored._class, 'WALK_FORWARD_FAILURE');
+  // A GENERATION_SWEPT event must NOT look like a WALK_FORWARD_FAILURE.
+  nx.console.add({ event_type: 'GENERATION_SWEPT', severity: 'INFO' });
+  const swept = nx.console.getEvents()[nx.console.getEvents().length - 1];
+  assert.strictEqual(swept._class, 'STALE_RUN_RECOVERY');
+  // Distinct classes confirmed.
+  assert.notStrictEqual(stored._class, swept._class);
+});
+
+test('debug console bounded retention (no unbounded memory growth)', () => {
+  const dom = { 'scc-console-body': makeEl(), 'scc-console-search': makeEl(), 'scc-console-sev': makeEl() };
+  const nx = loadModule('command_center_console.js', dom);
+  for (let i = 0; i < 6000; i++) nx.console.add({ event_type: 'E' + i });
+  assert.ok(nx.console.getEvents().length <= 5000);
+});

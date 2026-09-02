@@ -1,0 +1,11 @@
+# tests/unit/test_release_update_phase17.py
+
+- **GUARDS / KEY ASSERTIONS / PITFALLS IT ENCODES / NOTES**
+- TASK-9 (PHASE 17) CLI update / GitHub sync / installed-user migration tests — TEST-UP-01..60 acceptance mapping.
+- Semver/selection: comparison NUMERIC not lexicographic; `parse_version("garbage") is None`; `compare_versions("invalid", "9.0.0") is None`; downgrade blocked; stable skips prerelease, beta accepts; GitHub 429 / missing release NEVER fabricated (`test_github_429_not_fabricated`); invalid asset / unsupported arch blocked; draft releases never eligible (UP-37); revoked releases rejected even when higher (UP-38); include-prerelease flag (UP-40).
+- Download/verify: sha256 mismatch blocks install; manifest mismatch blocks; conflicting digests → `digest is None` fail-safe (UP-45); checksum asset digest resolution (UP-44); retry-on-transient / retry-after honored; resume hash full+partial (UP-49).
+- Gates: disk-space gate verdict in (BLOCKED, WARNING, PASS); compatibility summary in (COMPATIBLE, WARNING, BLOCKED); LIVE state blocks update; quiesce stops engine; atomic verified backup; model artifacts + news DB part of user-data backup plan.
+- Migration/install: config migration preserves overrides; DB migration version-aware + idempotent + rollback on failure; app replacement atomic; post-update health uses engine health; rollback restores prior app but NEVER old user data over migrated (`skipped_user_data_items == 1`, DB stays NEW-MIGRATED — BUG-091); app-tree artifacts/data/logs preserved across swap (user data wins).
+- State/history: update concurrency lock; crash-recoverable state machine; history persisted and NEVER stores credentials (`"token" not in json.dumps(rows)`); dry-run makes NO mutation; telegram credential preservation; install-mode detection; direct-unsupported migration rejected; no automatic model promotion on app update; release identity locked (UP-36).
+- E2E (UP-55..60): check→download→verify→install flow against a local fake GitHub server, wrong hash rejected, no downgrade, prerelease ignored by default, network-unavailable safe, drafts ignored.
+- 107 defs / 1262 lines.

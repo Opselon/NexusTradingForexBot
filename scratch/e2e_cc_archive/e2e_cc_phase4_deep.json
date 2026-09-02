@@ -1,0 +1,34 @@
+{
+  "probe": {
+    "nx_api_type": "function",
+    "api_spatial": {
+      "ok": true,
+      "status": 200,
+      "hasBody": true,
+      "nodes": 500,
+      "keys": [
+        "available",
+        "zones",
+        "nodes",
+        "meta"
+      ]
+    },
+    "fleetRowsInDom": 0,
+    "header": {
+      "total": "—",
+      "active": "—",
+      "blocked": "—",
+      "valid": "—",
+      "fleetNote": "Fleet: — strategies"
+    },
+    "canvas": {
+      "w": 896,
+      "h": 844
+    },
+    "evalMetricsText": "",
+    "bottleneckText": "",
+    "consoleRows": 0,
+    "nx_scc": "object"
+  },
+  "consoleAll": []
+}

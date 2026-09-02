@@ -1,0 +1,2 @@
+{'rows_input': 1000, 'rows_output': 946, 'seconds': 73.25, 'rows_per_second': 14}
+EXIT=1

@@ -1,0 +1,133 @@
+..FFFFF                                                                  [100%]
+================================== FAILURES ===================================
+___________________ test_forensic_command_in_cli_inventory ____________________
+
+    def test_forensic_command_in_cli_inventory() -> None:
+        """``forensic`` must be a registered command (hook calls it by name).
+    
+        Pre-fix HEAD: typer raises 'No such command' usage error, exit 2.
+        """
+        res = runner.invoke(app, ["forensic", "--help"])
+        out = res.stdout or ""
+>       assert res.exit_code == 0, (
+            f"BUG-162: 'forensic' not a valid CLI command "
+            f"(exit={res.exit_code}): {out[:300]}"
+        )
+E       AssertionError: BUG-162: 'forensic' not a valid CLI command (exit=2): 
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests\unit\test_bug162_forensic_cli_gate.py:72: AssertionError
+__________ test_forensic_json_only_does_not_raise_typer_usage_error ___________
+
+    def test_forensic_json_only_does_not_raise_typer_usage_error() -> None:
+        """Invoking with --json only must not raise a typer 'No such command'
+        (i.e. 'forensic' must be in the CLI inventory)."""
+        # direct inventory assertion — deterministic, no stderr dependence
+        names = {cmd.name or cmd.callback.__name__ for cmd in app.registered_commands}
+>       assert "forensic" in names, (
+            f"BUG-162 regression: 'forensic' missing from CLI inventory: {sorted(names)[:40]}"
+        )
+E       AssertionError: BUG-162 regression: 'forensic' missing from CLI inventory: ['analyze', 'audit-purge', 'config', 'config-validate', 'diagnostics', 'doctor', 'export-diagnostics', 'health', 'install', 'logs', 'model-dataset-build', 'model-doctor', 'model-experiment-create', 'model-inspect', 'model-replay', 'model-train', 'model-train-3', 'model-validate', 'release', 'repair', 'restart', 'run', 'settings', 'setup', 'start', 'status', 'stop', 'test', 'uninstall', 'update', 'verify-release', 'version']
+E       assert 'forensic' in {'analyze', 'audit-purge', 'config', 'config-validate', 'diagnostics', 'doctor', ...}
+
+tests\unit\test_bug162_forensic_cli_gate.py:87: AssertionError
+______________ test_forensic_deploy_gate_json_contract_clirunner ______________
+
+    def test_forensic_deploy_gate_json_contract_clirunner() -> None:
+        """``forensic --deploy-gate --json`` → exit in {0,1,2,3} and stdout parses
+        as JSON containing 'decision' and 'exit_code' keys."""
+        res = runner.invoke(app, ["forensic", "--deploy-gate", "--json"])
+        out = res.stdout or ""
+        assert res.exit_code in VALID_GATE_EXITS, (
+            f"BUG-162: deploy-gate exit {res.exit_code} outside contract {{0,1,2,3}}: {out[:300]}"
+        )
+>       payload = _extract_json(out)
+                  ^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_bug162_forensic_cli_gate.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+text = ''
+
+    def _extract_json(text: str) -> dict:
+        """Extract the JSON document from output that may carry preamble noise
+        (e.g. structlog/log lines) — first ``{`` that starts a parseable doc."""
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if line.strip().startswith("{"):
+                try:
+                    return json.loads("\n".join(lines[i:]))
+                except json.JSONDecodeError:
+                    continue
+>       raise AssertionError(f"no JSON document in output: {text[:300]!r}")
+E       AssertionError: no JSON document in output: ''
+
+tests\unit\test_bug162_forensic_cli_gate.py:57: AssertionError
+_____________ test_forensic_deploy_gate_json_contract_subprocess ______________
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-447/test_forensic_deploy_gate_json0')
+
+    def test_forensic_deploy_gate_json_contract_subprocess(tmp_path) -> None:
+        """Subprocess: ``python -m nexus_scalp.cli.main forensic --deploy-gate --json``
+        → exit in {0,1,2,3}, stdout parses as JSON with decision/exit_code."""
+        proc = subprocess.run(
+            [sys.executable, "-m", "nexus_scalp.cli.main", "forensic", "--deploy-gate", "--json"],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        out = proc.stdout or ""
+        assert proc.returncode in VALID_GATE_EXITS, (
+            f"BUG-162: subprocess exit {proc.returncode} outside contract {{0,1,2,3}}: "
+            f"{out[:300]}{proc.stderr[:300]}"
+        )
+>       payload = _extract_json(out)
+                  ^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_bug162_forensic_cli_gate.py:148: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+text = ''
+
+    def _extract_json(text: str) -> dict:
+        """Extract the JSON document from output that may carry preamble noise
+        (e.g. structlog/log lines) — first ``{`` that starts a parseable doc."""
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if line.strip().startswith("{"):
+                try:
+                    return json.loads("\n".join(lines[i:]))
+                except json.JSONDecodeError:
+                    continue
+>       raise AssertionError(f"no JSON document in output: {text[:300]!r}")
+E       AssertionError: no JSON document in output: ''
+
+tests\unit\test_bug162_forensic_cli_gate.py:57: AssertionError
+____________ test_deploy_gate_result_artifact_has_decision_payload ____________
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-447/test_deploy_gate_result_artifa0')
+
+    def test_deploy_gate_result_artifact_has_decision_payload(tmp_path) -> None:
+        """The persisted gate artifact (deploy_gate_result.json) must contain a
+        '"decision"' field — a typer usage-error panel is a fail-safe BLOCK."""
+        artifact = REPO_ROOT / "artifacts" / "forensics" / "deploy_gate_result.json"
+        if not artifact.exists():
+            pytest.skip("artifacts/forensics/deploy_gate_result.json not present in this checkout")
+        raw = artifact.read_text(encoding="utf-8", errors="replace")
+>       assert '"decision"' in raw, (
+            "BUG-162 fail-open signature: gate artifact lacks a decision payload "
+            "(typer usage error masqueraded as gate output)"
+        )
+E       AssertionError: BUG-162 fail-open signature: gate artifact lacks a decision payload (typer usage error masqueraded as gate output)
+E       assert '"decision"' in "Usage: python -m nexus_scalp.cli.main [OPTIONS] COMMAND [ARGS]...\nTry 'python -m nexus_scalp.cli.main --help' for he...                                  │\n└─────────────────────────────────────────────────────────────────────────────┘\n"
+
+tests\unit\test_bug162_forensic_cli_gate.py:169: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_bug162_forensic_cli_gate.py::test_forensic_command_in_cli_inventory
+FAILED tests/unit/test_bug162_forensic_cli_gate.py::test_forensic_json_only_does_not_raise_typer_usage_error
+FAILED tests/unit/test_bug162_forensic_cli_gate.py::test_forensic_deploy_gate_json_contract_clirunner
+FAILED tests/unit/test_bug162_forensic_cli_gate.py::test_forensic_deploy_gate_json_contract_subprocess
+FAILED tests/unit/test_bug162_forensic_cli_gate.py::test_deploy_gate_result_artifact_has_decision_payload

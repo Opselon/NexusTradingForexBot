@@ -1,0 +1,16 @@
+T: 2026-08-01T03:20:00+00:00
+v_before: [0.18939, 0.581244, 0.560564, 0.007865, 1.268761, 0.18939, 3.0, 3.0, -1.0, 0.0]
+v_after : [0.18939, 0.581244, 0.560564, 0.007865, 1.268761, 0.18939, 3.0, 3.0, -1.0, 0.0]
+max abs diff: 0.0
+  60 bsl_distance_atr: diff=0.000000000
+  61 ssl_distance_atr: diff=0.000000000
+  62 eqh_strength: diff=0.000000000
+  63 eql_strength: diff=0.000000000
+  64 htf_liquidity_score: diff=0.000000000
+  65 internal_liquidity_distance: diff=0.000000000
+  66 external_liquidity_distance: diff=0.000000000
+  67 liquidity_confluence: diff=0.000000000
+  68 liquidity_sweep_state: diff=0.000000000
+  69 post_sweep_displacement: diff=0.000000000
+
+RESULT: CAUSAL — future data does not change features at T

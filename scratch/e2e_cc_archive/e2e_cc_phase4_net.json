@@ -1,0 +1,36 @@
+{
+  "apiCalls": [
+    "REQ http://127.0.0.1:8082/api/command-center/timemachine/bounds",
+    "REQ http://127.0.0.1:8082/api/command-center/overview",
+    "REQ http://127.0.0.1:8082/api/command-center/fleet",
+    "REQ http://127.0.0.1:8082/api/command-center/spatial",
+    "RES 200 http://127.0.0.1:8082/api/command-center/fleet :: {\"available\":true,\"count\":500,\"rows\":[{\"strategy_id\":\"STRAT-ICHIMILI-FINAL\",\"strategy_version\":\"v836171aa38de\",\"lifecycle\":\"DISCOVERED\",\"confidence\":0.0,\"sample_count\":0,\"health_final\":null,\"eligibility_state\":\"BLOCKED\",\"eligibility_reason\":\"Strategy lifecycle DISCOVERED has not reached validation g",
+    "RES 200 http://127.0.0.1:8082/api/command-center/timemachine/bounds :: {\"available\":true,\"earliest\":\"2026-08-21T08:13:36.515713+00:00\",\"latest\":\"2026-08-23T12:33:07.437345+00:00\",\"total_events\":498}",
+    "RES 200 http://127.0.0.1:8082/api/command-center/overview :: {\"available\":true,\"total_strategies\":500,\"by_lifecycle\":{\"DISCOVERED\":55,\"BACKTESTING\":0,\"VALIDATING\":0,\"OOS_TESTING\":0,\"ROBUSTNESS_TESTING\":0,\"VALIDATED\":0,\"SHADOW\":0,\"ACTIVE\":0},\"terminal\":{\"REJECTED\":445,\"DEGRADED\":0,\"RETIRED\":0},\"evaluation_pipeline\":{\"BACKTEST_RUN\":498,\"WALK_FORWARD_TESTED\":498",
+    "REQ http://127.0.0.1:8082/api/command-center/overview",
+    "REQ http://127.0.0.1:8082/api/command-center/fleet",
+    "RES 200 http://127.0.0.1:8082/api/command-center/overview :: {\"available\":true,\"total_strategies\":500,\"by_lifecycle\":{\"DISCOVERED\":55,\"BACKTESTING\":0,\"VALIDATING\":0,\"OOS_TESTING\":0,\"ROBUSTNESS_TESTING\":0,\"VALIDATED\":0,\"SHADOW\":0,\"ACTIVE\":0},\"terminal\":{\"REJECTED\":445,\"DEGRADED\":0,\"RETIRED\":0},\"evaluation_pipeline\":{\"BACKTEST_RUN\":498,\"WALK_FORWARD_TESTED\":498",
+    "RES 200 http://127.0.0.1:8082/api/command-center/fleet :: {\"available\":true,\"count\":500,\"rows\":[{\"strategy_id\":\"STRAT-ICHIMILI-FINAL\",\"strategy_version\":\"v836171aa38de\",\"lifecycle\":\"DISCOVERED\",\"confidence\":0.0,\"sample_count\":0,\"health_final\":null,\"eligibility_state\":\"BLOCKED\",\"eligibility_reason\":\"Strategy lifecycle DISCOVERED has not reached validation g"
+  ],
+  "manual": {
+    "overview": {
+      "ok": true,
+      "status": 200,
+      "hasBody": true,
+      "total": 500
+    },
+    "fleet": {
+      "ok": true,
+      "status": 200,
+      "hasBody": true,
+      "rows": 500
+    },
+    "spatial": {
+      "ok": true,
+      "status": 200,
+      "hasBody": true,
+      "nodes": 500
+    }
+  },
+  "consoleAll": []
+}

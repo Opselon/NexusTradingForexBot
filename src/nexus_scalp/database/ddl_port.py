@@ -1,0 +1,172 @@
+"""DDL porting — translate SQLite CREATE TABLE statements into PostgreSQL.
+
+Used by the SQLite→PostgreSQL migration engine to create destination tables
+with provider-correct types and identity semantics:
+
+  * ``INTEGER PRIMARY KEY AUTOINCREMENT``  → ``BIGSERIAL PRIMARY KEY``
+  * ``INTEGER PRIMARY KEY`` (rowid alias) → ``BIGSERIAL PRIMARY KEY``
+  * ``REAL`` / ``FLOAT`` / ``DOUBLE``      → ``DOUBLE PRECISION``
+  * ``BLOB``                               → ``BYTEA``
+  * ``DATETIME`` / ``TIMESTAMP``           → ``TIMESTAMPTZ``
+  * boolean-ish ``INTEGER NOT NULL DEFAULT 0/1`` stays INTEGER (the app maps
+    them explicitly in code; changing to BOOLEAN would alter SELECT results)
+  * ``WITHOUT ROWID`` is dropped (PG has no rowid concept)
+
+Index statements are left untouched (portable syntax: CREATE INDEX ... ON
+table(cols)).
+"""
+
+from __future__ import annotations
+
+import re
+
+from nexus_scalp.database.drivers.postgres_driver import PG_TYPE_MAP
+
+
+def _type_map() -> dict[str, str]:
+    return PG_TYPE_MAP
+
+
+def port_column_type(declared: str) -> str:
+    """Translate one column type token (post parenthesized params removal)."""
+    name = (declared or "TEXT").strip().upper()
+    if "(" in name:
+        name = name.split("(", 1)[0]
+    mapped = _type_map().get(name)
+    return mapped or (
+        name
+        if name in {"DOUBLE PRECISION", "TIMESTAMPTZ", "BYTEA", "JSONB", "BIGSERIAL", "SERIAL"}
+        else "TEXT"
+    )
+
+
+def port_create_table(ddl: str) -> str | None:
+    """Port a SQLite CREATE TABLE statement to PostgreSQL.
+
+    Returns None when the statement is not a CREATE TABLE (caller skips).
+    Preserves constraints, defaults, unique clauses and column order.
+    """
+    m = re.match(r"\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([\"\w.]+)", ddl, re.I)
+    if not m:
+        return None
+    # locate the column block (first '(' to matching ')')
+    start = ddl.find("(")
+    if start == -1:
+        return ddl
+    depth = 0
+    end = -1
+    for k in range(start, len(ddl)):
+        if ddl[k] == "(":
+            depth += 1
+        elif ddl[k] == ")":
+            depth -= 1
+            if depth == 0:
+                end = k
+                break
+    if end == -1:
+        return ddl
+    head = ddl[:start]
+    body = ddl[start + 1 : end]
+    tail = ddl[end + 1 :]
+
+    # SQLite permits double-quoted STRING literals ("HOLD"), PostgreSQL treats
+    # "HOLD" as a column identifier -> rewrite double-quoted literals that are
+    # NOT identifiers (identifiers appear as `"."name` or adjacent to a type)
+    # to single-quoted strings.
+    def _normalize_literals(block: str) -> str:
+        out: list[str] = []
+        i = 0
+        n = len(block)
+        while i < n:
+            ch = block[i]
+            if ch == '"':
+                # find closing quote
+                j = block.find('"', i + 1)
+                if j == -1:
+                    out.append(ch)
+                    i += 1
+                    continue
+                inner = block[i + 1 : j]
+                # quoted identifier if it is an exact column name token
+                # followed by nothing or a constraint keyword; heuristic:
+                # identifiers are lowercase/keywords, string literals are
+                # '  mixed case, spaces, or clearly data-like.
+                # a bare identifier column definition "col" TYPE ... is an
+                # identifier; a DEFAULT "X" is a string literal
+                before = block[max(0, i - 8) : i]
+                looks_like_default = "DEFAULT" in before.upper() or "=" in before
+                if looks_like_default:
+                    out.append("'" + inner.replace("'", "''") + "'")
+                else:
+                    out.append('"' + inner + '"')
+                i = j + 1
+            else:
+                out.append(ch)
+                i += 1
+        return "".join(out)
+
+    def _split_columns(body: str) -> list[str]:
+        chunks: list[str] = []
+        cur: list[str] = []
+        depth = 0
+        for ch in body:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth = max(0, depth - 1)
+            if ch == "," and depth == 0:
+                chunks.append("".join(cur).strip())
+                cur = []
+            else:
+                cur.append(ch)
+        if cur:
+            chunks.append("".join(cur).strip())
+        return chunks
+
+    out_lines: list[str] = []
+    for _raw in _split_columns(body):
+        ln = _normalize_literals(_raw)
+        stripped = ln.rstrip(",").strip()
+        if not stripped:
+            continue
+        upper = stripped.upper()
+        # table-level constraint lines pass through
+        if upper.startswith(("PRIMARY KEY", "UNIQUE", "FOREIGN KEY", "CHECK", "CONSTRAINT")):
+            out_lines.append(stripped)
+            continue
+        # column-level: name + type + constraints
+        mcol = re.match(r'(["\w.]+)\s+(.+)$', stripped)
+        if not mcol:
+            out_lines.append(stripped)
+            continue
+        colname = mcol.group(1)
+        rest = mcol.group(2)
+        # split first token (type) from remaining constraints
+        tokens = rest.split(None, 1)
+        coltype = tokens[0] if tokens else "TEXT"
+        constraints = tokens[1] if len(tokens) > 1 else ""
+        # INTEGER PRIMARY KEY AUTOINCREMENT / INTEGER PRIMARY KEY (rowid
+        # alias) -> BIGSERIAL PRIMARY KEY; drop any AUTOINCREMENT suffix.
+        if coltype.upper() in {"INTEGER", "INT"} and re.match(
+            r"PRIMARY\s+KEY\b", constraints, re.I
+        ):
+            constraints = re.sub(r"AUTOINCREMENT", "", constraints, flags=re.I)
+            constraints = re.sub(r"\bPRIMARY\s+KEY\b", "", constraints, flags=re.I).strip()
+            out_lines.append(
+                f"{colname} BIGSERIAL PRIMARY KEY" + (f" {constraints}" if constraints else "")
+            )
+            continue
+        ported = port_column_type(coltype)
+        out_lines.append(f"{colname} {ported}" + (f" {constraints}" if constraints else ""))
+    if not out_lines:
+        return ddl
+    # strip any trailing 'WITHOUT ROWID' / 'STRICT' in tail
+    tail = re.sub(r"WITHOUT\s+ROWID", "", tail, flags=re.I)
+    tail = re.sub(r"STRICT", "", tail, flags=re.I)
+    tail = tail.rstrip().rstrip(",") if tail.strip() else tail
+    return f"{head}({', '.join(out_lines)}){tail}"
+
+
+def _drop_autoincrement(constraints: str) -> str:
+    """Remove AUTOINCREMENT from remaining constraints."""
+    return re.sub(r"\s*AUTOINCREMENT", "", constraints, flags=re.I).rstrip()

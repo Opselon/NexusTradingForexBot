@@ -1,0 +1,25 @@
+{
+  "research_run_id": "task07_error_attr_01",
+  "research_baseline_id": "e85de540e09d3339",
+  "status": "NOT_COMPUTABLE",
+  "reason": "No trained 70D model exists (exp_liq* are ds_test smoke experiments; no validated candidate in experience_model_registry). Error attribution requires model predictions on labeled data.",
+  "framework_when_model_exists": {
+    "error_classes": [
+      "false_BUY",
+      "false_SELL",
+      "missed_BUY",
+      "missed_SELL",
+      "NO_TRADE_when_profitable_move_followed",
+      "trade_when_adverse_move_followed"
+    ],
+    "liquidity_state_cross": [
+      "sweep",
+      "distance_bin",
+      "confluence_bucket",
+      "htf_sign",
+      "internal_external_zone"
+    ],
+    "output": "per error class x liquidity-state contingency: lift = P(error | liquidity_state) / P(error); n per cell; LOW_EVIDENCE when n < 30",
+    "note": "identical protocol to event_studies.json (causal features, forward labels)"
+  }
+}

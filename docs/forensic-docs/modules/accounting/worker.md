@@ -1,0 +1,24 @@
+# src/nexus_scalp/accounting/worker.py
+
+- PURPOSE: `AccountingWorker` — background derived-aggregation worker (spec §17-18) that keeps the derived view (period reports, curves, drawdown, strategy contributions) warm and incremental so a dashboard refresh never triggers a full-history recompute and Experience Intelligence always sees fresh attribution.
+- ARCHITECTURE LAYER: Application (background refresh loop over AccountingCore; NOT on the tick hot path — invoked via `asyncio.to_thread` from LiveEngine's periodic task).
+- RESPONSIBILITY: Restart-safe, idempotent, throttled refresh cycles: live state, DAY/WEEK/MONTH/YEAR current-period reports, bounded chart series, drawdown + equity curve, strategy attribution, cumulative PnL curve. Owns NO tables; its only side effect is the in-process derived-report cache of `AccountingCore` (rebuildable at any time).
+- DEPENDENCIES:
+  - `time` → wall-clock throttling + cycle duration.
+  - `datetime.datetime` → last-cycle telemetry.
+  - `accounting.core.AccountingCore` → the facade it refreshes.
+  - `accounting.periods.PeriodKind, utc_now` → the four granularities.
+  - `observability.logging.get_logger` → `[ACCOUNTING_WORKER]` event logging contract.
+- CONNECTS TO: LiveEngine.periodic task (kicked via `asyncio.to_thread`), REST layer (via `format_worker_status` telemetry), and everything that reads `AccountingCore._report_cache` (REST performance endpoints, dashboard, Experience Intelligence attribute reads).
+- KEY CONCEPTS:
+  - Hard rules (docstring lines 14-29): (1) never touches the trading hot path; (2) never writes financial truth — raw snapshots/ledger/outcomes are written exclusively by the audit queue worker, this worker only warms derived caches; (3) idempotent — a re-run with no new data is a no-op, and no duplicate financial records can be created because none are written; (4) failure-isolated — every cycle is wrapped, failures logged with the `[ACCOUNTING_WORKER] event=FAILURE` contract and the worker continues next tick, so it can never crash LiveEngine; (5) restartable/deterministic — `start()`/`stop()` manage a cycle counter and last-cycle telemetry; repeated restarts resume cleanly.
+  - Lifecycle: `start()` (line 78) / `stop()` (line 86) are idempotent running flags with START/STOP log events.
+  - `tick()` (line 97): the throttle gate — returns False when `interval_sec` has not elapsed or the worker is stopped; on run: bumps `cycle_count`, records `last_cycle_start`, runs `_refresh_once` inside a try/except, updates `last_cycle_duration_ms` and `last_error`. Failure isolation means `tick()` NEVER raises (line 126). `_last_run_ts` is wall-clock (`time.time()`), so restarts reset it (line 83) and the first tick after start always runs.
+  - `_refresh_once` (line 141): the six-step refresh — live_state (broker adapter warm read), current-period reports for all four `PeriodKind` values with `use_cache=False` (fresh authoritative compute; `periods_updated` records which had data), bounded chart series (`_SERIES_COUNT`: DAY 30 / WEEK 12 / MONTH 12 / YEAR 3, lines 190-195), drawdown + equity curve over `lookback_days` (default 90), strategy attribution (LIMIT 50), cumulative PnL curve (LIMIT 500). Every consumer reads the same refreshed objects, so no consumer can disagree with another (lines 150-154).
+  - `format_worker_status` (line 198): JSON-serializable telemetry (running, cycle_count, interval_sec, last_cycle_start iso, last_cycle_duration_ms, last_error, status RUNNING/IDLE) for the REST layer.
+- HOT PATH / PERFORMANCE: Never on the tick path; throttled at `interval_sec` (default 30s); all refresh reads are bounded (series counts, lookback days, row caps inside core) and open short-lived read-only SQLite connections. Safe to call from any thread (docstring lines 103-106).
+- EDGE CASES & PITFALLS:
+  - The worker is only as fresh as its last successful cycle: any exception mid-`_refresh_once` (e.g. one stage failing) aborts the REMAINING stages; the partial refresh of earlier stages still stands (`tick` catches after `_refresh_once` returns — there is no per-stage try/except), so `last_error` may describe a failure while some cache entries were already updated. No rollback — by design (derived cache, rebuildable).
+  - `lookback_days` of 0 (if configured) disables the window (`if lookback_days` line 492 in core) → full history bounded by MAX_SNAPSHOT_ROWS; the worker default of 90 avoids this.
+  - `_last_trade_count` is declared (line 72) but never used/updated — dead state (no incremental skip logic actually implemented; idempotence comes from querying authoritative rows, not from change detection).
+  - Cycle telemetry shares `_last_run_ts` and `cycle_count` unsynchronized across threads — `tick()` is documented safe from any thread but two concurrent callers could both pass the throttle gate and run overlapping refreshes (the cache lock in `period_series` protects the dict, not the cycle).

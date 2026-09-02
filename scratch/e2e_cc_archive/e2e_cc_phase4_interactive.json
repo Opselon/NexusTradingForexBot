@@ -1,0 +1,25 @@
+{
+  "out": {
+    "populatedFleetRows": 500,
+    "TEST4_inspector": {
+      "clicked": true,
+      "drawerOpen": true,
+      "title": "Strategy Inspector: STRAT-ICHIMILI-FINAL",
+      "contentHasVerdict": true,
+      "contentSample": " Execution Verdict BLOCKED Strategy lifecycle DISCOVERED has not reached validation gates. Required Gate: validation_and_shadow Blockers: lifecycle_at_discovered Identity & State vv836171aa38de Lifecycle: DISCOVERED Confidence: 0% Sample Count: 0 Health Final: — Evidence & Gates INCOMPLETE Backtest: MISSING Walk-Forward: MISSING OOS: MISSING Robustness: MISSING Missing Gates: backtest, walkforward"
+    },
+    "TEST4_filter": {
+      "discoveredRows": 500
+    },
+    "TEST8_restart": {
+      "reloaded": true,
+      "repopulatedFleetRows": 500
+    },
+    "TEST11_adversarial": {
+      "total": 500,
+      "spuriousYes": 0
+    },
+    "TEST12_noConsoleErrors": 0
+  },
+  "consoleAll": []
+}

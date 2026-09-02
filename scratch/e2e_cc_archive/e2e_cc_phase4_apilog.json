@@ -1,0 +1,28 @@
+{
+  "out": {
+    "apiLog": [
+      {
+        "url": "/api/command-center/fleet",
+        "ok": true,
+        "status": 200,
+        "bodyLen": 228365,
+        "rows": 500
+      },
+      {
+        "url": "/api/command-center/overview",
+        "ok": true,
+        "status": 200,
+        "bodyLen": 1833
+      },
+      {
+        "url": "/api/command-center/timemachine/bounds",
+        "ok": true,
+        "status": 200,
+        "bodyLen": 127
+      }
+    ],
+    "fleetRows": 0,
+    "total": "—"
+  },
+  "consoleAll": []
+}

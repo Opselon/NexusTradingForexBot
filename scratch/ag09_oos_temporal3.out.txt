@@ -1,0 +1,57 @@
+train rows: 2129 OOS rows: 317
+2026-08-19 07:29:36 [info     ] [TRAIN] event=CANDIDATE_READY model_id=ag09_oos_C_v1 val_acc=0.2042
+train: COMPLETED ag09_oos_C_v1
+{
+  "model_id": "ag09_oos_C_v1",
+  "oos_split": {
+    "cutoff": "2025-03-24 00:00:00",
+    "train_rows": 2129,
+    "oos_rows": 317
+  },
+  "hyperparameters": {
+    "epochs": 6,
+    "lr": 0.001,
+    "batch_size": 256,
+    "seed": 42,
+    "architecture": "LEGACY_SCALPNET_V1"
+  },
+  "train_status": "COMPLETED",
+  "artifact_hash": "cfc3b1f492616e26e6e4fe755c17b9c949f505084c6d429a24a4efe5a34533e3",
+  "results": {
+    "accuracy": 0.1451,
+    "balanced_accuracy": 0.3315,
+    "macro_f1": 0.1013,
+    "confusion_matrix": [
+      [
+        30,
+        232,
+        22
+      ],
+      [
+        1,
+        16,
+        1
+      ],
+      [
+        2,
+        13,
+        0
+      ]
+    ],
+    "ece": 0.3207,
+    "brier": 0.7165,
+    "class_distribution": {
+      "0": 284,
+      "1": 18,
+      "2": 15
+    }
+  },
+  "gate_comparison": {
+    "oos_accuracy_floor_0_30": false,
+    "oos_macro_f1_floor_0_34": false,
+    "oos_balanced_acc_floor_0_34": false,
+    "ece_floor_0_15": false
+  },
+  "verdict": "OOS LOCKED \u2014 no tuning after this observation"
+}
+EXIT=0

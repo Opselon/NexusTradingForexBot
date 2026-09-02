@@ -1,0 +1,39 @@
+name: OSV Dependency Scan
+
+# Language-aware dependency CVE scan. security.yml already runs Trivy (fs) and
+# CodeQL (code), but neither is a Python-package vulnerability scanner. OSV
+# reads pyproject.toml / uv.lock and flags known CVEs in the resolved tree.
+# ADVISORY: results upload to code scanning but the job is continue-on-error so
+# a disclosed CVE never blocks a merge (reviewers act on the alert). Maps to the
+# supply-chain-audit / osv-scanner need.
+#
+# NOTE: google/osv-scanner-action does NOT expose a direct action at the repo
+# root. Its consumable surfaces are:
+#   - google/osv-scanner-action/osv-scanner-action@v2.5.1   (leaf action)
+#   - google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml  (recommended)
+# Using the bare `google/osv-scanner-action@vX` resolves to repo-root action.yml
+# which has no `runs:` and fails with "Top level 'runs:' section is required".
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "27 4 * * 1"   # Every Monday at 04:27 UTC
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  osv:
+    name: OSV Scanner
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.5.1
+    with:
+      scan-args: |-
+        --recursive
+        ./
+      fail-on-vuln: false

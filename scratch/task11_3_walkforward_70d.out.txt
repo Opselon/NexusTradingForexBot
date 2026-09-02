@@ -1,0 +1,57 @@
+rows: 2446 | feat cols: 70 | labels: {'label': shape: (3,)
+Series: 'label' [str]
+[
+	"NO_TRADE"
+	"BUY_MARKET"
+	"SELL_MARKET"
+], 'count': shape: (3,)
+Series: 'count' [u32]
+[
+	2197
+	139
+	110
+]}
+2026-08-19 07:33:12 [info     ] Initiating production walk-forward training active_class_boost=3.0 device=cpu num_features=70 num_folds=4 purge_gap=15 scaling_enabled=True seed=42 total_rows=2446 trainable_rows=586
+2026-08-19 07:33:12 [info     ] Class Weights computed for fine-tuning class_counts=[52, 20, 15, 0] is_online_fine_tune=True num_classes=4 total_samples=87 weights=[1.0, 1.0, 1.0, 1.0]
+2026-08-19 07:33:13 [info     ] Walk-forward fold complete     batch_size=16 best_val_loss=1.266438 fold=1 sharpe_proxy=-10.102 test_rows=29 total_folds=4 train_rows=87
+2026-08-19 07:33:13 [info     ] Class Weights computed for fine-tuning class_counts=[54, 15, 18, 0] is_online_fine_tune=True num_classes=4 total_samples=87 weights=[1.0, 1.0, 1.0, 1.0]
+2026-08-19 07:33:13 [info     ] Walk-forward fold complete     batch_size=16 best_val_loss=1.327553 fold=2 sharpe_proxy=-8.871 test_rows=29 total_folds=4 train_rows=87
+2026-08-19 07:33:13 [info     ] Class Weights computed for fine-tuning class_counts=[55, 21, 11, 0] is_online_fine_tune=True num_classes=4 total_samples=87 weights=[1.0, 1.0, 1.0, 1.0]
+2026-08-19 07:33:14 [info     ] Walk-forward fold complete     batch_size=16 best_val_loss=1.339073 fold=3 sharpe_proxy=-3.479 test_rows=29 total_folds=4 train_rows=87
+2026-08-19 07:33:14 [info     ] Class Weights computed for fine-tuning class_counts=[53, 19, 16, 0] is_online_fine_tune=True num_classes=4 total_samples=88 weights=[1.0, 1.0, 1.0, 1.0]
+2026-08-19 07:33:14 [info     ] Walk-forward fold complete     batch_size=16 best_val_loss=1.380769 fold=4 sharpe_proxy=-12.754 test_rows=30 total_folds=4 train_rows=88
+2026-08-19 07:33:14 [info     ] === TASK 1 MODEL DIAGNOSTICS ===
+2026-08-19 07:33:14 [info     ] class_id mapping:
+2026-08-19 07:33:14 [info     ] 0 = BUY
+2026-08-19 07:33:14 [info     ] 1 = SELL
+2026-08-19 07:33:14 [info     ] 2 = NO_TRADE
+2026-08-19 07:33:14 [info     ] Inference class mapping (self.inverse_label_map):
+2026-08-19 07:33:14 [info     ] {0: 'NO_TRADE', 1: 'BUY_MARKET', 2: 'SELL_MARKET'}
+2026-08-19 07:33:14 [info     ] Verifying training labels distribution label_mapping={'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2} train_labels_counts=[337, 139, 110]
+2026-08-19 07:33:14 [info     ] Out-of-sample global metrics   profit_factor=0.37 total_oos_samples=117 total_oos_trades=59 trade_rate=50.4% win_rate=23.7%
+2026-08-19 07:33:14 [info     ] Initiating final production training on full trainable dataset
+2026-08-19 07:33:14 [info     ] Class Weights computed for fine-tuning class_counts=[337, 139, 110, 0] is_online_fine_tune=False num_classes=4 total_samples=586 weights=[4.139584126129947e-05, 0.00015941910708330297, 0.00017936402015728288, 3.9996198210314984]
+2026-08-19 07:33:14 [info     ] === POST-TRAINING VERIFICATION ===
+2026-08-19 07:33:14 [info     ] Raw Logits: [[-0.13333594799041748, 0.13159798085689545, -0.1662502884864807, 0.0223512202501297], [-0.11542130261659622, 0.20227420330047607, -0.13839370012283325, -0.18622273206710815], [-0.11705349385738373, 0.17219679057598114, -0.10699057579040527, -0.30902156233787537], [-0.10643787682056427, 0.16311292350292206, -0.1600949913263321, -0.06454383581876755], [-0.0972246378660202, 0.1603247970342636, -0.18722128868103027, -0.09681592136621475]]
+2026-08-19 07:33:14 [info     ] Softmax Probabilities: [[0.22525428235530853, 0.29358401894569397, 0.2179608792066574, 0.2632007598876953], [0.23348698019981384, 0.3208012580871582, 0.22818437218666077, 0.21752741932868958], [0.2397579848766327, 0.3201790153980255, 0.24218280613422394, 0.19788022339344025], [0.23256263136863708, 0.3045119643211365, 0.22041285037994385, 0.24251258373260498], [0.2376370131969452, 0.3074442446231842, 0.21718460321426392, 0.23773415386676788]]
+2026-08-19 07:33:14 [info     ] ==================================
+2026-08-19 07:33:14 [info     ] Model checkpoint saved atomically path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\wf_candidate\model.pt
+2026-08-19 07:33:14 [info     ] Scaler artifact saved atomically mean_shape=(70,) path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\wf_candidate\model.scaler.npz std_shape=(70,)
+2026-08-19 07:33:15 [info     ] Training metadata saved atomically path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\wf_candidate\model.meta.json
+2026-08-19 07:33:15 [info     ] Production training complete   model_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\wf_candidate\model.pt scaler_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\models\wf_candidate\model.scaler.npz
+WALK-FORWARD OK in 2.2s — model params: 267492
+model.pt hash: 80b6d159e98a2975... (full 80b6d159e98a2975c7fb452bb733e82b1940a45cd4ebb4d2ee1b9a9c115a36f0)
+scaler hash: 0bbe342ae9f28e55...
+{
+  "artifact_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\wf_candidate",
+  "model_pt_hash_sha256": "80b6d159e98a2975c7fb452bb733e82b1940a45cd4ebb4d2ee1b9a9c115a36f0",
+  "scaler_hash_sha256": "0bbe342ae9f28e55aaf098785eed2dbed0b3dd8f4940279cbefbd1ad50193588",
+  "dataset": "ds_task5_real70d_2500",
+  "feature_schema_id": "scalp_v3",
+  "dimension": 70,
+  "fold_count": 4,
+  "purge_gap_bars": 15,
+  "embargo_bars": 15,
+  "elapsed_sec": 2.23
+}
+EXIT=0

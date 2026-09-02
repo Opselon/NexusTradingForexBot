@@ -1,0 +1,67 @@
+{
+  "samples": [
+    {
+      "ms": 3847,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 6855,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 9888,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 12895,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 15901,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 18913,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 21916,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 24925,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 27933,
+      "fleetRows": 0,
+      "total": "—",
+      "canvasNonBlank": true
+    },
+    {
+      "ms": 30944,
+      "fleetRows": 500,
+      "total": "500",
+      "canvasNonBlank": true
+    }
+  ],
+  "consoleAll": [
+    "[warning] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently"
+  ]
+}

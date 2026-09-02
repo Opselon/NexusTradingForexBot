@@ -1,0 +1,25 @@
+{
+  "total_count": 1,
+  "artifacts": [
+    {
+      "id": 9828760978,
+      "node_id": "MDg6QXJ0aWZhY3Q5ODI4NzYwOTc4",
+      "name": "ci-results-quality-CI-622-6b893f045f3ef94e33c3988d3da76aef99252e3b",
+      "size_in_bytes": 5571899,
+      "url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/artifacts/9828760978",
+      "archive_download_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/artifacts/9828760978/zip",
+      "expired": false,
+      "digest": "sha256:9c6a2f6702df8adadacacc29996053aabe871fac1525a29c7def7a2745ecd9ca",
+      "created_at": "2026-09-02T02:10:14Z",
+      "updated_at": "2026-09-02T02:10:14Z",
+      "expires_at": "2026-10-02T02:10:12Z",
+      "workflow_run": {
+        "id": 33581709459,
+        "repository_id": 1316607103,
+        "head_repository_id": 1316607103,
+        "head_branch": "main",
+        "head_sha": "6b893f045f3ef94e33c3988d3da76aef99252e3b"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+raw slice: 2500 rows
+60D frame: 2446 rows in 6s
+2026-08-19 06:39:54 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=139 embargo_bars=3 evaluated_samples=586 friction_usd=$0.35 no_trade_labels=2197 sell_labels=110 skipped_invalid_atr=0 total_samples=2446
+2026-08-19 06:39:55 [info     ] [DATASET] event=BUILT dataset_id=ds_b64513f79687824a rows=2446
+B dataset: ds_b64513f79687824a rows=2446
+2026-08-19 06:39:55 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=139 embargo_bars=3 evaluated_samples=586 friction_usd=$0.35 no_trade_labels=2197 sell_labels=110 skipped_invalid_atr=0 total_samples=2446
+2026-08-19 06:39:56 [info     ] [DATASET] event=BUILT dataset_id=ds_cb30f87520e9e6a4 rows=2446
+A dataset: ds_cb30f87520e9e6a4 rows=2446
+{
+  "A_50d": "ds_cb30f87520e9e6a4",
+  "B_60d": "ds_b64513f79687824a",
+  "C_70d": "ds_task5_real70d_2500",
+  "raw_rows": 2500,
+  "note": "same 2500-bar slice; identical timestamps/labels/splits by construction (DatasetFactory)"
+}
+EXIT 0

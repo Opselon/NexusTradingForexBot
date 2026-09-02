@@ -1,0 +1,43 @@
+{
+  "task": "TASK-5",
+  "purpose": "CURRENT CHAMPION BASELINE FREEZE (control group)",
+  "captured_at_utc": "2026-08-18T18:10:18.003935+00:00",
+  "champion": {
+    "artifact_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\v1.0.0\\model.pt",
+    "model_id": "primary_scalp",
+    "model_version": "1.0.0",
+    "feature_schema_id": "scalp_v1",
+    "feature_dimension": 50,
+    "class_count": 4,
+    "artifact_hash_sha256": "f0f70efb1b55855beb96ae807d81b44db07ae4d0fcff1da2965ea0a408f1d88b",
+    "scaler_hash_sha256": "811554e5286ea3104a9f759ccce611fb62a9994856d08b2dad82aeb6b99424e1",
+    "scaler_mean_shape": [
+      50
+    ],
+    "scaler_std_shape": [
+      50
+    ],
+    "scaler_mean_first5": [
+      0.250905,
+      0.258723,
+      0.490372,
+      0.111111,
+      0.02015
+    ],
+    "scaler_std_first5": [
+      0.227269,
+      0.220555,
+      0.273337,
+      0.31427,
+      0.70423
+    ],
+    "input_projection_first": "input_projection.weight  (128, dim)",
+    "git_tracked": false
+  },
+  "notes": [
+    "Champion is loaded by LiveEngine from config.model.model_artifact_path",
+    "CandidateTrainer NEVER writes to this path (candidate staging only)",
+    "TASK-5 creates NO promotion path; Champion remains untouched until an",
+    "operator-approved future workflow"
+  ]
+}

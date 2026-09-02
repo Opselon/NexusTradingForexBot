@@ -1,0 +1,59 @@
+2026-08-19 03:22:19 [info     ] [SHADOW70] event=MODEL_LOADED  artifact_hash=ee629b161a448597 dimension=70 model_id=cand_70d_liquidity_v1 model_version=v1.0 schema=scalp_v3
+[1] LOAD GATE        SHADOW_READY model=cand_70d_liquidity_v1
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.008 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.007 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.005 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.002 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.008 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.006 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.005 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.005 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.005 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.007 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+[2] OBSERVATIONS     30 valid; disagreement classes=['BUY_VS_SELL', 'CHAMPION_NO_TRADE_SHADOW_BUYS', 'CONFIDENCE_DIVERGENCE']
+[3] SUMMARY          obs=30 valid=30 agree=8 disa=22 avg_ms=0.069
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+[4] IDEMPOTENT       same deterministic id
+2026-08-19 03:22:19 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\s70_ready_3oq2rvju\audit.db
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.01 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.007 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.006 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.005 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.006 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.006 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.006 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.005 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.004 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CONFIDENCE_DIVERGENCE latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=CHAMPION_NO_TRADE_SHADOW_BUYS latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+2026-08-19 03:22:19 [debug    ] [SHADOW70] event=INFERENCE     confidence=0.6 disagreement=BUY_VS_SELL latency_ms=0.003 model_id=cand_70d_liquidity_v1 prediction=BUY_MARKET
+[5] PERSISTENCE      15/15 rows landed in temp DB via queued writer
+2026-08-19 03:22:26 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-08-19 03:22:26 [info     ] Audit Database safely closed.
+[6] HEALTH/DRIFT     features=10 drift_status=None severity=NORMAL
+
+READY-PATH FIXTURE SMOKE: ALL CHECKS PASSED

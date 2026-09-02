@@ -1,0 +1,60 @@
+name: Lockfile Diff
+
+# Visibility gate for dependency changes. On every PR it diffs the dependency
+# manifests (pyproject.toml, requirements.txt, uv.lock) against the PR base and
+# renders the delta into the job summary so reviewers see exactly what changed
+# without opening the files. ADVISORY ONLY — it never fails the build (so a
+# legitimate bump does not block the PR). Maps to the lockfile-diff need.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lockfile-diff:
+    name: Dependency Manifest Diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Diff dependency manifests
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="${BASE_SHA:-${{ github.sha }}}"
+          files="pyproject.toml requirements.txt uv.lock"
+          {
+            echo "## Dependency manifest changes"
+            echo ""
+            echo "Base: \`${base:0:7}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          changed=0
+          for f in $files; do
+            if [ -f "$f" ]; then
+              if ! git diff --quiet "$base" -- "$f"; then
+                changed=1
+                {
+                  echo ""
+                  echo "### \`$f\`"
+                  echo '```diff'
+                } >> "$GITHUB_STEP_SUMMARY"
+                git diff "$base" -- "$f" | head -200 >> "$GITHUB_STEP_SUMMARY"
+                echo '```' >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
+          done
+          if [ "$changed" -eq 0 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No dependency manifest changes detected."
+          fi
+          cat "$GITHUB_STEP_SUMMARY"

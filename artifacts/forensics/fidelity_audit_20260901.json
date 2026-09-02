@@ -1,0 +1,53 @@
+{
+  "audit": "CHG-0038 data-to-decision fidelity",
+  "generated_at": "2026-09-01T20:44:23.967050+00:00",
+  "tensor_map": {
+    "dimension": 70,
+    "groups": {
+      "base_0_49": "ScalpFeatureEngine.to_tensor_input() (50D scalp_v1 canonical)",
+      "news_50_59": "('active_high_impact_events', 'xauusd_relevance', 'usd_relevance', 'bullish_pressure', 'bearish_pressure', 'conflict_score', 'novelty', 'freshness', 'confidence', 'news_state')",
+      "liquidity_60_69": "('bsl_distance_atr', 'ssl_distance_atr', 'eqh_strength', 'eql_strength', 'htf_liquidity_score', 'internal_liquidity_distance', 'external_liquidity_distance', 'liquidity_confluence', 'liquidity_sweep_state', 'post_sweep_displacement')"
+    },
+    "order_verified_live": "debug feature matrix names == canonical_feature_names (70/70)"
+  },
+  "news_block_projection": {
+    "canonical": "vectorize_news_context -> build_news_10 (state encoding preserved at slot 59)",
+    "defect_fixed": "BUG-190: raw model_dump route lost 4/10 slots (inference + retrain records)",
+    "post_fix_engine_block_demo": [
+      27.0,
+      1.0,
+      1.0,
+      0.1589,
+      0.1903,
+      0.0278,
+      0.0,
+      0.8469,
+      0.5634,
+      2.0
+    ]
+  },
+  "inference_parity": "replay _predict_probs vs live-shape path on identical 70D vector: max_abs_diff = 0.0 (bit-exact), single preprocessing path",
+  "tick_to_bar": "open=first tick mid of minute; close=last tick mid (stream order); high/low over all minute ticks; volume=tick count; forming bar never complete - verified on certified live ticks (2835 ticks -> 5 bars + forming, all OHLCV exact)",
+  "causality": "liquidity(T) invariant to future-bar mutation; news_context_at excludes published_at>T; future-only news window yields documented zero block",
+  "policy_parity": "same probs => same action across default/runtime thresholds; guardian blocks unsafe regimes with explicit reason; NO_TRADE first gate = CONFIDENCE (model 0.26-0.28 < 0.40)",
+  "db_reconciliation": {
+    "research_runs==snapshots": "4330/4330",
+    "experience_model_registry": "latest primary_scalp_scalp_v3_70d @70 (registry truthful after hot-swap)",
+    "known_labeling_artifact": "276 experience rows schema=scalp_v3 dim=50 (FeatureSnapshot dim = base-50 tensor length; values are the real base block; hash-bound; documented BUG-125-era labeling, not corruption)",
+    "future_dated_rows": "194 live-session rows (host clock written as UTC) - observed only, no rewrite"
+  },
+  "counterfactual_48h": {
+    "executed_below_0.40": {
+      "n": 16,
+      "mean_r": -0.0885,
+      "win_rate": 0.5
+    },
+    "executed_at_above_0.40": {
+      "n": 1,
+      "mean_r": 0.1346,
+      "win_rate": 1.0
+    },
+    "verdict": "small-n INCONCLUSIVE for threshold policy; NOT a trading-optimization input"
+  },
+  "artifact_fp_match": true
+}

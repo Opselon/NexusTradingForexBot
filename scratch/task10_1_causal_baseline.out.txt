@@ -1,0 +1,35 @@
+A. liquidity block length: 10
+   finite: True
+   in [-3,3]: True
+     60 bsl_distance_atr = 0.8177
+     61 ssl_distance_atr = 1.6402
+     62 eqh_strength = 0.9570
+     63 eql_strength = 0.1837
+     64 htf_liquidity_score = -2.5874
+     65 internal_liquidity_distance = 0.3214
+     66 external_liquidity_distance = 3.0000
+     67 liquidity_confluence = 3.0000
+     68 liquidity_sweep_state = 2.0000
+     69 post_sweep_displacement = 0.0000
+B. base 50D length: 50
+   70D composite: 70 | base==[:50]: True | liq==[60:70]: True
+   build_70d_vector correctly rejects 9D family (strict widths)
+C. vectorize_news_context length: 12
+     active = 3.000
+     xauusd_relevance = 0.920
+     usd_relevance = 0.550
+     bullish = 0.700
+     bearish = 0.100
+     conflict = 0.000
+     novelty = 0.000
+     freshness = 0.900
+     confidence = 0.800
+     source_consensus = 0.600
+     state_enc = 2.000
+     time_since_event_sec = 42.000
+   live-path news10: [3.0, 0.92, 0.55, 0.7, 0.1, 0.0, 0.0, 0.9, 0.8, 0.6]
+   dropped by [:10]: {'state_enc': 2.0, 'time_since_event_sec': 42.0}
+D. shadow70 slices: (0, 50) (50, 60) (60, 70) | dim: 70
+
+FINDINGS:
+ - C: live-path news10 truncation DROPS the news state encoding (state_enc=2.0) silently — HIGH_IMPACT information discarded

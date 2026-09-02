@@ -1,0 +1,13 @@
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+  return _methods._mean(a, axis=axis, dtype=dtype,
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)
+history=    55 bars |     7.27 ms/call |   0.0073 s
+history=   200 bars |    13.68 ms/call |   0.0137 s
+history=  1000 bars |   136.47 ms/call |   0.1365 s
+history=  2000 bars |   357.01 ms/call |   0.3570 s
+history=  4000 bars |  1223.32 ms/call |   1.2233 s
+history=  8000 bars |  4669.46 ms/call |   4.6695 s
+history= 20000 bars | 27565.34 ms/call |  27.5653 s
+saved: C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\benchmarks\bug106_engine_curve.json
+EXIT 0
