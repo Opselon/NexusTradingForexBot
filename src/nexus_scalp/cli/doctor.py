@@ -20,6 +20,8 @@ engine_boot, update/release → update_cli, setup wizard → wizard).
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import re
 import subprocess
@@ -58,6 +60,25 @@ from nexus_scalp.release import verify as rverify
 from nexus_scalp.release.metadata import PRODUCT_DISPLAY, get_version_info
 
 
+@contextlib.contextmanager
+def _json_quiet() -> Any:
+    """BUG-196: suppress stdout during --json computation phases.
+
+    Eager subsystem initialization (e.g. the audit DB WAL INFO line from a
+    registry-backed snapshot) must never land on stdout before the JSON
+    payload - that breaks every json.loads consumer. Capture-and-discard is
+    the truthful choice: those log lines are engine chatter, not operator
+    output for a machine stream.
+    """
+    _capture = io.StringIO()
+    _real_stdout = sys.stdout
+    sys.stdout = _capture
+    try:
+        yield
+    finally:
+        sys.stdout = _real_stdout
+
+
 # ---------------------------------------------------------------------------
 # version
 # ---------------------------------------------------------------------------
@@ -69,26 +90,27 @@ def version_cmd(
     """Show canonical version + build identity."""
     info = _resolve_facade_seam("get_version_info", get_version_info)()
     if json_mode:
-        from nexus_scalp.release.versioning import RuntimeVersionBlock
+        with _json_quiet():  # BUG-196: no stdout chatter before the payload
+            from nexus_scalp.release.versioning import RuntimeVersionBlock
 
-        try:
-            block = RuntimeVersionBlock(web_dir=Path("Web") if Path("Web").is_dir() else None)
-            info = {**info, "web_bundle": block.build()}
-        except Exception:
-            pass  # version truth never blocks the CLI
-        # CHG-0043: one canonical snapshot consumed by version/health/doctor/web
-        try:
-            from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
+            try:
+                block = RuntimeVersionBlock(web_dir=Path("Web") if Path("Web").is_dir() else None)
+                info = {**info, "web_bundle": block.build()}
+            except Exception:
+                pass  # version truth never blocks the CLI
+            # CHG-0043: one canonical snapshot consumed by version/health/doctor/web
+            try:
+                from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
 
-            info["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
-        except Exception:
-            pass  # failure-isolated: identity still emits
-        try:
-            from nexus_scalp.release.release_status import build_release_status
+                info["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
+            except Exception:
+                pass  # failure-isolated: identity still emits
+            try:
+                from nexus_scalp.release.release_status import build_release_status
 
-            info["release_status"] = build_release_status()
-        except Exception:
-            pass  # offline-safe: absence is UNKNOWN, never fabricated
+                info["release_status"] = build_release_status()
+            except Exception:
+                pass  # offline-safe: absence is UNKNOWN, never fabricated
         _emit(info, True)
         return
     if plain:
@@ -149,27 +171,28 @@ def doctor_cmd(
     """
     if no_color:
         console.print = lambda *a, **k: print(*[str(x) for x in a])  # type: ignore[assignment]
-    verdict, entries = _health_entries()
     if json_mode and not fix:
-        payload = {
-            "overall": verdict,
-            "checks": [e.to_dict() for e in entries],
-            "environment": renv.format_hardware_block(renv.detect_environment()),
-        }
-        # CHG-0043: canonical snapshot + offline-safe release status so the
-        # doctor answer is ONE consistent truth surface (failure-isolated).
-        try:
-            from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
+        with _json_quiet():  # BUG-196: no stdout chatter before the payload
+            verdict, entries = _health_entries()
+            payload = {
+                "overall": verdict,
+                "checks": [e.to_dict() for e in entries],
+                "environment": renv.format_hardware_block(renv.detect_environment()),
+            }
+            # CHG-0043: canonical snapshot + offline-safe release status so the
+            # doctor answer is ONE consistent truth surface (failure-isolated).
+            try:
+                from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
 
-            payload["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
-        except Exception:
-            pass
-        try:
-            from nexus_scalp.release.release_status import build_release_status
+                payload["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
+            except Exception:
+                pass
+            try:
+                from nexus_scalp.release.release_status import build_release_status
 
-            payload["release_status"] = build_release_status()
-        except Exception:
-            pass
+                payload["release_status"] = build_release_status()
+            except Exception:
+                pass
         _emit(payload, True)
         return
     if not json_mode:

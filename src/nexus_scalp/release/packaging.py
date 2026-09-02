@@ -195,7 +195,10 @@ def generate_manifest(
         "product_display": info["product_display"],
         "version": info.get("version") or get_version(),
         "git_commit": info.get("git_commit") or info.get("commit"),
-        "build_timestamp": info.get("build_timestamp") or datetime.now(UTC).isoformat(),
+        # CHG-0043: idempotent truth — emit the timestamp ONLY when recorded.
+        # A datetime.now() fallback fabricated a fresh value per call (breaking
+        # manifest idempotency) and lied about the actual build time.
+        **({"build_timestamp": info["build_timestamp"]} if info.get("build_timestamp") else {}),
         "channel": channel or info.get("channel") or "stable",
         "platform": "windows",
         "architecture": info.get("architecture") or platform.machine(),

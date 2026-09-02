@@ -27,6 +27,7 @@ Design (brief sections 3/17/20):
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -70,6 +71,7 @@ def _git_counts(remote: str = "origin/main") -> tuple[int | None, int | None]:
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
         if probe.returncode != 0:
             return None, None
@@ -78,6 +80,7 @@ def _git_counts(remote: str = "origin/main") -> tuple[int | None, int | None]:
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
         if out.returncode != 0:
             return None, None
@@ -114,12 +117,12 @@ def build_release_status(include_git_counts: bool = True) -> dict[str, Any]:
     # last-known available release (from the persisted update state when an
     # UPDATE_AVAILABLE plan was recorded; otherwise UNKNOWN)
     last_plan = state.get("last_plan") or {}
-    available_version = str(
-        last_plan.get("target_version") or state.get("available_version") or ""
-    ) or None
-    available_commit = str(
-        last_plan.get("commit_sha") or state.get("available_commit") or ""
-    ) or None
+    available_version = (
+        str(last_plan.get("target_version") or state.get("available_version") or "") or None
+    )
+    available_commit = (
+        str(last_plan.get("commit_sha") or state.get("available_commit") or "") or None
+    )
 
     # get_version_info() already implements the identity precedence
     # (frozen bundle -> its stamp; dev/source -> repo metadata, ignoring a
@@ -133,6 +136,7 @@ def build_release_status(include_git_counts: bool = True) -> dict[str, Any]:
 
     update_status = STATUS_UNKNOWN
     if available_version and current_version:
+
         def _v(v: str) -> tuple[int, ...]:
             return tuple(int(p) for p in re.findall(r"\d+", v)[:3])
 
@@ -149,10 +153,7 @@ def build_release_status(include_git_counts: bool = True) -> dict[str, Any]:
         behind, ahead = _git_counts()
 
     revision_ahead = bool(
-        behind == 0
-        and ahead
-        and ahead > 0
-        and update_status in (STATUS_NO_UPDATE, STATUS_UNKNOWN)
+        behind == 0 and ahead and ahead > 0 and update_status in (STATUS_NO_UPDATE, STATUS_UNKNOWN)
     )
     if revision_ahead:
         update_status = STATUS_REVISION_AHEAD

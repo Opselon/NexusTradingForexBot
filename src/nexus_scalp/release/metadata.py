@@ -20,7 +20,6 @@ import platform
 import re
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -176,6 +175,31 @@ def read_build_info() -> dict[str, Any]:
     return {}
 
 
+def _canonical_feature_schema(info: dict[str, Any]) -> str:
+    """Feature-schema identity for the version block (CHG-0043).
+
+    The canonical 70D contract (features/schema_contract.py) is the
+    truth; a stamped build value is only a fallback; the legacy
+    ``features/schema.py`` constant is the last resort. The literal
+    ``scalp_v1`` is never asserted as the active contract here.
+    """
+    try:
+        from nexus_scalp.features.schema_contract import SCHEMA_ID as CANON_SCHEMA_ID
+
+        return str(CANON_SCHEMA_ID)
+    except Exception:
+        pass
+    stamped = str(info.get("feature_schema") or "").strip()
+    if stamped:
+        return stamped
+    try:
+        from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID
+
+        return str(ACTIVE_SCHEMA_ID)
+    except Exception:
+        return "unknown"
+
+
 def get_version_info() -> dict[str, Any]:
     """Full version/identity block for CLI, manifest and diagnostics.
 
@@ -183,22 +207,56 @@ def get_version_info() -> dict[str, Any]:
     platform, architecture, python, channel, mode, schema. Never raises.
     """
     info = read_build_info()
+    # CHG-0043 stale build-info precedence (dev/source runs only): a
+    # leftover build-info.json stamped by a PREVIOUS release build must
+    # never mask the live repository identity (version truth, BUG-092
+    # family). Frozen bundles always report their own stamp.
+    stale_build_info = False
+    if not getattr(sys, "frozen", False) and info:
+        stamped = str(info.get("git_commit") or "").strip()
+        # Dev/source precedence: when the checkout HEAD is resolvable, the
+        # repository identity ALWAYS wins over a stamped build-info.json
+        # (a leftover release stamp must never mask the live repo -
+        # BUG-092 family, CHG-0043). Only a non-git environment keeps a
+        # stamp as the sole identity source.
+        head = _git_commit("HEAD") if stamped else None
+        if head:
+            stale_build_info = True
     arch = info.get("architecture") or platform.machine()
     channel = info.get("channel") or DEFAULT_CHANNEL
     mode = info.get("build_mode") or "Release"
+    # CHG-0043 commit identity truth: record WHERE the commit came from
+    # and say NOT_RECORDED instead of a bare falsy value. A source
+    # checkout reports the repository HEAD; a packaged bundle reports its
+    # stamped build identity; genuinely unavailable stays empty with
+    # commit_status NOT_RECORDED (never misleading None/n/a).
+    stamped_commit = None if stale_build_info else info.get("git_commit")
+    commit_value = stamped_commit or _git_commit()
+    if stamped_commit:
+        commit_source = "build-info"
+    elif commit_value:
+        commit_source = "repository"
+    else:
+        commit_source = "unavailable"
     return {
         "product": PRODUCT_NAME,
         "product_display": PRODUCT_DISPLAY,
-        "version": info.get("version") or get_version(),
-        "commit": info.get("git_commit") or _git_commit(),
+        "version": get_version() if stale_build_info else (info.get("version") or get_version()),
+        "commit": commit_value,
+        "commit_source": commit_source,
+        "commit_status": "RECORDED" if commit_value else "NOT_RECORDED",
         "dirty_tree": bool(info.get("dirty_tree", _git_dirty())),
-        "build_timestamp": info.get("build_timestamp") or datetime.now(UTC).isoformat(),
+        # CHG-0043: build_timestamp is a RECORDED identity fact. When no
+        # stamp exists (dev/source run) it stays None (NOT_RECORDED) - a
+        # synthesized datetime.now() is fabrication AND it breaks manifest
+        # idempotency (two calls -> two different timestamps).
+        "build_timestamp": (None if stale_build_info else info.get("build_timestamp")),
         "platform": info.get("platform") or sys_platform(),
         "architecture": arch,
         "python": info.get("python") or platform.python_version(),
         "channel": channel,
         "build_mode": mode,
-        "feature_schema": info.get("feature_schema") or "scalp_v1",
+        "feature_schema": _canonical_feature_schema(info),
         "installer_version": info.get("installer_version") or "1.0.0",
     }
 

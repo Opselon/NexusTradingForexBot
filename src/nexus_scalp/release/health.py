@@ -33,11 +33,10 @@ from .state_taxonomy import (
     ENABLED,
     ERROR,
     HEALTHY,
-    INFO,
     MISSING,
+    NOT_APPLICABLE,
     NOT_CONFIGURED,
     NOT_INITIALIZED,
-    NOT_RECORDED,
     UNKNOWN,
 )
 
@@ -226,20 +225,28 @@ class HealthEngine:
 
     def check_configuration(self) -> HealthEntry:
         cfg = self._load_config()
-        if cfg is None:
-            err = getattr(self, "_config_error", "unknown")
+        # CHG-0043: distinguish "file missing" (first-run, NOT_INITIALIZED)
+        # from "file exists but cannot be parsed" (ERROR). _load_config maps
+        # a missing file to False; an unreadable file sets _config_error.
+        if cfg is None and getattr(self, "_config_error", None):
+            err = self._config_error
             return HealthEntry(
                 "CONFIGURATION",
                 "FAIL",
                 f"config '{self.config_path}' failed to load: {err}",
                 "Run `nexus repair` to restore from template, or fix the YAML.",
+                state=ERROR,
             )
-        if cfg is False:
+        if cfg is None or cfg is False:
+            # First-run install without a config yet is lazy initialization,
+            # not corruption. Verdict stays FAIL (the engine cannot run
+            # without configuration) but the operator-facing STATE says why.
             return HealthEntry(
                 "CONFIGURATION",
                 "FAIL",
-                f"config '{self.config_path}' missing",
-                "Run `nexus setup` or `nexus repair`.",
+                f"config '{self.config_path}' missing (first run / not set up yet)",
+                "Run `nexus setup` or `nexus repair` to create the configuration.",
+                state=NOT_INITIALIZED,
             )
         mode = getattr(getattr(cfg, "execution", None), "mode", None)
         mode_txt = str(getattr(mode, "value", mode))
@@ -252,9 +259,15 @@ class HealthEngine:
     def check_database(self) -> HealthEntry:
         verdict, reason = _db_health(self.db_path)
         entry = HealthEntry("DATABASE", verdict, f"audit.db: {reason}")
+        # CHG-0043: an absent audit.db is lazy first-use (NOT_INITIALIZED),
+        # not a degraded/corrupt database — the state is neutral.
+        if not self.db_path.exists():
+            entry.state = NOT_INITIALIZED
+            entry.optional = True
+            entry.suggestion = "Created automatically on first engine start."
+            return entry
         # TASK-10: migration state contributes to the health verdict (§39).
-        # A MISSING database file stays FAIL; only an existing-but-behind DB
-        # is DEGRADED/WARNING.
+        # An existing-but-behind DB is DEGRADED/WARNING.
         if self.db_path.exists():
             mig_v, mig_reason = self._migration_state()
             if mig_v == "DEGRADED":
@@ -286,9 +299,7 @@ class HealthEngine:
                 # CHG-0043: phase tables (shadow/strategy/training/…) are
                 # created lazily by their owning subsystems on first use.
                 # Absence = NOT_INITIALIZED capability, not a degraded DB.
-                entry.reason += (
-                    f" · optional phase tables not created yet: {', '.join(missing)}"
-                )
+                entry.reason += f" · optional phase tables not created yet: {', '.join(missing)}"
                 entry.state = NOT_INITIALIZED
                 entry.suggestion = "Created automatically on first use of each subsystem."
         return entry
@@ -594,7 +605,9 @@ class HealthEngine:
             import torch  # type: ignore[import-not-found]
 
             sd = torch.load(artifact, map_location="cpu", weights_only=True)
-            meta = sd.get("metadata") or sd.get("model_metadata") or {} if isinstance(sd, dict) else {}
+            meta = (
+                sd.get("metadata") or sd.get("model_metadata") or {} if isinstance(sd, dict) else {}
+            )
             model_dim = (
                 meta.get("dimension")
                 or meta.get("feature_dimension")
@@ -612,7 +625,7 @@ class HealthEngine:
                 meta.get("schema_id")
                 or meta.get("feature_schema_id")
                 or meta.get("feature_schema_id_override")
-            )
+            ) or None
         except Exception as e:
             return HealthEntry(
                 "FEATURE_SCHEMA",
@@ -634,6 +647,8 @@ class HealthEngine:
             try:
                 from nexus_scalp.features.schema_contract import (
                     DIMENSION as CONTRACT_DIM,
+                )
+                from nexus_scalp.features.schema_contract import (
                     SCHEMA_ID as CONTRACT_ID,
                 )
 
@@ -648,12 +663,16 @@ class HealthEngine:
                 schema = f"{CONTRACT_ID} / {CONTRACT_DIM}D"
             except Exception:
                 schema = f"scalp_v3 / {dim}D"
-        else:
+        elif dim == 50:
             schema = f"scalp_v1 / {dim}D (legacy 50D)"
+        else:
+            schema = f"nonstandard / {dim}D"
         return HealthEntry(
             "FEATURE_SCHEMA",
             "PASS",
-            f"{schema} (serving bundle: {artifact.name})",
+            f"{schema} (serving bundle: {artifact.name}"
+            + (f", declared {model_schema}" if model_schema else "")
+            + ")",
             state=AVAILABLE,
         )
 
