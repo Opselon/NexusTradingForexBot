@@ -7,6 +7,7 @@ package-level module dependency cycle report (smallest cycles).
 
 Director baseline tool for the AntiGod program. No edits, no side effects.
 """
+
 from __future__ import annotations
 
 import ast
@@ -31,7 +32,7 @@ def module_name_for(path: str) -> str | None:
 
 
 def analyze_file(path: str):
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         src = f.read()
     try:
         tree = ast.parse(src)
@@ -49,19 +50,37 @@ def analyze_file(path: str):
             if node.module:
                 imports.add(node.module)
         elif isinstance(node, ast.ClassDef):
-            methods = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            methods = [
+                n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
             class_lines = (node.end_lineno or node.lineno) - node.lineno + 1
-            branches = sum(isinstance(n, (ast.If, ast.For, ast.While, ast.Try, ast.IfExp)) for n in ast.walk(node))
-            classes.append({
-                "name": node.name, "loc": class_lines, "methods": len(methods), "branches": branches,
-            })
+            branches = sum(
+                isinstance(n, (ast.If, ast.For, ast.While, ast.Try, ast.IfExp))
+                for n in ast.walk(node)
+            )
+            classes.append(
+                {
+                    "name": node.name,
+                    "loc": class_lines,
+                    "methods": len(methods),
+                    "branches": branches,
+                }
+            )
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             top_funcs.append(node)
 
     def func_metrics(fn):
         span = (fn.end_lineno or fn.lineno) - fn.lineno + 1
-        branches = sum(isinstance(n, (ast.If, ast.For, ast.While, ast.Try, ast.IfExp)) for n in ast.walk(fn))
-        attrs = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "self"}
+        branches = sum(
+            isinstance(n, (ast.If, ast.For, ast.While, ast.Try, ast.IfExp)) for n in ast.walk(fn)
+        )
+        attrs = {
+            n.attr
+            for n in ast.walk(fn)
+            if isinstance(n, ast.Attribute)
+            and isinstance(n.value, ast.Name)
+            and n.value.id == "self"
+        }
         return {"name": fn.name, "loc": span, "branches": branches, "self_attrs": len(attrs)}
 
     all_methods = [func_metrics(f) for f in top_funcs]
@@ -71,20 +90,33 @@ def analyze_file(path: str):
     # method details per class (re-walk to attach)
     class_details = []
     for node in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
-        ms = [func_metrics(n) for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        ms = [
+            func_metrics(n)
+            for n in node.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
         self_attrs = set()
         for n in ast.walk(node):
-            if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "self":
+            if (
+                isinstance(n, ast.Attribute)
+                and isinstance(n.value, ast.Name)
+                and n.value.id == "self"
+            ):
                 self_attrs.add(n.attr)
-        class_details.append({
-            "name": node.name,
-            "loc": (node.end_lineno or node.lineno) - node.lineno + 1,
-            "methods": len(ms),
-            "max_method_loc": max((m["loc"] for m in ms), default=0),
-            "branches": sum(isinstance(x, (ast.If, ast.For, ast.While, ast.Try, ast.IfExp)) for x in ast.walk(node)),
-            "self_attrs": len(self_attrs),
-            "top_methods": sorted(ms, key=lambda m: -m["loc"])[:5],
-        })
+        class_details.append(
+            {
+                "name": node.name,
+                "loc": (node.end_lineno or node.lineno) - node.lineno + 1,
+                "methods": len(ms),
+                "max_method_loc": max((m["loc"] for m in ms), default=0),
+                "branches": sum(
+                    isinstance(x, (ast.If, ast.For, ast.While, ast.Try, ast.IfExp))
+                    for x in ast.walk(node)
+                ),
+                "self_attrs": len(self_attrs),
+                "top_methods": sorted(ms, key=lambda m: -m["loc"])[:5],
+            }
+        )
 
     return {
         "module": module_name_for(path),
@@ -130,7 +162,7 @@ def main():
 
     # fan-in
     fan_in = defaultdict(int)
-    for m, deps in mod_deps.items():
+    for _m, deps in mod_deps.items():
         for d in deps:
             fan_in[d] += 1
 
@@ -144,7 +176,7 @@ def main():
         index_counter[0] += 1
         stack.append(v)
         on_stack[v] = True
-        for w in mod_deps.get(v, ()):  # noqa
+        for w in mod_deps.get(v, ()):
             if w not in index:
                 strongconnect(w)
                 lowlink[v] = min(lowlink[v], lowlink[w])
@@ -168,7 +200,6 @@ def main():
 
     def god_score(r):
         cls = max(r["classes"], key=lambda c: c["loc"]) if r["classes"] else None
-        resp = 0
         return (
             min(r["loc"] / 6000.0, 1.5)
             + min(r["n_classes"] / 12.0, 1.0)
@@ -185,7 +216,9 @@ def main():
     print("TOP 30 FILES BY LOC")
     print("=" * 100)
     for r in results[:30]:
-        print(f"{r['loc']:6d}L  {r['path']}  classes={r['n_classes']} fan_in={fan_in.get(r['module'],0):3d} imports={r['n_imports_internal']:3d}")
+        print(
+            f"{r['loc']:6d}L  {r['path']}  classes={r['n_classes']} fan_in={fan_in.get(r['module'], 0):3d} imports={r['n_imports_internal']:3d}"
+        )
 
     print()
     print("=" * 100)
@@ -193,7 +226,11 @@ def main():
     print("=" * 100)
     for r in ranked[:20]:
         cls = max(r["classes"], key=lambda c: c["loc"]) if r["classes"] else None
-        cinfo = f" | {cls['name']}: {cls['loc']}L {cls['methods']}m {cls['self_attrs']}attrs {cls['branches']}br max_m={cls['max_method_loc']}L" if cls else ""
+        cinfo = (
+            f" | {cls['name']}: {cls['loc']}L {cls['methods']}m {cls['self_attrs']}attrs {cls['branches']}br max_m={cls['max_method_loc']}L"
+            if cls
+            else ""
+        )
         print(f"score={god_score(r):.2f} {r['loc']:6d}L {r['path']}{cinfo}")
 
     print()
@@ -221,7 +258,14 @@ def main():
     for r in results:
         for c in r["classes"]:
             for m in c["top_methods"]:
-                biggest.append((m["loc"], m["branches"], m["self_attrs"], f"{r['path']}::{c['name']}.{m['name']}"))
+                biggest.append(
+                    (
+                        m["loc"],
+                        m["branches"],
+                        m["self_attrs"],
+                        f"{r['path']}::{c['name']}.{m['name']}",
+                    )
+                )
     for loc, br, at, name in sorted(biggest, reverse=True)[:25]:
         print(f"{loc:6d}L branches={br:4d} self_attrs={at:3d}  {name}")
 
