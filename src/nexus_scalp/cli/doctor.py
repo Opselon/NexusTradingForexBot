@@ -146,7 +146,16 @@ def doctor_cmd(
             detail = e.reason
             if verbose and e.suggestion:
                 detail += f"  → {e.suggestion}"
-            table.add_row(e.category, _verdict_style(e.verdict), detail)
+            # CHG-0043: state column carries the canonical taxonomy word so
+            # DISABLED/NOT_CONFIGURED/NOT_INITIALIZED never masquerade as
+            # health problems; the verdict column keeps aggregate semantics.
+            state_txt = getattr(e, "state", "") or ""
+            status_cell = (
+                f"{_verdict_style(e.verdict)} [dim]· {state_txt}[/dim]"
+                if state_txt and state_txt != "HEALTHY"
+                else _verdict_style(e.verdict)
+            )
+            table.add_row(e.category, status_cell, detail)
         console.print(table)
         console.print(
             Panel(

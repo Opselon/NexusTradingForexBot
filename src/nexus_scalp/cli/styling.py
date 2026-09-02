@@ -120,14 +120,34 @@ def _mode_dot(mode_value: str) -> str:
 
 
 def _verdict_style(v: str) -> str:
+    # CHG-0043: canonical taxonomy states render truthfully - neutral
+    # states (operator choice / lazy init / no capability) are dim, never
+    # amber-red; only genuine capability loss warns or fails.
+    neutral = (
+        "DISABLED",
+        "NOT_CONFIGURED",
+        "NOT_APPLICABLE",
+        "NOT_INITIALIZED",
+        "UNSUPPORTED",
+        "NOT_RECORDED",
+        "INFO",
+    )
+    if v in neutral:
+        return f"[dim]{v}[/dim]"
     return {
         "PASS": "[green]PASS[/green]",
         "READY": "[green]READY[/green]",
+        "HEALTHY": "[green]HEALTHY[/green]",
+        "AVAILABLE": "[green]AVAILABLE[/green]",
+        "ACTIVE": "[green]ACTIVE[/green]",
+        "ENABLED": "[green]ENABLED[/green]",
         "WARNING": "[yellow]WARN[/yellow]",
         "DEGRADED": "[yellow]DEGRADED[/yellow]",
-        "FAIL": "[red]FAIL[/red]",
-        "NOT READY": "[red]NOT READY[/red]",
         "UNKNOWN": "[dim]UNKNOWN[/dim]",
+        "FAIL": "[red]FAIL[/red]",
+        "ERROR": "[red]ERROR[/red]",
+        "MISSING": "[red]MISSING[/red]",
+        "NOT READY": "[red]NOT READY[/red]",
     }.get(v, v)
 
 
