@@ -331,12 +331,18 @@ class TestFailureInjection:
         return rg.run_stage(gate, "L4 MODEL/FEATURE", body)
 
     def test_missing_model(self, monkeypatch, tmp_path):
+        """BUG-217 contract: an absent champion artifact is an honest SKIP
+        (MISSING_ARTIFACT evidence recorded), never a raised failure - CI
+        runners never carry the private model."""
         gate = rg.Gate()
         gate.tmpdir = tmp_path
         monkeypatch.setattr(rg, "REPO_ROOT", tmp_path)  # artifact path resolves under tmp -> absent
-        with pytest.raises(rg._StageFailureError) as ei:
-            rg.l4_model_contract(gate, rg.StageResult(name="L4"))
-        assert ei.value.failure_class == "MISSING_ARTIFACT"
+        res = rg.StageResult(name="L4 MODEL/FEATURE")
+        rg.l4_model_contract(gate, res)
+        assert res.status == "SKIP"
+        assert res.failure_class == "MISSING_ARTIFACT"
+        assert "artifact absent" in res.skipped_reason
+        assert res.evidence["artifact_path"].endswith("model.pt")
 
     def test_wrong_model_width(self, tmp_path):
         """A real checkpoint saved at width 50 must fail MODEL_CONTRACT_ERROR."""

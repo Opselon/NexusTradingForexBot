@@ -579,11 +579,18 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
     assert_canonical_registry()
     artifact = REPO_ROOT / AppConfig().model.model_artifact_path
     if not artifact.exists():
-        raise _StageFailureError(
-            "MISSING_ARTIFACT",
-            f"configured champion artifact absent: {artifact}",
-            path=str(artifact),
+        # CI runners never carry the private champion artifact. Emit an honest
+        # SKIP evidence record instead of a MISSING_ARTIFACT failure so the
+        # gate stays usable as a push/CI certification (BUG-217): the run
+        # result reports runtime_gate status "SKIP (MISSING_ARTIFACT)" and the
+        # overall status is blocked-with-reason, not a code defect.
+        res.status = "SKIP"
+        res.failure_class = "MISSING_ARTIFACT"
+        res.skipped_reason = (
+            f"configured champion artifact absent (env lacks private model): {artifact}"
         )
+        res.evidence["artifact_path"] = str(artifact)
+        return
     state = torch.load(artifact, map_location="cpu")
     w = state.get("input_projection.weight") if isinstance(state, dict) else None
     model_dim = int(w.shape[1]) if w is not None and hasattr(w, "shape") else None

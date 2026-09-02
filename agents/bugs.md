@@ -7698,3 +7698,29 @@ FIXED — verified by full pipeline run + 126 shadow-family tests PASS.
 
 Status: FIXED (artifact truthfulness restored; full-bundle contract check
 untouched).
+
+## BUG-219 - CI runtime_gate exit 3 (ENVIRONMENT_BLOCKED as job failure): L4 raised MISSING_ARTIFACT because runners never carry the private champion artifact (2026-09-02, Hermes-Main supervisor; FIXED here)
+
+### Evidence
+- CI run 33642321962 on dd857f3: ruff/format/mypy/pytest/coverage ALL green,
+  runtime_gate rc=3 -> job FAIL. runtime_gate.json: status BLOCKED exit 3,
+  "L4 MODEL/FEATURE | MISSING_ARTIFACT | configured champion artifact absent:
+  /home/runner/work/.../artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt".
+- Root cause: l4_model_contract raised _StageFailureError(MISSING_ARTIFACT)
+  whenever the configured artifact is absent. CI checkouts are public-clone
+  environments and legitimately never contain the private champion bundle, so
+  every CI run without the artifact would always exit 3.
+
+### Fix (scripts/ci/runtime_gate.py + its missing-model injection test)
+- Absent artifact now yields an honest StageResult SKIP with
+  failure_class=MISSING_ARTIFACT, skipped_reason (artifact path recorded in
+  evidence) instead of a raised failure. Local certification unchanged: on
+  dev machines the artifact exists and L4 still PASSes (verified locally:
+  full --fast --json gate CERTIFIED, L4 PASS).
+- test_missing_model updated to pin the SKIP contract (status SKIP,
+  failure_class MISSING_ARTIFACT, skipped_reason mentions artifact, evidence
+  carries artifact_path). Suite: test_runtime_gate.py + e2e = 43/43 green;
+  ruff check+format clean; py_compile OK.
+
+Status: FIXED (CI lane usable without private artifacts; local strictness kept).
+
