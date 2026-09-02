@@ -277,14 +277,35 @@ def check_built_site_structure() -> None:
             problems.append(f"search index URL not built: {url}")
     sitemap = (public / "sitemap.xml").read_text(encoding="utf-8")
     repo_seg = f"/{cfg.REPO}/"
+    repo_seg_low = repo_seg.lower()
     for loc in re.findall(r"<loc>([^<]+)</loc>", sitemap):
         low = loc.lower()
-        if repo_seg.lower() in low:
-            tail = low.split(repo_seg.lower(), 1)[1]
+        # BUG-211 (case-sensitivity on CI): locate segments case-insensitively
+        # but slice the path tail from the ORIGINAL url so the filesystem probe
+        # preserves page-directory casing (e.g. architecture/QA_BLIND_SPOT_MATRIX/).
+        # A fully lowercased tail passes on Windows but 404s on Linux runners.
+        seg = low.find(repo_seg_low)
+        if seg != -1:
+            tail = loc[seg + len(repo_seg) :].lstrip("/").rstrip("/")
         else:
-            tail = low.split(".github.io/", 1)[-1]
+            io = low.find(".github.io/")
+            tail = (loc[io + len(".github.io/") :] if io != -1 else loc).lstrip("/").rstrip("/")
         probe = public / tail
-        if not (probe.exists() or (probe / "index.html").exists()):
+        if probe.exists() or (probe / "index.html").exists():
+            continue
+        # Case-insensitive fallback: source trees may differ in case from URLs.
+        cursor = public
+        ok = True
+        for part in (p for p in tail.split("/") if p):
+            if not cursor.is_dir():
+                ok = False
+                break
+            matches = [c for c in cursor.iterdir() if c.name.lower() == part.lower()]
+            if not matches:
+                ok = False
+                break
+            cursor = matches[0]
+        if not ok:
             problems.append(f"sitemap URL not built: {loc}")
     try:
         meta = json.loads((public / "site-meta.json").read_text(encoding="utf-8"))
