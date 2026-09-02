@@ -4370,31 +4370,18 @@ class OrderLifecycleManager:
 
             # Evaluate with a slight throttle (e.g., once every 500ms per open ticket) to prevent CPU thrashing
             current_time = time.time()
-            last_eval = self._last_hold_eval_time.get(ticket, 0.0)
-            if (current_time - last_eval) >= 0.50:
-                base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
-                    pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics
-                )
-                base_hold_score = self._recalculate_hold_score_with_position_state(
-                    ticket, base_hold_score, smart_metrics, invalidate_reasons
-                )
-                self._base_hold_score_tracker[ticket] = base_hold_score
-                self._last_reasons_tracker[ticket] = invalidate_reasons
-                self._last_hold_eval_time[ticket] = current_time
-            else:
-                base_hold_score = self._base_hold_score_tracker.get(ticket, 100)
-                invalidate_reasons = self._last_reasons_tracker.get(ticket, ["HEALTHY"])
-
-            # SAFETY OVERRIDE: applied on EVERY pass (never throttled) after the base
-            # score is computed but before the score is used for any execution
-            # decision, so the base scoring logic can never lift the score back up
-            # over a profit-giveback verdict.
-            hold_score, _giveback_required, _giveback_reason = self.evaluate_profit_giveback(
+            # S6-escalation HOLD-SCORE EVALUATION stage (verbatim block moved to
+            # _evaluate_hold_score; throttled base eval + giveback override).
+            hold_score, invalidate_reasons, base_hold_score = self._evaluate_hold_score(
+                pos=pos,
                 ticket=ticket,
-                current_pnl_usd=pos.profit,
-                base_hold_score=base_hold_score,
+                current_time=current_time,
+                price_current=price_current,
+                feature_vector=feature_vector,
+                impact_price_delta=impact_price_delta,
+                atr=atr,
+                smart_metrics=smart_metrics,
             )
-            self._hold_score_tracker[ticket] = hold_score
 
             # --- Trajectory, Evidence, and State machine Processing (Requirements 13-16, 20) ---
             # S6-escalation stage: verbatim block moved to _update_trajectory_and_state.
@@ -5578,6 +5565,50 @@ class OrderLifecycleManager:
         debounced_state = self.transition_state_with_hysteresis(ticket, cand_state, now)
 
         return pnl_features, evidence, confidence_factor, debounced_state, budget_exhausted
+
+    def _evaluate_hold_score(
+        self,
+        pos: Position,
+        ticket: int,
+        current_time: float,
+        price_current: float,
+        feature_vector: FeatureVector | None,
+        impact_price_delta: float,
+        atr: float,
+        smart_metrics: dict,
+    ) -> tuple[int, list[str], int]:
+        """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
+        evaluation + position-state recalculation + giveback override +
+        tracker store. Moved VERBATIM from manage_active_positions'
+        per-position loop. Returns (hold_score, invalidate_reasons,
+        base_hold_score)."""
+        last_eval = self._last_hold_eval_time.get(ticket, 0.0)
+        if (current_time - last_eval) >= 0.50:
+            base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
+                pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics
+            )
+            base_hold_score = self._recalculate_hold_score_with_position_state(
+                ticket, base_hold_score, smart_metrics, invalidate_reasons
+            )
+            self._base_hold_score_tracker[ticket] = base_hold_score
+            self._last_reasons_tracker[ticket] = invalidate_reasons
+            self._last_hold_eval_time[ticket] = current_time
+        else:
+            base_hold_score = self._base_hold_score_tracker.get(ticket, 100)
+            invalidate_reasons = self._last_reasons_tracker.get(ticket, ["HEALTHY"])
+
+        # SAFETY OVERRIDE: applied on EVERY pass (never throttled) after the base
+        # score is computed but before the score is used for any execution
+        # decision, so the base scoring logic can never lift the score back up
+        # over a profit-giveback verdict.
+        hold_score, _giveback_required, _giveback_reason = self.evaluate_profit_giveback(
+            ticket=ticket,
+            current_pnl_usd=pos.profit,
+            base_hold_score=base_hold_score,
+        )
+        self._hold_score_tracker[ticket] = hold_score
+
+        return hold_score, invalidate_reasons, base_hold_score
 
     def reconcile_missed_closes(
         self,
