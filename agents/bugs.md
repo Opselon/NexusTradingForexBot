@@ -7415,3 +7415,26 @@ pass - discovered during deploy-gate verification, referred NOT fixed)
   vs in the owning route modules (True for both); pytest both test files
   (FAIL reproduced at tip 86b13d6).
   Status: OPEN.
+
+## BUG-206 - Operational Control Center tab rendered a BLANK panel: control_center.js renders INTO cc-* view elements that index.html never shipped (2026-09-02, Nexus-Main client E2E acceptance)
+
+- SYMPTOM (black-box E2E, journey J3): clicking the `Control Center` nav button showed
+  the OPS tab highlighted but the main panel was a solid empty void (0 chars, 0 children).
+- MECHANISM: app.js switchTab hook calls window.NX.cc.views.showTab('cc-overview');
+  control_center.js render() resolves `document.getElementById('cc-overview')` (and the
+  other cc-* view ids) and renders into them. index.html shipped ONLY an empty
+  `<div id=cc-root></div>` shell — no cc-overview/cc-decisions/cc-model/cc-risk/
+  cc-diagnostics containers — so render() early-returned (guard `if (!el) return;`) and
+  every view stayed invisible while the boot poll ran harmlessly in the background.
+  Probe evidence: cc-root childElementCount=0, getElementById('cc-overview')=null,
+  NX.cc.state.snapshot('cc-summary')=LOADING->READY (backend fine: /api/operator/summary
+  available=true) — frontend-container contract break, not an API failure.
+- FIX (smallest correct layer, Web/index.html only): give the CC its five view containers
+  inside #cc-root (cc-overview visible, cc-decisions/cc-model/cc-risk/cc-diagnostics
+  hidden). No JS change required — render() found the elements and populated immediately.
+- VERIFIED: post-fix probe shows cc-root 5 children, overview 1286 chars of real operator
+  content (mode banner SHADOW, 6 status tiles Runtime/Data/Model/Inference/Database/MTS,
+  Runtime Truth v9.0.6 commit block, Market Snapshot, Latest Decision NO_TRADE + Guardian
+  gate) + screenshot evidence.
+- Classification: P1 UX-BLOCKER for the operator-first acceptance goal (the flagship
+  Control Center surface was unusable from first render).

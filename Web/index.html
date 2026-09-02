@@ -3093,7 +3093,17 @@
 
             <!-- TAB 13: STRATEGY COMMAND CENTER (2.5D SPATIAL) -->
             <section id="tab-control-center" class="tab-content hidden space-y-6">
-                <div id="cc-root"></div>
+                <!-- BUG-206: the CC frontend renders INTO per-view elements
+                     (control_center.js render() resolves getElementById(view-id));
+                     the empty cc-root shell left the tab blank. Containers below
+                     restore the documented view set. -->
+                <div id="cc-root">
+                    <div id="cc-overview" class="space-y-6"></div>
+                    <div id="cc-decisions" class="hidden space-y-6"></div>
+                    <div id="cc-model" class="hidden space-y-6"></div>
+                    <div id="cc-risk" class="hidden space-y-6"></div>
+                    <div id="cc-diagnostics" class="hidden space-y-6"></div>
+                </div>
             </section>
 
             <section id="tab-command-center" class="tab-content hidden space-y-0 h-full">
