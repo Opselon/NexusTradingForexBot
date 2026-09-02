@@ -110,7 +110,14 @@ def vectorize_news_context(context: dict[str, Any] | None) -> list[float]:
         "REPETITION": 3.0,
         "STALE": 4.0,
     }.get(novelty, 0.0)
-    active = float(g("active_event_count", g("active_high_impact_events", 0)))
+    # BUG-197: live CurrentNewsContext.active_event_count is an AGGREGATE
+    # count while the training frame encodes a per-event 0/1 flag (max
+    # 1.0). A raw count left the 70D bounds [-3,+3] and validate_70d_vector
+    # blocked ALL live 70D inference whenever >=4 high-impact events were
+    # active (client permanently STALE). Encode the bounded flag at the
+    # training distribution maximum instead.
+    _active_raw = float(g("active_event_count", g("active_high_impact_events", 0)))
+    active = 1.0 if _active_raw >= 1.0 else max(0.0, _active_raw)
     return [
         active,
         float(g("xauusd_relevance", 0.0)),
