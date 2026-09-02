@@ -203,7 +203,11 @@ def build_candidates(rows: list[dict[str, Any]]) -> list[DecisionCandidate]:
                     rc = {}
             except Exception:
                 rc = {}
-            geometry_unavailable = bool(rc.get("geometry_unavailable_before_gate", False))
+            # CHG-0043: the flag lives in the recorded payload (the policy
+            # stamps it into risk_checks at decision time).
+            geometry_unavailable = bool(rc.get("geometry_unavailable_before_gate", False)) or bool(
+                r.get("geometry_unavailable_before_gate")
+            )
             spread = r.get("spread_usd")
             spread_f = float(spread) if spread is not None else None
             prob_buy_raw = _extract_prob(r, "raw_prob_buy")
