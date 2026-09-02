@@ -7,6 +7,7 @@ Adding a language = add an entry here + create site/content/<lang>/.
 """
 
 import re
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -113,3 +114,21 @@ def repo_version() -> str:
     pyproject = REPO_ROOT / "pyproject.toml"
     m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
     return m.group(1) if m else "unknown"
+
+
+def repo_revision(fallback: str = "main") -> str:
+    """Current git short revision (real value — never fabricated).
+    Falls back to 'main' when git is unavailable (e.g. tarball builds)."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short=7", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            check=True,
+        )
+        rev = out.stdout.strip()
+        return rev or fallback
+    except Exception:
+        return fallback

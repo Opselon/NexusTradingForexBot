@@ -49,6 +49,50 @@ from nexus_scalp.release.metadata import get_version_info
 
 
 # ---------------------------------------------------------------------------
+def _package_inventory() -> list[dict[str, str]]:
+    """Truthful package inventory for setup/summary (2026-09-02 UX pass).
+
+    Reads the installed distribution metadata + importability — real versions
+    only; optional groups are marked OPTIONAL and never counted as failures.
+    """
+    import importlib
+
+    import importlib.metadata as im
+
+    spec = [  # (distribution name, import name, required)
+        ("pydantic", "pydantic", True),
+        ("httpx", "httpx", True),
+        ("yaml", "yaml", True),
+        ("typer", "typer", True),
+        ("rich", "rich", True),
+        ("fastapi", "fastapi", False),
+        ("uvicorn", "uvicorn", False),
+        ("MetaTrader5", "MetaTrader5", False),
+    ]
+    rows: list[dict[str, str]] = []
+    for dist, mod, required in spec:
+        try:
+            ver = im.version(dist)
+        except Exception:
+            ver = ""
+        status = "MISSING"
+        if ver:
+            try:
+                importlib.import_module(mod)
+                status = "OK"
+            except Exception:
+                status = "BROKEN"
+        rows.append(
+            {
+                "package": dist,
+                "version": ver or "--",
+                "status": status,
+                "tier": "REQUIRED" if required else "OPTIONAL",
+            }
+        )
+    return rows
+
+
 def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     console.print(_banner(subtitle="first-run setup wizard"))
     console.print(
@@ -148,6 +192,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
         "web_endpoints": _get_network_endpoints(port=8080),
         "health_overall": verdict2,
         "health_checks": [e.to_dict() for e in entries],
+        "packages": _package_inventory(),
     }
 
 
@@ -200,6 +245,37 @@ def setup_cmd(
             "Setup complete",
             f"Mode [bold]{flow['mode']}[/bold]  ·  Symbol [bold cyan]{flow['symbol']}[/bold cyan]\nHealth: [bold]{flow['health_overall']}[/bold]",
             border="green",
+        )
+    )
+    # Dependency inventory (2026-09-02 UX pass): real installed versions,
+    # OPTIONAL tier never counted as failure.
+    _icon = {"OK": "[green]✓[/green]", "MISSING": "[red]✗[/red]", "BROKEN": "[yellow]⚠[/yellow]"}
+    missing_required = [p for p in flow.get("packages", []) if p["status"] != "OK" and p["tier"] == "REQUIRED"]
+    if flow.get("packages"):
+        dep = Table(title="Dependencies", box=box.SIMPLE_HEAD, show_lines=False)
+        dep.add_column("", no_wrap=True)
+        dep.add_column("Package", style="bold white", no_wrap=True)
+        dep.add_column("Version", style="dim")
+        dep.add_column("Tier", style="dim", no_wrap=True)
+        for p in flow["packages"]:
+            dep.add_row(_icon.get(p["status"], "?"), p["package"], p["version"], p["tier"])
+        console.print(dep)
+        if missing_required:
+            console.print(
+                _error_panel(
+                    "Missing required dependencies",
+                    ", ".join(p["package"] for p in missing_required),
+                    hint="Run: nexus doctor --fix   (safe, non-destructive)",
+                )
+            )
+    console.print(
+        Panel(
+            "[bold]NEXT STEPS[/bold]\n"
+            "  1. Check system:   [cyan]nexus doctor[/cyan]\n"
+            "  2. Start safely:   [cyan]nexus start[/cyan]  (paper mode by default)\n"
+            "  3. Check updates:  [cyan]nexus update check[/cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
         )
     )
     console.print(

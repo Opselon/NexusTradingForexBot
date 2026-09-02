@@ -69,19 +69,11 @@ def register_v1_exception_handlers(app: FastAPI) -> None:
         if exc.status_code == 404:
             code = "RESOURCE_NOT_FOUND"
         elif exc.status_code == 405:
-            code = (
-                "METHOD_NOT_ALLOWED"
-                if "METHOD_NOT_ALLOWED" in ERROR_SEMANTICS
-                else "VALIDATION_ERROR"
-            )
+            code = "METHOD_NOT_ALLOWED"
         elif exc.status_code == 409:
             code = "CONFLICT"
         elif exc.status_code == 413:
-            code = (
-                "PAYLOAD_TOO_LARGE"
-                if "PAYLOAD_TOO_LARGE" in ERROR_SEMANTICS
-                else "VALIDATION_ERROR"
-            )
+            code = "PAYLOAD_TOO_LARGE"
         elif exc.status_code == 504:
             code = "TIMEOUT"
         return fail(request, code)

@@ -391,7 +391,7 @@ def register_operator_routes(
                 return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_SCHEMA_UNAVAILABLE"})
             wanted = list(
                 dict.fromkeys(
-                    list(_SIGNAL_LIST_COLUMNS) + ["payload"] + list(_OPTIONAL_SIGNAL_COLUMNS)
+                    [*list(_SIGNAL_LIST_COLUMNS), "payload", *list(_OPTIONAL_SIGNAL_COLUMNS)]
                 )
             )
             select_cols = [c for c in wanted if c in cols]
@@ -621,7 +621,7 @@ def register_operator_routes(
                 n = len(ordered)
 
                 def pct(p: float) -> float:
-                    return ordered[min(n - 1, int(round(p * (n - 1))))]
+                    return ordered[min(n - 1, round(p * (n - 1)))]
 
                 stats = {
                     "n": n,

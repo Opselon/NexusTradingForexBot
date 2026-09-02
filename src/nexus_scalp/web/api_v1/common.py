@@ -32,9 +32,10 @@ from fastapi.responses import JSONResponse
 #: code -> (HTTP status, retryable)
 _VALIDATION: tuple[int, bool] = (422, False)
 #: code -> (HTTP status, retryable); METHOD_NOT_ALLOWED / PAYLOAD_TOO_LARGE are
-#: aliases of the validation family for the handler mapping above.
+#: distinct codes in the handler mapping, with their proper HTTP statuses.
 ERROR_SEMANTICS: dict[str, tuple[int, bool]] = {
-    **{c: _VALIDATION for c in ("METHOD_NOT_ALLOWED", "PAYLOAD_TOO_LARGE")},
+    "METHOD_NOT_ALLOWED": (405, False),
+    "PAYLOAD_TOO_LARGE": (413, False),
     "VALIDATION_ERROR": (422, False),
     "RESOURCE_NOT_FOUND": (404, False),
     "CONFLICT": (409, False),
@@ -47,6 +48,8 @@ ERROR_SEMANTICS: dict[str, tuple[int, bool]] = {
 }
 
 _ERROR_MESSAGES: dict[str, str] = {
+    "METHOD_NOT_ALLOWED": "The HTTP method is not allowed for this resource.",
+    "PAYLOAD_TOO_LARGE": "The request payload exceeds the allowed size.",
     "VALIDATION_ERROR": "The request parameters were invalid.",
     "RESOURCE_NOT_FOUND": "The requested resource was not found.",
     "CONFLICT": "The request conflicts with the current state.",
