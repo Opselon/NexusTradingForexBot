@@ -7316,3 +7316,37 @@ down remain P2 follow-ups for the next shadow pass.
   4/9 tests red pre-fix, 0 red post-fix).
 - NOTE: BUG-197 numbering was claimed mid-flight by the DB-platform owner (migration gate
   hazard); this row takes BUG-197B per the duplicate/disambiguation rule.
+
+## BUG-208 - ZeroDivisionError in SignalPolicy candidate measure: all-WAIT probability vectors crash the live decision path (2026-09-02, Nexus-Main QA-deep-assurance CHG-0045)
+
+- SYMPTOM (live logs 2026-09-01 09:04:31/09:04:33/09:44:05, CHG-0042 era):
+  `ZeroDivisionError: float division by zero` raised from
+  `src/nexus_scalp/signals/policy.py` candidate-confidence division
+  (`prob_buy / (prob_buy + prob_sell + prob_no_trade)`) inside
+  `evaluate_probabilities` -> engine loop catches per-tick, so each offending
+  tick dies as an ERROR with no decision recorded.
+- ROOT CAUSE (reproduced by tests/unit/test_qa_deep_bug194_zero_trained_mass.py):
+  the CHG-0042 confidence-semantics repair computes the candidate's OWN-side
+  directional measure over the TRAINED mass (BUY+SELL+NO_TRADE). When the
+  4-logit head emits zero/negative mass on ALL trained slices (e.g. all mass
+  on the untrained WAIT slice, or BUY=-0.2,SELL=+0.2 from a malformed head)
+  the denominator is 0.0 while a candidate channel (sweep/choch with
+  relative bias) still fires -> division by zero. Negative trained mass can
+  also drive the measure negative into the TradeProposal >=0 validation.
+- BLAST RADIUS MASK: the duplicate-tick gate returns the PREVIOUS proposal
+  when the SAME tick signature is re-evaluated, so repeated identical
+  vectors do NOT re-crash — deterministic test fixtures that reuse a tick
+  never see the defect (proven by test_duplicate_tick_masking_evidence).
+  Real tick streams carry fresh timestamps, so live paths crash on
+  first sight.
+- NOT TOUCHED: policy.py fix belongs to the confidence-semantics owner
+  (CHG-0042 author) — this pass is tests-only for that file. Regression
+  battery: tests/unit/test_qa_deep_bug194_zero_trained_mass.py (5 tests:
+  2 crash probes + masking evidence + 2 post-fix semantics tests to flip).
+  Required post-fix semantics: zero/negative trained mass -> RAW_FALLBACK
+  measure, NO_TRADE proposal, no crash.
+- CLASS: division-by-zero on unvalidated model output; duplicate-input
+  gating masks defect signatures from replay-style tests.
+- Severity: P1 (live decision-path crash under a realistic degenerate model
+  output) | Status: OPEN — routed to policy owner
+- Found-by: CHG-0045 adversarial battery (live-log correlation + crash probe)

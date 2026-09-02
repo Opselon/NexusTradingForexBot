@@ -56,7 +56,6 @@ def _package_inventory() -> list[dict[str, str]]:
     only; optional groups are marked OPTIONAL and never counted as failures.
     """
     import importlib
-
     import importlib.metadata as im
 
     spec = [  # (distribution name, import name, required)
@@ -250,7 +249,9 @@ def setup_cmd(
     # Dependency inventory (2026-09-02 UX pass): real installed versions,
     # OPTIONAL tier never counted as failure.
     _icon = {"OK": "[green]✓[/green]", "MISSING": "[red]✗[/red]", "BROKEN": "[yellow]⚠[/yellow]"}
-    missing_required = [p for p in flow.get("packages", []) if p["status"] != "OK" and p["tier"] == "REQUIRED"]
+    missing_required = [
+        p for p in flow.get("packages", []) if p["status"] != "OK" and p["tier"] == "REQUIRED"
+    ]
     if flow.get("packages"):
         dep = Table(title="Dependencies", box=box.SIMPLE_HEAD, show_lines=False)
         dep.add_column("", no_wrap=True)

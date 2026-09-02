@@ -156,8 +156,10 @@ def _update_human_check(report: dict[str, Any]) -> None:
         if cur_commit:
             table.add_row("Current commit", str(cur_commit))
         if behind is not None and (behind or ahead):
-            rel = "UP TO DATE" if behind == 0 and not ahead else (
-                f"{behind} behind" + (f" / {ahead} ahead" if ahead else "")
+            rel = (
+                "UP TO DATE"
+                if behind == 0 and not ahead
+                else (f"{behind} behind" + (f" / {ahead} ahead" if ahead else ""))
             )
             table.add_row("Commit distance", rel)
         if rs.get("changes"):

@@ -16,6 +16,7 @@ Invariants:
   UX6  release_status.commit distance semantics: behind/ahead not swapped
        (regression for the left-right mapping bug fixed in this pass).
 """
+
 from __future__ import annotations
 
 import json
@@ -127,7 +128,10 @@ class TestCommitDistanceSemantics:
         # Cross-check against git directly for THIS tree state.
         out = subprocess.run(
             ["git", "rev-list", "--left-right", "--count", "HEAD...origin/main"],
-            cwd=str(REPO_ROOT), capture_output=True, text=True, check=False,
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if out.returncode != 0:
             pytest.skip("git rev-list unavailable")

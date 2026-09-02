@@ -123,13 +123,19 @@ def _recent_commit_titles(limit: int = 5, remote: str = "origin/main") -> list[s
     try:
         probe = subprocess.run(
             ["git", "rev-parse", "--verify", "-q", remote],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
         if probe.returncode != 0:
             return []
         out = subprocess.run(
             ["git", "log", f"HEAD..{remote}", "--pretty=format:%s", f"-n{limit}"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
         if out.returncode != 0:
             return []
