@@ -2682,6 +2682,14 @@ function Invoke-FullInstall {
 # ============================================================================
 
 function Write-Banner {
+    # RC-1 (INS-01): the banner is pure decoration. Under powershell.exe -File
+    # Write-Host lands on STDOUT, which corrupted the -Json contract: a driver
+    # parsing a full-install stdout got the banner as a non-JSON prefix. In
+    # driver mode the banner goes to stderr like every other human diagnostic.
+    if ($Script:_DriverMode) {
+        Write-Diag "Nexus Scalp Engine Installer - Windows bootstrap / update / recovery"
+        return
+    }
     Write-Host ""
     Write-Host "+----------------------------------------------------------+" -ForegroundColor Magenta
     Write-Host "|            * Nexus Scalp Engine Installer                |" -ForegroundColor Magenta
