@@ -55,6 +55,38 @@ Source language is **English**. Every translated page carries a
 navigation and terminology consistency; `scripts/docs/check_docs.py` is the
 overall doctor. CI (`.github/workflows/docs.yml`) runs both.
 
+## DOC-TASK-ID: DOCS-002 — Pages v2 rebuild (user brief 2026-09-02, phase 2)
+
+```text
+DOC-TASK-ID: DOCS-002
+Agent: Nexus-Docs
+Task: Fetch remote state, reproduce live defects, rebuild the Pages experience
+Scope: LIVE-VERIFIED defects fixed:
+  D1 root-absolute asset paths (/assets/...) 404 under Pages subpath ->
+     depth-relative URLs via rel_base() (single canonical base-path mechanism)
+  D2 search dead (window.NEXUS_SEARCH never embedded) -> search.js fetches
+     search-index.json relative to page; keyboard + focus + Escape handling
+  D3 no mobile nav -> hamburger + body.nav-open wired (JS enhancement only;
+     content readable without JS)
+  D4 root page was a raw markdown dump -> generated homepage (hero, pillars,
+     capability highlights, What's New, version timeline); hub at /docs-hub/
+  D5 language switch lost page context -> keeps current page when a
+     translation exists, else language landing (flagged)
+  D6 no prev/next -> section pagination + titled breadcrumbs
+  D7 release awareness -> fetch_releases.py + What's New + /releases/ page;
+     version + git revision injected from pyproject/git (site-meta.json);
+     docs.yml triggers on release published/edited + v* tags + pyproject
+  D8 depth pass: vision (tick-to-decision narrative), model-pipeline,
+     observability, methodology, new guides/api.md (203 /api endpoints
+     counted from real route modules)
+Validation: DOCS_HEALTH PASS (11 checks incl. built-site structure +
+  base-path discipline), TRANSLATION AUDIT PASS, RELEASE SIMULATION PASS
+  (version bump propagates to site-meta/homepage/footer; pyproject restored),
+  DOCS_LIVE_SMOKE PASS against the fresh deployment (36 checks), Docs
+  workflow green on 4013f91, live site-meta revision == deployed commit.
+Status: VERIFIED against live deployment
+```
+
 ## Out-of-scope defects observed (recorded only — owning agent notified via this registry)
 
 1. OBS-DOCS-001 (2026-09-02): project CI (ci.yml, "Code Quality & Tests") failing on
