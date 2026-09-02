@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>QA BLIND-SPOT MATRIX — Nexus Scalp Engine · Nexus Scalp Engine</title>
+<meta name='description' content='QA BLIND-SPOT MATRIX — Nexus Scalp Engine — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/QA_BLIND_SPOT_MATRIX/'>
+<meta property='og:title' content='QA BLIND-SPOT MATRIX — Nexus Scalp Engine'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/architecture/QA_BLIND_SPOT_MATRIX/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../fa/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='زبان'>🌐 فارسی</summary>
+      <div class='lang-menu'><a href='../../../architecture/QA_BLIND_SPOT_MATRIX/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../fa/'>خانه</a>
+<div class='nav-section'><a class='' href='../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/getting-started/installation/'>installation</a></li>
+<li><a class='' href='../../../fa/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../../fa/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/project/vision/'>vision</a></li>
+<li><a class='' href='../../../fa/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/status/'>status</a></li>
+<li><a class='' href='../../../fa/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../../fa/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/architecture/overview/'>overview</a></li>
+<li><a class='' href='../../../fa/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/research/methodology/'>methodology</a></li>
+<li><a class='' href='../../../fa/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/validation/'>validation</a></li>
+<li><a class='' href='../../../fa/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../../fa/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه در انتظار — <a href='../../architecture/QA_BLIND_SPOT_MATRIX/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/architecture/'>معماری</a> / <span class='crumb-current' aria-current='page'>QA_BLIND_SPOT_MATRIX</span></nav>
+<h1 id='qa-blind-spot-matrix--nexus-scalp-engine'>QA BLIND-SPOT MATRIX — Nexus Scalp Engine</h1>
+<blockquote><p>CHG-0045 / TASK-QA-DEEP-ASSURANCE (Nexus-Main, 2026-09-02).</p><p>Required first milestone of the OSS-grade adversarial QA brief: prove which</p><p>gaps matter BEFORE building test mass. Derived from <code>agents/bugs.md</code></p><p>(BUG-001..BUG-208) and <code>agents/change_control.md</code> (CHG-0001..CHG-0050).</p></blockquote>
+<h2 id='1-method'>1. Method</h2>
+<ol>
+<li><strong>Defect-history mining</strong> — every BUG/CHG row classified by subsystem,</li>
+</ol>
+<p>severity (P0 money/execution · P1 decision-path/trust · P2 operator</p>
+<p>trust/diagnostics · P3 robustness), and named regression test.</p>
+<ol>
+<li><strong>Detection-quality audit</strong> — does the named regression test the ROOT</li>
+</ol>
+<p>CAUSE or only the incident's symptom path?</p>
+<ol>
+<li><strong>Re-entry analysis</strong> — can the same class return through another door?</li>
+<li><strong>Verdict</strong> — KEEP / IMPROVE / MERGE / DELETE / MISSING per test family.</li>
+</ol>
+<h2 id='2-matrix--defect-history--detection--gap'>2. Matrix — defect history → detection → gap</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Subsystem</th><th>Historical defect</th><th>Current regression</th><th>Remaining hole</th><th>Proposed detection (CHG-0045)</th><th>Priority</th></tr></thead><tbody>
+<tr><td>features/70D contract</td><td>BUG-184 CHECK-FCS-04 accepted bool/str elements (duck-typing)</td><td><code>test_qa_deep_70d_contract_properties.py</code> (forensics half GREEN — guard landed 1490635)</td><td><code>validate_70d_vector</code> + <code>InferenceValidator</code> still coerce bool / crash on str-None at HEAD (parallel absorption restored files)</td><td>typed-element guard tests — xfail, owner-routed via BUG-208 scope addendum</td><td>P1</td></tr>
+<tr><td>signals/policy confidence</td><td>BUG-208 ZeroDivisionError: all-WAIT 4-logit vectors crash candidate measure; duplicate-tick gate masks repeats from replay-style tests</td><td><code>test_qa_deep_bug194_zero_trained_mass.py</code> (crash probes + masking evidence + post-fix semantics)</td><td>policy.py fix (owner-routed); negative-mass poisoning path</td><td>crash probes stay RED as live evidence until owner fix lands</td><td>P1</td></tr>
+<tr><td>execution/position state machine</td><td>hysteresis regression family (BUG-081/088/089)</td><td><code>test_s2_state_machine_golden.py</code> (example-based)</td><td>property guarantees over RANDOM event sequences were MISSING</td><td><code>test_qa_deep_state_machines.py</code> SM-1..7 (emergency zero-latency, window non-reset, cross-ticket isolation)</td><td>P1</td></tr>
+<tr><td>execution/recovery budget</td><td>budget clamp/exhaustion semantics (BUG-054/072 family)</td><td><code>test_s3_recovery_budget_golden.py</code></td><td>clamp bounds under EXTREME inputs; recompute-not-sticky untested</td><td><code>test_qa_deep_state_machines.py</code> RB-1..6 property over random configs</td><td>P1</td></tr>
+<tr><td>provider gate</td><td>BUG-186 429-storm amplification, BUG-187 silent auto-disable</td><td><code>test_provider_gate_hardening.py</code></td><td>follower-timeout deferral, circuit-flapping counter truth, exception containment, metrics-vs-reality cross-check</td><td><code>test_qa_deep_provider_gate_chaos.py</code> CHAOS-1..7</td><td>P1</td></tr>
+<tr><td>database migrations</td><td>BUG-094/096/108, AUDIT-0002..0007 chain</td><td><code>test_database_migrations_phase18.py</code> (38 acceptance tests)</td><td>migrate-idempotence fingerprint, mid-chain failure recovery, tamper block, downgrade block, backup presence</td><td><code>test_qa_deep_db_migration_adversarial.py</code> ADV-DB-1..7</td><td>P1</td></tr>
+<tr><td>web API surface</td><td>BUG-121 code-scanning, BUG-162 fail-open parsing, BUG-189 state contradiction</td><td><code>tests/integration/test_*_api.py</code> (happy paths)</td><td>malformed/oversized/unknown-field bodies, method abuse, traversal, JSON purity</td><td><code>test_qa_deep_security_surfaces.py</code> SEC-1..5</td><td>P2</td></tr>
+<tr><td>secrets/credentials</td><td>BUG-072/080, BUG-131, BUG-177 redaction corruption, BUG-121 clear-text</td><td><code>test_logging_redaction.py</code>, <code>test_web_security.py</code></td><td>property-level URL redaction over hostile shapes, CRLF injection, garbage-input crash-freedom</td><td><code>test_qa_deep_security_surfaces.py</code> SEC-4..6 (seeded URL generator)</td><td>P1</td></tr>
+<tr><td>replay/70D temporal</td><td>BUG-188 timebase double conversion, BUG-183 purge/embargo, BUG-190 news keys, BUG-192 replay crash</td><td><code>test_70d_replay_parity_task3.py</code>, <code>test_mt5_tick_boundary_bug188.py</code></td><td>determinism-as-property (repeat bit-identity), timezone equivalence, shuffled-input equivalence, end-of-data boundary</td><td><code>test_qa_deep_metamorphic_replay.py</code> M-1..M-6</td><td><strong>P0</strong></td></tr>
+<tr><td>observability aggregator</td><td>OBS-001..016 audit, BUG-177, storm contract freeze 2026-09-01</td><td><code>test_observability_contract_freeze.py</code>, <code>test_operational_log_hygiene.py</code></td><td>adversarial evidence preservation: signature-flood exact accounting, monotonicity, sample bounds, multi-cycle totals, thread-race zero-loss</td><td><code>test_qa_deep_observability_evidence.py</code> OBS-1..7</td><td>P1</td></tr>
+<tr><td>execution safety (repo-wide)</td><td>INV-002/004, research-stack §63-65 no-order_send</td><td><code>test_research_execution_stack.py::test_replay_never_calls_mt5_order_send</code></td><td>structural guard over the QA layer itself + research source scan</td><td><code>test_qa_deep_execution_safety.py</code> EXEC-1..4 (<code>live_trading_actions = 0</code>)</td><td><strong>P0</strong></td></tr>
+<tr><td>confidence semantics</td><td>CHG-0042 WAIT dilution; legacy 0.61-floor defect</td><td><code>test_confidence_semantics_repair.py</code> (13 example cases)</td><td>decision-level threshold freeze under perturbation, WAIT-neutrality, scale invariance</td><td><code>test_qa_deep_confidence_adversarial.py</code> (13 attacks)</td><td>P1</td></tr>
+<tr><td>release/versioning</td><td>BUG-152/154/155/144/160</td><td><code>test_cli_end_to_end.py</code>, <code>tests/release/</code></td><td>none proven — existing families adequate</td><td><strong>KEEP</strong> (no new mass; duplicate-architecture rule §15)</td><td>P2</td></tr>
+<tr><td>installer lifecycle</td><td>BUG-146/147/149/160/161/185</td><td><code>tests/installer/*.py</code> (28, incl. lifecycle stress)</td><td>none proven — recent Task-Installer pass</td><td><strong>KEEP</strong></td><td>P2</td></tr>
+<tr><td>CI determinism</td><td>BUG-162 xdist flush race, BUG-163 wall-clock lottery, BUG-179 sleep-race pair, BUG-153 rolling-window bomb</td><td>fixes landed in-suite</td><td>hazard scan performed (37 <code>time.sleep</code> sites, 3 network-import test files, 16 random-using files): 25 ranked</td><td><strong>IMPROVE via governance</strong>: clock-injection pattern (FakeClock) is the repo standard; new wall-clock/sleep asserts require a quarantine reason. Evidence in <code>qa-assurance-contract.md</code></td><td>P2</td></tr>
+</tbody></table></div>
+<h2 id='3-test-family-verdicts'>3. Test-family verdicts</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Family</th><th>Verdict</th><th>Rationale</th></tr></thead><tbody>
+<tr><td>unit/critical suite (69 files, ~779 tests)</td><td><strong>KEEP</strong></td><td>highest defect-detection per runtime; ram-aware xdist</td></tr>
+<tr><td>integration (21 files)</td><td><strong>KEEP</strong></td><td>real API/engine wiring; port-squatting hazard documented</td></tr>
+<tr><td>QA-DEEP adversarial layer (10 files, 101 tests)</td><td><strong>KEEP</strong></td><td>defect-class targeted; ~22 s; double-run determinism proof</td></tr>
+<tr><td>property testing (70D, state machines)</td><td><strong>KEEP</strong></td><td>stdlib seeded generators — no hypothesis dependency needed</td></tr>
+<tr><td>metamorphic replay</td><td><strong>KEEP</strong></td><td>P0 determinism net; cheap</td></tr>
+<tr><td>mutation proof (<code>scripts/qa/run_mutations.py</code>)</td><td><strong>KEEP</strong></td><td>temp-tree isolated; working tree never mutated</td></tr>
+<tr><td>example-based policy tests (<code>test_policy.py</code>)</td><td><strong>MERGE-candidate</strong></td><td>overlaps CHG-0042 battery; keep until owner refactor</td></tr>
+<tr><td>one-shot probes in <code>scratch/</code> (~23 files)</td><td><strong>DELETE-candidate</strong></td><td>zero consumers; archived copies exist; owner decision required</td></tr>
+<tr><td>bounded load/performance</td><td><strong>MISSING (deferred)</strong></td><td>latency benchmark scripts cover p50 probes; Locust NOT adopted (no proven service-load requirement)</td></tr>
+<tr><td>browser E2E (Playwright)</td><td><strong>MISSING-optional</strong></td><td>adopt only if a UI regression class escapes JS tests + API layer</td></tr>
+</tbody></table></div>
+<h2 id='4-new-defects-found-by-this-pass-evidence-first'>4. NEW defects found by this pass (evidence-first)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>ID</th><th>Class</th><th>Severity</th><th>Evidence</th><th>Owner routing</th></tr></thead><tbody>
+<tr><td>BUG-208</td><td>ZeroDivisionError in <code>SignalPolicy</code> candidate measure (all-WAIT vectors); duplicate-tick gate masks it from replay-style tests</td><td><strong>P1</strong></td><td>live logs 2026-09-01 09:04:31/09:04:33/09:44:05 + crash probes <code>test_qa_deep_bug194_zero_trained_mass.py</code></td><td>policy/confidence owner (CHG-0042 author)</td></tr>
+<tr><td>SEC-1c</td><td>JSON body under wrong Content-Type returns HTTP 500 with empty body</td><td>P3</td><td><code>test_sec_wrong_content_type_is_never_a_traceback</code> probe</td><td>web owners (matrix-routed)</td></tr>
+<tr><td>BUG-184 extension</td><td>type guard landed for CHECK-FCS-04 (1490635) but NOT for <code>validate_70d_vector</code> / <code>InferenceValidator</code> at HEAD (absorbed away mid-flight)</td><td>P2</td><td>import probe: <code>validate_70d_vector([True, 0.0...])</code> ACCEPTED; xfail-marked tests</td><td>feature-contract owner (BUG-208 scope addendum)</td></tr>
+</tbody></table></div>
+<h2 id='5-priority-of-next-detection-investments'>5. Priority of next detection investments</h2>
+<ol>
+<li><strong>Owner fixes for BUG-208 + BUG-184 extension</strong> (flip the RED probes/xfails).</li>
+<li>Determinism governance rulebook enforcement (no new wall-clock/sleep asserts without classification).</li>
+<li>Bounded load scenarios ONLY when a service-level requirement is proven (per brief §19).</li>
+</ol>
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/architecture/QA_BLIND_SPOT_MATRIX.md'>ویرایش این صفحه در گیت‌هاب</a> ·
+  نسخه v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../../fa/releases/'>همه انتشارها</a>
+</footer>
+</main>
+</div>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>CLI Reference · Nexus Scalp Engine</title>
+<meta name='description' content='Machine-oriented reference of the nexus CLI surface — commands, flags, exit codes.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/reference/cli-reference/'>
+<meta property='og:title' content='CLI Reference'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/reference/cli-reference/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../de/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache'>🌐 Deutsch</summary>
+      <div class='lang-menu'><a href='../../../reference/cli-reference/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/getting-started/installation/'>installation</a></li>
+<li><a class='' href='../../../de/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../../de/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/project/vision/'>vision</a></li>
+<li><a class='' href='../../../de/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/status/'>status</a></li>
+<li><a class='' href='../../../de/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../../de/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/architecture/overview/'>overview</a></li>
+<li><a class='' href='../../../de/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/research/methodology/'>methodology</a></li>
+<li><a class='' href='../../../de/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/validation/'>validation</a></li>
+<li><a class='' href='../../../de/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../../de/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='active' href='../../../de/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../reference/cli-reference/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../de/reference/'>Referenz</a> / <span class='crumb-current' aria-current='page'>cli reference</span></nav>
+<h1 id='cli-reference'>CLI Reference</h1>
+<p>The authoritative surface is always <code>nexus help</code> / <code>nexus &lt;command&gt; --help</code></p>
+<p>(this page documents the verified contract; the CLI is golden-tested by 66</p>
+<p>end-to-end tests).</p>
+<h2 id='global-flags'>Global flags</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Flag</th><th>Effect</th></tr></thead><tbody>
+<tr><td><code>--json</code></td><td>machine-readable output (parity-tested keys)</td></tr>
+<tr><td><code>--plain</code></td><td>no color, no formatting</td></tr>
+<tr><td><code>--no-color</code></td><td>disable color only</td></tr>
+</tbody></table></div>
+<h2 id='command-groups'>Command groups</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Command</th><th>Purpose</th><th>Notes</th></tr></thead><tbody>
+<tr><td>`nexus start [--mode paper\</td><td>shadow\</td><td>live] [--port N] [--daemon]`</td><td>run engine</td><td>paper default; live needs interactive <code>--yes</code>/confirmation; port default 8080</td></tr>
+<tr><td><code>nexus stop</code> / <code>nexus restart</code></td><td>daemon control</td><td>pidfile-based; dead-pid reported honestly (BUG-172)</td></tr>
+<tr><td><code>nexus doctor</code></td><td>19-category diagnostics + suggested fixes</td><td><code>--json</code> for tooling</td></tr>
+<tr><td><code>nexus status</code> / <code>nexus health</code></td><td>environment + health</td><td>READY / DEGRADED / NOT READY</td></tr>
+<tr><td><code>nexus config [--validate path] [--show]</code></td><td>configuration inspection</td><td>secrets masked</td></tr>
+<tr><td><code>nexus logs [--tail N] [--errors]</code></td><td>log access</td><td>severity-split store</td></tr>
+<tr><td>`nexus test --mode quick\</td><td>unit\</td><td>integration`</td><td>run suites</td><td>never runs live-broker tests</td></tr>
+<tr><td><code>nexus update &lt;sub&gt;</code></td><td>update lifecycle</td><td>`check\</td><td>latest\</td><td>download\</td><td>install\</td><td>verify\</td><td>status\</td><td>history\</td><td>rollback\</td><td>doctor`</td></tr>
+<tr><td><code>nexus release info</code></td><td>installed release metadata</td><td>release identity lock</td></tr>
+<tr><td><code>nexus repair</code></td><td>non-destructive derived-state repair</td><td>never deletes user data</td></tr>
+<tr><td><code>nexus db &lt;sub&gt;</code></td><td><code>migrate</code>, `hygiene status\</td><td>plan\</td><td>run\</td><td>pause\</td><td>resume\</td><td>history`</td><td>hygiene AUDIT_ONLY default</td></tr>
+<tr><td><code>nexus incidents &lt;sub&gt;</code></td><td>incident center</td><td>list / reports / export (sanitized)</td></tr>
+<tr><td><code>nexus forensic [---deploy-gate]</code></td><td>forensic health engine</td><td>deploy gate wired into beforePush</td></tr>
+<tr><td><code>nexus model-dataset-build</code></td><td>build canonical dataset</td><td>fingerprinted, immutable</td></tr>
+<tr><td><code>nexus model-experiment-create</code></td><td>create experiment</td><td>fair A/B/C protocol</td></tr>
+<tr><td><code>nexus model-train</code></td><td>train candidate</td><td>deterministic seeds</td></tr>
+<tr><td><code>nexus model-validate</code></td><td>validate candidate</td><td>walk-forward + OOS + robustness</td></tr>
+<tr><td><code>nexus model-replay</code></td><td>replay parity</td><td>bit-exact proof</td></tr>
+<tr><td><code>nexus setup</code> / <code>nexus install</code></td><td>first-run wizard</td><td>compat → mode → symbol → health</td></tr>
+<tr><td><code>nexus export-diagnostics</code></td><td>sanitized diagnostics ZIP</td><td>never contains secrets</td></tr>
+<tr><td><code>nexus uninstall [--no-keep-data]</code></td><td>remove installation</td><td>user data preserved by default</td></tr>
+</tbody></table></div>
+<h2 id='exit-codes'>Exit codes</h2>
+<p><code>0</code> success · <code>1</code> runtime/validation failure · <code>2</code> invalid usage ·</p>
+<p><code>3</code> environment blocked · <code>4</code> release verification failure · <code>5</code> update not</p>
+<p>applicable/failed.</p>
+<h2 id='legacy-entrypoints'>Legacy entrypoints</h2>
+<p>`python NexusTradingForexBot.py --doctor | --config configs/live.yaml |</p>
+<p>--symbol EURUSD | --gateway` — the legacy launcher (still supported;</p>
+<p><code>main.py</code> redirects). Prefer the <code>nexus</code> surface.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../de/reference/'><span class='pn-label'>Zurück</span><span class='pn-name'>Referenz</span></a><a class='pn pn-next' href='../../../de/reference/glossary/'><span class='pn-label'>Weiter</span><span class='pn-name'>Glossary</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/reference/cli-reference.md'>Diese Seite auf GitHub bearbeiten</a> ·
+  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../../de/releases/'>Alle Releases</a>
+</footer>
+</main>
+</div>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

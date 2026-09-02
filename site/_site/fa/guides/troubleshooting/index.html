@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Troubleshooting · Nexus Scalp Engine</title>
+<meta name='description' content='Common failure modes and honest diagnostics — doctor first, evidence second.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/guides/troubleshooting/'>
+<meta property='og:title' content='Troubleshooting'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/guides/troubleshooting/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../fa/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='زبان'>🌐 فارسی</summary>
+      <div class='lang-menu'><a href='../../../guides/troubleshooting/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../fa/'>خانه</a>
+<div class='nav-section'><a class='' href='../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/getting-started/installation/'>installation</a></li>
+<li><a class='' href='../../../fa/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../../fa/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/project/vision/'>vision</a></li>
+<li><a class='' href='../../../fa/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/status/'>status</a></li>
+<li><a class='' href='../../../fa/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../../fa/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/architecture/overview/'>overview</a></li>
+<li><a class='' href='../../../fa/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/research/methodology/'>methodology</a></li>
+<li><a class='' href='../../../fa/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/validation/'>validation</a></li>
+<li><a class='' href='../../../fa/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='active' href='../../../fa/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../../fa/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه در انتظار — <a href='../../guides/troubleshooting/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/guides/'>راهنما</a> / <span class='crumb-current' aria-current='page'>troubleshooting</span></nav>
+<h1 id='troubleshooting'>Troubleshooting</h1>
+<blockquote><p>Rule of thumb: <code>nexus doctor</code> first — it reports 19 diagnostic categories</p><p>with suggested fixes and is the same gate the engine runs pre-launch.</p></blockquote>
+<h2 id='engine-refuses-to-start'>Engine refuses to start</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Symptom</th><th>Likely cause</th><th>Action</th></tr></thead><tbody>
+<tr><td>"MT5 terminal missing/not running"</td><td>terminal closed / not installed</td><td>start MT5, log in (demo first), retry</td></tr>
+<tr><td>config validation error</td><td>YAML contract violation</td><td><code>nexus config --validate &lt;path&gt;</code>; fix the named key</td></tr>
+<tr><td>environment blocked (exit 3)</td><td>Windows ARM64</td><td>unsupported by dependency stack; use x64</td></tr>
+<tr><td>migration gate failure</td><td>schema drift</td><td><code>nexus db migrate</code>; check <code>nexus db hygiene status</code></td></tr>
+</tbody></table></div>
+<h2 id='ui--dashboard'>UI / dashboard</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Symptom</th><th>Likely cause</th><th>Action</th></tr></thead><tbody>
+<tr><td>dashboard unreachable</td><td>port drift (dev UI/API ports can move)</td><td>check <code>nexus status</code> output / launcher log for the bound port</td></tr>
+<tr><td>"Cannot GET /" on some port</td><td>wrong port — something else is listening</td><td>use the port from <code>nexus status</code></td></tr>
+<tr><td>SSE not streaming</td><td>proxy buffering</td><td>connect directly to <code>127.0.0.1:&lt;port&gt;</code></td></tr>
+</tbody></table></div>
+<h2 id='orders--execution'>Orders / execution</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Symptom</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>orders rejected at broker</td><td>"Allow Algo Trading" unchecked in MT5 options</td></tr>
+<tr><td>SAFE_MODE after rejections</td><td>circuit breaker tripped (3 rejections) — inspect <code>nexus incidents</code> + <code>/api/debug/trace</code></td></tr>
+<tr><td>no trades for long periods</td><td>check regime gate + confidence gate in the debug console; counterfactual evidence shows the confidence gate often filters losing trades — silence can be correct behavior</td></tr>
+</tbody></table></div>
+<h2 id='model--features'>Model / features</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Symptom</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>SCALER_MISMATCH</code> / <code>MODEL_INPUT_DIMENSION_MISMATCH</code></td><td>bundle doesn't match the active feature schema — the load gate is doing its job; don't bypass it</td></tr>
+<tr><td><code>FEATURE_CONTRACT_MISMATCH</code> SKIP in logs</td><td>retrain record refused (invalid snapshot) — by design, never zero-filled</td></tr>
+</tbody></table></div>
+<h2 id='updates'>Updates</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Symptom</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>RELEASE_NOT_FOUND</code></td><td>no release exists yet — honest state, not an error</td></tr>
+<tr><td><code>NO_UPDATE</code></td><td>you are current</td></tr>
+<tr><td>update refuses to run</td><td>engine is LIVE — updates are blocked while LIVE by contract</td></tr>
+</tbody></table></div>
+<h2 id='escalation'>Escalation</h2>
+<p><code>nexus export-diagnostics</code> produces a sanitized ZIP (secrets redacted by</p>
+<p>contract). Attach it to an issue — never paste raw logs with credentials.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../fa/guides/api/'><span class='pn-label'>قبلی</span><span class='pn-name'>API Reference</span></a><a class='pn pn-next' href='../../../fa/guides/common-workflows/'><span class='pn-label'>بعدی</span><span class='pn-name'>Common Workflows</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/guides/troubleshooting.md'>ویرایش این صفحه در گیت‌هاب</a> ·
+  نسخه v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../../fa/releases/'>همه انتشارها</a>
+</footer>
+</main>
+</div>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Failure-Recovery Matrix (NSE crash-containment pass) · Nexus Scalp Engine</title>
+<meta name='description' content='Failure-Recovery Matrix (NSE crash-containment pass) — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/failure-recovery-matrix/'>
+<meta property='og:title' content='Failure-Recovery Matrix (NSE crash-containment pass)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/architecture/failure-recovery-matrix/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../de/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache'>🌐 Deutsch</summary>
+      <div class='lang-menu'><a href='../../../architecture/failure-recovery-matrix/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/getting-started/installation/'>installation</a></li>
+<li><a class='' href='../../../de/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../../de/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/project/vision/'>vision</a></li>
+<li><a class='' href='../../../de/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/status/'>status</a></li>
+<li><a class='' href='../../../de/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../../de/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/architecture/overview/'>overview</a></li>
+<li><a class='' href='../../../de/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/research/methodology/'>methodology</a></li>
+<li><a class='' href='../../../de/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/validation/'>validation</a></li>
+<li><a class='' href='../../../de/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../../de/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../architecture/failure-recovery-matrix/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../de/architecture/'>Architektur</a> / <span class='crumb-current' aria-current='page'>failure recovery matrix</span></nav>
+<h1 id='failure-recovery-matrix-nse-crash-containment-pass'>Failure-Recovery Matrix (NSE crash-containment pass)</h1>
+<blockquote><p>Status: baseline 2026-09-01. Companion to <code>crash-safety.md</code> and</p><p><code>artifacts/forensics/crash-safety-audit.json</code>.</p><p>Every row = subsystem × failure → expected console log, state, recovery,</p><p>exit, and the test that proves it. GREEN means failure-injected → detected →</p><p>logged → safe behavior → regression exists (never "a try/except exists").</p></blockquote>
+<p>Legend — State: truthful runtime state after the failure. Log: minimum</p>
+<p>console/file record. Rec: recovery policy. Exit: CLI/process exit contract.</p>
+<p>Test: primary regression evidence.</p>
+<div class='table-wrap'><table>
+<thead><tr><th>#</th><th>Subsystem</th><th>Failure</th><th>Log (console)</th><th>State</th><th>Rec</th><th>Exit</th><th>Test</th></tr></thead><tbody>
+<tr><td>1</td><td>startup</td><td>missing/invalid config at launch</td><td>red panel <code>cfg_detail=Parse error…</code> + doctor FAIL</td><td>NOT READY</td><td>halt</td><td>1 / EXIT_RUNTIME</td><td>launcher doctor contract; BUG-149/156 lineage</td></tr>
+<tr><td>2</td><td>startup</td><td><code>_preflight_or_raise</code> raise (model dir missing)</td><td>panel with real error</td><td>halted pre-READY</td><td>halt</td><td>1</td><td>launcher/CLI preflight paths</td></tr>
+<tr><td>3</td><td>startup</td><td>MT5 connect fails ×3</td><td><code>[MT5_CONNECT]</code> attempts + CRITICAL + incident telemetry</td><td>engine stopped</td><td>fail-closed</td><td>shutdown</td><td>run_loop connect contract</td></tr>
+<tr><td>4</td><td>startup</td><td>corrupt/width-mismatched checkpoint</td><td>CRITICAL <code>Checkpoint dimension mismatch; quarantining</code></td><td>model quarantined <code>.corrupt</code></td><td>no silent replace</td><td>raise</td><td>BUG-141 suite</td></tr>
+<tr><td>5</td><td>config</td><td>hot-reload save with invalid value</td><td>validation error, snapshot version unchanged</td><td>old valid config ACTIVE</td><td>reject swap</td><td>0 (rejected write surfaced)</td><td>runtime_config validate_field suite</td></tr>
+<tr><td>6</td><td>DI</td><td>service construction raises (e.g. order_manager absent at reconciliation)</td><td><code>[EXECUTION_RECONCILIATION] STARTUP_FAILED (isolated)</code> + incident</td><td>degraded reconciliation, trading gated</td><td>retry next cycle</td><td>n/a (loop continues)</td><td>engine init-order tests (BUG-105/130)</td></tr>
+<tr><td>7</td><td>database</td><td>worker batch insert fails</td><td><code>Audit Background Worker failed to insert batch</code> (error)</td><td>queue drained (task_done per item)</td><td>backoff 1s, continue</td><td>n/a</td><td>audit worker tests</td></tr>
+<tr><td>8</td><td>database</td><td>DB locked/corrupt on read helper</td><td>error log + <code>exc_info=True</code> then sentinel</td><td>degraded sentinel (truthful)</td><td>BUG-142 discipline</td><td>n/a</td><td>test_forensic_repair_account_and_audit</td></tr>
+<tr><td>9</td><td>database</td><td>migration fails</td><td><code>DB_MIGRATION_FAILED</code> state + web report FAILED</td><td>original bytes restored</td><td>transactional rollback</td><td>EXIT_RUNTIME</td><td>DatabaseMigrator fail_after test</td></tr>
+<tr><td>10</td><td>market data</td><td>tick fetch failure</td><td>raised → run_loop error log w/ traceback</td><td>stale feed watchdog armed</td><td>watchdog reconnect/resync</td><td>n/a</td><td>G29 stalled-stream contract</td></tr>
+<tr><td>11</td><td>candle</td><td>duplicate/late tick</td><td>duplicate suppressed (no re-pipeline)</td><td>last REAL decision re-surfaced</td><td>skip + service workers</td><td>n/a</td><td>BUG-169 suite</td></tr>
+<tr><td>12</td><td>features</td><td>NaN/Inf feature value</td><td><code>Non-finite feature sanitized</code> warning (per index)</td><td>0.0 + clip [-3,3]</td><td>sanitized (documented)</td><td>n/a</td><td>to_tensor_input contract</td></tr>
+<tr><td>13</td><td>50D</td><td>width ≠ 50</td><td>RuntimeError <code>Feature contract violation …</code></td><td>inference blocked</td><td>fail-closed</td><td>n/a</td><td>50D gate tests</td></tr>
+<tr><td>14</td><td>70D</td><td>missing INVALID liquidity snapshot</td><td>RuntimeError <code>refusing to feed fabricated values</code></td><td>inference BLOCKED this tick</td><td>fail-closed</td><td>n/a</td><td>BUG-125 / 70D assembly tests</td></tr>
+<tr><td>15</td><td>70D</td><td>bounds/hash violation</td><td><code>SchemaContractError</code> w/ family+index</td><td>inference blocked</td><td>fail-closed</td><td>n/a</td><td>validate_70d_vector tests</td></tr>
+<tr><td>16</td><td>tensor</td><td>shape mismatch at forward</td><td>real RuntimeError surfaced w/ component context</td><td>decision blocked</td><td>never resize</td><td>n/a</td><td>BUG-175 cross-schema regression</td></tr>
+<tr><td>17</td><td>model load</td><td>artifact hash mismatch</td><td><code>ManifestValidationError artifact hash mismatch</code></td><td>MODEL FAILED</td><td>fail-closed</td><td>EXIT_RUNTIME</td><td>model-doctor/validate suites</td></tr>
+<tr><td>18</td><td>model load</td><td>declared scaler missing</td><td><code>scaler declared in manifest but file missing/corrupt</code></td><td>MODEL FAILED</td><td>fail-closed</td><td>n/a</td><td>runtime T24 contract</td></tr>
+<tr><td>19</td><td>inference</td><td>forward raises mid-tick</td><td><code>[INFERENCE] in-trade inference failed (isolated)</code> w/ traceback</td><td>probs=None, position mgmt CONTINUES</td><td>protective stops active</td><td>n/a</td><td>Phase-15 exit contract tests</td></tr>
+<tr><td>20</td><td>GPU/CPU</td><td>CUDA unavailable</td><td>device=cpu selection logged</td><td>CPU execution</td><td>validated fallback</td><td>n/a</td><td>LocalModelRuntime device pick</td></tr>
+<tr><td>21</td><td>regime</td><td>classifier raises</td><td>run_loop error log w/ traceback</td><td>prior regime state retained / UNKNOWN</td><td>retry next tick</td><td>n/a</td><td>regime classifier suite</td></tr>
+<tr><td>22</td><td>liquidity</td><td>governor snapshot invalid</td><td>assembly raises → <code>[INFERENCE] 70D assembly failed</code> warning</td><td>70D inference blocked</td><td>fail-closed</td><td>n/a</td><td>liquidity_runtime v2 tests</td></tr>
+<tr><td>23</td><td>strategy</td><td>policy exception mid-evaluate</td><td>run_loop error log w/ traceback</td><td>no proposal emitted</td><td>safe NO_TRADE default</td><td>n/a</td><td>policy suites</td></tr>
+<tr><td>24</td><td>risk</td><td>sizing input NaN/None/Inf</td><td><code>INVALID_INPUT_NAN_INF_NONE</code> reason</td><td>volume=0.0</td><td>fail-closed</td><td>n/a</td><td>test_risk_engine</td></tr>
+<tr><td>25</td><td>risk</td><td>clamp engine raises</td><td><code>Risk engine clamp failed; falling back to hard cap</code></td><td>HARD_MAX_LOTS bound</td><td>bounded fallback (logged)</td><td>n/a</td><td>order manager clamp tests</td></tr>
+<tr><td>26</td><td>execution</td><td>ambiguous market-order result</td><td><code>retcode %s but live position found (ticket=%s)</code> or terminal failure</td><td>verified fill OR confirmed failure</td><td>broker-truth probe, NO blind retry</td><td>n/a</td><td>ambiguous-fill recovery tests (BUG-142 verified-safe list)</td></tr>
+<tr><td>27</td><td>execution</td><td>3 consecutive rejections</td><td>CRITICAL <code>TRANSITIONED TO SAFE_MODE</code></td><td>SAFE_MODE (orders blocked)</td><td>operator reset</td><td>n/a</td><td>execution suite</td></tr>
+<tr><td>28</td><td>news</td><td>one source fails</td><td><code>[NEWS_FETCH] source=… status=FAILURE failures=N</code> + backoff</td><td>source degraded, others live</td><td>exponential backoff ≤1h</td><td>n/a</td><td>fetcher health/backoff tests</td></tr>
+<tr><td>29</td><td>news</td><td>worker cycle fails</td><td><code>[NEWS_WORKER] event=FAILURE</code> + exc_info</td><td>last_error set, next cycle retries</td><td>bounded retries per article</td><td>n/a</td><td>news worker tests</td></tr>
+<tr><td>30</td><td>workers</td><td>worker loop crash (telegram)</td><td><code>[TELEGRAM_WORKER] event=CRASH …</code> + <code>_worker_crash</code> captured</td><td>truthful failure state</td><td>loop continues w/ backoff</td><td>n/a</td><td>telegram notifier tests</td></tr>
+<tr><td>31</td><td>async</td><td><code>_kick_worker</code> hung &gt; timeout</td><td><code>[WORKER_KICK] event=TIMEOUT … detaching hung call</code></td><td>call detached, inflight cleared</td><td>continue</td><td>n/a</td><td>worker kick contract</td></tr>
+<tr><td>32</td><td>web/api</td><td>endpoint raises</td><td><code>WEB_ERROR endpoint=… request_id=… exception_type=…</code> + traceback (log only)</td><td>safe JSON <code>{error:{code,message,request_id}}</code></td><td>sanitized 500</td><td>HTTP 500</td><td>web/errors contract tests</td></tr>
+<tr><td>33</td><td>SSE</td><td>payload not JSON-serializable</td><td><code>[SSE] event=SERIALIZATION_ERROR fields=…</code></td><td><code>error</code> frame w/ failed_fields; counters bumped</td><td>stream survives</td><td>n/a</td><td>BUG-110 tests</td></tr>
+<tr><td>34</td><td>CLI</td><td>command raises</td><td>error panel + EXIT_RUNTIME (human == JSON decision)</td><td>structured failure</td><td>correct non-zero exit</td><td>EXIT_RUNTIME</td><td>CLI e2e suites</td></tr>
+<tr><td>35</td><td>diagnostics</td><td>analyzer crashes / none run</td><td><code>FAILED</code>/<code>error</code> status; <code>check raised:</code> health row</td><td>status=error (never clean)</td><td>truthful verdict</td><td>non-zero</td><td>diagnostics engine tests</td></tr>
+<tr><td>36</td><td>forensics</td><td>check body raises</td><td><code>CHECK-RAISED … group raised: …</code> UNKNOWN row</td><td>worst-status aggregation</td><td>visible UNKNOWN (never PASS)</td><td>gate exit per verdict</td><td>deploy gate tests (BUG-162)</td></tr>
+<tr><td>37</td><td>release</td><td>checksum/manifest mismatch</td><td>FAIL row w/ detail</td><td>overall FAIL</td><td>no install</td><td>EXIT_RELEASE</td><td>test_release_system (4-layout matrix)</td></tr>
+<tr><td>38</td><td>updater</td><td>SHA-256 mismatch on download</td><td><code>SHA256_MISMATCH — artifact discarded</code></td><td>state FAILED, install untouched</td><td>re-download cleanly</td><td>EXIT_UPDATE(4)</td><td>BUG-171 probe servers</td></tr>
+<tr><td>39</td><td>updater</td><td>crash mid-install</td><td>next <code>update status</code> → ROLLBACK_REQUIRED + <code>CRASH_REQUIRES_ROLLBACK</code></td><td>last-known-good preserved</td><td>rollback required first</td><td>EXIT_UPDATE(8) on rollback path</td><td>updater state-machine tests</td></tr>
+<tr><td>40</td><td>updater</td><td>rollback w/o backup</td><td>FAILED_SAFE panel w/ actionable hint</td><td>FAILED_SAFE (truthful)</td><td>user data untouched</td><td>EXIT_RUNTIME(1)</td><td>BUG-173 rewritten tests</td></tr>
+<tr><td>41</td><td>shutdown</td><td>one worker stop() raises</td><td>logged, remaining stops proceed</td><td>queue drained, no stale healthy claim</td><td>cleanup never masks primary</td><td>clean/1 per primary</td><td>_shutdown_async ordering tests</td></tr>
+<tr><td>42</td><td>lifecycle</td><td>launcher <code>start</code> on empty-claim pidfile</td><td>grace window (BUG-170-hardening) then liveness check</td><td>single engine guaranteed</td><td>second starter reports RUNNING</td><td>0</td><td>BUG-170 concurrency probes</td></tr>
+<tr><td>43</td><td>stop</td><td>taskkill rc=128 (dead pid)</td><td><code>already stopped (stale pidfile)</code> warning</td><td>pidfile unlinked</td><td>honest no-op</td><td>0</td><td>BUG-172 tests</td></tr>
+<tr><td>44</td><td>model CLI</td><td>model-validate w/o probabilities (fixed)</td><td>REAL probs via LocalModelRuntime; cross-schema → SCHEMA_MISMATCH panel</td><td>real metrics, honest verdict</td><td>fail-fast on mismatch</td><td>EXIT_RUNTIME</td><td>test_bug175_model_validate_probs (6)</td></tr>
+<tr><td>45</td><td>dataset CLI</td><td><code>--schema</code> unknown value (fixed)</td><td>explicit rejection panel</td><td>no ghost dataset</td><td>fail-fast</td><td>EXIT_USAGE</td><td>test_bug176_schema_flag (5)</td></tr>
+</tbody></table></div>
+<h2 id='residual-gaps-yellow-tracked'>Residual gaps (YELLOW, tracked)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Gap</th><th>Evidence</th><th>Risk</th><th>Next action</th></tr></thead><tbody>
+<tr><td>381 silent handlers (except-Exception: pass/continue/return-default) now flagged as P1 violations by the static check</td><td><code>artifacts/forensics/anti_crash_static_report.json</code> (rev-2 regex)</td><td>P1 tracking / P2 per-site (majority are reviewed fail-safe defaults)</td><td>triage top files: live_engine (48), debug_snapshot (16), pro_auto (13), server (13) — add <code>exc_info</code>, truthful state, or <code># anti-crash: allow</code></td></tr>
+<tr><td>8 thread-spawn sites without <code>add_done_callback</code></td><td>same report <code>SPAWN_NO_DONE_CALLBACK</code></td><td>LOW each (all capture crashes in-loop) — but none is centrally monitored</td><td>optional watchdog aggregation task</td></tr>
+<tr><td>2 <code>check=False</code> subprocess sites with wide windows</td><td>same report</td><td>LOW (runner kills tree + status TIMEOUT)</td><td>narrow result-inspection window</td></tr>
+<tr><td>BUG-164 regression does not pin the "Dataset not found" panel text</td><td>reviewer report (1f60832)</td><td>P2 test confidence</td><td>pin panel text</td></tr>
+<tr><td>model-replay returns prediction error INSIDE payload with exit 0</td><td>reviewer report (1f60832)</td><td>P2 misleading-success class</td><td>fold into BUG-175 family follow-up</td></tr>
+<tr><td>no automated GPU-failure injection test (CUDA OOM/driver)</td><td>this matrix</td><td>P3 (CPU fallback documented + device-pick tested)</td><td>add device-forced unit probe</td></tr>
+<tr><td>no automated disk-full injection on audit worker</td><td>this matrix</td><td>P3</td><td>add tmpfs-limited probe</td></tr>
+</tbody></table></div>
+<h2 id='scorecard-evidence-based-2026-09-01'>Scorecard (evidence-based, 2026-09-01)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Subsystem</th><th>Score</th><th>Evidence anchor</th></tr></thead><tbody>
+<tr><td>startup</td><td>GREEN</td><td>doctor/preflight contracts + engine runtime launch test</td></tr>
+<tr><td>config</td><td>GREEN</td><td>runtime store validate + hot-reload reject tests</td></tr>
+<tr><td>DI</td><td>YELLOW</td><td>reconciliation isolation tested; no generic DI container exists</td></tr>
+<tr><td>database</td><td>GREEN</td><td>worker drain tests + BUG-142 read-helper exc_info</td></tr>
+<tr><td>filesystem</td><td>YELLOW</td><td>workspace anchoring (BUG-149/156) tested; no disk-full injection</td></tr>
+<tr><td>market data</td><td>GREEN</td><td>watchdog + honest tick contract (G29/BUG-169)</td></tr>
+<tr><td>candles</td><td>GREEN</td><td>reseed/REPLACE+ALIGN tests</td></tr>
+<tr><td>features</td><td>GREEN</td><td>sanitize + width-raise contract tests</td></tr>
+<tr><td>50D</td><td>GREEN</td><td>50D gate tests</td></tr>
+<tr><td>70D</td><td>GREEN</td><td>validate_70d_vector + BUG-125 + BUG-141 suites</td></tr>
+<tr><td>tensor</td><td>GREEN</td><td>BUG-175 cross-schema regression + real RuntimeError surfacing</td></tr>
+<tr><td>model load</td><td>GREEN</td><td>manifest/hash/scaler hard-fail tests</td></tr>
+<tr><td>model inference</td><td>GREEN</td><td>isolated in-trade failure w/ mgmt continuation</td></tr>
+<tr><td>GPU/CPU</td><td>YELLOW</td><td>CPU fallback validated; no OOM injection</td></tr>
+<tr><td>regime</td><td>GREEN</td><td>classifier suites</td></tr>
+<tr><td>liquidity</td><td>GREEN</td><td>LIQUIDITY_RUNTIME v2 status matrix tests</td></tr>
+<tr><td>strategy</td><td>GREEN</td><td>policy suites (0 swallowed exceptions)</td></tr>
+<tr><td>risk</td><td>GREEN</td><td>INVALID_* fail-closed matrix + clamp fallback</td></tr>
+<tr><td>execution</td><td>GREEN</td><td>idempotency + ambiguous-fill + SAFE_MODE tests</td></tr>
+<tr><td>news</td><td>GREEN</td><td>per-source backoff + worker FAILURE exc_info</td></tr>
+<tr><td>workers</td><td>GREEN</td><td>per-worker capture (telegram/audit/candle/shadow70)</td></tr>
+<tr><td>async</td><td>GREEN</td><td>kick timeout detach + task tracking + shutdown cancel</td></tr>
+<tr><td>web/api</td><td>GREEN</td><td>safe-error envelope + middleware 500 sanitize</td></tr>
+<tr><td>SSE</td><td>GREEN</td><td>BUG-110 serialization diagnostic + stream survival</td></tr>
+<tr><td>CLI</td><td>GREEN</td><td>exit-code contract suites (66 e2e + 170..176 nets)</td></tr>
+<tr><td>release</td><td>GREEN</td><td>4-layout verify matrix + tamper probe</td></tr>
+<tr><td>updater</td><td>GREEN</td><td>state machine + crash recovery + BUG-170..173 nets</td></tr>
+<tr><td>shutdown</td><td>GREEN</td><td>ordered guarded teardown tests</td></tr>
+</tbody></table></div>
+<p>Verdict: <strong>HARDENED_WITH_GAPS</strong> — no known silent-crash / false-success /</p>
+<p>lost-traceback path on any P0 boundary; the honest caveat is the tracked</p>
+<p>381-site silent-handler backlog (see residual gaps), which is observability/</p>
+<p>documentation debt on mostly-fail-safe sites, not a proven safety hole.</p>
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/architecture/failure-recovery-matrix.md'>Diese Seite auf GitHub bearbeiten</a> ·
+  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../../de/releases/'>Alle Releases</a>
+</footer>
+</main>
+</div>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

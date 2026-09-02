@@ -556,3 +556,27 @@ ehthumbs.db
 desktop.ini
 $RECYCLE.BIN/
 archive/
+
+# === Generated docs-site build outputs (Nexus-Docs) ===
+site/_build/
+site/public/
+site/cache/
+
+# === Stray venv accidentally created in scripts/ (never commit binaries) ===
+scripts/python.exe
+scripts/pythonw.exe
+scripts/pip.exe
+scripts/pip3.exe
+scripts/pip3.11.exe
+scripts/activate
+scripts/activate.bat
+scripts/deactivate.bat
+scripts/Activate.ps1
+scripts/pyvenv.cfg
+scripts/Lib/
+scripts/share/
+
+# === Local one-off diagnostics ===
+doc1.txt
+end_limit
+pyvenv.cfg

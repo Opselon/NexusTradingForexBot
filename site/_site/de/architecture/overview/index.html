@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Architecture Overview · Nexus Scalp Engine</title>
+<meta name='description' content='Hexagonale, ereignisgesteuerte Architektur — Schichten, Grenzen und der Weg vom Tick zur Entscheidung.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/overview/'>
+<meta property='og:title' content='Architecture Overview'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/architecture/overview/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../de/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache'>🌐 Deutsch</summary>
+      <div class='lang-menu'><a href='../../../architecture/overview/' lang='en' hreflang='en'>English</a> <a href='../../../fa/architecture/overview/' lang='fa' hreflang='fa'>فارسی</a> <a href='../../../es/architecture/overview/' lang='es' hreflang='es'>Español</a> <a href='../../../ar/architecture/overview/' lang='ar' hreflang='ar'>العربية</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/getting-started/installation/'>installation</a></li>
+<li><a class='' href='../../../de/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../../de/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/project/vision/'>vision</a></li>
+<li><a class='' href='../../../de/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/status/'>status</a></li>
+<li><a class='' href='../../../de/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../../de/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='active' href='../../../de/architecture/overview/'>overview</a></li>
+<li><a class='' href='../../../de/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/research/methodology/'>methodology</a></li>
+<li><a class='' href='../../../de/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/validation/'>validation</a></li>
+<li><a class='' href='../../../de/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../../de/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../de/architecture/'>Architektur</a> / <span class='crumb-current' aria-current='page'>overview</span></nav>
+<p>NSE ist <strong>hexagonal (Ports-and-Adapters) und ereignisgesteuert</strong>: Broker-Plattformen, Modelle und Netzwerkadapter liegen hinter Port-Verträgen (<code>IMT5Port</code>, <code>IGatewayPort</code>); die Domain weiß nie, welcher Broker angeschlossen ist.</p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>Marktdaten (MT5 / ZMQ / paper)
+  → Kausale Features — 50D-Basis (scalp_v1) · gesteuerte 70D-Assemblierung
+  → Inferenz-Validator — Schema-Hash · Scaler-Dim · Grenzen (lautablehnend)
+  → ScalpNet (TCN + Self-Attention) — 4 Logits → Confidence-Gate
+  → Regime-Wächter → SMC-Policy-Matrix (~30 Regeln)
+  → Risikomotor (Kelly-Sizing · Marge ≤20% · Tier-Kappen · HARD_MAX_LOTS=10)
+  → OrderManager (60-Szenario-Router · 11 Positionsstände · atomares Teardown)
+  → IMT5Port-Adapter → MT5 / paper / shadow (null Order-Autorität)
+  → Buchhaltung (unveränderliches SQLite-WAL) → Erfahrung &amp; Autopsie
+  → Observability (Logs · Incidents · Forensik) + Control Center (REST/SSE/WS)</code></pre></div>
+<h2 id='schichten'>Schichten</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Schicht</th><th>Verantwortung</th><th>Harte Grenze</th></tr></thead><tbody>
+<tr><td>Domain</td><td>eingefrorene Pydantic-Verträge</td><td>nie mutieren</td></tr>
+<tr><td>Ports/Adapter</td><td>MT5-Win32-IPC · ZMQ · paper · SQLite-WAL-Repo</td><td>keine synchrone DB im Hot-Path</td></tr>
+<tr><td>Features</td><td>kausale 50D/70D-Engine · Schema-Registry + Hash</td><td>Ordnung ist Vertrag</td></tr>
+<tr><td>Modelle/Training</td><td>ScalpNet · gepurgtes Walk-Forward · Triple-Barrier</td><td>kein Lookahead</td></tr>
+<tr><td>Signale</td><td>Policy · SMC-Regelmatrix</td><td>keine Order-Autorität</td></tr>
+<tr><td>Risiko / Ausführung</td><td>Sizing-Grenzen · 60-Szenario-Dispatch</td><td>autoritative Klemmen</td></tr>
+<tr><td>Intelligenz-Schleife</td><td>Erfahrung · Forschung · Shadow · Governance</td><td>null Order-Autorität</td></tr>
+<tr><td>Observability</td><td>Logs · Incidents · Forensik</td><td>nur Diagnostik</td></tr>
+</tbody></table></div>
+<h2 id='schlsseleigenschaften'>Schlüsseleigenschaften</h2>
+<ul>
+<li><strong>INV-001</strong> — null synchrone DB/Training/Netzwerk auf dem Tick-Pfad.</li>
+<li><strong>INV-002</strong> — Lernkomponenten können physisch keine Orders platzieren.</li>
+<li><strong>INV-008</strong> — kein Lookahead; Liquidität strikt kausal.</li>
+<li><strong>INV-011</strong> — Broker-Wahrheit gewinnt beim Abgleich von Positionen.</li>
+<li>Modellpakete passieren bei jedem Attach das <strong>10-Gate-Load-Gate</strong>; Dim/Hash-Abweichung blockiert laut mit Diagnosecode — niemals still.</li>
+</ul>
+<p>Vertiefung: <a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/architecture/overview.md">overview.md">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/architecture/overview.md">overview.md</a></a></p>
+<p>· <a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/architecture/data-flow.md">data-flow.md">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/architecture/data-flow.md">data-flow.md</a></a></p>
+<p>· <a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/architecture/model-pipeline.md">model-pipeline.md">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/architecture/model-pipeline.md">model-pipeline.md</a></a></p>
+<p>· interne autoritative Karte: <a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/skill.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/skill.md"></a><code>agents/skill.md</code></a>.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../de/architecture/'><span class='pn-label'>Zurück</span><span class='pn-name'>Architektur</span></a><a class='pn pn-next' href='../../../de/architecture/system-map/'><span class='pn-label'>Weiter</span><span class='pn-name'>System Map</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/architecture.md'>Diese Seite auf GitHub bearbeiten</a> ·
+  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../../de/releases/'>Alle Releases</a>
+</footer>
+</main>
+</div>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

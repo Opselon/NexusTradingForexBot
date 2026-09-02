@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang='en' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Quickstart · Nexus Scalp Engine</title>
+<meta name='description' content='Minimal verified path from clone to a running engine — PAPER mode by default, never LIVE silently.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/getting-started/quickstart/'>
+<meta property='og:title' content='Quickstart'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/getting-started/quickstart/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../assets/styles.css'>
+<link rel='icon' href='../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Skip to content</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menu' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Search docs…' aria-label='Search docs…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='Language'>🌐 English</summary>
+      <div class='lang-menu'><span class='lang-current' lang='en'>English ✓</span> <a href='../../fa/getting-started/quickstart/' lang='fa' hreflang='fa'>فارسی</a> <a href='../../es/getting-started/quickstart/' lang='es' hreflang='es'>Español</a> <a href='../../ar/getting-started/quickstart/' lang='ar' hreflang='ar'>العربية</a> <a href='../../de/getting-started/quickstart/' lang='de' hreflang='de'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../'>Home</a>
+<div class='nav-section'><a class='active' href='../../getting-started/'>Getting Started</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../getting-started/installation/'>installation</a></li>
+<li><a class='active' href='../../getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../getting-started/first-run/'>first run</a></li>
+<li><a class='' href='../../getting-started/configuration/'>configuration</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../project/'>Project</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../project/vision/'>vision</a></li>
+<li><a class='' href='../../project/scope/'>scope</a></li>
+<li><a class='' href='../../project/status/'>status</a></li>
+<li><a class='' href='../../project/capabilities/'>capabilities</a></li>
+<li><a class='' href='../../project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../project/milestones/'>milestones</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../architecture/'>Architecture</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../architecture/overview/'>overview</a></li>
+<li><a class='' href='../../architecture/system-map/'>system map</a></li>
+<li><a class='' href='../../architecture/data-flow/'>data flow</a></li>
+<li><a class='' href='../../architecture/runtime/'>runtime</a></li>
+<li><a class='' href='../../architecture/research-stack/'>research stack</a></li>
+<li><a class='' href='../../architecture/model-pipeline/'>model pipeline</a></li>
+<li><a class='' href='../../architecture/execution-pipeline/'>execution pipeline</a></li>
+<li><a class='' href='../../architecture/observability/'>observability</a></li>
+<li><a class='' href='../../architecture/database/'>database</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../research/'>Research</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../research/methodology/'>methodology</a></li>
+<li><a class='' href='../../research/datasets/'>datasets</a></li>
+<li><a class='' href='../../research/backtesting/'>backtesting</a></li>
+<li><a class='' href='../../research/walk-forward/'>walk forward</a></li>
+<li><a class='' href='../../research/out-of-sample/'>out of sample</a></li>
+<li><a class='' href='../../research/replay/'>replay</a></li>
+<li><a class='' href='../../research/counterfactuals/'>counterfactuals</a></li>
+<li><a class='' href='../../research/validation/'>validation</a></li>
+<li><a class='' href='../../research/reproducibility/'>reproducibility</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../engineering/quality/'>quality</a></li>
+<li><a class='' href='../../engineering/ci/'>ci</a></li>
+<li><a class='' href='../../engineering/release-process/'>release process</a></li>
+<li><a class='' href='../../engineering/security/'>security</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../guides/'>Guides</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../guides/cli/'>cli</a></li>
+<li><a class='' href='../../guides/api/'>api</a></li>
+<li><a class='' href='../../guides/troubleshooting/'>troubleshooting</a></li>
+<li><a class='' href='../../guides/common-workflows/'>common workflows</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../contributing/'>Contributing</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../contributing/documentation/'>documentation</a></li>
+<li><a class='' href='../../contributing/add-language/'>add language</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../reference/'>Reference</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../reference/cli-reference/'>cli reference</a></li>
+<li><a class='' href='../../reference/glossary/'>glossary</a></li>
+<li><a class='' href='../../reference/terminology/'>terminology</a></li>
+<li><a class='' href='../../reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../getting-started/'>Getting Started</a> / <span class='crumb-current' aria-current='page'>quickstart</span></nav>
+<h1 id='quickstart'>Quickstart</h1>
+<p>The shortest safe path. Every command below is part of the verified CLI surface</p>
+<p>(<code>nexus help</code> shows the authoritative list).</p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code># 1. Install (developers, from source)
+git clone https://github.com/Opselon/NexusTradingForexBot.git
+cd NexusTradingForexBot
+python -m venv .venv &amp;&amp; source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+pip install -e .[dev]
+
+# 2. Verify your system
+nexus doctor          # read-only diagnostics, 19 categories + suggested fixes
+nexus health          # READY / DEGRADED / NOT READY
+
+# 3. Run — PAPER mode is the default, never LIVE silently
+nexus start           # paper simulation, Control Center at http://127.0.0.1:8080
+
+# 4. Evaluate on real data with zero order authority
+nexus start --mode shadow
+
+# 5. Stop
+nexus stop            # for --daemon runs; Ctrl+C in the foreground</code></pre></div>
+<h2 id='mode-semantics'>Mode semantics</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Mode</th><th>Data</th><th>Orders</th><th>Use</th></tr></thead><tbody>
+<tr><td><code>paper</code> <em>(default)</em></td><td>simulated</td><td>simulated</td><td>first run, UI, development</td></tr>
+<tr><td><code>shadow</code></td><td>live feed</td><td><strong>none — zero order authority</strong> (<code>simulated=True</code>)</td><td>evaluate model/signals on real market data</td></tr>
+<tr><td><code>live</code></td><td>live feed</td><td>real</td><td><strong>explicit interactive confirmation required</strong>; full risk panel printed first</td></tr>
+</tbody></table></div>
+<div class='callout callout-warning' role='note'><div class='callout-title'>WARNING</div><p>This engine can place <strong>real trades with real money</strong> in LIVE mode. The</p><p>recommended first-run progression is</p><p><a href="first-run.md">Demo MT5 account → SHADOW → small LIVE</a>. The engine's hard</p><p>clamps protect the strategy — not your capital from market volatility.</p></div>
+<h2 id='what-you-should-see'>What you should see</h2>
+<p><code>nexus start</code> boots the engine in PAPER mode, runs pre-flight doctor + migration</p>
+<p>checks, and serves the <strong>Control Center</strong> (FastAPI) at <code><a href="http://127.0.0.1:8080">http://127.0.0.1:8080</a></code></p>
+<p>(<code>--port</code> to change): REST <code>:8080/api/...</code>, tick stream over SSE</p>
+<p>(<code>/api/ticks/stream</code>), live dashboard over WebSocket (<code>/web</code>).</p>
+<p>Docker alternative: <code>docker compose up -d --build</code> (PAPER by default, dashboard</p>
+<p>at <code><a href="http://localhost:9090">http://localhost:9090</a></code>, <code>/health</code> readiness). See</p>
+<p><a href="../guides/common-workflows.md">Common workflows</a>.</p>
+<h2 id='where-to-go-next'>Where to go next</h2>
+<ul>
+<li><a href="first-run.md">First-run safety</a> — Demo → Shadow → Live ladder</li>
+<li><a href="../guides/cli.md">CLI guide</a> and <a href="../reference/cli-reference.md">CLI reference</a></li>
+<li><a href="../architecture/overview.md">How the engine works</a></li>
+</ul>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../getting-started/installation/'><span class='pn-label'>Previous</span><span class='pn-name'>Installation</span></a><a class='pn pn-next' href='../../getting-started/first-run/'><span class='pn-label'>Next</span><span class='pn-name'>First-Run Safety</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/docs/getting-started/quickstart.md'>Edit this page on GitHub</a> ·
+  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../releases/'>All releases</a>
+</footer>
+</main>
+</div>
+<script src='../../assets/search.js' defer></script>
+</body>
+</html>

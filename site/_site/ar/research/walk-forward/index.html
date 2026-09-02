@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Walk-Forward · Nexus Scalp Engine</title>
+<meta name='description' content='Purged and embargoed walk-forward validation — why the purge exists and what happens when it was missing.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/research/walk-forward/'>
+<meta property='og:title' content='Walk-Forward'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/ar/research/walk-forward/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>الانتقال إلى المحتوى</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='القائمة' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../ar/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='اللغة'>🌐 العربية</summary>
+      <div class='lang-menu'><a href='../../../research/walk-forward/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../ar/'>الرئيسية</a>
+<div class='nav-section'><a class='' href='../../../ar/getting-started/'>البداية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/getting-started/installation/'>installation</a></li>
+<li><a class='' href='../../../ar/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../../ar/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/project/'>المشروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/project/vision/'>vision</a></li>
+<li><a class='' href='../../../ar/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/status/'>status</a></li>
+<li><a class='' href='../../../ar/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../../ar/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/architecture/'>البنية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/architecture/overview/'>overview</a></li>
+<li><a class='' href='../../../ar/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../ar/research/'>البحث</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/research/methodology/'>methodology</a></li>
+<li><a class='' href='../../../ar/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='active' href='../../../ar/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/validation/'>validation</a></li>
+<li><a class='' href='../../../ar/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/engineering/'>الهندسة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/guides/'>أدلة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/contributing/'>المساهمة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../../ar/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/releases/'>الإصدارات</a></div>
+<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../research/walk-forward/'>الإنجليزية</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../ar/research/'>البحث</a> / <span class='crumb-current' aria-current='page'>walk forward</span></nav>
+<h1 id='walk-forward'>Walk-Forward</h1>
+<h2 id='method'>Method</h2>
+<p><code>training/walk_forward_trainer.py</code> + <code>research/walkforward.py</code> implement</p>
+<p><strong>purged, embargoed walk-forward</strong> (Lopez de Prado): training folds are</p>
+<p>separated from test folds by a purge gap (label horizon) and an embargo gap</p>
+<p>(serial-correlation buffer), evaluated across temporally ordered folds.</p>
+<h2 id='defaults-that-matter-bug-183'>Defaults that matter (BUG-183)</h2>
+<p>The production research path once ran with purge/embargo silently disabled —</p>
+<p>the constants existed but weren't wired. This is recorded as BUG-183 and fixed</p>
+<p>with regression tests: <code>DEFAULT_PURGE_SECONDS = 300</code>, `DEFAULT_EMBARGO_SECONDS</p>
+<p>= 60<code> are now wired into </code>ResearchPipeline.validate_candidate`,</p>
+<p><code>OOSGate.evaluate</code>, <code>WalkForwardEngine.validate</code> and <code>BacktestEngine.run</code>, and</p>
+<p>the <strong>effective</strong> purge/embargo values are recorded in every run's config.</p>
+<h2 id='why-it-is-non-negotiable'>Why it is non-negotiable</h2>
+<p>A walk-forward without purge/embargo leaks label information across folds and</p>
+<p>overstates performance — the classic quantitative backtest crime. The</p>
+<p>repository treats a purge regression the same way it treats a risk-clamp</p>
+<p>regression: critical.</p>
+<h2 id='validation-gates'>Validation gates</h2>
+<p>OOS floors (macro-F1, balanced accuracy ≥ 0.34; ECE ≤ 0.15; minimum evidence</p>
+<p>100 rows) apply to walk-forward outputs. Failure ⇒ the candidate is REJECTED,</p>
+<p>full stop. See <a href="out-of-sample.md">OOS gate</a>.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../ar/research/backtesting/'><span class='pn-label'>السابق</span><span class='pn-name'>Backtesting</span></a><a class='pn pn-next' href='../../../ar/research/out-of-sample/'><span class='pn-label'>التالي</span><span class='pn-name'>Out-of-Sample Gate</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/research/walk-forward.md'>تعديل هذه الصفحة على جيت هب</a> ·
+  الإصدار v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../../ar/releases/'>كل الإصدارات</a>
+</footer>
+</main>
+</div>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

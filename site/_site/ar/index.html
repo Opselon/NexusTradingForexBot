@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Nexus Scalp Engine Documentation · Nexus Scalp Engine</title>
+<meta name='description' content='منصة تداول كمي قائمة على البحث'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/'>
+<meta property='og:title' content='Nexus Scalp Engine Documentation'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/ar/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../assets/styles.css'>
+<link rel='icon' href='../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>الانتقال إلى المحتوى</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='القائمة' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../ar/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='اللغة'>🌐 العربية</summary>
+      <div class='lang-menu'><a href='../' lang='en' hreflang='en'>English</a> <a href='../fa/' lang='fa' hreflang='fa'>فارسی</a> <a href='../es/' lang='es' hreflang='es'>Español</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../de/' lang='de' hreflang='de'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../ar/'>الرئيسية</a>
+<div class='nav-section'><a class='' href='../ar/getting-started/'>البداية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/getting-started/installation/'>installation</a></li>
+<li><a class='' href='../ar/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../ar/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/project/'>المشروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/project/vision/'>vision</a></li>
+<li><a class='' href='../ar/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/project/status/'>status</a></li>
+<li><a class='' href='../ar/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../ar/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/architecture/'>البنية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/architecture/overview/'>overview</a></li>
+<li><a class='' href='../ar/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/research/'>البحث</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/research/methodology/'>methodology</a></li>
+<li><a class='' href='../ar/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/research/validation/'>validation</a></li>
+<li><a class='' href='../ar/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/engineering/'>الهندسة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/guides/'>أدلة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/contributing/'>المساهمة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../ar/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../ar/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../ar/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../ar/releases/'>الإصدارات</a></div>
+<ul class='nav-list'><li><a href='../ar/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+
+
+<section class='hero'>
+  <div class='hero-kicker'>QUANTITATIVE TRADING RESEARCH &amp; EXECUTION PLATFORM</div>
+  <h1>Nexus <span class='grad'>Scalp Engine</span></h1>
+  <p class='hero-sub'>A research-driven, hexagonal, event-driven scalping platform for MetaTrader 5 —
+  causal features, governed deep models, an invariant risk engine, deterministic research tooling
+  and forensic observability in one auditable pipeline.</p>
+  <div class='hero-meta'><span class='chip chip-cert'>v9.0.6 released</span><span class='chip'>rev 4fbe921</span><span class='chip'>research: 50D live · 70D candidate</span></div>
+  <div class='hero-actions'><a class='btn btn-primary' href='../ar/getting-started/quickstart/'>ابدأ</a><a class='btn' href='../ar/architecture/overview/'>البنية</a><a class='btn' href='../ar/project/roadmap/'>خارطة الطريق</a><a class='btn btn-ghost' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></div>
+</section>
+<section class='pillars'><div class='pillar'><h3>🧭 Evidence before claims</h3><p>Metrics without evidence render <code>n/a</code> — never fake zeros. Negative results are published: the flagship 70D research candidate was <strong>rejected</strong> by our own OOS gate.</p></div><div class='pillar'><h3>🔒 Safety by construction</h3><p>PAPER default · SHADOW with zero order authority · LIVE behind explicit confirmation · hard risk clamps (<code>HARD_MAX_LOTS</code>, margin ≤20%) enforced in the execution path.</p></div><div class='pillar'><h3>🔬 Deterministic research</h3><p>Purged + embargoed walk-forward, bit-exact replay, fingerprinted datasets/models, provenance on every run — the same feature contract for live, replay and training.</p></div><div class='pillar'><h3>👁️ Runtime truth</h3><p>Forensic observability: severity-split logs, incident correlation, deploy gate. Broker truth wins over stale state; gates are authorities, settings are intent.</p></div></section>
+<section class='cap-highlights'><div class='section-head'><h2>🧱 Capability highlights</h2><a class='wn-more' href='../ar/project/capabilities/'>Full matrix →</a></div><div class='table-wrap'><table><thead><tr><th>Capability</th><th>Status</th></tr></thead><tbody><tr><td><a href='../ar/architecture/data-flow/'>Causal 50D feature engine</a></td><td><span class='chip chip-cert'>CERTIFIED</span></td></tr><tr><td><a href='../ar/architecture/execution-pipeline/'>Risk engine + execution clamps</a></td><td><span class='chip chip-cert'>CERTIFIED</span></td></tr><tr><td><a href='../ar/research/validation/'>Walk-forward + hard OOS gate</a></td><td><span class='chip chip-cert'>CERTIFIED</span></td></tr><tr><td><a href='../ar/architecture/model-pipeline/'>Artifact-first Model Factory</a></td><td><span class='chip chip-impl'>IMPLEMENTED</span></td></tr><tr><td><a href='../ar/architecture/research-stack/'>70D contract (Base+News+Liquidity)</a></td><td><span class='chip chip-exp'>EXPERIMENTAL</span></td></tr><tr><td><a href='../ar/research/counterfactuals/'>Counterfactual engine (NO_TRADE walk)</a></td><td><span class='chip chip-res'>RESEARCH</span></td></tr></tbody></table></div></section>
+<section class='whats-new'><div class='section-head'><h2>⚡ الجديد — v9.0.6</h2><span class='tl-date'>2026-09-01</span></div><ul class='wn-list'><li>f71cf01 Hermes-Main: BUG-183 taskboard row re-applied (lost in TASK-STASH-MERGE-03 branch cycle) — purge/embargo defaults wired into production research path</li><li>966c152 Agent GitHub Manager: TASK-STASH-MERGE-03 - both stashes reconciled (chg32-seam ABSORBED by 6213d23/2388780, policy prob-hunk superseded by CHG-0032-A1 policy deferral); byte-preserved to archive then dropped</li><li>967a468 Hermes-DevOps: wire BUG-183 purge/embargo leakage-guard regression into the CI critical manifest</li><li>0eb026c Nexus-Main: taskboard row — BUG-182B deferred-file touch disclosure + launch-gate evidence + CHG-0032 Step-3 binding rules R1/R2/R3</li><li>3fa3909 Nexus-Main: BUG-182B launch-gate evidence attached + BUG-184 filed (CHECK-FCS-04 non-numeric-element PASS hole, repro-grounded)</li><li>749054a Agent GitHub Manager: ruff 0.16.5 format conformance for BUG-176 schema-flag test (long runner.invoke line wrapped; 0.16.3 local skew masked it -&gt; CI ruff_format rc=1). Local venv ruff aligned to the pyproject pin 0.16.5.</li></ul><a class='wn-more' href='../ar/releases/'>كل الإصدارات →</a></section>
+<section class='secs'><div class='section-head'><h2>📚 Explore the documentation</h2></div>
+<div class='sec-grid'><a class='sec-card' href='../ar/getting-started/'><span class='sec-icon'>🚀</span><h3>البداية</h3><p>Install, run and configure the engine. PAPER mode is the default; SHADOW gives you live data with zero order authority.</p></a><a class='sec-card' href='../ar/project/'><span class='sec-icon'>📌</span><h3>المشروع</h3><p>What Nexus is, what is certified vs experimental, where it is going — all evidence-graded.</p></a><a class='sec-card' href='../ar/architecture/'><span class='sec-icon'>🗺️</span><h3>البنية</h3><p>How the engine is built: hexagonal layers, the tick-to-decision path, model governance, and the intelligence loop.</p></a><a class='sec-card' href='../ar/research/'><span class='sec-icon'>🔬</span><h3>البحث</h3><p>How historical data becomes falsifiable evidence — datasets, backtests, walk-forward, OOS, replay, counterfactuals.</p></a><a class='sec-card' href='../ar/engineering/'><span class='sec-icon'>🧪</span><h3>الهندسة</h3><p>Quality gates, CI architecture, the release process, and the security posture.</p></a><a class='sec-card' href='../ar/guides/'><span class='sec-icon'>🧭</span><h3>أدلة</h3><p>Operating the engine day to day: CLI, REST API, troubleshooting, common workflows.</p></a><a class='sec-card' href='../ar/contributing/'><span class='sec-icon'>🤝</span><h3>المساهمة</h3><p>The engineering contract, documentation ownership, and how to add a language.</p></a><a class='sec-card' href='../ar/reference/'><span class='sec-icon'>📚</span><h3>مرجع</h3><p>CLI reference, glossary, terminology, and honest answers in the FAQ.</p></a></div></section>
+<section class='timeline-block'><div class='section-head'><h2>🗓️ Release timeline</h2>
+<a class='wn-more' href='../ar/releases/'>كل الإصدارات →</a></div>
+<div class='timeline'><a class='tl-item' href='../ar/releases/'><span class='tl-tag'>v9.0.3</span><span class='tl-date'>2026-08-30</span></a><a class='tl-item' href='../ar/releases/'><span class='tl-tag'>v9.0.4</span><span class='tl-date'>2026-08-31</span></a><a class='tl-item' href='../ar/releases/'><span class='tl-tag'>v9.0.5</span><span class='tl-date'>2026-08-31</span></a><a class='tl-item' href='../ar/releases/'><span class='tl-tag'>v9.0.6</span><span class='tl-date'>2026-09-01</span></a></div></section>
+
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/.md'>تعديل هذه الصفحة على جيت هب</a> ·
+  الإصدار v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../ar/releases/'>كل الإصدارات</a>
+</footer>
+</main>
+</div>
+<script src='../assets/search.js' defer></script>
+</body>
+</html>

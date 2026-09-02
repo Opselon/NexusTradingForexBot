@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang='en' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>API Reference · Nexus Scalp Engine</title>
+<meta name='description' content='The live REST/SSE surface of the running engine — 203 /api endpoints across 22 groups, plus real examples and contracts.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/guides/api/'>
+<meta property='og:title' content='API Reference'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/guides/api/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../assets/styles.css'>
+<link rel='icon' href='../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Skip to content</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menu' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Search docs…' aria-label='Search docs…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='Language'>🌐 English</summary>
+      <div class='lang-menu'><span class='lang-current' lang='en'>English ✓</span> <a href='../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../'>Home</a>
+<div class='nav-section'><a class='' href='../../getting-started/'>Getting Started</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../getting-started/installation/'>installation</a></li>
+<li><a class='' href='../../getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../getting-started/first-run/'>first run</a></li>
+<li><a class='' href='../../getting-started/configuration/'>configuration</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../project/'>Project</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../project/vision/'>vision</a></li>
+<li><a class='' href='../../project/scope/'>scope</a></li>
+<li><a class='' href='../../project/status/'>status</a></li>
+<li><a class='' href='../../project/capabilities/'>capabilities</a></li>
+<li><a class='' href='../../project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../project/milestones/'>milestones</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../architecture/'>Architecture</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../architecture/overview/'>overview</a></li>
+<li><a class='' href='../../architecture/system-map/'>system map</a></li>
+<li><a class='' href='../../architecture/data-flow/'>data flow</a></li>
+<li><a class='' href='../../architecture/runtime/'>runtime</a></li>
+<li><a class='' href='../../architecture/research-stack/'>research stack</a></li>
+<li><a class='' href='../../architecture/model-pipeline/'>model pipeline</a></li>
+<li><a class='' href='../../architecture/execution-pipeline/'>execution pipeline</a></li>
+<li><a class='' href='../../architecture/observability/'>observability</a></li>
+<li><a class='' href='../../architecture/database/'>database</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../research/'>Research</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../research/methodology/'>methodology</a></li>
+<li><a class='' href='../../research/datasets/'>datasets</a></li>
+<li><a class='' href='../../research/backtesting/'>backtesting</a></li>
+<li><a class='' href='../../research/walk-forward/'>walk forward</a></li>
+<li><a class='' href='../../research/out-of-sample/'>out of sample</a></li>
+<li><a class='' href='../../research/replay/'>replay</a></li>
+<li><a class='' href='../../research/counterfactuals/'>counterfactuals</a></li>
+<li><a class='' href='../../research/validation/'>validation</a></li>
+<li><a class='' href='../../research/reproducibility/'>reproducibility</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../engineering/quality/'>quality</a></li>
+<li><a class='' href='../../engineering/ci/'>ci</a></li>
+<li><a class='' href='../../engineering/release-process/'>release process</a></li>
+<li><a class='' href='../../engineering/security/'>security</a></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../guides/'>Guides</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../guides/cli/'>cli</a></li>
+<li><a class='active' href='../../guides/api/'>api</a></li>
+<li><a class='' href='../../guides/troubleshooting/'>troubleshooting</a></li>
+<li><a class='' href='../../guides/common-workflows/'>common workflows</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../contributing/'>Contributing</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../contributing/documentation/'>documentation</a></li>
+<li><a class='' href='../../contributing/add-language/'>add language</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../reference/'>Reference</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../reference/cli-reference/'>cli reference</a></li>
+<li><a class='' href='../../reference/glossary/'>glossary</a></li>
+<li><a class='' href='../../reference/terminology/'>terminology</a></li>
+<li><a class='' href='../../reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../guides/'>Guides</a> / <span class='crumb-current' aria-current='page'>api</span></nav>
+<h1 id='api-reference'>API Reference</h1>
+<p>The Control Center backend is a FastAPI application exposing *<em>203 <code>/api/</em></code></p>
+<p>endpoints across 22 groups** (verified by scanning the route modules in</p>
+<p><code>src/nexus_scalp/web/</code>), plus Server-Sent Events for ticks and WebSocket for</p>
+<p>the dashboard. Everything the UI does, the API does — the UI is a consumer of</p>
+<p>the same surface.</p>
+<div class='callout callout-note' role='note'><div class='callout-title'>NOTE</div><p>Endpoint counts are generated from the repository's actual route decorators —</p><p>they drift with the code, and the docs doctor flags stale counts.</p></div>
+<h2 id='discovery'>Discovery</h2>
+<ul>
+<li><strong>Health / readiness:</strong> <code>GET /health</code> → <code>200</code> with <code>READY</code>/<code>DEGRADED</code>, <code>503</code> when NOT READY.</li>
+<li><strong>Engine state:</strong> <code>GET /api/status</code> and <code>GET /api/live/state</code> (the dashboard heart, includes the effective serving contract).</li>
+<li><strong>OpenAPI:</strong> the FastAPI app serves its schema at <code>/openapi.json</code> and Swagger UI at <code>/docs</code> on the same port as the UI (<code><a href="http://127.0.0.1:8080">http://127.0.0.1:8080</a></code> by default; Docker <code>:9090</code>).</li>
+</ul>
+<h2 id='endpoint-groups-verified'>Endpoint groups (verified)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Group</th><th>Count</th><th>What it covers</th></tr></thead><tbody>
+<tr><td><code>/api/models/*</code></td><td>45</td><td>governance, promotion/rollback previews, load gate, model inventory</td></tr>
+<tr><td><code>/api/research/*</code></td><td>23</td><td>datasets, discovery, runs, evidence, observability, retry/cancel</td></tr>
+<tr><td><code>/api/news/*</code></td><td>18</td><td>ingestion, analysis, consensus, keywords, bounded gate state</td></tr>
+<tr><td><code>/api/db/*</code></td><td>12</td><td>migrations, hygiene runtime + quarantine, console, portability</td></tr>
+<tr><td><code>/api/account/*</code></td><td>11</td><td>equity curve, drawdown, growth, performance intelligence</td></tr>
+<tr><td><code>/api/debug/*</code></td><td>10</td><td>canonical 18-section debug snapshot, traces</td></tr>
+<tr><td><code>/api/diagnostics/*</code></td><td>10</td><td>read-only incident diagnostics, export</td></tr>
+<tr><td><code>/api/intelligence/*</code></td><td>10</td><td>behavior detections, anomalies, lifecycle</td></tr>
+<tr><td><code>/api/command-center/*</code></td><td>8</td><td>operator command surfaces</td></tr>
+<tr><td><code>/api/operator/*</code></td><td>6</td><td>operator actions (gated)</td></tr>
+<tr><td><code>/api/replay/*</code></td><td>6</td><td>historical session replay over the shared engine</td></tr>
+<tr><td><code>/api/experience/*</code></td><td>5</td><td>autopsy, outcome recovery</td></tr>
+<tr><td><code>/api/runtime-config/*</code></td><td>4</td><td>authoritative runtime snapshots (hot reload)</td></tr>
+<tr><td><code>/api/settings/*</code></td><td>4</td><td>settings DB (secrets never returned)</td></tr>
+<tr><td><code>/api/liquidity/*</code></td><td>3</td><td>liquidity state/features/toggle (research governor)</td></tr>
+<tr><td><code>/api/forensics/*</code></td><td>2</td><td>health engine, deploy gate</td></tr>
+<tr><td>others (<code>rules</code>, <code>live</code>, <code>engine</code>, <code>config</code>, <code>mslie</code>, <code>algo</code>, …)</td><td>rest</td><td>rules matrix, SSE streams, algo tuner</td></tr>
+</tbody></table></div>
+<h2 id='conventions'>Conventions</h2>
+<ul>
+<li><strong>JSON everywhere.</strong> Enums serialize via a single <code>serialize_enums()</code> helper; error payloads use a shared safe-error shape (no stack traces, no internals).</li>
+<li><strong>Timestamps</strong> are broker-local-offset-aware ISO-8601 (the broker epoch quirk is a documented contract, not an accident).</li>
+<li><strong>No authentication on loopback</strong> (the API binds <code>127.0.0.1</code> by default); secrets never appear in responses — provider URLs are <code>[REDACTED_SECRET]</code>.</li>
+<li><strong>Write paths are gated:</strong> LIVE-affecting actions require explicit operator confirmation; <code>/api/factory/provider-test</code> performs exactly one bounded probe through the provider gate.</li>
+</ul>
+<h2 id='examples'>Examples</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code># engine health
+curl http://127.0.0.1:8080/health
+
+# account performance intelligence (compact intelligence block included)
+curl http://127.0.0.1:8080/api/account/performance/intelligence
+
+# forensic health verdicts
+curl http://127.0.0.1:8080/api/forensics/health
+
+# debug snapshot: 18 canonical sections, contract validation included
+curl http://127.0.0.1:8080/api/debug/state
+
+# live tick stream (SSE)
+curl -N http://127.0.0.1:8080/api/ticks/stream</code></pre></div>
+<h2 id='automation-notes'>Automation notes</h2>
+<ul>
+<li>All list endpoints are stable-shape JSON; the Control Center's <code>api_client.js</code> is the reference client.</li>
+<li>SSE clients should reconnect on drop; stream state is idempotent.</li>
+<li>Runtime configuration reads must go through <code>GET /api/runtime-config/*</code> snapshots — cached constructor values lie.</li>
+</ul>
+<h2 id='where-the-code-lives'>Where the code lives</h2>
+<p>Route modules: <code>src/nexus_scalp/web/</code> (<code>server.py</code> + domain modules:</p>
+<p><code>debug_research_routes.py</code>, <code>diagnostics_state_routes.py</code>,</p>
+<p><code>news_liquidity_mslie_routes.py</code>, <code>factory_routes.py</code>, <code>db_console.py</code>, …).</p>
+<p>Contracts are indexed in</p>
+<p><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/contracts.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/contracts.md"></a><code>agents/contracts.md</code></a>.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../guides/cli/'><span class='pn-label'>Previous</span><span class='pn-name'>CLI Guide</span></a><a class='pn pn-next' href='../../guides/troubleshooting/'><span class='pn-label'>Next</span><span class='pn-name'>Troubleshooting</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/docs/guides/api.md'>Edit this page on GitHub</a> ·
+  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../releases/'>All releases</a>
+</footer>
+</main>
+</div>
+<script src='../../assets/search.js' defer></script>
+</body>
+</html>

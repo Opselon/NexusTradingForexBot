@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Quickstart · Nexus Scalp Engine</title>
+<meta name='description' content='کوتاه‌ترین مسیر امن از کلون تا اجرای موتور — حالت PAPER پیش‌فرض است.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/getting-started/quickstart/'>
+<meta property='og:title' content='Quickstart'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/getting-started/quickstart/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../fa/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='زبان'>🌐 فارسی</summary>
+      <div class='lang-menu'><a href='../../../getting-started/quickstart/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../es/getting-started/quickstart/' lang='es' hreflang='es'>Español</a> <a href='../../../ar/getting-started/quickstart/' lang='ar' hreflang='ar'>العربية</a> <a href='../../../de/getting-started/quickstart/' lang='de' hreflang='de'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../fa/'>خانه</a>
+<div class='nav-section'><a class='active' href='../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/getting-started/installation/'>installation</a></li>
+<li><a class='active' href='../../../fa/getting-started/quickstart/'>quickstart</a></li>
+<li><a class='' href='../../../fa/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/project/vision/'>vision</a></li>
+<li><a class='' href='../../../fa/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/status/'>status</a></li>
+<li><a class='' href='../../../fa/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/roadmap/'>roadmap</a></li>
+<li><a class='' href='../../../fa/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/architecture/overview/'>overview</a></li>
+<li><a class='' href='../../../fa/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/research/methodology/'>methodology</a></li>
+<li><a class='' href='../../../fa/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/validation/'>validation</a></li>
+<li><a class='' href='../../../fa/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/contributing/contribution-guide/'>contribution guide</a></li>
+<li><a class='' href='../../../fa/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/faq/'>faq</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.6 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/getting-started/'>شروع</a> / <span class='crumb-current' aria-current='page'>quickstart</span></nav>
+<h1 id='-'>شروع سریع</h1>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code># ۱. نصب (توسعه‌دهندگان، از سورس)
+git clone https://github.com/Opselon/NexusTradingForexBot.git
+cd NexusTradingForexBot
+python -m venv .venv &amp;&amp; .\.venv\Scripts\Activate.ps1   # لینوکس: source .venv/bin/activate
+pip install -e .[dev]
+
+# ۲. سلامت سیستم
+nexus doctor          # عیب‌یابی فقط-خواندنی در ۱۹ دسته + پیشنهاد رفع
+nexus health          # READY / DEGRADED / NOT READY
+
+# ۳. اجرا — PAPER پیش‌فرض است، هرگز بی‌صدا LIVE نمی‌شود
+nexus start           # شبیه‌سازی کاغذی، داشبورد روی http://127.0.0.1:8080
+
+# ۴. ارزیابی روی داده واقعی، با صفر اختیار سفارش
+nexus start --mode shadow
+
+# ۵. توقف
+nexus stop            # برای اجرای --daemon؛ در پیش‌زمینه Ctrl+C</code></pre></div>
+<h2 id='-'>معنای حالت‌ها</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>حالت</th><th>داده</th><th>سفارش</th><th>کاربرد</th></tr></thead><tbody>
+<tr><td><code>paper</code> (پیش‌فرض)</td><td>شبیه‌سازی‌شده</td><td>شبیه‌سازی‌شده</td><td>اجرای اول، UI، توسعه</td></tr>
+<tr><td><code>shadow</code></td><td>زنده</td><td><strong>هیچ — صفر اختیار سفارش</strong> (<code>simulated=True</code>)</td><td>ارزیابی مدل/سیگنال روی بازار واقعی</td></tr>
+<tr><td><code>live</code></td><td>زنده</td><td>واقعی</td><td><strong>تأیید تعاملی صریح لازم است</strong>؛ پنل کامل ریسک چاپ می‌شود</td></tr>
+</tbody></table></div>
+<div class='callout callout-warning' role='note'><div class='callout-title'>WARNING</div><p>این موتور در حالت LIVE با پول واقعی معامله می‌کند. مسیر توصیه‌شده:</p><p><a href="#معنای-حالتها">حساب دمو → SHADOW → LIVE کوچک</a>. کلمپ‌های سخت موتور از</p><p>استراتژی محافظت می‌کنند — نه از سرمایه شما در برابر نوسان بازار.</p></div>
+<h2 id='-'>گام بعدی</h2>
+<ul>
+<li><a href="../../../fa/fa/architecture/overview/">نمای معماری</a></li>
+<li><a href="../../../fa/fa/project/status/">وضعیت پروژه</a></li>
+<li><a href="../../../fa/reference/faq/">پرسش‌های متداول</a></li>
+</ul>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../fa/getting-started/installation/'><span class='pn-label'>قبلی</span><span class='pn-name'>Installation</span></a><a class='pn pn-next' href='../../../fa/getting-started/first-run/'><span class='pn-label'>بعدی</span><span class='pn-name'>First-Run Safety</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/getting-started/quickstart.md'>ویرایش این صفحه در گیت‌هاب</a> ·
+  نسخه v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  <a href='../../../fa/releases/'>همه انتشارها</a>
+</footer>
+</main>
+</div>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>
