@@ -7747,3 +7747,34 @@ Status: FIXED (CI lane usable without private artifacts; local strictness kept).
   alignment (if desired) as engine.align_adapter_to_boot_mode(...) AFTER
   construction, or rely on the constructor guard alone.
 - Classification: P1 (blocked every engine boot). Status: FIXED.
+
+## BUG-212 - RESOLUTION (2026-09-02, Hermes-EngineGuard TASK-NX-BUG212-PAPERA): PAPER hard simulation boundary restored + SHADOW observation-only execution
+
+- FIX (3 layers, minimal surface): (1) NexusTradingForexBot.py adapter bind now honors the
+  effective boot mode first: `--mode paper` binds PaperMT5Adapter(symbol=config) BEFORE the
+  gateway/win32 branches (mirrors engine_boot.py BUG-148); LIVE and gateway paths unchanged.
+  (2) LiveEngine.align_adapter_to_boot_mode(adapter, mode) (new, live_engine.py): boot-time
+  defense-in-depth - a PAPER effective mode REPLACES any real broker adapter with the
+  simulation boundary BEFORE OrderLifecycleManager wiring; SHADOW intentionally keeps its
+  live-data adapter (shadow evidence must observe the real feed; mutation ban is enforced at
+  the decision path, not adapter identity). Called from LiveEngine.__init__ after the
+  effective-mode resolution (override > settings DB > config).
+- SHADOW observation-only: _process_tick_pipeline downgrades every non-NO_TRADE policy
+  decision to NO_TRADE (reason SHADOW_OBSERVATION_ONLY, final_action=NO_TRADE, is_ai_reversal
+  cleared) BEFORE the dispatch router; _evaluate_hedging_policy suppresses intelligent-hedge
+  dispatch in SHADOW. Live prediction/position observation (manage_active_positions, inference,
+  audit, experience counterfactuals) fully preserved.
+- CROSS-OWNER NOTE: Nexus-Main's BUG-218 discovery-duty repair removed a BROKEN intermediate
+  revision of my launcher realignment call (unbound instance-method call). The final launcher
+  carries only the correct mode-first bind; the constructor guard is the authoritative second
+  layer. No behavior gap; launcher and engine layers verified together below.
+- REGRESSION TESTS: tests/unit/test_launcher_paper_boundary_bug212.py (10 tests: PAPER boot
+  must not construct DirectMT5Adapter, alignment PAPER/SHADOW/LIVE semantics, constructor
+  alignment, launcher AST order guard paper-bind-before-real-bind, SHADOW downgrade + hedge
+  suppression + source-order contract, hot-swap contract unchanged). GREEN 10/10 on fix;
+  fails-before proven on pristine HEAD worktree (2 structural tests fail pre-fix).
+- VERIFICATION: py_compile OK; ruff check + ruff format --check OK (both files); mypy OK;
+  scoped pytest: test_launcher_paper_boundary_bug212.py (10 passed), state-contradiction +
+  bug146_149 + mt5_status suites (18 passed); test_htf_warmup_gate 5 failures reproduced
+  IDENTICAL on pristine HEAD worktree (pre-existing, unrelated - model artifact env).
+- Classification: P0-adjacent SAFETY. Status: FIXED.

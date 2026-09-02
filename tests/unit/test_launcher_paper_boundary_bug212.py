@@ -59,7 +59,7 @@ def test_boot_alignment_paper_replaces_real_adapter() -> None:
     engine = _make_engine(ExecutionMode.PAPER, real)
     aligned = engine.align_adapter_to_boot_mode(engine.adapter, ExecutionMode.PAPER)
     assert isinstance(aligned, PaperMT5Adapter), (
-        "PAPER boot must bind the simulation adapter, got " f"{type(aligned).__name__}"
+        f"PAPER boot must bind the simulation adapter, got {type(aligned).__name__}"
     )
     assert aligned is not real
 
@@ -139,9 +139,7 @@ def test_launcher_source_binds_paper_adapter_for_paper_boot() -> None:
             if "ExecutionMode.PAPER" in test_src and "args.gateway" in test_src:
                 paper_guard_seen = True
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = (
-                node.targets if isinstance(node, ast.Assign) else [node.target]
-            )
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             names = {ast.unparse(t) for t in targets}
             if "adapter" in names and node.value is not None:
                 call = node.value
@@ -169,17 +167,6 @@ def _shadow_engine() -> LiveEngine:
     )
 
     engine = _make_engine(ExecutionMode.SHADOW, _FakeAdapter())
-    proposal = TradeProposal(
-        request_id="shadow_test_1",
-        symbol="XAUUSD",
-        generated_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
-        action=ActionType.BUY,
-        confidence=0.9,
-        proposed_entry=2000.0,
-        stop_loss=1990.0,
-        take_profit=2020.0,
-        risk_reward_ratio=2.0,
-    )
     return engine
 
 
@@ -262,9 +249,8 @@ def test_hot_mode_switch_contract_unchanged() -> None:
     """set_execution_mode keeps its BUG-148 hot-swap behavior (PAPER+SHADOW
     swap to simulation on a mode CHANGE) — the boot alignment must not have
     altered the hot path."""
-    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
-
     from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
+    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 
     real = DirectMT5Adapter()
     engine = _make_engine(ExecutionMode.LIVE, real)

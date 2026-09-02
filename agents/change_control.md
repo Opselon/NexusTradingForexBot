@@ -1670,3 +1670,26 @@ runtime gate work landed on top):
   trained with - the current 70d_liquidity artifact is unaffected as its
   news block is smoke-grade zeros).
 - Status: IMPLEMENTING
+
+## CHG-0053 - BUG-212 hard simulation boundary: PAPER boots bind PaperMT5Adapter + SHADOW observation-only execution (2026-09-02, Hermes-EngineGuard)
+
+- MOTIVATION: `NexusTradingForexBot.py --mode paper` bound DirectMT5Adapter on win32
+  regardless of mode (BUG-212 black-box evidence: MT5 CONNECTED + real demo position managed
+  while configured_mode=PAPER); PAPER was not the documented hard simulation boundary and
+  SHADOW still ran position-mutation lifecycles.
+- CHANGE (minimal surface, no LIVE behavior change, no order_manager/execution/* edits):
+  (1) launcher mode-first adapter bind (PAPER -> PaperMT5Adapter before any real branch);
+  (2) LiveEngine.align_adapter_to_boot_mode() called at __init__ (PAPER replaces a real
+  adapter BEFORE OrderLifecycleManager wiring; SHADOW keeps live-data adapter by contract);
+  (3) _process_tick_pipeline SHADOW boundary downgrades every non-NO_TRADE decision to a
+  logged NO_TRADE observation (SHADOW_OBSERVATION_ONLY) before dispatch;
+  (4) _evaluate_hedging_policy suppresses hedge dispatch in SHADOW.
+- BEHAVIOR: PAPER boot can never touch the real terminal (no account/position RPC); SHADOW
+  observes live data and records full counterfactual evidence but never mutates broker
+  state; LIVE/gateway/REPLAY/BACKTEST semantics untouched; set_execution_mode hot-switch
+  contract (BUG-148) unchanged.
+- TESTS: tests/unit/test_launcher_paper_boundary_bug212.py (10 green; fails-before evidence
+  on pristine HEAD worktree).
+- RISK: LOW-MEDIUM (execution-adjacent but engine-level only; order_manager untouched;
+  no dispatch-path change in LIVE). Owner sign-off: runtime-truth owner notified via
+  taskboard row TASK-NX-BUG212-PAPERA.
