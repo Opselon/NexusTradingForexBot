@@ -510,7 +510,9 @@ All CLI commands consume `NexusApiClient` over real HTTP (`--base-url` / `NEXUS_
 from nexus_scalp.api_client import NexusApiClient, NexusApiError, DEFAULT_BASE_URL
 
 client = NexusApiClient("http://127.0.0.1:8080", timeout=10.0, headers={})
-client.get(path, params=...)            # → envelope dict {"data","meta"} (+ "pagination" keys inside data on lists)
+client.get(
+    path, params=...
+)  # → envelope dict {"data","meta"} (+ "pagination" keys inside data on lists)
 client.post(path, json_body=..., idempotency_key=...)
 # typed shortcuts: system_status/health/version, capabilities, runtime_mode,
 # market_quote, signals_latest/history, decisions_latest/decisions/

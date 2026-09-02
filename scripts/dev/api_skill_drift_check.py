@@ -8,6 +8,7 @@ Detects:
 
 Exit 0 = in sync, 1 = drift (documentation/contract defect).
 """
+
 from __future__ import annotations
 
 import re
@@ -65,7 +66,9 @@ def main() -> int:
     if missing:
         problems.append(f"current operations missing from APISkill ({len(missing)}): {missing}")
     if extra:
-        problems.append(f"APISkill documents non-existent current operations ({len(extra)}): {extra}")
+        problems.append(
+            f"APISkill documents non-existent current operations ({len(extra)}): {extra}"
+        )
     if count_m and int(count_m.group(1)) != len(live):
         problems.append(f"APISkill claims {count_m.group(1)} operations; live count is {len(live)}")
 
