@@ -1,0 +1,803 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  5%]
+.............................................................sssss.s.... [ 10%]
+.......sssssss...s.s.......................................s............ [ 15%]
+........................................................................ [ 20%]
+........................................................................ [ 25%]
+...................s..ss................................................ [ 30%]
+............................................ssssssssss.................. [ 35%]
+........................................................................ [ 40%]
+........................................................................ [ 45%]
+........................................................................ [ 50%]
+........................................................................ [ 55%]
+........................................................................ [ 60%]
+........................................................................ [ 66%]
+........................................................................ [ 71%]
+........................................................................ [ 76%]
+........................................................................ [ 81%]
+........................................................................ [ 86%]
+...................................sss.................................. [ 91%]
+.................s...................................................... [ 96%]
+....................................F............Fatal Python error: Bus error
+
+Current thread 0x00007f2c3afee6c0 (most recent call first):
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/release/health.py", line 154 in _db_tables
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/release/health.py", line 877 in check_experience
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/release/health.py", line 1047 in run_all
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/release/health.py", line 1069 in overall
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/web/api_v1/system.py", line 46 in _health_block
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/web/api_v1_wiring.py", line 96 in _warm_bound
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c3bfef6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c3cff06c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c3dff16c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c3eff26c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c3fff36c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c40ff46c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c41ff56c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c42ff66c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c43ff76c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c44ff86c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c48ffc6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c45ff96c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c47ffb6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/candle_intelligence/store.py", line 431 in _worker_loop
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c46ffa6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/candle_intelligence/store.py", line 431 in _worker_loop
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c4bfff6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/candle_intelligence/store.py", line 431 in _worker_loop
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c49ffd6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/candle_intelligence/store.py", line 431 in _worker_loop
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c4affe6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/candle_intelligence/store.py", line 431 in _worker_loop
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c59ffd6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c5affe6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c5bfff6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c69ffd6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c6affe6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c6bfff6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c7dffd6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c7effe6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c7ffff6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c855ff6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c87dfe6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2c88dff6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 331 in wait
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/queue.py", line 180 in get
+  File "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/adapters/database/audit_repository.py", line 1436 in _process_queue_worker
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 982 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x00007f2dc31ff6c0 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 534 in read
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 567 in from_io
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 1160 in _thread_receiver
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 341 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 411 in _perform_spawn
+
+Thread 0x00007f2dc4868b80 (most recent call first):
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/coverage/numbits.py", line 41 in nums_to_numbits
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/coverage/sqldata.py", line 557 in add_lines
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/coverage/sqldata.py", line 136 in _wrapped
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/coverage/collector.py", line 488 in flush_data
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/coverage/control.py", line 944 in get_data
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/coverage/control.py", line 864 in save
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pytest_cov/engine.py", line 413 in finish
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pytest_cov/engine.py", line 44 in ensure_topdir_wrapper
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pytest_cov/plugin.py", line 352 in pytest_runtestloop
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 152 in _multicall
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/main.py", line 384 in _main
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/main.py", line 330 in wrap_session
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/main.py", line 377 in pytest_cmdline_main
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/xdist/remote.py", line 427 in <module>
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 1291 in executetask
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 341 in run
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 411 in _perform_spawn
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 389 in integrate_as_primary_thread
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 1273 in serve
+  File "/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/execnet/gateway_base.py", line 1806 in serve
+  File "<string>", line 8 in <module>
+  File "<string>", line 1 in <module>
+
+Extension modules: numpy._core._multiarray_umath, numpy.linalg._umath_linalg, torch._C, torch._C._dynamo.autograd_compiler, torch._C._dynamo.eval_frame, torch._C._dynamo.guards, torch._C._dynamo.utils, torch._C._fft, torch._C._linalg, torch._C._nested, torch._C._nn, torch._C._sparse, torch._C._special, cuda.bindings._bindings.cydriver, cuda.bindings.cydriver, cuda.bindings.driver, cuda.bindings._bindings.cyruntime_ptds, cuda.bindings._bindings.cyruntime, cuda.bindings.cyruntime, cuda.bindings.runtime, yaml._yaml, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._pcg64, numpy.random._generator, numpy.random._mt19937, numpy.random._philox, numpy.random._sfc64, numpy.random.mtrand (total: 30)
+.[gw0] node down: Not properly terminated
+                                                                         [100%]
+=================================== FAILURES ===================================
+___________ TestSubsystemPins.test_strategy_degraded_edge_triggered ____________
+[gw0] linux -- Python 3.11.16 /opt/hostedtoolcache/Python/3.11.16/x64/bin/python
+
+self = <tests.unit.test_observability_guardrails.TestSubsystemPins object at 0x7f2cdf30db50>
+
+    def test_strategy_degraded_edge_triggered(self):
+        from nexus_scalp.experience.evaluator import StrategyEvaluator
+    
+        e = StrategyEvaluator.__new__(StrategyEvaluator)
+        e._degraded_log_ts = {}
+        # first call logs (True); immediate second call suppressed (False)
+>       assert e._should_repeat_degraded("strat_x") is True
+E       AssertionError: assert False is True
+E        +  where False = _should_repeat_degraded('strat_x')
+E        +    where _should_repeat_degraded = <nexus_scalp.experience.evaluator.StrategyEvaluator object at 0x7f2c6875b450>._should_repeat_degraded
+
+tests/unit/test_observability_guardrails.py:411: AssertionError
+=============================== warnings summary ===============================
+../../../../../opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/fastapi/testclient.py:1
+../../../../../opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/fastapi/testclient.py:1
+../../../../../opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/fastapi/testclient.py:1
+../../../../../opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/fastapi/testclient.py:1
+../../../../../opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/fastapi/testclient.py:1
+  /opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_champion_verified_logs_once_per_fingerprint
+tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_artifact_rewrite_reverifies_once
+tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_cold_start_none_memoized
+  /home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/observability/logging.py:621: DeprecationWarning: The `pad_event` argument is deprecated. Use `pad_event_to` instead.
+    else structlog.dev.ConsoleRenderer(colors=False, pad_event=0)
+
+tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_champion_verified_logs_once_per_fingerprint
+tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_artifact_rewrite_reverifies_once
+tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_cold_start_none_memoized
+  /home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/observability/logging.py:630: DeprecationWarning: The `pad_event` argument is deprecated. Use `pad_event_to` instead.
+    console_renderer: Any = structlog.dev.ConsoleRenderer(colors=True, pad_event=28)
+
+tests/unit/test_web_ux_safety.py::TestServeRoutes::test_19_ux_assets_served[ux_i18n.js]
+tests/unit/test_web_ux_safety.py::TestServeRoutes::test_19_ux_assets_served[ux.js]
+tests/unit/test_web_ux_safety.py::TestServeRoutes::test_19_ux_assets_served[ux_attention.js]
+  /opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/_pytest/fixtures.py:1313: PytestRemovedIn10Warning: Class-scoped fixture defined as instance method is deprecated.
+  Instance attributes set in this fixture will NOT be visible to test methods,
+  as each test gets a new instance while the fixture runs only once per class.
+  Use @classmethod decorator and set attributes on cls instead.
+  See https://docs.pytest.org/en/stable/deprecations.html#class-scoped-fixture-as-instance-method
+    fixturefunc = resolve_fixture_function(fixturedef, request)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.11.16-final-0 _______________
+
+___________________________ coverage: failed workers ___________________________
+
+The following workers failed to return coverage data, ensure that pytest-cov is installed on these workers.
+gw0
+Name                                                            Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------------------------------
+src/nexus_scalp/__init__.py                                         2      0   100%
+src/nexus_scalp/accounting/__init__.py                              7      0   100%
+src/nexus_scalp/accounting/aggregation.py                         356    344     3%   44-53, 58-66, 71-77, 100-251, 263-277, 288-358, 388-653
+src/nexus_scalp/accounting/core.py                                365    329    10%   84-91, 100, 103-105, 119-163, 181-223, 238-280, 293-357, 376-427, 443-465, 469-471, 484-494, 498, 509-510, 519-536, 545-561, 577-623, 635-653, 665-712, 727-818, 838-895, 904-920
+src/nexus_scalp/accounting/market_calendar.py                      47     33    30%   55-66, 70, 86-132, 148-153, 158-159
+src/nexus_scalp/accounting/models.py                              243     19    92%   52, 115-117, 178, 183-185, 190-192, 285, 361, 405, 450, 502, 524-526
+src/nexus_scalp/accounting/normalize.py                            96     81    16%   53-59, 64-68, 72, 93-109, 119-168, 173-177, 188-193, 204-216, 228-244
+src/nexus_scalp/accounting/periods.py                              89     59    34%   71-72, 77, 82, 87-93, 104-106, 111, 115, 129-154, 159, 170-177, 189-205
+src/nexus_scalp/accounting/retention.py                            37     37     0%   13-103
+src/nexus_scalp/accounting/worker.py                               71     55    23%   63-72, 80-84, 88-91, 107-135, 155-182, 200
+src/nexus_scalp/adapters/__init__.py                                0      0   100%
+src/nexus_scalp/adapters/database/__init__.py                       0      0   100%
+src/nexus_scalp/adapters/database/audit_repository.py             708    646     9%   38-40, 62-123, 127-152, 156-436, 454-480, 491-494, 503-519, 527-537, 545-558, 578-747, 770-776, 779-816, 819-869, 872-906, 909-965, 968-992, 995, 1013-1139, 1149-1221, 1238-1386, 1400-1413, 1417-1421, 1425-1465, 1499-1507, 1521-1651, 1660-1671, 1689-1718, 1722-1746, 1755-1787, 1809-1838, 1846-1866, 1877-1895, 1907-1949, 1956-1974, 2027-2156, 2162-2243, 2261-2290, 2301-2320, 2326-2338, 2345-2364, 2368-2378, 2385-2401, 2405-2544, 2554-2573, 2579-2606, 2630-2711, 2715-2729
+src/nexus_scalp/adapters/database/broker_history.py               184    156    15%   43, 53-56, 61-64, 68-73, 77-82, 86-88, 93-95, 100, 125-129, 186-207, 228-288, 303-312, 414-418, 434-606, 611-619
+src/nexus_scalp/adapters/database/broker_history_sync.py          102    102     0%   9-188
+src/nexus_scalp/adapters/mt5/__init__.py                            0      0   100%
+src/nexus_scalp/adapters/mt5/diagnostics.py                       155    109    30%   68-69, 89, 102-118, 123-125, 153-178, 183-186, 206-217, 221-230, 233-237, 240-241, 244-246, 251-256, 259-260, 263-279, 284, 288, 292-295
+src/nexus_scalp/adapters/mt5/mt5_adapter.py                       662    662     0%   20-1512
+src/nexus_scalp/adapters/mt5/providers.py                         485    279    42%   53-66, 87-94, 136-137, 156-157, 179-180, 295-297, 361-411, 416-419, 423-429, 433-439, 443-449, 457-492, 499-572, 576-629, 633-661, 665-695, 699-726, 731-751, 755-775, 785-831
+src/nexus_scalp/adapters/mt5/remote_gateway.py                    116    116     0%   14-296
+src/nexus_scalp/adapters/paper/paper_adapter.py                   250    202    19%   61-69, 77-78, 88-89, 92, 100-102, 106-107, 110, 119-124, 127-151, 154-192, 195-218, 221-222, 231-245, 254-265, 275-289, 295, 300, 303, 312, 322, 330, 338, 356-370, 390-402, 423-459, 467-469, 473, 496, 520, 540-565, 574-587, 591, 595, 599-619
+src/nexus_scalp/api_client.py                                      96     58    40%   45-51, 64-66, 74, 84-87, 90-96, 107-139, 146, 149, 152, 155, 158, 161, 164, 174, 185, 195, 206, 209, 212, 215, 218, 221, 224, 227, 230, 233, 238, 248, 251, 254
+src/nexus_scalp/application/__init__.py                             0      0   100%
+src/nexus_scalp/application/live_engine.py                       2506   2328     7%   133-145, 159, 163-168, 172-174, 178, 225-237, 248-255, 260, 272-284, 308-394, 406-438, 448-1237, 1247-1282, 1286-1294, 1303-1316, 1327-1404, 1418-1423, 1433-1492, 1504-1514, 1529-1537, 1549-1557, 1561-1591, 1595-1624, 1628-1678, 1681, 1693-2206, 2218-2234, 2255-2275, 2279-2286, 2290-2294, 2298-2382, 2392-2413, 2429-2438, 2445-2449, 2458-2470, 2480-2509, 2518-2559, 2562-2594, 2605-2638, 2652-2738, 2748-2756, 2760-2764, 2772-2780, 2784-2788, 2792-2800, 2809-2818, 2822-2830, 2834-2838, 2842-2849, 2853-2857, 2865-2873, 2882-2915, 2927-2938, 2942-2948, 2956-2977, 2998-3011, 3015-3021, 3029-3036, 3040-3044, 3052-3056, 3066-3115, 3118-3209, 3226-3271, 3294-3320, 3323-3371, 3383-3462, 3477-3480, 3502-3523, 3529-4220, 4244-4282, 4291-4317, 4329-4346, 4360-4483, 4489-4684, 4688-4698, 4708-4794, 4815-4822, 4832-4858, 4901-4919, 4929-5003, 5007-5013, 5016-5108, 5122-5263, 5282-5409, 5416-5469, 5478-5537, 5552-5585, 5598-5642, 5649-5659, 5669-5704, 5723-5785, 5794-5804, 5814-5867, 5883-5906
+src/nexus_scalp/candle_intelligence/__init__.py                     5      0   100%
+src/nexus_scalp/candle_intelligence/classifier.py                  93     81    13%   31, 44-127, 168-195, 203-224, 236-243, 255
+src/nexus_scalp/candle_intelligence/config.py                      23      0   100%
+src/nexus_scalp/candle_intelligence/decision.py                   127    116     9%   43, 56-226, 252-271, 276-279, 288-312, 333
+src/nexus_scalp/candle_intelligence/engine.py                      79     55    30%   66-75, 78, 100-113, 137-154, 185-234, 249, 256, 259, 262, 265
+src/nexus_scalp/candle_intelligence/models.py                     110      3    97%   101-103
+src/nexus_scalp/candle_intelligence/patterns.py                   370    318    14%   44-51, 55, 59, 63, 67, 71, 75, 79, 82, 98-102, 145-146, 159-187, 194-257, 266-290, 298-317, 332-334, 340-361, 366-367, 371-388, 393-406, 410-414, 418-422, 426-428, 432-436, 440-452, 457-462, 466-483, 489-506, 510-522, 526-540, 546-579, 583-587, 591-595
+src/nexus_scalp/candle_intelligence/store.py                      247    189    23%   212, 218-231, 248, 301-338, 345-349, 353-355, 361-400, 409-414, 418-448, 451-463, 472-484, 488, 492-495, 498-510, 513, 516, 529-556, 560-574, 577-586, 589-595
+src/nexus_scalp/candle_intelligence/store_writes.py                71     54    24%   31-35, 39-41, 50, 67-113, 118-202, 214-267, 271-315, 319-361, 366-427, 441-479, 491-527
+src/nexus_scalp/cli/__init__.py                                     0      0   100%
+src/nexus_scalp/cli/__main__.py                                     0      0   100%
+src/nexus_scalp/cli/analyze_commands.py                            86     74    14%   35-163
+src/nexus_scalp/cli/api_commands.py                               120     85    29%   27-28, 32, 36-44, 48-49, 57-70, 78, 86, 94, 102, 110, 122-136, 144, 152, 161-174, 185-199, 207-248
+src/nexus_scalp/cli/app_factory.py                                 22      4    82%   84-87
+src/nexus_scalp/cli/db_commands.py                                344    259    25%   30-33, 46-56, 68-82, 89-90, 102-112, 127-146, 154-161, 174-200, 205-207, 218-226, 231-233, 238-257, 264-286, 290, 308-324, 332-344, 353-367, 375-384, 392-402, 411-418, 426-440, 453-511, 519-525, 531-532, 557-561, 565-572, 576-587, 598-599, 609-614, 632-635, 644-653, 663-674, 689-698, 706-707, 711-712, 719-726
+src/nexus_scalp/cli/dependency_commands.py                        123     92    25%   37-39, 48-67, 75-82, 88-104, 110-122, 128-143, 149-162, 182-187
+src/nexus_scalp/cli/doctor.py                                     737    651    12%   73-79, 91-148, 155-156, 172-343, 352-375, 390-394, 422-486, 493-502, 513-539, 554-604, 617-668, 679-708, 727-764, 788-817, 827-836, 848-871, 917-1022, 1038, 1051-1103, 1113-1115, 1138-1301, 1309-1336, 1344-1360, 1365-1378, 1386-1440, 1452-1516, 1525-1534, 1539-1558, 1581-1633
+src/nexus_scalp/cli/engine_boot.py                                236    206    13%   53, 82-225, 231-306, 320-414, 418-522, 528-587, 596-597, 613-621
+src/nexus_scalp/cli/help_command.py                                27     21    22%   41-94
+src/nexus_scalp/cli/incident_commands.py                          198    158    20%   51, 55-58, 62-67, 71-87, 103-110, 117-122, 130-135, 139-145, 152-162, 170-183, 194-355, 363-378, 386-401
+src/nexus_scalp/cli/main.py                                        21      1    95%   80
+src/nexus_scalp/cli/styling.py                                    111     79    29%   70-81, 85-89, 93-105, 115, 119, 126-137, 166-200, 211-246, 265-270, 274
+src/nexus_scalp/cli/update_cli.py                                 340    315     7%   52-53, 70-99, 104-109, 114-190, 250-692, 704-748
+src/nexus_scalp/cli/wizard.py                                     160    131    18%   58-92, 96-187, 199-212, 216-228, 237-292, 303-336
+src/nexus_scalp/configuration/__init__.py                           3      0   100%
+src/nexus_scalp/configuration/config.py                           106      5    95%   207-213
+src/nexus_scalp/configuration/runtime_config.py                   468    264    44%   197, 201, 205, 209, 213, 217, 221, 225, 229, 233, 237, 241, 245, 249, 253, 257, 338-345, 349, 363-392, 418, 442, 467-468, 472-476, 479, 482, 485, 488, 491, 494, 497, 500, 503, 515-522, 525-526, 589-594, 598-629, 633, 660-753, 757, 795, 799-840, 845-856, 860, 864, 868-872, 894-934, 943-965, 973, 976, 979-980, 994-995, 998-1002, 1019-1101, 1120-1132, 1137-1143
+src/nexus_scalp/database/__init__.py                                6      0   100%
+src/nexus_scalp/database/config.py                                132     86    35%   91-93, 115, 134, 138, 143, 152-158, 168-185, 190-210, 215-224, 243-311, 320-331, 336-337
+src/nexus_scalp/database/ddl_port.py                              105    105     0%   19-172
+src/nexus_scalp/database/drivers/__init__.py                       14      6    57%   23-25, 33-35
+src/nexus_scalp/database/drivers/base.py                          103     37    64%   36-37, 43-47, 51-53, 61, 74, 79, 86, 155, 171, 181, 185, 192-194, 197-200, 203-216
+src/nexus_scalp/database/drivers/postgres_driver.py               299    251    16%   52-61, 71-101, 114-115, 121-130, 134-139, 146, 151-165, 173, 176-182, 189, 193-225, 228-239, 242-253, 257-262, 268-272, 275-287, 290-302, 305-314, 319-330, 333-340, 348-351, 362-396, 405-432, 435-451, 456-459, 462-465, 470, 473-476, 479, 489, 492-495, 500, 503-507, 513, 517
+src/nexus_scalp/database/drivers/proxy.py                         123     91    26%   41-45, 49, 53, 56-60, 63-64, 67, 70, 73-76, 85-92, 99-107, 112-128, 131-139, 142, 145-148, 151-155, 158, 161-164, 170, 178-197, 206
+src/nexus_scalp/database/drivers/sqlite_driver.py                 183    140    23%   53-56, 67-68, 75, 79, 84-87, 94-96, 99-103, 109-116, 120-125, 131-137, 141-148, 151-161, 164-174, 185-191, 194-200, 204-211, 216-224, 227-235, 238-244, 248-253, 256-261, 266-269, 272-274, 279, 282-287, 290, 300, 303-306, 310-317, 320
+src/nexus_scalp/database/engine.py                                408    362    11%   75-83, 101-112, 119-121, 124-125, 128-134, 137, 144-153, 156, 159, 163-166, 173-176, 179-182, 193, 222-240, 244-257, 265-289, 292, 299-306, 314-407, 419-529, 534-556, 564-598, 613-648, 656-896, 908, 912, 916-939, 952-977, 982-984, 989-995
+src/nexus_scalp/database/gate.py                                   37     27    27%   44-92, 105-117
+src/nexus_scalp/database/health.py                                115    115     0%   9-200
+src/nexus_scalp/database/manifest.py                               16      2    88%   272, 276
+src/nexus_scalp/database/migrate_copier.py                        123    123     0%   18-331
+src/nexus_scalp/database/migrate_engine.py                        204    204     0%   21-412
+src/nexus_scalp/database/models.py                                 96     15    84%   89-94, 133, 136-139, 142-146, 149, 173-174
+src/nexus_scalp/database/provider.py                               39     23    41%   35, 39, 51-58, 63-66, 89-97, 108-112
+src/nexus_scalp/database/registry.py                              120     75    38%   49-51, 61, 70, 74-78, 82-86, 90-91, 103, 107, 111-112, 119-124, 128, 139, 148, 152-153, 167-190, 212, 219-223, 237-311, 317, 324-326, 345-363, 372, 376-379, 391, 402-405, 409-410, 419, 428, 432-433, 566, 570, 575, 579
+src/nexus_scalp/dependency_intelligence/__init__.py                 4      0   100%
+src/nexus_scalp/dependency_intelligence/analysis.py               210    158    25%   117, 139, 163-165, 170-184, 189-207, 212-259, 264-306, 311-352, 365-378, 389-421, 437-442
+src/nexus_scalp/dependency_intelligence/analyzers/__init__.py       3      0   100%
+src/nexus_scalp/dependency_intelligence/analyzers/di.py           109     95    13%   56-65, 70-71, 74-79, 84-184, 191-209, 212-230
+src/nexus_scalp/dependency_intelligence/classify.py                23     16    30%   84-92, 97-113
+src/nexus_scalp/dependency_intelligence/engine.py                  66     33    50%   49-50, 53-75, 80-92, 96-97
+src/nexus_scalp/dependency_intelligence/models.py                 127     17    87%   117, 141, 168, 189-192, 196-211, 214
+src/nexus_scalp/dependency_intelligence/scanner.py                311    267    14%   155-158, 161-180, 183-190, 194-197, 201-203, 207-218, 222-225, 230-235, 247-252, 255, 258, 261-280, 285-311, 316-338, 347-370, 374, 379-445, 452-537, 556-577, 580-627, 630-643, 654-668, 685
+src/nexus_scalp/diagnostics/analyzers/bandit_adapter.py            57     45    21%   18-31, 34-48, 51-101
+src/nexus_scalp/diagnostics/analyzers/base.py                      15      2    87%   15-16
+src/nexus_scalp/diagnostics/analyzers/pylint_adapter.py            57     45    21%   18-31, 34-48, 51-100
+src/nexus_scalp/diagnostics/analyzers/pyright_adapter.py           60     48    20%   18-31, 34-48, 51-104
+src/nexus_scalp/diagnostics/analyzers/ruff_adapter.py              65     53    18%   18-32, 35-50, 53-116
+src/nexus_scalp/diagnostics/engine.py                              97     68    30%   47, 60-61, 69, 72-84, 88-97, 105-164
+src/nexus_scalp/diagnostics/models.py                              41      5    88%   29-31, 34, 68
+src/nexus_scalp/diagnostics/runner.py                              73     54    26%   36-61, 66-74, 87-139, 159-173
+src/nexus_scalp/domain/__init__.py                                  0      0   100%
+src/nexus_scalp/domain/enums.py                                    40      0   100%
+src/nexus_scalp/domain/models.py                                  124     15    88%   41, 48, 54, 100, 196-216
+src/nexus_scalp/execution/order_manager.py                       2282   2048    10%   320-514, 545-557, 568-585, 592-603, 607-609, 620-623, 627-628, 632, 650-676, 680-681, 685-731, 740-750, 758-759, 766-808, 824-991, 998-1005, 1022-1086, 1099-1110, 1133-1148, 1172-1275, 1285-1390, 1410-1465, 1477-1553, 1565-1571, 1583-1675, 1687-1719, 1733, 1748-1755, 1759-1762, 1783, 1794-1801, 1805-1812, 1826-1834, 1847-1850, 1859-1863, 1880-1900, 1907-1910, 1920-1940, 1955-1970, 1998-2145, 2159-2203, 2207-2209, 2223-2234, 2250-2264, 2280-2314, 2339-2472, 2494-2562, 2573-2584, 2590-2599, 2610-2618, 2632, 2643-2679, 2691-2733, 2736-2742, 2745-2749, 2754-2769, 2791-2794, 2839-2920, 2929-2939, 2960-3032, 3048-3056, 3071-3084, 3092-3103, 3112, 3116, 3120, 3124, 3128, 3132, 3150-3164, 3183, 3197-3280, 3289, 3295, 3308, 3320-3363, 3391-3496, 3513-3590, 3603-3689, 3700-3763, 3793-3904, 3918-3994, 4016-4974, 4993-5487, 5512-5691, 5734-5808, 5822-5836, 5853-5928, 5944-5979, 5983-6042
+src/nexus_scalp/execution/position_intelligence.py                173    137    21%   60-69, 83-91, 105-115, 125-298
+src/nexus_scalp/execution/position_state_machine.py                55     44    20%   48-50, 53, 56, 60-61, 73-163
+src/nexus_scalp/execution/position_states.py                       14      0   100%
+src/nexus_scalp/execution/protection_ledger.py                     44     23    48%   59-66, 73-78, 85, 95-99, 103, 106, 109
+src/nexus_scalp/execution/recovery_budget.py                       68     58    15%   35-40, 43, 62-96, 105-134, 138, 142-147
+src/nexus_scalp/execution/terminal_outcome.py                      31     21    32%   43-47, 69-118
+src/nexus_scalp/experience/__init__.py                              8      0   100%
+src/nexus_scalp/experience/decision_evidence.py                    47     21    55%   77, 86-88, 91, 113-165
+src/nexus_scalp/experience/evaluator.py                           228    199    13%   73-86, 90-101, 130-274, 283-286, 291-294, 305-312, 316-318, 338-357, 385-465, 482-514, 523-531, 539-590, 598-614, 618-639
+src/nexus_scalp/experience/intelligence.py                        232    188    19%   118-139, 153-154, 179-199, 224-388, 403, 420, 457-485, 496-515, 519-522, 542-573, 584-591, 602, 656-851, 871-880, 903-905, 909
+src/nexus_scalp/experience/ledger.py                              263    218    17%   132-137, 154-161, 175-224, 234-279, 299-336, 350-394, 401-430, 441, 455-457, 466-494, 500-518, 533-539, 548-554, 558-559, 574-576, 592-612, 616-630, 639-665, 669-683, 687-697, 706-725, 743-745, 757-762, 767
+src/nexus_scalp/experience/lifecycle.py                            50     19    62%   138-153, 172-175
+src/nexus_scalp/experience/models.py                              335     30    91%   217-222, 227, 395, 515-534, 539-541, 545-550, 555, 560, 565, 570, 579, 657
+src/nexus_scalp/experience/outcome_recovery.py                    155    139    10%   30-34, 42-47, 81-209, 225-235, 266-279, 311-380, 433-462, 475-485, 513-525
+src/nexus_scalp/experience/outcome_recovery_sweep.py              247    199    19%   85-90, 113-145, 164-167, 174-176, 187-210, 214-225, 228-235, 256-300, 307-341, 351-402, 416-617, 630-660
+src/nexus_scalp/experience/outcome_repair.py                      146    146     0%   19-341
+src/nexus_scalp/experience/provenance.py                           62     45    27%   46-60, 72-73, 78, 98-122, 126-154, 158-176
+src/nexus_scalp/experience/quality.py                             171    133    22%   87, 92-96, 101-103, 121, 151-217, 228-233, 240-262, 266-273, 286-299, 303-316, 326-334, 341-345, 353-357, 376-436, 461-463
+src/nexus_scalp/experience/retriever.py                           130    103    21%   61, 70-79, 88-98, 103-110, 115-124, 138-154, 175-194, 220-265, 275-296
+src/nexus_scalp/features/features70.py                             97     28    71%   86, 89, 94, 105, 137-140, 175, 179, 185, 189, 195, 201, 203, 236-237, 239, 246-251, 261-267
+src/nexus_scalp/features/inference_validator.py                   106     59    44%   58-64, 68-69, 98-102, 121-251, 263-268, 279, 294-312
+src/nexus_scalp/features/liquidity_engine.py                      519     94    82%   353, 359, 377-388, 397, 418-422, 450, 499, 505, 514-529, 552, 561, 595, 600, 605-606, 611-613, 615, 656, 663, 668-721, 797, 863, 870, 881, 889, 916, 925, 954, 962, 1008, 1020, 1073, 1076, 1079, 1096, 1118-1119, 1125, 1128, 1135, 1146-1151, 1190, 1195-1196, 1212, 1227-1228, 1293-1297, 1305-1322
+src/nexus_scalp/features/liquidity_runtime.py                     369    284    23%   162, 184, 202-223, 252-259, 265, 301-355, 389, 426-447, 453-454, 458-459, 463-464, 468-469, 473-474, 485-513, 532-599, 607-624, 630-646, 651-661, 666-764, 823-831, 846-911, 929-931, 973-1001, 1013-1058
+src/nexus_scalp/features/regime_classifier.py                     221    164    26%   169-222, 234-326, 345-351, 354-363, 380-456, 471-474, 533-591, 594-600, 614-643, 665-667
+src/nexus_scalp/features/scalp_features.py                        441     46    90%   45, 109, 115, 133, 205, 375, 377, 382, 384, 451, 456, 492-498, 503, 523, 620-621, 669, 671, 713, 715, 748-750, 754, 761, 788, 792, 815, 839, 850-852, 897, 899, 908-910, 912-914, 994
+src/nexus_scalp/features/schema.py                                 67     16    76%   60, 76-81, 85-86, 117-122, 136, 148, 151, 290-293
+src/nexus_scalp/features/schema_augment.py                        173    154    11%   176-186, 196-208, 212-214, 240-354, 368-378, 383-395, 413-469
+src/nexus_scalp/features/schema_contract.py                        86     30    65%   56, 141, 143, 148, 153, 168, 208, 231-253, 257-259, 264-268, 277-284
+src/nexus_scalp/forensics/__init__.py                               8      8     0%   3-50
+src/nexus_scalp/forensics/checks.py                                 7      7     0%   12-78
+src/nexus_scalp/forensics/checks_accounting.py                    200    200     0%   18-523
+src/nexus_scalp/forensics/checks_features.py                      287    287     0%   18-791
+src/nexus_scalp/forensics/checks_governance.py                    120    120     0%   18-361
+src/nexus_scalp/forensics/checks_news.py                          116    116     0%   18-344
+src/nexus_scalp/forensics/checks_observability.py                 143    143     0%   18-383
+src/nexus_scalp/forensics/checks_support.py                       324    324     0%   18-546
+src/nexus_scalp/forensics/deploy_gate.py                           97     97     0%   19-214
+src/nexus_scalp/forensics/engine.py                               134    134     0%   15-401
+src/nexus_scalp/forensics/experience_gap.py                       167    167     0%   14-349
+src/nexus_scalp/forensics/models.py                                43     43     0%   16-99
+src/nexus_scalp/forensics/news_sources.py                          85     85     0%   17-261
+src/nexus_scalp/forensics/references.py                            86     86     0%   17-246
+src/nexus_scalp/forensics/telegram_report.py                      132    132     0%   13-272
+src/nexus_scalp/forensics/trend.py                                 66     66     0%   8-138
+src/nexus_scalp/governance/__init__.py                             11      0   100%
+src/nexus_scalp/governance/alignment.py                            68     52    24%   51, 58-79, 86-121, 163-205, 220-239, 264-265
+src/nexus_scalp/governance/engine.py                              243    205    16%   76-89, 114-211, 215-230, 233-241, 252-253, 276-322, 326-334, 352-368, 389-391, 418-454, 479-521, 535-538, 564-573, 604-648, 683-708, 713-716, 728-763, 785, 793-795, 804-806, 816-819, 836-850
+src/nexus_scalp/governance/evidence.py                            135    117    13%   67-132, 158-180, 187-194, 199-202, 235-336, 356-371
+src/nexus_scalp/governance/load_gate.py                           165    142    14%   44, 49-58, 63-80, 85-88, 93-104, 111, 127-290, 314-330, 350-358, 378, 390-397, 402-419
+src/nexus_scalp/governance/lock.py                                 59     43    27%   47-49, 55-69, 73-92, 95-100, 103-104, 107
+src/nexus_scalp/governance/models.py                              181      7    96%   36, 99, 133, 264, 282, 303, 330
+src/nexus_scalp/governance/reporting.py                            42     36    14%   28-61, 69-111
+src/nexus_scalp/governance/shadow_runtime.py                      116     97    16%   61-78, 107-242, 249, 281, 293-319
+src/nexus_scalp/governance/store.py                               251    217    14%   98-99, 106-256, 263-289, 293-313, 322-337, 341-386, 389-415, 422-444, 449-482, 485-506, 509-522, 531-560, 564-589, 592-613, 616-637, 640-661
+src/nexus_scalp/governance/transaction.py                          68     52    24%   58, 95-263
+src/nexus_scalp/governance/verify.py                              105     93    11%   88-300
+src/nexus_scalp/hygiene/__init__.py                                39     39     0%   9-70
+src/nexus_scalp/hygiene/archive.py                                 71     71     0%   19-176
+src/nexus_scalp/hygiene/consistency.py                            195    195     0%   31-576
+src/nexus_scalp/hygiene/detectors.py                              110    110     0%   30-344
+src/nexus_scalp/hygiene/hygiene_runtime.py                        176    176     0%   33-390
+src/nexus_scalp/hygiene/index_health.py                            91     91     0%   23-228
+src/nexus_scalp/hygiene/quarantine.py                             110    110     0%   31-282
+src/nexus_scalp/hygiene/report.py                                  50     50     0%   21-192
+src/nexus_scalp/hygiene/retention.py                               86     86     0%   20-750
+src/nexus_scalp/hygiene/state.py                                   65     65     0%   22-222
+src/nexus_scalp/hygiene/worker.py                                 314    314     0%   19-649
+src/nexus_scalp/hygiene/worker_runner.py                          131    131     0%   22-285
+src/nexus_scalp/incidents/__init__.py                              14      0   100%
+src/nexus_scalp/incidents/accounting.py                           122     98    20%   69-71, 77-81, 91, 103-152, 174-229, 263-269, 273-286, 293-307, 310-325, 331-336
+src/nexus_scalp/incidents/correlator.py                           151    111    26%   174-177, 181-211, 215-219, 232, 248-251, 270-342, 352-386, 393-395, 398-426, 429-443
+src/nexus_scalp/incidents/impact.py                                91     71    22%   39, 58-133, 136-141, 145, 150-157, 174, 186-196, 199, 377-432, 437-443
+src/nexus_scalp/incidents/lineage.py                               68     49    28%   81, 89-94, 102, 105, 109-124, 133-141, 150-158, 185-216, 228-246, 251-252
+src/nexus_scalp/incidents/models.py                               236     28    88%   50, 171, 196-206, 209, 235, 260, 284, 317, 351, 377, 397-398, 406-407, 454-457, 460, 463-464, 467, 470, 475, 529
+src/nexus_scalp/incidents/occurrences.py                          106    106     0%   18-238
+src/nexus_scalp/incidents/reports.py                              127    102    20%   57-63, 69-77, 100-119, 129-136, 141, 146-225, 234-248, 267-294
+src/nexus_scalp/incidents/store.py                                262    219    16%   150, 154-160, 164, 168-173, 183-261, 270, 323-328, 337-339, 344-352, 356-413, 421-428, 433-435, 438-494, 509-556, 560-598, 604-647, 651-664, 668-684, 694-705, 736-762, 775-791, 811-814
+src/nexus_scalp/incidents/telegram.py                              83     58    30%   56-63, 68-71, 75-85, 89-105, 110-131, 135-155
+src/nexus_scalp/incidents/telemetry.py                             71     54    24%   43-48, 55, 75-107, 111-124, 127-128, 131, 189-204
+src/nexus_scalp/incidents/timebase.py                             140    118    16%   30-36, 43, 46-64, 85-95, 104-127, 136-164, 168-177, 193-201, 210-219, 238-276, 281-286
+src/nexus_scalp/incidents/trace.py                                258    231    10%   52-54, 60-64, 78-118, 146-174, 188-201, 216-235, 268-330, 356-385, 401-419, 430-457, 477-498, 520-539, 563-582, 605-636, 655-699
+src/nexus_scalp/incidents/trace_lineage.py                        112    112     0%   22-253
+src/nexus_scalp/incidents/worker.py                               192    152    21%   86-124, 131-137, 140-144, 148-151, 164-196, 203-208, 216, 220, 224-232, 237-289, 294-344, 349
+src/nexus_scalp/intelligence/__init__.py                            8      0   100%
+src/nexus_scalp/intelligence/autopsy.py                            88     75    15%   87-90, 105-153, 196-241, 245-295
+src/nexus_scalp/intelligence/behavior.py                            5      0   100%
+src/nexus_scalp/intelligence/behavior_backfill.py                  16      6    62%   40-44, 50
+src/nexus_scalp/intelligence/behavior_canonical.py                169    149    12%   43-44, 56-70, 89-203, 214-220, 227-245, 260-370, 381-441, 446-447, 452-474, 479-497
+src/nexus_scalp/intelligence/behavior_detect.py                   184    126    32%   103-109, 113-115, 120-124, 129, 151-159, 174-193, 198-217, 229-287, 298-326, 338-365, 377-398, 410-436, 448-470, 481-501, 511-534, 539-557, 562-578, 614-699, 703-712, 743, 755-781, 785-786
+src/nexus_scalp/intelligence/evolution.py                          96     72    25%   72-77, 93-108, 114-152, 168-193, 216-239, 246-273, 276-294, 298
+src/nexus_scalp/intelligence/gate.py                              113     72    36%   74, 102-113, 125-168, 181-244, 256-277, 281, 296, 313
+src/nexus_scalp/intelligence/lifecycle.py                         143    117    18%   91-108, 132-326, 351-409, 429-462, 470-472, 478-495, 500-501, 509-513
+src/nexus_scalp/intelligence/models.py                            192      6    97%   160, 211, 236, 265, 310, 335
+src/nexus_scalp/intelligence/store.py                             198    198     0%   15-314
+src/nexus_scalp/intelligence/worker.py                            132    106    20%   68-82, 90-95, 99-103, 117-133, 137-156, 169-197, 208-211, 214-217, 229-267, 274-278, 290-306, 318
+src/nexus_scalp/labeling/triple_barrier.py                        116    108     7%   46-53, 67-260
+src/nexus_scalp/market_data/__init__.py                             0      0   100%
+src/nexus_scalp/market_data/bar_aggregator.py                      90     68    24%   42-51, 63-110, 114, 134-181, 188-190
+src/nexus_scalp/model_generation/__init__.py                       19      0   100%
+src/nexus_scalp/model_generation/architectures.py                  51     38    25%   52-63, 67-73, 94-128, 137-151, 158
+src/nexus_scalp/model_generation/artifact_store.py                152    112    26%   43-49, 54-61, 65, 70-71, 78-83, 90-94, 97-104, 111, 114, 117, 122-128, 131-140, 143, 150, 153-155, 158, 165, 168, 171, 174, 177, 190-226, 234, 237-245, 248, 251, 260-268, 273
+src/nexus_scalp/model_generation/benchmark.py                     156    156     0%   19-419
+src/nexus_scalp/model_generation/dataset_factory.py                71     53    25%   41-48, 55-84, 88, 101-102, 120-223, 238-245
+src/nexus_scalp/model_generation/experiment_factory.py             36     23    36%   91, 104-133, 136-139, 157-165
+src/nexus_scalp/model_generation/model_factory.py                  47     28    40%   42-50, 53, 66, 74-125, 129, 139
+src/nexus_scalp/model_generation/models.py                        215     31    86%   82, 85-90, 93-96, 99-102, 110, 161-168, 201, 204-205, 340, 344-349, 390
+src/nexus_scalp/model_generation/news_bridge.py                   271    243    10%   75-80, 84-89, 93-99, 104-115, 127-129, 143-197, 216-258, 272-294, 298-300, 323-416, 420-428, 443-451, 469-525, 541-567, 591-613, 644-655
+src/nexus_scalp/model_generation/replay.py                        115     99    14%   33, 47-103, 117-122, 147-154, 170-177, 213-306
+src/nexus_scalp/model_generation/runtime.py                        90     71    21%   45-50, 59-130, 133-135, 142-144, 147, 161-183, 190-193, 200-201
+src/nexus_scalp/model_generation/sample_factory.py                106     85    20%   50-51, 65-75, 98-100, 119-142, 165-265, 269-274, 279-309
+src/nexus_scalp/model_generation/sample_maker.py                   82     60    27%   53-66, 83-85, 106-125, 143, 172-210, 228-236, 245-255
+src/nexus_scalp/model_generation/schema_v2.py                     306    272    11%   54-77, 97-182, 200-229, 250-275, 290-320, 373-443, 461-485, 493-509, 562-658, 683-743, 757-810
+src/nexus_scalp/model_generation/schema_v2_incremental.py         316    291     8%   94-118, 128-137, 153-192, 203-215, 226-244, 249-256, 261-321, 336-399, 402-409, 417-428, 457-522, 531-556, 571-716
+src/nexus_scalp/model_generation/sequence.py                       57     49    14%   33-35, 57-119, 128-138
+src/nexus_scalp/model_generation/sequence_training.py             110     90    18%   59-63, 74-250, 260-264
+src/nexus_scalp/model_generation/setup_detector.py                241    197    18%   69, 82-86, 97-110, 114-117, 124, 133-137, 144-164, 179-201, 217-233, 248-266, 282-292, 306-319, 334-350, 366-382, 399-413, 428-445, 460-475, 490-505, 526-528, 531-547, 562-578, 601-627, 631-632, 637
+src/nexus_scalp/model_generation/strategy_factory.py               99     59    40%   45, 211-213, 230, 247, 263-285, 290-330, 342-349, 354-360
+src/nexus_scalp/model_generation/three_model.py                   119    119     0%   28-388
+src/nexus_scalp/model_generation/training.py                      164    143    13%   41-47, 54-60, 68-80, 89-97, 104-106, 121-394
+src/nexus_scalp/model_generation/validation.py                    141    121    14%   49-57, 68-75, 86-115, 125-144, 151, 167-285, 313-315, 340-363, 377-389
+src/nexus_scalp/model_lab/__init__.py                               0      0   100%
+src/nexus_scalp/model_lab/architectures.py                         55     55     0%   18-140
+src/nexus_scalp/model_lab/baseline.py                              39     39     0%   12-106
+src/nexus_scalp/model_lab/dataset_lab.py                           64     64     0%   19-141
+src/nexus_scalp/model_lab/evaluation.py                            98     98     0%   14-168
+src/nexus_scalp/model_lab/integrity.py                             66     66     0%   12-119
+src/nexus_scalp/model_lab/lab_runner.py                           145    145     0%   9-302
+src/nexus_scalp/model_lab/promotion.py                             19     19     0%   13-84
+src/nexus_scalp/model_lab/registry.py                              88     88     0%   16-157
+src/nexus_scalp/model_lab/trainer.py                              158    158     0%   19-315
+src/nexus_scalp/model_lab/windowing.py                             22     22     0%   9-52
+src/nexus_scalp/model_lifecycle/__init__.py                         2      0   100%
+src/nexus_scalp/model_lifecycle/champion.py                        91     65    29%   37, 53-72, 84, 88, 92-104, 107, 135-152, 162-183, 194-206, 210-214, 218, 221, 225, 228
+src/nexus_scalp/model_lifecycle/comparison.py                      60     49    18%   47-133, 143-147
+src/nexus_scalp/model_lifecycle/dataset.py                         74     52    30%   51, 58, 62, 73-95, 142-182, 204-208, 215-217
+src/nexus_scalp/model_lifecycle/gates.py                          188    163    13%   49-65, 74-84, 97-112, 122-140, 145-151, 162-176, 183-192, 202-213, 223-230, 240-249, 259-272, 282-287, 307-341, 348-358
+src/nexus_scalp/model_lifecycle/integrity.py                      124    105    15%   38, 47, 51-55, 74-223, 237-255, 260-277, 286-298, 303
+src/nexus_scalp/model_lifecycle/models.py                         162     15    91%   89, 93-94, 119, 123, 126-129, 132, 175, 223, 227, 232, 263
+src/nexus_scalp/model_lifecycle/orchestrator.py                   107     78    27%   78-89, 103, 125-186, 206-229, 242-291, 295-296, 299-300, 304-332, 335-336, 340
+src/nexus_scalp/model_lifecycle/registry.py                       110     89    19%   47, 59-60, 68-88, 112-147, 164-182, 198-215, 221-243, 247-248, 252-268
+src/nexus_scalp/model_lifecycle/store.py                          131    110    16%   53, 61-127, 135-169, 172-191, 198-212, 215-236, 239-253, 256-274, 278-295
+src/nexus_scalp/model_lifecycle/trainer.py                         68     49    28%   58-64, 82-196, 204-216, 220-224, 232
+src/nexus_scalp/model_lifecycle/worker.py                         109     90    17%   59-74, 82-87, 91-96, 100-101, 109-128, 139-169, 177-214, 224-232
+src/nexus_scalp/models/scalp_net.py                                77     63    18%   57-59, 72-73, 83-92, 99-101, 118-153, 167-216
+src/nexus_scalp/mslie/__init__.py                                   9      9     0%   13-43
+src/nexus_scalp/mslie/breakout.py                                 111    111     0%   16-210
+src/nexus_scalp/mslie/engine.py                                   223    223     0%   27-563
+src/nexus_scalp/mslie/liquidity_map.py                            182    182     0%   17-355
+src/nexus_scalp/mslie/models.py                                   149    149     0%   22-384
+src/nexus_scalp/mslie/regime.py                                   110    110     0%   16-213
+src/nexus_scalp/mslie/smart_money.py                               99     99     0%   15-196
+src/nexus_scalp/mslie/sweep.py                                    105    105     0%   19-225
+src/nexus_scalp/mslie/swing.py                                    152    152     0%   25-299
+src/nexus_scalp/news/__init__.py                                    9      0   100%
+src/nexus_scalp/news/_db_core_protocol.py                           7      0   100%
+src/nexus_scalp/news/ai_service.py                                284    284     0%   35-828
+src/nexus_scalp/news/analysis/__init__.py                           6      0   100%
+src/nexus_scalp/news/analysis/consensus.py                         47     38    19%   35-64, 87-113
+src/nexus_scalp/news/analysis/decay.py                             32     18    44%   35-36, 39-40, 48, 57-63, 73, 82-85, 89
+src/nexus_scalp/news/analysis/keywords.py                         182    110    40%   380, 385, 389, 394-397, 401, 406-410, 415-419, 423-426, 438-447, 471-482, 494-502, 512-526, 544-558, 575-631, 646-662, 673-674
+src/nexus_scalp/news/analysis/local.py                            196    167    15%   271-274, 281, 288-322, 329-343, 350-356, 365-476, 481-498, 507-574, 583-620, 623-633, 636-641, 646-649
+src/nexus_scalp/news/analysis/pipeline.py                         194    161    17%   58, 62, 70, 83-89, 92-127, 130-146, 157-164, 168-170, 184-188, 203-380, 383-390, 395-410, 441-476, 492-528, 532-539, 544-549
+src/nexus_scalp/news/config.py                                     51      7    86%   91-98
+src/nexus_scalp/news/context.py                                   160    142    11%   39-43, 47-49, 60-63, 71-74, 82-84, 92-266, 292-298
+src/nexus_scalp/news/database.py                                   38     17    55%   78-92, 100-104, 108
+src/nexus_scalp/news/db_analysis.py                               106     82    23%   21-24, 41-44, 50-51, 60-61, 75-141, 144-150, 153-155, 166-182, 204-205, 214-216, 226-227, 250-254, 262-271, 305-311, 314-318, 321-323, 332-333, 352-353, 362-363
+src/nexus_scalp/news/db_articles.py                               118     91    23%   22-26, 31-32, 38-57, 60-62, 66-70, 76-77, 83-85, 88-89, 120-125, 128-132, 135-140, 147-151, 154-158, 161-165, 168-169, 206-207, 213-223, 235-252, 256-258, 268-269, 290-296, 299-304
+src/nexus_scalp/news/db_queries.py                                153    128    16%   23-25, 29-35, 60-138, 145-177, 180-184, 201-233, 236-241, 248-249, 255-256, 263-267, 274-275, 297-301, 304-305, 312-313, 329-331, 343-406, 413-418, 430
+src/nexus_scalp/news/db_schema.py                                  29     18    38%   285-303, 310-312
+src/nexus_scalp/news/engine.py                                    124     97    22%   48-65, 77-96, 104, 116-120, 136-148, 154-163, 182-189, 208-258, 266-270, 277-293, 297-302
+src/nexus_scalp/news/gate.py                                       97     63    35%   58, 79, 106-209, 216-223, 227-233, 237-241
+src/nexus_scalp/news/ingest/__init__.py                             3      0   100%
+src/nexus_scalp/news/ingest/deduplicator.py                        68     48    29%   90-95, 101-106, 111-112, 116, 133-147, 156-172, 189-197, 212-214, 219, 231-234
+src/nexus_scalp/news/ingest/fetcher.py                            161    133    17%   37, 42-50, 53, 60-62, 65-71, 74-75, 78-86, 89-234, 241-242, 250-344, 348-349, 353-360
+src/nexus_scalp/news/memory/__init__.py                             2      0   100%
+src/nexus_scalp/news/memory/post_event.py                          84     66    21%   35-39, 46-47, 51-80, 97-153, 156-188, 191-207, 211-216
+src/nexus_scalp/news/models.py                                    238     11    95%   18, 138, 163, 217, 242-245, 370, 376, 381
+src/nexus_scalp/news/pro_auto.py                                  354    354     0%   33-984
+src/nexus_scalp/news/pro_auto_console.py                           34     34     0%   14-71
+src/nexus_scalp/news/seed.py                                       30     15    50%   239, 257-261, 268, 273, 277-280, 285-287
+src/nexus_scalp/news/sources/__init__.py                            2      0   100%
+src/nexus_scalp/news/sources/base.py                              131    102    22%   19, 35-40, 50-52, 60, 64-74, 88-148, 151-165, 168-188, 201-236, 250-255, 260-263
+src/nexus_scalp/news/worker.py                                    184    160    13%   48-67, 74-78, 81-85, 88-89, 96-110, 113-123, 130-144, 148-161, 168-251, 258-285, 299-321, 331-333
+src/nexus_scalp/observability/__init__.py                           2      0   100%
+src/nexus_scalp/observability/_tg_core_protocol.py                 20      0   100%
+src/nexus_scalp/observability/ci_telegram_reporter.py             205    205     0%   21-470
+src/nexus_scalp/observability/contract_validator.py               164    109    34%   93-96, 113, 117, 120, 124-125, 129-132, 135-137, 145-148, 155, 158-160, 169-170, 181-192, 200-206, 212-222, 226-244, 251-262, 267-268, 276-287, 294-302, 313-332, 339-342, 346-349, 354-356, 361, 365-368, 372-373, 378-380, 384
+src/nexus_scalp/observability/event_aggregator.py                  87     58    33%   81-88, 112-141, 144-157, 171-197, 201-202, 206-207, 214-217, 222-224
+src/nexus_scalp/observability/logging.py                          262    195    26%   242-246, 251, 257, 267-273, 283-318, 338-350, 363-364, 378-380, 389, 393, 398-402, 406-408, 417-418, 421, 435-442, 446-455, 459-462, 465-471, 475-476, 479-507, 510-512, 526-547, 556-563, 568-571, 592-659, 685-696, 704
+src/nexus_scalp/observability/selftest.py                         101    101     0%   25-178
+src/nexus_scalp/observability/telegram_html.py                    441    441     0%   16-835
+src/nexus_scalp/observability/telegram_notifier.py                322    240    25%   115, 143-195, 205-214, 235, 266-323, 335-345, 351-376, 379-395, 398-406, 410-416, 450-538, 545-673, 676, 679-682, 685-689, 692-704, 707, 715-717
+src/nexus_scalp/observability/telegram_transport.py               134    134     0%   17-268
+src/nexus_scalp/observability/tg_notifications.py                 164    115    30%   37-46, 49-54, 62, 71-72, 75-82, 87-93, 98-105, 110-117, 122-129, 134-149, 154-166, 180-190, 206-216, 232-244, 277-307, 316-332, 343-351, 362-369, 381-388, 401-410, 423-430, 444-455, 470-480, 497-510, 528-542, 556-564, 571-579, 584-594, 599-606, 611-617, 620-626, 629-635, 640-650, 655-661, 671-680, 685-693, 698-705, 710-717, 722-728, 732-734, 738
+src/nexus_scalp/observability/tg_transport.py                     180    142    21%   55-57, 89-95, 109-114, 119-123, 131-146, 161-176, 188-200, 212-270, 274-308, 320, 323-334, 342-372, 380-412
+src/nexus_scalp/ports/__init__.py                                   0      0   100%
+src/nexus_scalp/ports/gateway_port.py                               9      9     0%   7-24
+src/nexus_scalp/ports/mt5_port.py                                  98     49    50%   42, 47, 52, 57, 62, 67, 71, 80, 85, 90, 95, 100, 104, 116, 128, 132, 136, 149, 153-156, 160-163, 167-170, 174, 178, 184, 190, 204, 214, 225-230, 240-245, 249
+src/nexus_scalp/release/__init__.py                                 4      0   100%
+src/nexus_scalp/release/artifacts.py                               36     36     0%   23-109
+src/nexus_scalp/release/cli_shim.py                                10     10     0%   14-29
+src/nexus_scalp/release/diagnostics.py                             84     66    21%   39-57, 61-75, 79-97, 101, 106-141, 145-151
+src/nexus_scalp/release/environment.py                            205    148    28%   40, 79, 85-89, 93-96, 100-130, 134-147, 152-189, 194-217, 222-248, 253-262, 266-271, 275-280, 285-333, 338-344
+src/nexus_scalp/release/evaluate.py                               122     96    21%   39, 49-61, 66-81, 85-95, 101-113, 122-130, 136-147, 156-167, 176-182, 191-198, 207-218, 226-235, 239-248, 252-256, 265-267
+src/nexus_scalp/release/exit_codes.py                               7      0   100%
+src/nexus_scalp/release/health.py                                 468    406    13%   105, 122-145, 149-158, 172-178, 184-197, 203-210, 218-220, 227-253, 260-305, 309-328, 331-378, 396-477, 490-537, 547-567, 584-670, 680-692, 697-723, 732-742, 747-764, 767-784, 787-796, 807-816, 828-831, 848-874, 877-879, 882-884, 887-889, 898-909, 919-921, 929-967, 979-981, 991-1010, 1020-1066, 1069-1078, 1081-1082, 1093-1099
+src/nexus_scalp/release/metadata.py                               125    100    20%   38-49, 53-63, 70-84, 88-91, 96-106, 110-113, 126-165, 169-175, 186-200, 209-241, 265, 269
+src/nexus_scalp/release/model_artifacts.py                        167    167     0%   26-455
+src/nexus_scalp/release/packaged_main.py                           12     12     0%   12-35
+src/nexus_scalp/release/packaging.py                              150    128    15%   20-24, 29-39, 44-65, 74-85, 90-96, 102-107, 116-129, 134-147, 152-153, 157-162, 180-240, 245-263, 270-281, 285-309
+src/nexus_scalp/release/paths.py                                   55     28    49%   31, 40, 44-46, 51-55, 61-65, 69, 73, 77, 81, 85, 89, 94-96, 108, 113-121, 125
+src/nexus_scalp/release/release_status.py                         116    116     0%   27-254
+src/nexus_scalp/release/repair.py                                 137    111    19%   30, 40-42, 49-58, 62-77, 80-86, 89-107, 111-124, 127-138, 147-159, 166-179, 183-197, 200-208, 215-219, 222-223
+src/nexus_scalp/release/runtime_snapshot.py                       169    169     0%   29-398
+src/nexus_scalp/release/state_taxonomy.py                          31      8    74%   86-87, 98-103
+src/nexus_scalp/release/update.py                                 112     89    21%   41, 57-58, 80-143, 147-176, 180-187, 191-199
+src/nexus_scalp/release/updater.py                               1341   1136    15%   144-147, 157-160, 191-244, 249-250, 266-281, 286, 302-312, 323-327, 331, 352, 356-361, 367-386, 397-438, 450-461, 465-473, 481, 491-510, 525-592, 614-629, 632-802, 805-824, 828-835, 849-850, 854, 857-860, 871-884, 895-947, 954-977, 989-990, 993-1004, 1007-1013, 1017-1019, 1038, 1041, 1044-1072, 1086-1087, 1090-1104, 1111-1112, 1115-1159, 1184, 1187-1191, 1194-1210, 1221, 1224-1241, 1244-1277, 1303, 1306-1364, 1367-1377, 1390-1391, 1394-1413, 1427-1428, 1431-1447, 1466-1468, 1471-1492, 1495-1499, 1502-1504, 1511-1513, 1516-1521, 1524-1528, 1531-1532, 1541-1557, 1564-1569, 1586-1601, 1604-1614, 1631, 1635-1636, 1646-1662, 1665-1674, 1684-1686, 1703-1704, 1707-1726, 1729-1732, 1739-1754, 1785-1805, 1817-1851, 1855-1884, 1887-1892, 1904-2010, 2018, 2031-2037, 2049-2079, 2093-2096, 2103-2165, 2177-2179, 2205-2461, 2466-2508, 2518-2553, 2558-2571, 2576-2580, 2584, 2588-2629, 2632-2637, 2644-2646
+src/nexus_scalp/release/verify.py                                 271    237    13%   42, 49-51, 55-65, 68-71, 74-88, 92-96, 99-114, 125-190, 197-227, 240-246, 257-271, 285-311, 326-392, 396-441, 445-459, 467, 473-476
+src/nexus_scalp/release/versioning.py                             113    113     0%   17-229
+src/nexus_scalp/reporting/__init__.py                               5      0   100%
+src/nexus_scalp/reporting/engine.py                               454    405    11%   118-119, 134-333, 372, 414-427, 444-451, 483-494, 508-517, 536-568, 579-588, 597-617, 620-636, 649-666, 688-690, 707-744, 747-777, 780-806, 810-918, 941-981, 995-1006, 1026-1059, 1075-1106, 1123-1144, 1155-1174, 1190-1196, 1210, 1214-1220, 1224-1226, 1231-1238
+src/nexus_scalp/reporting/insights.py                             281    259     8%   37-45, 61-81, 97-101, 106-108, 121-140, 162-254, 268-384, 396-398, 408-677, 687, 692, 710-718
+src/nexus_scalp/reporting/models.py                               367     28    92%   55, 103, 149, 178, 204, 226, 246, 265, 287, 318, 355, 390, 417, 451, 486, 512, 545, 577, 600, 622, 649, 675, 692, 708, 757, 795-797
+src/nexus_scalp/reporting/queries.py                               64     48    25%   39, 44, 49-60, 65-76, 81-110, 115-144
+src/nexus_scalp/reporting/telegram_format.py                      183    153    16%   24-26, 30-32, 36-38, 42-44, 48-50, 54-60, 65-69, 74-154, 159-237, 246-252, 256-262, 266-285, 289-312, 316-319, 330-333, 343-356, 360-373, 377-385, 395-405, 409-419, 423-433, 437-448, 452-473, 477-489, 493-496, 507-513
+src/nexus_scalp/research/__init__.py                               16      0   100%
+src/nexus_scalp/research/attribution.py                            80     80     0%   21-243
+src/nexus_scalp/research/backtest.py                               18      9    50%   37, 58-89
+src/nexus_scalp/research/candidates.py                             60     25    58%   61, 69-81, 85, 89, 99-115, 123, 129-133, 137-143
+src/nexus_scalp/research/context_analysis.py                       45     45     0%   9-90
+src/nexus_scalp/research/context_contract.py                       98     86    12%   51-131, 144-145, 154-156, 185-210
+src/nexus_scalp/research/counterfactual.py                        213    213     0%   43-478
+src/nexus_scalp/research/dataset.py                               256    195    24%   171-172, 176, 183-190, 204-228, 231-233, 244-271, 286-301, 321-409, 412-413, 450-458, 469-520, 549-646, 662-673, 676-684, 694-699, 704-707
+src/nexus_scalp/research/debug_intelligence.py                     70     70     0%   15-204
+src/nexus_scalp/research/directional_lab.py                       174    174     0%   13-371
+src/nexus_scalp/research/discovery.py                              58     42    28%   47-55, 71-79, 105-173, 178-180, 184, 188-191
+src/nexus_scalp/research/event_projection.py                      151    132    13%   33, 45-78, 102, 116-183, 193-222, 235-256, 265-274, 278-285, 289-292
+src/nexus_scalp/research/event_source.py                          229    229     0%   26-459
+src/nexus_scalp/research/evidence.py                              233     75    68%   158, 162, 167-171, 180, 185-186, 215-217, 221, 225, 270, 279, 323-386, 412-416, 436, 458, 474-475
+src/nexus_scalp/research/forward_test.py                          158    158     0%   41-437
+src/nexus_scalp/research/leakage.py                                31     31     0%   14-92
+src/nexus_scalp/research/lifecycle.py                              18     10    44%   95, 104-106, 116-120, 128-130
+src/nexus_scalp/research/metrics.py                               144    129    10%   24-31, 35, 45-67, 93-100, 104-112, 131-232, 272-286, 291-292
+src/nexus_scalp/research/models.py                                250     18    93%   94, 151, 154, 157-158, 189, 192, 195, 245, 249-251, 293, 394, 398, 423-425
+src/nexus_scalp/research/mt5_tick_dataset.py                      119    119     0%   25-310
+src/nexus_scalp/research/observability.py                         456    402    12%   47-55, 59, 63-71, 75-77, 84-87, 106-141, 144-166, 180-223, 232-265, 268-291, 294-310, 318-347, 351-373, 376-380, 396-419, 427-465, 472-487, 490-503, 511-540, 544-559, 566-596, 599-648, 672-692, 696-747, 755-803, 811-841, 845-884, 892-912, 915-944, 947-967, 1050-1055, 1059-1064, 1076-1135
+src/nexus_scalp/research/oos.py                                    48     37    23%   43-45, 62-134
+src/nexus_scalp/research/pipeline.py                              254    228    10%   61-69, 86-105, 128-137, 145-154, 189-828, 845-869, 884-928, 937-949
+src/nexus_scalp/research/registry.py                              181    157    13%   75, 101-151, 161-183, 187-210, 213-229, 244-276, 291-320, 328-394, 404-436, 447-455, 459-464
+src/nexus_scalp/research/replay_session.py                        308    308     0%   41-693
+src/nexus_scalp/research/robustness.py                             34     24    29%   48-50, 58-108
+src/nexus_scalp/research/scoring.py                                91     84     8%   34-37, 56-205
+src/nexus_scalp/research/snapshot.py                               88     88     0%   11-188
+src/nexus_scalp/research/spatial_layout.py                         48     48     0%   20-161
+src/nexus_scalp/research/splitting.py                             119     81    32%   55, 60-66, 84-144, 195-270, 275, 289-292
+src/nexus_scalp/research/store.py                                 234    234     0%   12-441
+src/nexus_scalp/research/streaming_replay.py                      428    428     0%   39-1188
+src/nexus_scalp/research/time_machine.py                           90     90     0%   17-211
+src/nexus_scalp/research/walkforward.py                            51     39    24%   44-45, 60-182, 196
+src/nexus_scalp/research/worker.py                                167    139    17%   74-92, 100-105, 109-113, 120-136, 139-158, 171-208, 216-237, 241-244, 254-268, 271-280, 288-298, 312-328, 335-355, 370-387, 392
+src/nexus_scalp/risk/risk_engine.py                               283    261     8%   51-59, 70-90, 103-118, 122-128, 143-229, 233-234, 238-239, 254-268, 284-526, 549-557, 561-574, 608-643, 660-698
+src/nexus_scalp/settings/__init__.py                                5      0   100%
+src/nexus_scalp/settings/paths.py                                  18     10    44%   30-38, 43
+src/nexus_scalp/settings/secret_store.py                          141    105    26%   41-44, 49-60, 70-82, 86-87, 91-109, 113-133, 145-146, 150-165, 168-180, 185-197, 201-214, 217, 220-223
+src/nexus_scalp/settings/service.py                               362    262    28%   156, 189-193, 196-198, 201-211, 214-219, 223-231, 234-240, 263-312, 323-326, 329-342, 345-349, 352-360, 363-367, 370-374, 378-386, 390, 399-403, 414-416, 421-430, 445-450, 461-484, 495-499, 529, 585-642, 654-656, 661-662, 666-671, 680, 695-711, 722-758, 771-772, 795-807, 828-863, 867-890, 902-925, 929-931, 935-944, 949-958, 962, 970-973, 978
+src/nexus_scalp/shadow/__init__.py                                  2      0   100%
+src/nexus_scalp/shadow/challenger.py                               83     65    22%   41, 69-80, 88-147, 166-192, 199, 213-215, 227
+src/nexus_scalp/shadow/comparison.py                              197    174    12%   48, 52-57, 64, 77-209, 278-379, 403, 411-431, 436-446, 450-454
+src/nexus_scalp/shadow/compat.py                                   54     39    28%   49-56, 61-66, 71, 81-91, 100-104, 114-122
+src/nexus_scalp/shadow/engine.py                                  126    103    18%   47-53, 72-103, 107, 118-171, 219-313, 320, 325, 328, 340-369, 373
+src/nexus_scalp/shadow/models.py                                  187      8    96%   83, 87, 172, 203, 272, 276, 280, 321
+src/nexus_scalp/shadow/outcomes.py                                113     69    39%   114-225, 254-267, 278-280
+src/nexus_scalp/shadow/shadow70/__init__.py                         7      0   100%
+src/nexus_scalp/shadow/shadow70/health.py                         202    131    35%   76, 111, 127-132, 140-155, 164-171, 178-180, 184-192, 196-229, 258-271, 279-283, 288-294, 297-303, 307-409, 412, 416-442
+src/nexus_scalp/shadow/shadow70/liq_provider.py                    86     86     0%   22-180
+src/nexus_scalp/shadow/shadow70/models.py                         178     38    79%   108, 112, 134, 137, 163, 240, 245-248, 251, 255-259, 263, 282-312
+src/nexus_scalp/shadow/shadow70/news_provider.py                   15     15     0%   39-91
+src/nexus_scalp/shadow/shadow70/runtime.py                        266    220    17%   77-80, 84, 87, 97-104, 109, 121-123, 131-212, 225, 228-240, 244-246, 265-290, 298-327, 331, 334-335, 338-339, 342, 376-552, 591-599, 647-673, 686, 689-710, 725-726, 761
+src/nexus_scalp/shadow/shadow70/store.py                          177    142    20%   40-42, 45, 48-49, 54, 110-112, 119-240, 247-299, 302-323, 326-354, 357-382, 391-398, 401-404, 409-412, 417-419, 431-447, 451-474, 477-488
+src/nexus_scalp/shadow/shadow70/worker.py                         110     83    25%   54-72, 79-83, 86-90, 93-102, 110-125, 133-162, 166, 173, 187-189
+src/nexus_scalp/shadow/store.py                                   224    194    13%   89-94, 113-236, 245-286, 292-301, 310-335, 338-394, 397-431, 434-455, 462-476, 479-497, 505-532, 535-549, 552-566, 569-587, 591-610
+src/nexus_scalp/shadow/worker.py                                   81     63    22%   51-62, 65-70, 73-76, 79-80, 84-99, 106-134, 138-146, 155
+src/nexus_scalp/signals/policy.py                                 770    737     4%   66-102, 123-1207, 1225-1312, 1331-1408, 1427-1499, 1509-1519, 1524-1548, 1572-1638, 1646-1708, 1736-1822, 1845, 1885-2023, 2039-2054, 2058-2066
+src/nexus_scalp/signals/rule_matrix.py                            269    237    12%   31-34, 38-53, 57-60, 64-67, 76-110, 116-150, 155-186, 192-222, 227-257, 262-292, 297-325, 330-353, 359-388, 394-424, 432-454, 460-489, 503-551, 564-647, 663-732, 744-764
+src/nexus_scalp/strategies/__init__.py                              5      0   100%
+src/nexus_scalp/strategies/base.py                                 44     11    75%   70, 75-90, 101, 108, 118-123
+src/nexus_scalp/strategies/factory/__init__.py                     13      0   100%
+src/nexus_scalp/strategies/factory/benchmark.py                    95     80    16%   71-94, 105-108, 128-139, 147-153, 188-266, 337-343
+src/nexus_scalp/strategies/factory/dsl.py                         160    125    22%   330-331, 451-471, 476, 481, 491, 496, 501, 510-512, 522-529, 533, 538-543, 559-572, 581-592, 597-605, 614-653, 662-686, 699-730, 741-785
+src/nexus_scalp/strategies/factory/evolution.py                   211    187    11%   62, 66, 72-86, 90-95, 101-108, 112-124, 128-135, 141-150, 155-164, 179-221, 240-244, 249-255, 270-344, 371-409, 434-443, 458-479
+src/nexus_scalp/strategies/factory/models.py                      258      6    98%   33, 37, 258, 284, 328, 348
+src/nexus_scalp/strategies/factory/orchestrator.py                703    621    12%   91, 95, 106-119, 140-168, 177, 185-193, 197-212, 215-230, 234-257, 262-265, 286-323, 330-337, 340-342, 346-349, 364-381, 385-408, 415-436, 452-464, 474-509, 518-545, 552-625, 628-638, 642-655, 659-678, 681-685, 698-700, 712-713, 723-730, 733-735, 751-779, 786-799, 806-811, 816, 823-827, 841-845, 859-877, 882-892, 904-936, 946-961, 982, 1023-1239, 1248-1280, 1294-1302, 1334-1369, 1384-1400, 1404-1416, 1419-1423, 1431-1480, 1487-1494, 1498-1509, 1522-1574, 1578, 1592-1639, 1644-1663, 1666-1693, 1703-1730, 1737-1760
+src/nexus_scalp/strategies/factory/provider.py                    218    176    19%   76-83, 87-88, 130-149, 153-156, 165-172, 175, 193-259, 281-346, 350-354, 358-363, 366-381, 387-394, 400-413, 435-534
+src/nexus_scalp/strategies/factory/provider_gate.py               388    276    29%   187, 206-218, 231-249, 287-301, 319-325, 328-339, 352-362, 367-370, 401-411, 418-427, 434-442, 445-453, 456-461, 468-484, 503-530, 535-598, 603-617, 620-640, 643-646, 651-702, 712-727, 732-740, 761-809, 815-817, 829-830, 833-836, 844-845
+src/nexus_scalp/strategies/factory/ranking.py                     171    153    11%   48, 52, 57-60, 73-131, 144-153, 161-164, 169-174, 191-217, 230-243, 257-273, 278-306, 311-313
+src/nexus_scalp/strategies/factory/store.py                       444    404     9%   59-65, 69-77, 81, 85-93, 102-104, 108, 118-151, 156-198, 203-233, 238-267, 278-319, 324-358, 363-394, 404-418, 423-438, 448-462, 500-607, 625-682, 692-718, 727-747, 756-776, 781-796, 805-833, 838-852, 871-890, 895-923, 928-949, 954-975
+src/nexus_scalp/strategies/factory/summarizer.py                  117    106     9%   28-31, 35-38, 55-96, 126, 135-149, 160-204, 233-256
+src/nexus_scalp/strategies/factory/telegram.py                     62     47    24%   44, 48, 57-78, 83-91, 95, 105, 113, 132-168
+src/nexus_scalp/strategies/factory/validators.py                  108     94    13%   75, 90-169, 179-203, 216-248, 256-304, 320-339
+src/nexus_scalp/strategies/factory/worker.py                      138    115    17%   43, 67-81, 88-107, 113-116, 119-122, 125-128, 136-175, 178-182, 185-208, 211-225, 241-308, 315
+src/nexus_scalp/strategies/ichimoku.py                            123     78    37%   61-71, 98, 108, 121, 124, 135-213, 242, 252, 266, 269, 280-335
+src/nexus_scalp/strategies/research_store.py                      234    234     0%   36-775
+src/nexus_scalp/strategies/seeder.py                               26     14    46%   37-90, 95-96
+src/nexus_scalp/training/__init__.py                                2      0   100%
+src/nexus_scalp/training/walk_forward_trainer.py                  676    611    10%   49, 59-60, 63, 66, 79-81, 84, 87, 94-97, 160-217, 226-382, 400-774, 786-795, 798-803, 811-815, 818-825, 828-832, 844-853, 868-872, 892-931, 934, 937-939, 954-975, 985-1023, 1031-1049, 1052-1060, 1066-1075, 1078-1105, 1117, 1120, 1123-1139, 1142-1172, 1175-1186, 1189-1221, 1227-1238, 1257-1261, 1269-1297, 1307-1332
+src/nexus_scalp/web/debug_research_routes.py                     1068   1046     2%   71-2161
+src/nexus_scalp/web/diagnostics_state_routes.py                   793    770     3%   65-1752
+src/nexus_scalp/web/errors.py                                      52     36    31%   43, 52-56, 92-108, 118, 145-157, 175-193, 209-227
+src/nexus_scalp/web/server.py                                    1195   1111     7%   53-59, 78-110, 120-143, 172, 176-178, 181, 187, 190-192, 196, 214, 217-218, 222, 226, 235-244, 255-266, 271-276, 279-280, 284-287, 344-353, 358-360, 367-368, 373-379, 388-392, 404-406, 411-416, 421-2690
+---------------------------------------------------------------------------------------------
+TOTAL                                                           62550  50076    20%
+Coverage HTML written to dir ci-results/pytest/htmlcov
+Coverage XML written to file ci-results/pytest/coverage.xml
+=========================== short test summary info ============================
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:163: existing 50D/60D artifacts not present
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:180: existing 50D/60D artifacts not present
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:206: 70D artifact not present
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:230: artifacts not present
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:242: artifacts not present
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:276: no 70D scaler artifact yet (TASK-2/3 pending)
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:577: 70D dataset not built
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:594: TASK-5 70D candidate not trained
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:617: TASK-5 benchmark report not yet written
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:643: 70D dataset not built
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:670: 70D candidate not trained
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:684: TASK-5 70D candidate not trained
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:702: TASK-5 70D candidate not trained (benchmark pending)
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:786: 50D artifact not present
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:861: 50D artifact not present
+SKIPPED [1] tests/unit/test_70d_model_validation_task4.py:425: champion artifacts not present
+SKIPPED [1] tests/unit/test_schema_70d_reconciliation.py:174: champion artifact not present in this environment
+SKIPPED [1] tests/unit/test_schema_70d_reconciliation.py:232: no 70D datasets present in this environment
+SKIPPED [1] tests/unit/test_schema_70d_reconciliation.py:243: real 70D dataset not present
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:44: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:59: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:81: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:106: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:130: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:154: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:172: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:192: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:212: real data file absent
+SKIPPED [1] tests/unit/test_70d_bug106_incremental_phase19.py:225: real data file absent
+SKIPPED [1] tests/unit/test_liquidity_runtime_integration_phase18.py:1055: BUG-123 proof artifact not built (run scratch/fix_70d_proof_artifact.py)
+SKIPPED [1] tests/unit/test_liquidity_runtime_integration_phase18.py:1082: BUG-123 proof artifact not built (run scratch/fix_70d_proof_artifact.py)
+SKIPPED [1] tests/unit/test_liquidity_runtime_integration_phase18.py:1108: live 50D champion artifact not present
+SKIPPED [1] tests/release/test_release_hardening.py:384: no built release dir on this machine
+FAILED tests/unit/test_observability_guardrails.py::TestSubsystemPins::test_strategy_degraded_edge_triggered - AssertionError: assert False is True
+ +  where False = _should_repeat_degraded('strat_x')
+ +    where _should_repeat_degraded = <nexus_scalp.experience.evaluator.StrategyEvaluator object at 0x7f2c6875b450>._should_repeat_degraded

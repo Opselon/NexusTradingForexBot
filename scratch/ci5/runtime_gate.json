@@ -1,0 +1,217 @@
+{
+  "gate_version": "1.0.0",
+  "timestamp": "2026-09-02T04:16:40.817035+00:00",
+  "git_commit": "88753f8",
+  "application_version": "9.0.6",
+  "environment": {
+    "python": "3.11.16",
+    "platform": "linux",
+    "tier": "full",
+    "network": "offline (loopback only)",
+    "live_trading": "disabled (paper adapter, disposable DBs)"
+  },
+  "duration_ms": 2312.3,
+  "status": "BLOCKED",
+  "exit_code": 3,
+  "stages": [
+    {
+      "name": "L0 STATIC",
+      "status": "PASS",
+      "duration_ms": 53.9,
+      "evidence": {
+        "required_files_present": 16,
+        "py_compile": [
+          "NexusTradingForexBot.py",
+          "main.py"
+        ]
+      },
+      "owner": "repo-owner (structure)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": ""
+    },
+    {
+      "name": "L1 IMPORT",
+      "status": "PASS",
+      "duration_ms": 1885.1,
+      "evidence": {
+        "imported": 18
+      },
+      "owner": "import-graph / dependency owner",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": ""
+    },
+    {
+      "name": "L2 CONFIG",
+      "status": "PASS",
+      "duration_ms": 6.6,
+      "evidence": {
+        "defaults_ok": true,
+        "base_yaml_ok": true,
+        "mode": "PAPER",
+        "symbol": "XAUUSD",
+        "artifact_path": "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+        "telegram_enabled": true,
+        "secret_masking": "PASS",
+        "masking_surface": "runtime_snapshot.to_dict()"
+      },
+      "owner": "configuration owner (configuration/config.py)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": ""
+    },
+    {
+      "name": "L3 DATABASE",
+      "status": "PASS",
+      "duration_ms": 166.9,
+      "evidence": {
+        "db": "disposable tmp file (production DBs untouched)",
+        "tables_created": 39,
+        "required_present": true,
+        "roundtrip_rows": 1,
+        "migration_state": "DB_MIGRATION_PENDING",
+        "optional_absent_tolerated": [
+          "news_articles"
+        ]
+      },
+      "owner": "database platform owner (TASK-DB-PLATFORM)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": ""
+    },
+    {
+      "name": "L4 MODEL/FEATURE",
+      "status": "FAIL",
+      "duration_ms": 1.3,
+      "evidence": {
+        "path": "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+        "stdout_tail": ""
+      },
+      "owner": "model/feature-contract owner (schema_contract.py, artifacts)",
+      "failure_class": "MISSING_ARTIFACT",
+      "reason": "configured champion artifact absent: /home/runner/work/NexusTradingForexBot/NexusTradingForexBot/artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+      "skipped_reason": ""
+    },
+    {
+      "name": "L5 SERVICE GRAPH",
+      "status": "SKIP",
+      "duration_ms": 0.0,
+      "evidence": {},
+      "owner": "application/runtime owner (live_engine.py service graph)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": "contract layer failed"
+    },
+    {
+      "name": "L6 DECISION CYCLE",
+      "status": "SKIP",
+      "duration_ms": 0.0,
+      "evidence": {},
+      "owner": "application/runtime owner (decision pipeline)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": "contract layer failed"
+    },
+    {
+      "name": "L7 API/HEALTH",
+      "status": "SKIP",
+      "duration_ms": 0.0,
+      "evidence": {},
+      "owner": "web/API owner (web/server.py)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": "contract layer failed"
+    },
+    {
+      "name": "L8 SHUTDOWN",
+      "status": "SKIP",
+      "duration_ms": 0.0,
+      "evidence": {},
+      "owner": "application/runtime owner (shutdown path)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": "contract layer failed"
+    },
+    {
+      "name": "L9 INVARIANTS",
+      "status": "SKIP",
+      "duration_ms": 0.0,
+      "evidence": {},
+      "owner": "invariants owner (forensics/, execution/)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": "contract layer failed"
+    },
+    {
+      "name": "L9 INVARIANTS",
+      "status": "PASS",
+      "duration_ms": 184.0,
+      "evidence": {
+        "order_send_isolation": "PASS (runtime seam count = 0)",
+        "mt5_module_loaded_in_gate_process": false,
+        "forensic_deploy_gate": {
+          "status": "UNAVAILABLE",
+          "note": "TypeError: 'list' object is not callable"
+        }
+      },
+      "owner": "invariants owner (forensics/, execution/)",
+      "failure_class": null,
+      "reason": "",
+      "skipped_reason": ""
+    }
+  ],
+  "invariants": [
+    {
+      "name": "order_send_isolation",
+      "status": "PASS"
+    }
+  ],
+  "model": {
+    "status": "FAIL",
+    "path": "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+    "stdout_tail": ""
+  },
+  "feature_schema": {
+    "schema_id": null,
+    "dimension": null,
+    "schema_hash": null,
+    "scaler": "UNKNOWN",
+    "runtime_activation": null
+  },
+  "database": {
+    "status": "PASS",
+    "db": "disposable tmp file (production DBs untouched)",
+    "tables_created": 39,
+    "required_present": true,
+    "roundtrip_rows": 1,
+    "migration_state": "DB_MIGRATION_PENDING",
+    "optional_absent_tolerated": [
+      "news_articles"
+    ]
+  },
+  "engine": {
+    "service_graph": {
+      "status": "SKIP"
+    },
+    "decision_cycle": {
+      "status": "SKIP"
+    }
+  },
+  "api": {
+    "status": "SKIP"
+  },
+  "shutdown": {
+    "status": "SKIP"
+  },
+  "failures": [
+    {
+      "stage": "L4 MODEL/FEATURE",
+      "reason": "configured champion artifact absent: /home/runner/work/NexusTradingForexBot/NexusTradingForexBot/artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+      "failure_class": "MISSING_ARTIFACT",
+      "evidence": "{\"path\": \"/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt\", \"stdout_tail\": \"\"}",
+      "owner": "model/feature-contract owner (schema_contract.py, artifacts)"
+    }
+  ],
+  "warnings": []
+}

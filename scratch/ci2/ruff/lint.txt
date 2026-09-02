@@ -1,0 +1,69 @@
+N818 Exception name `_StageFailure` should be named with an Error suffix
+   --> scripts/ci/runtime_gate.py:146:7
+    |
+146 | class _StageFailure(Exception):
+    |       ^^^^^^^^^^^^^
+147 |     """Raised by a stage body to fail the stage with a precise class."""
+    |
+
+PLW1510 `subprocess.run` without explicit `check` argument
+   --> scripts/ci/runtime_gate.py:312:16
+    |
+310 |     # py_compile the true entrypoints (cheap but real syntax gate).
+311 |     for entry in ("NexusTradingForexBot.py", "main.py"):
+312 |         proc = subprocess.run(
+    |                ^^^^^^^^^^^^^^
+313 |             [sys.executable, "-m", "py_compile", str(REPO_ROOT / entry)],
+314 |             capture_output=True,
+    |
+help: Add explicit `check=False`
+
+F841 Local variable `cfg` is assigned to but never used
+   --> scripts/ci/runtime_gate.py:381:5
+    |
+380 |     # 1. Defaults construct and validate (pydantic contract).
+381 |     cfg = AppConfig()
+    |     ^^^
+382 |     # 2. The REAL bootstrap YAML every operator launch reads.
+383 |     cfg_yaml = AppConfig.load_from_yaml(REPO_ROOT / "configs" / "base.yaml")
+    |
+help: Remove assignment to unused variable `cfg`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+    --> scripts/ci/runtime_gate.py:1082:15
+     |
+1080 |     commit = "NOT_RECORDED"
+1081 |     try:
+1082 |         out = subprocess.run(
+     |               ^^^^^^^^^^^^^^
+1083 |             ["git", "rev-parse", "--short", "HEAD"],
+1084 |             cwd=str(REPO_ROOT),
+     |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> tests/unit/test_runtime_gate.py:39:12
+   |
+37 | def _run_gate(*args: str) -> tuple[int, str]:
+38 |     """Runs the gate as a REAL subprocess (canonical invocation)."""
+39 |     proc = subprocess.run(
+   |            ^^^^^^^^^^^^^^
+40 |         [sys.executable, str(GATE), *args],
+41 |         cwd=str(REPO),
+   |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+   --> tests/unit/test_runtime_gate.py:129:16
+    |
+127 |     def test_gate_crash_is_never_green(self):
+128 |         """A crashed gate must return 5, never 0 (fail-safe principle)."""
+129 |         proc = subprocess.run(
+    |                ^^^^^^^^^^^^^^
+130 |             [
+131 |                 sys.executable,
+    |
+help: Add explicit `check=False`
+
+Found 6 errors.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

@@ -1,0 +1,2276 @@
+{
+  "files": [
+    {
+      "path": "format/format.txt",
+      "sha256": "80c2f189d6658a27dc317201ec44ac225457f68e8191a5edfa7b9166f3fe4c4e",
+      "size_bytes": 221
+    },
+    {
+      "path": "mypy/mypy-junit.xml",
+      "sha256": "71bb9f1a8865b7ab7986108ca64a9d6e4c841afdc463a9c92c97867876d7f634",
+      "size_bytes": 620
+    },
+    {
+      "path": "mypy/mypy.txt",
+      "sha256": "5b95d7eb86d1f57f4a56206600d8f91bf27f94ab31213b6af29ea5670d7bda57",
+      "size_bytes": 371
+    },
+    {
+      "path": "pytest/coverage.xml",
+      "sha256": "6677feb15de2c7f0251bca859a736a6ed9a421bd3a6969851af1e210d1688557",
+      "size_bytes": 2530074
+    },
+    {
+      "path": "pytest/htmlcov/.gitignore",
+      "sha256": "8c2eb1fa82c314dc11791274cb7aa967245d1908442d6e788bc77f6e1aa5c2b8",
+      "size_bytes": 27
+    },
+    {
+      "path": "pytest/htmlcov/class_index.html",
+      "sha256": "efb711053fb44977fb61052c362e635298642ee81d87c9f0935b9249b3858b75",
+      "size_bytes": 756619
+    },
+    {
+      "path": "pytest/htmlcov/coverage_html_cb_dd2e7eb5.js",
+      "sha256": "7378f969dfb8c57a9fdeefda04fa62361a07627da64d8b0a99eadc5cfd975b73",
+      "size_bytes": 25450
+    },
+    {
+      "path": "pytest/htmlcov/favicon_32_cb_c827f16f.png",
+      "sha256": "bc8100fa8743c11bd243eb3259f4b012758651612fd9bf93bf8b734d17f02561",
+      "size_bytes": 1732
+    },
+    {
+      "path": "pytest/htmlcov/function_index.html",
+      "sha256": "458176c8f424fcbae70aa9a16e53d90c92eeddb1cbe2f2ad03fc83a9ae5677b7",
+      "size_bytes": 3404416
+    },
+    {
+      "path": "pytest/htmlcov/index.html",
+      "sha256": "a807e08a3c94db04db0e3f28c0f8270841872b351931e1222823e507993749cc",
+      "size_bytes": 209909
+    },
+    {
+      "path": "pytest/htmlcov/keybd_closed_cb_900cfef5.png",
+      "sha256": "7d9bf8ae66370e4349b4f423ac5279501384e4374da1fde675e099582ed33a8a",
+      "size_bytes": 9004
+    },
+    {
+      "path": "pytest/htmlcov/status.json",
+      "sha256": "a39bf765280c3d1df4c22a6ce0a79b752df26bfc529a071ff77bf9a6c3675b43",
+      "size_bytes": 146748
+    },
+    {
+      "path": "pytest/htmlcov/style_cb_4667309f.css",
+      "sha256": "1b54edba892874f987fd65a5f0fc992bf4f5923ef6e53c687eb0ac0923dd932a",
+      "size_bytes": 16131
+    },
+    {
+      "path": "pytest/htmlcov/z_00eeab66720ed62f_risk_engine_py.html",
+      "sha256": "251d2de8f8812aa5f87023d1f56999ed619242fbc92039536207e4d9cd362073",
+      "size_bytes": 206086
+    },
+    {
+      "path": "pytest/htmlcov/z_040d7ba66bbb6b62_scalp_net_py.html",
+      "sha256": "d42db4cef46e5a2bb3d2eb2dcd04141869e0dc8764e7998e66833ad2780accda",
+      "size_bytes": 66656
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8___init___py.html",
+      "sha256": "a337ccd88f61cb162dd2c919e2fccf62b2a7a12bd4f23349da443a0b6bc47a20",
+      "size_bytes": 16656
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_classifier_py.html",
+      "sha256": "d674aa48f8bce46b0d49aa40c1ee5478ab91b698b060c60939926d80236685e4",
+      "size_bytes": 83695
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_config_py.html",
+      "sha256": "f65eadd01f866b29b4532d75409c8290b5350c20dec8db33bc1ae0bb28585a55",
+      "size_bytes": 21786
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_decision_py.html",
+      "sha256": "0da1872acae9ee857c5e948f2f0f5b4e3bb94746201bc343eb0edc946dc9db2f",
+      "size_bytes": 108627
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_engine_py.html",
+      "sha256": "ffc33978c42124a5b6d799a7a2c66a0f493c44546ae815bca015b4fd2edcd109",
+      "size_bytes": 79705
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_models_py.html",
+      "sha256": "c18f2334f89bdd9f8ea5077d6aa01431dc6dbec98d9b57ab4990540c7e30c93e",
+      "size_bytes": 50748
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_patterns_py.html",
+      "sha256": "0c17bafad7fa97151b1ab3c7cb6e0adec43910c563440316c3bd10c7eda7d80c",
+      "size_bytes": 205212
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_store_py.html",
+      "sha256": "64eb61289ef9a67c2bc9335246722a8e0ec7a4600df49b9bbc2640f15e14cdfc",
+      "size_bytes": 171626
+    },
+    {
+      "path": "pytest/htmlcov/z_0533c9e78e2b62d8_store_writes_py.html",
+      "sha256": "deab4c71fd2d62c0398b6f0057771b8bfe25002807ce82b08c172661902a0a59",
+      "size_bytes": 138850
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e___init___py.html",
+      "sha256": "f6bf5bbb209ee37218c77274b2fbfb77931a735856c7bce7f80c945b77910e42",
+      "size_bytes": 44123
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_benchmark_py.html",
+      "sha256": "7e3725614737e92410a6b7ecbecac7fa870a89a386e13da3fc4fde95a379fa38",
+      "size_bytes": 110084
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_dsl_py.html",
+      "sha256": "7f7994bf68bb42620af9cd9f077bb8cb80874af6fb7fcc7c52e2017a81d85b6f",
+      "size_bytes": 250136
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_evolution_py.html",
+      "sha256": "d15b6b067cec61469d9d9e31919bb4e2248fc3e456ad7f26d4ed9d4feab92202",
+      "size_bytes": 156196
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_models_py.html",
+      "sha256": "093a2df16a20d510e687f0b821b4dd25f47a2a67f7006bccc577ab996c9b79d7",
+      "size_bytes": 140556
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_orchestrator_py.html",
+      "sha256": "c1ce6c49c9e2dd3668f8ab70741b7d5908f90cc07029e657c8a6f2c0beb36339",
+      "size_bytes": 555766
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_provider_gate_py.html",
+      "sha256": "96394d1641a9d908aa4e17c8ca6c0c083ed6aaac537cdba1758c2d3cb102324d",
+      "size_bytes": 246529
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_provider_py.html",
+      "sha256": "0aaebe161baadbe7ae7b78a2b90f48169b169a6f534bcab11bf5ce27a577cf41",
+      "size_bytes": 163661
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_ranking_py.html",
+      "sha256": "33c7632e5e2ab12d5c189dab6756417aa79486ec3c54a0f2b69de15d81b39f43",
+      "size_bytes": 108668
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_store_py.html",
+      "sha256": "d42f132995ca2e178db73c64452ce6c930a9ac2a5cfbb8302300ec104600f9d0",
+      "size_bytes": 293526
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_summarizer_py.html",
+      "sha256": "6bd121c3176c06e955118150566ee6c76192b0fc18d139cce49f794d5b208d9c",
+      "size_bytes": 98332
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_telegram_py.html",
+      "sha256": "9b885d9485b9956aa5443ae9dda3b3cefcd621bb33e11fd435d722b2af198c14",
+      "size_bytes": 52470
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_validators_py.html",
+      "sha256": "6ef33aad58fcc6633c8f365ef551ceeb86f722d71e827ad7232d07fb78903917",
+      "size_bytes": 99502
+    },
+    {
+      "path": "pytest/htmlcov/z_0b376a5866a2a14e_worker_py.html",
+      "sha256": "eafa475ecc13dcccfa603c8b7bd92acf4a35997e3b9f26af47a2274a748e260b",
+      "size_bytes": 97565
+    },
+    {
+      "path": "pytest/htmlcov/z_0d7e79bce5f344f1___init___py.html",
+      "sha256": "a79dae8d970a79c9fad14a53e4165c84c06455838244b0bb7b6a5b751b6cf32d",
+      "size_bytes": 13341
+    },
+    {
+      "path": "pytest/htmlcov/z_0d7e79bce5f344f1_analysis_py.html",
+      "sha256": "9736a63d14d31de4420d26613191cd46be1f1980eadb1b20b41f4aaecf6cae47",
+      "size_bytes": 144996
+    },
+    {
+      "path": "pytest/htmlcov/z_0d7e79bce5f344f1_classify_py.html",
+      "sha256": "c6497e9447bb389db8f0240bb7f7e6a0aa97f83054b47b926e4c5ff7c0a0dae1",
+      "size_bytes": 34516
+    },
+    {
+      "path": "pytest/htmlcov/z_0d7e79bce5f344f1_engine_py.html",
+      "sha256": "6932fd3f52ebfaaad40079e47bedc00bc370dca92a636bbbc395ac2d2755a89f",
+      "size_bytes": 34202
+    },
+    {
+      "path": "pytest/htmlcov/z_0d7e79bce5f344f1_models_py.html",
+      "sha256": "b856f1023499463a5813784fc3df128f16c41fd9411eb11c1d4dd5c317f517be",
+      "size_bytes": 63775
+    },
+    {
+      "path": "pytest/htmlcov/z_0d7e79bce5f344f1_scanner_py.html",
+      "sha256": "919ba77e3597503d82c7ba84061a1affa83a86863f88e58d02f785ef010ff6bf",
+      "size_bytes": 217678
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824___init___py.html",
+      "sha256": "080ba2190dfef94cfa1eb44b860f0adc373b445e41df948e8c7067b266a031ff",
+      "size_bytes": 20636
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_archive_py.html",
+      "sha256": "8dd8cf18d5545b0fbf71a258cf0b4e871429ace83fc27a638bafea887a68e255",
+      "size_bytes": 55089
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_consistency_py.html",
+      "sha256": "cb3b28da49a05c50dc55d4e6be2a38e0ad216bb6995f08654daa5874dd599ea4",
+      "size_bytes": 159794
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_detectors_py.html",
+      "sha256": "3c363427c7c449526a903594dd68ff88a3bb59d1dfe5250ade5ceaaaf663f175",
+      "size_bytes": 97739
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_hygiene_runtime_py.html",
+      "sha256": "d9ad524d3711301e18e5c7a908f14c923c608cf7f92d44603c957e0eae1fea0e",
+      "size_bytes": 132662
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_index_health_py.html",
+      "sha256": "fd3c3c835734c4086a282d10ef18df59b41adb46e6dec50fec07c9041fa3954c",
+      "size_bytes": 73456
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_quarantine_py.html",
+      "sha256": "de4c060a3472c88781cebba45960785460c913c4ba3eb46683a97782c70df549",
+      "size_bytes": 82456
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_report_py.html",
+      "sha256": "b284d1a8969399b0ad94cccdced2999234420036cfdfd317e8f28aba72a3947c",
+      "size_bytes": 68229
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_retention_py.html",
+      "sha256": "14dbb5d37ae74d154c305137a0b2a5be6869c375756860566f9c5f628d82cb53",
+      "size_bytes": 209869
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_state_py.html",
+      "sha256": "49197d3731ab092c229e91b004daddaa3349234b62c44d488c9879a0ff6c4599",
+      "size_bytes": 64201
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_worker_py.html",
+      "sha256": "a09345ced44df884a41cc275ff5775b3d54da3cb35c24e4c41ec8714806bde9f",
+      "size_bytes": 204490
+    },
+    {
+      "path": "pytest/htmlcov/z_0e2e9d4e54a93824_worker_runner_py.html",
+      "sha256": "f448a9dd4b5ba770c240e46017472e08fcc9d8277722397a1e287bef1c05a38a",
+      "size_bytes": 96200
+    },
+    {
+      "path": "pytest/htmlcov/z_0fcaf5a6b1e65aa3___init___py.html",
+      "sha256": "48029f285830f23f8be151ea7d5f80869b1138c39d131e7f470ae839129c6a46",
+      "size_bytes": 4925
+    },
+    {
+      "path": "pytest/htmlcov/z_0fcaf5a6b1e65aa3_gateway_port_py.html",
+      "sha256": "fa1be882dce0be8d48818ae1636e355085f3aef75978aee51ff73bd183f2471c",
+      "size_bytes": 10296
+    },
+    {
+      "path": "pytest/htmlcov/z_0fcaf5a6b1e65aa3_mt5_port_py.html",
+      "sha256": "f8e35906f5d0d74c00e6525007cb41bd920c39a48f9bcdec7e66a53181186849",
+      "size_bytes": 68931
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667___init___py.html",
+      "sha256": "4a4920e5006972a56603b516928a2853b0eb3939e162d15ed2aafe2639306019",
+      "size_bytes": 39133
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_architectures_py.html",
+      "sha256": "2559394270a67fed6f0fde98c79606b72861f1f3c106b364a7fcd87836304b54",
+      "size_bytes": 51312
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_artifact_store_py.html",
+      "sha256": "82dc0489574b8c22f90ff6b5dfb398820de023563fb1f718be4fa9d8d9eab8f7",
+      "size_bytes": 90955
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_benchmark_py.html",
+      "sha256": "3116f3e25e599fa74c293c09d9857359c992e72b1734b99a19d3b1deb98f0bc7",
+      "size_bytes": 141699
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_dataset_factory_py.html",
+      "sha256": "645ffec9e7b4a2a66395c266abe22612b1c11597f16d0d9e29ff7c26809dc364",
+      "size_bytes": 76746
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_experiment_factory_py.html",
+      "sha256": "2011122152f6c4868b16a703b4362298f916f5c80a8fa1d2321f68a5d2e80465",
+      "size_bytes": 52130
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_model_factory_py.html",
+      "sha256": "d31d6abe76a60ec8d6aa8e2e749b96df4ce7206c911e978a613a64c0e14cad9a",
+      "size_bytes": 44914
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_models_py.html",
+      "sha256": "2130ac68c76f9f513c50f932176b44fd4bea265dc0fceae3e64b2180650db6a5",
+      "size_bytes": 140474
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_news_bridge_py.html",
+      "sha256": "4973cf9f472a396074c154f9a1b098f37ee6c8e9f57cf048995d0c1213dd19dd",
+      "size_bytes": 202470
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_replay_py.html",
+      "sha256": "4d191a4b6eb823d8d68aa2483d9b3fe7e3ab12a4c6bad1a9370721d774f081ab",
+      "size_bytes": 104196
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_runtime_py.html",
+      "sha256": "c67d0a899ca135e50f1f62841191e137727b3201d1d55d7f19a8fe6fcea50025",
+      "size_bytes": 65735
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_sample_factory_py.html",
+      "sha256": "ea3cd6bf4eda5bab1c8c98f972921225eada96e6c911cf4ecb15609951e065c3",
+      "size_bytes": 101030
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_sample_maker_py.html",
+      "sha256": "3d21c8aa98cb2d58ccd8ac6fa9319899e1111fbcbc84821f0567c084c488b9ed",
+      "size_bytes": 78466
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_schema_v2_incremental_py.html",
+      "sha256": "b9fa67c0fffd79ec0b43c06b0a202b613eeda182643ecaeb00b08f9e83dadba9",
+      "size_bytes": 231109
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_schema_v2_py.html",
+      "sha256": "aa6462bf6d7d32aad2833b2cc46aec2c6b1b59b24258283342e8e2af1228eaef",
+      "size_bytes": 260418
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_sequence_py.html",
+      "sha256": "e65543dfebc09ebe4d17848101640b75ef4d0d36c98645b20ea347edc1cec88a",
+      "size_bytes": 46362
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_sequence_training_py.html",
+      "sha256": "900dec2120710eedfa92fde34b0c7a2fc7cb08ec3a2204ddee65251b9fd64bf7",
+      "size_bytes": 87506
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_setup_detector_py.html",
+      "sha256": "212888b10da1597678e53c39b69003fdd2281c3228069120fb82b49744ff463e",
+      "size_bytes": 224054
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_strategy_factory_py.html",
+      "sha256": "d5081b51b65e6cbe03deef3681a4d590a68cc30086c9d8efba381ec12d332814",
+      "size_bytes": 108083
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_three_model_py.html",
+      "sha256": "f13179008a0f6358db45a535fe32a565a279bdad70c863107e659b6b0a95559d",
+      "size_bytes": 114692
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_training_py.html",
+      "sha256": "0a6c69dff5c4387520dbff74809c93adad29bfc099c4c32e7f4282298b0d73e1",
+      "size_bytes": 129692
+    },
+    {
+      "path": "pytest/htmlcov/z_11aec5a9c6019667_validation_py.html",
+      "sha256": "fb8306faf81e552afa1470b40010a6306d1cb354093d662b1e380a6b43c8dd3d",
+      "size_bytes": 128108
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4___init___py.html",
+      "sha256": "674f14d14dd0eec3c770001fb89ee70a8d3e2a5ac6ea57aaf9048d9318fd4088",
+      "size_bytes": 13337
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_artifacts_py.html",
+      "sha256": "4bcb7242decd91a76a87510e8605022cf8240ebd42586545d6e789f96cdab09e",
+      "size_bytes": 34139
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_cli_shim_py.html",
+      "sha256": "64bcf3103033dfee5e508aa505b085baaca150e51c31edecba3793bba3b5c094",
+      "size_bytes": 11260
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_diagnostics_py.html",
+      "sha256": "35e465e6af169d815fe506b52b8d56c2d91e58dfe960947e4926be129062ff57",
+      "size_bytes": 51353
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_environment_py.html",
+      "sha256": "ea94d55703f9070e891e5c4dacc84edbebff87af21c85876a20e1138044f1723",
+      "size_bytes": 107427
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_evaluate_py.html",
+      "sha256": "c5cbb80d5044751e2de7672ae29909fc10324d12ef58305463d9955f796ee9ab",
+      "size_bytes": 80719
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_exit_codes_py.html",
+      "sha256": "2bc34d055ea0086ef549c3bc51f9a75b7d53f269200e6155734c2ed7476749f9",
+      "size_bytes": 12210
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_health_py.html",
+      "sha256": "66532c2a5967bdd4f55de9167954cb2fa423ec0b6f550629cd9f5a7825375710",
+      "size_bytes": 318040
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_metadata_py.html",
+      "sha256": "2ee6b7004034144d85b5f6d82c406b9cf45f7af7765d0119509d4f4a07e35ef9",
+      "size_bytes": 77869
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_model_artifacts_py.html",
+      "sha256": "44703dc920541515555344a05022d70b1778e194f9ff06960986829c7c437df5",
+      "size_bytes": 131806
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_packaged_main_py.html",
+      "sha256": "67c01a9759b93c6bbe230443b9e47ff7184010f579a137ad585921cf90534e10",
+      "size_bytes": 13544
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_packaging_py.html",
+      "sha256": "1a6fd682c085fd56a67e9061047ddbbe4abea2c579b4d9787c8b9f873518d71b",
+      "size_bytes": 100111
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_paths_py.html",
+      "sha256": "d051e6c5bdcd88ed0176fc8307078dac1532600f9c9cb2e5b1e3526bee6c5912",
+      "size_bytes": 37632
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_release_status_py.html",
+      "sha256": "9d0f9ef844a43cd975dd9c3542262243fedd315a669bd08fd0f1471cb4ac3881",
+      "size_bytes": 77417
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_repair_py.html",
+      "sha256": "4ddc9f3185f565940b1106750b12b110419700e0f90fb5881d9670c6eb808c22",
+      "size_bytes": 75315
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_runtime_snapshot_py.html",
+      "sha256": "36bcb7e91df38d387600ca1ff5d7f085b2ca1037282b23e2a2cf1220984b1c6f",
+      "size_bytes": 119115
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_state_taxonomy_py.html",
+      "sha256": "a0eaa2de8b6920db7c8422388175d547a05d09d58d27c211f9efba53d5fc3341",
+      "size_bytes": 28941
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_update_py.html",
+      "sha256": "56ce68554f02c82072cc63fd32cae4b81a49f43d421cf265be906ea3cd704e29",
+      "size_bytes": 61908
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_updater_py.html",
+      "sha256": "c4b52801032b0fe13eb58cf631641665334e8679336a6c9a6a605ae23870a17a",
+      "size_bytes": 847668
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_verify_py.html",
+      "sha256": "2528f2875bbd486c8db1444c2bc9c251ab1e1f75cbe9f84b0b16ce732f9f196d",
+      "size_bytes": 150631
+    },
+    {
+      "path": "pytest/htmlcov/z_13a42dca323a91e4_versioning_py.html",
+      "sha256": "8b8b2417601f13211c7435d42f47cfbfec187560a5ef5416554f795e2b866d49",
+      "size_bytes": 68479
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60___init___py.html",
+      "sha256": "5454b3525bf28ca1a318d07b6a0ccf03e5e2fe4c480a9f5745fcc6ac47d956b9",
+      "size_bytes": 7615
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_architectures_py.html",
+      "sha256": "7e796a0c4a17a82d3252525bad7b45ef25a1abad8204aa44855fea5cb74b2593",
+      "size_bytes": 48147
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_baseline_py.html",
+      "sha256": "c15bf740d88c1a230606484a592d11e93173bc8209a21c87d3cb1649a8bb9858",
+      "size_bytes": 37665
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_dataset_lab_py.html",
+      "sha256": "41c33b5a987fea932b16600d1904f70f2674ce712879d1f367941f8973667017",
+      "size_bytes": 52805
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_evaluation_py.html",
+      "sha256": "da3be0bcb0fe2e73f3cbf537340272e9076a12c0ada67a801bf77610939f045b",
+      "size_bytes": 68113
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_integrity_py.html",
+      "sha256": "3f77948eef4504526fa7b76511b87ecfbf0dc3a9c6a8828b2a30ee8c56a06890",
+      "size_bytes": 48148
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_lab_runner_py.html",
+      "sha256": "23ef8ef5e421fd4872dab67e3d4ca2313651b169871d66d6c3e2741ee953bd59",
+      "size_bytes": 115511
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_promotion_py.html",
+      "sha256": "da6a3917e2d35f1f58fd4398851ce812b163e955a40bc82c063264aa4dce3547",
+      "size_bytes": 31929
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_registry_py.html",
+      "sha256": "68fdbba03c48b5d4e522f5b6521b81b2d51a0ad754d5e46c589cbcaf2ab17640",
+      "size_bytes": 50895
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_trainer_py.html",
+      "sha256": "75020cd9dfc94b2ed7a546459894a231c221dab8e217207d2f0d6f50363225ab",
+      "size_bytes": 118283
+    },
+    {
+      "path": "pytest/htmlcov/z_18ced601f4f77a60_windowing_py.html",
+      "sha256": "df6e26533d66cfa4b27b4c193cded574f5e1e1ba29d97465fc8e1e1c79e5e873",
+      "size_bytes": 22998
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b___init___py.html",
+      "sha256": "74e166bb43dfaed4cca1c6b2f707763dc7181ebe91bda76d60bc5561826fa4ab",
+      "size_bytes": 19328
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_alignment_py.html",
+      "sha256": "22a52dd4ad069d0385435d1cde755c2de74b95f9f79f6f2c6ddab86d59e0fcda",
+      "size_bytes": 82292
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_engine_py.html",
+      "sha256": "4b5b5f63099673a19ecb563dffc1866198fc107f84584fa029aebbadd99eccdb",
+      "size_bytes": 265491
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_evidence_py.html",
+      "sha256": "f6a2831a2b2fc96a367302106be485c72cbe79c79c1a454d600903bd2d5777ad",
+      "size_bytes": 118167
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_load_gate_py.html",
+      "sha256": "2f297b91bb43379ef69605a25016cb771063885d633d8e3c1b234a982f04b060",
+      "size_bytes": 123873
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_lock_py.html",
+      "sha256": "340d9cdecb8c5648ab8667ef4980e4ded4016ae8c3d20bc195cc16d3d4acc732",
+      "size_bytes": 32893
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_models_py.html",
+      "sha256": "db10217c5c14a66009cb559bd38f0c2f08b4c7c8b2c2d11cfbd2f5e9f7c0b5f7",
+      "size_bytes": 100183
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_reporting_py.html",
+      "sha256": "1af4ef76dba389c80920d71d8682b966e0003de7335fb12c739e7f12ffcbf95b",
+      "size_bytes": 40813
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_shadow_runtime_py.html",
+      "sha256": "1903979abda1d2ed69b39920449fa66926661639c12f4f0b5eb9b94e875c9e62",
+      "size_bytes": 102853
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_store_py.html",
+      "sha256": "9d2a76a994893989f15801779f545abe076f8c5995a4cc6146c93d6081468be3",
+      "size_bytes": 208156
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_transaction_py.html",
+      "sha256": "06f7fb6ae5fcd8bdbac99fb705c7d0edac707ee628ac1fdc40c60c54d503cb82",
+      "size_bytes": 77406
+    },
+    {
+      "path": "pytest/htmlcov/z_1d043b4926c01e5b_verify_py.html",
+      "sha256": "9816743eda881188bf27b9f49b4ffdf13646e0b418c4da4f2573f1f9297a44e9",
+      "size_bytes": 91722
+    },
+    {
+      "path": "pytest/htmlcov/z_1f0db473e08abf63___init___py.html",
+      "sha256": "95da814b3bec38ba63c8bfd15f8182e45abed8aafab97999a0fc1234402a8aa8",
+      "size_bytes": 9859
+    },
+    {
+      "path": "pytest/htmlcov/z_1f0db473e08abf63_deduplicator_py.html",
+      "sha256": "0c8bc29a701cb3c94b83805c33dee44dca2feea4d3f633c582d409dbe7d6fee9",
+      "size_bytes": 69405
+    },
+    {
+      "path": "pytest/htmlcov/z_1f0db473e08abf63_fetcher_py.html",
+      "sha256": "97c107b0a267e3c16875539e0f4fae08238d6b071b1e642e97382e1619314697",
+      "size_bytes": 114161
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278___init___py.html",
+      "sha256": "5f8ee146939db990b50abf31fb09b39d31c1f104613daffea7d6f51e8962b32c",
+      "size_bytes": 22160
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_decision_evidence_py.html",
+      "sha256": "2cd177b18e027dc145e9beea19acd4bd120a5f13746bf74b0375f307af546fdb",
+      "size_bytes": 49056
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_evaluator_py.html",
+      "sha256": "324d4e19c7761380a244c8742c6451f2b1e9ccc7b73e36f1c505a0af6e5e9130",
+      "size_bytes": 196599
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_intelligence_py.html",
+      "sha256": "511b9d9ebcad5b5ed00dc5d6eaf73359f8724b7a1910399ec50e90154e15b064",
+      "size_bytes": 256951
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_ledger_py.html",
+      "sha256": "1b7ac98dddedfe6e16040630b679a476a6e3f7a72781fa46ffce4a3351e23ad9",
+      "size_bytes": 210012
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_lifecycle_py.html",
+      "sha256": "9171af9218a6472d2a2bf0cc6ae4908b4040281ebe0e13f3798bd318cd395d2a",
+      "size_bytes": 49847
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_models_py.html",
+      "sha256": "13d9da6b88972a4638819effa8c4f459c181a2bfce580b619935761baa2dcfb6",
+      "size_bytes": 218347
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_outcome_recovery_py.html",
+      "sha256": "2b6758173eb24861737de94a9b1b2e9bc07941b82dd97f5f39758774fd60ba46",
+      "size_bytes": 151375
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_outcome_recovery_sweep_py.html",
+      "sha256": "6124457cba34bfe15ff5467a43e48b870d9d29f272d61045cee7b1ca829dd528",
+      "size_bytes": 203809
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_outcome_repair_py.html",
+      "sha256": "bca55cda474567c3bd9f191b995f161e020704d074f47a526c1e7665582241ae",
+      "size_bytes": 106647
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_provenance_py.html",
+      "sha256": "c41b0820b69b7b2664244a5a0997c65a9fe45ce4e84d58755d94229d84550c6c",
+      "size_bytes": 51789
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_quality_py.html",
+      "sha256": "f07d43e3f8aa3bda77f238581bbfd74f4c7df5f3620ce0b0d36dba4a6119449e",
+      "size_bytes": 139241
+    },
+    {
+      "path": "pytest/htmlcov/z_2a269d0ec6cf2278_retriever_py.html",
+      "sha256": "4dee1f8a5962afa0e16e429c4fcc71ae85a7fdb90890479fe122c33a3a4e9125",
+      "size_bytes": 87746
+    },
+    {
+      "path": "pytest/htmlcov/z_4632a19f2569e06c___init___py.html",
+      "sha256": "36c206c18c96b25c99ccdc7025d7f066afdea2e31b17654146532c697018a63c",
+      "size_bytes": 20134
+    },
+    {
+      "path": "pytest/htmlcov/z_4632a19f2569e06c_config_py.html",
+      "sha256": "b257ccd3f50716d5438e454e74e399e1d5d86d76d33bd7017c2188e1b0419901",
+      "size_bytes": 66984
+    },
+    {
+      "path": "pytest/htmlcov/z_4632a19f2569e06c_runtime_config_py.html",
+      "sha256": "7de1d3fd473b6d0597612fe53d5e91f0282890522d84ce856a798be2a6fb9d45",
+      "size_bytes": 355224
+    },
+    {
+      "path": "pytest/htmlcov/z_480001b65f02a584___init___py.html",
+      "sha256": "501e108a571e0507daf83fe7b5e51672ab97886ee9af483a86a3909806a45995",
+      "size_bytes": 4949
+    },
+    {
+      "path": "pytest/htmlcov/z_480001b65f02a584_bar_aggregator_py.html",
+      "sha256": "f394215d91bf166f4102760c183f60f6fc771cd7d61e3dfe7bc3e448ca416a0d",
+      "size_bytes": 59387
+    },
+    {
+      "path": "pytest/htmlcov/z_48b0bd0fe4918e7f___init___py.html",
+      "sha256": "1d3d78aa402ad395b4c8f61b53d2eb2b89604c1f220c0a1fe129d92445b73f6c",
+      "size_bytes": 8200
+    },
+    {
+      "path": "pytest/htmlcov/z_48b0bd0fe4918e7f_base_py.html",
+      "sha256": "970866b89e7295d20d6e86c2eebcca5d214e55b96f2fc77db1e24092f81b1114",
+      "size_bytes": 90518
+    },
+    {
+      "path": "pytest/htmlcov/z_4b26f0ba43ef0815_policy_py.html",
+      "sha256": "f70687f661157d5e3edce2ff620dfe74250264bf2599769e8aca67a94f415417",
+      "size_bytes": 627242
+    },
+    {
+      "path": "pytest/htmlcov/z_4b26f0ba43ef0815_rule_matrix_py.html",
+      "sha256": "80d6b45fe2055b90fcd35a4200309df58b03c46ccf09ef36c96aad500dac5724",
+      "size_bytes": 242926
+    },
+    {
+      "path": "pytest/htmlcov/z_55c39d78580ca8e4___init___py.html",
+      "sha256": "b730e883fcbe56e7181a1c661e84c82bb128d230089e7ae6025d9f39d3c478cf",
+      "size_bytes": 4964
+    },
+    {
+      "path": "pytest/htmlcov/z_55c39d78580ca8e4_audit_repository_py.html",
+      "sha256": "b872c1ed24c115e9dd4480847307f64ad3b62df187596f00d00371e5fd88bf90",
+      "size_bytes": 710858
+    },
+    {
+      "path": "pytest/htmlcov/z_55c39d78580ca8e4_broker_history_py.html",
+      "sha256": "ae54074afa6ff35b4ecf6aa14458d8c501d5b8a1f72585cd2e7d8363ae837560",
+      "size_bytes": 187691
+    },
+    {
+      "path": "pytest/htmlcov/z_55c39d78580ca8e4_broker_history_sync_py.html",
+      "sha256": "208ae077caaa67ac9c3114685687df58f77731788b94dd03fd0368868a369a11",
+      "size_bytes": 61810
+    },
+    {
+      "path": "pytest/htmlcov/z_5f53e774d3737b12_order_manager_py.html",
+      "sha256": "a1b5c90ebf892a36f7946ee7bc2890089649a87599af6d3a52203e7c111745c5",
+      "size_bytes": 1798452
+    },
+    {
+      "path": "pytest/htmlcov/z_5f53e774d3737b12_position_intelligence_py.html",
+      "sha256": "8fdd103438bb6f5181d6660c312fc6fa5c690cf8fc47f92010cfbb3eb295aff0",
+      "size_bytes": 108922
+    },
+    {
+      "path": "pytest/htmlcov/z_5f53e774d3737b12_position_state_machine_py.html",
+      "sha256": "bb1bcf94bb6005dbe5e448f446af89d77d27046ee0b7a4728ac5b96fa0cbb245",
+      "size_bytes": 48079
+    },
+    {
+      "path": "pytest/htmlcov/z_5f53e774d3737b12_position_states_py.html",
+      "sha256": "2de880ee50b0eb8263c956fb9c53ebcb1697473898e4d29b9871483586f9b83a",
+      "size_bytes": 10518
+    },
+    {
+      "path": "pytest/htmlcov/z_5f53e774d3737b12_protection_ledger_py.html",
+      "sha256": "9e10a5896379d9c561cf1f7969e6556755cf10e9a4bebd493e3a00677c0ff9a1",
+      "size_bytes": 31514
+    },
+    {
+      "path": "pytest/htmlcov/z_5f53e774d3737b12_recovery_budget_py.html",
+      "sha256": "30b8b8a5ab46d5b010c65dc22ed8c46014101e388465ab81c64ba15a7ecc3aee",
+      "size_bytes": 46687
+    },
+    {
+      "path": "pytest/htmlcov/z_5f53e774d3737b12_terminal_outcome_py.html",
+      "sha256": "bcd7ea7fe40c9f6ca16e03090c2489303352cf81921e90cfa843053af1dced0e",
+      "size_bytes": 35330
+    },
+    {
+      "path": "pytest/htmlcov/z_681ab06df0b006fa___init___py.html",
+      "sha256": "ab0ad39dc07b34e061badfe5527785db11724e84b0a5e76461e0261d255fbf6e",
+      "size_bytes": 22331
+    },
+    {
+      "path": "pytest/htmlcov/z_681ab06df0b006fa_paths_py.html",
+      "sha256": "d3d27ced6cb60617a6fed843c2c460b18a1ea3df1313b12d971de64f07adb0fc",
+      "size_bytes": 14806
+    },
+    {
+      "path": "pytest/htmlcov/z_681ab06df0b006fa_secret_store_py.html",
+      "sha256": "9c01f373e6f90f79d41dca1fd7a5e246bf220b7334ac53fdf40ce6a03487eac7",
+      "size_bytes": 70135
+    },
+    {
+      "path": "pytest/htmlcov/z_681ab06df0b006fa_service_py.html",
+      "sha256": "d2e8e15bbab4d36387af02ae0773dacd4ca75eabc7ab6aacfd4aef50fc6fbd3b",
+      "size_bytes": 291159
+    },
+    {
+      "path": "pytest/htmlcov/z_6d2256e907ed25d3___init___py.html",
+      "sha256": "eb5c7afc6cfd0626a503cdeb4174c1601601dc007274cddbe8733fa0e1a70912",
+      "size_bytes": 8617
+    },
+    {
+      "path": "pytest/htmlcov/z_6d2256e907ed25d3_diagnostics_py.html",
+      "sha256": "792d47b30ff39d1b38f8c19ae61a20300d8df032237c86f5688beac15c0d90b7",
+      "size_bytes": 96336
+    },
+    {
+      "path": "pytest/htmlcov/z_6d2256e907ed25d3_mt5_adapter_py.html",
+      "sha256": "c2676a78f36245dc0b3cb554d5a3c465dbe93a58127fce7c98ba5f7c336360cf",
+      "size_bytes": 462808
+    },
+    {
+      "path": "pytest/htmlcov/z_6d2256e907ed25d3_providers_py.html",
+      "sha256": "3567d3b13e91c08fbddba2516611af71d51c19cd595bf178b93ca13afc8912d2",
+      "size_bytes": 243831
+    },
+    {
+      "path": "pytest/htmlcov/z_6d2256e907ed25d3_remote_gateway_py.html",
+      "sha256": "135a34ff6d81fec02994d8257ddf8da374fd540e8ea81247a8583441fe1b41a1",
+      "size_bytes": 100156
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba___init___py.html",
+      "sha256": "72d3634189693849c5f577e976da0d8bbe0126abf80d0bd906e28577211b3b30",
+      "size_bytes": 23272
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba_health_py.html",
+      "sha256": "db90022192407a416e514c41c96265f9035ec6e847b02eb1fc3aa2c3c9a47a5b",
+      "size_bytes": 145115
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba_liq_provider_py.html",
+      "sha256": "387941121dc8a766af964b22ea72d987ef2798b0b0c1790f961937842ff44c98",
+      "size_bytes": 52349
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba_models_py.html",
+      "sha256": "dc823150dd151c0686a60f3ce3a89c5650c04ff8acbe4309213a5fb304ed1d3b",
+      "size_bytes": 96743
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba_news_provider_py.html",
+      "sha256": "ad451638ec4e4c0469223420bf1981b4e191aa14b86fcd372f0bee693328a4e9",
+      "size_bytes": 27125
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba_runtime_py.html",
+      "sha256": "0d0cad2370302ec87bca594dd09fa2b7c97e3b660b2cb55d12a6fdc37aa28145",
+      "size_bytes": 228007
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba_store_py.html",
+      "sha256": "90c0a71fd54fef33b36ac719a3dd613552c3d369e8bc6169b1299891f866aa2d",
+      "size_bytes": 151918
+    },
+    {
+      "path": "pytest/htmlcov/z_74a285a8fbd11fba_worker_py.html",
+      "sha256": "ef4d479dae5d2943600f5fdc1cf4f70ee4ff847272764ceba0dc83d0e4fd6f21",
+      "size_bytes": 60999
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb___init___py.html",
+      "sha256": "3f63e6531088a3361d7d008c7e5ed04927fa0b01af6f906739518dce264fa00d",
+      "size_bytes": 10511
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_common_py.html",
+      "sha256": "d851ff8a5b082464d0989ad0e5e783543a83d2fb485f5f01f0dd24b6f177fa22",
+      "size_bytes": 102783
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_decisions_py.html",
+      "sha256": "36b5217d83b6ab09a5b694d89b9f7c7b58ba0788d679aade8639e87b9fea4618",
+      "size_bytes": 113715
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_errors_py.html",
+      "sha256": "e3a09d38f6d8bb11c9d43d28b33cdc880a9e6eb468d680f516c049d4d260aedb",
+      "size_bytes": 33968
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_incidents_py.html",
+      "sha256": "9fdf859044e09165f27311d1baf5e25123ab500bc4ff46be5cb782e6dde178e6",
+      "size_bytes": 133653
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_market_py.html",
+      "sha256": "242ecc61be0d8567f012f0ffb6e6294bf9a3651fa93688edce61e0bf3393d259",
+      "size_bytes": 52709
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_positions_py.html",
+      "sha256": "60e365436b2c0549cf333e0e3f391d60881f614f36ed38569dfad6895a3a91a9",
+      "size_bytes": 139418
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_research_py.html",
+      "sha256": "fb804d9c236f3d4fc2884e2c4bcc34396f7135a9acff0b2c12966fcbaf926e19",
+      "size_bytes": 65066
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_risk_py.html",
+      "sha256": "a883d3a3bda601446dc2db528363b3dcc54eb9ae1c8b42eed8541f8b6e137162",
+      "size_bytes": 39343
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_runtime_py.html",
+      "sha256": "e8c1af5b2a561b41f19badc89dd2e9275d6f4e8523a9985abd761a165d2445fe",
+      "size_bytes": 54047
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_shadow_py.html",
+      "sha256": "9329b5ee886704972e97f28db7dab8f4943b27bca2e10152a5fad9fde38af473",
+      "size_bytes": 62847
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_signals_py.html",
+      "sha256": "2d8968cd906c1e8d9cc184d34aa897132e79c253091617284fe7ea115a489b5f",
+      "size_bytes": 38857
+    },
+    {
+      "path": "pytest/htmlcov/z_79ef102b463287cb_system_py.html",
+      "sha256": "3ee6f2a16d1a8ff52a65458e9a3ead6a20ee98bb43658d7446b557f3e58d9727",
+      "size_bytes": 114402
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473___init___py.html",
+      "sha256": "276177ba31eb725d59cc9b06f15de575e6de17ef37f9aab2966d3648ee30abe4",
+      "size_bytes": 20262
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_autopsy_py.html",
+      "sha256": "b131bc01ff01133aa6907cb84918bafe911f71b10d3850f0dbc2277b06a3dae0",
+      "size_bytes": 83493
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_behavior_backfill_py.html",
+      "sha256": "2df26165d770d61703de4bad3f00e88546ee09effd2db3adcbd824a90e46b0ea",
+      "size_bytes": 18946
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_behavior_canonical_py.html",
+      "sha256": "1dd17a69192ffb67a74edf58778f69ea1ef7d79f1ca6768b966df9c53289a88d",
+      "size_bytes": 151840
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_behavior_detect_py.html",
+      "sha256": "a5e0a8a5a45ad08d87e7d10c92c837f9b0ac2b4f99d060800a8046dba3cdf150",
+      "size_bytes": 224629
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_behavior_py.html",
+      "sha256": "46048cd6991fafa8680ccc6f4485e063b0c0b45829c5ec9edaef5ff205341f99",
+      "size_bytes": 11447
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_evolution_py.html",
+      "sha256": "0f535e157d8a756370f6fa135eaa6a0805ea5bdcee29757e1775ddccccce5fc8",
+      "size_bytes": 90059
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_gate_py.html",
+      "sha256": "586f97293cbe86dac629aa03d98ebea36c5a81ecee9ac8755875842844d290f0",
+      "size_bytes": 91004
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_lifecycle_py.html",
+      "sha256": "58e5af264b71a58e10be5ce3931f51ac996349b6b351ed7946a07df3a93f6497",
+      "size_bytes": 149626
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_models_py.html",
+      "sha256": "50a790131b583c606535754f2655d29918203f1d2e50e55ffbc3cd969fd9853c",
+      "size_bytes": 107218
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_store_py.html",
+      "sha256": "c3b4a7683b3784b3a65bdd8b8dad02851624fbe01d53638d7b60d22b2260e4cb",
+      "size_bytes": 105328
+    },
+    {
+      "path": "pytest/htmlcov/z_86ac67cb4f6be473_worker_py.html",
+      "sha256": "9b0da26aa5c472a09adbe96e23a6af7ce56bcabebf9baa26160e70dc9b7a965d",
+      "size_bytes": 96187
+    },
+    {
+      "path": "pytest/htmlcov/z_898d1514e694ca56___init___py.html",
+      "sha256": "4b961095e8dba27a401d6195cf2406df3767cb4d8c5a7b33450c8282f198f63e",
+      "size_bytes": 14620
+    },
+    {
+      "path": "pytest/htmlcov/z_898d1514e694ca56_consensus_py.html",
+      "sha256": "5b2a316d35666964e4b78ac8cd1e0ca6a7cce935542b872c1d25739fce238be6",
+      "size_bytes": 38412
+    },
+    {
+      "path": "pytest/htmlcov/z_898d1514e694ca56_decay_py.html",
+      "sha256": "57297971a141fec409a7a9b968cfaf4ed65893dfd2f1a5c5f121395e9126018c",
+      "size_bytes": 31059
+    },
+    {
+      "path": "pytest/htmlcov/z_898d1514e694ca56_keywords_py.html",
+      "sha256": "0b46ca9d020c2b03747a4e586436c1e33f51e9b16c015e1561d43e71e33b8a5d",
+      "size_bytes": 270954
+    },
+    {
+      "path": "pytest/htmlcov/z_898d1514e694ca56_local_py.html",
+      "sha256": "4dc66020cbe23efd1c11253de5c2c174313ee514d97b785f42ad64c454251460",
+      "size_bytes": 194200
+    },
+    {
+      "path": "pytest/htmlcov/z_898d1514e694ca56_pipeline_py.html",
+      "sha256": "3ccaab14521b806e5e7f9904e27e4731577dcf3e0d1ebe11845201eb09b4c82d",
+      "size_bytes": 187588
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab___init___py.html",
+      "sha256": "f6eecc79bc4767af0f2286915335cade057a11ed723de46bd6e22d9b6e4691df",
+      "size_bytes": 34727
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_attribution_py.html",
+      "sha256": "cd2856eefad69e559e6a45ed32aae93ef8b71fa28c2d4e6e7fdcee67f19fce22",
+      "size_bytes": 75177
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_backtest_py.html",
+      "sha256": "2f49780a1915c2586582e288e31cb5897f2f096ef23ead7c9878b8e3c7defdf1",
+      "size_bytes": 26518
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_candidates_py.html",
+      "sha256": "a86f3471d703a2eb6c21e9e9531d7486e89600dc56054bacbc26ffd2450cb01e",
+      "size_bytes": 49354
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_context_analysis_py.html",
+      "sha256": "edcd4e90b98b7cdaef2be9ebb3f0964034990c66dc3d6fd6d9b18f6890e26607",
+      "size_bytes": 36079
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_context_contract_py.html",
+      "sha256": "b17eec908be80afc48e19c6a17b2ed141dbbaa2a42f826d6475f8bec46d4d557",
+      "size_bytes": 72799
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_counterfactual_py.html",
+      "sha256": "a2c22b59d469fb736d0c48101f735847d583fd72910eeeac5e25a4d3cb782ef7",
+      "size_bytes": 147838
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_dataset_py.html",
+      "sha256": "6614f273d222e0cdb437cc8bfd851034f68487803f0fa2efd1c449b4336cb4d5",
+      "size_bytes": 208542
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_debug_intelligence_py.html",
+      "sha256": "3392f40437c608487ec7c67c5f17bd060f60994a162b210338cdba5ec2e083e9",
+      "size_bytes": 62906
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_directional_lab_py.html",
+      "sha256": "217142bed966f6bf2963b2fb7d02f51d1e56746bfcf4f4b15944ee6fc23e9731",
+      "size_bytes": 135299
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_discovery_py.html",
+      "sha256": "1d10292510b8d4a8af547a8fcb6eca6f0e76c2cbcdc9d7a603a0837d326e8899",
+      "size_bytes": 60691
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_event_projection_py.html",
+      "sha256": "d836d10c51afd0402a961c59160c67bb61e9ecc4929b2df59f3c68a35ac3b0d8",
+      "size_bytes": 90816
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_event_source_py.html",
+      "sha256": "8757a8903ec9110f057945b611b426465a0545be8403e559ebfa08d1ca1bcf38",
+      "size_bytes": 136129
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_evidence_py.html",
+      "sha256": "018b2e2f3b58527cf5d1f5f358d309080da4efc0570fc2816b130d88984c81f3",
+      "size_bytes": 148758
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_forward_test_py.html",
+      "sha256": "8c3ab1388627a34b7ffc5157e5bc9ffb6edc2843076db94b4c1cb35d53e16879",
+      "size_bytes": 129541
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_leakage_py.html",
+      "sha256": "f8880998f8b8433679fbc02145e8b844a0bab44e27132b83159c14600489b183",
+      "size_bytes": 27063
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_lifecycle_py.html",
+      "sha256": "9d839bcd45b447fda5b11948de69bd39eeaa3600969f644fe4c8591dd6c2b7fb",
+      "size_bytes": 38308
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_metrics_py.html",
+      "sha256": "86a7e222e1e33c68e26f38bc61a9fc7517eebf6403fba194557b0c49545ac990",
+      "size_bytes": 93049
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_models_py.html",
+      "sha256": "0b0279bea59a77bd505f0aba7fa67b834fff0f51b817772111514f37462e571c",
+      "size_bytes": 143268
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_mt5_tick_dataset_py.html",
+      "sha256": "cb671f636dbe562c18b0a514f5fb16e78de92d9d372d4299f5c3d9654f98d51b",
+      "size_bytes": 104349
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_observability_py.html",
+      "sha256": "84d98b436a73d8172c0051962179cfdc3629056b5d3fd46d73cdc926bc35f9dc",
+      "size_bytes": 353941
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_oos_py.html",
+      "sha256": "af9480881c261d4196081b0d9e1a99a12e137e32e3d1428e93f92eee8d68ee1f",
+      "size_bytes": 43045
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_pipeline_py.html",
+      "sha256": "4e7510ef29b647bb198f36f942d5517a905a3fb5631eecae93916fc5841659a4",
+      "size_bytes": 277616
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_registry_py.html",
+      "sha256": "b5970e78bc6ff3dda7586dfee76a2942d836a60f4fc939a5c5eb50246f6a4c3e",
+      "size_bytes": 141647
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_replay_session_py.html",
+      "sha256": "109eb64d7a3904d8feb0aff1211ad1b628486cefcae6e296d0544e054cfa6c1c",
+      "size_bytes": 235830
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_robustness_py.html",
+      "sha256": "f32ad77b083ed8761ff8be9a76514606b15c3ba8e8552156ca56f6203616744b",
+      "size_bytes": 37726
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_scoring_py.html",
+      "sha256": "2f847040dec89042f6b2e76176528fddb1d135fd3a4929be6617e98bee4a9f39",
+      "size_bytes": 67690
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_snapshot_py.html",
+      "sha256": "100fd10bc5549f42f74927596c9c1f387da3e4486d72393d33cdc29809c99fe7",
+      "size_bytes": 74238
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_spatial_layout_py.html",
+      "sha256": "38218f79106659952ee2a19fc15243a21f70cf5213664b70dd1b4a9f25d2d721",
+      "size_bytes": 51588
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_splitting_py.html",
+      "sha256": "64e712b593a6af59bdcb7b0fab795921fb54161588dd60e0d9a0858966489743",
+      "size_bytes": 82970
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_store_py.html",
+      "sha256": "2e880310f62a14235308af735ba5b2441cb149e69720091f8ddf286ac159d310",
+      "size_bytes": 136524
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_streaming_replay_py.html",
+      "sha256": "2469fc21d72f4bb09e7c4bdc03204a0b85b597450306875e2a888cc9047caf77",
+      "size_bytes": 368848
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_time_machine_py.html",
+      "sha256": "8d1b23edd992159bc9a81fa26402cd162108f0b6477f3139d716675b419cf824",
+      "size_bytes": 69493
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_walkforward_py.html",
+      "sha256": "dc7b2e2a38c9efa24260fad28a8a391c00a87c997b4bd84e148032369f3746e4",
+      "size_bytes": 58051
+    },
+    {
+      "path": "pytest/htmlcov/z_8a30eb4146c3c5ab_worker_py.html",
+      "sha256": "2050bbbb8962fc88b478a93913734c0467130f5b2f612de5686d2ff8a90842ef",
+      "size_bytes": 118659
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa___init___py.html",
+      "sha256": "7bfd4deed417849b94995392df80bd098a5046ae0cbb135927f16210523454b8",
+      "size_bytes": 24798
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_checks_accounting_py.html",
+      "sha256": "b30c0cd870beb421a20bbe98fd332172b402ee05d696ae7bb59bf450516af97b",
+      "size_bytes": 160689
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_checks_features_py.html",
+      "sha256": "76cb91b627b839b2dfd779590a603e9177e44b9883d014646a38348f7c0b865c",
+      "size_bytes": 240743
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_checks_governance_py.html",
+      "sha256": "a3bf03b0be7bd10b2e9bbe918e72b15f169fe84814dc953dcade162660b3e8c3",
+      "size_bytes": 112123
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_checks_news_py.html",
+      "sha256": "9f45fdb079682401f3018c3945f1f34206e86248e3ee4108107c573be7a19fd6",
+      "size_bytes": 102823
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_checks_observability_py.html",
+      "sha256": "43daaf72f14f643c6c46c4d2077f1131511def4c485eddffa8933638ae9fc474",
+      "size_bytes": 113749
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_checks_py.html",
+      "sha256": "8c96fb8e4abd1672b4a7205ebc57fae25712f97c09fa7470da0f8a543adb56c8",
+      "size_bytes": 28153
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_checks_support_py.html",
+      "sha256": "e30f0ca0c7b825bb8471fcd9163b1668d30bcef11a15270388f21e02ec15db77",
+      "size_bytes": 177338
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_deploy_gate_py.html",
+      "sha256": "edac547c467ef8710ed3f4ba22800b12b2c588ef60aa0ccf01daa21e841b9da2",
+      "size_bytes": 66398
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_engine_py.html",
+      "sha256": "1ca00b8328f192fafbaf2aebd6d246b02972bf719d3cde5a96ffc71fa77a21b5",
+      "size_bytes": 137917
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_experience_gap_py.html",
+      "sha256": "b8dc498b05443f2ded4315d84614d78aec783e0e5eefbb40881a01d8cdede985",
+      "size_bytes": 118115
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_models_py.html",
+      "sha256": "a7908a328482f419f5ebc6935f4f864f22e4930e03db6369209a7dbb99db3fdd",
+      "size_bytes": 33370
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_news_sources_py.html",
+      "sha256": "fc2f9a5800561203b0bf75d1d47b711d2ecccfbc0bbbe710e8389e2da767fb40",
+      "size_bytes": 83920
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_references_py.html",
+      "sha256": "bcc4c2ea3fbe802e2e7b56ca48e570e981cf9b6623c577a9c10e92af271dfe64",
+      "size_bytes": 78184
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_telegram_report_py.html",
+      "sha256": "896e8a7a75162c38d10a9b8ee79b045dceda548248cd59a176522a6e12bdefb0",
+      "size_bytes": 87723
+    },
+    {
+      "path": "pytest/htmlcov/z_8bf824eb107db2aa_trend_py.html",
+      "sha256": "e3cb2fcfa5c3f3422b10763e52205ca661c6412370a4a771d2514814ffc31306",
+      "size_bytes": 52739
+    },
+    {
+      "path": "pytest/htmlcov/z_8e3a292f4b9c0ac7___init___py.html",
+      "sha256": "0e8657265283b42a29d0a81d0e11bca6ce65b892fa971ba5d1a4b50f44f4551b",
+      "size_bytes": 4913
+    },
+    {
+      "path": "pytest/htmlcov/z_91ca46853a1ebab1___init___py.html",
+      "sha256": "8ae193964324d5a5850e29620c64b7c9830251315545a6f1d04a40d7a24955ea",
+      "size_bytes": 6313
+    },
+    {
+      "path": "pytest/htmlcov/z_91ca46853a1ebab1_di_py.html",
+      "sha256": "43045334a73925547df51999bbf7ede509ead80ad69571fd7a335dda6f2da92e",
+      "size_bytes": 72812
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29___init___py.html",
+      "sha256": "8ec1f0fe1b4dd3530281d8b1d2912f1c2401b9367b4ba962bb02a346f6ae9749",
+      "size_bytes": 14561
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_champion_py.html",
+      "sha256": "8d0f1d2de77ba3f335dbfb5cdbdb552eed0bca27513c651b3a22a0417d6f50e3",
+      "size_bytes": 68595
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_comparison_py.html",
+      "sha256": "4ebc36098d666f28931cb29fa0714241063b3c2c9aa649b9e8cd34dd87ca41c7",
+      "size_bytes": 51073
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_dataset_py.html",
+      "sha256": "26af67eae38cfd50742b40c59566c17a3cf280728938a90c37245adc9c7e3cf2",
+      "size_bytes": 66433
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_gates_py.html",
+      "sha256": "40568f9dc42c2a5462e5d84dba29b265bbe35a2d91735793d46375ea593e4a14",
+      "size_bytes": 117242
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_integrity_py.html",
+      "sha256": "b2fa7bbc1e24234599af92054d81d76ab54f7f34f6a5bbf3c135acf32e8f631c",
+      "size_bytes": 91323
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_models_py.html",
+      "sha256": "1409255166b87ffd060c92d0ea8729bc6b2df041da5fcdc4869b4567e0c4668c",
+      "size_bytes": 90547
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_orchestrator_py.html",
+      "sha256": "0d0eb6020cdbf1057f4a1578035fbb0068acc3499ecedbb83876c6f6b884ad21",
+      "size_bytes": 103902
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_registry_py.html",
+      "sha256": "69bb1340165b8c46a8c7826982e74c6a81de96d7378f666e2185bc790e7cc3eb",
+      "size_bytes": 80736
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_store_py.html",
+      "sha256": "a63956c1da3c69032debbe71260787b5d9ef9caeb4f0abd0fa3075480b9fe741",
+      "size_bytes": 92008
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_trainer_py.html",
+      "sha256": "27dfa2e88a32522215ed51337510f2c23e496f43113b99859fa63164b0c00f05",
+      "size_bytes": 80208
+    },
+    {
+      "path": "pytest/htmlcov/z_9244f641119e3c29_worker_py.html",
+      "sha256": "6500efb00f14f822aa520b46b6d286848c35727f3dbe3343a0a4fc568a2ddbbb",
+      "size_bytes": 70712
+    },
+    {
+      "path": "pytest/htmlcov/z_94e441271823d2bb___init___py.html",
+      "sha256": "3c1fe3b8cbcc0861e3efd5ace7bf5c0eead77b858d60d2c65cf810248b3c8853",
+      "size_bytes": 6557
+    },
+    {
+      "path": "pytest/htmlcov/z_94e441271823d2bb_walk_forward_trainer_py.html",
+      "sha256": "ef6632c3c7f3063a4570ff1ab28b960e8da8fb8118cfedccf5da285b4bac6b24",
+      "size_bytes": 449987
+    },
+    {
+      "path": "pytest/htmlcov/z_a31a7517d824ad60___init___py.html",
+      "sha256": "371334fb77337033948a646cd3f212d03309ec672f4ceefbe154bcd9a62d4ec8",
+      "size_bytes": 14905
+    },
+    {
+      "path": "pytest/htmlcov/z_a31a7517d824ad60_base_py.html",
+      "sha256": "7b65b83f20db48396e543b1e86a402e07d81b9adddfa41ee70bf7b7dab42151e",
+      "size_bytes": 65035
+    },
+    {
+      "path": "pytest/htmlcov/z_a31a7517d824ad60_postgres_driver_py.html",
+      "sha256": "bd36422d330d2d65a1c70b9afe302cab5f46acc250565a653e73e6f55873f536",
+      "size_bytes": 160254
+    },
+    {
+      "path": "pytest/htmlcov/z_a31a7517d824ad60_proxy_py.html",
+      "sha256": "63c2eaff33a2dd9d2d386b477e922f0f3cd6f80eb2ebe4a35822c697fd4a844c",
+      "size_bytes": 70495
+    },
+    {
+      "path": "pytest/htmlcov/z_a31a7517d824ad60_sqlite_driver_py.html",
+      "sha256": "a15f7f7e30f98460bc347f63d22f41e5fc22bc95a4739d73b05b1f20e011408c",
+      "size_bytes": 104722
+    },
+    {
+      "path": "pytest/htmlcov/z_a8044362f910be12___init___py.html",
+      "sha256": "895a2e050c55749effc92bc98ea01c4e31650a34ef38973ebaea7a203671ef71",
+      "size_bytes": 28882
+    },
+    {
+      "path": "pytest/htmlcov/z_a8044362f910be12_engine_py.html",
+      "sha256": "6433bd6cd04bac3f61c8e59f9935065df301a6eb486ab89801f4a4fa4f592751",
+      "size_bytes": 392637
+    },
+    {
+      "path": "pytest/htmlcov/z_a8044362f910be12_insights_py.html",
+      "sha256": "4ca1cacc6e2f0f161f0b0b591e07ef1207bd49709a271ec1cce8780d012b0d2c",
+      "size_bytes": 199695
+    },
+    {
+      "path": "pytest/htmlcov/z_a8044362f910be12_models_py.html",
+      "sha256": "39cded87b3bd46ef9fbf2aafc5be4763fd061766c8214f667e0ba55252707334",
+      "size_bytes": 251990
+    },
+    {
+      "path": "pytest/htmlcov/z_a8044362f910be12_queries_py.html",
+      "sha256": "b32393eee02c2c3f619af9278357111ea2302e7485c10212a475185a08920038",
+      "size_bytes": 44720
+    },
+    {
+      "path": "pytest/htmlcov/z_a8044362f910be12_telegram_format_py.html",
+      "sha256": "9bea6a979304f261e106593b6366089a8fbcfbc486538bc3aba6007ce5af14a4",
+      "size_bytes": 143939
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212___init___py.html",
+      "sha256": "fba36592fd8fbb21b4a8ee5b8c64f27eaa130349ae828cf48aee2babf9c86144",
+      "size_bytes": 24132
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_aggregation_py.html",
+      "sha256": "f7518a4e11fe0556aa11f46f59efe613070f851d0ddcd42cc19928f24957b92b",
+      "size_bytes": 217903
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_core_py.html",
+      "sha256": "9f18a5ab8669f75001b2df74559f5895021415e89e36f2d30f295e4b58ef4968",
+      "size_bytes": 284192
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_market_calendar_py.html",
+      "sha256": "7a135d981e9c56910795d55493d10a819cb31fe5e96693987415ede9af697280",
+      "size_bytes": 46816
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_models_py.html",
+      "sha256": "ea4d52aa46bc8bb2843291af7dbcad2aa816e2a2e6503e03515e1faac9b47d51",
+      "size_bytes": 157420
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_normalize_py.html",
+      "sha256": "1467f606cf583d21295db16ea40506a19c698b09ef05108017ac48145be6aaa5",
+      "size_bytes": 85041
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_periods_py.html",
+      "sha256": "e4a25c82f5a18833170106599735425bc65bdfd4162955d064792a8785d9fba9",
+      "size_bytes": 58156
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_retention_py.html",
+      "sha256": "6c77da37ab6e23ede791000df6d761901ed07ad518b4343666e03555cfdb9e1b",
+      "size_bytes": 35380
+    },
+    {
+      "path": "pytest/htmlcov/z_a8a8bdec716c4212_worker_py.html",
+      "sha256": "1696acdb367c58abe874696881e51c2bf81a60042ae9d1e9690f60748cd84c1a",
+      "size_bytes": 58479
+    },
+    {
+      "path": "pytest/htmlcov/z_ac434fd682109663_engine_py.html",
+      "sha256": "5f5da8ad48f36c87f11e9f3614930a64c6ff67f438de26db4907c776ea36456a",
+      "size_bytes": 58398
+    },
+    {
+      "path": "pytest/htmlcov/z_ac434fd682109663_models_py.html",
+      "sha256": "16ae9d0cbeb14446cf34ab53a138fdc201babb97c983f01081fca9affa71071f",
+      "size_bytes": 27243
+    },
+    {
+      "path": "pytest/htmlcov/z_ac434fd682109663_runner_py.html",
+      "sha256": "57d4a4ac575b412f60031cd59ca8610d9296b676834cd7dfbe7aca1d18edacf5",
+      "size_bytes": 51759
+    },
+    {
+      "path": "pytest/htmlcov/z_acd658bb47f18f51___init___py.html",
+      "sha256": "4b6d4dce7bd0e3fea340df6c8f46fac6b0b801a175adb848d71cad0d2a7dc71a",
+      "size_bytes": 14631
+    },
+    {
+      "path": "pytest/htmlcov/z_acd658bb47f18f51_base_py.html",
+      "sha256": "50dcf613c5549430d147fca85cd5470c7a685ffb707adedb935ec19ecc0ad8c6",
+      "size_bytes": 38986
+    },
+    {
+      "path": "pytest/htmlcov/z_acd658bb47f18f51_ichimoku_py.html",
+      "sha256": "75f86d1831c5b35d54868efea5e9b3501bc359555100bfab7c74816fe14e916a",
+      "size_bytes": 105387
+    },
+    {
+      "path": "pytest/htmlcov/z_acd658bb47f18f51_research_store_py.html",
+      "sha256": "8330a7edd6df5c69cacd9daa00b95e83ba09a60532c3e059ae9bee5fb9070287",
+      "size_bytes": 232897
+    },
+    {
+      "path": "pytest/htmlcov/z_acd658bb47f18f51_seeder_py.html",
+      "sha256": "eb75f1bcc3dc9d20305dc6ec4088d546c0c2cc54458c1329f9d29a831c065273",
+      "size_bytes": 32495
+    },
+    {
+      "path": "pytest/htmlcov/z_b4b2a250e5342209___init___py.html",
+      "sha256": "a87ee07a28bd0fd5e819ca4aa4e653bfbdd68e5027acbbe8f020e6a5db9b1b10",
+      "size_bytes": 4923
+    },
+    {
+      "path": "pytest/htmlcov/z_b4b2a250e5342209_live_engine_py.html",
+      "sha256": "50e280c789728103375b934d23835de802507db81170a5c24b246d50992e0d76",
+      "size_bytes": 1800249
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb___init___py.html",
+      "sha256": "cba123af782e4c8bd3f54119b0af68fbc7a1ea2c3894a6a57829013085aba7a2",
+      "size_bytes": 4869
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb___main___py.html",
+      "sha256": "d5d3980a78fbf870a10cf111e122d08944c6e7abce0d03e4e94ef14838637f4d",
+      "size_bytes": 5348
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_analyze_commands_py.html",
+      "sha256": "4606e0d5785f8cf2e082f3498bd9e9bb67e55c5dbbd389da92272b747c9a3d20",
+      "size_bytes": 54126
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_api_commands_py.html",
+      "sha256": "611de9659b84c53ff4dc7be80e543dbb617913641afcd3bbeabb220e10dc709f",
+      "size_bytes": 85547
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_app_factory_py.html",
+      "sha256": "a71ac981b87e2ab82b3f705840ba0c19f2192889e753ed2553a8ac16a3ca4588",
+      "size_bytes": 25676
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_db_commands_py.html",
+      "sha256": "b8dc6aa163d61eefee90c488145a1359c7392b80084d2bac87425bbd193fe839",
+      "size_bytes": 251046
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_dependency_commands_py.html",
+      "sha256": "865477f1958e3dd41ae756694147d5a94da3c18470e8d808d5a5fd0200a63479",
+      "size_bytes": 65195
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_doctor_py.html",
+      "sha256": "04080e5725f362f9f4484b46898f6f74cb785c06259f007e6de6e5d5e7d7e8df",
+      "size_bytes": 523332
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_engine_boot_py.html",
+      "sha256": "868e1a4c7cd09fdd0f4e021ca93bef52448b6d6e1925aaf74fd863ed7b9ba8ae",
+      "size_bytes": 179184
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_help_command_py.html",
+      "sha256": "41e0f4cb664586fb98b0bf3fc321a7f85b9da5f2f546720103de2a7a1f625631",
+      "size_bytes": 29321
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_incident_commands_py.html",
+      "sha256": "56024b10401edd7a2b2aaa8cb85df885dabc4aae6747403bc012feb80e4e3f78",
+      "size_bytes": 132939
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_main_py.html",
+      "sha256": "d9134a2e5ff4bdcb6eebe0e7c9b5764ceaca851bcbf7534daf1b0bdafd98af7d",
+      "size_bytes": 23860
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_styling_py.html",
+      "sha256": "f15c4ecf1774c8529425fd37a7bc1b6e16143fb97df8c702a549345066d2b04d",
+      "size_bytes": 84682
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_update_cli_py.html",
+      "sha256": "97876824a7a8c2f8692e05eba340ddffa42f653aaa4ab510f2e21bd033eccca3",
+      "size_bytes": 241902
+    },
+    {
+      "path": "pytest/htmlcov/z_b8c7935f92c17ceb_wizard_py.html",
+      "sha256": "65867b52ea2c2c326b8d27869f82fc0df0d0b9c70c1829b9d6349a779739453f",
+      "size_bytes": 104801
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093___init___py.html",
+      "sha256": "c98baa744aca3284db5e2177102710a7b75d097d76da5ce65d2c421a3d765597",
+      "size_bytes": 45786
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_accounting_py.html",
+      "sha256": "c455539f4123649bac81df7c6b44c378059df516fcb4a9f21e6dabb2ce2ff3f2",
+      "size_bytes": 107000
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_correlator_py.html",
+      "sha256": "25a41162fa3394e96ed9a890bc640ae38ca6a2c7e89ccd1cdccd607be7b877d4",
+      "size_bytes": 149836
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_impact_py.html",
+      "sha256": "94722f3ffcd382a035d37fbebaa238b2b37baf2a3427ec4b41cecf636d262081",
+      "size_bytes": 132968
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_lineage_py.html",
+      "sha256": "9429987fe20da3a5251be657a9ffe5bf905064c64b4a73256d1d82adace8c81d",
+      "size_bytes": 80636
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_models_py.html",
+      "sha256": "a02c6011cf5e7d197baeb69edcfd188a26909142eebb269b24b26a1d83ce5526",
+      "size_bytes": 160323
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_occurrences_py.html",
+      "sha256": "39dd52d8627d15e933a1b66a9af6ba096fb4b31208ffa4ce3678c52b26127733",
+      "size_bytes": 78772
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_reports_py.html",
+      "sha256": "56d12e74588ca62d7634c90344fd413f000d1d77775621524ec6af6f153fd2cb",
+      "size_bytes": 92117
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_store_py.html",
+      "sha256": "fbaaf4a4e9e3a18a642258460c4cc125f6e37a4702b09a95ab5b463c1142940c",
+      "size_bytes": 256868
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_telegram_py.html",
+      "sha256": "aaa5afa0626d26c8239db3b4380a6e359a68b0c51a3419bc8bd360372ae4b0be",
+      "size_bytes": 51051
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_telemetry_py.html",
+      "sha256": "8a13739aa551ca30ed8d1f5a5ad0a559d07182876dec42f5129f898ff26e151a",
+      "size_bytes": 66865
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_timebase_py.html",
+      "sha256": "0a2da6eac6980a680e6979daca864622756d0447c3a1e532e9b8afec6c5eec52",
+      "size_bytes": 95548
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_trace_lineage_py.html",
+      "sha256": "a39679f83cad32f5ff1ecaaa18b5e0702a1f4e529e725738b56f619e0032fa80",
+      "size_bytes": 84568
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_trace_py.html",
+      "sha256": "77e4d73ce20674880c201a715eb68a769867890dd02e4e27e544cd7b1b7e01c2",
+      "size_bytes": 217108
+    },
+    {
+      "path": "pytest/htmlcov/z_bc2bfe730eff7093_worker_py.html",
+      "sha256": "ce42215f60f37152a8abd3d972d97dfd8d7e20eedd2e12401d9c9c30bc45fa9c",
+      "size_bytes": 124082
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e___init___py.html",
+      "sha256": "6e47cd3c294c078365fcc000e8551e3ad39d2fadd930bc2b6f53caf47a12486e",
+      "size_bytes": 6657
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e__tg_core_protocol_py.html",
+      "sha256": "5915100d6e354430abbeb38ed40c34a5d70053b362708393de3136d85c0ef543",
+      "size_bytes": 14916
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_ci_telegram_reporter_py.html",
+      "sha256": "c5cd67b075d6f99f3c22689c7c8c3e216c5487b4df082f43d7b06645a9fe6c66",
+      "size_bytes": 153100
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_contract_validator_py.html",
+      "sha256": "0e63ed62e4e4b32ec72364569bae389b2a29eb192d2e04ec614814e83e40bd0f",
+      "size_bytes": 116675
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_event_aggregator_py.html",
+      "sha256": "cea0e67255b37aeb17a77ea58577a9a220870c5468776894ab6bcd8460cc0eb9",
+      "size_bytes": 65130
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_logging_py.html",
+      "sha256": "7765ebb2cd570bd392946d94148fa45825a5aa46cebc9f4ade4b21f682b4c1e1",
+      "size_bytes": 198679
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_selftest_py.html",
+      "sha256": "b6e3fe593c70220a3688d301215f2c4598de96bf2fc1fcde83ac78e1c27f2748",
+      "size_bytes": 59888
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_telegram_html_py.html",
+      "sha256": "e41e240e7c4c71eea1995c05ed959207c48070b422bba92a11ffc41ff9e0d290",
+      "size_bytes": 269037
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_telegram_notifier_py.html",
+      "sha256": "88bccb6f6017acc01ffcbb27e2bc053455178e5734a50a5e8190eb31e4bcd584",
+      "size_bytes": 209845
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_telegram_transport_py.html",
+      "sha256": "356c1e522641587c719f9efe992062985f98df8099ce6b155f9cb1543fa6808f",
+      "size_bytes": 87641
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_tg_notifications_py.html",
+      "sha256": "3b0c3f5f4022d1de293a9b8fd1c458b9935055b7084e4d8088051e7bcf7ea51f",
+      "size_bytes": 222795
+    },
+    {
+      "path": "pytest/htmlcov/z_bff9d3eddfbcce6e_tg_transport_py.html",
+      "sha256": "4ae21a889af6bc606083064055f33c889a0e374d341ad9d1c45f883a53ecd7ba",
+      "size_bytes": 132004
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_features70_py.html",
+      "sha256": "a62372244be8a358112b8c19531d19a83ade1d4c3a8bada69ae9e25c7c1c8949",
+      "size_bytes": 81081
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_inference_validator_py.html",
+      "sha256": "db6d7cec4438a37c64d8a945c1a1aeab575a4d907914b0c0633b096c2d65dd45",
+      "size_bytes": 88826
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_liquidity_engine_py.html",
+      "sha256": "e84b589610a707b408082713cfd247289b692650ddc1d8bba9c4858c07811fb6",
+      "size_bytes": 399293
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_liquidity_runtime_py.html",
+      "sha256": "9aa49ce4db645f2860593af74a196309243172914e631f606eedb88dbe2cefdd",
+      "size_bytes": 314941
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_regime_classifier_py.html",
+      "sha256": "0d7a8cea6c12481eb94f87a662ad0f1d27819b386f7dfda6047d1a85428da3af",
+      "size_bytes": 190611
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_scalp_features_py.html",
+      "sha256": "c7793785f45f0aa6e70ce6788e784fa5a7f891654878439101050b6b7526d2a9",
+      "size_bytes": 341842
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_schema_augment_py.html",
+      "sha256": "8a777d05d72f8cce4a4d9c4b733d9c30021288f47ed45dfccd22f1089987012c",
+      "size_bytes": 151128
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_schema_contract_py.html",
+      "sha256": "2bc9eea60355c09897b8b2467adcdb68ea590588efcee0eb0933f6fa2bd8c4a6",
+      "size_bytes": 78586
+    },
+    {
+      "path": "pytest/htmlcov/z_c3d075fc3b781535_schema_py.html",
+      "sha256": "9656174a736a40e34d0c23cd38f7f28e2041c79f74aa9d190ce07a9d6970eda7",
+      "size_bytes": 74580
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_api_v1_wiring_py.html",
+      "sha256": "db16c8134601a58f61132e7cb512e9211d7eca05bf6f52e3f91727c0e7f1cd9c",
+      "size_bytes": 43624
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_command_center_integration_py.html",
+      "sha256": "2893b248aaf537d620cf34894bb638a82b230d8a073aa7deedd8f41688518580",
+      "size_bytes": 60237
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_command_center_routes_py.html",
+      "sha256": "6ebb9ca76cfe14a78ca74db2805a4a3cc94e4a8a72b11f95ec4c41eb5bfcfc7f",
+      "size_bytes": 156665
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_db_console_py.html",
+      "sha256": "35daad4091d21d5ee7c9fd5d17ddbbd962ffb4bab2772e40980b493f5f1d508f",
+      "size_bytes": 168992
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_debug_research_routes_py.html",
+      "sha256": "831896717ac678fe9a34febefb680342deb13c19a504caef8eaef41e711818c7",
+      "size_bytes": 687353
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_debug_snapshot_py.html",
+      "sha256": "501f273856d42c1626ceea3f69381233c9fe8aa7e4cf4cb8d2486218b458f63b",
+      "size_bytes": 667285
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_dependency_routes_py.html",
+      "sha256": "b6063938a73c3d1ad3e8997c70145e3f0ea9fd6d8693821ca5c52e2f9fe1f9da",
+      "size_bytes": 72010
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_diagnostics_state_routes_py.html",
+      "sha256": "79688625da36bc415b91d63a79a87023bdac7b1d0f162409f2e0bf2486256afe",
+      "size_bytes": 585399
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_errors_py.html",
+      "sha256": "863ee4f489fa1e3b46f64712b7304c886455da3fe5720520c073ea25461275bc",
+      "size_bytes": 65594
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_factory_routes_py.html",
+      "sha256": "33cd8b3219afe3640bd2f3313a556880beca854838ed2bbd92a644f12258e9a0",
+      "size_bytes": 263253
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_intelligence_routes_py.html",
+      "sha256": "12309cd2696594f371bb2aa234a1afb24bc2a841589677fb07c0f2c1889c39b3",
+      "size_bytes": 90750
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_model_governance_routes_py.html",
+      "sha256": "c09e2ad1d0f3f3ec0bf763ab78f47e69afe5d3ad1eae07641fd79221cd60c4c6",
+      "size_bytes": 501424
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_news_intelligence_routes_py.html",
+      "sha256": "88a09c1ac8067407b0b6770b15f6f658c5f34a3e5601e54c99db094580907932",
+      "size_bytes": 135015
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_news_liquidity_mslie_routes_py.html",
+      "sha256": "da9afd05685a68f3b512f225b5d58df54dedcc8d97989e04dfbde20e3dbfb260",
+      "size_bytes": 249522
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_operator_routes_py.html",
+      "sha256": "e9d261aeca81c73db41f2fd3d656121ac5058a70d8ec96a4c82390fee0004916",
+      "size_bytes": 208039
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_replay_routes_py.html",
+      "sha256": "15d53bdb093a86a6115d4147e01a66ae0cbfd5143575e382c98145c00c0ffdeb",
+      "size_bytes": 77686
+    },
+    {
+      "path": "pytest/htmlcov/z_c65183269561897e_server_py.html",
+      "sha256": "b4201ec8d590faefb6b9d18ba9430f4440f099b6392c417fff07d1442fc60e7f",
+      "size_bytes": 833672
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63___init___py.html",
+      "sha256": "64daaeba99db51e7c6b478549d2d0146f549f5f8aeb8b7da78fdb646fad4ee15",
+      "size_bytes": 18094
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_config_py.html",
+      "sha256": "37053f1994a318108cf03c9b975e85c92e489c5f5236d04c376267f6b8b7b047",
+      "size_bytes": 101003
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_ddl_port_py.html",
+      "sha256": "25e1ac322b38e18b614e2059d17bddabdf4daf0ece8c5a060fd5559b4558a508",
+      "size_bytes": 57445
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_engine_py.html",
+      "sha256": "c963aef5600e305228876b76a95bb7137f8d8e72823950aca34f1176fb0c54be",
+      "size_bytes": 296270
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_gate_py.html",
+      "sha256": "9cafa9c616c5f13d49e25fbfbdb195de6b22157e600941951ab9e791881318e9",
+      "size_bytes": 38570
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_health_py.html",
+      "sha256": "6d2f0a960cdd64c2047945c45f544649d150085adc972ef41402a069a0ccbc59",
+      "size_bytes": 68911
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_manifest_py.html",
+      "sha256": "379970219de0d62ca582d38a669e2c703f81adabb9c1914d8ba187526de2a964",
+      "size_bytes": 80284
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_migrate_copier_py.html",
+      "sha256": "4ed19340dc8d57fa3fcfe4d05ee024c96be3a73895e303412f62b56ab0624516",
+      "size_bytes": 101015
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_migrate_engine_py.html",
+      "sha256": "3821a1ee9f67e76d03a8fcd58259916a494e7ac6e592094daef92bc98f6899c5",
+      "size_bytes": 128950
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_models_py.html",
+      "sha256": "b883bdc2dbe8b1c95edebf2b6bdec6ee0fb0807b376fc161f4f9244a55361fe7",
+      "size_bytes": 52978
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_provider_py.html",
+      "sha256": "567467de98caa9df22642eedd7809a66c0c20fc6e33b0a67a1b6171b28459327",
+      "size_bytes": 32643
+    },
+    {
+      "path": "pytest/htmlcov/z_c7180f0bee012b63_registry_py.html",
+      "sha256": "0eacb2434044e3e5b9afce1808a57f6084a38618e03b5331a65d639ef0bd4118",
+      "size_bytes": 154741
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971___init___py.html",
+      "sha256": "a35eaf06708515285dbb636f71b19ed011f3a98f3b94074847158b3599ac2e25",
+      "size_bytes": 14147
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_challenger_py.html",
+      "sha256": "9d35f95aacb62c8d1db31d3ae63d64a21f9fbbd4634ab2d2272fa00be6b92f10",
+      "size_bytes": 72825
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_comparison_py.html",
+      "sha256": "1bc022611016f1fe8b6c3e3f9ae3f0f662f4aa6d99e54855b08f8f44c1f64940",
+      "size_bytes": 149301
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_compat_py.html",
+      "sha256": "901497269d9ea0b79b738d9538afeb82a7911d2f35964be5985999fa48f6156f",
+      "size_bytes": 39053
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_engine_py.html",
+      "sha256": "35153e965256ed87a635118eb1a7a1eba9d587b3530a945aba4e66c61630c18f",
+      "size_bytes": 113090
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_models_py.html",
+      "sha256": "8c0fe733dfb62281f75d0e0472b3d880b787ce9a6217ed2fa160a4d62393f401",
+      "size_bytes": 111750
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_outcomes_py.html",
+      "sha256": "cdcfb6096d551be0a04a4a6172120dabf8d4ad98402cab2f8be2a40d48ec14aa",
+      "size_bytes": 85979
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_store_py.html",
+      "sha256": "acf6446d85e62dc2931b2ed53e1afb99ce1682644470de19e9db893fcd1ed1df",
+      "size_bytes": 180520
+    },
+    {
+      "path": "pytest/htmlcov/z_cc2ab795f1fbf971_worker_py.html",
+      "sha256": "bea33d968f26bc1b312835c419895786b1bdc761e9f1da566d2235681adce5c7",
+      "size_bytes": 50057
+    },
+    {
+      "path": "pytest/htmlcov/z_d3ecd416502c4e58_triple_barrier_py.html",
+      "sha256": "6c7579afcf2345d1309fdc64e34b06a93c81b42a3b5df6175c6423b53d400a5e",
+      "size_bytes": 79641
+    },
+    {
+      "path": "pytest/htmlcov/z_d583bb348f43f877_paper_adapter_py.html",
+      "sha256": "364b26fa03481b8cdac5606c643fec486f30d4af83ef56ada052746ca510b002",
+      "size_bytes": 185452
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320___init___py.html",
+      "sha256": "58180402fcb664fb824efd6e486940132a5ef68199375065cefc204b6f039db9",
+      "size_bytes": 20395
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_breakout_py.html",
+      "sha256": "59b106c857af5d1c9828f6a735a21f97d633553b500d69f8105566231a0b95b2",
+      "size_bytes": 72472
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_engine_py.html",
+      "sha256": "d704c1fc9923deaf5d4813dca55daa9b66a22a9e12426205ebc2fd6bdd3e6b01",
+      "size_bytes": 177197
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_liquidity_map_py.html",
+      "sha256": "61c851e24d3ff880d53b8132624bc8e8614d83dbf750d186c6ec2f3db71df8d7",
+      "size_bytes": 120417
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_models_py.html",
+      "sha256": "300ce7eaef4e36d5e170d310043bced58d79c1f9623c1359df0b6cb2bc75abe9",
+      "size_bytes": 109702
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_regime_py.html",
+      "sha256": "01fe46f30a1ae6472cb97949a740356b512f9632fac9ad1307d442204c5d9b54",
+      "size_bytes": 76705
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_smart_money_py.html",
+      "sha256": "578b79021bc84c19d76f3bc47142480bd12fe5d5e53cb02016f0b251ac6c20db",
+      "size_bytes": 71401
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_sweep_py.html",
+      "sha256": "59a67adad59d96494b403717f3823cde1e3ef845eb6c6b85bf7beb88c15b3128",
+      "size_bytes": 73651
+    },
+    {
+      "path": "pytest/htmlcov/z_dcbc45d4ed514320_swing_py.html",
+      "sha256": "262924e83efca7f6cd07cc900c7937c78afbb8679d475790328f056f66270b64",
+      "size_bytes": 104154
+    },
+    {
+      "path": "pytest/htmlcov/z_e5d07dd1aea2f950_bandit_adapter_py.html",
+      "sha256": "4b1a9ce6371059efb2cca0562aafec2083814a386649d2c0e6e1cdadb536a515",
+      "size_bytes": 39355
+    },
+    {
+      "path": "pytest/htmlcov/z_e5d07dd1aea2f950_base_py.html",
+      "sha256": "c1f4c429180a59a61f3e1b5457c50c1d328192d77d635f2262fe879d733cf6d2",
+      "size_bytes": 12819
+    },
+    {
+      "path": "pytest/htmlcov/z_e5d07dd1aea2f950_pylint_adapter_py.html",
+      "sha256": "86da8d0a4ca5c2298b11920b6f9ef813b6376abc94475793280fb838b12debe5",
+      "size_bytes": 37520
+    },
+    {
+      "path": "pytest/htmlcov/z_e5d07dd1aea2f950_pyright_adapter_py.html",
+      "sha256": "339c01b3a5b61cda9d585771d1fb8d069247cb1b9abe0fb25ac0b1682a59d998",
+      "size_bytes": 39728
+    },
+    {
+      "path": "pytest/htmlcov/z_e5d07dd1aea2f950_ruff_adapter_py.html",
+      "sha256": "1b2fa9b5f49105a6844df53949ea667bcb60abbf285575a419e1706ab617c65e",
+      "size_bytes": 41859
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae___init___py.html",
+      "sha256": "8a8d705aee4648906d299557eabb15c91b26e52529ee174642f541b67c76e780",
+      "size_bytes": 20339
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae__db_core_protocol_py.html",
+      "sha256": "5171616d7bfee186871b6dc540db63233b6f8aa10921d5c09bff5ef7814e5b33",
+      "size_bytes": 11494
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_ai_service_py.html",
+      "sha256": "5948768c9577de3bca66a71701cf0f3735c4cc305219f61860ac962d0ef62dbe",
+      "size_bytes": 244880
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_config_py.html",
+      "sha256": "5521e19e538d5fcd65f94bfd54287293d25448b4d3b30390fe6680fe03741ac3",
+      "size_bytes": 35433
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_context_py.html",
+      "sha256": "906f85bf9f41103ed89bcb4c6e1637e8d85743896334ac86c34cb9ff88886f17",
+      "size_bytes": 97603
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_database_py.html",
+      "sha256": "a09359292a0e228cfee65d22c5a254f35a25081f0d88e9734ad1e199080e10db",
+      "size_bytes": 37023
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_db_analysis_py.html",
+      "sha256": "5e9328c4774a3ba0fd88db0be6517abc9acc76561dac62d2f4f8ac3d1dad410b",
+      "size_bytes": 129274
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_db_articles_py.html",
+      "sha256": "784975bcc8d4073152accd0602bfff1ddefd55d587fb64b41cb551fcaa7cfc13",
+      "size_bytes": 105653
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_db_queries_py.html",
+      "sha256": "6c0d0b9427067fa70e60d99a08d9de303dee640f2756cccf0daaa977babaebb3",
+      "size_bytes": 135008
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_db_schema_py.html",
+      "sha256": "e4f455b28dc7dfccf26bdb6b6494cc12cd2c27b7063f34b6ad5962bf3a2e226b",
+      "size_bytes": 72101
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_engine_py.html",
+      "sha256": "edff4da1f5c9d479892b215640f86f79acc86e024e23e71e8593c93f52ee6b55",
+      "size_bytes": 97177
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_gate_py.html",
+      "sha256": "7b197bdf8d0fcc74b89a05248c7a0785cf012b35dec0a8d7942e6c6978d57ea1",
+      "size_bytes": 70784
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_models_py.html",
+      "sha256": "05e58a40b648c3eec721cf930d700202df07ceb7bf77506950b77958994232d2",
+      "size_bytes": 114508
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_pro_auto_console_py.html",
+      "sha256": "23203caccd021c6ed5b1c2c40294e12f21197043e982a33303aec15106aa0c5b",
+      "size_bytes": 23602
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_pro_auto_py.html",
+      "sha256": "fa9fa649ca90b9561eb12ca7fc3fff15f38a837e4743fc11f9cee32332218d2c",
+      "size_bytes": 299715
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_seed_py.html",
+      "sha256": "8527bb0cdcbb0fd81bcff327818d69e1e020a1aab311fcd6030cf110270ff951",
+      "size_bytes": 80493
+    },
+    {
+      "path": "pytest/htmlcov/z_f4a82614a29df7ae_worker_py.html",
+      "sha256": "5b6c9da9f5af9cecda15aff74fcbb05f24a003ff792ea81800e1d15dbb88300f",
+      "size_bytes": 110028
+    },
+    {
+      "path": "pytest/htmlcov/z_fc3d14bdd52878a4___init___py.html",
+      "sha256": "49d68461cbd74bc42c2dc88250d55a04f905edc584c506391521401773f197e5",
+      "size_bytes": 5923
+    },
+    {
+      "path": "pytest/htmlcov/z_fc3d14bdd52878a4_post_event_py.html",
+      "sha256": "60559e95a3def1d4f4a242ce88d92413264c00b027849551d957b06a1c488e04",
+      "size_bytes": 69935
+    },
+    {
+      "path": "pytest/htmlcov/z_fe0a9d170153525f___init___py.html",
+      "sha256": "1408283534794f59887c400e7910edfeac5b971f8b117e5bb3de0833197dab97",
+      "size_bytes": 4889
+    },
+    {
+      "path": "pytest/htmlcov/z_fe0a9d170153525f_enums_py.html",
+      "sha256": "8bfa8a3a14415eed3803a2443563cf5f1891419d7db782e41ca99cd81cc9018e",
+      "size_bytes": 22225
+    },
+    {
+      "path": "pytest/htmlcov/z_fe0a9d170153525f_models_py.html",
+      "sha256": "1cb6e31dd736bb6a74b197c5a5de0e3f9ac49c032b272eda26898a18692b5ca0",
+      "size_bytes": 89144
+    },
+    {
+      "path": "pytest/htmlcov/z_ff50a03824e58c80___init___py.html",
+      "sha256": "da62c276908d28b13b849ab69d23dfe73008ff8bc78cf9699b99d2de7f339aa1",
+      "size_bytes": 6873
+    },
+    {
+      "path": "pytest/htmlcov/z_ff50a03824e58c80_api_client_py.html",
+      "sha256": "ac0c8a3be6342240da11d692ecaa5a57296d99f8aff640349b09129d081c8ea6",
+      "size_bytes": 81115
+    },
+    {
+      "path": "pytest/junit.xml",
+      "sha256": "cad05517dde6549a02b9278af110b7bf9652757be18bdcb07e9bd1b5925cca84",
+      "size_bytes": 199017
+    },
+    {
+      "path": "pytest/pytest.txt",
+      "sha256": "c565ef8d73d88aabad9258700e6cb3bc71439246ac115d724e4c4848af6a7b29",
+      "size_bytes": 78202
+    },
+    {
+      "path": "ruff/lint.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "size_bytes": 2
+    },
+    {
+      "path": "ruff/lint.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "ruff/lint.txt",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "size_bytes": 19
+    },
+    {
+      "path": "run-info/coverage-extra.json",
+      "sha256": "f827475234f0eb24761ed780124e03f0ae4a73c898267b4a81d1fcec490e4e0b",
+      "size_bytes": 17
+    },
+    {
+      "path": "run-info/coverage.json",
+      "sha256": "a90cb59f402d16501e2f65c2af472f8b51a05e64e1b0d030c541d0e6cabd8253",
+      "size_bytes": 107
+    },
+    {
+      "path": "run-info/env-digest.json",
+      "sha256": "2886a01e6b585af7f7e4550dc0a8e238c0d948725b54f15456fccf9ca8015bae",
+      "size_bytes": 394
+    },
+    {
+      "path": "run-info/metadata.json",
+      "sha256": "ac07b693f3728e5878af1ad0488540c2c8ba51419288fe2238ff03a48f08962e",
+      "size_bytes": 455
+    },
+    {
+      "path": "run-info/mypy.json",
+      "sha256": "f35451258e9037c6adcfd62cbf34360bb68381bd3ca56f17f5aa6e808d980168",
+      "size_bytes": 146
+    },
+    {
+      "path": "run-info/pytest.json",
+      "sha256": "f3c017bcc144806d153679f22f67a9eb2e0c1c4b8d209a29d3be4ec1d5458947",
+      "size_bytes": 152
+    },
+    {
+      "path": "run-info/ruff_format.json",
+      "sha256": "db4ce64eed07fd8935f71e71b08c257a32f8e857e36cd5c3d5b1a341b4b6f8f9",
+      "size_bytes": 164
+    },
+    {
+      "path": "run-info/ruff_lint.json",
+      "sha256": "3a69ab983fd899e09c9051843e8d98caf695326f23f416b1144778002f9bfa22",
+      "size_bytes": 150
+    },
+    {
+      "path": "run-info/runtime_gate.json",
+      "sha256": "1855680548e718476d71198009ef3476ee647e224e1770593ecce9e0ac68c53c",
+      "size_bytes": 166
+    },
+    {
+      "path": "run-info/secrets-present.json",
+      "sha256": "91cbbe50ea1b2ea9fd98d63f6eef3a4df446961c6db7c86cf50e5337f4524371",
+      "size_bytes": 183
+    },
+    {
+      "path": "run-info/summary.md",
+      "sha256": "67a296c9eebe44c2498f119e43b0c2cc19c6679c7f0be04894fb519f4d34f039",
+      "size_bytes": 1239
+    },
+    {
+      "path": "runtime_gate.json",
+      "sha256": "aa9e5cea73f06ae15a991faf4306e15c0d6023e46414936cac0e6a6ba13602f0",
+      "size_bytes": 6165
+    },
+    {
+      "path": "runtime_gate.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    }
+  ],
+  "generated_at": "2026-09-02T03:30:29Z",
+  "run_id": "33586820518"
+}

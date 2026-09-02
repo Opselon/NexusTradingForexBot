@@ -1,0 +1,161 @@
+[
+  {
+    "cell": null,
+    "code": "RUF005",
+    "end_location": {
+      "column": 94,
+      "row": 394
+    },
+    "filename": "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/web/operator_routes.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "[*list(_SIGNAL_LIST_COLUMNS), \"payload\", *list(_OPTIONAL_SIGNAL_COLUMNS)]",
+          "end_location": {
+            "column": 94,
+            "row": 394
+          },
+          "location": {
+            "column": 21,
+            "row": 394
+          }
+        }
+      ],
+      "message": "Replace with iterable unpacking"
+    },
+    "location": {
+      "column": 21,
+      "row": 394
+    },
+    "message": "Consider iterable unpacking instead of concatenation",
+    "name": "collection-literal-concatenation",
+    "noqa_row": 394,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/collection-literal-concatenation"
+  },
+  {
+    "cell": null,
+    "code": "RUF046",
+    "end_location": {
+      "column": 70,
+      "row": 624
+    },
+    "filename": "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/src/nexus_scalp/web/operator_routes.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "round(p * (n - 1))",
+          "end_location": {
+            "column": 70,
+            "row": 624
+          },
+          "location": {
+            "column": 47,
+            "row": 624
+          }
+        }
+      ],
+      "message": "Remove unnecessary `int` call"
+    },
+    "location": {
+      "column": 47,
+      "row": 624
+    },
+    "message": "Value being cast to `int` is already an integer",
+    "name": "unnecessary-cast-to-int",
+    "noqa_row": 624,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unnecessary-cast-to-int"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 71,
+      "row": 45
+    },
+    "filename": "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/tests/unit/test_fidelity_data_to_decision.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from __future__ import annotations\n\nfrom datetime import UTC, datetime, timedelta\nfrom pathlib import Path\nfrom typing import Any\n\nimport numpy as np\nimport polars as pl\nimport pytest\nimport torch\n\nfrom nexus_scalp.domain.models import TickData\nfrom nexus_scalp.features.features70 import news_10d_from_context\nfrom nexus_scalp.features.liquidity_engine import compute_liquidity_features\nfrom nexus_scalp.features.liquidity_runtime import build_70d_vector\nfrom nexus_scalp.features.scalp_features import ScalpFeatureEngine\nfrom nexus_scalp.features.schema_contract import NEWS_10D_NAMES, validate_70d_vector\nfrom nexus_scalp.governance.alignment import vectorize_news_context\nfrom nexus_scalp.market_data.bar_aggregator import BarAggregator\nfrom nexus_scalp.model_generation.news_bridge import (\n    build_news_frame_from_db,\n    news_context_at,\n)\nfrom nexus_scalp.news.database import NewsDatabase\nfrom nexus_scalp.news.models import CurrentNewsContext, NewsState\nfrom nexus_scalp.research.streaming_replay import load_model_artifacts\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 47
+          },
+          "location": {
+            "column": 1,
+            "row": 20
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 20
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 20,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "F821",
+    "end_location": {
+      "column": 53,
+      "row": 53
+    },
+    "filename": "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/tests/unit/test_fidelity_data_to_decision.py",
+    "fix": null,
+    "location": {
+      "column": 46,
+      "row": 53
+    },
+    "message": "Undefined name `BarData`",
+    "name": "undefined-name",
+    "noqa_row": 53,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/undefined-name"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 56,
+      "row": 372
+    },
+    "filename": "/home/runner/work/NexusTradingForexBot/NexusTradingForexBot/tests/unit/test_fidelity_data_to_decision.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    from nexus_scalp.features.regime_classifier import (\n        MarketRegimeClassifier,\n        MarketRegimeState,\n        RecommendedExecutionType,\n        RegimeReason,\n        RegimeType,\n    )\n    from nexus_scalp.signals.policy import SignalPolicy\n",
+          "end_location": {
+            "column": 1,
+            "row": 373
+          },
+          "location": {
+            "column": 1,
+            "row": 365
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 5,
+      "row": 365
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "name": "unsorted-imports",
+    "noqa_row": 365,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  }
+]

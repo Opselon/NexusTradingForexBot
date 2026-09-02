@@ -1,0 +1,155 @@
+unformatted: File would be reformatted
+   --> src/nexus_scalp/cli/update_cli.py:155:19
+    |
+154 |         if behind is not None:
+    -             rel = "UP TO DATE" if behind == 0 and not ahead else (
+    -                 f"{behind} behind" + (f" / {ahead} ahead" if ahead else "")
+155 +             rel = (
+156 +                 "UP TO DATE"
+157 +                 if behind == 0 and not ahead
+158 +                 else (f"{behind} behind" + (f" / {ahead} ahead" if ahead else ""))
+159 |             )
+    |
+
+unformatted: File would be reformatted
+   --> src/nexus_scalp/shadow/comparison.py:57:12
+    |
+56  |     mid = n // 2
+    -     return (s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0)
+57  +     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+58  |
+--------------------------------------------------------------------------------
+227 |             challenger_tail_losses=sum(
+    -                 1
+    -                 for d in resolved
+    -                 if (d.shadow_r if d.shadow_r is not None else 0.0) <= -1.5
+228 +                 1 for d in resolved if (d.shadow_r if d.shadow_r is not None else 0.0) <= -1.5
+229 |             ),
+    |
+
+unformatted: File would be reformatted
+  --> src/nexus_scalp/shadow/engine.py:80:50
+   |
+79 |         self._frozen_git_revision = _git_revision()
+   -         self._frozen_configuration_version = str(
+   -             getattr(self, "_configuration_version", "") or ""
+   -         )
+80 +         self._frozen_configuration_version = str(getattr(self, "_configuration_version", "") or "")
+81 |         self._frozen_challenger_hash = challenger_ref.artifact_hash or ""
+   |
+
+unformatted: File would be reformatted
+   --> src/nexus_scalp/shadow/outcomes.py:217:40
+    |
+216 |
+    -     if time_to_target is not None and (
+    -         time_to_stop is None or time_to_target <= time_to_stop
+    -     ):
+217 +     if time_to_target is not None and (time_to_stop is None or time_to_target <= time_to_stop):
+218 |         exit_reason = "TARGET_HIT"
+    |
+
+unformatted: File would be reformatted
+   --> src/nexus_scalp/shadow/store.py:289:30
+    |
+288 |     @staticmethod
+    -     def _add_missing_columns(conn: sqlite3.Connection, table: str, columns: list[tuple[str, str]]) -> None:
+289 +     def _add_missing_columns(
+290 +         conn: sqlite3.Connection, table: str, columns: list[tuple[str, str]]
+291 +     ) -> None:
+292 |         try:
+--------------------------------------------------------------------------------
+300 |                 except Exception as e:
+    -                     logger.error("[SHADOW] add column failed", table=table, column=name, error=str(e))
+301 +                     logger.error(
+302 +                         "[SHADOW] add column failed", table=table, column=name, error=str(e)
+303 +                     )
+304 |
+    |
+
+unformatted: File would be reformatted
+   --> src/nexus_scalp/web/model_governance_routes.py:531:59
+    |
+530 |                         feature_schema_hash_value = str(
+    -                             man.get("feature_schema_hash")
+    -                             or man.get("feature_schema_id", "")
+    -                             or ""
+531 +                             man.get("feature_schema_hash") or man.get("feature_schema_id", "") or ""
+532 |                         )
+    |
+
+unformatted: File would be reformatted
+   --> tests/unit/test_decision_evidence_completeness.py:143:82
+    |
+142 |     ticks = [
+    -         Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m)
+    -         for m in range(60)
+143 +         Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m) for m in range(60)
+144 |     ]
+--------------------------------------------------------------------------------
+244 | def test_fingerprint_reproducible_same_inputs() -> None:
+    -     cands = build_candidates([_row(decision_id="A"), _row(decision_id="B", timestamp=T0 + timedelta(minutes=1))])
+245 +     cands = build_candidates(
+246 +         [_row(decision_id="A"), _row(decision_id="B", timestamp=T0 + timedelta(minutes=1))]
+247 +     )
+248 |     ticks = [
+    -         Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m)
+    -         for m in range(60)
+249 +         Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m) for m in range(60)
+250 |     ]
+    |
+
+unformatted: File would be reformatted
+   --> tests/unit/test_fidelity_data_to_decision.py:291:25
+    |
+290 |
+    -     fp = hashlib.sha256((REPO / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt").read_bytes()).hexdigest()[:32]
+291 +     fp = hashlib.sha256(
+292 +         (REPO / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt").read_bytes()
+293 +     ).hexdigest()[:32]
+294 |     assert artifacts.model_fingerprint == fp
+--------------------------------------------------------------------------------
+315 |     )
+    -     vec70 = build_70d_vector(fv.to_tensor_input(), family_10=news10, liquidity_10=list(liquid.as_vector()))
+316 +     vec70 = build_70d_vector(
+317 +         fv.to_tensor_input(), family_10=news10, liquidity_10=list(liquid.as_vector())
+318 +     )
+319 |     validate_70d_vector(vec70)
+--------------------------------------------------------------------------------
+354 |     bars = _bars(60)
+    -     tick = TickData(symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.2, volume=100)
+355 +     tick = TickData(
+356 +         symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.2, volume=100
+357 +     )
+358 |     fv_engine = ScalpFeatureEngine(symbol="XAUUSD")
+--------------------------------------------------------------------------------
+380 |     bars = _bars(60)
+    -     tick = TickData(symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.9, volume=100)
+381 +     tick = TickData(
+382 +         symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.9, volume=100
+383 +     )
+384 |     fv_engine = ScalpFeatureEngine(symbol="XAUUSD")
+--------------------------------------------------------------------------------
+399 |     probs = torch.tensor([[0.1, 0.8, 0.05, 0.05]], dtype=torch.float32)
+    -     proposal = SignalPolicy().evaluate_probabilities(probs, current_tick=tick, feature_vector=fv, regime_state=state)
+400 +     proposal = SignalPolicy().evaluate_probabilities(
+401 +         probs, current_tick=tick, feature_vector=fv, regime_state=state
+402 +     )
+403 |     assert proposal.action.value == "NO_TRADE"
+    -     assert "GUARDIAN" in (proposal.reason_code or "").upper() or "UNSAFE" in (proposal.reason_code or "").upper()
+404 +     assert (
+405 +         "GUARDIAN" in (proposal.reason_code or "").upper()
+406 +         or "UNSAFE" in (proposal.reason_code or "").upper()
+407 +     )
+408 |
+    |
+
+unformatted: File would be reformatted
+  --> tests/unit/test_operator_routes.py:11:1
+   |
+10 | """
+11 +
+12 | from __future__ import annotations
+   |
+
+9 files would be reformatted, 1384 files already formatted

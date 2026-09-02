@@ -1,0 +1,7 @@
+{
+  "check": "runtime_gate",
+  "detail": "see runtime_gate.json + runtime_gate.log",
+  "exit_code": 3,
+  "status": "errored",
+  "timestamp": "2026-09-02T04:34:52Z"
+}

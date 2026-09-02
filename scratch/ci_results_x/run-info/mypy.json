@@ -1,0 +1,7 @@
+{
+  "check": "mypy",
+  "detail": "type errors found (see mypy/)",
+  "exit_code": 1,
+  "status": "failed",
+  "timestamp": "2026-09-02T02:04:50Z"
+}

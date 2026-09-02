@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuite errors="0" failures="1" name="mypy" skips="0" tests="1" time="35.212">
+  <testcase classname="mypy" file="mypy" line="1" name="mypy-py3_11-linux" time="35.212">
+    <failure message="mypy produced messages">src/nexus_scalp/database/engine.py:493: error: Incompatible types in assignment (expression has type "tuple[str, ...]", variable has type "list[str]")  [assignment]
+src/nexus_scalp/release/health.py:111: error: Dict entry 5 has incompatible type "str": "bool"; expected "str": "str"  [dict-item]
+src/nexus_scalp/news/pro_auto.py:284: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src/nexus_scalp/web/server.py:2579: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]</failure>
+  </testcase>
+</testsuite>

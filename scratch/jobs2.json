@@ -1,0 +1,359 @@
+{
+  "total_count": 4,
+  "jobs": [
+    {
+      "id": 100112640102,
+      "run_id": 33586820518,
+      "workflow_name": "CI",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/runs/33586820518",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOTnnUf88AAAAXTy2oZg",
+      "head_sha": "03d0848bd8a6a29af20cc27217a2ef185f31aee4",
+      "url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/jobs/100112640102",
+      "html_url": "https://github.com/Opselon/NexusTradingForexBot/actions/runs/33586820518/job/100112640102",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-02T03:23:15Z",
+      "started_at": "2026-09-02T03:23:17Z",
+      "completed_at": "2026-09-02T03:23:26Z",
+      "name": "CI Integrity and Change Classification",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-02T03:23:18Z",
+          "completed_at": "2026-09-02T03:23:18Z"
+        },
+        {
+          "name": "Checkout repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-02T03:23:18Z",
+          "completed_at": "2026-09-02T03:23:20Z"
+        },
+        {
+          "name": "Set up Python 3.11",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-02T03:23:20Z",
+          "completed_at": "2026-09-02T03:23:20Z"
+        },
+        {
+          "name": "Install workflow analyzer deps",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-02T03:23:20Z",
+          "completed_at": "2026-09-02T03:23:23Z"
+        },
+        {
+          "name": "Workflow static integrity scan",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-02T03:23:23Z",
+          "completed_at": "2026-09-02T03:23:23Z"
+        },
+        {
+          "name": "Classify changes (sanity check of the canonical classifier)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-09-02T03:23:23Z",
+          "completed_at": "2026-09-02T03:23:24Z"
+        },
+        {
+          "name": "Post Set up Python 3.11",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-09-02T03:23:24Z",
+          "completed_at": "2026-09-02T03:23:24Z"
+        },
+        {
+          "name": "Post Checkout repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-09-02T03:23:24Z",
+          "completed_at": "2026-09-02T03:23:24Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-09-02T03:23:24Z",
+          "completed_at": "2026-09-02T03:23:24Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/check-runs/100112640102",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000010403,
+      "runner_name": "GitHub Actions 1000010403",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 100112640347,
+      "run_id": 33586820518,
+      "workflow_name": "CI",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/runs/33586820518",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOTnnUf88AAAAXTy2pWw",
+      "head_sha": "03d0848bd8a6a29af20cc27217a2ef185f31aee4",
+      "url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/jobs/100112640347",
+      "html_url": "https://github.com/Opselon/NexusTradingForexBot/actions/runs/33586820518/job/100112640347",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-09-02T03:23:15Z",
+      "started_at": "2026-09-02T03:23:18Z",
+      "completed_at": "2026-09-02T03:30:41Z",
+      "name": "Code Quality & Tests",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-02T03:23:19Z",
+          "completed_at": "2026-09-02T03:23:20Z"
+        },
+        {
+          "name": "Checkout repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-02T03:23:20Z",
+          "completed_at": "2026-09-02T03:23:22Z"
+        },
+        {
+          "name": "Set up Python 3.11",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-02T03:23:22Z",
+          "completed_at": "2026-09-02T03:23:49Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-02T03:23:49Z",
+          "completed_at": "2026-09-02T03:24:40Z"
+        },
+        {
+          "name": "Initialize results tree",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-02T03:24:40Z",
+          "completed_at": "2026-09-02T03:24:40Z"
+        },
+        {
+          "name": "Telegram - CI started",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-09-02T03:24:40Z",
+          "completed_at": "2026-09-02T03:24:40Z"
+        },
+        {
+          "name": "Ruff - Lint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-09-02T03:24:40Z",
+          "completed_at": "2026-09-02T03:24:40Z"
+        },
+        {
+          "name": "Ruff - Format check",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-09-02T03:24:40Z",
+          "completed_at": "2026-09-02T03:24:41Z"
+        },
+        {
+          "name": "Mypy - Type checking",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-09-02T03:24:41Z",
+          "completed_at": "2026-09-02T03:25:17Z"
+        },
+        {
+          "name": "Pytest with coverage",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-09-02T03:25:17Z",
+          "completed_at": "2026-09-02T03:30:25Z"
+        },
+        {
+          "name": "Coverage report",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-09-02T03:30:25Z",
+          "completed_at": "2026-09-02T03:30:25Z"
+        },
+        {
+          "name": "Runtime certification gate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-09-02T03:30:25Z",
+          "completed_at": "2026-09-02T03:30:28Z"
+        },
+        {
+          "name": "Secret presence check",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-09-02T03:30:28Z",
+          "completed_at": "2026-09-02T03:30:28Z"
+        },
+        {
+          "name": "Generate CI summary (step summary + summary.md)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-09-02T03:30:28Z",
+          "completed_at": "2026-09-02T03:30:29Z"
+        },
+        {
+          "name": "Telegram - CI finished",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-09-02T03:30:29Z",
+          "completed_at": "2026-09-02T03:30:35Z"
+        },
+        {
+          "name": "Upload CI results artifact",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-09-02T03:30:35Z",
+          "completed_at": "2026-09-02T03:30:38Z"
+        },
+        {
+          "name": "Emit review-status.json",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17,
+          "started_at": "2026-09-02T03:30:38Z",
+          "completed_at": "2026-09-02T03:30:38Z"
+        },
+        {
+          "name": "Fail job if any check failed",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 18,
+          "started_at": "2026-09-02T03:30:38Z",
+          "completed_at": "2026-09-02T03:30:38Z"
+        },
+        {
+          "name": "Post Set up Python 3.11",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 35,
+          "started_at": "2026-09-02T03:30:38Z",
+          "completed_at": "2026-09-02T03:30:38Z"
+        },
+        {
+          "name": "Post Checkout repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 36,
+          "started_at": "2026-09-02T03:30:38Z",
+          "completed_at": "2026-09-02T03:30:38Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 37,
+          "started_at": "2026-09-02T03:30:38Z",
+          "completed_at": "2026-09-02T03:30:38Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/check-runs/100112640347",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000010404,
+      "runner_name": "GitHub Actions 1000010404",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 100114040656,
+      "run_id": 33586820518,
+      "workflow_name": "CI",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/runs/33586820518",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOTnnUf88AAAAXT0MHUA",
+      "head_sha": "03d0848bd8a6a29af20cc27217a2ef185f31aee4",
+      "url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/jobs/100114040656",
+      "html_url": "https://github.com/Opselon/NexusTradingForexBot/actions/runs/33586820518/job/100114040656",
+      "status": "completed",
+      "conclusion": "skipped",
+      "created_at": "2026-09-02T03:30:42Z",
+      "started_at": "2026-09-02T03:30:42Z",
+      "completed_at": "2026-09-02T03:30:42Z",
+      "name": "Heavy CI (${{ matrix.suite }})",
+      "steps": [
+
+      ],
+      "check_run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/check-runs/100114040656",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    },
+    {
+      "id": 100114040694,
+      "run_id": 33586820518,
+      "workflow_name": "CI",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/runs/33586820518",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOTnnUf88AAAAXT0MHdg",
+      "head_sha": "03d0848bd8a6a29af20cc27217a2ef185f31aee4",
+      "url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/actions/jobs/100114040694",
+      "html_url": "https://github.com/Opselon/NexusTradingForexBot/actions/runs/33586820518/job/100114040694",
+      "status": "completed",
+      "conclusion": "skipped",
+      "created_at": "2026-09-02T03:30:42Z",
+      "started_at": "2026-09-02T03:30:42Z",
+      "completed_at": "2026-09-02T03:30:42Z",
+      "name": "Aggregate CI Results",
+      "steps": [
+
+      ],
+      "check_run_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/check-runs/100114040694",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    }
+  ]
+}

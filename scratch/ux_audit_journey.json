@@ -1,0 +1,114 @@
+{
+  "load_ms": 11533,
+  "first_screen": {
+    "title": "Nexus Scalp Engine - Control Center",
+    "header_text": "NSE | NEXUS SCALP ENGINE | CONNECTING | v— | — | Production Quant Control Center | rest — · sse — · v— | — | MODE | PAPER (SIM) | SHADOW (no orders) | LIVE TRADING | UNKNOWN",
+    "sidebar_items": [
+      "Live Monitoring",
+      "Account Center",
+      "AI Intel Hub",
+      "Strategy Research",
+      "Strategy Factory\n--",
+      "News Intelligence\n--",
+      "Liquidity Intelligence\n--",
+      "Scalping Rules",
+      "Bot Settings",
+      "Debug & Diagnostics\n--",
+      "Model Governance\n--",
+      "Forensic Incident Center\n--",
+      "Strategy Command Center\nNEW",
+      "Database Management\nERR"
+    ],
+    "active_tab": "Live Monitoring",
+    "h1s": [
+      "Real-Time Candlestick & Volatility Visualizer",
+      "Market Microstructure",
+      " Interactive Live Simulation\nReady",
+      "Replay Mode & Accuracy Tracking"
+    ],
+    "status_badge": "CONNECTING",
+    "mode_selector_value": "PAPER",
+    "runtime_badge": "UNKNOWN"
+  },
+  "monitoring": {
+    "visible_metrics": 4,
+    "ai_decision_visible": false,
+    "ai_reason_shown": 0,
+    "has_plain_explanation": 0
+  },
+  "tabs": {
+    "Monitoring": {
+      "tabId": "tab-monitoring",
+      "snippet": "Real-Time Candlestick & Volatility Visualizer M1 Live Pause UI Auto Fit Reset View Resync AI View 0 bars sync — Market Microstructure BID PRICE — — ASK PRICE — Spread — ATR (M1) — Regime State — ACTIVE INTELLIGENCE OUTPU"
+    },
+    "Account": {
+      "tabId": "tab-account",
+      "snippet": "BALANCE — EQUITY — FLOATING P&L — MAX DRAWDOWN — WIN RATE — FREE MARGIN — OPEN POSITIONS 0 LOGIN — BROKER — CURRENCY — LEVERAGE — MARGIN LEVEL — TRADE ALLOWED — Risk Plan (RiskEngine — single source of truth) — RISK / TR"
+    },
+    "AI Analysis": {
+      "error": "TimeoutError: locator.click: Timeout 3000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.tab-btn:has-text(\"AI Analy"
+    },
+    "Research": {
+      "tabId": "tab-research",
+      "snippet": "Strategy Research & Validation Engine EVIDENCE-DRIVEN GATES: discovery → backtest → walk-forward → OOS → robustness → score. A candidate NEVER goes live automatically. Discover Refresh REGISTRY Total -- Validated -- Reje"
+    },
+    "Strategy Factory": {
+      "tabId": "tab-factory",
+      "snippet": "Strategy Factory — Autonomous Strategy Evolution GENERATE → VALIDATE → BACKTEST → WALK-FORWARD → OOS → ROBUSTNESS → SCORE → RANK → ELITE → EVOLVE. Candidates NEVER go live automatically. STOPPED Refresh GENERATION SIZE 5"
+    },
+    "News": {
+      "tabId": "tab-news",
+      "snippet": "News Intelligence Engine PERSISTENT NEWS INTELLIGENCE: canonical events, source consensus, XAUUSD/USD impact, time decay. News can never force a trade. -- NEWS ON ENABLED AUTO ON AUTO ON Refresh Fetch News NEWS STATE -- "
+    },
+    "Liquidity": {
+      "tabId": "tab-liquidity",
+      "snippet": "Liquidity Intelligence 70D integration contract: Base 0..49 | Family 50..59 | Liquidity 60..69. Structural information only — never a trade signal. ENABLED Refresh Disable Liquidity Intelligence STATUS ENABLED SCHEMA sca"
+    },
+    "Rules": {
+      "tabId": "tab-rules",
+      "snippet": "Advanced Price-Hunting & Scalping Rule Matrix PERSISTENCE CONTROL: All 30+ institutional rules are disabled by default. Enabling a rule overrides standard PyTorch AI. Refresh Rules"
+    },
+    "Bot Settings": {
+      "tabId": "tab-config",
+      "snippet": "Algorithm Live Tuner Tweak quant algorithm thresholds on the fly without restarting the engine. Apply Tuner Settings ATR SL BUFFER MULTIPLIER 1.5 Multiplier for ATR stop-loss buffer (0.5 to 4.0). MIN RISK REWARD RATIO 1."
+    },
+    "Debug Hub": {
+      "error": "TimeoutError: locator.click: Timeout 3000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.tab-btn:has-text(\"Debug Hu"
+    },
+    "Governance": {
+      "tabId": "tab-governance",
+      "snippet": "Model Governance & Champion/Challenger Truthful registry state, load gate, shadow runtime, feature/news parity, latency, promotion lifecycle. Refresh CHAMPION -- No data CHALLENGER -- No data SHADOW RUNTIME No data LATEN"
+    },
+    "Incidents": {
+      "error": "TimeoutError: locator.click: Timeout 3000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.tab-btn:has-text(\"Incident"
+    },
+    "Command Center": {
+      "tabId": "tab-command-center",
+      "snippet": ""
+    },
+    "Database": {
+      "tabId": "tab-database",
+      "snippet": "DATABASE MANAGEMENT Refresh Status Current Database Provider: -- Status: -- Database: -- Server: -- Schema Version: -- Health: -- Latency: -- Provider Switch Active Provider SQLite (local / default) PostgreSQL (scalable "
+    }
+  },
+  "why_no_trade": {
+    "ai_reason_code": 0,
+    "plain_words_count": 0
+  },
+  "idle_8s_new_requests": 6,
+  "tablet": {
+    "horizontal_overflow": false,
+    "header_visible": true
+  },
+  "mobile": {
+    "horizontal_overflow": false,
+    "sidebar_visible": true,
+    "first_clicks_to_market": "sidebar visible => same nav"
+  },
+  "network": {
+    "total_fetches": 71,
+    "unique": 38,
+    "errors": []
+  },
+  "screenshots": "see scratch/ux_audit_*.png"
+}
