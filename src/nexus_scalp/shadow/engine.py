@@ -62,19 +62,36 @@ class ShadowEngine:
         champion: ShadowModelRef,
         challenger_ref: ShadowModelRef,
     ) -> str:
-        """Starts a shadow run (idempotent by run_id)."""
+        """Starts a shadow run (idempotent by run_id).
+
+        CHG-0046 D11: freezes the run identity (git revision, configuration
+        version, artifact hashes) at START. Nothing may silently change
+        under a live run — the finalize step re-verifies the challenger
+        artifact hash and fails the run honestly on drift.
+        """
         run_id = run_id or f"shadow_{uuid.uuid4().hex[:12]}"
         if self.active_run_id and self.active_run_id != run_id:
             # complete the previous run first
             self.finish_run()
         self.active_run_id = run_id
         self._decisions = []
+        self._started = datetime.now(UTC)
+        self._frozen_git_revision = _git_revision()
+        self._frozen_configuration_version = str(
+            getattr(self, "_configuration_version", "") or ""
+        )
+        self._frozen_challenger_hash = challenger_ref.artifact_hash or ""
+        self._frozen_champion_hash = champion.artifact_hash or ""
         run = ShadowRun(
             run_id=run_id,
             champion=champion,
             challenger=challenger_ref,
             status="RUNNING",
-            started_at=datetime.now(UTC),
+            started_at=self._started,
+            git_revision=self._frozen_git_revision,
+            configuration_version=self._frozen_configuration_version,
+            challenger_artifact_hash=self._frozen_challenger_hash,
+            champion_artifact_hash=self._frozen_champion_hash,
         )
         self.store.save_run(run)
         logger.info(
@@ -82,6 +99,8 @@ class ShadowEngine:
             run_id=run_id,
             champion=f"{champion.model_id}@{champion.model_version}",
             challenger=f"{challenger_ref.model_id}@{challenger_ref.model_version}",
+            git_revision=run.git_revision,
+            challenger_hash=run.challenger_artifact_hash,
         )
         return run_id
 
@@ -90,20 +109,49 @@ class ShadowEngine:
         self.active_challenger = runtime
 
     def finish_run(self, status: str = "COMPLETED", error: str = "") -> None:
-        """Completes the active run and persists the aggregated comparison."""
+        """Completes the active run and persists the aggregated comparison.
+
+        CHG-0046 D11: the challenger's LIVE artifact hash is re-derived and
+        compared against the frozen run identity. A replaced artifact fails
+        the run (FAILED/ARTIFACT_REPLACED) — historical evidence is never
+        silently re-attributed to a different model. Legacy runs (frozen
+        hash empty) cannot drift-check and are marked honestly.
+        """
         if not self.active_run_id:
             return
+        chal_ref = (
+            self.active_challenger.ref
+            if self.active_challenger and self.active_challenger.ref
+            else ShadowModelRef(model_id="", model_version="")
+        )
+        frozen_hash = str(getattr(self, "_frozen_challenger_hash", "") or "")
+        live_hash = chal_ref.artifact_hash or ""
+        if status == "COMPLETED":
+            if frozen_hash and live_hash and live_hash != frozen_hash:
+                status = "FAILED"
+                error = (
+                    f"ARTIFACT_REPLACED: frozen={frozen_hash} live={live_hash} "
+                    "— run evidence invalid for promotion"
+                )
+                logger.error("[SHADOW] event=RUN_INVALIDATED", run_id=self.active_run_id)
+            elif frozen_hash and not live_hash:
+                status = "COMPLETED"
+                error = "ARTIFACT_UNVERIFIED: challenger ref lost before finalize"
+            elif not frozen_hash:
+                error = error or "IDENTITY_NOT_RECORDED (legacy run: no frozen artifact hash)"
         run = ShadowRun(
             run_id=self.active_run_id,
             champion=self._champion_ref() or ShadowModelRef(model_id="", model_version=""),
-            challenger=self.active_challenger.ref
-            if self.active_challenger and self.active_challenger.ref
-            else ShadowModelRef(model_id="", model_version=""),
+            challenger=chal_ref,
             status=status,
             started_at=self._run_started_at(),
             finished_at=datetime.now(UTC),
             decision_count=len(self._decisions),
             error=error,
+            git_revision=str(getattr(self, "_frozen_git_revision", "") or ""),
+            configuration_version=str(getattr(self, "_frozen_configuration_version", "") or ""),
+            challenger_artifact_hash=frozen_hash,
+            champion_artifact_hash=str(getattr(self, "_frozen_champion_hash", "") or ""),
         )
         self.store.save_run(run)
         if self._decisions and self.active_challenger and self.active_challenger.ref:
@@ -283,14 +331,50 @@ class ShadowEngine:
 
     _started: datetime = datetime.now(UTC)
 
-    # ------------------------------------------------------------------
-    # Aggregation endpoints for the worker / API
-    # ------------------------------------------------------------------
 
-    def current_evidence(self) -> dict[str, Any]:
-        return {
-            "run_id": self.active_run_id,
-            "decisions": len(self._decisions),
-            "challenger_loaded": self.active_challenger is not None,
-            "last_comparison_run": self.last_comparison.run_id if self.last_comparison else "",
-        }
+def _git_revision() -> str:
+    """Best-effort git revision for run-freeze identity ('' = NOT_RECORDED).
+
+    Never raises: identity capture must never disturb the run lifecycle.
+    Prefers `git rev-parse` (3s timeout); falls back to reading the HEAD
+    ref file directly (frozen/EXE layouts without git installed).
+    """
+    import subprocess
+    from pathlib import Path
+
+    try:
+        head = Path(__file__).resolve()
+        for parent in head.parents:
+            git_head = parent / ".git" / "HEAD"
+            if git_head.exists():
+                try:
+                    out = subprocess.run(
+                        ["git", "rev-parse", "--short", "HEAD"],
+                        cwd=str(parent),
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                        check=False,
+                    )
+                    if out.returncode == 0 and out.stdout.strip():
+                        return out.stdout.strip()[:12]
+                except Exception:
+                    pass
+                ref = git_head.read_text(encoding="utf-8", errors="replace").strip()
+                if ref.startswith("ref:"):
+                    ref_path = parent / ".git" / ref[4:].strip()
+                    if ref_path.exists():
+                        return ref_path.read_text(encoding="utf-8", errors="replace").strip()[:12]
+                return ref[:12]
+    except Exception:
+        pass
+    return ""
+
+
+def current_evidence(engine: ShadowEngine) -> dict[str, Any]:
+    return {
+        "run_id": engine.active_run_id,
+        "decisions": len(engine._decisions),
+        "challenger_loaded": engine.active_challenger is not None,
+        "last_comparison_run": engine.last_comparison.run_id if engine.last_comparison else "",
+    }

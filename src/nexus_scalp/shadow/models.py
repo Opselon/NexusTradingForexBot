@@ -173,7 +173,13 @@ class ShadowDecisionRecord(BaseModel):
 
 
 class ShadowRun(BaseModel):
-    """A bounded shadow evaluation run (spec 20 / 24)."""
+    """A bounded shadow evaluation run (spec 20 / 24).
+
+    CHG-0046 D11 run-freeze identity: the run records the environment it
+    was started under. ``challenger_artifact_hash`` is re-verified at
+    finalize; a mid-run artifact replacement fails the run honestly
+    (FAILED/ARTIFACT_REPLACED) instead of silently mixing identities.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -185,6 +191,11 @@ class ShadowRun(BaseModel):
     finished_at: datetime | None = Field(default=None)
     decision_count: int = Field(default=0, ge=0)
     error: str = Field(default="")
+    # Run-freeze identity (D11). "" = NOT_RECORDED (legacy rows preserved).
+    git_revision: str = Field(default="")
+    configuration_version: str = Field(default="")
+    challenger_artifact_hash: str = Field(default="")
+    champion_artifact_hash: str = Field(default="")
 
     @field_validator("started_at")
     @classmethod
