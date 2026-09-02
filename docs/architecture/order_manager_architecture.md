@@ -223,3 +223,59 @@ log_autopsy_fixes, accounting_hedging, rule_matrix.
   trajectory/state, AI-flip, protection chain, telemetry, rule-matrix,
   arbitration, dispatch). Future extractions require tracker-state ownership
   first (hold-value writes _rolling_spreads; trajectory/tick updaters).
+
+
+## 15. S6-followup — PositionTrackingLedger: explicit tracking-state ownership
+
+### Phase-1 ownership audit (per-position loop, 935L at L4039-4974)
+- 82 self.* names touched in-loop: 11 methods, 71 data fields; of the data
+  fields, 19 form the cohesive TRACKING cluster (all TICKET_LOCAL, keyed by
+  ticket, zero external src consumers, few direct test seeds):
+  tick/duration (_last_tick_timestamps, _time_in_profit_sec,
+  _time_in_drawdown_sec, _peak_profit_usd [documented MIRROR of S1
+  protection.peak_win_usd], _peak_drawdown_usd, _last_tick_for_ticket),
+  MFE/MAE (_mfe_tracker, _mae_tracker, _time_to_mfe_sec, _time_to_mae_sec),
+  tick-state (_stagnation_ticks, _adverse_ticks, _favorable_ticks,
+  _last_price_tracker), LSF desync (_lsf_state, _last_seen_ts),
+  reversal evidence (_reversal_events, _entry_probs, _entry_regime_state).
+- Everything else stays manager-owned: dispatch state
+  (_last_modify_sl, _sl_modified_flags, _forced_exit_mechanisms,
+  _exit_pending_final_reason, _partial_closed_tickets), hold-score routing
+  (_hold_score_tracker, _base_hold_score_tracker, _last_reasons_tracker,
+  _last_hold_eval_time), telemetry throttle (_last_telemetry_time —
+  SESSION_GLOBAL), spreads (_rolling_spreads — SESSION_GLOBAL), identity
+  dicts (_entry_prices/_sls/_tps/... — lifecycle metadata), locks/cache.
+- Writers of the tracking cluster are exactly: __init__, the five updaters,
+  the loop-head new-ticket seeding, the in-loop tick/duration block,
+  _cleanup_ticket_state, and six well-defined readers (smart metrics,
+  hold-value, sweep, experience, lsf get/set, scenario resolver).
+
+### Phase-2/3 — the boundary + lifecycle
+- execution/position_tracker.py (385L): PositionTrackingLedger owns the 19
+  dicts + the five updaters (bodies verbatim) + record_tick_durations (the
+  in-loop block verbatim) + drop_ticket. No broker/risk/policy/dispatch/
+  audit/persistence authority (source-scan golden enforces).
+- Lifecycle: ensure_bootstrap -> CREATED (idempotent; MFE/MAE seed at ZERO
+  per ANOMALY-VERIFY-01) -> TRACKING (per-tick: record_tick_durations,
+  update_lsf_desync_metrics, update_mfe_mae [entry anchor parameterized],
+  update_tick_state, capture_reversal_state) -> drop_ticket -> CLEANED
+  (atomic, called from the manager's cleanup bundle).
+- Compatibility: order_manager keeps the historical dict names as @property
+  accessors returning the ledger's LIVE dicts (single source of truth; the
+  cleanup tuple and direct test seeds keep working unchanged).
+- Preserved original semantics (including quirks): _last_tick_for_ticket is
+  NOT released by cleanup (original leak kept); the stale-tick negative-delta
+  pass still updates _last_tick_timestamps unconditionally; duration
+  trackers self-seed at zero on first record (loop-head seeding parity).
+
+### Phase-4 seam + verification
+- In-loop tick/duration block (24L) replaced by a single
+  _tracking.record_tick_durations call at the identical position — the first
+  per-position loop extraction, enabled by explicit ownership.
+- Gates: 18 suites RC=0 (S1-S6 goldens incl. 8 new ownership/lifecycle/
+  isolation tests + execution set); ruff/mypy/py_compile clean; perf
+  0.76-2.59 ms/pass (1 live position, mock adapter) — no material change.
+- Remaining blockers for deeper loop decomposition: hold-score routing state
+  and dispatch state are interwoven with broker calls — next prerequisite is
+  a tracker-owner decision for _hold_score_tracker/_base_hold_score_tracker
+  (read-modify-write by the router) before arbitration/dispatch extraction.
