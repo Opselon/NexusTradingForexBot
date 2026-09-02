@@ -472,7 +472,7 @@ class DatabaseMigrationEngine:
         # The app bootstrap still owns the full column contract; this only
         # guarantees the skeleton is compatible with it.
         # ------------------------------------------------------------------
-        skeleton_heal = {
+        skeleton_heal: dict[str, tuple[str, ...]] = {
             "trading_rules_config": (
                 "rule_name TEXT",
                 "is_enabled INTEGER DEFAULT 0",
