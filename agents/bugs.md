@@ -7438,3 +7438,22 @@ pass - discovered during deploy-gate verification, referred NOT fixed)
   gate) + screenshot evidence.
 - Classification: P1 UX-BLOCKER for the operator-first acceptance goal (the flagship
   Control Center surface was unusable from first render).
+
+## BUG-210 (flaky, machine-state) - test_release_hardening::test_old_bug_fails_before_runtime_identity_rejected passed solo + ordered, failed once in full 66-file critical-suite run (2026-09-02, Hermes-Main, discovered during CHG-0046 gate; NOT fixed here — release-owner referral)
+
+### Evidence
+- Full-suite run (proc, 66 files, ~19min): FAILED once.
+- Solo rerun + tests/release/ + release+runtime_truth combos: PASS (multiple).
+- Local environment: repo root carries an UNTRACKED build-info.json
+  (stale 2026-08-31 release stamp, git 53317de) + the frozen-profile
+  candidate list includes Path.cwd()/build-info.json; any prior test that
+  leaves cwd at repo root during that window can leak the stale stamp.
+- pytest-xdist worker cwd shuffling is the suspected trigger; the test's
+  "no build-info anywhere reachable" premise holds only when cwd hygiene
+  survives the whole session.
+
+### Referral
+- Release/metadata owner (CHG-0043): consider monkeypatching cwd isolation
+  for the frozen-profile candidate scan, or deleting the stale untracked
+  build-info.json from the dev machine. NOT a Shadow-subsystem defect; no
+  code changed under CHG-0046 for this.
