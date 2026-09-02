@@ -35,12 +35,18 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-def find_powershell() -> str:
+def find_powershell() -> str | None:
     for candidate in ("pwsh.exe", "powershell.exe"):
         path = shutil.which(candidate)
         if path:
             return path
-    pytest.skip("no PowerShell host found")
+    # BUG-224 (2026-09-03): pytest.skip() at import time raised outside a
+    # test context (collection ERROR, exit code 2) on any host without a
+    # PowerShell CLI - e.g. the Ubuntu release gates job that runs this file
+    # in the release smoke subset. Module-level skipif (pytestmark above)
+    # already gates the whole file on Windows + installer presence, so this
+    # helper only needs to degrade to None and let the skipif catch it.
+    return None
 
 
 PS = find_powershell()
