@@ -1712,6 +1712,22 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_styles() -> FileResponse:
         return FileResponse(WEB_DIR / "styles.css")
 
+    @app.get("/cc_styles.css")
+    def serve_cc_styles() -> FileResponse:
+        return FileResponse(WEB_DIR / "cc_styles.css")
+
+    @app.get("/cc_components.js")
+    def serve_cc_components() -> FileResponse:
+        return FileResponse(WEB_DIR / "cc_components.js")
+
+    @app.get("/cc_state.js")
+    def serve_cc_state() -> FileResponse:
+        return FileResponse(WEB_DIR / "cc_state.js")
+
+    @app.get("/control_center.js")
+    def serve_control_center() -> FileResponse:
+        return FileResponse(WEB_DIR / "control_center.js")
+
     @app.get("/app.js")
     def serve_app(request: Request) -> FileResponse:
         # UI FORENSICS (BUG-077): identify the served bundle once per process.
@@ -2565,5 +2581,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 await asyncio.sleep(0.2)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    # ======================================================================
+    # API PLATFORM v1 (CHG-0043, TASK-API-PLATFORM): versioned read-only
+    # developer surface at /api/v1. Registered LAST (additive; no legacy
+    # route touched, legacy route order parity preserved).
+    # ======================================================================
+    from nexus_scalp.web.api_v1_wiring import register_api_v1
+
+    register_api_v1(app)
 
     return app
