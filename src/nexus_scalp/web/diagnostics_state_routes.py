@@ -66,6 +66,9 @@ def register_diagnostics_state_routes(
     from nexus_scalp.observability.telegram_notifier import (
         TelegramNotifier,
     )
+    from nexus_scalp.release.runtime_snapshot import (
+        build_runtime_snapshot,  # CHG-0043: canonical feature/model truth
+    )
     from nexus_scalp.web.server import (  # late import: cycle-safe
         _default_audit_config,
         _liquidity_state_section,
@@ -588,6 +591,18 @@ def register_diagnostics_state_routes(
                 "entries": state.get("features", []),
                 "source": (state.get("provenance") or {}).get("features", "UNAVAILABLE"),
                 "timestamp": timestamps.get("features"),
+                # CHG-0043 additive: EFFECTIVE contract of the LOADED bundle
+                # (FEATURE ENABLED != FEATURE ACTIVE). The legacy fields above
+                # keep their bootstrap-class semantics for old consumers.
+                "effective_schema_id": (
+                    getattr(engine, "effective_feature_schema_id", None) if engine else None
+                ),
+                "effective_dimension": (
+                    getattr(engine, "effective_feature_dim", None) if engine else None
+                ),
+                "activation": (build_runtime_snapshot(include_update=False).get(
+                    "feature_activation"
+                )),
             },
             "model": {
                 "available": bool(state.get("model", {}).get("available")),
