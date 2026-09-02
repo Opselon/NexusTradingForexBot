@@ -924,6 +924,8 @@ async function fetchSystemSnapshot() {
 
             setSystemBadge('disconnected');
 
+            NXConn.setDown('Snapshot request failed (HTTP ' + res.status + '). ');
+
             return;
 
         }
@@ -936,6 +938,8 @@ async function fetchSystemSnapshot() {
 
         lastSnapshotAt = Date.now();
 
+        NXConn.setUp();
+
         updateObsStrip();
 
         handleIncomingLiveTick(data, { isSnapshot: true });
@@ -947,6 +951,8 @@ async function fetchSystemSnapshot() {
         console.warn('[UI_ERROR] component=State action=LOAD_SNAPSHOT status=network', err);
 
         setSystemBadge('disconnected');
+
+        NXConn.setDown('Server unreachable. ');
 
     }
 
@@ -3407,6 +3413,11 @@ function sseStaleCheck() {
 
         }
 
+        // CHG-0048: stale stream is a degraded (not lost) connection —
+        // surface a soft warning banner so stale data is never mistaken
+        // for live data, without alarming like a hard disconnect.
+        NXConn.setDegraded();
+
         setChartStatus('stale');
 
         // RESYNC (BUG-054): a stale live stream after a reconnect/downtime
@@ -3498,6 +3509,8 @@ function startSSE() {
 
         console.log('[UI_STREAM] event=CONNECTED');
 
+        NXConn.setUp();
+
         sseRetryDelay = 1000;
 
         if (sseStaleTimer) clearInterval(sseStaleTimer);
@@ -3532,6 +3545,8 @@ function startSSE() {
 
         sseLastEventAt = Date.now();
 
+        NXConn.setUp();
+
         try {
 
             const data = JSON.parse(event.data);
@@ -3559,6 +3574,8 @@ function startSSE() {
         sseRetryDelay = 1000;
 
         sseLastEventAt = Date.now();
+
+        NXConn.setUp();
 
         try {
 
@@ -3593,6 +3610,8 @@ function startSSE() {
         sseRetryDelay = 1000;
 
         sseLastEventAt = Date.now();
+
+        NXConn.setUp();
 
         try {
 
@@ -3632,6 +3651,8 @@ function startSSE() {
 
         sseLastEventAt = Date.now();
 
+        NXConn.setUp();
+
         updateObsStrip();
 
     }, false);
@@ -3647,6 +3668,8 @@ function startSSE() {
         console.warn('[UI_ERROR] component=SSE action=RECONNECT status=network', err);
 
         setSystemBadge('disconnected');
+
+        NXConn.setDown('Live event stream interrupted. ');
 
         if (eventSource) {
 
