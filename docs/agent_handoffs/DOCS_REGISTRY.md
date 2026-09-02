@@ -139,3 +139,17 @@ Status: VERIFIED against live deployment
    failed with "Get Pages site failed ... Not Found". Resolved by enabling Pages
    (build_type=workflow) via REST API by Nexus-Docs (this is a docs-platform
    responsibility). Docs workflow green as of run 33578596716 attempt 2.
+
+
+## Ownership note (2026-09-02, user-directed commit/push check)
+
+- ALL Nexus-Docs owned surface (scripts/docs/, site/assets/styles.css,
+  site/assets/search.js, site/content/, docs/ IA tree, .github/workflows/docs.yml,
+  README.md) is COMMITTED and PUSHED — verified file-by-file against origin/main
+  (git cat-file -e) and HEAD == origin/main.
+- UNTRACKED and NOT MINE (disclosed, untouched): site/assets/css/site.css and
+  site/assets/js/site.js — authored by the Nexus-UX agent (CHG-0048 surface),
+  present as untracked WIP inside site/assets/. Per the no-silent-absorption
+  contract these are left for their owner to commit/push.
+- Remaining scratch/ + doc1.txt/end_limit/pyvenv.cfg untracked files belong to
+  other agents/locals — not docs surface, untouched.
