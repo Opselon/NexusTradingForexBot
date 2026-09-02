@@ -69,6 +69,10 @@ DEFAULT_MODEL_ARTIFACT = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
 #: the compute_70d_frame dataset convention (synthetic tick at bar close).
 BAR_MODE_SYNTHETIC_SPREAD_USD: float = 0.20
 
+#: CHG-0043: bounded per-decision evidence trace size (observability only;
+#: never feeds back into the decision path — INV-018).
+DECISION_TRACE_LIMIT: int = 5000
+
 
 # ---------------------------------------------------------------------------
 # Frozen model bundle
@@ -208,6 +212,10 @@ class ReplaySessionConfig:
     news_frame: Any = None
     git_commit: str = ""
     starting_equity_usd: float = 10_000.0
+    #: CHG-0043 (additive): causal regime wiring. False (default) keeps the
+    #: exact pre-refactor behavior (regime_state=None everywhere); True runs
+    #: the production MarketRegimeClassifier causally on replay ticks.
+    regime_enabled: bool = False
 
     def identity(self) -> dict[str, Any]:
         return {
@@ -220,6 +228,7 @@ class ReplaySessionConfig:
             "decide_on": self.decide_on,
             "git_commit": self.git_commit,
             "starting_equity_usd": self.starting_equity_usd,
+            "regime_enabled": self.regime_enabled,
         }
 
     def fingerprint(self, model_fingerprint: str = "", scaler_fingerprint: str = "") -> str:
@@ -353,12 +362,14 @@ class FrozenPolicyRunner:
     def fingerprint(self) -> str:
         return self._fingerprint
 
-    def evaluate(self, probs_tensor: Any, tick: Any, fv: Any) -> Any:
+    def evaluate(self, probs_tensor: Any, tick: Any, fv: Any, regime_state: Any = None) -> Any:
+        """Same production policy semantics; regime_state is the CAUSAL
+        classifier output at T (None keeps the historical behavior)."""
         return self.policy.evaluate_probabilities(
             probs_tensor,
             current_tick=tick,
             feature_vector=fv,
-            regime_state=None,
+            regime_state=regime_state,
         )
 
 
@@ -403,6 +414,10 @@ class ReplayRunResult:
     final_equity_usd: float
     warmup_skipped_decisions: int
     decision_mode: str
+    #: CHG-0043 (additive): bounded per-decision evidence trace + regime
+    #: transition records. Empty unless the caller enables tracing/regime.
+    decision_trace: list[dict[str, Any]] = field(default_factory=list)
+    regime_transitions: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -427,7 +442,46 @@ class ReplayRunResult:
             "final_equity_usd": round(self.final_equity_usd, 6),
             "warmup_skipped_decisions": self.warmup_skipped_decisions,
             "decision_mode": self.decision_mode,
+            "decision_trace": self.decision_trace,
+            "regime_transitions": self.regime_transitions,
         }
+
+
+@dataclass
+class _RunState:
+    """Mutable per-run replay state (CHG-0043).
+
+    ONE state object shared by StreamingReplayEngine.run() and the stepwise
+    ReplaySessionController (research/replay_session.py) so both drive the
+    IDENTICAL event-processing path. Field-for-field the same locals run()
+    used before the refactor (hash-equivalence probe-verified).
+    """
+
+    rid: str
+    cfg_fp: str
+    identity: dict[str, Any]
+    risk_engine: Any
+    equity: float
+    completed: list[BarData]
+    open_pos: _OpenPosition | None
+    trades: list[SimulatedTrade]
+    orders: list[SimulatedOrder]
+    data_errors: list[dict[str, Any]]
+    event_hasher: Any
+    events_seen: int
+    decisions: int
+    last_decide_minute: tuple[int, int, int, int, int] | None
+    first_ts: str
+    last_ts: str
+    last_tick: TickEvent | None
+    feature_engine: _FeatureEngineHolder
+    #: CHG-0043 additive: causal regime classifier (None = disabled; the
+    #: default keeps byte-identical behavior with pre-refactor runs).
+    regime_classifier: Any | None = None
+    regime_state: Any | None = None
+    prev_regime_type: str = ""
+    decision_trace: list[dict[str, Any]] = field(default_factory=list)
+    regime_transitions: list[dict[str, Any]] = field(default_factory=list)
 
 
 class StreamingReplayEngine:
@@ -599,249 +653,111 @@ class StreamingReplayEngine:
         run_id: str | None = None,
         max_events: int | None = None,
     ) -> ReplayRunResult:
-        """Streams events; returns the deterministic run result."""
+        """Streams events; returns the deterministic run result.
+
+        CHG-0043: the loop body now lives in _process_event and the result
+        assembly in _finalize_run so the stepwise controller
+        (research/replay_session.py) drives the IDENTICAL path. Same source +
+        same config => identical event/ledger hashes (probe-verified).
+        """
         rid = run_id or f"REPLAY-{datetime.now(UTC):%Y%m%d%H%M%S}-{id(self) % 100000:05d}"
-        identity = self.session_identity()
-        cfg_fp = self.config_fingerprint()
-
-        from nexus_scalp.configuration.config import RiskConfig
-        from nexus_scalp.risk.risk_engine import RiskEngine
-
-        risk_engine = RiskEngine(config=RiskConfig(risk_per_trade_pct=0.5))
-        equity = float(self.config.starting_equity_usd)
-
-        completed: list[BarData] = []
-        open_pos: _OpenPosition | None = None
-        trades: list[SimulatedTrade] = []
-        orders: list[SimulatedOrder] = []
-        data_errors: list[dict[str, Any]] = []
-        event_hasher = hashlib.sha256()
-        events_seen = 0
-        decisions = 0
-        last_decide_minute: tuple[int, int, int, int, int] | None = None
-        first_ts = ""
-        last_ts = ""
-        last_tick: TickEvent | None = None
-        feature_engine = _FeatureEngineHolder(self.config.symbol)
-
-        def close_position(
-            pos: _OpenPosition, exit_reason: str, exit_price: float, ts: datetime
-        ) -> None:
-            nonlocal equity, open_pos
-            pnl = self._pnl_usd(pos.direction, pos.volume, pos.entry_price, exit_price)
-            trades.append(
-                SimulatedTrade(
-                    trade_id=f"{rid}-T{len(trades) + 1:05d}",
-                    entry_order_id=pos.entry_order_id,
-                    exit_order_id=f"{rid}-XT{len(trades) + 1:05d}",
-                    direction=pos.direction,
-                    volume=pos.volume,
-                    entry_time=pos.entry_time,
-                    entry_price=pos.entry_price,
-                    exit_time=ts,
-                    exit_price=exit_price,
-                    exit_reason=exit_reason,
-                    pnl_usd=pnl,
-                    mae_usd=pos.mae_usd,
-                    mfe_usd=pos.mfe_usd,
-                    run_id=rid,
-                )
-            )
-            equity += pnl
-            open_pos = None
-
+        state = self._init_run_state(rid)
         for ev in self._iter_events(source, max_events):
-            events_seen += 1
-            event_hasher.update(f"{ev.kind.value}|{getattr(ev, 'timestamp', None)}|".encode())
-            if isinstance(getattr(ev, "timestamp", None), datetime):
-                if first_ts == "":
-                    first_ts = ev.timestamp.isoformat()
-                last_ts = ev.timestamp.isoformat()
-
-            if isinstance(ev, DataErrorEvent):
-                if len(data_errors) < 200:
-                    data_errors.append(
-                        {
-                            "reason": ev.reason,
-                            "timestamp": ev.timestamp.isoformat() if ev.timestamp else "",
-                            "raw_index": ev.raw_index,
-                            "source": ev.source_name,
-                        }
-                    )
-                continue
-
-            if isinstance(ev, BarEvent):
-                completed.append(
-                    BarData(
-                        symbol=ev.symbol,
-                        timeframe=ev.timeframe,
-                        timestamp=ev.timestamp,
-                        open=ev.open,
-                        high=ev.high,
-                        low=ev.low,
-                        close=ev.close,
-                        tick_volume=ev.tick_volume,
-                        is_complete=True,
-                    )
-                )
-                # Bar-level SL/TP surveillance (conservative SL-first
-                # tie-break; documented difference vs tick replay).
-                if open_pos is not None and self.config.execution.evaluate_sl_tp_every_event:
-                    hit_sl = (
-                        ev.low <= open_pos.stop_loss <= ev.high
-                        if open_pos.direction == "BUY"
-                        else ev.high >= open_pos.stop_loss >= ev.low
-                    )
-                    hit_tp = (
-                        ev.high >= open_pos.take_profit >= ev.low
-                        if open_pos.direction == "BUY"
-                        else ev.low <= open_pos.take_profit <= ev.high
-                    )
-                    if hit_sl or hit_tp:
-                        exit_reason = "SL" if (hit_sl or not hit_tp) else "TP"
-                        exit_price = (
-                            open_pos.stop_loss if exit_reason == "SL" else open_pos.take_profit
-                        )
-                        close_position(open_pos, exit_reason, exit_price, ev.timestamp)
-                # Bar-mode decision on the synthetic close tick (dataset
-                # builder convention; keeps bar/tick parity comparable).
-                if self.config.decide_on == "bar_close":
-                    synth = TickEvent(
-                        timestamp=ev.timestamp,
-                        bid=ev.close,
-                        ask=ev.close + BAR_MODE_SYNTHETIC_SPREAD_USD,
-                        volume=float(ev.tick_volume),
-                        symbol=ev.symbol,
-                    )
-                    last_tick = synth
-                    open_pos = self._decide(
-                        synth,
-                        completed,
-                        feature_engine,
-                        open_pos,
-                        orders,
-                        rid,
-                        cfg_fp,
-                        equity,
-                        risk_engine,
-                        close_position,
-                    )
-                continue
-
-            # --- TickEvent ---
-            last_tick = ev
-            if open_pos is not None:
-                # tick-chronological SL/TP (§20) + MFE/MAE path tracking (§80)
-                if open_pos.direction == "BUY":
-                    hit_sl = ev.bid <= open_pos.stop_loss
-                    hit_tp = ev.bid >= open_pos.take_profit
-                    cur_price = ev.bid
-                else:
-                    hit_sl = ev.ask >= open_pos.stop_loss
-                    hit_tp = ev.ask <= open_pos.take_profit
-                    cur_price = ev.ask
-                cur_pnl = self._pnl_usd(
-                    open_pos.direction, open_pos.volume, open_pos.entry_price, cur_price
-                )
-                open_pos.mae_usd = min(open_pos.mae_usd, cur_pnl)
-                open_pos.mfe_usd = max(open_pos.mfe_usd, cur_pnl)
-                if hit_sl or hit_tp:
-                    exit_reason = "SL" if hit_sl else "TP"
-                    exit_price = open_pos.stop_loss if exit_reason == "SL" else open_pos.take_profit
-                    close_position(open_pos, exit_reason, exit_price, ev.timestamp)
-                    continue
-
-            if self.config.decide_on == "every_tick" or self._new_minute(
-                ev.timestamp, last_decide_minute
-            ):
-                last_decide_minute = self._minute_key(ev.timestamp)
-                decisions += 1
-                open_pos = self._decide(
-                    ev,
-                    completed,
-                    feature_engine,
-                    open_pos,
-                    orders,
-                    rid,
-                    cfg_fp,
-                    equity,
-                    risk_engine,
-                    close_position,
-                )
-
-        # End of data: close an open position honestly at the last price
-        # (exit_reason=END_OF_DATA — visible, never hidden, §76/§79).
-        if open_pos is not None and last_tick is not None:
-            close_position(
-                open_pos,
-                "END_OF_DATA",
-                self._exit_price(open_pos.direction, last_tick),
-                last_tick.timestamp,
-            )
-
-        event_hash = event_hasher.hexdigest()[:32]
-        total_pnl = float(sum(t.pnl_usd for t in trades))
-        result = ReplayRunResult(
-            run_id=rid,
-            experiment_type=self.config.experiment_type,
-            config_fingerprint=cfg_fp,
-            model_identity=identity["model"],
-            strategy_fingerprint=self.policy.fingerprint(),
-            schema_hash=identity["schema_hash"],
-            event_hash=event_hash,
-            ledger_hash=_ledger_digest(trades, event_hash),
-            events_seen=events_seen,
-            decisions=decisions,
-            orders=[_order_to_dict(o) | {"run_id": rid} for o in orders],
-            trades=[t.to_dict() for t in trades],
-            data_errors=data_errors,
-            first_event=first_ts,
-            last_event=last_ts,
-            total_pnl_usd=total_pnl,
-            final_equity_usd=equity,
-            warmup_skipped_decisions=feature_engine.warmup_skips,
-            decision_mode=self.config.decide_on,
-        )
+            self._process_event(state, ev)
+        result = self._finalize_run(state)
         logger.info(
             "[STREAMING_REPLAY] event=RUN_COMPLETE",
             run_id=rid,
             experiment_type=self.config.experiment_type,
-            events=events_seen,
-            decisions=decisions,
-            orders=len(orders),
-            trades=len(trades),
-            total_pnl_usd=round(total_pnl, 4),
+            events=result.events_seen,
+            decisions=result.decisions,
+            orders=len(result.orders),
+            trades=len(result.trades),
+            total_pnl_usd=round(result.total_pnl_usd, 4),
             ledger_hash=result.ledger_hash,
         )
         return result
 
     # ------------------------------------------------------------------
-    # Decision path
+    # Stepwise-capable run internals (CHG-0043; behavior-preserving)
     # ------------------------------------------------------------------
 
-    def _decide(
+    def _init_run_state(self, rid: str) -> _RunState:
+        """Fresh deterministic run state (one per run / controller session)."""
+        from nexus_scalp.configuration.config import RiskConfig
+        from nexus_scalp.risk.risk_engine import RiskEngine
+
+        regime_classifier = None
+        if getattr(self.config, "regime_enabled", False):
+            from nexus_scalp.features.regime_classifier import MarketRegimeClassifier
+
+            regime_classifier = MarketRegimeClassifier(symbol=self.config.symbol)
+
+        return _RunState(
+            rid=rid,
+            cfg_fp=self.config_fingerprint(),
+            identity=self.session_identity(),
+            risk_engine=RiskEngine(config=RiskConfig(risk_per_trade_pct=0.5)),
+            equity=float(self.config.starting_equity_usd),
+            completed=[],
+            open_pos=None,
+            trades=[],
+            orders=[],
+            data_errors=[],
+            event_hasher=hashlib.sha256(),
+            events_seen=0,
+            decisions=0,
+            last_decide_minute=None,
+            first_ts="",
+            last_ts="",
+            last_tick=None,
+            feature_engine=_FeatureEngineHolder(self.config.symbol),
+            regime_classifier=regime_classifier,
+        )
+
+    def _close_position(
         self,
-        tick: TickEvent,
-        completed: list[BarData],
-        feature_engine: _FeatureEngineHolder,
-        open_pos: _OpenPosition | None,
-        orders: list[SimulatedOrder],
-        rid: str,
-        cfg_fp: str,
-        equity: float,
-        risk_engine: Any,
-        close_position: Any,
-    ) -> _OpenPosition | None:
-        """One decision: features -> model -> policy -> risk -> simulated fill."""
-        import torch
+        state: _RunState,
+        pos: _OpenPosition,
+        exit_reason: str,
+        exit_price: float,
+        ts: datetime,
+    ) -> None:
+        """Single ledger owner: appends the trade + updates equity (the
+        pre-refactor close_position closure, method-ized verbatim)."""
+        pnl = self._pnl_usd(pos.direction, pos.volume, pos.entry_price, exit_price)
+        state.trades.append(
+            SimulatedTrade(
+                trade_id=f"{state.rid}-T{len(state.trades) + 1:05d}",
+                entry_order_id=pos.entry_order_id,
+                exit_order_id=f"{state.rid}-XT{len(state.trades) + 1:05d}",
+                direction=pos.direction,
+                volume=pos.volume,
+                entry_time=pos.entry_time,
+                entry_price=pos.entry_price,
+                exit_time=ts,
+                exit_price=exit_price,
+                exit_reason=exit_reason,
+                pnl_usd=pnl,
+                mae_usd=pos.mae_usd,
+                mfe_usd=pos.mfe_usd,
+                run_id=state.rid,
+            )
+        )
+        state.equity += pnl
+        state.open_pos = None
 
+    def _maybe_classify_regime(self, state: _RunState, tick: TickEvent) -> None:
+        """Causal regime classification at T (CHG-0043, additive).
+
+        Runs the production MarketRegimeClassifier on the replay tick so
+        regime(T) depends ONLY on information <= T. Disabled (None) keeps
+        the exact pre-refactor behavior. Transition records are appended
+        when the classified regime type changes.
+        """
+        if state.regime_classifier is None:
+            return
         from nexus_scalp.domain.models import TickData
-
-        warmup_bars = len(completed)
-        if warmup_bars < FEATURE_WARMUP_BARS:
-            feature_engine.warmup_skips += 1
-            return open_pos
-        feature_engine.warmed = True
 
         live_tick = TickData(
             symbol=tick.symbol,
@@ -850,13 +766,264 @@ class StreamingReplayEngine:
             ask=tick.ask,
             volume=tick.volume,
         )
-        fv = feature_engine.compute(completed, live_tick)
+        state.regime_state = state.regime_classifier.classify_tick(live_tick)
+        rtype = str(
+            getattr(state.regime_state.regime_type, "value", state.regime_state.regime_type)
+        )
+        if state.prev_regime_type and rtype != state.prev_regime_type:
+            state.regime_transitions.append(
+                {
+                    "at": tick.timestamp.isoformat(),
+                    "from": state.prev_regime_type,
+                    "to": rtype,
+                    "probability": float(state.regime_state.regime_probability),
+                    "reason": str(
+                        getattr(state.regime_state.reason, "value", state.regime_state.reason)
+                    ),
+                }
+            )
+        state.prev_regime_type = rtype
+
+    def _trace_record(
+        self,
+        state: _RunState,
+        tick: TickEvent,
+        fv: Any,
+        probs: list[float],
+        proposal: Any,
+        action: str,
+    ) -> dict[str, Any]:
+        """One bounded evidence row per decision (NO_TRADE included).
+
+        Fields are observability-only; nothing here feeds back into the
+        decision path (INV-018). Outcome fields are absent BY DESIGN:
+        outcome(T) is measured strictly after the decision by the research
+        layer (counterfactual engine), never during it.
+        """
+        is_trade = "BUY" in action or "SELL" in action
+        regime_type = (
+            getattr(state.regime_state.regime_type, "value", state.regime_state.regime_type)
+            if state.regime_state is not None
+            else None
+        )
+        return {
+            "ts": tick.timestamp.isoformat(),
+            "decision_index": state.decisions,
+            "bid": tick.bid,
+            "ask": tick.ask,
+            "probs": [round(float(p), 6) for p in probs],
+            "action": action or "NO_TRADE",
+            "is_trade": is_trade,
+            "confidence": float(getattr(proposal, "confidence", 0.0) or 0.0),
+            "reason_code": str(getattr(proposal, "reason_code", "") or ""),
+            "blocked_by": str(getattr(proposal, "blocked_by", "") or "") or None,
+            "rejection_reason": str(getattr(proposal, "rejection_reason", "") or "") or None,
+            "decision_stage": str(getattr(proposal, "decision_stage", "") or "") or None,
+            "guardian_status": str(getattr(proposal, "guardian_status", "") or "") or None,
+            "regime": regime_type,
+            "regime_confidence": (
+                float(state.regime_state.regime_probability)
+                if state.regime_state is not None
+                else None
+            ),
+            "atr_m1": float(getattr(fv, "atr_m1", 0.0) or 0.0),
+            "spread": round(tick.ask - tick.bid, 6),
+            "entry": float(getattr(proposal, "proposed_entry", 0.0) or 0.0) or None,
+            "stop_loss": float(getattr(proposal, "stop_loss", 0.0) or 0.0) or None,
+            "take_profit": float(getattr(proposal, "take_profit", 0.0) or 0.0) or None,
+            "risk_allowed": getattr(proposal, "risk_allowed", None),
+            "risk_accepted": None,
+        }
+
+    def _process_event(self, state: _RunState, ev: Any) -> None:
+        """Processes ONE event through the canonical path (the pre-refactor
+        run() loop body, verbatim semantics)."""
+        state.events_seen += 1
+        state.event_hasher.update(f"{ev.kind.value}|{getattr(ev, 'timestamp', None)}|".encode())
+        if isinstance(getattr(ev, "timestamp", None), datetime):
+            if state.first_ts == "":
+                state.first_ts = ev.timestamp.isoformat()
+            state.last_ts = ev.timestamp.isoformat()
+
+        if isinstance(ev, DataErrorEvent):
+            if len(state.data_errors) < 200:
+                state.data_errors.append(
+                    {
+                        "reason": ev.reason,
+                        "timestamp": ev.timestamp.isoformat() if ev.timestamp else "",
+                        "raw_index": ev.raw_index,
+                        "source": ev.source_name,
+                    }
+                )
+            return
+
+        if isinstance(ev, BarEvent):
+            state.completed.append(
+                BarData(
+                    symbol=ev.symbol,
+                    timeframe=ev.timeframe,
+                    timestamp=ev.timestamp,
+                    open=ev.open,
+                    high=ev.high,
+                    low=ev.low,
+                    close=ev.close,
+                    tick_volume=ev.tick_volume,
+                    is_complete=True,
+                )
+            )
+            # Bar-level SL/TP surveillance (conservative SL-first
+            # tie-break; documented difference vs tick replay).
+            if state.open_pos is not None and self.config.execution.evaluate_sl_tp_every_event:
+                hit_sl = (
+                    ev.low <= state.open_pos.stop_loss <= ev.high
+                    if state.open_pos.direction == "BUY"
+                    else ev.high >= state.open_pos.stop_loss >= ev.low
+                )
+                hit_tp = (
+                    ev.high >= state.open_pos.take_profit >= ev.low
+                    if state.open_pos.direction == "BUY"
+                    else ev.low <= state.open_pos.take_profit >= ev.low
+                )
+                if hit_sl or hit_tp:
+                    exit_reason = "SL" if (hit_sl or not hit_tp) else "TP"
+                    exit_price = (
+                        state.open_pos.stop_loss
+                        if exit_reason == "SL"
+                        else state.open_pos.take_profit
+                    )
+                    self._close_position(
+                        state, state.open_pos, exit_reason, exit_price, ev.timestamp
+                    )
+            # Bar-mode decision on the synthetic close tick (dataset
+            # builder convention; keeps bar/tick parity comparable).
+            if self.config.decide_on == "bar_close":
+                synth = TickEvent(
+                    timestamp=ev.timestamp,
+                    bid=ev.close,
+                    ask=ev.close + BAR_MODE_SYNTHETIC_SPREAD_USD,
+                    volume=float(ev.tick_volume),
+                    symbol=ev.symbol,
+                )
+                state.last_tick = synth
+                # CHG-0043 P1 FIX: bar-mode decisions are now counted (the
+                # pre-refactor counter only incremented in the tick branch,
+                # so bar-mode runs reported decisions=0 despite orders).
+                state.decisions += 1
+                self._maybe_classify_regime(state, synth)
+                state.open_pos = self._decide(state, synth)
+            return
+
+        # --- TickEvent ---
+        state.last_tick = ev
+        if state.open_pos is not None:
+            # tick-chronological SL/TP (§20) + MFE/MAE path tracking (§80)
+            if state.open_pos.direction == "BUY":
+                hit_sl = ev.bid <= state.open_pos.stop_loss
+                hit_tp = ev.bid >= state.open_pos.take_profit
+                cur_price = ev.bid
+            else:
+                hit_sl = ev.ask >= state.open_pos.stop_loss
+                hit_tp = ev.ask <= state.open_pos.take_profit
+                cur_price = ev.ask
+            cur_pnl = self._pnl_usd(
+                state.open_pos.direction,
+                state.open_pos.volume,
+                state.open_pos.entry_price,
+                cur_price,
+            )
+            state.open_pos.mae_usd = min(state.open_pos.mae_usd, cur_pnl)
+            state.open_pos.mfe_usd = max(state.open_pos.mfe_usd, cur_pnl)
+            if hit_sl or hit_tp:
+                exit_reason = "SL" if hit_sl else "TP"
+                exit_price = (
+                    state.open_pos.stop_loss if exit_reason == "SL" else state.open_pos.take_profit
+                )
+                self._close_position(state, state.open_pos, exit_reason, exit_price, ev.timestamp)
+                return
+
+        if self.config.decide_on == "every_tick" or self._new_minute(
+            ev.timestamp, state.last_decide_minute
+        ):
+            state.last_decide_minute = self._minute_key(ev.timestamp)
+            state.decisions += 1
+            self._maybe_classify_regime(state, ev)
+            state.open_pos = self._decide(state, ev)
+
+    def _finalize_run(self, state: _RunState) -> ReplayRunResult:
+        """END_OF_DATA close + deterministic result assembly (verbatim from
+        the pre-refactor run() tail)."""
+        # End of data: close an open position honestly at the last price
+        # (exit_reason=END_OF_DATA — visible, never hidden, §76/§79).
+        if state.open_pos is not None and state.last_tick is not None:
+            self._close_position(
+                state,
+                state.open_pos,
+                "END_OF_DATA",
+                self._exit_price(state.open_pos.direction, state.last_tick),
+                state.last_tick.timestamp,
+            )
+
+        event_hash = state.event_hasher.hexdigest()[:32]
+        total_pnl = float(sum(t.pnl_usd for t in state.trades))
+        return ReplayRunResult(
+            run_id=state.rid,
+            experiment_type=self.config.experiment_type,
+            config_fingerprint=state.cfg_fp,
+            model_identity=state.identity["model"],
+            strategy_fingerprint=self.policy.fingerprint(),
+            schema_hash=state.identity["schema_hash"],
+            event_hash=event_hash,
+            ledger_hash=_ledger_digest(state.trades, event_hash),
+            events_seen=state.events_seen,
+            decisions=state.decisions,
+            orders=[_order_to_dict(o) | {"run_id": state.rid} for o in state.orders],
+            trades=[t.to_dict() for t in state.trades],
+            data_errors=state.data_errors,
+            first_event=state.first_ts,
+            last_event=state.last_ts,
+            total_pnl_usd=total_pnl,
+            final_equity_usd=state.equity,
+            warmup_skipped_decisions=state.feature_engine.warmup_skips,
+            decision_mode=self.config.decide_on,
+            decision_trace=state.decision_trace,
+            regime_transitions=state.regime_transitions,
+        )
+
+    # ------------------------------------------------------------------
+    # Decision path
+    # ------------------------------------------------------------------
+
+    def _decide(self, state: _RunState, tick: TickEvent) -> _OpenPosition | None:
+        """One decision: features -> model -> policy -> risk -> simulated fill.
+
+        CHG-0043: state-object signature; regime_state is the CAUSAL
+        classifier output at T (None when regime wiring is disabled); every
+        decision appends a bounded evidence trace row (NO_TRADE included).
+        """
+        import torch
+
+        from nexus_scalp.domain.models import TickData
+
+        warmup_bars = len(state.completed)
+        if warmup_bars < FEATURE_WARMUP_BARS:
+            state.feature_engine.warmup_skips += 1
+            return state.open_pos
+        state.feature_engine.warmed = True
+
+        live_tick = TickData(
+            symbol=tick.symbol,
+            timestamp=tick.timestamp,
+            bid=tick.bid,
+            ask=tick.ask,
+            volume=tick.volume,
+        )
+        fv = state.feature_engine.compute(state.completed, live_tick)
         try:
-            vec70 = self._assemble_vector(completed, tick, fv)
+            vec70 = self._assemble_vector(state.completed, tick, fv)
         except Exception as e:  # contract violation is a hard data problem
             logger.error(
                 "[STREAMING_REPLAY] event=FEATURE_ASSEMBLY_FAILED",
-                run_id=rid,
+                run_id=state.rid,
                 ts=tick.timestamp.isoformat(),
                 error=str(e),
             )
@@ -864,21 +1031,34 @@ class StreamingReplayEngine:
 
         probs = self._predict_probs(vec70)
         probs_t = torch.tensor([probs], dtype=torch.float32)
-        proposal = self.policy.evaluate(probs_t, live_tick, fv)
-        _ = cfg_fp  # config identity is recorded on the result; not per-order
+        proposal = self.policy.evaluate(probs_t, live_tick, fv, regime_state=state.regime_state)
 
         action = str(getattr(proposal, "action", ""))
+        # CHG-0043 additive: bounded per-decision evidence trace.
+        if len(state.decision_trace) < DECISION_TRACE_LIMIT:
+            state.decision_trace.append(
+                self._trace_record(state, tick, fv, probs, proposal, action)
+            )
+
         if "BUY" not in action and "SELL" not in action:
-            return open_pos
+            return state.open_pos
 
         # --- Risk gate (production RiskEngine semantics; replay state only) ---
-        order = self._risk_gate(proposal, tick, equity, risk_engine)
+        order = self._risk_gate(proposal, tick, state.equity, state.risk_engine, state.regime_state)
         if order is None:
-            return open_pos
+            if state.decision_trace:
+                last = state.decision_trace[-1]
+                last["risk_accepted"] = False
+                last["blocked_by"] = "RISK_ENGINE"
+            return state.open_pos
+        if state.decision_trace:
+            last = state.decision_trace[-1]
+            last["risk_accepted"] = True
+            last["order_id"] = f"{state.rid}-O{len(state.orders) + 1:05d}"
 
         fill = self._fill_price(action, tick)
         sim_order = SimulatedOrder(
-            order_id=f"{rid}-O{len(orders) + 1:05d}",
+            order_id=f"{state.rid}-O{len(state.orders) + 1:05d}",
             signal_time=tick.timestamp,
             decision_time=tick.timestamp,
             order_time=tick.timestamp,
@@ -890,22 +1070,22 @@ class StreamingReplayEngine:
             fill_price=fill,
             stop_loss=float(order.stop_loss),
             take_profit=float(order.take_profit),
-            run_id=rid,
+            run_id=state.rid,
         )
-        orders.append(sim_order)
+        state.orders.append(sim_order)
 
-        if open_pos is not None:
-            same_dir = (open_pos.direction == "BUY" and "BUY" in action) or (
-                open_pos.direction == "SELL" and "SELL" in action
+        if state.open_pos is not None:
+            same_dir = (state.open_pos.direction == "BUY" and "BUY" in action) or (
+                state.open_pos.direction == "SELL" and "SELL" in action
             )
             if same_dir:
-                return open_pos
+                return state.open_pos
             # reversal: close at market (SIGNAL_REVERSAL) then open opposite.
-            # close_position appends the ledger trade + updates equity in the
+            # _close_position appends the ledger trade + updates equity in the
             # run loop (single ledger owner — no duplicate accounting).
-            exit_px = self._exit_price(open_pos.direction, tick)
-            close_position(open_pos, "SIGNAL_REVERSAL", exit_px, tick.timestamp)
-            open_pos = None
+            exit_px = self._exit_price(state.open_pos.direction, tick)
+            self._close_position(state, state.open_pos, "SIGNAL_REVERSAL", exit_px, tick.timestamp)
+            state.open_pos = None
 
         return _OpenPosition(
             direction="BUY" if "BUY" in action else "SELL",
@@ -918,7 +1098,12 @@ class StreamingReplayEngine:
         )
 
     def _risk_gate(
-        self, proposal: Any, tick: TickEvent, equity: float, risk_engine: Any
+        self,
+        proposal: Any,
+        tick: TickEvent,
+        equity: float,
+        risk_engine: Any,
+        regime_state: Any = None,
     ) -> Any | None:
         """Production RiskEngine.evaluate_proposal with replay state only."""
         from nexus_scalp.domain.models import AccountInfo, SymbolInfo
@@ -951,7 +1136,7 @@ class StreamingReplayEngine:
             symbol_info=symbol_info,
             active_positions=[],
             current_tick=tick,
-            regime_state=None,
+            regime_state=regime_state,
             atr=1.5,
             pending_orders=[],
         )
