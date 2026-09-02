@@ -9,6 +9,7 @@ from typing import Any
 import torch
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import AccountInfo, Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.features.regime_classifier import (
@@ -18,10 +19,17 @@ from nexus_scalp.features.regime_classifier import (
 )
 
 
-class MockMT5Port:
-    """Mock Direct MT5 / Broker Port for test isolation."""
+class MockMT5Port(PaperMT5Adapter):
+    """Broker-seam recorder for hedge-policy tests.
 
-    def __init__(self) -> None:
+    Subclasses PaperMT5Adapter so the BUG-212 PAPER boot guard
+    (align_adapter_to_boot_mode) recognizes it as the simulation
+    boundary and keeps it; send_order records dispatched orders for
+    assertion (BUG-212 regression-compat repair, 2026-09-02).
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self.positions: list[Position] = []
         self.sent_orders: list[TradeOrder] = []
         self.closed_deals: list[dict[str, Any]] = []
