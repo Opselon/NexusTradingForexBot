@@ -282,13 +282,25 @@ def doctor_cmd(
             if not ok:
                 console.print("[yellow]Cancelled.[/yellow]")
                 raise typer.Exit(xc.EXIT_OK) from None
-        console.print("\n[bold cyan]Repairing fixable issues…[/bold cyan]")
+        if not json_mode:
+            console.print("\n[bold cyan]Repairing fixable issues…[/bold cyan]")
         # Map fixable categories -> RepairEngine options
         rec_dirs = any(e.category in ("CONFIGURATION", "LOGGING") for e in fixable)
         with_news = any(e.category == "NEWS" for e in fails)  # off by default
         engine2 = rrepair.RepairEngine()
-        results = engine2.run(recreate_dirs=rec_dirs, with_news=with_news)
+        # BUG-196 family (chaos acceptance 2026-09-02): RepairEngine spins up
+        # the audit DB engine whose WAL INFO line lands on stdout BEFORE the
+        # JSON payload - breaking every json.loads consumer of
+        # `doctor --fix --json`. Suppress stdout for the repair work only;
+        # the result payload below stays the single machine-readable frame.
+        with _json_quiet() if json_mode else contextlib.nullcontext():
+            results = engine2.run(recreate_dirs=rec_dirs, with_news=with_news)
         for r in results:
+            if json_mode:
+                # Machine stream: results travel inside the repair[] payload
+                # only - console chatter here would corrupt stdout (BUG-196
+                # family, chaos acceptance 2026-09-02).
+                continue
             style = "green" if r.status == "OK" else ("yellow" if r.status == "SKIPPED" else "red")
             console.print(f"[{style}]{r.status:8}[/{style}] {r.action:12} {r.detail}")
         # Re-verify

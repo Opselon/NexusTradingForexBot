@@ -7581,3 +7581,27 @@ Status: FIXED (root fix, not test weakening; test kept as the original pin).
 Status: FIXED (deterministic wait replaces timing guess; no test weakening -
 assertions unchanged).
 
+## BUG-216 - `doctor --fix --json` stdout polluted: RepairEngine DB INFO line + human repair table landed on the machine stream (2026-09-02, Agent Nexus-UX lifecycle chaos acceptance; FIXED)
+
+### Root cause
+- The `--fix` repair path ran `RepairEngine.run()` bare: the audit DB engine
+  initialization emitted its WAL INFO banner to stdout before the JSON
+  payload, and the per-result `console.print` loop printed the human repair
+  table on the same stream. Every `json.loads(stdout)` consumer of
+  `doctor --fix --json` broke (found by the lifecycle chaos acceptance S17
+  scenario, not by review).
+
+### Fix (cli/doctor.py, minimal)
+- `RepairEngine.run()` wrapped in `_json_quiet()` when `json_mode` (same
+  BUG-196 suppression contract the non-fix path already used).
+- The results loop skips console printing in JSON mode; results travel
+  exclusively inside the `repair[]` payload.
+- The "Repairing fixable issues..." banner prints only in human mode.
+
+### Verification
+- Chaos suite S17: `doctor --fix --yes --json` now parses as pure JSON with
+  repair[] populated (dirs repaired, logs dir recreated); human mode output
+  unchanged. rc stays truthful (EXIT_RUNTIME while DB still degraded).
+
+Status: FIXED (machine streams clean on both paths; human UX unchanged).
+

@@ -26,9 +26,9 @@ INPUT/OBSERVED/EXIT/STATE/NEXT-ACTION/EXPECTED-ACTUAL/PASS-FAIL records.
 Usage:  .venv/Scripts/python.exe scripts/release/lifecycle_chaos.py
         (or pytest tests/unit/test_lifecycle_chaos.py for the pytest view)
 """
+
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -60,8 +60,9 @@ class Sandbox:
         e["NEXUS_HOME"] = ""  # never inherit an installer-home override
         return e
 
-    def nexus(self, *args: str, cwd: Path | None = None, timeout: int = 240,
-              check: bool = False) -> subprocess.CompletedProcess:
+    def nexus(
+        self, *args: str, cwd: Path | None = None, timeout: int = 240, check: bool = False
+    ) -> subprocess.CompletedProcess:
         return subprocess.run(
             [str(PY), *MODULE, *args],
             cwd=str(cwd or self.cwd),
@@ -81,10 +82,21 @@ class Sandbox:
         shutil.rmtree(self.root, ignore_errors=True)
 
 
-def record(evidence: dict, sid: str, name: str, *, cmd: list[str] | None = None,
-           observed: str = "", rc: int | None = None, state: str = "",
-           next_action: str = "", expected: str = "", actual: str = "",
-           passed: bool | None = None, notes: str = "") -> bool:
+def record(
+    evidence: dict,
+    sid: str,
+    name: str,
+    *,
+    cmd: list[str] | None = None,
+    observed: str = "",
+    rc: int | None = None,
+    state: str = "",
+    next_action: str = "",
+    expected: str = "",
+    actual: str = "",
+    passed: bool | None = None,
+    notes: str = "",
+) -> bool:
     rows = evidence.setdefault("scenarios", [])
     row = {
         "id": sid,
@@ -105,7 +117,6 @@ def record(evidence: dict, sid: str, name: str, *, cmd: list[str] | None = None,
 
 
 def main() -> int:  # pragma: no cover - orchestrated manually via pytest too
-    evidence: dict = {"contract": "LIFECYCLE_CHAOS_EVIDENCE v1"}
     print("Use tests/unit/test_lifecycle_chaos.py (pytest) to execute scenarios.")
     return 0
 
