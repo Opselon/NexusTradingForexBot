@@ -51,10 +51,10 @@ docs/
 | Language | Status |
 | :--- | :--- |
 | 🇬🇧 [English](index.md) | Source of truth (complete) |
-| 🇮🇷 [فارسی](fa/index.md) | Persian (partial — core pages) |
-| 🇪🇸 [Español](es/index.md) | Spanish (partial — core pages) |
-| 🇸🇦 [العربية](ar/index.md) | Arabic (partial — core pages) |
-| 🇩🇪 [Deutsch](de/index.md) | German (partial — core pages) |
+| 🇮🇷 [فارسی](https://opselon.github.io/NexusTradingForexBot/fa/) | Persian (partial — core pages) |
+| 🇪🇸 [Español](https://opselon.github.io/NexusTradingForexBot/es/) | Spanish (partial — core pages) |
+| 🇸🇦 [العربية](https://opselon.github.io/NexusTradingForexBot/ar/) | Arabic (partial — core pages) |
+| 🇩🇪 [Deutsch](https://opselon.github.io/NexusTradingForexBot/de/) | German (partial — core pages) |
 
 Translation coverage and staleness are audited by
 `scripts/docs/check_translations.py` — numbers, not vibes. See
