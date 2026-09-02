@@ -143,7 +143,7 @@ class StageResult:
         }
 
 
-class _StageFailure(Exception):
+class _StageFailureError(Exception):
     """Raised by a stage body to fail the stage with a precise class."""
 
     def __init__(self, failure_class: str, reason: str, **evidence: Any) -> None:
@@ -255,7 +255,7 @@ def run_stage(gate: Gate, name: str, body: StageBody) -> StageResult:
     try:
         with contextlib.redirect_stdout(buffer):
             body(gate, result)
-    except _StageFailure as exc:
+    except _StageFailureError as exc:
         result.status = "FAIL"
         result.failure_class = exc.failure_class
         result.reason = str(exc)
@@ -302,7 +302,7 @@ REQUIRED_PATHS: tuple[str, ...] = (
 def l0_static(gate: Gate, res: StageResult) -> None:
     missing = [rel for rel in REQUIRED_PATHS if not (REPO_ROOT / rel).exists()]
     if missing:
-        raise _StageFailure(
+        raise _StageFailureError(
             "ENVIRONMENT_BLOCKED",
             f"required runtime files absent: {missing}",
             missing=missing,
@@ -315,9 +315,10 @@ def l0_static(gate: Gate, res: StageResult) -> None:
             text=True,
             timeout=60,
             cwd=str(REPO_ROOT),
+            check=False,
         )
         if proc.returncode != 0:
-            raise _StageFailure(
+            raise _StageFailureError(
                 "CODE_DEFECT", f"py_compile failed for {entry}", stderr=proc.stderr[-800:]
             )
     res.evidence = {
@@ -362,7 +363,7 @@ def l1_import(gate: Gate, res: StageResult) -> None:
         except Exception as exc:
             failed.append({"module": mod, "error": f"{type(exc).__name__}: {exc}"})
     if failed:
-        raise _StageFailure(
+        raise _StageFailureError(
             "CODE_DEFECT", f"{len(failed)} critical import(s) failed", failed=failed[:8]
         )
     res.evidence = {"imported": len(CRITICAL_IMPORTS)}
@@ -378,7 +379,7 @@ def l2_config(gate: Gate, res: StageResult) -> None:
     from nexus_scalp.configuration.runtime_config import RuntimeConfigStore
 
     # 1. Defaults construct and validate (pydantic contract).
-    cfg = AppConfig()
+    AppConfig()  # construct-and-validate only (pydantic contract exercise)
     # 2. The REAL bootstrap YAML every operator launch reads.
     cfg_yaml = AppConfig.load_from_yaml(REPO_ROOT / "configs" / "base.yaml")
     # 3. Secret masking: no token material in the safe representation.
@@ -391,7 +392,7 @@ def l2_config(gate: Gate, res: StageResult) -> None:
         masking_surface = "model_dump() fallback"
     token = getattr(cfg_yaml.telegram, "bot_token", "") or ""
     if token and token in blob:
-        raise _StageFailure(
+        raise _StageFailureError(
             "CONFIG_ERROR", "telegram bot_token leaked into the safe config representation"
         )
     res.evidence = {
@@ -435,7 +436,7 @@ def l3_database(gate: Gate, res: StageResult) -> None:
             con.close()
         missing_required = [t for t in REQUIRED_TABLE_CLASSES if t not in tables]
         if missing_required:
-            raise _StageFailure(
+            raise _StageFailureError(
                 "DATABASE_SCHEMA_ERROR",
                 f"required audit tables absent on fresh engine-created DB: {missing_required}",
                 missing=missing_required,
@@ -465,7 +466,7 @@ def l3_database(gate: Gate, res: StageResult) -> None:
             con.close()
         count = int(row[0]) if row else 0
         if not flushed or count < 1:
-            raise _StageFailure(
+            raise _StageFailureError(
                 "DATABASE_SCHEMA_ERROR",
                 f"audit round-trip failed (flushed={flushed}, rows={count})",
             )
@@ -577,7 +578,7 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
     assert_canonical_registry()
     artifact = REPO_ROOT / AppConfig().model.model_artifact_path
     if not artifact.exists():
-        raise _StageFailure(
+        raise _StageFailureError(
             "MISSING_ARTIFACT",
             f"configured champion artifact absent: {artifact}",
             path=str(artifact),
@@ -601,7 +602,7 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
                 np.asarray(data["std"], dtype=np.float64),
             )
     if model_dim != 70 or scaler_dim != 70:
-        raise _StageFailure(
+        raise _StageFailureError(
             "MODEL_CONTRACT_ERROR",
             f"artifact width split: checkpoint={model_dim} scaler={scaler_dim} (want 70/70)",
             model_dim=model_dim,
@@ -609,10 +610,10 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
         )
     meta_dim = meta.get("feature_schema_dimension") or meta.get("num_features")
     if meta and meta_dim != 70:
-        raise _StageFailure("MODEL_CONTRACT_ERROR", f"meta declares dim {meta_dim} (want 70)")
+        raise _StageFailureError("MODEL_CONTRACT_ERROR", f"meta declares dim {meta_dim} (want 70)")
     meta_schema = meta.get("feature_schema_id")
     if meta and meta_schema != SCHEMA_ID:
-        raise _StageFailure(
+        raise _StageFailureError(
             "MODEL_CONTRACT_ERROR", f"meta schema {meta_schema} != canonical {SCHEMA_ID}"
         )
 
@@ -621,7 +622,7 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
     fv = ScalpFeatureEngine(symbol="XAUUSD").compute_from_bars(bars, tick)
     base50 = fv.to_tensor_input()
     if len(base50) != 50:
-        raise _StageFailure(
+        raise _StageFailureError(
             "FEATURE_CONTRACT_ERROR", f"base producer width {len(base50)} (want 50)"
         )
     gov = LiquidityGovernor(enabled=True)
@@ -633,7 +634,7 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
     )
     liq10 = [float(v) for v in gov.last_snapshot.features] if gov.last_snapshot else None
     if not liq10 or len(liq10) != 10:
-        raise _StageFailure(
+        raise _StageFailureError(
             "FEATURE_CONTRACT_ERROR", "liquidity 10D block not produced for synthetic bars"
         )
     vec70 = build_70d_vector(base50, family_10=news_10d_from_context(None), liquidity_10=liq10)
@@ -645,7 +646,7 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
         x = (np.array(vec70, dtype=np.float64) - mean) / std
         scaled_finite = bool(np.isfinite(x).all())
         if not scaled_finite:
-            raise _StageFailure("MODEL_CONTRACT_ERROR", "scaled vector has non-finite values")
+            raise _StageFailureError("MODEL_CONTRACT_ERROR", "scaled vector has non-finite values")
     res.evidence = {
         "artifact": str(artifact.relative_to(REPO_ROOT)),
         "model_dim": model_dim,
@@ -773,7 +774,7 @@ def l5_service_graph(gate: Gate, res: StageResult) -> None:
     )
     missing = [s for s in required_services if getattr(engine, s, None) is None]
     if missing:
-        raise _StageFailure(
+        raise _StageFailureError(
             "SERVICE_CONSTRUCTION_ERROR",
             f"service graph incomplete: {missing}",
             missing=missing,
@@ -781,7 +782,7 @@ def l5_service_graph(gate: Gate, res: StageResult) -> None:
     bundle = engine._bundle
     effective_dim = int(engine.effective_feature_dim)
     if bundle is None or effective_dim not in (50, 70):
-        raise _StageFailure(
+        raise _StageFailureError(
             "MODEL_CONTRACT_ERROR", f"bundle None or unexpected effective dim {effective_dim}"
         )
     gate.engine_ref = engine
@@ -815,7 +816,7 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
 
     engine = gate.engine_ref
     if engine is None:
-        raise _StageFailure("INTERNAL_GATE_ERROR", "L5 did not leave an engine reference")
+        raise _StageFailureError("INTERNAL_GATE_ERROR", "L5 did not leave an engine reference")
 
     bars, tick = synthetic_bars(240)
     fv = engine.feature_engine.compute_from_bars(bars, tick)
@@ -832,14 +833,16 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
     snap = gov.last_snapshot
     liq10 = [float(v) for v in snap.features] if snap is not None else None
     if liq10 is None or len(liq10) != 10:
-        raise _StageFailure("FEATURE_CONTRACT_ERROR", "70D assembly input: liquidity block invalid")
+        raise _StageFailureError(
+            "FEATURE_CONTRACT_ERROR", "70D assembly input: liquidity block invalid"
+        )
     vec70 = build_70d_vector(base50, family_10=news_10d_from_context(None), liquidity_10=liq10)
     vec70 = validate_70d_vector(vec70, schema_hash=feature_schema_hash(), context="runtime_gate_l6")
 
     with engine._bundle_lock:
         bundle = engine._bundle
     if bundle is None:
-        raise _StageFailure("MODEL_CONTRACT_ERROR", "model bundle absent at decision cycle")
+        raise _StageFailureError("MODEL_CONTRACT_ERROR", "model bundle absent at decision cycle")
     x_np = np.array(vec70, dtype=np.float32).reshape(1, -1)
     x_np = bundle.scaler.transform(x_np)
     x = torch.nan_to_num(torch.tensor(x_np, dtype=torch.float32), nan=0.0, posinf=1.0, neginf=-1.0)
@@ -853,7 +856,9 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
         torch.set_num_threads(prior_threads)
     probs_list = probs.detach().cpu().numpy().flatten().tolist()
     if len(probs_list) < 3 or not all(np.isfinite(v) for v in probs_list[:3]):
-        raise _StageFailure("MODEL_CONTRACT_ERROR", f"model output degenerate: {probs_list[:4]}")
+        raise _StageFailureError(
+            "MODEL_CONTRACT_ERROR", f"model output degenerate: {probs_list[:4]}"
+        )
 
     # The REAL regime classifier + REAL policy + REAL pre-trade gates.
     regime_state = engine.regime_classifier.classify_tick(
@@ -893,7 +898,7 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
         )
     execution_calls = int(getattr(gate.adapter_ref, "execution_calls", 0))
     if execution_calls != 0:
-        raise _StageFailure(
+        raise _StageFailureError(
             "INVARIANT_VIOLATION",
             f"execution seam fired {execution_calls}x during the decision cycle",
         )
@@ -922,21 +927,23 @@ def l7_api(gate: Gate, res: StageResult) -> None:
     app = create_app(engine_ref=gate.engine_ref)
     r_health = client_get(app, "/health")
     if r_health.status_code not in (200, 503):
-        raise _StageFailure(
+        raise _StageFailureError(
             "API_ERROR", f"/health returned {r_health.status_code}", status=r_health.status_code
         )
     health = r_health.json() if r_health.status_code == 200 else {}
     verdict = str(health.get("verdict", "?"))
     if r_health.status_code == 200 and verdict not in ("READY", "DEGRADED"):
-        raise _StageFailure("API_ERROR", f"/health verdict unexpected: {verdict}", verdict=verdict)
+        raise _StageFailureError(
+            "API_ERROR", f"/health verdict unexpected: {verdict}", verdict=verdict
+        )
     r_status = client_get(app, "/api/status")
     if r_status.status_code != 200:
-        raise _StageFailure("API_ERROR", f"/api/status returned {r_status.status_code}")
+        raise _StageFailureError("API_ERROR", f"/api/status returned {r_status.status_code}")
     status = r_status.json()
     blob = json.dumps(status, default=str)
     token = os.environ.get("NEXUS_TELEGRAM_BOT_TOKEN", "")
     if token and token in blob:
-        raise _StageFailure("API_ERROR", "environment token leaked into /api/status")
+        raise _StageFailureError("API_ERROR", "environment token leaked into /api/status")
     res.evidence = {
         "health_status": r_health.status_code,
         "health_verdict": verdict,
@@ -962,13 +969,13 @@ def l8_shutdown(gate: Gate, res: StageResult) -> None:
 
     engine = gate.engine_ref
     if engine is None:
-        raise _StageFailure("INTERNAL_GATE_ERROR", "no engine to shut down")
+        raise _StageFailureError("INTERNAL_GATE_ERROR", "no engine to shut down")
     asyncio.run(engine._shutdown_async())
     repo = getattr(gate, "_engine_repo", None) or engine.audit
     drained = repo.flush(timeout_sec=10.0)
     bg = [t for t in getattr(engine, "_background_tasks", set()) if not t.done()]
     if bg:
-        raise _StageFailure(
+        raise _StageFailureError(
             "SHUTDOWN_ERROR", f"{len(bg)} background task(s) still pending after shutdown"
         )
     res.evidence = {
@@ -990,7 +997,7 @@ def l9_invariants(gate: Gate, res: StageResult) -> None:
     #    execution-seam call; the WHOLE certification must show ZERO.
     execution_calls = int(getattr(gate.adapter_ref, "execution_calls", 0))
     if execution_calls != 0:
-        raise _StageFailure(
+        raise _StageFailureError(
             "INVARIANT_VIOLATION",
             f"execution seam invoked {execution_calls}x during certification (want 0)",
         )
@@ -1085,6 +1092,7 @@ def gate_json(gate: Gate) -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         if out.returncode == 0:
             commit = out.stdout.strip() or commit
@@ -1167,6 +1175,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"RUNTIME GATE: cannot isolate environment: {exc}", file=sys.stderr)
         return EXIT_CONFIG_ERROR
 
+    # Route the root logger's console stream to stderr BEFORE any engine
+    # import can install its structlog console handler. The gate's stdout is
+    # a machine contract (--json must be pure JSON; the human report must not
+    # interleave engine logs). Engine chatter belongs on stderr.
+    import logging as _logging
+
+    class _StderrStream:
+        def write(self, s: str) -> int:
+            return sys.stderr.write(s)
+
+        def flush(self) -> None:
+            sys.stderr.flush()
+
+        def reconfigure(self, *a: Any, **k: Any) -> None:  # BUG-122 compat
+            return None
+
+    _logging.StreamHandler(_StderrStream())
+
     code = EXIT_INTERNAL_GATE_ERROR
     report: dict[str, Any] = {}
     try:
@@ -1233,6 +1259,19 @@ def main(argv: list[str] | None = None) -> int:
             )
         except Exception:
             pass
+
+    # STDOUT IS A CONTRACT: engine/structlog console handlers attach to the
+    # real stdout and daemon threads (audit close, notifier heartbeat) can
+    # emit AFTER the staged sections ran (a >60s run crosses the notifier's
+    # rate-limit window). Detach root console handlers and route everything
+    # to stderr BEFORE our own final output, so --json is pure JSON and the
+    # human report stays clean. Gate-side only; operator logging untouched.
+    import logging as _logging
+
+    for _h in list(_logging.getLogger().handlers):
+        if isinstance(_h, _logging.StreamHandler) and not isinstance(_h, _logging.FileHandler):
+            _logging.getLogger().removeHandler(_h)
+    _logging.getLogger().addHandler(_logging.StreamHandler(sys.stderr))
 
     if args.json:
         print(json.dumps(report, indent=2, default=str))
