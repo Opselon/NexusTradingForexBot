@@ -191,6 +191,19 @@ def default_db_versions_provider() -> dict[str, Any]:
             path = _engine_mod.db_path_for_domain(domain.value)
             if path is None:
                 continue
+            # BUG-196: sqlite3.connect auto-creates an absent DB file, so
+            # probing migration status from version/doctor --json in a
+            # foreign CWD materialized empty audit/news/candle_intel DBs
+            # there. An absent database is NOT_INITIALIZED (neutral first-
+            # use state) - report it without touching the filesystem.
+            if not path.exists():
+                out[domain.value] = {
+                    "current": 0,
+                    "expected": 0,
+                    "state": "NOT_INITIALIZED",
+                    "pending": 0,
+                }
+                continue
             eng = DatabaseMigrationEngine(path, domain)
             try:
                 st = eng.status()

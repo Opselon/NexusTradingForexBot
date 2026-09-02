@@ -60,11 +60,19 @@ _ERROR_MESSAGES: dict[str, str] = {
 
 
 def _request_id(request: Request | None) -> str:
-    """Reuse the correlation middleware's request_id when present."""
+    """Reuse the correlation middleware's request_id when present.
+
+    Falls back to the incoming ``X-Request-ID`` header (client-supplied
+    correlation — the standalone v1 app has no legacy middleware mounted) and
+    finally generates a fresh id. Order: middleware state > header > new.
+    """
     if request is not None:
         rid = getattr(request.state, "request_id", None)
         if rid:
             return str(rid)[:64]
+        header = request.headers.get("x-request-id")
+        if header and header.strip():
+            return header.strip()[:64]
     from nexus_scalp.web.errors import new_request_id
 
     return new_request_id()

@@ -71,6 +71,25 @@ def register_api_v1(app: FastAPI) -> None:
     """Mounts the versioned read-dominant API platform on the EXISTING app."""
     register_v1_exception_handlers(app)
     _include_routers(app)
+    _ensure_correlation_middleware(app)
+
+
+def _ensure_correlation_middleware(app: FastAPI) -> None:
+    """Guarantees request_id plumbing on ANY app hosting /api/v1.
+
+    The dashboard app already registers ``attach_request_id_middleware`` in
+    create_app; the standalone v1 app does not. Middleware are appended once,
+    keyed by a marker attribute, so double-registration is impossible.
+    """
+    if getattr(app.state, "v1_correlation_middleware", False):
+        return
+    from nexus_scalp.web.errors import attach_request_id_middleware
+
+    @app.middleware("http")
+    async def _v1_correlation(request: Any, call_next: Any):  # type: ignore[no-untyped-def]
+        return await attach_request_id_middleware(request, call_next)
+
+    app.state.v1_correlation_middleware = True
 
 
 def create_v1_app() -> FastAPI:
