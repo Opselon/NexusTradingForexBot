@@ -344,7 +344,9 @@ class OrderLifecycleManager:
         import threading
 
         self._live_tickets_lock = threading.Lock()
-        self._live_tickets_cache: dict[int, dict[str, Any]] = {}
+        # S6 Phase-2: cache storage lives in TicketsCache (_tickets_cache);
+        # the @property _live_tickets_cache exposes its live dict. Do NOT
+        # assign that name — an instance attribute would shadow the property.
 
         self.be_trigger = be_trigger_usd
         self.be_lock = be_lock_usd
@@ -1666,10 +1668,9 @@ class OrderLifecycleManager:
                 logger.error(
                     "[RECONCILE] terminal pending sweep failed (isolated)", error=str(sweep_err)
                 )
-            # NOTE: do NOT assign self._live_tickets_cache here — that would
-            # shadow the @property with a plain instance attribute and
-            # desync every reader from the ledger-owned dict (found by the
-            # S6 dispatch/trace goldens). swap() + property is the path.
+            # S6 Phase-2: publish through the cache owner (never assign the
+            # property name — it would shadow the @property).
+            self._tickets_cache.swap(new_cache)
 
     def reconcile_pending_state(
         self, symbol: str | None = None, current_tick: TickData | None = None
@@ -2747,6 +2748,13 @@ class OrderLifecycleManager:
     def _last_telemetry_time(self) -> dict:
         """Compatibility accessor — live throttle dict owned by TelemetryThrottle."""
         return self._telemetry._last_telemetry_time
+
+    @property
+    def _live_tickets_cache(self) -> dict:
+        """Compatibility accessor — live cache dict owned by TicketsCache.
+        Writers must use _tickets_cache.swap()/pop_ticket() under
+        _live_tickets_lock; readers get the live dict (web/debug parity)."""
+        return self._tickets_cache.cache
 
     def _ensure_ticket_bootstrap(
         self,
@@ -4076,7 +4084,6 @@ class OrderLifecycleManager:
                 symbol=symbol,
             )
             self._tickets_cache.swap(new_cache)
-            self._live_tickets_cache = new_cache
 
         # BUG-072/073: periodic broker-truth reconciliation of the internal
         # pending/position view. Broker wins; mismatch is repaired. Bounded
