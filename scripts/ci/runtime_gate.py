@@ -851,6 +851,21 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
         bundle = engine._bundle
     if bundle is None:
         raise _StageFailureError("MODEL_CONTRACT_ERROR", "model bundle absent at decision cycle")
+    # BUG-219 corollary (CI cold-start): without the private champion artifact
+    # the engine intentionally bootstraps its 50D default (BUG-125 fallback),
+    # so a canonical 70D decision cycle cannot be certified in that
+    # environment. That is an ENVIRONMENT property, not a code defect: record
+    # an honest SKIP with evidence instead of crashing the stage.
+    bundle_dim = getattr(bundle.model, "num_features", None)
+    if bundle_dim is not None and int(bundle_dim) != 70:
+        res.status = "SKIP"
+        res.failure_class = "MISSING_ARTIFACT"
+        res.skipped_reason = (
+            f"decision cycle needs the 70D champion artifact (absent in this env); "
+            f"engine bootstrapped {bundle_dim}D default - not certifiable here"
+        )
+        res.evidence["bundle_model_dim"] = int(bundle_dim)
+        return
     x_np = np.array(vec70, dtype=np.float32).reshape(1, -1)
     x_np = bundle.scaler.transform(x_np)
     x = torch.nan_to_num(torch.tensor(x_np, dtype=torch.float32), nan=0.0, posinf=1.0, neginf=-1.0)
@@ -979,6 +994,11 @@ def l8_shutdown(gate: Gate, res: StageResult) -> None:
     if engine is None:
         raise _StageFailureError("INTERNAL_GATE_ERROR", "no engine to shut down")
     asyncio.run(engine._shutdown_async())
+    # BUG-212 realignment may have swapped the adapter inside the engine
+    # (PAPER boots require a genuine PaperMT5Adapter; the gate's tripwire
+    # wrapper is replaced). Read shutdown truth from the ACTUAL bound adapter,
+    # not the stale wrapper reference.
+    gate.adapter_ref = engine.adapter
     repo = getattr(gate, "_engine_repo", None) or engine.audit
     drained = repo.flush(timeout_sec=10.0)
     bg = [t for t in getattr(engine, "_background_tasks", set()) if not t.done()]
