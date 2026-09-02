@@ -5,6 +5,7 @@ and unit runs stay green without a running engine. When NSE_E2E_BASE is set and
 reachable, executes each journey script in-process and asserts its recorded
 checks all passed (evidence JSON in tests/e2e_client/evidence/).
 """
+
 import importlib
 import json
 import os
@@ -22,8 +23,14 @@ BASE = os.environ["NSE_E2E_BASE"]
 HOST = urlparse(BASE).hostname or "127.0.0.1"
 PORT = urlparse(BASE).port or 80
 
-_JOURNEYS = ["j1_golden", "j2_mode_switch", "j3_signal_decisions",
-             "j4_resilience", "j6_responsive_a11y", "j7_localization"]
+_JOURNEYS = [
+    "j1_golden",
+    "j2_mode_switch",
+    "j3_signal_decisions",
+    "j4_resilience",
+    "j6_responsive_a11y",
+    "j7_localization",
+]
 
 
 def _engine_reachable() -> bool:
