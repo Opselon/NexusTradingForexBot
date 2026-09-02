@@ -1,0 +1,341 @@
+{
+  "mission": "CHG-0049 directional model R&D",
+  "generated_at": "2026-09-02T02:22:38.628642+00:00",
+  "git_commit": "4812ad5",
+  "evidence_inputs": {
+    "source_db": "artifacts/audit.db (audit_experiences + outcomes, executed only)",
+    "n_executed_with_r": 133,
+    "model_versions": {
+      "v1.0": 133
+    }
+  },
+  "directional_sample_audit": {
+    "SELL": {
+      "n": 70,
+      "mean_r": -0.0298,
+      "median_r": 0.0059,
+      "stdev_r": 0.4339,
+      "mfe_mean": 0.2547,
+      "mae_mean": 0.2295
+    },
+    "BUY": {
+      "n": 63,
+      "mean_r": -0.1489,
+      "median_r": -0.0167,
+      "stdev_r": 0.457,
+      "mfe_mean": 0.1672,
+      "mae_mean": 0.2742
+    }
+  },
+  "regime_normalized_asymmetry": {
+    "pooled_sell_minus_buy": {
+      "diff": 0.1191,
+      "ci_low": -0.0319,
+      "ci_high": 0.2616,
+      "n_a": 70,
+      "n_b": 63
+    },
+    "per_stratum": {
+      "RANGING_MEAN_REVERSION": {
+        "buy": {
+          "n": 43,
+          "mean_r": -0.1701,
+          "median_r": -0.0368,
+          "stdev": 0.4953
+        },
+        "sell": {
+          "n": 41,
+          "mean_r": -0.1203,
+          "median_r": -0.0334,
+          "stdev": 0.4117
+        },
+        "sell_minus_buy": {
+          "diff": 0.0497,
+          "ci_low": -0.143,
+          "ci_high": 0.2346,
+          "n_a": 41,
+          "n_b": 43
+        },
+        "survives_ci": false
+      },
+      "TRENDING_MOMENTUM": {
+        "buy": {
+          "n": 20,
+          "mean_r": -0.1035,
+          "median_r": 0.0026,
+          "stdev": 0.3687
+        },
+        "sell": {
+          "n": 23,
+          "mean_r": 0.0986,
+          "median_r": 0.0399,
+          "stdev": 0.478
+        },
+        "sell_minus_buy": {
+          "diff": 0.202,
+          "ci_low": -0.0346,
+          "ci_high": 0.4597,
+          "n_a": 23,
+          "n_b": 20
+        },
+        "survives_ci": false
+      },
+      "VOLATILITY_EXPANSION": {
+        "buy": {
+          "n": 0,
+          "mean_r": null,
+          "median_r": null,
+          "stdev": null
+        },
+        "sell": {
+          "n": 6,
+          "mean_r": 0.0965,
+          "median_r": 0.0421,
+          "stdev": 0.2737
+        },
+        "sell_minus_buy": {
+          "diff": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "n_a": 6,
+          "n_b": 0
+        },
+        "survives_ci": false
+      }
+    },
+    "strata_where_asymmetry_survives_ci": [],
+    "interpretation": "DIRECTIONAL ASYMMETRY NOT ESTABLISHED (does not survive normalization/CI)"
+  },
+  "session_normalized_asymmetry": {
+    "pooled_sell_minus_buy": {
+      "diff": 0.1191,
+      "ci_low": -0.0319,
+      "ci_high": 0.2616,
+      "n_a": 70,
+      "n_b": 63
+    },
+    "per_stratum": {
+      "LONDON": {
+        "buy": {
+          "n": 21,
+          "mean_r": -0.2441,
+          "median_r": 0.0,
+          "stdev": 0.5623
+        },
+        "sell": {
+          "n": 17,
+          "mean_r": -0.1323,
+          "median_r": -0.0413,
+          "stdev": 0.5753
+        },
+        "sell_minus_buy": {
+          "diff": 0.1117,
+          "ci_low": -0.2656,
+          "ci_high": 0.4627,
+          "n_a": 17,
+          "n_b": 21
+        },
+        "survives_ci": false
+      },
+      "NY": {
+        "buy": {
+          "n": 14,
+          "mean_r": -0.0068,
+          "median_r": 0.0105,
+          "stdev": 0.2814
+        },
+        "sell": {
+          "n": 19,
+          "mean_r": -0.0032,
+          "median_r": -0.0114,
+          "stdev": 0.1737
+        },
+        "sell_minus_buy": {
+          "diff": 0.0035,
+          "ci_low": -0.1739,
+          "ci_high": 0.1466,
+          "n_a": 19,
+          "n_b": 14
+        },
+        "survives_ci": false
+      },
+      "OFF_SESSION": {
+        "buy": {
+          "n": 6,
+          "mean_r": -0.184,
+          "median_r": -0.1463,
+          "stdev": 0.6924
+        },
+        "sell": {
+          "n": 5,
+          "mean_r": -0.1564,
+          "median_r": -0.0876,
+          "stdev": 0.6389
+        },
+        "sell_minus_buy": {
+          "diff": 0.0276,
+          "ci_low": -0.6459,
+          "ci_high": 0.7468,
+          "n_a": 5,
+          "n_b": 6
+        },
+        "survives_ci": false
+      },
+      "OVERLAP_LONDON_NY": {
+        "buy": {
+          "n": 1,
+          "mean_r": -0.332,
+          "median_r": -0.332,
+          "stdev": 0.0
+        },
+        "sell": {
+          "n": 8,
+          "mean_r": 0.1769,
+          "median_r": 0.0421,
+          "stdev": 0.3499
+        },
+        "sell_minus_buy": {
+          "diff": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "n_a": 8,
+          "n_b": 1
+        },
+        "survives_ci": false
+      },
+      "TOKYO": {
+        "buy": {
+          "n": 21,
+          "mean_r": -0.1298,
+          "median_r": -0.0153,
+          "stdev": 0.3657
+        },
+        "sell": {
+          "n": 21,
+          "mean_r": -0.0194,
+          "median_r": 0.0566,
+          "stdev": 0.4498
+        },
+        "sell_minus_buy": {
+          "diff": 0.1103,
+          "ci_low": -0.1331,
+          "ci_high": 0.3552,
+          "n_a": 21,
+          "n_b": 21
+        },
+        "survives_ci": false
+      }
+    },
+    "strata_where_asymmetry_survives_ci": [],
+    "interpretation": "DIRECTIONAL ASYMMETRY NOT ESTABLISHED (does not survive normalization/CI)"
+  },
+  "calibration_by_direction": {
+    "BUY": {
+      "n": 63,
+      "terciles": [
+        {
+          "tercile": "low",
+          "n": 21,
+          "mean_prob": 0.0466,
+          "mean_r": -0.1118
+        },
+        {
+          "tercile": "mid",
+          "n": 21,
+          "mean_prob": 0.2881,
+          "mean_r": -0.2067
+        },
+        {
+          "tercile": "high",
+          "n": 21,
+          "mean_prob": 0.6519,
+          "mean_r": -0.1283
+        }
+      ],
+      "outcome_monotonic_in_probability": false,
+      "verdict": "MISCALIBRATED (outcome not increasing in prob)"
+    },
+    "SELL": {
+      "n": 70,
+      "terciles": [
+        {
+          "tercile": "low",
+          "n": 23,
+          "mean_prob": 0.0,
+          "mean_r": -0.0991
+        },
+        {
+          "tercile": "mid",
+          "n": 23,
+          "mean_prob": 0.2481,
+          "mean_r": 0.1111
+        },
+        {
+          "tercile": "high",
+          "n": 24,
+          "mean_prob": 0.6633,
+          "mean_r": -0.0985
+        }
+      ],
+      "outcome_monotonic_in_probability": false,
+      "verdict": "MISCALIBRATED (outcome not increasing in prob)"
+    }
+  },
+  "lab_candidates": {
+    "LAB-3CLASS-GOLDEN": {
+      "classes": 2,
+      "oos_accuracy": 1.0,
+      "oos_buy_f1": 1.0,
+      "oos_sell_f1": 1.0,
+      "directional_gap_f1": 0.0,
+      "train_seconds": 1.684,
+      "fingerprint": "5ba77b78413e7d6f1ec30e37cdc6e0c3"
+    },
+    "LAB-NEGATIVE-CONTROL": {
+      "classes": 2,
+      "oos_accuracy": 1.0,
+      "oos_buy_f1": 1.0,
+      "oos_sell_f1": 1.0,
+      "directional_gap_f1": 0.0,
+      "train_seconds": 1.063,
+      "fingerprint": "70b11aee19e3129bc53055ebde3e857a"
+    },
+    "LAB-3CLASS": {
+      "classes": 3,
+      "oos_accuracy": 1.0,
+      "oos_buy_f1": 1.0,
+      "oos_sell_f1": 0.0,
+      "directional_gap_f1": -1.0,
+      "train_seconds": 1.124,
+      "fingerprint": "569c55a34eb0f7c0bbc51bc31d571439"
+    },
+    "LAB-4LOGIT": {
+      "classes": 4,
+      "oos_accuracy": 0.865,
+      "oos_buy_f1": 0.9333,
+      "oos_sell_f1": 0.9209,
+      "directional_gap_f1": -0.0125,
+      "train_seconds": 1.087,
+      "fingerprint": "17894c66481d4a0ef41a341e8b4d292a"
+    },
+    "LAB-BUY-WEIGHTED": {
+      "classes": 2,
+      "oos_accuracy": 1.0,
+      "oos_buy_f1": 1.0,
+      "oos_sell_f1": 1.0,
+      "directional_gap_f1": 0.0,
+      "baseline_buy_f1": 1.0,
+      "baseline_sell_f1": 1.0,
+      "train_seconds": 1.042,
+      "fingerprint": "c9cdb1a122bf6ad54ac45756c3ecb9cc"
+    }
+  },
+  "interpretation": {
+    "asymmetry_verdict": "DIRECTIONAL ASYMMETRY NOT ESTABLISHED (does not survive normalization/CI)",
+    "surviving_regimes": [],
+    "calibration_verdicts": {
+      "BUY": "MISCALIBRATED (outcome not increasing in prob)",
+      "SELL": "MISCALIBRATED (outcome not increasing in prob)"
+    }
+  }
+}

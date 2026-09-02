@@ -7038,6 +7038,7 @@ Status: FIXED (uncommitted at discovery; committed with CHG-0043 part 1)
 - Classification: P1 (deploy gate fail-closed on healthy system; false
   blocker for every release cut), Category: Observability/Release.
   Status: OPEN - routed to forensics owner; NOT fixed in this pass
+  Status update (2026-09-02, remediation pass): FIXED. checks_news.FEATURE_REF_REGISTRY and checks_features.FEATURE_REF_REGISTRY are now aliases of the canonical references.FEATURE_REFERENCES singleton (ONE freeze-once owner: ForensicHealthEngine). Deploy gate on the healthy tree: critical_count 1->0, blocking_checks [] (exit 2 REVIEW_REQUIRED, honest unknowns/degradations only); real-critical injection still BLOCKs. Regression net: tests/integration/test_bug193_bug196_remediation.py (healthy/not-critical, missing-refs/critical, 25x determinism, fresh-process isolation).
 ## BUG-196 - CLI JSON-mode stdout pollution: eager audit/settings DB init logs "Initialized High-Performance SQLite WAL storage" to STDOUT before JSON payload (2026-09-02, Nexus-Main integration verification at tip ~NexusTradingForexBot)
 
 - Symptom: `nexus version --json` and `nexus doctor --json` executed from a
@@ -7071,7 +7072,8 @@ Status: FIXED (uncommitted at discovery; committed with CHG-0043 part 1)
 - Evidence: tests/cli run output 2026-09-02 04:41 (TestVersion FAIL, stdout
   prefix '2026-09-02 04:41:45 [info     ] Initialized High-Performance').
   Status: OPEN.
-  (check files carry uncommitted foreign BUG-192 WIP).
+
+  Status update (2026-09-02, remediation pass): FIXED in two halves. (1) stdout purity: _json_quiet capture during --json computation landed via the parallel runtime-truth lane (48c5ddd, credited). (2) foreign-CWD DB materialization: runtime_snapshot champion probe returns NOT_INITIALIZED when audit.db is absent (no writable AuditRepository construction) and versioning.default_db_versions_provider reports NOT_INITIALIZED for absent DBs instead of connecting (sqlite auto-create suppressed on read-only identity paths). Verified: version/doctor --json from a foreign CWD = json.loads(stdout) PASS + zero artifacts/ DBs; human mode unbroken; regression net tests/integration/test_bug193_bug196_remediation.py.  (check files carry uncommitted foreign BUG-192 WIP).
 ## BUG-194 - Web client PAPER->LIVE execution-mode switch fires with NO confirmation (2026-09-02, Nexus-Main UX pass)
 
 - Symptom (live-audited on :8080, v9.0.3): the header `execution-mode-selector`
@@ -7350,3 +7352,18 @@ down remain P2 follow-ups for the next shadow pass.
 - Severity: P1 (live decision-path crash under a realistic degenerate model
   output) | Status: OPEN — routed to policy owner
 - Found-by: CHG-0045 adversarial battery (live-log correlation + crash probe)
+- SCOPE ADDENDUM (2026-09-02 05:3x, Nexus-Main QA battery verification):
+  the BUG-184-class type guard LANDED only in forensics/checks_features.py
+  (1490635 "forensics numeric type guards" -> CHECK-FCS-04 CRITICAL on
+  bool/str/None elements, verified). The SAME class in
+  features/schema_contract.validate_70d_vector (bool element ACCEPTED via
+  int-subclass coercion; str/None elements crash with raw TypeError instead
+  of SchemaContractError) and features/inference_validator._finite (same
+  crash class) was present in the working tree during the battery probes
+  but was NOT in the landed tree at HEAD (files restored/absorbed away in
+  parallel commit cycles before the guard landed there). Re-OPENED as an
+  extension of BUG-184 for the two feature modules; regression net
+  tests/unit/test_qa_deep_70d_contract_properties.py pins the required
+  semantics (RED until the feature-contract owner lands the guard).
+  Owner: feature-contract domain (features/schema_contract.py,
+  features/inference_validator.py).

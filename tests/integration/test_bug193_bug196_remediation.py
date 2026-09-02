@@ -57,9 +57,7 @@ class TestBug193SharedRegistryTruth:
         assert checks_news.FEATURE_REF_REGISTRY is FEATURE_REFERENCES
         _patched_runtime_config(monkeypatch, liquidity=True)
         result = checks_news.check_news_availability_matrix()
-        assert result.status.name != "CRITICAL", (
-            f"healthy system still critical: {result.evidence}"
-        )
+        assert result.status.name != "CRITICAL", f"healthy system still critical: {result.evidence}"
 
     def test_case_b_missing_references_real_critical(self, monkeypatch):
         """Real critical survives: with liquidity enabled and the shared
@@ -160,9 +158,11 @@ class TestBug196ForeignCwdSafety:
                 assert "overall" in payload
             else:
                 assert payload.get("version")
-        created = sorted(p.name for p in (tmp_path / "artifacts").glob("*.db")) if (
-            tmp_path / "artifacts"
-        ).exists() else []
+        created = (
+            sorted(p.name for p in (tmp_path / "artifacts").glob("*.db"))
+            if (tmp_path / "artifacts").exists()
+            else []
+        )
         assert created == [], f"foreign CWD polluted with {created}"
 
     def test_repeated_json_runs_no_drift(self, tmp_path):
