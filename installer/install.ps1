@@ -283,8 +283,11 @@ if (-not $NexusHome) {
     else { $NexusHome = Join-Path $env:LOCALAPPDATA "Nexus" }
 }
 if (-not $InstallDir) {
-    if ($env:NEXUS_HOME) { $InstallDir = Join-Path $env:NEXUS_HOME "engine" }
-    else { $InstallDir = Join-Path $env:LOCALAPPDATA "Nexus\engine" }
+    # RC-2 (INS-02): the engine default must follow the RESOLVED NexusHome
+    # (parameter > env > default). Deriving it from $env:NEXUS_HOME directly
+    # split the installation across two homes when -NexusHome pointed
+    # somewhere else than the inherited environment variable.
+    $InstallDir = Join-Path $NexusHome "engine"
 }
 $NexusHome = ConvertTo-LongPath $NexusHome
 $InstallDir = ConvertTo-LongPath $InstallDir
