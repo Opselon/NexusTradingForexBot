@@ -295,9 +295,11 @@ def test_old_bug_fails_before_runtime_identity_rejected(
     assert rmeta.get_build_info_file() is None
     info = rmeta.get_version_info()
     # the unstamped profile: commit falls back to _git_commit() (None outside a
-    # repo) and timestamp to now() — this is exactly what CI must reject.
+    # repo); timestamp is a RECORDED identity fact (CHG-0043): None when no
+    # stamp exists (dev/source run) — never a fabricated now().
     unstamped = info["commit"] is None
-    runtime_ts = info["build_timestamp"].startswith(time.strftime("%Y-%m-%d"))
+    build_ts = info["build_timestamp"]
+    runtime_ts = bool(build_ts) and build_ts.startswith(time.strftime("%Y-%m-%d"))
     assert unstamped or runtime_ts, (
         "unstamped frozen profile should show Commit None and/or runtime timestamp"
     )
