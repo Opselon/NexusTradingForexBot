@@ -183,6 +183,16 @@ def _registry_champion_section() -> dict[str, Any]:
         from nexus_scalp.adapters.database.audit_repository import AuditRepository
         from nexus_scalp.experience.provenance import ModelRegistry
         from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
+        from nexus_scalp.release import paths as _paths
+
+        # BUG-196: this is a READ-ONLY identity probe on the version/doctor
+        # --json path. Constructing a writable AuditRepository() with the
+        # relative default created artifacts/audit.db (plus WAL chatter on
+        # stdout) in whatever CWD the CLI ran from. An absent audit.db means
+        # the engine never ran here: champion is NOT_INITIALIZED, and the
+        # probe must not conjure a database into existence.
+        if not (_paths.get_runtime_workspace() / "artifacts" / "audit.db").exists():
+            return None
 
         repo = AuditRepository()
         reg = ModelLifecycleRegistry(audit_repo=repo, model_registry=ModelRegistry(audit_repo=repo))
