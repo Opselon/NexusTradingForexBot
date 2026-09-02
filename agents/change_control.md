@@ -1359,3 +1359,70 @@ Required tests: identity parity, action normalization, outcome resolver
 determinism, scaler parity, attach gate, retention bounds, isolation reproofs.
 Status: IMPLEMENTING
 
+## CHG-0043 - OSS-grade adversarial QA / deep-assurance layer (2026-09-02, Nexus-Main)
+
+Change: builds the user-briefed adversarial QA layer WITHOUT changing production
+behavior: (1) test-architecture forensics inventory (families table, duplication
+risk, runtime budgets measured); (2) docs/architecture/QA_BLIND_SPOT_MATRIX.md
+mapping BUG/CHG history -> current regression -> re-entry gap -> proposed
+detection with priority; (3) tests/adversarial/ targeted suites: property-style
+tensor/vector contracts, position state-machine + recovery-budget invariants
+over arbitrary event sequences, provider-gate chaos (single-flight follower
+timeout, bounded retry storm with FakeClock, circuit flapping), DB migration
+adversarial (idempotence migrate(migrate(x))==migrate(x), partial failure,
+tamper, downgrade block), API contract adversarial against create_app() TestClient
+(malformed JSON, oversized inputs, unknown fields, method abuse, JSON purity),
+secret-redaction/URL-hygiene security tests, replay determinism (repeat equality),
+timestamp/UTC boundary property tests, execution-safety order_send-never-called
+guard, EventBatchAggregator evidence-preservation property (drop_events==0,
+count/first_seen/last_seen/sample_ids bounds); (4) scripts/qa/deep_assurance.py
+orchestrator: --fast/--json/--seed/--offline, suite_version, git_commit,
+duration_ms, defects[]/flaky[]/mutation[]/recommendations[], deterministic seed
+default 20260902, Windows PS 5.1/7-safe (pure Python, no bash); (5) mutation
+proof runner (temp-tree copy, bounded textual mutations >/>=, threshold shift,
+index swap, timestamp comparison flip, state-transition drop; SURVIVOR = test
+blind spot reported, working tree NEVER mutated); (6) CI lane
+qa-deep-assurance.yml (scheduled + dispatch; NOT added to the pre-push critical
+gate); (7) BUG-184 fix (checks_features.py CHECK-FCS-04 duck-typing hole:
+bool/str vector elements now CRITICAL) — routed to Nexus-Main by the BUG-184
+ledger row, regression test included.
+Scope: docs/architecture/{QA_BLIND_SPOT_MATRIX.md,qa-assurance-contract.md},
+tests/adversarial/ (new), scripts/qa/ (new), pyproject.toml (pytest markers
+adversarial/deep under strict-markers), .github/workflows/qa-deep-assurance.yml,
+src/nexus_scalp/forensics/checks_features.py (BUG-184 ONLY), agents/* registries.
+NOT touched: live_engine, order_manager, policy, risk, regime, shadow, replay
+producers, provider gate, installer, migrations, observability SSOT.
+Why: user OSS-grade adversarial QA brief 2026-09-02. Contracts touched: none
+changed (verification-only layer); CONFIDENCE/PROVIDER/DB contracts consumed
+read-only. Risk: LOW (tests+docs; one ledger-routed P2 forensics-check repair).
+Status: IMPLEMENTING
+## CHG-0043 - Decision evidence completeness: NO_TRADE counterfactuals fully reconstructable (2026-09-02, Hermes-Main)
+
+Change: closes the CHG-0041 coverage gap (1619 rows without a recorded
+direction). (1) audit_signals gains 7 ADD COLUMN-guarded research fields:
+preferred_direction, raw_prob_buy/sell/no_trade/wait, confidence_source,
+spread_usd; the recorder populates them at decision time; genuine NO_TRADE
+abstention stays NOT_RECORDED (''), never derived from market outcomes;
+historical rows immutable (new columns NULL = NOT_RECORDED). (2) policy.py:
+spread_usd stamped into risk_checks at both proposal builders (INV-018
+observability only); guardian pre-model block records the observed quoting
+state + geometry_unavailable_before_gate=True + PRE_MODEL_GUARDIAN semantics
+so sentinel SL/TP are unambiguous non-geometry. (3) counterfactual engine
+consumes preferred_direction (legacy model_action parse as pre-column
+fallback), the raw probability block, and refuses sentinel geometry
+(RR_NOT_RECORDED + excursion proxy). (4) tests/unit/test_decision_evidence
+_completeness.py (10 evidence-invariant tests incl. schema-safe migration +
+historical immutability). (5) evidence artifact decision_evidence_
+completeness_20260902.json (2162 decisions, 476 covered, per-stratum
+evidence grades).
+Scope: src/nexus_scalp/{adapters/database/audit_repository.py,signals/policy.py,
+research/counterfactual.py}, tests/unit/test_decision_evidence_completeness.py,
+artifacts/forensics/*, agents/*.
+NOT touched: thresholds, regime engine, model architecture, execution
+behavior; guardian stays BEFORE inference (moving it = semantics change).
+Why: user decision-evidence brief 2026-09-02.
+Contracts touched: AUDIT_SIGNALS_EVIDENCE v2 (7 columns), TICK_COUNTERFACTUAL
+v1.1 (evidence join + geometry refusal). Risk: LOW (recording + research
+only; zero decision-path change).
+Status: COMPLETE
+
