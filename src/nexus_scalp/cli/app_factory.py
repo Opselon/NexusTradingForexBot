@@ -60,6 +60,14 @@ app.add_typer(
 register_analyze_commands(app)
 # Dependency Intelligence (``nse dependency``)
 register_dependency_commands(app)
+# API PLATFORM v1 (``nexus api ...``) — same HTTP contracts as external clients.
+from nexus_scalp.cli.api_commands import api_app  # noqa: E402  (registration side effect)
+
+app.add_typer(
+    api_app,
+    name="api",
+    help="Query the versioned /api/v1 platform of a running engine.",
+)
 
 
 def _resolve_facade_seam(name: str, default: Any) -> Any:

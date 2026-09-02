@@ -21,6 +21,7 @@ Usage:
     .venv/Scripts/python.exe scripts/release/process_kill_smoke.py
 Exit 0 = all gates pass; nonzero = acceptance failure (never fake).
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -60,9 +61,7 @@ class Job:
         info = (ctypes.c_char * 144)()  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
         # kill-on-close: struct layout offset for LimitFlags in basic info = 0x14
         # (JOBOBJECT_BASIC_LIMIT_INFORMATION.LimitFlags)
-        ctypes.cast(info, ctypes.POINTER(ctypes.c_uint32))[5] = (
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        )
+        ctypes.cast(info, ctypes.POINTER(ctypes.c_uint32))[5] = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         if not k32.SetInformationJobObject(
             self.handle, 9, info, ctypes.sizeof(info)
         ):  # JobObjectExtendedLimitInformation = 9
@@ -99,7 +98,7 @@ def make_slow_stub_uv(stub_dir: Path, seconds: int) -> Path:
         'set "TARGETDIR=%~2"',
         'if /i "%~1"=="venv" (',
         f'  "{REPO_PY}" -m venv "%TARGETDIR%"',
-        f'  ping -n {seconds + 1} 127.0.0.1 >nul',  # portable sleep
+        f"  ping -n {seconds + 1} 127.0.0.1 >nul",  # portable sleep
         ")",
         'if /i "%~1"=="--version" (echo uv 9.9.9-stub & exit /b 0)',
         "exit /b 0",
@@ -117,8 +116,11 @@ def installer_ps_expr(nexus_home: Path, stub: Path, installer_name: str = "") ->
     return (
         "$ErrorActionPreference = 'Stop'; "
         "$ProgressPreference = 'SilentlyContinue'; "
-        ". \"" + INSTALLER.as_posix() + "\" -NexusHome '"
-        + nexus_home.as_posix() + "' -NonInteractive; "
+        '. "'
+        + INSTALLER.as_posix()
+        + "\" -NexusHome '"
+        + nexus_home.as_posix()
+        + "' -NonInteractive; "
         "Install-Venv; 'INSTALL-VENV-DONE'"
     )
 
@@ -129,8 +131,10 @@ def main() -> int:
         return 2
     ambient = os.environ.get("NEXUS_HOME")
     if ambient:
-        print(f"NOTE: ambient NEXUS_HOME={ambient} detected - child env will clear it "
-              "(explicit parameters take precedence anyway).")
+        print(
+            f"NOTE: ambient NEXUS_HOME={ambient} detected - child env will clear it "
+            "(explicit parameters take precedence anyway)."
+        )
     ps = find_powershell()
     report: dict[str, object] = {}
 
@@ -232,12 +236,20 @@ def main() -> int:
     expr2 = installer_ps_expr(home, stub_fast)
     rec = subprocess.run(
         [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr2],
-        cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=420,
-        encoding="utf-8", errors="replace", env=child_env, check=False,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=420,
+        encoding="utf-8",
+        errors="replace",
+        env=child_env,
+        check=False,
     )
     venv_healthy = (home / "venv" / "Scripts" / "python.exe").exists()
     marker_gone = not marker.exists()
-    gate_b = rec.returncode == 0 and "INSTALL-VENV-DONE" in rec.stdout and venv_healthy and marker_gone
+    gate_b = (
+        rec.returncode == 0 and "INSTALL-VENV-DONE" in rec.stdout and venv_healthy and marker_gone
+    )
     print(f"GATE 08 (recovery after real kill): {'PASS' if gate_b else 'FAIL'}")
     print(f"  rc={rec.returncode} venv_healthy={venv_healthy} marker_gone={marker_gone}")
     if not gate_b:

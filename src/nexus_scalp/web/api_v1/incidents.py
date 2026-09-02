@@ -352,7 +352,11 @@ def config_schema(request: Request) -> Any:
 
 @router.post("/config/validate", summary="Validate a proposed partial config (no apply)")
 def config_validate(request: Request, proposal: dict[str, Any]) -> Any:
-    """Pure pydantic validation of a proposed partial config dict — NOTHING applied."""
+    """Pure pydantic validation of a proposed partial config dict — NOTHING applied.
+
+    Body: an open object of config sections -> partial values (validated against
+    the real pydantic models below).
+    """
     from nexus_scalp.configuration.config import AppConfig
 
     unknown = sorted(set(proposal.keys()) - set(AppConfig.model_fields.keys()))

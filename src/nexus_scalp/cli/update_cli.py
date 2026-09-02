@@ -18,6 +18,7 @@ DO-NOT-PUT-HERE: verification/atomic-write logic (release/), doctor/forensic com
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -138,11 +139,12 @@ def _update_human_check(report: dict[str, Any]) -> None:
         v = report.get(k)
         if v:
             table.add_row(label, str(v))
-    console.print(table)
 
-    # Update-awareness block (2026-09-02 UX pass): commit distance + real
+    # Update-awareness rows (2026-09-02 UX pass): commit distance + real
     # change summary + last-checked timestamp, from the offline-safe
-    # release-status truth (never fabricated). Failure-isolated.
+    # release-status truth (never fabricated). Rows are added BEFORE the
+    # table renders (the first pass added them after console.print - the
+    # rows silently never appeared). Failure-isolated.
     try:
         from nexus_scalp.release.release_status import (
             STATUS_NO_UPDATE,
@@ -155,27 +157,32 @@ def _update_human_check(report: dict[str, Any]) -> None:
         cur_commit = rs.get("current_commit")
         if cur_commit:
             table.add_row("Current commit", str(cur_commit))
-        if behind is not None and (behind or ahead):
-            rel = (
-                "UP TO DATE"
-                if behind == 0 and not ahead
-                else (f"{behind} behind" + (f" / {ahead} ahead" if ahead else ""))
-            )
+        if behind is not None:
+            if behind or ahead:
+                rel = f"{behind} behind" + (f" / {ahead} ahead" if ahead else "")
+            else:
+                rel = "UP TO DATE"
             table.add_row("Commit distance", rel)
-        if rs.get("changes"):
-            console.print("[bold]Changes since current:[/bold]")
-            for c in rs["changes"][:5]:
-                console.print(f"  • {c}")
-        if status == STATUS_NO_UPDATE and rs.get("update_status") == STATUS_REVISION_AHEAD:
-            console.print(
-                f"[yellow]◎ Local revision is {ahead} commit(s) ahead of origin "
-                "(development build - nothing to update to).[/yellow]"
-            )
-        elif status == STATUS_NO_UPDATE:
-            console.print("[green]✓ Nexus is up to date.[/green]")
-        console.print(f"[dim]Last checked: {rs.get('generated_at', '')}[/dim]")
+        awareness_status = rs.get("update_status")
     except Exception:
-        pass  # awareness extras never break the core check
+        rs = {}
+        awareness_status = None  # extras never break the core check
+
+    console.print(table)
+
+    if rs.get("changes"):
+        console.print("[bold]Changes since current:[/bold]")
+        for c in rs["changes"][:5]:
+            console.print(f"  • {c}")
+    if status == STATUS_NO_UPDATE and awareness_status == STATUS_REVISION_AHEAD:
+        console.print(
+            f"[yellow]◎ Local revision is {ahead} commit(s) ahead of origin "
+            "(development build - nothing to update to).[/yellow]"
+        )
+    elif status == STATUS_NO_UPDATE:
+        console.print("[green]✓ Nexus is up to date.[/green]")
+    if rs.get("generated_at"):
+        console.print(f"[dim]Last checked: {rs['generated_at']}[/dim]")
     if report.get("decisions"):
         console.print("[dim]Decisions:[/dim]")
         for d in report.get("decisions", []):
@@ -216,6 +223,11 @@ def update_cmd(
         False,
         "--force-refresh",
         help="Bypass cached release metadata; query GitHub fresh (spec 18/40).",
+    ),
+    fetch: bool = typer.Option(
+        False,
+        "--fetch",
+        help="Also fetch origin before computing commit distance (bounded network op).",
     ),
     fresh: bool = typer.Option(
         False, "--force-refresh", help="Bypass cached release metadata; query GitHub fresh."
@@ -317,6 +329,20 @@ def update_cmd(
             raise typer.Exit(xc.EXIT_UPDATE) from None
         report["dry_run"] = True
         report["force_refresh"] = force_refresh
+        if fetch:
+            # Bounded, opt-in repo fetch so commit distance reflects the real
+            # remote tip (the offline default reads the last-fetched ref).
+            # Failure-isolated: network problems degrade to stale counts,
+            # never fabricate.
+            fr = subprocess.run(
+                ["git", "fetch", "origin", "--quiet"],
+                cwd=str(Path.cwd()),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            report["git_fetch"] = "ok" if fr.returncode == 0 else f"failed (rc={fr.returncode})"
         if not json_mode:
             _update_human_check(report)
         _update_json_exit(report, json_mode)

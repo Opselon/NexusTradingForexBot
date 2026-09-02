@@ -14,6 +14,7 @@ secrets. Cleanup reports residue honestly.
 
 Usage:  .venv/Scripts/python.exe scripts/release/bootstrap_smoke.py
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -27,8 +28,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PUBLIC_URL = (
-    "https://raw.githubusercontent.com/Opselon/"
-    "NexusTradingForexBot/main/installer/install.ps1"
+    "https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1"
 )
 
 
@@ -52,9 +52,17 @@ def main() -> int:
 
     # ---- Step 1: the REAL download (irm equivalent, bounded: one fetch) ----
     dl = subprocess.run(
-        [ps, "-NoProfile", "-NonInteractive", "-Command",
-         f"irm '{PUBLIC_URL}' -OutFile '{fetched.as_posix()}'"],
-        capture_output=True, text=True, timeout=120, check=False,
+        [
+            ps,
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            f"irm '{PUBLIC_URL}' -OutFile '{fetched.as_posix()}'",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
     )
     if dl.returncode != 0 or not fetched.exists():
         print("FAIL: public fetch failed:", dl.stderr[-300:])
@@ -76,11 +84,27 @@ def main() -> int:
     # one-liner itself is what end users run - here we additionally verify
     # the downloaded file executes standalone, which irm|iex does in-memory).
     inst = subprocess.run(
-        [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-         "-File", str(fetched), "-NexusHome", str(home), "-NonInteractive", "-Json"],
-        capture_output=True, text=True, timeout=1800, encoding="utf-8", errors="replace",
+        [
+            ps,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(fetched),
+            "-NexusHome",
+            str(home),
+            "-NonInteractive",
+            "-Json",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        encoding="utf-8",
+        errors="replace",
         env={k: v for k, v in os.environ.items() if k != "NEXUS_HOME"},
-        cwd=str(work), check=False,
+        cwd=str(work),
+        check=False,
     )
     results["install_rc"] = inst.returncode
     try:
@@ -98,11 +122,27 @@ def main() -> int:
 
     # ---- Step 4: second run - NO_UPDATE / idempotency ----
     inst2 = subprocess.run(
-        [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-         "-File", str(fetched), "-NexusHome", str(home), "-NonInteractive", "-Json"],
-        capture_output=True, text=True, timeout=1800, encoding="utf-8", errors="replace",
+        [
+            ps,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(fetched),
+            "-NexusHome",
+            str(home),
+            "-NonInteractive",
+            "-Json",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        encoding="utf-8",
+        errors="replace",
         env={k: v for k, v in os.environ.items() if k != "NEXUS_HOME"},
-        cwd=str(work), check=False,
+        cwd=str(work),
+        check=False,
     )
     results["rerun_rc"] = inst2.returncode
     state = home / "state" / "install.json"
@@ -112,7 +152,9 @@ def main() -> int:
         results["ledger_stages_recorded"] = len(st.get("stages", {}))
     gate_idem = inst2.returncode == 0
     print(f"GATE 18 (public fetch + provenance): {'PASS' if ok_marker else 'FAIL'}")
-    print(f"GATE 19 (real install from fetched script): {'PASS' if inst.returncode == 0 else 'FAIL'}")
+    print(
+        f"GATE 19 (real install from fetched script): {'PASS' if inst.returncode == 0 else 'FAIL'}"
+    )
     print(f"GATE 20 (second run idempotent): {'PASS' if gate_idem else 'FAIL'}")
     print("EVIDENCE:", json.dumps(results, indent=2)[:800])
 

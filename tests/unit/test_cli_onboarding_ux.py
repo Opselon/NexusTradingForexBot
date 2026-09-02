@@ -103,17 +103,25 @@ class TestUpdateAwareness:
         """UX4: update check carries current commit / distance / verdict.
         Depending on the local-vs-remote state the block renders as an
         up-to-date line, a distance row, or a revision-ahead notice."""
-        r = nexus("update", "check")
+        r = nexus("update", "check", "--fetch")
         assert r.returncode == 0
         out = r.stdout
-        has_awareness = (
-            "Current commit" in out
-            or "Commit distance" in out
-            or "up to date" in out
-            or "ahead of origin" in out
-        )
-        assert has_awareness, out[-600:]
+        # Regression (2026-09-02 next-steps pass): awareness rows were added
+        # AFTER console.print(table) and never rendered. They must appear now.
+        assert "Current commit" in out, out[-600:]
+        assert "Commit distance" in out, out[-600:]
+        has_verdict = "up to date" in out or "ahead of origin" in out or "behind" in out
+        assert has_verdict, out[-600:]
         assert "Last checked:" in out
+
+    def test_json_check_with_fetch_pure_json(self):
+        r = nexus("update", "check", "--fetch", "--json")
+        assert r.returncode == 0
+        payload = json.loads(r.stdout.strip())
+        assert "status" in payload
+        assert payload.get("git_fetch") in ("ok",) or str(payload.get("git_fetch", "")).startswith(
+            "failed"
+        )
 
     def test_json_check_pure_json(self):
         """UX5: update check --json is pure JSON with a status field."""
