@@ -181,6 +181,23 @@
             </button>
 
             <div class="pt-6 border-t border-borderClr mt-auto space-y-4">
+
+                <!-- CHG-0048: language switcher (UI preference only; persisted
+                     in localStorage, never a system-critical setting). -->
+                <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
+                    <label class="text-xs text-textMuted font-semibold mb-2 flex items-center justify-between" for="ux-lang-select">
+                        <span><i class="fa-solid fa-language mr-1" aria-hidden="true"></i> Language</span>
+                    </label>
+                    <select id="ux-lang-select" aria-label="UI language"
+                            class="w-full bg-darkBg border border-borderClr text-gray-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-accentCyan cursor-pointer transition">
+                        <option value="en">English</option>
+                        <option value="fa">فارسی (RTL)</option>
+                        <option value="de">Deutsch</option>
+                        <option value="es">Español</option>
+                        <option value="ar">العربية (RTL)</option>
+                    </select>
+                </div>
+
                 <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
                     <p class="text-xs text-textMuted font-semibold mb-2 flex items-center justify-between">
                         <span>Telegram Bot</span>
@@ -3518,6 +3535,7 @@
     <script src="cc_components.js?v=20260902a"></script>
     <script src="cc_state.js?v=20260902a"></script>
     <script src="control_center.js?v=20260902a"></script>
+    <script src="ux_i18n.js?v=20260902a"></script>
     <script src="ux_conn.js?v=20260902a"></script>
     <script src="ux.js?v=20260902a"></script>
     <script src="app.js?v=20260902a"></script>

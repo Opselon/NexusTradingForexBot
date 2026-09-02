@@ -274,3 +274,40 @@ pre, code, .font-mono {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
     border-radius: 10px;
 }
+
+/* ==========================================================================
+   CHG-0048 (Nexus-Main UX): client experience layer styles
+   ========================================================================== */
+
+/* RTL support: mirror the sidebar border + flip icon margins when the UI
+   language is RTL (fa/ar). Set on <html dir="rtl"> by ux_i18n.js. */
+html[dir="rtl"] .tab-btn {
+    border-left: none;
+    text-align: right;
+}
+html[dir="rtl"] .tab-btn.active {
+    border-right: 3px solid #06b6d4;
+}
+html[dir="rtl"] aside.w-64 {
+    border-right: none;
+    border-left: 1px solid #1e293b;
+}
+
+/* Respect reduced-motion preferences (brief §36). */
+@media (prefers-reduced-motion: reduce) {
+    .animate-pulse,
+    .animate-spin,
+    .animate-bounce {
+        animation: none !important;
+    }
+    * {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+    }
+}
+
+/* Stale-data marking (NX.markStale / connectivity banner). */
+.ux-stale {
+    opacity: 0.55;
+    filter: saturate(0.6);
+}

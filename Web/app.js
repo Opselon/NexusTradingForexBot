@@ -10483,6 +10483,19 @@ async function performEngineModeSet(requested) {
 
     }, 30000);
 
+    // CHG-0048: language switcher binding (i18n framework in ux_i18n.js).
+    // UI preference only — persisted to localStorage, never a system setting.
+    var langSel = document.getElementById('ux-lang-select');
+    if (langSel && window.NX_I18N) {
+        langSel.value = window.NX_I18N.lang();
+        langSel.addEventListener('change', function () {
+            window.NX_I18N.setLanguage(langSel.value);
+            if (window.NX && window.NX.toast) {
+                window.NX.toast(langSel.options[langSel.selectedIndex].text, 'info', { ttl: 2000 });
+            }
+        });
+    }
+
     const observer = new MutationObserver(() => {
 
         const tab = document.getElementById('tab-account');
