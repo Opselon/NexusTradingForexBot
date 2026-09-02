@@ -42,6 +42,7 @@ def _run_gate(*args: str) -> tuple[int, str]:
         capture_output=True,
         text=True,
         timeout=300,
+        check=False,
     )
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -59,7 +60,7 @@ def _raising_body(exc: Exception, failure_class: str | None = None):
     else:
 
         def body(gate: rg.Gate, res: rg.StageResult) -> None:
-            raise rg._StageFailure(failure_class, str(exc))
+            raise rg._StageFailureError(failure_class, str(exc))
 
     return body
 
@@ -138,6 +139,7 @@ class TestExitCodeContract:
             capture_output=True,
             text=True,
             timeout=60,
+            check=False,
         )
         assert proc.returncode == rg.EXIT_INTERNAL_GATE_ERROR
 
@@ -332,7 +334,7 @@ class TestFailureInjection:
         gate = rg.Gate()
         gate.tmpdir = tmp_path
         monkeypatch.setattr(rg, "REPO_ROOT", tmp_path)  # artifact path resolves under tmp -> absent
-        with pytest.raises(rg._StageFailure) as ei:
+        with pytest.raises(rg._StageFailureError) as ei:
             rg.l4_model_contract(gate, rg.StageResult(name="L4"))
         assert ei.value.failure_class == "MISSING_ARTIFACT"
 
@@ -381,7 +383,7 @@ class TestFailureInjection:
             w = state.get("input_projection.weight")
             model_dim = int(w.shape[1])
             if model_dim != 70:
-                raise rg._StageFailure(
+                raise rg._StageFailureError(
                     "MODEL_CONTRACT_ERROR",
                     f"artifact width {model_dim} != canonical 70",
                     model_dim=model_dim,
@@ -404,7 +406,7 @@ class TestFailureInjection:
         gate = rg.Gate()
 
         def body(g, res):
-            raise rg._StageFailure(
+            raise rg._StageFailureError(
                 "SERVICE_CONSTRUCTION_ERROR", "missing risk_engine", missing=["risk_engine"]
             )
 
@@ -416,7 +418,7 @@ class TestFailureInjection:
         gate = rg.Gate()
 
         def body(g, res):
-            raise rg._StageFailure("SHUTDOWN_ERROR", "2 tasks pending", pending=2)
+            raise rg._StageFailureError("SHUTDOWN_ERROR", "2 tasks pending", pending=2)
 
         res = _run_stage_body(body, gate)
         assert res.failure_class == "SHUTDOWN_ERROR"
