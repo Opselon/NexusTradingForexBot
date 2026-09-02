@@ -1138,6 +1138,25 @@ Required tests: new unit suites (taxonomy, snapshot identity, doctor semantics, 
 Status: IMPLEMENTING
 
 
+## CHG-0047 - System-integration & production-readiness evidence pass (2026-09-02, Nexus-Main)
+
+- Objective: cross-layer integration proof (install -> start -> data -> model
+  -> decision -> persistence -> API/UI -> restart -> recovery) without
+  redesigning any subsystem. Scope: tests/, artifacts/forensics/, agents/
+  registries ONLY.
+- Delivered: tests/integration/test_system_integration_boundaries.py (3
+  boundary contracts), BUG-193 (deploy-gate false CRITICAL, split
+  reference-registry singletons), evidence package
+  docs/architecture/system-integration-evidence.json.
+- Boundary findings routed to owners (NOT fixed here): BUG-193 (forensics
+  domain), stale build-info.json CWD precedence (TASK-RUNTIME-TRUTH, pinned
+  by test), model registry dual rows CHAMPION scalp_v1_50d + CANDIDATE
+  scalp_v3_70d pointing at the same 70D artifact (governance domain,
+  BUG-125/BUG-140 labeling artifact class - documented, not corruption).
+- Verification: critical-suite replica RC=0 (1358 tests), engine runtime
+  launch gate PASS (0 errors), CLI subprocess harness PASS, installer
+  protocol suite 42 pass/1 skip, HEAD-tree isolated import probe 0 fails.
+
 ## CHG-0044 - OSS-grade adversarial QA / deep-assurance layer (2026-09-02, Hermes-Main)
 
 Change: independent QA-adversarial brief. (1) tests/unit/test_qa_deep_*.py families:

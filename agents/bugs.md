@@ -7035,3 +7035,33 @@ research+parity tests green post-fix. Classification: P1
 (result-serialization crash, not decision-path; decision semantics
 unchanged). Found by: replay-on-chart real-data smoke (CHG-0043).
 Status: FIXED (uncommitted at discovery; committed with CHG-0043 part 1)
+## BUG-193 - Forensic deploy-gate false CRITICAL: split reference-registry singletons (checks_news.FEATURE_REF_REGISTRY vs engine auto-freeze) (2026-09-02, Nexus-Main system-integration mission)
+
+- Symptom: `nexus forensic --deploy-gate` returned BLOCK / CHECK-NWS-03
+  CRITICAL "liquidity enabled but no frozen reference distribution" on a
+  healthy 70D runtime (evidence `artifacts/forensics/deploy_gate_result.json`,
+  correlation 2265e214b0a0ded7; `artifacts/forensics/history.jsonl` shows the
+  same crit-1 verdict repeating since at least 09-01 19:54). `nexus doctor`
+  on the SAME tree reports READY - two health surfaces disagreed.
+- Root cause (reproduced, not inferred): `ForensicHealthEngine._auto_freeze_references()`
+  (src/nexus_scalp/forensics/engine.py:112) loads 10 golden liquidity
+  references into `engine.references` (the `FEATURE_REFERENCES` singleton in
+  references.py:163), but `check_news_availability_matrix()`
+  (src/nexus_scalp/forensics/checks_news.py:191) reads a DIFFERENT module-level
+  singleton `checks_news.FEATURE_REF_REGISTRY = FeatureReferenceRegistry()`
+  (:211) that NO production path ever freezes. Fresh-interpreter probe:
+  `len(engine.references)==10`, `len(checks_news.FEATURE_REF_REGISTRY)==0`.
+  History: the singleton was born empty in AGENT-11 3299a4d when
+  `liquidity_features_enabled` defaulted False (check hit the news/liquidity
+  OFF arm); BUG-185 b873c04 flipped the default to True and the check began
+  demanding references the split registry never sees.
+- Contract: ONE process = ONE frozen-reference registry. The check must read
+  the registry the engine freezes (or the freeze must target the singleton
+  the check reads).
+- Regression net: tests/integration/test_system_integration_boundaries.py::TestForensicReferenceRegistryCoherence
+  (currently RED by design - flips green when the singletons are unified;
+  owner: forensics domain / CHG-0032-A1 Step-2 slice owner).
+- Classification: P1 (deploy gate fail-closed on healthy system; false
+  blocker for every release cut), Category: Observability/Release.
+  Status: OPEN - routed to forensics owner; NOT fixed in this pass
+  (check files carry uncommitted foreign BUG-192 WIP).
