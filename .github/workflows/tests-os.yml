@@ -58,12 +58,13 @@ jobs:
         shell: bash
         run: |
           set +e
+          # 2026-09-03: dropped dead outer `-n auto --dist loadgroup --cov=src
+          # --cov-report=term-missing -q` continuation args — python -c ignores
+          # extra argv, so only the flag list INSIDE the python -c subprocess
+          # ever took effect. One authoritative flag set remains (xdist
+          # loadgroup + coverage, mirror of ci.yml quality job).
           python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
-                 -n auto \
-                 --dist loadgroup \
-                 --cov=src \
-                 --cov-report=term-missing \
-                 -q > "pytest-${{ matrix.os }}.txt" 2>&1
+                 > "pytest-${{ matrix.os }}.txt" 2>&1
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           cat "pytest-${{ matrix.os }}.txt"
