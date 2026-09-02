@@ -453,6 +453,78 @@ class DatabaseMigrationEngine:
                     con.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
                 except sqlite3.Error:
                     pass
+        # ------------------------------------------------------------------
+        # BUG-197 (TASK-DB-PLATFORM 2026-09-02): heal minimal skeletons so
+        # the APPLICATION bootstrap cannot crash after a bare migration.
+        #
+        # Reproduced ordering hazard: fresh install → engine boot runs the
+        # migration gate BEFORE LiveEngine constructs AuditRepository. The
+        # gate's baseline skeleton built `trading_rules_config` with only
+        # (id, rule_id TEXT) and `audit_ledger` with ticket TEXT (not
+        # INTEGER PRIMARY KEY). AuditRepository._seed_trading_rules then
+        # failed with "table trading_rules_config has no column named
+        # rule_name" — a fresh install unable to boot. Repair contract:
+        #   * ADD only app-required columns that the manifest skeleton
+        #     omitted (idempotent, additive, never destructive);
+        #   * retype the audit_ledger.ticket PK by table rebuild ONLY on
+        #     the exact skeleton shape (empty table, ticket TEXT) — a
+        #     legacy DB with real rows is NEVER touched (§5).
+        # The app bootstrap still owns the full column contract; this only
+        # guarantees the skeleton is compatible with it.
+        # ------------------------------------------------------------------
+        skeleton_heal = {
+            "trading_rules_config": (
+                "rule_name TEXT",
+                "is_enabled INTEGER DEFAULT 0",
+                "category TEXT",
+                "parameters TEXT",
+            ),
+            "audit_ledger": (
+                "symbol TEXT",
+                "direction TEXT",
+                "volume REAL",
+                "entry_price REAL",
+                "exit_price REAL",
+                "status TEXT",
+                "pnl REAL",
+                "timestamp TEXT",
+            ),
+        }
+        for table, col_defs in skeleton_heal.items():
+            if table not in {
+                r[0]
+                for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }:
+                continue
+            cols_now = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+            for col_def in col_defs:
+                col_name = col_def.split()[0]
+                if col_name not in cols_now:
+                    try:
+                        con.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
+                        cols_now.add(col_name)
+                    except sqlite3.Error:
+                        pass
+        # Retype audit_ledger.ticket TEXT → INTEGER PRIMARY KEY when the
+        # skeleton shape is present and the table is EMPTY (fresh install
+        # only; any pre-existing row means a real DB we never rebuild).
+        try:
+            ledger_cols = con.execute("PRAGMA table_info(audit_ledger)").fetchall()
+            ticket_col = next((c for c in ledger_cols if c[1] == "ticket"), None)
+            if (
+                ticket_col is not None
+                and str(ticket_col[2]).upper() == "TEXT"
+                and ticket_col[5] == 0  # not PK
+                and con.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0] == 0
+            ):
+                cols_txt = ", ".join(f'"{c[1]}"' for c in ledger_cols if c[1] != "ticket")
+                con.execute("DROP TABLE audit_ledger")
+                con.execute(
+                    f"CREATE TABLE audit_ledger ("
+                    f"ticket INTEGER PRIMARY KEY{',' if cols_txt else ''} {cols_txt})"
+                )
+        except sqlite3.Error:
+            pass
         con.commit()
 
     def _detect_tamper(self) -> bool:

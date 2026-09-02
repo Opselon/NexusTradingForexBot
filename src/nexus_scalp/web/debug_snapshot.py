@@ -1451,12 +1451,33 @@ def _database_section(engine: Any) -> dict[str, Any]:
             size = path.stat().st_size if path.exists() else None
             wal = Path(str(path) + "-wal")
             wal_size = wal.stat().st_size if wal.exists() else None
+            # BUG-195 (TASK-DB-PLATFORM 2026-09-02): schema_version was
+            # hard-coded None, so the UI could never show the real schema
+            # version even when the DB was healthy — the FIRST broken layer
+            # was the API itself. Probe the canonical migration engine
+            # (single cheap version lookup, never a full scan; failures are
+            # isolated to NOT_RECORDED, never fabricated).
+            schema_version: Any = "NOT_RECORDED"
+            migration_state: Any = "UNKNOWN"
+            if path.exists():
+                try:
+                    from nexus_scalp.database.engine import DatabaseMigrationEngine
+                    from nexus_scalp.database.models import DatabaseDomain
+
+                    eng = DatabaseMigrationEngine(db_path=path, domain=DatabaseDomain(name))
+                    st = eng.status()
+                    cur = int(st.get("current_version", 0) or 0)
+                    schema_version = cur if cur > 0 else "NOT_RECORDED"
+                    migration_state = str(st.get("migration_state", "") or "UNKNOWN")
+                except Exception as exc:
+                    logger.warning("debug_snapshot db schema probe error", error=str(exc))
             return {
                 "path": _mask_path(str(path)),
                 "size_bytes": size,
                 "wal_bytes": wal_size,
                 "exists": path.exists(),
-                "schema_version": None,  # not probed per request (bounded)
+                "schema_version": schema_version,
+                "migration_state": migration_state,
                 "last_write": None,
                 "last_read": None,
                 "health": "READY" if path.exists() else "MISSING",

@@ -151,12 +151,18 @@ def test_health_returns_all_categories() -> None:
 
 
 def test_health_never_raises_on_missing_database(tmp_path: Path) -> None:
+    """Updated for BUG-196 semantics (CHG-0043 part A, 316d751): an ABSENT
+    audit.db before first engine run is lazy initialization (NOT_INITIALIZED,
+    WARNING), not corruption - only an existing-but-unreadable database is a
+    FAIL. The test previously pinned the old FAIL-on-absence contract and
+    broke on every run after the truthful-state change."""
     engine = rhealth.HealthEngine(workspace=tmp_path, db_path=tmp_path / "nope" / "audit.db")
-    entries = engine.run_all()
+    entries = engine.run_all()  # must not raise (test name contract)
     db = next(e for e in entries if e.category == "DATABASE")
-    assert db.verdict == "FAIL"
-    overall, _ = engine.overall(entries)
-    assert overall == "NOT READY"
+    assert db.verdict == "WARNING"
+    assert db.state == "NOT_INITIALIZED"
+    # Still never fabricated: the reason names the absent file truthfully.
+    assert "not initialized" in db.reason.lower()
 
 
 # ---------------------------------------------------------------------------

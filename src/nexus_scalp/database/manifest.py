@@ -29,6 +29,12 @@ from nexus_scalp.database.models import (
 # AUDIT domain (audit.db)
 # ---------------------------------------------------------------------------
 
+# AUDIT_SCHEMA_VERSION must equal baseline(1) + len(AUDIT_MIGRATIONS) = 7.
+# TASK-DB-PLATFORM (2026-09-02): the engine's expected_version() is derived
+# from the migration REGISTRY (registry.expected_version_for_domain); this
+# constant is the manifest-side mirror used by docs/drift tooling. A
+# regression test (test_database_platform_task_db.py) pins all three
+# domains to registry-expected so the two SSOTs can never diverge silently.
 AUDIT_SCHEMA_VERSION: int = 7
 
 AUDIT_TABLES: tuple[SchemaTable, ...] = (
@@ -164,7 +170,12 @@ AUDIT_MANIFEST = SchemaManifest(
 # NEWS domain (news.db)
 # ---------------------------------------------------------------------------
 
-NEWS_SCHEMA_VERSION: int = 1
+# NEWS_SCHEMA_VERSION must equal baseline(1) + len(NEWS_MIGRATIONS) = 2.
+# BUG-194 (TASK-DB-PLATFORM 2026-09-02): this was left at 1 after
+# NEWS-0002-source-health-index landed, so manifest.expected_version_for
+# (1) contradicted the engine's registry-derived expected_version (2) —
+# two SSOTs disagreeing about the same database. Pinned to 2.
+NEWS_SCHEMA_VERSION: int = 2
 
 NEWS_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(name="news_sources"),
@@ -220,7 +231,11 @@ NEWS_MANIFEST = SchemaManifest(
 # CANDLE_INTEL domain (candle_intel.db)
 # ---------------------------------------------------------------------------
 
-CANDLE_SCHEMA_VERSION: int = 1
+# CANDLE_SCHEMA_VERSION must equal baseline(1) + len(CANDLE_MIGRATIONS) = 2.
+# BUG-194 (TASK-DB-PLATFORM 2026-09-02): same drift class as NEWS — pinned
+# to 2 after CANDLE-0002-closure-composite-index. Manifest and registry
+# now agree by construction (pinned by regression test).
+CANDLE_SCHEMA_VERSION: int = 2
 
 CANDLE_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(name="candles"),

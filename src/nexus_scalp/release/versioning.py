@@ -194,14 +194,23 @@ def default_db_versions_provider() -> dict[str, Any]:
             eng = DatabaseMigrationEngine(path, domain)
             try:
                 st = eng.status()
+                # BUG-196 (TASK-DB-PLATFORM 2026-09-02): this used to read
+                # ``st["state"]`` which engine.status() never sets (its key is
+                # ``migration_state``) — the operator snapshot silently showed
+                # an empty migration state for every domain. Read the real
+                # key; fall back to UNKNOWN, never an empty string.
                 out[domain.value] = {
                     "current": st.get("current_version", 0),
                     "expected": st.get("expected_version", 0),
-                    "state": st.get("state", ""),
+                    "state": str(st.get("migration_state", "") or "UNKNOWN"),
                     "pending": len(st.get("pending", []) or []),
                 }
             except Exception:
-                out[domain.value] = {"current": 0, "expected": 0, "state": "unavailable"}
+                out[domain.value] = {
+                    "current": 0,
+                    "expected": 0,
+                    "state": "UNKNOWN",
+                }
         return out
     except Exception:
         return {}

@@ -245,9 +245,10 @@ class TestServeRoutes:
 
     def test_20_index_loads_ux_modules_before_app_js(self) -> None:
         html = _read("index.html")
-        order = [html.find(f'src="{n}?') for n in UX_ASSETS] + [html.find('src="app.js?')]
-        assert all(i >= 0 for i in order), \
-            f"script tag missing: {[n for n, i in zip(UX_ASSETS + ['app.js'], order) if i < 0]}"
+        names = [*UX_ASSETS, "app.js"]
+        order = [html.find(f'src="{n}?') for n in names]
+        missing = [n for n, i in zip(names, order, strict=True) if i < 0]
+        assert not missing, f"script tag missing: {missing}"
         assert order == sorted(order), "UX modules must load before app.js"
 
 

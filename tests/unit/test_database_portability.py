@@ -782,11 +782,17 @@ class TestDbConsoleUiSurface:
             assert fn in js, f"missing JS function {fn}"
 
     def test_server_registers_console_router(self):
-        server_text = (REPO_ROOT / "src" / "nexus_scalp" / "web" / "server.py").read_text(
-            encoding="utf-8"
-        )
-        assert "db_console" in server_text
-        assert "app.include_router(db_console_router)" in server_text
+        """BUG-198 (TASK-DB-PLATFORM 2026-09-02): the router registration was
+        extracted from server.py into web/debug_research_routes.py by
+        CHG-0032-A1 Step 3E; the endpoint is registered at runtime, but this
+        test still asserted the pre-extraction import text in server.py and
+        failed on every run. Assert the CURRENT truthful location instead:
+        debug_research_routes includes the db_console router."""
+        drr_text = (
+            REPO_ROOT / "src" / "nexus_scalp" / "web" / "debug_research_routes.py"
+        ).read_text(encoding="utf-8")
+        assert "db_console" in drr_text
+        assert "app.include_router(db_console_router)" in drr_text
 
     def test_api_client_has_del(self):
         client = (REPO_ROOT / "Web" / "api_client.js").read_text(encoding="utf-8")
