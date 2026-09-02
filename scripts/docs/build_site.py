@@ -635,8 +635,11 @@ def lang_switcher(lang: str, rel: str, from_rel: str) -> str:
             continue
         keep = find_translation(code, rel) is not None if rel else True
         # from_lang=lang: depth is computed from the CURRENT page's language
+        target_rel = rel
+        if code == "en" and rel in ("docs-hub", "index"):
+            target_rel = ""  # EN hub content lives at the site root
         href = (
-            page_href(rel, code, from_rel, from_lang=lang)
+            page_href(target_rel, code, from_rel, from_lang=lang)
             if (keep and rel)
             else page_href("", code, from_rel, from_lang=lang)
         )

@@ -302,7 +302,27 @@ def check_built_site_structure() -> None:
     js = (public / "assets" / "search.js").read_text(encoding="utf-8")
     if "nav-open" not in js:
         problems.append("search.js does not wire mobile nav")
-    record("Built-site structure", not problems, problems[:12] or ["ok"])
+    # FULL LINK AUDIT: every internal href/src on every built page resolves
+    bad_links: list[str] = []
+    total_links = 0
+    for page in public.rglob("*.html"):
+        text = page.read_text(encoding="utf-8", errors="replace")
+        from_dir = page.parent
+        for m in re.finditer(r"""(?:href|src)='([^']+)'""", text):
+            h = m.group(1)
+            if h.startswith(("http://", "https://", "mailto:", "#")):
+                continue
+            total_links += 1
+            resolved = (from_dir / h).resolve()
+            if not (resolved.exists() or (resolved / "index.html").exists()):
+                bad_links.append(f"{page.relative_to(public)}: {h}")
+    if bad_links:
+        problems.append(f"dead internal links ({len(bad_links)} of {total_links}): {bad_links[:6]}")
+    record(
+        "Built-site structure",
+        not problems,
+        problems[:12] or [f"ok — {total_links} links verified"],
+    )
 
 
 # ---------------------------------------------------------------- 7. mermaid
