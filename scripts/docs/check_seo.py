@@ -75,9 +75,8 @@ def main() -> int:
         sm_text = sm.read_text(encoding="utf-8")
         locs = re.findall(r"<loc>([^<]+)</loc>", sm_text)
         for loc in locs:
-            low = loc.lower()
-            repo_seg = "/nexustradingforexbot/"
-            tail = low.split(repo_seg, 1)[1] if repo_seg in low else low.split(".github.io/", 1)[-1]
+            repo_seg = "/NexusTradingForexBot/"
+            tail = loc.split(repo_seg, 1)[1] if repo_seg in loc else loc.split(".github.io/", 1)[-1]
             probe = SITE / tail
             if not (probe.exists() or (probe / "index.html").exists()):
                 problems.append(f"sitemap lists non-built URL: {loc}")
