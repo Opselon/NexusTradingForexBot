@@ -114,8 +114,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
+          # pytest-cov>=4.1.0 + pytest-xdist>=3.5.0 ship in the [dev] extra
+          # (pyproject) - the editable install above already provides them;
+          # a second resolver pass only added 10-20s per job.
           pip install -e ".[dev,web]"
-          pip install pytest-cov
 
       # -------- Results tree + run metadata (fresh on every run) --------
       - name: Initialize results tree
@@ -564,8 +566,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
+          # pytest-cov>=4.1.0 + pytest-xdist>=3.5.0 ship in the [dev] extra
+          # (pyproject) - the editable install above already provides them;
+          # a second resolver pass only added 10-20s per job.
           pip install -e ".[dev,web]"
-          pip install pytest-cov
 
       - name: Initialize results tree
         run: |
@@ -596,24 +600,27 @@ jobs:
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             research-backtest)
-              pytest tests/unit/test_research_phase09b.py \
-                    tests/unit/test_research_registry_null_score_bug075.py \
-                    tests/unit/test_research_task4_dataset.py \
+              # 2026-09-03 dedup: the 8 files here that are ALSO in
+              # tests/critical_suite.txt (research_phase09b, task4_dataset,
+              # nse_lifecycle_regression_matrix, lifecycle_verdict_mapping,
+              # lifecycle_e2e_v3, hardening_p1_p2, model_benchmark_phase13b,
+              # model_generation_phase13) were removed - the quality job
+              # already executes them on every push; re-running them in this
+              # arm duplicated identical behavior for zero extra signal.
+              # Coverage moved: none (dedup only). Remaining: the 3 files
+              # NOT covered by the critical-suite manifest.
+              pytest tests/unit/test_research_registry_null_score_bug075.py \
                     tests/unit/test_research_task4_validation.py \
-                    tests/unit/test_nse_lifecycle_regression_matrix.py \
-                    tests/unit/test_lifecycle_verdict_mapping.py \
-                    tests/unit/test_lifecycle_e2e_v3.py \
-                    tests/unit/test_hardening_p1_p2.py \
-                    tests/unit/test_model_benchmark_phase13b.py \
-                    tests/unit/test_model_generation_phase13.py \
                     tests/integration/test_research_api.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             model-validation)
-              pytest tests/unit/test_70d_model_validation_task4.py \
-                    tests/unit/test_model_governance_phase16.py \
-                    tests/unit/test_model_lifecycle_phase10.py \
-                    tests/unit/test_train_model_cli.py \
+              # 2026-09-03 dedup: 70d_model_validation_task4,
+              # model_governance_phase16 and model_lifecycle_phase10 are all
+              # members of tests/critical_suite.txt (quality job runs them on
+              # every push) - dropped here as duplicate execution. Remaining:
+              # train_model_cli + model_lifecycle_api (not in the manifest).
+              pytest tests/unit/test_train_model_cli.py \
                     tests/integration/test_model_lifecycle_api.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
