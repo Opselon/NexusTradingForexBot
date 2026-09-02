@@ -415,3 +415,55 @@ chain (reversal dispatch), the dispatcher, and reconcile paths.
 Largest remaining methods: manage_active_positions 484L (orchestrator),
 _autopsy_vanished_ticket 423L (could split row-build/experience later),
 _run_protection_chain 264L, reconcile_missed_closes 204L.
+
+
+## 18. S6 autopilot — telemetry throttle, protection chain, autopsy pipeline
+
+Three seams extracted in one continuous verified pass (each independently
+gated: 21 suites RC=0, ruff/mypy/py_compile clean):
+
+1. TelemetryThrottle (execution/telemetry_throttle.py, STEP A) — explicit
+   owner of the BUG-129 shared per-ticket emission gate (_last_telemetry_time).
+   API: may_emit / last_emit / record / drop_ticket. Manager keeps a live-dict
+   compat property; the legacy never-firing lazy-init guard inside the loop
+   was replaced by a throttle read (identical semantics — the guard could not
+   fire after __init__ construction). 9 goldens.
+
+2. Protection/AI-flip chain (STEP C) — _run_protection_chain(pos, ticket, ...,
+   20 explicit inputs) -> bool: AI direction flip + fast-reversal dispatch
+   (adapter.place_pending_order — the chain's broker authority is documented
+   and remains manager-owned), deterministic priority chain, giveback
+   enforcement, breakeven lock, MFE giveback trailing lock, throttled
+   institutional telemetry. The block's 4 `continue` sites return skip=True;
+   the caller continues the loop — identical control flow. (264L method.)
+
+3. Per-ticket autopsy pipeline — _autopsy_vanished_ticket(dead_ticket,
+   history_deals, symbol, now, current_tick, symbol_info, atr, hours_back):
+   deal resolution (live window + BUG-088/089 durable fallback), the
+   data-rich autopsy row, experience outcome, notification (418L verbatim,
+   no accumulators/skips — iteration-independent). _sweep_dead_tickets is
+   now a small coordinator (lookup + loop + finalize + cleanup).
+
+Measured cumulative (S6 start -> now): manage_active_positions 966 -> 484L;
+loop self.* fields 85 -> 53; the orchestrator is now a linear sequence:
+account prep -> discovery -> tracking -> hold-score eval ->
+trajectory/evidence/state -> protection chain (skip signal) -> decision
+stage -> ExecutionPlan dispatch -> sweep call. All stages have typed input
+contracts and verbatim-preserved bodies; broker calls remain only in the
+chain (reversal dispatch), the dispatcher, and reconcile paths.
+
+Largest remaining methods: manage_active_positions 484L (orchestrator),
+_autopsy_vanished_ticket 423L (could split row-build/experience later),
+_run_protection_chain 264L, reconcile_missed_closes 204L.
+
+
+### 18.1 Entry-sync stage (autopilot continuation)
+
+- _sync_external_modifications(pos, ticket, price_current, symbol_info):
+  broker-side SL/TP/volume modification detection + notifier + BUG-045
+  tracker advance + partial-close realized-pnl computation (71L verbatim).
+  manage_active_positions: 484 -> 416L; loop self-state 53 -> 52.
+- Remote-race note: d07a2a3 (entry-sync) was committed while Nexus-Docs
+  c1f8bee landed (site/_site re-tracking tug-of-war); resolved via clean
+  merge e89681d; unrelated unstaged foreign WIP left untouched; HEAD ==
+  origin/main verified at each step.
