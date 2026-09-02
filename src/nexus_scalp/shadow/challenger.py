@@ -173,8 +173,14 @@ class ChallengerRuntime:
         import torch
         from torch import nn
 
+        from nexus_scalp.shadow.compat import scale_like_champion
+
         x_np = np.asarray(x50, dtype=np.float32).reshape(1, -1)
-        x_np = (x_np - self.scaler_mean) / (self.scaler_std + 1e-8)
+        # CHG-0046 D6: champion-identical transform — (x-mean)/std with the
+        # trainer's 1e-3 std floor, clipped to [-5,+5]. The previous
+        # (x-mean)/(std+1e-8) UNCLIPPED variant evaluated the challenger
+        # under a transform it was never trained with.
+        x_np = scale_like_champion(x_np, self.scaler_mean, self.scaler_std)
         x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
         with torch.inference_mode():
