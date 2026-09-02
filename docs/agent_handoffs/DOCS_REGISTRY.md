@@ -125,6 +125,12 @@ Validation:
 Status: VERIFIED against live deployment
 ```
 
+
+
+## DOC-TASK-ID: DOCS-004 — P0 localization repair + P1/P2 UI system (user steer 2026-09-02)
+
+
+
 ## Out-of-scope defects observed (recorded only — owning agent notified via this registry)
 
 1. OBS-DOCS-001 (2026-09-02): project CI (ci.yml, "Code Quality & Tests") failing on
