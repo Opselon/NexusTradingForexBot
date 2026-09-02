@@ -1,3 +1,4 @@
+import json
 import tempfile
 from pathlib import Path
 
@@ -196,3 +197,70 @@ def test_wf_checkpoint_roundtrip_persists_exact_weights(tmp_path):
     raw = _np.load(scaler_path)
     assert _np.array_equal(raw["mean"], _np.asarray(bundle.mean, dtype=_np.float32))
     assert _np.array_equal(raw["std"], _np.asarray(bundle.std, dtype=_np.float32))
+
+
+def test_wf_metadata_carries_canonical_contract_identity_70d(tmp_path):
+    """MLPWR-05-01 (NEXUS-MLPOWER lane 05): the persisted training metadata
+    must carry the CONTRACT identity — canonical ordered feature names plus
+    the schema content hash — so serving-time verification can detect a
+    feature-ORDER swap, not only a width mismatch. A meta.json holding only
+    positional feat_0..N placeholders cannot prove train/live feature
+    identity (mission §4/§32). The identity must be honest: absent (None)
+    when the training columns are not the canonical feat_i sequence — never
+    fabricated."""
+    from nexus_scalp.features.schema_contract import (
+        BASE_50D_NAMES,
+        canonical_feature_names,
+        feature_schema_hash,
+    )
+    from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
+
+    trainer = WalkForwardTrainer(
+        feature_schema_id="scalp_v3",
+        artifact_save_path=tmp_path / "m70" / "model.pt",
+    )
+    trainer._save_metadata([f"feat_{i}" for i in range(70)])
+    meta = json.loads((tmp_path / "m70" / "model.meta.json").read_text(encoding="utf-8"))
+
+    assert meta["num_features"] == 70 and meta["feature_schema_id"] == "scalp_v3"
+    names = meta["canonical_feature_names"]
+    assert names == list(canonical_feature_names()), (
+        "meta must embed the exact canonical 70-name ordering"
+    )
+    # Family boundaries survive serialization: base ends 49, news 50..59,
+    # liquidity 60..69 (scalar name spot-checks from the canonical registry).
+    assert names[50] == "active_high_impact_events"
+    assert names[60] == "bsl_distance_atr"
+    assert names[69] == "post_sweep_displacement"
+    assert meta["feature_schema_hash"] == feature_schema_hash()
+
+
+def test_wf_metadata_identity_50d_and_noncanonical_columns(tmp_path):
+    """MLPWR-05-01 companion: scalp_v1/50D binds to the canonical 50-name
+    base block (hash stays null — the content hash is defined for scalp_v3);
+    and a NON-canonical training column list yields identity=None (honest
+    UNKNOWN), while the bound schema hash is still recorded when defined."""
+    import json as _json
+
+    from nexus_scalp.features.schema_contract import (
+        BASE_50D_NAMES,
+        feature_schema_hash,
+    )
+    from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
+
+    out50 = tmp_path / "m50"
+    tr50 = WalkForwardTrainer(feature_schema_id="scalp_v1", artifact_save_path=out50 / "model.pt")
+    tr50._save_metadata([f"feat_{i}" for i in range(50)])
+    meta50 = _json.loads((out50 / "model.meta.json").read_text(encoding="utf-8"))
+    assert meta50["canonical_feature_names"] == list(BASE_50D_NAMES)
+    assert meta50["feature_schema_hash"] is None
+
+    # Non-canonical ordering: identity must be None (UNKNOWN), never faked.
+    outnc = tmp_path / "mnc"
+    trnc = WalkForwardTrainer(feature_schema_id="scalp_v3", artifact_save_path=outnc / "model.pt")
+    shuffled = [f"feat_{i}" for i in range(70)]
+    shuffled[0], shuffled[7] = shuffled[7], shuffled[0]
+    trnc._save_metadata(shuffled)
+    metanc = _json.loads((outnc / "model.meta.json").read_text(encoding="utf-8"))
+    assert metanc["canonical_feature_names"] is None
+    assert metanc["feature_schema_hash"] == feature_schema_hash()

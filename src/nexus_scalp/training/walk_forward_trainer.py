@@ -1185,9 +1185,49 @@ class WalkForwardTrainer:
             )
         return ScalerBundle(mean=mean, std=std)
 
+    def _canonical_feature_columns(self, feature_cols: list[str]) -> list[str] | None:
+        """Canonical schema names when the training columns are the feat_i sequence.
+
+        MLPWR-05-01: the persisted meta must carry the CONTRACT identity, not
+        only positional placeholders — a feature-ORDER swap between dataset
+        and training is otherwise undetectable at serving time. Returns the
+        canonical ordered names for the bound schema when (and only when) the
+        training columns are exactly feat_0..N-1 for the schema dimension
+        (the convention both production call sites guarantee). Returns None
+        (identity unavailable) for any non-canonical column list.
+        """
+        try:
+            dim = int(self.feature_schema.dimension)
+            if list(feature_cols) != [f"feat_{i}" for i in range(dim)]:
+                return None
+            schema_id = str(self.feature_schema.schema_id)
+            if schema_id == "scalp_v3":
+                from nexus_scalp.features.schema_contract import canonical_feature_names
+
+                return list(canonical_feature_names())
+            if schema_id == "scalp_v1":
+                from nexus_scalp.features.schema_contract import BASE_50D_NAMES
+
+                return list(BASE_50D_NAMES) if dim == 50 else None
+            return None
+        except Exception:
+            return None
+
+    def _feature_schema_hash(self) -> str | None:
+        """The bound schema's canonical content hash (scalp_v3 only)."""
+        if str(self.feature_schema.schema_id) != "scalp_v3":
+            return None
+        try:
+            from nexus_scalp.features.schema_contract import feature_schema_hash
+
+            return feature_schema_hash()
+        except Exception:
+            return None
+
     def _save_metadata(self, feature_cols: list[str]) -> None:
         meta_path = self._get_meta_path()
         tmp_path = meta_path.with_name(meta_path.name + ".tmp")
+        canonical_cols = self._canonical_feature_columns(feature_cols)
         payload = {
             "num_features": self.num_features,
             "num_classes": self.NUM_CLASSES,
@@ -1209,6 +1249,13 @@ class WalkForwardTrainer:
             "clip_features_max": self.clip_features_max,
             "seed": self.seed,
             "device_at_training": str(self.device),
+            # MLPWR-05-01: contract identity — canonical ordered feature
+            # names + the schema content hash, so serving-time verification
+            # can detect an ORDER swap, not only a width mismatch. Absent
+            # (null) when the training columns were not the canonical
+            # feat_i sequence (honest UNKNOWN, never fabricated identity).
+            "canonical_feature_names": canonical_cols,
+            "feature_schema_hash": self._feature_schema_hash(),
         }
         try:
             meta_path.parent.mkdir(parents=True, exist_ok=True)
