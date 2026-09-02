@@ -334,3 +334,18 @@ training_dataset_id.
   schema, model governance, migrations, secrets) without explicit ownership.
 - Swarm work maps to existing TASK-ID / BUG-NNN / CHANGE-ID registries; no second
   independent coordination state is introduced.
+
+## Snapshot 2026-09-02 (CHG-0051 — canonical runtime certification gate, Nexus-Main)
+- ONE canonical pre-push command: scripts/ci/runtime_gate.py (L0..L9 layered
+  certification of the composed runtime). Exit codes 0/1/2/3/4/5 (additive to
+  release/exit_codes.py semantics). --json pure-JSON stdout, --fast tier,
+  --evidence artifact. RUNTIME_GATE v1 registered in contracts.md.
+- Safety: paper adapter only + execution-seam tripwire (whole run must show 0
+  execution-seam calls), disposable audit DB injected, NEXUS_SETTINGS_DB
+  isolated, offline (loopback-only), deterministic synthetic market series.
+- Measured budgets: full ~30s cold / ~14s warm, fast ~6.5s.
+- CI: quality job invokes the same command via make_ci_results check lane
+  (runtime_gate); CI remains final authority.
+- Gate self-tests: tests/unit/test_runtime_gate.py (34) +
+  tests/integration/test_runtime_gate_e2e.py (9) — all green at commit time.
+- Doc: docs/architecture/runtime-certification-gate.md (canonical).
