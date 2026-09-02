@@ -864,6 +864,13 @@ class _Shadow70Harness:
         self._last_probs = None
         self.FEATURE_DIM = 50
         self.FEATURE_SCHEMA_ID = "scalp_v1"
+        # CHG-0046: the 70D hook resolves the base width from the
+        # bundle-authoritative contract; harness emulates a 70D bundle
+        # (70 - 20 family/liquidity = 50 base) like the live engine.
+        self._bundle = SimpleNamespace(scaler=None, model=None, artifact_path=None)
+        self.effective_feature_dim = 70
+        self.effective_feature_schema_id = "scalp_v3"
+        self.liquidity_governor = None
         self.aggregator = SimpleNamespace(get_completed_bars=lambda: [])
         self.champion_manager = SimpleNamespace(
             model_id="primary_scalp_scalp_v1_50d",

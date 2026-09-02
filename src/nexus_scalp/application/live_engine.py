@@ -5129,11 +5129,7 @@ class LiveEngine:
             # (which lag at scalp_v1/50D while a 70D bundle serves).
             live_schema_id = str(self.effective_feature_schema_id)
             live_dim = int(self.effective_feature_dim)
-            x50 = (
-                fv.to_tensor_input()
-                if hasattr(fv, "to_tensor_input")
-                else [0.0] * live_dim
-            )
+            x50 = fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else [0.0] * live_dim
             # CHG-0046 D5: deterministic full-vector fingerprint (the salted
             # 5-element python hash() was irreproducible across processes and
             # insensitive to 90% of the vector — same-input proof impossible).
@@ -5296,10 +5292,14 @@ class LiveEngine:
             )
             from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
 
-            base50 = [0.0] * 50
+            # CHG-0046 D1b: the 70D observation inherits the bundle's
+            # AUTHORITATIVE base width, not the hard-coded 50 — a 0-filled
+            # fallback must match the ACTUAL base block the champion used.
+            _base_dim = int(self.effective_feature_dim) - 20
+            base50 = [0.0] * max(1, _base_dim)
             if fv is not None:
                 v = fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else None
-                if v is not None and len(v) == 50:
+                if v is not None and len(v) == _base_dim:
                     base50 = list(v)
             feature_hash = getattr(fv, "feature_hash", "") or ""
             regime_str = getattr(getattr(self, "_last_regime_state", None), "regime", None)
@@ -5326,9 +5326,24 @@ class LiveEngine:
                 except Exception:
                     news10 = [0.0] * 10
 
-            # liquidity features: injected producer when available
+            # CHG-0046 D8: record the governor's CAUSAL state alongside the
+            # snapshot. The champion consumes a governor snapshot ONLY when
+            # causal_state == VALID (else inference is blocked); the shadow
+            # accepts a fresh-but-invalid snapshot and labels it. The
+            # liquidity_state column now carries that truth so an operator
+            # can distinguish a like-for-like comparison from an
+            # INPUT_MISMATCH (the champion saw no liquidity at all).
             liquidity_calc_version = ""
+            liquidity_causal_state = ""
             liq10 = [0.0] * 10
+            gov = getattr(self, "liquidity_governor", None)
+            if gov is not None:
+                try:
+                    liquidity_causal_state = str(
+                        gov.causal_state() if callable(getattr(gov, "causal_state", None)) else ""
+                    )
+                except Exception:
+                    liquidity_causal_state = ""
             try:
                 liq10, liquidity_calc_version = build_liquidity_10(self, tick)
             except Exception:
@@ -5364,7 +5379,12 @@ class LiveEngine:
                 news_state=str(getattr(news_ctx, "state", "") or "")
                 if isinstance(news_ctx, object)
                 else "",
-                liquidity_state="",
+                # CHG-0046 D8: truthful liquidity provenance — the governor's
+                # causal state + how the 10 values were produced. An
+                # INVALID/stale state means the CHAMPION would have blocked
+                # inference this tick; the shadow row is labeled, not silent.
+                liquidity_state=liquidity_causal_state
+                or ("unavailable" if liquidity_calc_version == "unavailable" else "UNKNOWN"),
                 liquidity_calculation_version=liquidity_calc_version,
                 liquidity_features_10=liq10,
                 base_feature_hash=feature_hash,
