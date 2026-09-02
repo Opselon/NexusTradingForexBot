@@ -10392,20 +10392,17 @@ document.addEventListener('DOMContentLoaded', () => {
         modeSel.dataset.modeBound = '1';
         modeSel.addEventListener('change', async () => {
             const requested = modeSel.value;
-            // OPERATOR SAFETY (CHG-0043): switching INTO LIVE dispatches
-            // real orders; require structured confirmation first. Cancel
-            // reverts the selector to the authoritative server mode.
-            if (requested === 'LIVE' && window.NX && window.NX.cc && window.NX.cc.design) {
-                window.NX.cc.design.confirmDialog({
-                    action: 'Switch execution mode to LIVE',
-                    current: 'Configured mode: ' + (window.__serverExecutionMode || 'UNKNOWN'),
-                    impact: 'The engine will dispatch REAL orders to the connected broker account.',
-                    recovery: 'Revert by selecting PAPER/SHADOW again; every order stays in the audit trail.',
-                    confirmVerb: 'GO LIVE',
-                    onCancel: function () { modeSel.value = window.__serverExecutionMode || 'PAPER'; },
-                    onConfirm: function () { performEngineModeSet(requested); },
-                });
-                return;
+            const previous = window.__serverExecutionMode || 'PAPER';
+            // OPERATOR SAFETY (CHG-0043 + CHG-0048/BUG-194): switching INTO LIVE
+            // dispatches real orders — requires typed confirmation ("LIVE").
+            // PAPER <-> SHADOW keeps a single impact-preview confirm. Cancel or
+            // failure reverts the selector to the authoritative server mode.
+            if (requested !== previous && window.NX && window.NX.confirmModeChange) {
+                const confirmed = await window.NX.confirmModeChange(previous, requested);
+                if (!confirmed) {
+                    modeSel.value = previous;
+                    return;
+                }
             }
             performEngineModeSet(requested);
         });
