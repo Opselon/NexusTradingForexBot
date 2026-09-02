@@ -1288,3 +1288,24 @@ Why: brief mandates defect-detection power over test count; regression classes (
 Contracts touched: none changed; contracts VERIFIED (SCHEMA, OBSERVABILITY_LOG freeze,
 PROVIDER_HEALTH_GATE v1, DB_MIGRATION v1, API platform v1). Risk: LOW (tests-only + CI lane).
 Status: IMPLEMENTING
+
+
+## CHG-0043 - API Platform v1 (/api/v1) — additive typed platform layer (2026-09-02, Hermes-Main)
+
+Change: New versioned API platform `/api/v1` (65 read-dominant capabilities, 16 domain
+routers under src/nexus_scalp/web/api_v1/) with standardized envelope
+({data, meta:{request_id, generated_at}}), single pagination model (page/page_size/has_more),
+unified error model (code/message/details/request_id/retryable; VALIDATION_ERROR→422,
+RESOURCE_NOT_FOUND→404, unavailable family→503), UTC ISO-8601 timestamps, secret
+sanitization, idempotency-key echo on POSTs. Developer surface: Python client
+(api_client.py), CLI `nexus api`, scripts/dev tools (smoke/contract-check/openapi
+snapshot+diff/benchmark), docs/api/API_REFERENCE.md. Spec of record:
+docs/api/API_PLATFORM_V1.md.
+Scope: src/nexus_scalp/web/api_v1/ (new), server.py (ONE include_router wiring block
+ONLY), api_client.py, cli/api_commands.py + app_factory registration, scripts/dev/api_*,
+tests/unit/test_api_v1_contracts.py, tests/integration/test_api_v1_platform.py, docs/api/.
+NOT touched: legacy routes (zero behavior change), trading/execution/risk internals,
+feature/model contracts, installer, CI workflows (except additive api-platform job last).
+Contracts: API_V1_ENVELOPE v1 (new), API_V1_PAGINATION v1 (new), API_V1_ERRORS v1 (new).
+Risk: MEDIUM (new public surface; mitigated: read-dominant, no trading mutations,
+sanitization layer, additive-only wiring, contract gates). Status: IN_PROGRESS
