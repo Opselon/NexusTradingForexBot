@@ -556,6 +556,14 @@ def main() -> int:
     en_index = out_dir / "index" / "index.html"
     if en_index.exists():
         (out_dir / "index.html").write_bytes(en_index.read_bytes())
+    # Language landing pages: /<lang>/ -> /<lang>/index/index.html so the
+    # language switcher and README language links resolve at directory roots.
+    for lang in LANGUAGES:
+        if lang == "en":
+            continue
+        lang_index = out_dir / lang / "index" / "index.html"
+        if lang_index.exists():
+            (out_dir / lang / "index.html").write_bytes(lang_index.read_bytes())
 
     # Favicon fallback + 404
     if not (out_dir / "assets" / "favicon.svg").exists():
