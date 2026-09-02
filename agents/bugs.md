@@ -7807,3 +7807,29 @@ Status: FIXED (CI lane usable without private artifacts; local strictness kept).
 - COMMITS: landed in 787601db (parallel index absorption: Nexus-Fleet-Orchestrator staged/committed the tree as part of TASK-ANTIGOD row update; BUG-223 payload verified intact via git show HEAD — files audit_repository.py +18/-1, conftest.py +16, test_audit_db_default_isolation_bug223.py +114, test_packaged_db_and_mode_bug146_149.py +7/-1; commit message labels the batch, not this fix — disclosed here per contract s41).
 - PUSH: origin/main == 787601db (pushed by the parallel orchestrator during the window; fetch-verified).
 - RESIDUAL / HANDOFF: 957 contaminated test_req rows remain in production artifacts/audit.db (orders + executions). Purge needs user consent because the live paper-mode engine writes the same DB — @nexus-database owns the purge/quarantine design. Scratch evidence: scratch/ns_qa_tdfq2_* (census/repro), scratch/ns_probe_bug223_default_audit_seam.py (resolution proof).
+
+
+## BUG-224 — installer smoke collection ERROR on non-Windows release gates job (2026-09-03, Nexus-Fleet-Orchestrator)
+
+- **Symptom**: Release run 33692802493 (re-cut tag v9.0.7 @ 315cb36f) — job
+  "Quality gates", step "Integration smoke (fast subset)" failed with pytest
+  exit code 2: `ERROR collecting tests/installer/test_installer_protocol.py`
+  → `Using pytest.skip outside of a test will skip the entire module ... pass
+  allow_module_level=True` → "1 error during collection".
+- **Root cause**: `find_powershell()` called `pytest.skip(...)` at IMPORT
+  time (module scope, `PS = find_powershell()`). On any host without
+  `pwsh.exe`/`powershell.exe` on PATH (ubuntu-latest gates job) the import
+  itself raised `Skipped` outside a test context = collection ERROR, exit 2.
+  The module already had a correct `pytestmark = pytest.mark.skipif(not win32
+  or installer missing)` guard; the helper's fallback skip was a redundant
+  second guard implemented with a collection-fatal mechanism.
+- **Fix** (c1253bd7): helper returns `None` instead of calling
+  `pytest.skip()`; module-level skipif remains the single skip authority.
+  File still runs fully on Windows runners (22 collected / 21 passed / 1
+  E2E-env skip verified locally), skips cleanly on non-Windows.
+- **Class**: test-harness collection bug (CI truth bug, not a product
+  regression). Fixed rather than suppressed; no test removed, no skip added.
+- **Lesson**: never `pytest.skip()` at import/module scope; use
+  `pytestmark = pytest.mark.skipif(...)` or `allow_module_level=True` —
+  and re-run the exact CI subset (all 3 smoke files, Linux semantics) before
+  trusting a release-gate change.
