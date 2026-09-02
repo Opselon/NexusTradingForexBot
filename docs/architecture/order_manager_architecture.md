@@ -279,3 +279,48 @@ log_autopsy_fixes, accounting_hedging, rule_matrix.
   and dispatch state are interwoven with broker calls — next prerequisite is
   a tracker-owner decision for _hold_score_tracker/_base_hold_score_tracker
   (read-modify-write by the router) before arbitration/dispatch extraction.
+
+
+## 16. S6-escalation — stage decomposition of the per-position loop
+
+Four atomic commits, each independently gated (18-19 suites RC=0, ruff/mypy/
+py_compile clean, perf unchanged):
+
+1. f2d8207  HoldScoreLedger (execution/hold_score_ledger.py) — explicit owner
+   of the four hold-score state dicts (_hold_score_tracker,
+   _base_hold_score_tracker, _last_reasons_tracker, _last_hold_eval_time).
+   Store-only boundary; manager keeps live-dict compat properties; cleanup
+   bundle pops work unchanged. The previously identified blocker is resolved.
+2. c4d0aa8  DECISION STAGE — _decide_position_action(pos, ticket, ..., 17
+   explicit inputs) -> (action, scenario, rule_target_sl): rule-matrix
+   evaluation, scenario fallback, multi-stage arbitration, exit-pending
+   record, throttled exit-evaluation log, exit-mechanism mapping, giveback
+   MFE-SL targeting (91L verbatim block). Broker dispatch stays manager-owned.
+3. 42b7964  TRACKING/EVIDENCE/STATE STAGE — _update_trajectory_and_state(...)
+   -> (pnl_features, evidence, confidence_factor, debounced_state,
+   budget_exhausted): trajectory step, pnl features, adaptive evidence,
+   recovery-budget gate on drawdown, candidate state, hysteresis debounce.
+4. 71ba47d  HOLD-SCORE EVALUATION STAGE — _evaluate_hold_score(...) ->
+   (hold_score, invalidate_reasons, base_hold_score): throttled base eval,
+   position-state recalculation, giveback override, tracker store.
+
+Measured effect (baseline -> after):
+- manage_active_positions: 966L -> 832L (-134L body; the three stages live as
+  explicit testable class methods adjacent to the orchestrator)
+- self.* fields touched in-loop: 85 -> 68 (-17; hold-score state + decision
+  internals now behind stage signatures)
+- internal stage calls in loop: 30 explicit stage invocations; branches
+  110 -> 91; try blocks 6 -> 4 in the loop body
+- execution flow is now literally: ACCOUNT PREP -> TICKET DISCOVERY ->
+  TRACKING -> HOLD-SCORE EVAL -> POSITION EVAL (trajectory/evidence/state) ->
+  PROTECTION/AI-FLIP chain -> DECISION -> DISPATCH -> TELEMETRY
+
+Stage-method shape (Phase-5 target): each stage has an explicit typed input
+contract, a tuple return, no hidden globals, and preserves the exact
+statement order of the original block (verbatim moves). Broker writes remain
+only in the manager dispatch section.
+
+Remaining: the loop body still holds the protection/AI-flip priority chain
+and the broker dispatch (~250L combined). Prerequisites documented: dispatch
+extraction requires an execution-plan object; protection-chain extraction
+requires the notifier-throttle owner decision.
