@@ -100,11 +100,19 @@ class TestVersionIdentity:
 
 class TestUpdateAwareness:
     def test_human_check_has_awareness_block(self):
-        """UX4: update check carries current commit / distance / verdict."""
+        """UX4: update check carries current commit / distance / verdict.
+        Depending on the local-vs-remote state the block renders as an
+        up-to-date line, a distance row, or a revision-ahead notice."""
         r = nexus("update", "check")
         assert r.returncode == 0
         out = r.stdout
-        assert ("Current commit" in out) or ("Commit distance" in out) or ("up to date" in out)
+        has_awareness = (
+            "Current commit" in out
+            or "Commit distance" in out
+            or "up to date" in out
+            or "ahead of origin" in out
+        )
+        assert has_awareness, out[-600:]
         assert "Last checked:" in out
 
     def test_json_check_pure_json(self):
