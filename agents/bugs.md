@@ -7065,3 +7065,23 @@ Status: FIXED (uncommitted at discovery; committed with CHG-0043 part 1)
   blocker for every release cut), Category: Observability/Release.
   Status: OPEN - routed to forensics owner; NOT fixed in this pass
   (check files carry uncommitted foreign BUG-192 WIP).
+## BUG-194 - Web client PAPER->LIVE execution-mode switch fires with NO confirmation (2026-09-02, Nexus-Main UX pass)
+
+- Symptom (live-audited on :8080, v9.0.3): the header `execution-mode-selector`
+  binds a bare `change` listener that immediately POSTs /api/engine/mode.
+  PAPER -> LIVE arms real order execution in ONE accidental click / one mouse
+  slip on a touch device. No modal, no impact preview, no type-to-confirm -
+  while destructive position-close (app.js:5403) and model promotion
+  (app.js:7173) both use confirm() and Forensic Incident Center uses
+  type-to-confirm.
+- Evidence: Web/app.js DOMContentLoaded handler (~line 10359) posts
+  { mode: requested } with zero user confirmation; server-side guard is the
+  only barrier. Journey audit of the running client recorded the mode flip
+  with 1 click and 0 confirmations.
+- Risk: CRITICAL-adjacent (HIGH) - live-money UX hazard class; violates the
+  brief's destructive-action rule ("Do not hide consequences").
+- Fix (this change): NX.confirm modal gate with impact preview +
+  type-to-confirm for any -> LIVE transition; other transitions get a light
+  confirm. Regression tests: tests/unit/test_web_ux_safety.py
+- Classification: P1 UI-safety. Status: FIXED in this pass (client-side
+  confirmation; server-side LIVE-arm authorization remains the runtime owner's).

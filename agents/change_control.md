@@ -1426,3 +1426,28 @@ v1.1 (evidence join + geometry refusal). Risk: LOW (recording + research
 only; zero decision-path change).
 Status: COMPLETE
 
+## CHG-0048 - Client experience & usability pass: safety, clarity, connectivity, i18n (2026-09-02, Nexus-Main UX)
+
+- Objective (user brief "NEXUS CLIENT EXPERIENCE & USABILITY AGENT"): make the
+  actual client easy/fast/clear for a user who knows nothing about internals.
+  NO trading-logic, model, risk, execution, or signal-semantics changes.
+- Scope (presentation layer only): Web/index.html, Web/app.js (additive),
+  Web/ux.js (NEW), Web/ux_i18n.js (NEW), Web/ux_palette.js (NEW),
+  Web/styles.css (append), src/nexus_scalp/web/server.py (ADDITIVE serve
+  routes for the 3 new static assets, verbatim FileResponse pattern),
+  tests/unit/test_web_ux_safety.py (NEW).
+- Delivered: (1) NX.confirm modal + type-to-confirm on PAPER/SHADOW->LIVE
+  (BUG-194); (2) connection-lost banner + stale-data marking + retry-now;
+  (3) i18n core EN/FA/DE/ES/AR + dir=rtl + language switcher for shared UI
+  chrome; (4) Ctrl+K command palette + keyboard shortcuts + last-tab restore;
+  (5) NO_TRADE humanization (confidence semantics, plain-language reasons,
+  freshness); (6) attention strip + grouped sidebar sections; (7)
+  visibility-aware polling (hidden tabs stop 30s account polling).
+- Owners affected: Web/Dashboard (this agent); web/server.py touched ADDITIVELY
+  (CROSS-OWNER declared: serve-route block only, no handler semantics).
+- Contracts: UI_STATE (presentation-only consumers, no producer changes),
+  PROVIDER_HEALTH_GATE UI panel untouched, INV-010 untouched (no Telegram
+  paths), no API request/response shapes changed.
+- Risk: LOW (client-only presentation; worst case = cosmetic regression,
+  covered by new UI-safety tests + existing Playwright e2e + deploy-drift tests).
+- Status: IMPLEMENTING
