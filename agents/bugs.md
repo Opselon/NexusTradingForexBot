@@ -7480,7 +7480,7 @@ pass - discovered during deploy-gate verification, referred NOT fixed)
 
 Status: FIXED (docs-tooling probe only; no site content changed).
 
-## BUG-211 - Primary launcher binds DirectMT5Adapter in PAPER/SHADOW boots: `--mode paper` still connects the real broker adapter and the engine manages REAL (demo) positions in non-LIVE modes (2026-09-02, Nexus-Main client E2E acceptance)
+## BUG-212 - Primary launcher binds DirectMT5Adapter in PAPER/SHADOW boots: `--mode paper` still connects the real broker adapter and the engine manages REAL (demo) positions in non-LIVE modes (2026-09-02, Nexus-Main client E2E acceptance)
 
 - SYMPTOM (black-box E2E): booted `NexusTradingForexBot.py --mode paper`; banner prints
   `Paper guard  PAPER  Default safe` but the very next line binds
