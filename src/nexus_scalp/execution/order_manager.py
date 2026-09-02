@@ -51,6 +51,7 @@ from nexus_scalp.execution.protection_ledger import (
     PositionProtectionState,
 )
 from nexus_scalp.execution.recovery_budget import RecoveryBudgetLedger
+from nexus_scalp.execution.telemetry_throttle import TelemetryThrottle
 from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
 from nexus_scalp.experience.outcome_recovery import (
@@ -393,12 +394,14 @@ class OrderLifecycleManager:
         # to position_tracker.PositionTrackingLedger; compat properties below).
         self._tracking = PositionTrackingLedger()
 
+        # S6 STEP-A: telemetry throttle owner (BUG-129 shared gate).
+        self._telemetry = TelemetryThrottle()
+
         # S6-escalation: hold-score state owner (dicts moved to
         # hold_score_ledger.HoldScoreLedger; compat properties below).
         self._hold_scores = HoldScoreLedger()
 
         # Throttling & spread tracking for dynamic hold score
-        self._last_telemetry_time: dict[int, float] = {}
         self._rolling_spreads: list[float] = []
 
         # Part 4: Pending Order Lifecycle Management tracking
@@ -2734,6 +2737,11 @@ class OrderLifecycleManager:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._last_hold_eval_time
 
+    @property
+    def _last_telemetry_time(self) -> dict:
+        """Compatibility accessor — live throttle dict owned by TelemetryThrottle."""
+        return self._telemetry._last_telemetry_time
+
     def _ensure_ticket_bootstrap(
         self,
         ticket: int,
@@ -4613,9 +4621,9 @@ class OrderLifecycleManager:
 
             # Throttled Detailed Telemetry logging (max once every 3.0s per ticket)
             current_time = time.time()
-            if not hasattr(self, "_last_telemetry_time"):
-                self._last_telemetry_time = {}
-            last_telemetry = self._last_telemetry_time.get(ticket, 0.0)
+            # S6 STEP-A: throttle owned by TelemetryThrottle (the legacy lazy
+            # init never fired post-__init__ construction; guard removed).
+            last_telemetry = self._telemetry.last_emit(ticket)
             if (current_time - last_telemetry) >= 3.0:
                 logger.info(
                     "[INSTITUTIONAL TELEMETRY v6.8]",
