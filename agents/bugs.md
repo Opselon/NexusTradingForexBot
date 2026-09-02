@@ -7505,3 +7505,24 @@ Status: FIXED (docs-tooling probe only; no site content changed).
   make position mutation observation-only in SHADOW.
 - E2E classification: P0-adjacent SAFETY (paper/shadow trust boundary). No real order was
   placed by this pass (no dispatch occurred; the position pre-dates the session).
+
+
+## BUG-213 (flaky, CI-only) - test_observability_guardrails::TestSubsystemPins::test_strategy_degraded_edge_triggered failed twice in CI runs 633/653 while passing 5/5 solo locally and in most CI runs (2026-09-02, Nexus-Main DB platform owner; discovered while certifying TASK-DB-PLATFORM CI state; NOT fixed here — observability-guardrails lane referral)
+
+- Symptom: `assert e._should_repeat_degraded("strat_x") is True` fails with
+  False in CI (runs 33583881735/633 and 33586820518-adjacent/653) but the
+  same test passes solo locally (5/5) and in other CI runs. Implementation
+  (`experience/evaluator.py::_should_repeat_degraded`) is a straightforward
+  monotonic-clock edge-trigger; the test builds the evaluator via
+  `StrategyEvaluator.__new__` + manual `_degraded_log_ts = {}`.
+- Suspected mechanism: another guardrail test in the same class leaks a
+  module-level/time-patched dependency into `import time as _time`, or a
+  parallel xdist worker reuses a mutated class attribute; solo/ordered runs
+  are green both locally and in CI re-runs.
+- Impact: CI red only when it fires; unrelated to the database platform
+  (experience-layer test seam). Referral: observability guardrails owner
+  (AGENT-2 lane). Suggested fix direction: construct via a tiny real
+  `__init__` (monkeypatched AuditRepository stub) or assert edge semantics
+  with a frozen `_time.monotonic` seam instead of `__new__` + manual attr.
+- Evidence: CI artifacts 9829506146 (run 633) + 9830824914 (run 653)
+  FAILED line; local 5x solo PASS at HEAD 0382f15. Status: OPEN (referred).
