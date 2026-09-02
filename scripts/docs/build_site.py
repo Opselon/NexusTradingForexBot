@@ -1084,24 +1084,23 @@ def main() -> int:
         )
 
         # EVERY page for EVERY language (translated or English-with-notice)
+        # EN skips a separate /docs-hub/ — its hub content IS the root page.
         for rel in all_rels:
-            if rel == "docs-hub" and lang != "en" and find_translation(lang, rel) is None:
-                hub_src = DOCS_DIR / "index.md"
-            else:
-                hub_src = None
+            if rel == "docs-hub" and lang == "en":
+                continue
             translated = False
-            if lang == "en":
-                src_path = DOCS_DIR / f"{rel}.md"
-                translated = True
-            else:
+            if lang != "en":
                 tpath = find_translation(lang, rel)
                 if tpath is not None:
                     src_path = tpath
                     translated = True
                 elif rel == "docs-hub":
-                    src_path = hub_src or (DOCS_DIR / "index.md")
+                    src_path = DOCS_DIR / "index.md"  # hub fallback source
                 else:
                     src_path = DOCS_DIR / f"{rel}.md"  # English fallback, flagged
+            else:
+                src_path = DOCS_DIR / f"{rel}.md"
+                translated = True
             if not src_path.exists():
                 continue
             fm, body = parse_front_matter(src_path.read_text(encoding="utf-8"))
