@@ -132,7 +132,7 @@ def test_engine_news_projection_must_match_canonical_projection() -> None:
     assert engine_block == canonical_block
     # and the state encoding lands at slot 59 (HIGH_IMPACT -> 2.0)
     assert engine_block[9] == 2.0
-    assert engine_block[0] == 27.0
+    assert engine_block[0] == 1.0  # BUG-197: bounded 0/1 flag, not raw count 27
     assert abs(engine_block[3] - 0.1589) < 1e-9
     assert abs(engine_block[4] - 0.1903) < 1e-9
 

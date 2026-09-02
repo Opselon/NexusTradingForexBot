@@ -24,7 +24,7 @@ SITE_TAGLINE = {
 OWNER = "Opselon"
 REPO = "NexusTradingForexBot"
 REPO_URL = f"https://github.com/{OWNER}/{REPO}"
-PAGES_URL = f"https://{OWNER}.github.io/{REPO}"
+PAGES_URL = f"https://{OWNER.lower()}.github.io/{REPO}"  # Pages hosts are lowercase
 SOURCE_LANG = "en"
 
 LANGUAGES = {

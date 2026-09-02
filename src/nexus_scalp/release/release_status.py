@@ -84,8 +84,15 @@ def _git_counts(remote: str = "origin/main") -> tuple[int | None, int | None]:
         )
         if out.returncode != 0:
             return None, None
-        behind, ahead = out.stdout.split()
-        return int(behind), int(ahead)
+        # left-right semantics: left side = HEAD-only commits (AHEAD),
+        # right side = remote-only commits (BEHIND). The previous mapping
+        # (behind, ahead = split) was swapped (found in the 2026-09-02
+        # update-awareness UX pass via a 4-ahead local tree).
+        counts = out.stdout.split()
+        if len(counts) != 2:
+            return None, None
+        ahead, behind = int(counts[0]), int(counts[1])
+        return behind, ahead
     except Exception:
         return None, None
 
