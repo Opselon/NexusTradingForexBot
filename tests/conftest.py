@@ -43,3 +43,19 @@ def _isolate_settings_db(tmp_path_factory: pytest.TempPathFactory, monkeypatch: 
     run_dir = tmp_path_factory.mktemp("settings_db")
     monkeypatch.setenv("NEXUS_SETTINGS_DB", str(run_dir / "app_settings.db"))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_implicit_audit_db(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+):
+    """BUG-223: the AuditRepository IMPLICIT default ("sqlite:///artifacts/
+    audit.db", BUG-149-anchored to the runtime workspace) resolves to the
+    PRODUCTION artifacts/audit.db whenever pytest runs from the repo root,
+    so unit tests constructing OrderLifecycleManager without audit_repo
+    appended test_req rows to the live trading ledger (957 rows found
+    2026-08-31..09-02). Point the implicit default at a per-run temp file;
+    explicit db_url/config callers are unaffected by construction."""
+    run_dir = tmp_path_factory.mktemp("audit_db")
+    monkeypatch.setenv("NEXUS_AUDIT_DB", str(run_dir / "audit.db"))
+    yield

@@ -31,6 +31,12 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.adapters.audit_db")
 
+# BUG-223: legacy relative default of AuditRepository (kept for BUG-149
+# anchoring semantics). NEXUS_AUDIT_DB overrides this implicit default only
+# (explicit db_url/config callers are never hijacked); tests/conftest.py sets
+# it per pytest run so bare constructions cannot touch the production tree.
+_DEFAULT_AUDIT_DB_URL = "sqlite:///artifacts/audit.db"
+
 
 def normalize_history_dt(value: Any) -> Any:
     """Best-effort UTC datetime from arbitrary timestamp inputs."""
@@ -51,7 +57,7 @@ class AuditRepository:
 
     def __init__(
         self,
-        db_url: str = "sqlite:///artifacts/audit.db",
+        db_url: str = _DEFAULT_AUDIT_DB_URL,
         config: Any = None,
         flush_interval_sec: float = 1.0,
         signal_retention_days: float = 7.0,
@@ -63,6 +69,16 @@ class AuditRepository:
             # DATABASE PORTABILITY: the caller resolved the authoritative
             # DatabaseConfig (settings/env); derive the SQLite connect path.
             db_url = f"sqlite:///{config.sqlite_connect_path}"
+        # BUG-223: the implicit default is CWD/workspace-anchored
+        # (BUG-149), so a bare construction under a repo-root pytest run
+        # resolves to the PRODUCTION artifacts/audit.db and unit tests
+        # wrote test_req rows into it (957 contaminated rows found
+        # 2026-08-31..09-02). Honor NEXUS_AUDIT_DB for the implicit
+        # default ONLY - explicit db_url/config callers keep authority.
+        elif db_url == _DEFAULT_AUDIT_DB_URL:
+            env_db = os.environ.get("NEXUS_AUDIT_DB", "").strip()
+            if env_db:
+                db_url = f"sqlite:///{Path(env_db).as_posix()}"
         self._db_url = db_url
         self._is_sqlite = db_url.startswith("sqlite")
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
