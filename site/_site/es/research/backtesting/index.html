@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Backtesting · Nexus Scalp Engine</title>
+<meta name='description' content='Deterministic, friction-aware backtests — what is simulated, what is honest about it.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/research/backtesting/'>
+<meta property='og:title' content='Backtesting'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/research/backtesting/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../es/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma'>🌐 Español</summary>
+      <div class='lang-menu'><a href='../../../research/backtesting/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='active' href='../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../es/releases/'>v9.0.6 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../research/backtesting/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../es/research/'>Investigación</a> / <span class='crumb-current' aria-current='page'>Backtesting</span></nav>
+<h1 id='backtesting'>Backtesting</h1>
+<h2 id='determinism'>Determinism</h2>
+<p>Backtests (<code>research/backtest.py</code>) are deterministic: fixed seeds, frozen</p>
+<p>datasets, no wall-clock dependence. Same inputs ⇒ same results.</p>
+<h2 id='friction-model'>Friction model</h2>
+<p>Spread, slippage and latency are modeled, not ignored:</p>
+<ul>
+<li>fills on historical bid/ask (direction-aware),</li>
+<li>tick-level SL/TP first-touch resolution,</li>
+<li>logical latency applied to the decision path,</li>
+<li>robustness stress re-runs under degraded friction (spread/slippage/latency</li>
+</ul>
+<p>shocks) — a strategy that only works under ideal fills does not pass.</p>
+<h2 id='boundary-honesty'>Boundary honesty</h2>
+<ul>
+<li>Backtests produce evidence, not promises. Results feed the validation</li>
+</ul>
+<p>pipeline; they never bypass the OOS gate.</p>
+<ul>
+<li>Fees/commissions follow the configured friction profile; metrics without the</li>
+</ul>
+<p>underlying evidence render <code>n/a</code> — never fabricated zeros.</p>
+<ul>
+<li>Streaming replay (<code>research/streaming_replay.py</code>) is the high-fidelity</li>
+</ul>
+<p>sibling: it runs the <strong>shared engine</strong> over historical events with a logical</p>
+<p>clock (zero sleeps) and simulated fills — and is test-enforced to never call</p>
+<p><code>order_send</code>.</p>
+<h2 id='reading-a-backtest-report'>Reading a backtest report</h2>
+<p>Reports include funnel (signals → orders → fills → exits), per-regime and</p>
+<p>per-confidence stratification, MFE/MAE, and exit-mechanism attribution. See</p>
+<p><a href="validation.md">Validation</a> for how these numbers are judged.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../es/research/datasets/'><span class='pn-label'>Anterior</span><span class='pn-name'>Datasets</span></a><a class='pn pn-next' href='../../../es/research/walk-forward/'><span class='pn-label'>Siguiente</span><span class='pn-name'>Walk-Forward</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/research/backtesting.md'>Editar esta página en GitHub</a> ·
+  Versión v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/381730a'>381730a</a> ·
+  <a href='../../../es/releases/'>Todas las versiones</a>
+</footer>
+</main>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA"};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

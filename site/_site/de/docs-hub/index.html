@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Nexus Scalp Engine — Documentation · Nexus Scalp Engine</title>
+<meta name='description' content='Evidence-based documentation hub for the Nexus Scalp Engine quantitative trading research and execution platform.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/docs-hub/'>
+<meta property='og:title' content='Nexus Scalp Engine — Documentation'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/docs-hub/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../assets/styles.css'>
+<link rel='icon' href='../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../de/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='Design' title='Design'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Hell</button>
+        <button type='button' data-theme-set='dark'>☾ Dunkel</button>
+        <button type='button' data-theme-set='system'>🖥 System</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache'>🌐 Deutsch</summary>
+      <div class='lang-menu'><a href='../../' lang='en' hreflang='en'>English</a> <a href='../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/getting-started/installation/'>Installation</a></li>
+<li><a class='' href='../../de/getting-started/quickstart/'>Quickstart</a></li>
+<li><a class='' href='../../de/getting-started/first-run/'>Erster Lauf</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/getting-started/configuration/'>Konfiguration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/project/vision/'>Vision &amp; Warum</a></li>
+<li><a class='' href='../../de/project/scope/'>Umfang</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/project/status/'>Projektstatus</a></li>
+<li><a class='' href='../../de/project/capabilities/'>Fähigkeitsmatrix</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/project/roadmap/'>Roadmap</a></li>
+<li><a class='' href='../../de/project/milestones/'>Meilensteine</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/architecture/overview/'>Überblick</a></li>
+<li><a class='' href='../../de/architecture/system-map/'>Systemkarte</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/architecture/data-flow/'>Datenfluss</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/architecture/runtime/'>Laufzeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/architecture/research-stack/'>Forschungsstack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/architecture/model-pipeline/'>Modellpipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/architecture/execution-pipeline/'>Ausführungspipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/architecture/observability/'>Observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/architecture/database/'>Datenbank</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/research/methodology/'>Methodik</a></li>
+<li><a class='' href='../../de/research/datasets/'>Datensätze</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/research/out-of-sample/'>OOS-Gate</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/research/counterfactuals/'>Kontrafaktische</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/research/validation/'>Validierung</a></li>
+<li><a class='' href='../../de/research/reproducibility/'>Reproduzierbarkeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/engineering/quality/'>Qualität &amp; Tests</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/engineering/ci/'>CI-Architektur</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/engineering/release-process/'>Release-Prozess</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/engineering/security/'>Sicherheit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/guides/cli/'>CLI-Anleitung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/guides/api/'>API-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/guides/troubleshooting/'>Fehlerbehebung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/guides/common-workflows/'>Typische Workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/contributing/contribution-guide/'>Beitragsleitfaden</a></li>
+<li><a class='' href='../../de/contributing/documentation/'>Dokumentations-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/contributing/add-language/'>Sprache hinzufügen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../de/reference/cli-reference/'>CLI-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/reference/glossary/'>Glossar</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/reference/terminology/'>Terminologie &amp; Übersetzungen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../de/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../de/releases/'>v9.0.6 &amp; Historie</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../docs-hub/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><span class='crumb-current' aria-current='page'>Doku-Hub</span></nav>
+<h1 id='nexus-scalp-engine--documentation'>Nexus Scalp Engine — Documentation</h1>
+<p><strong>Research-driven quantitative trading platform</strong> — a hexagonal, event-driven</p>
+<p>scalping engine for MetaTrader 5 (primary market: XAUUSD M1), built around</p>
+<p>causal feature engineering, artifact-first model governance, deterministic</p>
+<p>research tooling, and forensic observability.</p>
+<div class='callout callout-important' role='note'><div class='callout-title'>WICHTIG</div><p>This documentation describes a <strong>research and engineering platform</strong>. It is</p><p>not investment advice, and nothing here is a promise of profitability.</p><p>Leveraged scalping carries extreme financial risk. See</p><p><a href="project/status.md">Project Status</a> for what is certified vs experimental.</p></div>
+<h2 id='start-here'>Start here</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Question</th><th>Page</th></tr></thead><tbody>
+<tr><td>What is Nexus and why does it exist?</td><td><a href="project/vision.md">Vision</a></td></tr>
+<tr><td>How do I run it?</td><td><a href="getting-started/quickstart.md">Quickstart</a></td></tr>
+<tr><td>How is the architecture structured?</td><td><a href="architecture/overview.md">Architecture Overview</a></td></tr>
+<tr><td>How does data become a decision?</td><td><a href="architecture/data-flow.md">Data Flow</a></td></tr>
+<tr><td>How is research validated?</td><td><a href="research/methodology.md">Research Methodology</a></td></tr>
+<tr><td>What is real vs experimental vs planned?</td><td><a href="project/status.md">Project Status</a> · <a href="project/capabilities.md">Capability Matrix</a></td></tr>
+<tr><td>Where is the project going?</td><td><a href="project/roadmap.md">Roadmap</a></td></tr>
+<tr><td>How do I contribute?</td><td><a href="contributing/contribution-guide.md">Contribution Guide</a></td></tr>
+</tbody></table></div>
+<h2 id='documentation-map'>Documentation map</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>docs/
+├── getting-started/   Installation · Quickstart · First-run · Configuration
+├── project/           Vision · Scope · Status · Roadmap · Milestones
+├── architecture/      Overview · System map · Runtime · Research stack ·
+│                      Data flow · Observability · Database
+├── research/          Methodology · Backtesting · Walk-forward · Validation ·
+│                      Replay · Counterfactuals · Reproducibility
+├── engineering/       Quality · Testing · CI · Release process · Security
+├── guides/            CLI · Troubleshooting · Common workflows
+├── contributing/      Contribution guide · Docs authoring · Adding a language
+└── reference/         CLI reference · Glossary · Terminology · FAQ</code></pre></div>
+<h2 id='languages'>Languages</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Language</th><th>Status</th></tr></thead><tbody>
+<tr><td>🇬🇧 <a href="index.md">English</a></td><td>Source of truth (complete)</td></tr>
+<tr><td>🇮🇷 <a href="<a href="https://opselon.github.io/NexusTradingForexBot/fa/">فارسی">https://opselon.github.io/NexusTradingForexBot/fa/">فارسی</a></a></td><td>Persian (partial — core pages)</td></tr>
+<tr><td>🇪🇸 <a href="<a href="https://opselon.github.io/NexusTradingForexBot/es/">Español">https://opselon.github.io/NexusTradingForexBot/es/">Español</a></a></td><td>Spanish (partial — core pages)</td></tr>
+<tr><td>🇸🇦 <a href="<a href="https://opselon.github.io/NexusTradingForexBot/ar/">العربية">https://opselon.github.io/NexusTradingForexBot/ar/">العربية</a></a></td><td>Arabic (partial — core pages)</td></tr>
+<tr><td>🇩🇪 <a href="<a href="https://opselon.github.io/NexusTradingForexBot/de/">Deutsch">https://opselon.github.io/NexusTradingForexBot/de/">Deutsch</a></a></td><td>German (partial — core pages)</td></tr>
+</tbody></table></div>
+<p>Translation coverage and staleness are audited by</p>
+<p><code>scripts/docs/check_translations.py</code> — numbers, not vibes. See</p>
+<p><a href="contributing/add-language.md">Translation workflow</a>.</p>
+<h2 id='deep-technical-documentation-repository-native'>Deep technical documentation (repository-native)</h2>
+<p>The repository also carries a large body of agent-generated forensic and</p>
+<p>contract documentation. The most important entry points:</p>
+<ul>
+<li><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/skill.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/skill.md"></a><code>agents/skill.md</code></a> — authoritative architecture map</li>
+<li><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/bugs.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/bugs.md"></a><code>agents/bugs.md</code></a> — forensic bug ledger (root causes, evidence, regression guards)</li>
+<li><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/runtime_invariants.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/runtime_invariants.md"></a><code>agents/runtime_invariants.md</code></a> — runtime invariants (INV-001…)</li>
+<li><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/70D_DATA_CONTRACT.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/70D_DATA_CONTRACT.md"></a><code>docs/70D_DATA_CONTRACT.md</code></a> — 70D canonical feature contract</li>
+<li><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md"></a><code>docs/RELEASE.md</code></a> — release, installer, CLI, update &amp; rollback guide</li>
+</ul>
+<p>These are internal engineering artifacts: preserved as-is, linked, and not</p>
+<p>rewritten by the documentation effort.</p>
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/docs-hub.md'>Diese Seite auf GitHub bearbeiten</a> ·
+  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/381730a'>381730a</a> ·
+  <a href='../../de/releases/'>Alle Releases</a>
+</footer>
+</main>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Doku durchsuchen…", "home": "Start", "repo": "GitHub", "skip": "Zum Inhalt springen", "language": "Sprache", "partial": "Englische Quelle — Übersetzung ausstehend", "english": "Englisch", "version": "Version", "next": "Weiter", "prev": "Zurück", "on_github": "Diese Seite auf GitHub bearbeiten", "menu": "Menü", "whats_new": "Neuigkeiten", "all_releases": "Alle Releases", "get_started": "Erste Schritte", "view_architecture": "Architektur", "view_roadmap": "Roadmap", "close": "Schließen", "theme": "Design", "theme_light": "Hell", "theme_dark": "Dunkel", "theme_system": "System", "copy": "Kopieren", "copied": "Kopiert", "copy_error": "Kopieren fehlgeschlagen", "no_results": "Keine Ergebnisse", "loading": "Wird geladen…", "section": "Bereich", "search_results": "Suchergebnisse", "explore_docs": "Die Dokumentation erkunden", "full_matrix": "Vollständige Matrix", "release_timeline": "Release-Zeitleiste", "hero_kicker": "QUANTITATIVE HANDELSFORSCHUNGS- UND EXECUTION-PLATTFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Eine forschungsgetriebene, hexagonale, ereignisgesteuerte Scalping-Plattform für MetaTrader 5 — kausale Features, governete Deep-Learning-Modelle, ein invariantes Risikosystem, deterministische Forschungswerkzeuge und forensische Observability in einer prüfbaren Pipeline.", "chip_released": "veröffentlicht", "chip_rev": "Rev", "chip_research": "Forschung: 50D live · 70D Kandidat", "released_history": "Historie", "release_history_kicker": "RELEASE-HISTORIE", "releases_intro": "Jedes Release mit seinen echten Highlights, abgeleitet aus GitHub-Release-Metadaten zur Build-Zeit. Einzelquelle für Versionen:", "nf404_title": "404", "nf404_lead": "Diese Dokumentationsseite existiert nicht.", "nf404_home": "Start", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Release auf GitHub", "back_home": "Zurück zur Startseite", "quickstart_label": "Quickstart", "status_label": "Projektstatus", "faq_label": "FAQ", "cap_engine": "Kausale 50D-Feature-Engine", "cap_risk": "Risikomotor + Ausführungs-Klemmen", "cap_oos": "Walk-Forward + hartes OOS-Gate", "cap_factory": "Artefakt-zentrierte Modellfabrik", "cap_70d": "70D-Vertrag (Basis+News+Liquidität)", "cap_cf": "Kontrafaktische Engine (NO_TRADE-Wanderung)", "pillar_evidence_t": "🧭 Evidenz vor Behauptungen", "pillar_evidence_b": "Metriken ohne Evidenz zeigen n/a — nie falsche Nullen. Negative Ergebnisse werden veröffentlicht: Unser 70D-Forschungskandidat wurde vom eigenen OOS-Gate abgelehnt.", "pillar_safety_t": "🔒 Sicherheit durch Konstruktion", "pillar_safety_b": "PAPER als Standard · SHADOW ohne Order-Autorität · LIVE hinter expliziter Bestätigung · harte Risikoklemmen (HARD_MAX_LOTS, Marge ≤20%) im Ausführungspfad erzwungen.", "pillar_research_t": "🔬 Deterministische Forschung", "pillar_research_b": "Gepurgtes + Embargo-Walk-Forward, bit-exaktes Replay, fingerprintierte Datensätze/Modelle, Provenienz bei jedem Lauf — derselbe Feature-Vertrag für Live, Replay und Training.", "pillar_truth_t": "👁️ Laufzeit-Wahrheit", "pillar_truth_b": "Forensische Observability: schweregetrennte Logs, Incident-Korrelation, Deploy-Gate. Broker-Wahrheit schlägt veralteten Zustand; Gates sind Autoritäten, Settings sind Absicht.", "capability": "Fähigkeit", "status": "Status", "chip_certified": "ZERTIFIZIERT", "chip_implemented": "IMPLEMENTIERT", "chip_experimental": "EXPERIMENTELL", "chip_research_l": "FORSCHUNG", "cap_highlights": "Fähigkeiten im Fokus", "callout_important": "WICHTIG", "callout_note": "HINWEIS", "callout_warning": "WARNUNG"};
+window.NEXUS_LANG = "de";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../assets/search.js' defer></script>
+</body>
+</html>

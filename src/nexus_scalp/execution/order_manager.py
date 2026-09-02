@@ -4285,77 +4285,9 @@ class OrderLifecycleManager:
             self._capture_reversal_state(ticket, pos, probs, regime_state, now)
 
             # [EXPANDED] Real-time order/position modification & partial close checks
-            if ticket in self._entry_prices:
-                old_sl = self._entry_sls.get(ticket, 0.0)
-                old_tp = self._entry_tps.get(ticket, 0.0)
-                old_vol = self._last_known_volume.get(ticket, pos.volume)
-
-                if pos.sl != old_sl:
-                    if self.notifier:
-                        self.notifier.notify_order_modification(
-                            ticket=ticket,
-                            symbol=pos.symbol,
-                            field_modified="Stop Loss",
-                            old_value=old_sl,
-                            new_value=pos.sl,
-                            reply_to_message_id=self._order_message_ids.get(ticket),
-                        )
-                    # Phase 14 (BUG-045): the CURRENT broker-side SL is tracked in
-                    # _last_modify_sl (for the autopsy's final_sl), while
-                    # _entry_sls remains the SL AT ENTRY. Previously this line
-                    # overwrote the entry SL, so initial_sl_price == final_sl_price
-                    # on every autopsy row and the SL modification timeline was
-                    # lost. _entry_sls is now frozen at open; only the broker-side
-                    # tracker advances.
-                    self._last_modify_sl[ticket] = pos.sl
-                    self._sl_modified_flags[ticket] = True
-                    self._entry_sls[ticket] = self._entry_sls.get(ticket, pos.sl) or pos.sl
-
-                if pos.tp != old_tp:
-                    if self.notifier:
-                        self.notifier.notify_order_modification(
-                            ticket=ticket,
-                            symbol=pos.symbol,
-                            field_modified="Take Profit",
-                            old_value=old_tp,
-                            new_value=pos.tp,
-                            reply_to_message_id=self._order_message_ids.get(ticket),
-                        )
-                    self._entry_tps[ticket] = pos.tp
-
-                if pos.volume != old_vol:
-                    if pos.volume < old_vol:
-                        closed_lots = round(old_vol - pos.volume, 2)
-                        price_delta = (
-                            (price_current - pos.price_open)
-                            if pos.type == OrderType.BUY
-                            else (pos.price_open - price_current)
-                        )
-                        contract_size = (
-                            symbol_info.trade_contract_size
-                            if symbol_info and symbol_info.trade_contract_size > 0
-                            else 100.0
-                        )
-                        realized_pnl = closed_lots * contract_size * price_delta
-                        if self.notifier:
-                            self.notifier.notify_partial_close(
-                                ticket=ticket,
-                                symbol=pos.symbol,
-                                closed_lots=closed_lots,
-                                remaining_lots=pos.volume,
-                                realized_profit_usd=realized_pnl,
-                                reply_to_message_id=self._order_message_ids.get(ticket),
-                            )
-                    elif self.notifier:
-                        self.notifier.notify_order_modification(
-                            ticket=ticket,
-                            symbol=pos.symbol,
-                            field_modified="Volume",
-                            old_value=old_vol,
-                            new_value=pos.volume,
-                            reply_to_message_id=self._order_message_ids.get(ticket),
-                        )
-                    self._last_known_volume[ticket] = pos.volume
+            # S6: external-modification sync stage (verbatim block moved to
+            # _sync_external_modifications).
+            self._sync_external_modifications(pos, ticket, price_current, symbol_info)
 
             entry_time = self._entry_timestamps[ticket]
             holding_duration = (
@@ -5751,6 +5683,88 @@ class OrderLifecycleManager:
                     )
             except Exception as e:
                 logger.error("Failed to notify closed trade", error=e)
+
+    def _sync_external_modifications(
+        self,
+        pos: Position,
+        ticket: int,
+        price_current: float,
+        symbol_info: SymbolInfo | None,
+    ) -> None:
+        """ENTRY-SYNC STAGE (S6): detect broker-side SL/TP/volume
+        modifications, notify, and advance the broker-side trackers. Moved
+        VERBATIM from manage_active_positions' per-position loop."""
+        if ticket in self._entry_prices:
+            old_sl = self._entry_sls.get(ticket, 0.0)
+            old_tp = self._entry_tps.get(ticket, 0.0)
+            old_vol = self._last_known_volume.get(ticket, pos.volume)
+
+            if pos.sl != old_sl:
+                if self.notifier:
+                    self.notifier.notify_order_modification(
+                        ticket=ticket,
+                        symbol=pos.symbol,
+                        field_modified="Stop Loss",
+                        old_value=old_sl,
+                        new_value=pos.sl,
+                        reply_to_message_id=self._order_message_ids.get(ticket),
+                    )
+                # Phase 14 (BUG-045): the CURRENT broker-side SL is tracked in
+                # _last_modify_sl (for the autopsy's final_sl), while
+                # _entry_sls remains the SL AT ENTRY. Previously this line
+                # overwrote the entry SL, so initial_sl_price == final_sl_price
+                # on every autopsy row and the SL modification timeline was
+                # lost. _entry_sls is now frozen at open; only the broker-side
+                # tracker advances.
+                self._last_modify_sl[ticket] = pos.sl
+                self._sl_modified_flags[ticket] = True
+                self._entry_sls[ticket] = self._entry_sls.get(ticket, pos.sl) or pos.sl
+
+            if pos.tp != old_tp:
+                if self.notifier:
+                    self.notifier.notify_order_modification(
+                        ticket=ticket,
+                        symbol=pos.symbol,
+                        field_modified="Take Profit",
+                        old_value=old_tp,
+                        new_value=pos.tp,
+                        reply_to_message_id=self._order_message_ids.get(ticket),
+                    )
+                self._entry_tps[ticket] = pos.tp
+
+            if pos.volume != old_vol:
+                if pos.volume < old_vol:
+                    closed_lots = round(old_vol - pos.volume, 2)
+                    price_delta = (
+                        (price_current - pos.price_open)
+                        if pos.type == OrderType.BUY
+                        else (pos.price_open - price_current)
+                    )
+                    contract_size = (
+                        symbol_info.trade_contract_size
+                        if symbol_info and symbol_info.trade_contract_size > 0
+                        else 100.0
+                    )
+                    realized_pnl = closed_lots * contract_size * price_delta
+                    if self.notifier:
+                        self.notifier.notify_partial_close(
+                            ticket=ticket,
+                            symbol=pos.symbol,
+                            closed_lots=closed_lots,
+                            remaining_lots=pos.volume,
+                            realized_profit_usd=realized_pnl,
+                            reply_to_message_id=self._order_message_ids.get(ticket),
+                        )
+                elif self.notifier:
+                    self.notifier.notify_order_modification(
+                        ticket=ticket,
+                        symbol=pos.symbol,
+                        field_modified="Volume",
+                        old_value=old_vol,
+                        new_value=pos.volume,
+                        reply_to_message_id=self._order_message_ids.get(ticket),
+                    )
+                self._last_known_volume[ticket] = pos.volume
 
     def reconcile_missed_closes(
         self,

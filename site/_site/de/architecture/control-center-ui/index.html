@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Control Center UI Architecture (CHG-0043, TASK-CONTROL-CENTER) · Nexus Scalp Engine</title>
+<meta name='description' content='Control Center UI Architecture (CHG-0043, TASK-CONTROL-CENTER) — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/control-center-ui/'>
+<meta property='og:title' content='Control Center UI Architecture (CHG-0043, TASK-CONTROL-CENTER)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/architecture/control-center-ui/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../de/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='Design' title='Design'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Hell</button>
+        <button type='button' data-theme-set='dark'>☾ Dunkel</button>
+        <button type='button' data-theme-set='system'>🖥 System</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache'>🌐 Deutsch</summary>
+      <div class='lang-menu'><a href='../../../architecture/control-center-ui/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/getting-started/installation/'>Installation</a></li>
+<li><a class='' href='../../../de/getting-started/quickstart/'>Quickstart</a></li>
+<li><a class='' href='../../../de/getting-started/first-run/'>Erster Lauf</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/getting-started/configuration/'>Konfiguration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/project/vision/'>Vision &amp; Warum</a></li>
+<li><a class='' href='../../../de/project/scope/'>Umfang</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/status/'>Projektstatus</a></li>
+<li><a class='' href='../../../de/project/capabilities/'>Fähigkeitsmatrix</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/roadmap/'>Roadmap</a></li>
+<li><a class='' href='../../../de/project/milestones/'>Meilensteine</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/architecture/overview/'>Überblick</a></li>
+<li><a class='' href='../../../de/architecture/system-map/'>Systemkarte</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/data-flow/'>Datenfluss</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/runtime/'>Laufzeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/research-stack/'>Forschungsstack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/model-pipeline/'>Modellpipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/execution-pipeline/'>Ausführungspipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/observability/'>Observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/database/'>Datenbank</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/research/methodology/'>Methodik</a></li>
+<li><a class='' href='../../../de/research/datasets/'>Datensätze</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/out-of-sample/'>OOS-Gate</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/counterfactuals/'>Kontrafaktische</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/validation/'>Validierung</a></li>
+<li><a class='' href='../../../de/research/reproducibility/'>Reproduzierbarkeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/engineering/quality/'>Qualität &amp; Tests</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/ci/'>CI-Architektur</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/release-process/'>Release-Prozess</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/security/'>Sicherheit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/guides/cli/'>CLI-Anleitung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/api/'>API-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/troubleshooting/'>Fehlerbehebung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/common-workflows/'>Typische Workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/contributing/contribution-guide/'>Beitragsleitfaden</a></li>
+<li><a class='' href='../../../de/contributing/documentation/'>Dokumentations-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/contributing/add-language/'>Sprache hinzufügen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/reference/cli-reference/'>CLI-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/glossary/'>Glossar</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/terminology/'>Terminologie &amp; Übersetzungen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.6 &amp; Historie</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../architecture/control-center-ui/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../de/architecture/'>Architektur</a> / <span class='crumb-current' aria-current='page'>control center ui</span></nav>
+<h1 id='control-center-ui-architecture-chg-0043-task-control-center'>Control Center UI Architecture (CHG-0043, TASK-CONTROL-CENTER)</h1>
+<blockquote><p>Operator-facing architecture of the NEXUS Control Center. UI-owned doc;</p><p>backend architecture lives in <code>docs/architecture/</code> elsewhere. Status</p><p>semantics here are the CONTRACT for every future CC view.</p></blockquote>
+<h2 id='purpose'>Purpose</h2>
+<p>One coherent surface where an operator answers, without reading logs:</p>
+<p>WHAT is happening → WHY → WHAT changed → WHAT is blocked → WHAT is healthy →</p>
+<p>WHAT is serving → WHY did/didn't a trade happen → WHAT is safe to do next.</p>
+<p>Observation model: OBSERVE → UNDERSTAND → INVESTIGATE → ACT → VERIFY.</p>
+<h2 id='navigation--screens'>Navigation &amp; Screens</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Tab (nav id)</th><th>Screen</th><th>Data sources (all read-only)</th></tr></thead><tbody>
+<tr><td>Control Center (<code>tab-control-center</code>)</td><td>Overview: mode banner, 6-tile status strip (Runtime/Data/Model/Inference/Database/MT5), runtime truth, market snapshot, latest decision, active warnings</td><td><code>/api/operator/summary</code>, <code>/api/operator/decisions?limit=1</code>, <code>liveUiSnapshot</code> (SSE, owned by app.js)</td></tr>
+<tr><td>↳ Decision Observatory</td><td>history (filters: hours/action/gate/search), terminal-stage funnel + blocking gates, NO_TRADE forensics (gates/regimes/reasons/hourly trend/recent), decision inspector drilldown</td><td><code>/api/operator/decisions</code>, <code>/api/operator/funnel</code>, <code>/api/operator/no-trade</code>, <code>/api/operator/decisions/{id}</code></td></tr>
+<tr><td>↳ Model &amp; Feature Contract</td><td>serving identity (id/version/artifact/schema/dim/scaler), probability distribution, grouped feature contract (Base 0..49 · News 50..59 · Liquidity 60..69) with search + anomaly highlight</td><td><code>liveUiSnapshot.model</code>, <code>.features</code></td></tr>
+<tr><td>↳ Risk &amp; Execution</td><td>risk state + limits, open positions, recent dispatches + latency percentiles</td><td><code>liveUiSnapshot.risk/.positions</code>, <code>/api/operator/orders</code></td></tr>
+<tr><td>↳ Diagnostics</td><td>engine self-check grid (per-category verdict + suggestion), incident health, sanitized copyable report</td><td><code>/health</code>, <code>/api/diagnostics/health</code></td></tr>
+<tr><td>System Health (<code>tab-health</code>)</td><td>pre-existing subsystem panel (ORPHAN FIX: nav button added 2026-09-02 — the section existed but was unreachable since inception)</td><td>pre-existing loaders</td></tr>
+</tbody></table></div>
+<h2 id='module-layout'>Module layout</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>Web/
+  cc_components.js   NX.cc.design — component library (badges, cards, states,
+                     confirm dialog, tables, bars, copy, toast)
+  cc_state.js        NX.cc.state  — finite UI state machine + bounded
+                     visibility-aware polling engine
+  control_center.js  NX.cc.views  — the five CC views + boot/tabs wiring
+  cc_styles.css      .ccb-*/.cc-* component layer (dark technical theme)
+  api_client.js      NX.api (shared; +AbortController signal passthrough)
+  app.js             switchTab/DOMContentLoaded hooks; operator safety guards
+src/nexus_scalp/web/operator_routes.py  /api/operator/* read-only evidence
+src/nexus_scalp/web/server.py           registration + static asset routes</code></pre></div>
+<h2 id='state-semantics-binding'>State semantics (binding)</h2>
+<h3 id='component-states-nxccdesignstates'>Component states (<code>NX.cc.design.STATES</code>)</h3>
+<p><code>HEALTHY · READY · PASS · AVAILABLE · FRESH · ACTIVE · ENABLED · VALID</code> (ok) —</p>
+<p><code>DEGRADED · WARNING · STALE · RECOVERING</code> (warn) —</p>
+<p><code>BLOCKED · FAIL · ERROR · UNAVAILABLE</code> (bad) —</p>
+<p>`DISABLED · NOT_CONFIGURED · NOT_INITIALIZED · NOT_APPLICABLE · NOT_RECORDED ·</p>
+<p>UNKNOWN` (muted).</p>
+<p>Rules: glyph + text always accompany color (never color alone); unknown</p>
+<p>values render as <code>NOT RECORDED</code> / <code>EVIDENCE NOT RECORDED</code>, never as zeros;</p>
+<p>mode badges (LIVE/PAPER/SHADOW/REPLAY/RESEARCH) are visually distinct classes.</p>
+<h3 id='ui-data-states-nxccstate'>UI data states (<code>NX.cc.state</code>)</h3>
+<p>One enum per resource: <code>LOADING → READY | STALE | ERROR | EMPTY</code></p>
+<p>(impossible combinations unrepresentable). Polling: bounded interval</p>
+<p>(default 15s, never 1s-everything), fetch timeout 8s, exponential error</p>
+<p>backoff capped 60s, STALE at 2.5× interval without success, paused while</p>
+<p><code>document.hidden</code>, leak-free <code>untrack</code> (verified: pending timers cleared,</p>
+<p>mid-flight fetches never reschedule).</p>
+<h2 id='dangerous-actions-operator-safety'>Dangerous actions (operator safety)</h2>
+<p>Structured confirmation (<code>NX.cc.design.confirmDialog</code>) — rows ACTION /</p>
+<p>CURRENT STATE / IMPACT / RECOVERY + verb-specific CONFIRM button; ESC</p>
+<p>cancels, Enter confirms, focus lands on CANCEL. Guards wired:</p>
+<ul>
+<li><strong>Stop/Start Bot</strong> (<code>app.js toggleEngineRunning</code> → <code>doEngineToggle</code>)</li>
+<li><strong>Switch to LIVE</strong> (<code>app.js</code> mode selector → <code>performEngineModeSet</code>;</li>
+</ul>
+<p>cancel reverts the selector to the authoritative server mode)</p>
+<p>Promotion/freeze actions in Model Governance already had confirmations</p>
+<p>(pre-existing); CC adds no new mutation surface — the /api/operator/*</p>
+<p>module is structurally read-only (<code>file:...?mode=ro</code>).</p>
+<h2 id='data-truth-rules'>Data truth rules</h2>
+<ol>
+<li>Every number reconciles summary ↔ detail (funnel/NO_TRADE totals vs</li>
+</ol>
+<p>filtered rows; enforced by tests).</p>
+<ol>
+<li>The ledger records the FINAL blocking stage per decision — the funnel is</li>
+</ol>
+<p>labeled a TERMINAL distribution; a fabricated per-stage pass-through</p>
+<p>funnel is forbidden.</p>
+<ol>
+<li>Rows with a model_action lacking direction (GUARDIAN abstentions) are</li>
+</ol>
+<p>counted and surfaced as <code>model_direction_unresolved</code> — counterfactual</p>
+<p>direction is NOT reconstructable (TICK_COUNTERFACTUAL v1 honesty).</p>
+<ol>
+<li>Malformed payload rows stay visible with <code>payload_ok: false</code>; they are</li>
+</ol>
+<p>never silently dropped.</p>
+<ol>
+<li>Order correlation method is disclosed in every detail response</li>
+</ol>
+<p>(<code>order_id == request_id</code>, fallback <code>execution_id</code>).</p>
+<h2 id='tests'>Tests</h2>
+<ul>
+<li><code>tests/unit/test_operator_routes.py</code> — 19 pytest cases (route parity,</li>
+</ul>
+<p>read-only enforcement, filters/clamps, envelope stability, reconciliation,</p>
+<p>sanitization).</p>
+<ul>
+<li><code>tests/js/cc_design.test.js</code> — 9 node --test cases (vocabulary, badges,</li>
+</ul>
+<p>freshness, NOT-RECORDED honesty, structured confirm, bar math).</p>
+<ul>
+<li><code>tests/js/cc_state.test.js</code> — 6 node --test cases (enum states, EMPTY</li>
+</ul>
+<p>contract, error backoff, untrack/reset hygiene incl. no leaked timers).</p>
+<ul>
+<li><code>tests/unit/test_frontend_assets_phase14.py</code> — guards every index.html</li>
+</ul>
+<p>local ref resolves 200 (the CC asset routes are covered by it).</p>
+<h2 id='deliberate-non-goals'>Deliberate non-goals</h2>
+<ul>
+<li>Replay/Shadow CC tabs are NOT built here: the replay session engine is</li>
+</ul>
+<p>another owner's active CHG-0043 workstream; surfacing half-wired modes</p>
+<p>would violate mode-separation honesty. Entry points remain the existing</p>
+<p>panels until that lands.</p>
+<ul>
+<li><code>/api/v1</code> (TASK-API-PLATFORM) is the developer surface; <code>/api/operator/*</code></li>
+</ul>
+<p>serves the dashboard. Overlap reconciliation belongs to the API-platform</p>
+<p>owner (documented in commit 1c4d293 handoff).</p>
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/architecture/control-center-ui.md'>Diese Seite auf GitHub bearbeiten</a> ·
+  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/381730a'>381730a</a> ·
+  <a href='../../../de/releases/'>Alle Releases</a>
+</footer>
+</main>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Doku durchsuchen…", "home": "Start", "repo": "GitHub", "skip": "Zum Inhalt springen", "language": "Sprache", "partial": "Englische Quelle — Übersetzung ausstehend", "english": "Englisch", "version": "Version", "next": "Weiter", "prev": "Zurück", "on_github": "Diese Seite auf GitHub bearbeiten", "menu": "Menü", "whats_new": "Neuigkeiten", "all_releases": "Alle Releases", "get_started": "Erste Schritte", "view_architecture": "Architektur", "view_roadmap": "Roadmap", "close": "Schließen", "theme": "Design", "theme_light": "Hell", "theme_dark": "Dunkel", "theme_system": "System", "copy": "Kopieren", "copied": "Kopiert", "copy_error": "Kopieren fehlgeschlagen", "no_results": "Keine Ergebnisse", "loading": "Wird geladen…", "section": "Bereich", "search_results": "Suchergebnisse", "explore_docs": "Die Dokumentation erkunden", "full_matrix": "Vollständige Matrix", "release_timeline": "Release-Zeitleiste", "hero_kicker": "QUANTITATIVE HANDELSFORSCHUNGS- UND EXECUTION-PLATTFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Eine forschungsgetriebene, hexagonale, ereignisgesteuerte Scalping-Plattform für MetaTrader 5 — kausale Features, governete Deep-Learning-Modelle, ein invariantes Risikosystem, deterministische Forschungswerkzeuge und forensische Observability in einer prüfbaren Pipeline.", "chip_released": "veröffentlicht", "chip_rev": "Rev", "chip_research": "Forschung: 50D live · 70D Kandidat", "released_history": "Historie", "release_history_kicker": "RELEASE-HISTORIE", "releases_intro": "Jedes Release mit seinen echten Highlights, abgeleitet aus GitHub-Release-Metadaten zur Build-Zeit. Einzelquelle für Versionen:", "nf404_title": "404", "nf404_lead": "Diese Dokumentationsseite existiert nicht.", "nf404_home": "Start", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Release auf GitHub", "back_home": "Zurück zur Startseite", "quickstart_label": "Quickstart", "status_label": "Projektstatus", "faq_label": "FAQ", "cap_engine": "Kausale 50D-Feature-Engine", "cap_risk": "Risikomotor + Ausführungs-Klemmen", "cap_oos": "Walk-Forward + hartes OOS-Gate", "cap_factory": "Artefakt-zentrierte Modellfabrik", "cap_70d": "70D-Vertrag (Basis+News+Liquidität)", "cap_cf": "Kontrafaktische Engine (NO_TRADE-Wanderung)", "pillar_evidence_t": "🧭 Evidenz vor Behauptungen", "pillar_evidence_b": "Metriken ohne Evidenz zeigen n/a — nie falsche Nullen. Negative Ergebnisse werden veröffentlicht: Unser 70D-Forschungskandidat wurde vom eigenen OOS-Gate abgelehnt.", "pillar_safety_t": "🔒 Sicherheit durch Konstruktion", "pillar_safety_b": "PAPER als Standard · SHADOW ohne Order-Autorität · LIVE hinter expliziter Bestätigung · harte Risikoklemmen (HARD_MAX_LOTS, Marge ≤20%) im Ausführungspfad erzwungen.", "pillar_research_t": "🔬 Deterministische Forschung", "pillar_research_b": "Gepurgtes + Embargo-Walk-Forward, bit-exaktes Replay, fingerprintierte Datensätze/Modelle, Provenienz bei jedem Lauf — derselbe Feature-Vertrag für Live, Replay und Training.", "pillar_truth_t": "👁️ Laufzeit-Wahrheit", "pillar_truth_b": "Forensische Observability: schweregetrennte Logs, Incident-Korrelation, Deploy-Gate. Broker-Wahrheit schlägt veralteten Zustand; Gates sind Autoritäten, Settings sind Absicht.", "capability": "Fähigkeit", "status": "Status", "chip_certified": "ZERTIFIZIERT", "chip_implemented": "IMPLEMENTIERT", "chip_experimental": "EXPERIMENTELL", "chip_research_l": "FORSCHUNG", "cap_highlights": "Fähigkeiten im Fokus", "callout_important": "WICHTIG", "callout_note": "HINWEIS", "callout_warning": "WARNUNG"};
+window.NEXUS_LANG = "de";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

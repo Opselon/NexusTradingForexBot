@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Observability Map — Nexus Scalp Engine (NSE) · Nexus Scalp Engine</title>
+<meta name='description' content='Observability Map — Nexus Scalp Engine (NSE) — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-map/'>
+<meta property='og:title' content='Observability Map — Nexus Scalp Engine (NSE)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-map/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../es/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma'>🌐 Español</summary>
+      <div class='lang-menu'><a href='../../../architecture/observability-map/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../es/releases/'>v9.0.6 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../architecture/observability-map/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../es/architecture/'>Arquitectura</a> / <span class='crumb-current' aria-current='page'>observability map</span></nav>
+<h1 id='observability-map--nexus-scalp-engine-nse'>Observability Map — Nexus Scalp Engine (NSE)</h1>
+<blockquote><p>TASK-OBS-AUDIT (2026-08-31, HEAD baseline 1f60832; delivered at dcc80d7).</p><p>Agent: Hermes-ObsForensic. AUDIT-ONLY: zero runtime code changed.</p><p>Machine-readable companion: <code>artifacts/forensics/observability-audit.json</code>.</p><p>Method: black-box reconstruction from runtime evidence (logs / DBs / artifacts /</p><p>live API / CLI) FIRST, then targeted read-only code sweeps for every claim.</p><p>Evidence markers: [L]=live-probed today, [DB]=DB census, [LOG]=log sample, [C]=code file:line.</p></blockquote>
+<h2 id='1-what-the-system-actually-produces-today'>1. What the system actually produces today</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Channel</th><th>Reality (verified)</th></tr></thead><tbody>
+<tr><td>Logs</td><td>severity-split <code>logs/{critical,error,warning,info}/YYYY/MM/*.log</code>, ISO-8601 <strong>+03:30</strong>, 10 MB part rotation, retention 30/30/90/365 d [C observability/logging.py:388-394]. Only 08-29 + 08-31 exist; 08-30 absent. ~190 MB on 08-31 (131 MB error).</td></tr>
+<tr><td>Log record</td><td><code>ts [level] msg [logger] key=value…</code> + <code>[COMPONENT] event=X</code> prefixes; tracebacks present (60 in 08-31 error log). <strong><code>category</code>/<code>error_code</code> fields absent from file records; <code>correlation_id</code> never bound (<code>bind_correlation_id</code> has zero callers [C logging.py:691])</strong>.</td></tr>
+<tr><td>DBs</td><td>audit.db (61 tables, 114 MB) = decision/execution/ledger/governance/research/incident evidence, UTC ISO strings; candle_intel.db = per-bar decision forensics with <strong>distinct <code>bar_ts</code> (event) vs <code>ts</code> (processing)</strong>; news.db; strategies.db. <code>audit_broker_*</code> store raw MT5 <strong>epoch ints (GMT+3 server-local)</strong> — a third time dialect.</td></tr>
+<tr><td>Incidents</td><td><code>incidents</code> + <code>incident_events</code> tables + <code>artifacts/incidents/INC-*.json/md</code> with root_cause_status, evidence list, timeline, fingerprint, correlation_id column (populated 1/6 rows).</td></tr>
+<tr><td>Web API</td><td><code>/api/live/state</code> (timestamps{tick,features,inference,proposal} UTC, provenance map, live_freshness{state,age_ms,sequences}, health, state_version, is_stale) [L]; <code>/api/debug/state</code> 24-section snapshot incl. per-worker state + SSE diag + correlation_id [L]; <code>X-Request-ID</code> echo middleware live [L, probed 200].</td></tr>
+<tr><td>CLI</td><td><code>nexus status --json</code>, <code>nexus forensic --snapshot --json</code> (17-group matrix, per-check timestamp/duration/evidence) [L, executed].</td></tr>
+<tr><td>Updater</td><td><code>%LOCALAPPDATA%/NexusScalpEngine/update/update-state.json</code> — last entry <code>{state: FAILED_SAFE, correlation_id: upd-…, updated_at}</code> [L]. That correlation id appears in <strong>zero</strong> log lines.</td></tr>
+</tbody></table></div>
+<h2 id='2-forensic-identity-chain-as-built'>2. Forensic identity chain (as-built)</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>request_id (uuid, policy) ── doubles as broker client order_id
+   → TradeProposal → [EXEC_TRACE] log (id REDACTED today) → audit_signals.request_id
+execution_id (EXEC-YYYYMMDD-HHMMSS-xxxxxx)
+   → generated per decision → embedded into audit_orders.reason → audit_orders.execution_id
+   → /api/debug/trace/{execution_id} join endpoint
+ticket (broker) → position_lifecycle_events.sequence → audit_ledger → trade_autopsies
+experience_id = &quot;exp_&quot;+request_id → audit_experiences (execution_id column 0% filled [C intelligence.py:556-573])
+update correlation_id (upd-…) → update-state.json only (not logged)
+deploy-gate correlation_id (fh-…) → deploy_gate_result.json only
+per-boot correlation: NONE (no boot/run id; correlation contextvars never bound)</code></pre></div>
+<p><strong>Verdict: chain is PARTIAL and broken at the log↔DB seam.</strong> DB side is strong</p>
+<p>(request_id 100% in signals/experiences; EXEC- ids on 2026-08-20 orders); the log</p>
+<p>side destroys the same ids (OBS-002). Live-probed SELL_LIMIT lifecycle</p>
+<p><code>EXEC-20260831-175500-a92169</code>: signal→order→lifecycle seq 83..87→ledger CLOSED</p>
+<p>+6.24 joined cleanly <strong>through the DB alone</strong>; the log side offers only</p>
+<p>second-granularity time correlation.</p>
+<h2 id='3-subsystem-observability-map-required-columns-per-task-46'>3. Subsystem observability map (required columns per task §46)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Subsystem</th><th>Entry</th><th>Operation ID</th><th>Correlation</th><th>State</th><th>Event</th><th>Timestamp</th><th>Error</th><th>Result</th><th>Provenance</th><th>Recovery evidence</th><th>UI vis</th><th>CLI vis</th><th>DB persist</th></tr></thead><tbody>
+<tr><td>Launcher/boot</td><td>NexusTradingForexBot.py</td><td><strong>none (no boot id)</strong></td><td>none</td><td>partial (mode/MT5/reconciliation logged)</td><td>good text trail</td><td>+03:30</td><td>good (critical)</td><td>n/a</td><td>version via /health only</td><td>none (silent death)</td><td>—</td><td>status --json</td><td>none</td></tr>
+<tr><td>MT5 adapter</td><td>connect()</td><td>attempt n/3 only</td><td>none</td><td>CONNECTED/FAILED</td><td>MT5_CONNECT</td><td>+03:30</td><td>retcode (-6) preserved</td><td>bool</td><td>account-identity check (BUG-142)</td><td>3-attempt retry visible</td><td>health.mt5</td><td>—</td><td>audit_broker_*</td></tr>
+<tr><td>Candle/bar</td><td>bar aggregation</td><td>none</td><td>none</td><td>forming/complete</td><td><strong>silent in log</strong> (only in candle_intel.db)</td><td>bar_ts vs ts ✔</td><td>—</td><td>—</td><td>symbol/timeframe ✔</td><td>—</td><td>chart</td><td>—</td><td>candle_intel.db ✔</td></tr>
+<tr><td>Features 50/70D</td><td>to_tensor_input / build_70d</td><td>none</td><td>none</td><td>LIQUIDITY event stream ✔</td><td>FEATURE_CALCULATION_OK (latency, bars)</td><td>✔</td><td>dim mismatch: text warning w/ expected-vs-actual</td><td>schema id+hash at load</td><td>—</td><td>live/state.features</td><td>—</td><td>—</td></tr>
+<tr><td>Tensor</td><td>inference path</td><td>none</td><td>none</td><td>silent (no transition events)</td><td>none</td><td>—</td><td>shape-only text on failure</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>Model</td><td>load gate</td><td>fingerprint 2b98f333cf1e3f77 [L]</td><td>none</td><td>CHAMPION VERIFIED [L]</td><td>[MODEL] REGISTERED/SCHEMA_VERSION</td><td>✔</td><td>BUG141_GUARD class</td><td>—</td><td>hash+schema+dim ✔</td><td>model_runtime_health ✔</td><td>live/state.model ✔</td><td>—</td></tr>
+<tr><td>Inference</td><td>_process_tick_pipeline</td><td>none</td><td>none</td><td>freshness gate</td><td><strong>no started/finished events</strong>; throttled console only</td><td>✔</td><td>"Async retrain failed" w/o shapes/device</td><td>probabilities in state</td><td>—</td><td>live_freshness ✔</td><td>—</td><td>—</td></tr>
+<tr><td>Regime</td><td>regime_classifier</td><td>none</td><td>none</td><td>transitions</td><td>[REGIME TRANSITION] prev/new/prob/reason ✔</td><td>✔</td><td>—</td><td>—</td><td>—</td><td>chart/regime</td><td>—</td><td>market_regimes ✔</td></tr>
+<tr><td>Liquidity</td><td>liquidity_runtime</td><td>state_revision 138549 [L]</td><td>none</td><td>explicit status matrix ✔</td><td>LIQUIDITY events ✔</td><td>✔</td><td>source failures</td><td>available/calculation/source ✔</td><td>live/state.liquidity ✔</td><td>—</td><td>—</td></tr>
+<tr><td>Policy</td><td>signals/policy.py</td><td>request_id + execution_id</td><td>REDACTED in logs</td><td>stage</td><td>EXEC_TRACE (action/conf/reason/regime/stage) ✔</td><td>✔</td><td>blocked_by</td><td>decision_stage ✔</td><td>audit_signals ✔</td><td>debug/state.policy</td><td>—</td><td>audit_signals ✔</td></tr>
+<tr><td>Risk</td><td>risk_engine</td><td>none</td><td>inherits proposal</td><td>—</td><td>thin (reason codes embedded in signals)</td><td>✔</td><td>text</td><td>verdict</td><td>—</td><td>debug/state.risk</td><td>—</td><td>via signals only</td></tr>
+<tr><td>Execution</td><td>order_manager</td><td>execution_id ✔</td><td>to orders DB ✔</td><td>60-scenario router</td><td>[EXEC_TRACE]/[TRADE_LINEAGE]</td><td>✔</td><td>scenario reasons in DB</td><td>status</td><td>audit_orders ✔</td><td>debug/state.execution ✔</td><td>—</td><td>audit_orders ✔</td></tr>
+<tr><td>Broker result</td><td>mt5 adapter</td><td>ticket</td><td>via orders</td><td>ambiguous-fill recovery exists</td><td>text</td><td>epoch (GMT+3)</td><td>retcodes</td><td>deals</td><td>audit_broker_deals ✔</td><td>—</td><td>—</td><td>✔</td></tr>
+<tr><td>Accounting</td><td>ledger</td><td>ticket</td><td>—</td><td>CLOSED/…</td><td>thin</td><td>✔</td><td>—</td><td>pnl + exit_reason_source/confidence ✔</td><td>audit_ledger ✔</td><td>—</td><td>—</td><td>✔</td></tr>
+<tr><td>Workers</td><td>hygiene/news/research/intel/training/incidents</td><td>cycle counts</td><td>none</td><td>heartbeat tables + debug/state.workers ✔ [L]</td><td>WORKER_KICK TIMEOUT (per worker)</td><td>✔</td><td>last_error in DB</td><td>state</td><td>research_worker_heartbeat ✔</td><td>restart counts: none</td><td>—</td><td>worker_state tables ✔</td></tr>
+<tr><td>Async tasks</td><td>create_task sites</td><td>none</td><td>none</td><td>—</td><td>"Task exception was never retrieved" (1x, w/ traceback)</td><td>✔</td><td>traceback</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>Web/API</td><td>FastAPI</td><td>req_… + X-Request-ID ✔</td><td>header→response ✔ (→log+DB: NO)</td><td>sanitized 500s (web/errors.py)</td><td>access log: none</td><td>✔</td><td>code+message+request_id ✔</td><td>—</td><td>—</td><td>UI shows request id</td><td>—</td><td>settings_audit (0 rows)</td></tr>
+<tr><td>SSE</td><td>/api/ticks/stream</td><td>event type only</td><td>none</td><td>CONNECTED/latency/reconnect diag ✔ [L]</td><td>no per-event id/producer</td><td>✔</td><td>serialization_errors counted ✔</td><td>—</td><td>—</td><td>sse section ✔</td><td>—</td><td>—</td></tr>
+<tr><td>CLI</td><td>Typer</td><td><strong>none</strong></td><td>none</td><td>exit codes 0/1/2/3/4/5</td><td>panels</td><td>none</td><td>panels+codes ✔ (BUG-173)</td><td>JSON parity ✔</td><td>—</td><td>—</td><td>✔</td><td>—</td></tr>
+<tr><td>Update</td><td>updater</td><td>upd-… correlation ✔</td><td><strong>json only, not logged</strong></td><td>FAILED_SAFE etc. in json</td><td>none in logs</td><td>✔</td><td>state machine in json</td><td>—</td><td>update-state.json</td><td>partial (.previous-&lt;ts&gt; dirs)</td><td>UI?</td><td>update status</td><td>release_metadata (0 rows)</td></tr>
+<tr><td>Release</td><td>metadata.py</td><td>commit sha in build info</td><td>—</td><td>—</td><td>—</td><td>build ts</td><td>—</td><td>—</td><td>checksums/manifest</td><td>verify-release CLI ✔</td><td>—</td><td>—</td></tr>
+<tr><td>Shutdown</td><td>engine</td><td>none</td><td>none</td><td><strong>no STOPPING→STOPPED log found</strong> [L, 8/31]</td><td>none</td><td>—</td><td>—</td><td>—</td><td>—</td><td>none</td><td>—</td><td>—</td></tr>
+</tbody></table></div>
+<h2 id='4-trace-matrix-47--reconstructable-evidence-basis-black-box-'>4. Trace matrix (§47) — reconstructable? (evidence basis: black-box pass)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Operation</th><th>Start</th><th>Intermediate</th><th>End</th><th>Failure</th><th>Correlation</th><th>Reconstructable?</th><th>Missing</th></tr></thead><tbody>
+<tr><td>startup</td><td>✔ boot trail</td><td>✔ subsystem init</td><td><strong>no explicit READY marker</strong></td><td>✔ critical path</td><td><strong>no boot id</strong></td><td>PARTIAL</td><td>boot id, stop evidence for prior instance</td></tr>
+<tr><td>status</td><td>✔ CLI</td><td>—</td><td>✔ exit 0</td><td>✔</td><td>n/a</td><td>YES</td><td>—</td></tr>
+<tr><td>start (daemon)</td><td>✔ O_EXCL pidfile claim</td><td>—</td><td>—</td><td>✔ loser detection (post BUG-179)</td><td>pidfile only</td><td>PARTIAL</td><td>dev-run starts leave no pidfile [L]</td></tr>
+<tr><td>stop</td><td>—</td><td>—</td><td><strong>rc-inspected but no log row</strong></td><td>✔ BUG-172 panel</td><td>pidfile</td><td>PARTIAL</td><td>stop event not persisted</td></tr>
+<tr><td>update</td><td>✔ json state</td><td><strong>stage transitions unlogged</strong></td><td>✔ FAILED_SAFE json</td><td>✔ terminal state</td><td>upd-id <strong>json-only</strong></td><td>PARTIAL</td><td>stage events, release_metadata rows</td></tr>
+<tr><td>rollback</td><td>✔ FAILED_SAFE non-zero (BUG-173)</td><td>.previous- dir</td><td>✔</td><td>✔</td><td>upd-id</td><td>PARTIAL</td><td>—</td></tr>
+<tr><td>model inference</td><td>✖ no started event</td><td>throttled probs console</td><td>✖ no finished event</td><td>✔ exception text</td><td><strong>ids redacted in logs</strong></td><td>PARTIAL</td><td>inference lifecycle events, ids in logs</td></tr>
+<tr><td>feature build</td><td>—</td><td>✔ LIQUIDITY stream</td><td>—</td><td>✔ expected-vs-actual</td><td>none</td><td>PARTIAL</td><td>feature snapshot hash/summary</td></tr>
+<tr><td>DB op</td><td>✔ queue enqueue</td><td>✖</td><td>✖</td><td>✖ generic "failed to insert batch" [C audit_repository.py:1422-1431]</td><td>none</td><td><strong>NO</strong></td><td>table/duration/commit/rollback, drop counters</td></tr>
+<tr><td>worker</td><td>✔ state rows</td><td>✔ heartbeat [L]</td><td>—</td><td>✔ last_error [L]</td><td>none</td><td>YES</td><td>restart count</td></tr>
+<tr><td>API request</td><td>✔ X-Request-ID</td><td>—</td><td>✔ status</td><td>✔ sanitized payload + internal log</td><td><strong>header never reaches logs/DB</strong></td><td>PARTIAL</td><td>request id in server log</td></tr>
+<tr><td>SSE event</td><td>✔ diag counters</td><td>—</td><td>—</td><td>✔ counted</td><td>no event id</td><td>PARTIAL</td><td>producer/op id per event</td></tr>
+<tr><td>release verification</td><td>✔ verify CLI</td><td>✔ sums/manifest</td><td>✔ exit</td><td>✔</td><td>file hashes</td><td>YES</td><td>install→artifact link (release_metadata empty)</td></tr>
+<tr><td>execution (order)</td><td>✔ signal+order rows</td><td>✔ lifecycle seq</td><td>✔ ledger</td><td>✔ reasons</td><td>execution_id ✔ DB-side</td><td>YES (via DB)</td><td>log-side ids (redacted), broker history gap [L: SELL_LIMIT ticket had 0 broker rows]</td></tr>
+<tr><td>shutdown</td><td>✖</td><td>✖</td><td>✖</td><td>—</td><td>✖</td><td><strong>NO</strong></td><td>everything</td></tr>
+</tbody></table></div>
+<h2 id='5-black-box-reconstruction-results-10-scenarios-runtime-evid'>5. Black-box reconstruction results (10 scenarios, runtime evidence only)</h2>
+<ol>
+<li><strong>Engine startup 19:26 boot</strong> — YES: config/mode/model fingerprint/scaler(70)/MT5/reconciliation trail.</li>
+<li><strong>Failed startup (MT5 auth) 16:59</strong> — YES-PARTIAL: 3× retcode(-6) + critical; no attempt id/boot id.</li>
+<li><strong>One inference</strong> — PARTIAL: EXEC_TRACE + audit_signals rich, but ids redacted in log; no inference lifecycle events.</li>
+<li><strong>Failed inference</strong> — PARTIAL: "Async retrain failed … mat and mat shapes cannot be multiplied" — no shapes/dtype/device/op-id; scaler refit warning has good expected-vs-actual but sits at WARNING while changing runtime identity.</li>
+<li><strong>One update</strong> — NO: json terminal state only; correlation id never logged; stages invisible.</li>
+<li><strong>Failed update</strong> — PARTIAL: FAILED_SAFE + upd-id + timestamp; nothing before it.</li>
+<li><strong>One CLI op</strong> — PARTIAL: strong JSON surfaces; no per-invocation op id; CLI self-identity stale (commit 53317de vs HEAD) [L].</li>
+<li><strong>One API op</strong> — YES-PARTIAL: request-id echo + state/freshness/health rich; debug/trace endpoint DEAD in running instance (OBS-001).</li>
+<li><strong>Worker failure</strong> — YES: WORKER_KICK + heartbeat/state tables + news_health per-source.</li>
+<li><strong>Order lifecycle</strong> — YES via DB chain (execution_id join); NO via logs alone (redacted ids).</li>
+</ol>
+<p>Plus: <strong>"SELL then disappeared"</strong> black-box question — answerable from DB (signal 17:55:00Z → order → POSITION_EXITED 17:56:38Z → ledger +6.24, reason BROKER_DEAL_REASON conf 0.8), NOT from logs.</p>
+<h2 id='6-gap-ledger-obs-001016-full-detail-in-observability-auditjs'>6. Gap ledger (OBS-001..016; full detail in observability-audit.json)</h2>
+<ul>
+<li><strong>P0</strong> OBS-002 (redactor eats EXEC- correlation ids — 2,631/2,631 EXEC_TRACE lines affected [C logging.py:161-163]) · OBS-003 (correlation ids never bound: <code>bind_correlation_id</code> 0 callers [C logging.py:691]).</li>
+<li><strong>P1</strong> OBS-001 (/api/debug/trace dead import <code>nexus_scalp.adapters.audit_db</code> while /health=READY [C web/server.py:4769]) · OBS-004 (audit write failures/drops lack identity; rows silently dropped) · OBS-005 (EXPERIENCE rows written with execution_id 0% [C experience/intelligence.py:556-573]) · OBS-006 (update chain: correlation id json-only, stage transitions unlogged, release_metadata empty).</li>
+<li><strong>P2</strong> OBS-007 shutdown/stop evidence absent · OBS-008 dev-run boots leave no pidfile/start id (BUG-170 covers <code>nexus start</code> only) · OBS-009 three time dialects (log +03:30 / DB UTC / broker epoch GMT+3, BUG-070) · OBS-010 audit_orders.latency 81% zeros; execution latency not traceable · OBS-011 async task failures unattributed (no task id/parent) · OBS-012 SSE events lack producer/op id.</li>
+<li><strong>P3</strong> OBS-013 strategy-factory / dataset-rejection floods (15,289 + 20,373 identical lines/day) · OBS-014 CLI/health identity drift (version 9.0.3/commit 53317de vs HEAD 9.0.5) · OBS-015 request-id not persisted into logs/DB · OBS-016 CLI ops expose no operation id/timestamps.</li>
+</ul>
+<h2 id='7-reconstruction-scorecard'>7. Reconstruction scorecard</h2>
+<p>STARTUP YELLOW · PROCESS RED · DATABASE RED · MARKET DATA YELLOW · CANDLES GREEN (DB) · FEATURES YELLOW · 50D YELLOW · 70D YELLOW · TENSOR RED · MODEL GREEN · REGIME GREEN · LIQUIDITY GREEN · STRATEGY YELLOW · RISK YELLOW · EXECUTION YELLOW (DB-side GREEN, log-side RED) · WORKERS GREEN · ASYNC RED · CLI YELLOW · WEB/API GREEN · SSE YELLOW · UPDATER RED · ROLLBACK YELLOW · RELEASE YELLOW · SHUTDOWN RED.</p>
+<p><strong>Overall: PARTIALLY OBSERVABLE.</strong> The DB layer is the system's real flight</p>
+<p>recorder; the log layer loses identity at the exact seam where an incident</p>
+<p>investigator needs it (log↔DB join via correlation ids).</p>
+<h2 id='8-recommended-future-fixes-not-implemented-here--audit-only-'>8. Recommended future fixes (NOT implemented here — audit-only mandate)</h2>
+<ol>
+<li>Allowlist id-shaped values in <code>_redact_value</code> (EXEC-/req_/upd-/fh-/INC- prefixes) — OBS-002.</li>
+<li>Bind correlation context per boot + per decision (wire <code>bind_correlation_id</code>) — OBS-003.</li>
+<li>Fix <code>adapters.audit_db</code> import in <code>/api/debug/trace</code> (or fail health visibly) — OBS-001.</li>
+<li>Persist stage transitions for update/rollback into logs + release_metadata — OBS-006.</li>
+<li>Structured DB-write failure events (table, rows, duration, drop counters) — OBS-004.</li>
+<li>Thread execution_id through to audit_experiences — OBS-005.</li>
+<li>Emit SHUTDOWN/STOPPED + explicit STARTUP_COMPLETE markers with a boot id — OBS-007.</li>
+<li>Deduplicate/escalate flood hotspots; demote WORKER_KICK repeats to state rows — OBS-013.</li>
+</ol>
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/architecture/observability-map.md'>Editar esta página en GitHub</a> ·
+  Versión v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/381730a'>381730a</a> ·
+  <a href='../../../es/releases/'>Todas las versiones</a>
+</footer>
+</main>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA"};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>
