@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>QA ASSURANCE CONTRACT — Deep Assurance Layer (CHG-0045) · Nexus Scalp Engine</title>
+<meta name='description' content='QA ASSURANCE CONTRACT — Deep Assurance Layer (CHG-0045) — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/qa-assurance-contract/'>
+<meta property='og:title' content='QA ASSURANCE CONTRACT — Deep Assurance Layer (CHG-0045)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/architecture/qa-assurance-contract/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../es/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma'>🌐 Español</summary>
+      <div class='lang-menu'><a href='../../../architecture/qa-assurance-contract/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../es/releases/'>v9.0.6 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../architecture/qa-assurance-contract/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../es/architecture/'>Arquitectura</a> / <span class='crumb-current' aria-current='page'>qa assurance contract</span></nav>
+<h1 id='qa-assurance-contract--deep-assurance-layer-chg-0045'>QA ASSURANCE CONTRACT — Deep Assurance Layer (CHG-0045)</h1>
+<blockquote><p>Owner: Nexus-Main (TASK-QA-DEEP-ASSURANCE). This document is the contract</p><p>for the OSS-grade adversarial QA layer: lanes, markers, budgets, the JSON</p><p>result schema, and the governance rules for flaky/open-defect tests.</p></blockquote>
+<h2 id='1-position-in-the-gate-hierarchy'>1. Position in the gate hierarchy</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Lane</th><th>Command</th><th>When</th><th>Budget</th></tr></thead><tbody>
+<tr><td>Pre-push critical gate (existing, NOT replaced)</td><td><code>beforePush.sh</code> / <code>check_local.py</code></td><td>every push</td><td>~2.5 min</td></tr>
+<tr><td><strong>Deep assurance — fast</strong></td><td><code>python scripts/qa/deep_assurance.py --fast</code></td><td>PR / push lane in CI</td><td>&lt; 60 s</td></tr>
+<tr><td><strong>Deep assurance — full</strong></td><td><code>python scripts/qa/deep_assurance.py</code></td><td>main / scheduled / dispatch</td><td>&lt; 5 min</td></tr>
+<tr><td>Mutation proof</td><td><code>python scripts/qa/run_mutations.py</code></td><td>scheduled / dispatch (weekly)</td><td>&lt; 15 min</td></tr>
+</tbody></table></div>
+<p>The deep-assurance layer NEVER replaces the runtime gate; it adds</p>
+<p>independent adversarial angles (brief §30/§26).</p>
+<h2 id='2-battery-inventory-testsunittestqadeeppy'>2. Battery inventory (tests/unit/test_qa_deep_*.py)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Battery</th><th>Tests</th><th>Class</th><th>Determinism</th></tr></thead><tbody>
+<tr><td><code>test_qa_deep_70d_contract_properties.py</code></td><td>14+6xfail</td><td>property (70D contract, BUG-184/192 classes)</td><td>seeded <code>random.Random(20260902)</code></td></tr>
+<tr><td><code>test_qa_deep_bug194_zero_trained_mass.py</code></td><td>5</td><td>adversarial crash probes (BUG-208)</td><td>explicit inputs</td></tr>
+<tr><td><code>test_qa_deep_confidence_adversarial.py</code></td><td>18</td><td>metamorphic + threshold freeze (CHG-0042)</td><td>explicit inputs</td></tr>
+<tr><td><code>test_qa_deep_state_machines.py</code></td><td>15</td><td>state-machine property (SM-1..7, RB-1..6)</td><td>seeded random sequences</td></tr>
+<tr><td><code>test_qa_deep_provider_gate_chaos.py</code></td><td>7</td><td>chaos/failure-injection (CHAOS-1..7)</td><td>FakeClock + stubs</td></tr>
+<tr><td><code>test_qa_deep_db_migration_adversarial.py</code></td><td>7</td><td>DB adversarial (ADV-DB-1..7)</td><td>disposable tmp_path DBs</td></tr>
+<tr><td><code>test_qa_deep_security_surfaces.py</code></td><td>10</td><td>security surfaces (SEC-1..6)</td><td>seeded URL generator</td></tr>
+<tr><td><code>test_qa_deep_metamorphic_replay.py</code></td><td>7</td><td>metamorphic/temporal replay (M-1..6)</td><td>seeded synthetic bars</td></tr>
+<tr><td><code>test_qa_deep_observability_evidence.py</code></td><td>8</td><td>evidence preservation (OBS-1..7)</td><td>seeded + bounded threads</td></tr>
+<tr><td><code>test_qa_deep_execution_safety.py</code></td><td>4</td><td>execution safety (EXEC-1..4)</td><td>structural</td></tr>
+</tbody></table></div>
+<p>Helper: <code>tests/helpers/fault_injection.py</code> (<code>FaultPoint</code> — deterministic,</p>
+<p>count-based boundary fault injector).</p>
+<h2 id='3-rules'>3. Rules</h2>
+<ol>
+<li><strong>Offline by default.</strong> No network, no MT5, no package downloads. Any</li>
+</ol>
+<p>future external test MUST be marked and default-skipped as</p>
+<p><code>ENVIRONMENT_BLOCKED</code> in JSON (never counted as PASS).</p>
+<ol>
+<li><strong><code>live_trading_actions = 0</code></strong> is structurally enforced</li>
+</ol>
+<p>(<code>test_exec_live_trading_actions_zero_kpi</code>).</p>
+<ol>
+<li><strong>Determinism.</strong> All randomness from <code>random.Random(fixed seed)</code>. The</li>
+</ol>
+<p>full layer is verified green on two consecutive runs.</p>
+<ol>
+<li><strong>No production edits.</strong> Production-code changes discovered by this</li>
+</ol>
+<p>layer are ledger-routed (BUG-208 → policy owner; BUG-184 extension →</p>
+<p>feature-contract owner; SEC-1c → web owners) with xfail/RED tests as</p>
+<p>pinned semantics — never silently skipped.</p>
+<ol>
+<li><strong>Open-defect tests</strong> use <code>pytest.mark.xfail(strict=False, reason=...)</code></li>
+</ol>
+<p>naming the BUG id; they MUST flip green when the owner lands the fix</p>
+<p>and become strict or plain tests at that point.</p>
+<ol>
+<li><strong>Flaky governance.</strong> A flaky battery test is reproduced, classified,</li>
+</ol>
+<p>and either FIXED or quarantined with an explicit reason in this file.</p>
+<p>Blanket retries are forbidden.</p>
+<ol>
+<li><strong>Mutation proof</strong> runs against temp-tree copies; the working tree is</li>
+</ol>
+<p>never mutated. <code>SURVIVED</code> = test blind spot and must be filed as a</p>
+<p>test-quality defect in <code>agents/bugs.md</code>.</p>
+<ol>
+<li><strong>Windows-first.</strong> Everything is pure Python + pytest; no bash/grep</li>
+</ol>
+<p>assumptions; PS 5.1/7 compatible invocation.</p>
+<h2 id='4-budgets-measured-on-the-dev-machine-2026-09-02'>4. Budgets (measured on the dev machine, 2026-09-02)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Class</th><th>Measured</th><th>Budget</th></tr></thead><tbody>
+<tr><td>QA-DEEP full layer</td><td>20–28 s</td><td>&lt; 60 s</td></tr>
+<tr><td>Individual battery</td><td>0.3–8 s</td><td>&lt; 30 s</td></tr>
+<tr><td>Mutation proof (9 mutations, isolated interpreters)</td><td>~150 s</td><td>&lt; 15 min</td></tr>
+</tbody></table></div>
+<p>A battery exceeding its budget twice consecutively must be investigated</p>
+<p>(perf regression in the target contract, not just "slow tests").</p>
+<h2 id='5-json-result-schema-deepassurancepy---json'>5. JSON result schema (<code>deep_assurance.py --json</code>)</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>{
+  &quot;suite_version&quot;: &quot;1.0.0&quot;,
+  &quot;git_commit&quot;: &quot;&lt;sha&gt;&quot;,
+  &quot;environment&quot;: {&quot;python&quot;: &quot;3.11.x&quot;, &quot;platform&quot;: &quot;Windows-...&quot;},
+  &quot;seed&quot;: 20260902,
+  &quot;duration_ms&quot;: 0,
+  &quot;status&quot;: &quot;PASS | FAIL | ENVIRONMENT_BLOCKED&quot;,
+  &quot;tests_run&quot;: 0,
+  &quot;tests_passed&quot;: 0,
+  &quot;tests_failed&quot;: 0,
+  &quot;tests_skipped&quot;: 0,
+  &quot;tests_xfailed&quot;: 0,
+  &quot;defects&quot;: [
+    {&quot;subsystem&quot;: &quot;...&quot;, &quot;severity&quot;: &quot;P1&quot;, &quot;classification&quot;: &quot;OPEN|FIXED&quot;,
+     &quot;evidence&quot;: &quot;test id&quot;, &quot;reproducer&quot;: &quot;test path&quot;, &quot;owner&quot;: &quot;...&quot;}
+  ],
+  &quot;flaky&quot;: [],
+  &quot;performance&quot;: {&quot;slowest_battery_ms&quot;: 0},
+  &quot;security&quot;: {&quot;surfaces_checked&quot;: 6, &quot;findings&quot;: []},
+  &quot;mutation&quot;: {&quot;file&quot;: &quot;scripts/qa/run_mutations.py&quot;, &quot;last_run&quot;: &quot;n/a&quot;},
+  &quot;coverage&quot;: {&quot;note&quot;: &quot;line-coverage intentionally omitted; detection-power driven&quot;},
+  &quot;recommendations&quot;: []
+}</code></pre></div>
+<h2 id='6-ci-integration'>6. CI integration</h2>
+<p><code>.github/workflows/qa-deep-assurance.yml</code>:</p>
+<ul>
+<li><strong>fast lane</strong>: <code>--fast</code> on pull_request + push to main (timeout 10 min).</li>
+<li><strong>deep lane</strong>: scheduled weekly + workflow_dispatch (<code>--json</code> artifact</li>
+</ul>
+<p>uploaded; failures block the lane, never silently green).</p>
+<ul>
+<li>The workflow does NOT touch <code>ci.yml</code> / <code>beforePush</code> (owner boundaries).</li>
+</ul>
+<h2 id='7-new-dependency-policy-brief-31'>7. New-dependency policy (brief §31)</h2>
+<p>No new dependencies were adopted. Property generation uses stdlib</p>
+<p><code>random.Random</code> with fixed seeds; fault injection is a 60-line helper;</p>
+<p>mutation testing is a bespoke bounded runner. Hypothesis/Locust/Playwright</p>
+<p>are consciously NOT adopted (no proven defect class beyond current layers).</p>
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/architecture/qa-assurance-contract.md'>Editar esta página en GitHub</a> ·
+  Versión v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/381730a'>381730a</a> ·
+  <a href='../../../es/releases/'>Todas las versiones</a>
+</footer>
+</main>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA"};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

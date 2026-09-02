@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Runtime Certification Gate — canonical pre-push contract · نکسوس اسکالپ انجین</title>
+<meta name='description' content='Runtime Certification Gate — canonical pre-push contract — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/runtime-certification-gate/'>
+<meta property='og:title' content='Runtime Certification Gate — canonical pre-push contract'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/architecture/runtime-certification-gate/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../fa/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='پوسته' title='پوسته'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ روشن</button>
+        <button type='button' data-theme-set='dark'>☾ تیره</button>
+        <button type='button' data-theme-set='system'>🖥 سیستم</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='زبان'>🌐 فارسی</summary>
+      <div class='lang-menu'><a href='../../../architecture/runtime-certification-gate/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../fa/'>خانه</a>
+<div class='nav-section'><a class='' href='../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/getting-started/installation/'>نصب</a></li>
+<li><a class='' href='../../../fa/getting-started/quickstart/'>شروع سریع</a></li>
+<li><a class='' href='../../../fa/getting-started/first-run/'>اجرای اول</a></li>
+<li><a class='' href='../../../fa/getting-started/configuration/'>پیکربندی</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/project/vision/'>چشم‌انداز و چرایی</a></li>
+<li><a class='' href='../../../fa/project/scope/'>محدوده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/status/'>وضعیت پروژه</a></li>
+<li><a class='' href='../../../fa/project/capabilities/'>ماتریس قابلیت‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/roadmap/'>نقشه راه</a></li>
+<li><a class='' href='../../../fa/project/milestones/'>نقاط عطف</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/architecture/overview/'>نمای کلی</a></li>
+<li><a class='' href='../../../fa/architecture/system-map/'>نقشه سیستم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/data-flow/'>جریان داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/runtime/'>زمان اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/research-stack/'>پشته پژوهش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/model-pipeline/'>خط لوله مدل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/execution-pipeline/'>خط لوله اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/observability/'>مشاهده‌پذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/database/'>پایگاه داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/research/methodology/'>روش‌شناسی</a></li>
+<li><a class='' href='../../../fa/research/datasets/'>دیتاست‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/backtesting/'>بک‌تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/out-of-sample/'>گیت OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/replay/'>بازپخش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/counterfactuals/'>خلاف‌واقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/validation/'>اعتبارسنجی</a></li>
+<li><a class='' href='../../../fa/research/reproducibility/'>بازتولیدپذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/engineering/quality/'>کیفیت و تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/ci/'>معماری CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/release-process/'>فرایند انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/security/'>امنیت</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/guides/cli/'>راهنمای CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/troubleshooting/'>عیب‌یابی</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/common-workflows/'>گردش‌کارهای رایج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/contributing/contribution-guide/'>راهنمای مشارکت</a></li>
+<li><a class='' href='../../../fa/contributing/documentation/'>گردش‌کار مستندات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/add-language/'>افزودن زبان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/glossary/'>واژه‌نامه</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/terminology/'>اصطلاحات و ترجمه‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/faq/'>پرسش‌های متداول</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.6 &amp; تاریخچه</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است — <a href='../../architecture/runtime-certification-gate/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/architecture/'>معماری</a> / <span class='crumb-current' aria-current='page'>runtime certification gate</span></nav>
+<h1 id='runtime-certification-gate--canonical-pre-push-contract'>Runtime Certification Gate — canonical pre-push contract</h1>
+<blockquote><p><strong>CHANGE-ID:</strong> CHG-0051 · <strong>TASK-ID:</strong> TASK-RUNTIME-GATE · <strong>Status:</strong> ACTIVE</p><p><strong>One command. One answer.</strong> <code>python scripts/ci/runtime_gate.py</code></p></blockquote>
+<h2 id='1-purpose'>1. Purpose</h2>
+<p>The repository has many test families (runtime, features, 50D/70D, models,</p>
+<p>database, execution, providers, research, CLI, observability, installer,</p>
+<p>integration). The problem was never test count — it was the absence of ONE</p>
+<p>strong, trustworthy, repeatable command answering:</p>
+<blockquote><p>"Is the composed runtime safe, coherent, loadable, and operational enough</p><p>for an agent to push its change?"</p></blockquote>
+<p>The Runtime Certification Gate is that command. It is a **curated, layered</p>
+<p>certification of the REAL composed runtime** — not "run all pytest". It</p>
+<p>exercises the actual boot path (config → adapter → <code>LiveEngine</code> service</p>
+<p>graph → decision pipeline → API → shutdown) with disposable persistence and</p>
+<p>a paper broker.</p>
+<p>Doctor (operator diagnostics) and the forensic deploy gate (release health)</p>
+<p>remain their own contracts; the gate CALLS them, never replaces them.</p>
+<h2 id='2-command'>2. Command</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code># Recommended (agents, pre-push) — full certification
+python scripts/ci/runtime_gate.py
+
+# Machine-readable (pure JSON on stdout)
+python scripts/ci/runtime_gate.py --json
+
+# Cheap tier (no runtime boot) — static/import/config/DB-disposable/contract
+python scripts/ci/runtime_gate.py --fast
+
+# Persist evidence artifact (artifacts/forensics/runtime_gate_result.json)
+python scripts/ci/runtime_gate.py --evidence</code></pre></div>
+<p>Use the repo venv: <code>.venv/Scripts/python.exe scripts/ci/runtime_gate.py</code></p>
+<p>(always invoke via the project's venv, never a bare tool name).</p>
+<p>Measured budget (2026-09-02, dev workstation):</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Tier</th><th>Measured wall time</th><th>Contents</th></tr></thead><tbody>
+<tr><td>full</td><td>~30 s (14–16 s warm)</td><td>L0..L9</td></tr>
+<tr><td>fast</td><td>~6.5 s</td><td>L0..L4 only</td></tr>
+</tbody></table></div>
+<h2 id='3-certification-layers'>3. Certification layers</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Stage</th><th>Layer</th><th>Verifies (real objects only)</th><th>Required</th></tr></thead><tbody>
+<tr><td>L0</td><td>STATIC</td><td>entrypoints exist, <code>py_compile</code> of <code>NexusTradingForexBot.py</code>/<code>main.py</code></td><td>yes</td></tr>
+<tr><td>L1</td><td>IMPORT</td><td>18 critical modules import (circular/deferred errors surface)</td><td>yes</td></tr>
+<tr><td>L2</td><td>CONFIG</td><td>real <code>AppConfig</code> defaults + <code>configs/base.yaml</code>, telegram secret masking</td><td>yes</td></tr>
+<tr><td>L3</td><td>DATABASE</td><td>engine-created schema on a DISPOSABLE SQLite file, required table classes, queued write→flush→read round-trip, migration-engine status; optional tables absent ≠ failure</td><td>yes</td></tr>
+<tr><td>L4</td><td>MODEL/FEATURE</td><td>real checkpoint/meta/scaler (70/70), canonical registry + hash, 50D base → <code>build_70d_vector</code> (0..49 base, 50..59 news, 60..69 liquidity) → strict <code>validate_70d_vector</code></td><td>yes</td></tr>
+<tr><td>L5</td><td>SERVICE GRAPH</td><td>REAL <code>LiveEngine</code> construction (paper adapter, injected tmp <code>AuditRepository</code>, isolated settings DB); 12 required services present; effective dim/schema from bundle</td><td>yes</td></tr>
+<tr><td>L6</td><td>DECISION CYCLE</td><td>seeded synthetic M1 bars → features → 70D assembly → scaler → inference → regime → policy → experience/intelligence gates → freshness gate → risk sizing on a SIMULATED proposal. <code>NO_TRADE</code> is a valid completion</td><td>yes</td></tr>
+<tr><td>L7</td><td>API/HEALTH</td><td>real <code>create_app()</code>; <code>/health</code> (READY/DEGRADED) + <code>/api/status</code>; secret-leak check</td><td>yes</td></tr>
+<tr><td>L8</td><td>SHUTDOWN</td><td>real <code>_shutdown_async()</code>: workers stop, audit flush, adapter disconnect, zero pending background tasks</td><td>yes</td></tr>
+<tr><td>L9</td><td>INVARIANTS</td><td>runtime proof of <code>order_send</code> isolation (execution-seam counter == 0), consumes the certified forensic deploy-gate engine</td><td>yes</td></tr>
+</tbody></table></div>
+<p>Each stage reports <code>PASS / FAIL / SKIP</code> with duration, evidence, owner, and</p>
+<p>failure class. A cheap-layer failure SKIPs downstream stages (evidence from</p>
+<p>a broken foundation is misleading); SKIP is explicit, never silent.</p>
+<h2 id='4-exit-codes'>4. Exit codes</h2>
+<p>Additive to <code>release/exit_codes.py</code> semantics (0..4 aligned; 5 extended):</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Code</th><th>Meaning</th><th>Mapped failure classes</th></tr></thead><tbody>
+<tr><td>0</td><td>CERTIFIED</td><td>—</td></tr>
+<tr><td>1</td><td>RUNTIME FAILURE</td><td><code>CODE_DEFECT</code>, <code>SERVICE_CONSTRUCTION_ERROR</code>, <code>RUNTIME_BOOT_ERROR</code>, <code>DATABASE_SCHEMA_ERROR</code>, <code>API_ERROR</code>, <code>SHUTDOWN_ERROR</code></td></tr>
+<tr><td>2</td><td>CONFIGURATION ERROR</td><td><code>CONFIG_ERROR</code></td></tr>
+<tr><td>3</td><td>ENVIRONMENT BLOCKED</td><td><code>ENVIRONMENT_BLOCKED</code>, <code>MISSING_ARTIFACT</code></td></tr>
+<tr><td>4</td><td>CONTRACT VIOLATION</td><td><code>MODEL_CONTRACT_ERROR</code>, <code>FEATURE_CONTRACT_ERROR</code>, <code>INVARIANT_VIOLATION</code></td></tr>
+<tr><td>5</td><td>INTERNAL GATE ERROR</td><td>gate crashed — <strong>never green on a crash</strong></td></tr>
+</tbody></table></div>
+<h2 id='5-safety-contract'>5. Safety contract</h2>
+<ul>
+<li><strong>No live trading.</strong> Paper adapter only; a gate tripwire wrapper counts</li>
+</ul>
+<p>every execution-seam call (<code>send_order</code>, <code>execute_market_order</code>,</p>
+<p><code>place_pending_order</code>, <code>close_position</code>, …) and the whole certification</p>
+<p>must show <strong>0</strong>. This is runtime PROOF, not a claim.</p>
+<ul>
+<li><strong>No production mutation.</strong> <code>artifacts/audit.db</code>, <code>artifacts/news.db</code> and</li>
+</ul>
+<p>the real <code>app_settings.db</code> are never touched: disposable tmp DBs are</p>
+<p>injected and <code>NEXUS_SETTINGS_DB</code> is repointed BEFORE runtime import.</p>
+<ul>
+<li><strong>Offline.</strong> No provider calls, no MT5 terminal IPC, no downloads. The</li>
+</ul>
+<p>only traffic is loopback HTTP to the gate's own in-process FastAPI app.</p>
+<ul>
+<li><strong>Deterministic.</strong> Synthetic bars are fixed math series (no <code>random</code>),</li>
+</ul>
+<p>timestamps end in the past (no future data), and repeat runs agree.</p>
+<ul>
+<li><strong>Pure stdout contract.</strong> <code>--json</code> is pure JSON; engine chatter goes to</li>
+</ul>
+<p>stderr (the gate detaches root console handlers before its own output).</p>
+<h2 id='6-failure-classification--output'>6. Failure classification &amp; output</h2>
+<p>Every failure carries: <code>stage</code>, <code>reason</code>, <code>failure_class</code>, <code>evidence</code></p>
+<p>(stdout tail included), and <code>owner</code> (suggested handoff target). Human</p>
+<p>output ends with <code>RUNTIME CERTIFIED</code> or <code>RUNTIME BLOCKED</code>; every failing</p>
+<p>stage prints reason/class/owner — never "something failed".</p>
+<p>JSON top-level keys: `gate_version, timestamp, git_commit,</p>
+<p>application_version, environment, duration_ms, status, exit_code, stages[],</p>
+<p>invariants[], model, feature_schema, database, engine, api, shutdown,</p>
+<p>failures[], warnings[]<code>. Each stage: </code>name, status, duration_ms, evidence,</p>
+<p>owner, failure_class, reason, skipped_reason`.</p>
+<h2 id='7-agent-pre-push-workflow'>7. Agent pre-push workflow</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>agent modifies code
+  → python scripts/ci/runtime_gate.py        # canonical gate (this doc)
+  → PASS → targeted tests (critical suite per beforePush)
+  → commit → push → GitHub CI (final authority)</code></pre></div>
+<p>If the gate fails: <strong>do not push.</strong> Fix the first failing layer (owner is</p>
+<p>named in the failure), rerun. The only exception is a failure classified</p>
+<p><code>ENVIRONMENT_BLOCKED</code> / <code>MISSING_ARTIFACT</code> that is provably environmental</p>
+<p>(e.g. artifact not provisioned in CI) — such exceptions are owner-reviewed</p>
+<p>and recorded in <code>agents/bugs.md</code> or <code>change_control.md</code>, never silent.</p>
+<h2 id='8-ci-usage'>8. CI usage</h2>
+<p>The same canonical command runs as an explicit step in the <code>quality</code> job of</p>
+<p><code>.github/workflows/ci.yml</code> (no duplicated logic in YAML — CI invokes the</p>
+<p>script). CI remains the final authority; the gate is the local fast mirror</p>
+<p>for the composed-runtime question.</p>
+<h2 id='9-gate-testing-the-gate-tests-itself'>9. Gate testing (the gate tests itself)</h2>
+<ul>
+<li><code>tests/unit/test_runtime_gate.py</code> — 34 tests: exit-code contract, stage</li>
+</ul>
+<p>machinery, JSON schema keys, determinism/no-future-data, tripwire</p>
+<p>behavior, failure-injection classes (missing model, width split, service,</p>
+<p>shutdown, invariants), upstream-skip semantics, human report, subprocess</p>
+<p>e2e.</p>
+<ul>
+<li><code>tests/integration/test_runtime_gate_e2e.py</code> — 9 tests: full-chain</li>
+</ul>
+<p>certification, stage order, 70D model/scaler/schema evidence, zero-seam</p>
+<p>decision-cycle proof, health/shutdown evidence, DB isolation evidence,</p>
+<p>stdout purity.</p>
+<h2 id='10-failure-injection-matrix-mission-28-coverage'>10. Failure-injection matrix (mission 28 coverage)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Scenario</th><th>Injected via</th><th>Expected stage</th><th>Class / exit</th></tr></thead><tbody>
+<tr><td>A. missing model</td><td>artifact absent</td><td>L4</td><td><code>MISSING_ARTIFACT</code> / 3</td></tr>
+<tr><td>B. wrong model width</td><td>50-wide checkpoint</td><td>L4</td><td><code>MODEL_CONTRACT_ERROR</code> / 4</td></tr>
+<tr><td>C. wrong schema</td><td>meta ≠ canonical id</td><td>L4</td><td><code>MODEL_CONTRACT_ERROR</code> / 4</td></tr>
+<tr><td>D. broken scaler</td><td>zero-std / dim split</td><td>L4</td><td><code>MODEL_CONTRACT_ERROR</code> / 4</td></tr>
+<tr><td>E. missing required table</td><td>schema probe</td><td>L3</td><td><code>DATABASE_SCHEMA_ERROR</code> / 1</td></tr>
+<tr><td>F. malformed config</td><td>masking/parse fail</td><td>L2</td><td><code>CONFIG_ERROR</code> / 2</td></tr>
+<tr><td>G. dependency graph failure</td><td>service absent</td><td>L5</td><td><code>SERVICE_CONSTRUCTION_ERROR</code> / 1</td></tr>
+<tr><td>H. feature init failure</td><td>base/liquidity block</td><td>L4/L6</td><td><code>FEATURE_CONTRACT_ERROR</code> / 4</td></tr>
+<tr><td>I. inference failure</td><td>degenerate probs</td><td>L6</td><td><code>MODEL_CONTRACT_ERROR</code> / 4</td></tr>
+<tr><td>J. policy construction failure</td><td>service absent</td><td>L5</td><td><code>SERVICE_CONSTRUCTION_ERROR</code> / 1</td></tr>
+<tr><td>K. API startup failure</td><td>wrong status/verdict</td><td>L7</td><td><code>API_ERROR</code> / 1</td></tr>
+<tr><td>L. shutdown failure</td><td>pending tasks</td><td>L8</td><td><code>SHUTDOWN_ERROR</code> / 1</td></tr>
+<tr><td>M. order_send reachable</td><td>tripwire counter &gt; 0</td><td>L6/L9</td><td><code>INVARIANT_VIOLATION</code> / 4</td></tr>
+<tr><td>N. stale model</td><td>meta/schema/hash drift</td><td>L4</td><td><code>MODEL_CONTRACT_ERROR</code> / 4</td></tr>
+<tr><td>O. 70D enabled + incompatible model</td><td>dim split</td><td>L4/L5</td><td><code>MODEL_CONTRACT_ERROR</code> / 4</td></tr>
+</tbody></table></div>
+<h2 id='11-ownership-boundary'>11. Ownership boundary</h2>
+<p>The gate owns runtime verification/certification orchestration only. It</p>
+<p>CALLS public certified surfaces (<code>schema_contract</code>, <code>features70</code>,</p>
+<p><code>liquidity_runtime</code>, <code>inference_validator</code>, <code>HealthEngine</code>,</p>
+<p><code>ForensicHealthEngine</code>, <code>AuditRepository</code>, migration engine) and does NOT</p>
+<p>redesign installer, provider gate, order manager, policy, regime, replay,</p>
+<p>shadow, migrations, model training, observability SSOT, or CLI product</p>
+<p>architecture. Defects found outside the gate are proven and handed off with</p>
+<p>the failing stage's owner field.</p>
+
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/architecture/runtime-certification-gate.md'>ویرایش این صفحه در گیت‌هاب</a> ·
+  نسخه v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/381730a'>381730a</a> ·
+  <a href='../../../fa/releases/'>همه انتشارها</a>
+</footer>
+</main>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "جستجو در مستندات…", "home": "خانه", "repo": "گیت‌هاب", "skip": "پرش به محتوا", "language": "زبان", "partial": "متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است", "english": "انگلیسی", "version": "نسخه", "next": "بعدی", "prev": "قبلی", "on_github": "ویرایش این صفحه در گیت‌هاب", "menu": "منو", "whats_new": "تازه‌ها", "all_releases": "همه انتشارها", "get_started": "شروع کنید", "view_architecture": "معماری", "view_roadmap": "نقشه راه", "close": "بستن", "theme": "پوسته", "theme_light": "روشن", "theme_dark": "تیره", "theme_system": "سیستم", "copy": "کپی", "copied": "کپی شد", "copy_error": "خطا در کپی", "no_results": "نتیجه‌ای یافت نشد", "loading": "در حال بارگذاری…", "section": "بخش", "search_results": "نتایج جستجو", "explore_docs": "کاوش در مستندات", "full_matrix": "ماتریس کامل", "release_timeline": "خط زمان انتشارها", "hero_kicker": "پلتفرم پژوهش و اجرای معاملات کمّی", "hero_title_a": "نکسوس", "hero_title_b": "اسکالپ انجین", "hero_sub": "پلتفرم اسکالپ پژوهش‌محور، شش‌ضلعی و رویدادمحور برای متاتریدر ۵ — ویژگی‌های علّی، مدل‌های عمیق تحت حکمرانی، موتور ریسک ثابت‌شده، ابزار پژوهش قطعی و مشاهده‌پذیری فارنزیک در یک خط لوله قابل‌ممیزی.", "chip_released": "منتشرشده", "chip_rev": "ریویژن", "chip_research": "پژوهش: 50D زنده · 70D کاندیدا", "released_history": "تاریخچه", "release_history_kicker": "تاریخچه انتشارها", "releases_intro": "هر انتشار با هایلایت‌های واقعی خود، برگرفته از فراداده انتشارهای گیت‌هاب در زمان ساخت. منبع یکتای نسخه:", "nf404_title": "۴۰۴", "nf404_lead": "این صفحه مستندات وجود ندارد.", "nf404_home": "خانه", "footer_prefix": "", "brand": "نکسوس", "brand_dim": "اسکالپ انجین", "github_release": "انتشار در گیت‌هاب", "back_home": "بازگشت به خانه", "quickstart_label": "شروع سریع", "status_label": "وضعیت پروژه", "faq_label": "پرسش‌های متداول", "cap_engine": "موتور ویژگی علّی 50D", "cap_risk": "موتور ریسک + کلمپ‌های اجرا", "cap_oos": "Walk-Forward + گیت سخت OOS", "cap_factory": "کارخانه مدل مصنوع-محور", "cap_70d": "قرارداد 70D (پایه+اخبار+نقدینگی)", "cap_cf": "موتور خلاف‌واقع (قدم زدن NO_TRADE)", "pillar_evidence_t": "🧭 شواهد پیش از ادعا", "pillar_evidence_b": "سنجه‌های بدون شواهد «n/a» نمایش داده می‌شوند — هرگز صفر جعلی نیست. نتایج منفی منتشر می‌شوند: کاندیدای پژوهشی 70D توسط گیت OOS خودمان رد شد.", "pillar_safety_t": "🔒 ایمنی در ساخت", "pillar_safety_b": "پیش‌فرض PAPER · SHADOW با صفر اختیار سفارش · LIVE پشت تأیید صریح · کلمپ‌های سخت ریسک (HARD_MAX_LOTS، مارجین ≤20٪) در مسیر اجرا اعمال می‌شوند.", "pillar_research_t": "🔬 پژوهش قطعی", "pillar_research_b": "Walk-Forward با پاکسازی و تحریم، بازپخش بی‌دقیق (bit-exact)، دیتاست/مدل‌های اثرانگشت‌شده، منشأ در هر اجرا — یک قرارداد ویژگی مشترک برای زنده، بازپخش و آموزش.", "pillar_truth_t": "👁️ حقیقت زمان اجرا", "pillar_truth_b": "مشاهده‌پذیری فارنزیک: لاگ‌های تفکیک‌شده با شدت، همبستگی رخدادها، گیت استقرار. حقیقت بروکر بر وضعیت کهنه می‌چربد؛ گیت‌ها مرجع‌اند، تنظیمات فقط قصد.", "capability": "قابلیت", "status": "وضعیت", "chip_certified": "گواهی‌شده", "chip_implemented": "پیاده‌سازی‌شده", "chip_experimental": "آزمایشی", "chip_research_l": "پژوهشی", "cap_highlights": "هایلایت قابلیت‌ها", "callout_important": "مهم", "callout_note": "یادداشت", "callout_warning": "هشدار"};
+window.NEXUS_LANG = "fa";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>

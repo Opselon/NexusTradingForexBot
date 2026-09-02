@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Quality &amp; Testing · نكسوس سكالب إنجين</title>
+<meta name='description' content='How quality is enforced — the beforePush gate, test architecture, golden tests, and the no-fake-green rule.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/engineering/quality/'>
+<meta property='og:title' content='Quality &amp; Testing'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/ar/engineering/quality/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<a class='skip-link' href='#content'>الانتقال إلى المحتوى</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='القائمة' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../ar/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.6</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='المظهر' title='المظهر'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ فاتح</button>
+        <button type='button' data-theme-set='dark'>☾ داكن</button>
+        <button type='button' data-theme-set='system'>🖥 النظام</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='اللغة'>🌐 العربية</summary>
+      <div class='lang-menu'><a href='../../../engineering/quality/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب</a>
+  </div>
+</header>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../ar/'>الرئيسية</a>
+<div class='nav-section'><a class='' href='../../../ar/getting-started/'>البداية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/getting-started/installation/'>التثبيت</a></li>
+<li><a class='' href='../../../ar/getting-started/quickstart/'>البداية السريعة</a></li>
+<li><a class='' href='../../../ar/getting-started/first-run/'>التشغيل الأول</a></li>
+<li><a class='' href='../../../ar/getting-started/configuration/'>الإعداد</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/project/'>المشروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/project/vision/'>الرؤية والغاية</a></li>
+<li><a class='' href='../../../ar/project/scope/'>النطاق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/status/'>حالة المشروع</a></li>
+<li><a class='' href='../../../ar/project/capabilities/'>مصفوفة القدرات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/roadmap/'>خارطة الطريق</a></li>
+<li><a class='' href='../../../ar/project/milestones/'>المحطات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/architecture/'>البنية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/architecture/overview/'>نظرة عامة</a></li>
+<li><a class='' href='../../../ar/architecture/system-map/'>خريطة النظام</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/data-flow/'>تدفق البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/runtime/'>وقت التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/research-stack/'>منظومة البحث</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/model-pipeline/'>خط أنابيب النموذج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/execution-pipeline/'>خط أنابيب التنفيذ</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/observability/'>قابلية المراقبة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/database/'>قاعدة البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/research/'>البحث</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/research/methodology/'>المنهجية</a></li>
+<li><a class='' href='../../../ar/research/datasets/'>مجموعات البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/backtesting/'>الاختبار الرجعي</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/out-of-sample/'>بوابة OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/replay/'>إعادة التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/counterfactuals/'>المضاد للواقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/validation/'>التحقق</a></li>
+<li><a class='' href='../../../ar/research/reproducibility/'>قابلية إعادة الإنتاج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../ar/engineering/'>الهندسة</a></div>
+<ul class='nav-list'>
+<li><a class='active' href='../../../ar/engineering/quality/'>الجودة والاختبار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/ci/'>بنية CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/release-process/'>عملية الإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/security/'>الأمان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/guides/'>أدلة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/guides/cli/'>دليل CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/troubleshooting/'>استكشاف الأخطاء</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/common-workflows/'>سير العمل الشائعة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/contributing/'>المساهمة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/contributing/contribution-guide/'>دليل المساهمة</a></li>
+<li><a class='' href='../../../ar/contributing/documentation/'>سير عمل التوثيق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/contributing/add-language/'>إضافة لغة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/glossary/'>المسرد</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/terminology/'>المصطلحات والترجمات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/faq/'>الأسئلة الشائعة</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/releases/'>الإصدارات</a></div>
+<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.6 &amp; التاريخ</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../engineering/quality/'>الإنجليزية</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../ar/engineering/'>الهندسة</a> / <span class='crumb-current' aria-current='page'>الجودة والاختبار</span></nav>
+<h1 id='quality--testing'>Quality &amp; Testing</h1>
+<h2 id='the-quality-gate'>The quality gate</h2>
+<p>Every push passes <code>beforePush.sh</code> / <code>beforePush.ps1</code> (5 stages):</p>
+<ol>
+<li><code>ruff check</code> (lint)</li>
+<li><code>ruff format</code> check</li>
+<li><code>mypy src</code></li>
+<li><strong>CRITICAL suite</strong> pytest run (<code>tests/critical_suite.txt</code>, ~779 tests,</li>
+</ol>
+<p>RAM-aware xdist workers, coverage)</p>
+<ol>
+<li>Forensic <strong>deploy gate</strong> writing <code>artifacts/forensics/deploy_gate_result.json</code></li>
+</ol>
+<p><code>-FullSuite</code> runs the whole ~1931-test unit corpus. CI mirrors the gate</p>
+<p>(<code>.github/workflows/ci.yml</code>) and adds CodeQL, Trivy, OSV, lockfile-diff and JS</p>
+<p>tests on separate workflows.</p>
+<h2 id='test-architecture'>Test architecture</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Suite</th><th>Location</th><th>Character</th></tr></thead><tbody>
+<tr><td>Unit</td><td><code>tests/unit/</code></td><td>~1900 tests; critical subset in <code>critical_suite.txt</code></td></tr>
+<tr><td>Integration</td><td><code>tests/integration/</code></td><td>API + engine-level, run standalone/sequential in CI</td></tr>
+<tr><td>Golden</td><td><code>tests/golden/</code> + <code>test_*_golden.py</code></td><td>byte/behavior-identical extraction gates (decomposition safety)</td></tr>
+<tr><td>CLI E2E</td><td><code>test_cli_end_to_end.py</code></td><td>66 end-to-end CLI contracts incl. exit codes</td></tr>
+<tr><td>Installer</td><td><code>tests/installer/</code></td><td>stage protocol tests</td></tr>
+<tr><td>JS</td><td><code>tests/js/</code></td><td>Control Center syntax/behavior gates</td></tr>
+</tbody></table></div>
+<h2 id='golden-tests-decomposition-safety'>Golden tests (decomposition safety)</h2>
+<p>Large hot-path modules are decomposed only behind golden tests written</p>
+<p><strong>before</strong> extraction: the extracted seam must be behaviorally identical</p>
+<p>(e.g. OrderManager's state machine, protection ledger, recovery budget;</p>
+<p>reporting read-adapter golden JSON).</p>
+<h2 id='no-fake-green'>No fake green</h2>
+<ul>
+<li>A test that can't fail is deleted, not ignored silently.</li>
+<li>Pre-existing failures are classified and owned — never absorbed into</li>
+</ul>
+<p>"passing" runs.</p>
+<ul>
+<li>Exit codes are contracts (<code>CLI_EXIT_CODES v1</code>): <code>0</code> success · <code>1</code> runtime ·</li>
+</ul>
+<p><code>2</code> usage · <code>3</code> environment blocked · <code>4</code> release verification · <code>5</code> update.</p>
+<h2 id='static-anti-crash-checks'>Static anti-crash checks</h2>
+<p><code>scripts/ci/anti_crash_static.py</code> scans for silent exception handlers</p>
+<p>(<code>SILENT_HANDLER</code> sites are ledgered as P1 findings, with an explicit inline</p>
+<p>allow marker + allowlist for legitimate migrations).</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../ar/engineering/'><span class='pn-label'>السابق</span><span class='pn-name'>الهندسة</span></a><a class='pn pn-next' href='../../../ar/engineering/ci/'><span class='pn-label'>التالي</span><span class='pn-name'>بنية CI</span></a></nav>
+<footer class='page-footer'>
+  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/engineering/quality.md'>تعديل هذه الصفحة على جيت هب</a> ·
+  الإصدار v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/381730a'>381730a</a> ·
+  <a href='../../../ar/releases/'>كل الإصدارات</a>
+</footer>
+</main>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "ابحث في التوثيق…", "home": "الرئيسية", "repo": "جيت هب", "skip": "الانتقال إلى المحتوى", "language": "اللغة", "partial": "المصدر الإنجليزي — الترجمة قيد الانتظار", "english": "الإنجليزية", "version": "الإصدار", "next": "التالي", "prev": "السابق", "on_github": "تعديل هذه الصفحة على جيت هب", "menu": "القائمة", "whats_new": "الجديد", "all_releases": "كل الإصدارات", "get_started": "ابدأ", "view_architecture": "البنية", "view_roadmap": "خارطة الطريق", "close": "إغلاق", "theme": "المظهر", "theme_light": "فاتح", "theme_dark": "داكن", "theme_system": "النظام", "copy": "نسخ", "copied": "تم النسخ", "copy_error": "فشل النسخ", "no_results": "لا نتائج", "loading": "جارٍ التحميل…", "section": "القسم", "search_results": "نتائج البحث", "explore_docs": "استكشف التوثيق", "full_matrix": "المصفوفة الكاملة", "release_timeline": "الجدول الزمني للإصدارات", "hero_kicker": "منصة بحث وتنفيذ للتداول الكمي", "hero_title_a": "نكسوس", "hero_title_b": "سكالب إنجين", "hero_sub": "منصة سكالب قائمة على البحث، سداسية البنية ومدفوعة بالأحداث لميتاتريدر 5 — خصائص سببية، نماذج عميقة محوكم، محرك مخاطر ثابت، أدوات بحث حتمية وقابلية مراقبة جنائية في خط أنابيب واحد قابل للتدقيق.", "chip_released": "منشور", "chip_rev": "مراجعة", "chip_research": "بحث: 50D حي · 70D مرشح", "released_history": "التاريخ", "release_history_kicker": "سجل الإصدارات", "releases_intro": "كل إصدار مع أبرز ملامحه الحقيقية، مستمدة من بيانات إصدارات جيت هب وقت البناء. المصدر الوحيد للإصدار:", "nf404_title": "٤٠٤", "nf404_lead": "صفحة التوثيق هذه غير موجودة.", "nf404_home": "الرئيسية", "footer_prefix": "", "brand": "نكسوس", "brand_dim": "سكالب إنجين", "github_release": "الإصدار على جيت هب", "back_home": "العودة للرئيسية", "quickstart_label": "البداية السريعة", "status_label": "حالة المشروع", "faq_label": "الأسئلة الشائعة", "cap_engine": "محرك الخصائص السببية 50D", "cap_risk": "محرك المخاطر + قيود التنفيذ", "cap_oos": "Walk-Forward + بوابة OOS الصارمة", "cap_factory": "مصنع النماذج المبني على المصنوعات", "cap_70d": "عقد 70D (القاعدة+الأخبار+السيولة)", "cap_cf": "محرك المضاد للواقع (مشي NO_TRADE)", "pillar_evidence_t": "🧭 الأدلة قبل الادعاءات", "pillar_evidence_b": "المقاييس بلا أدلة تظهر n/a — وليس أصفارًا مزيفة أبدًا. النتائج السلبية تُنشر: مرشحنا البحثي 70D رفضه بوابة OOS لدينا.", "pillar_safety_t": "🔒 السلامة بالتصميم", "pillar_safety_b": "PAPER افتراضيًا · SHADOW بلا صلاحية أوامر · LIVE خلف تأكيد صريح · قيود مخاطر صارمة (HARD_MAX_LOTS، هامش ≤20%) مفروضة في مسار التنفيذ.", "pillar_research_t": "🔬 بحث حتمي", "pillar_research_b": "Walk-Forward مع التطهير والحجر، إعادة تشغيل مطابقة بت-بت، بيانات/نماذج ببصمة، مصدر لكل تشغيل — عقد خصائص واحد للحياة وإعادة التشغيل والتدريب.", "pillar_truth_t": "👁️ حقيقة وقت التشغيل", "pillar_truth_b": "قابلية مراقبة جنائية: سجلات مفصولة بالخطورة، ارتباط الحوادث، بوابة النشر. حقيقة الوسيط تتفوق على الحالة القديمة؛ البوابات مرجع، والإعدادات نية.", "capability": "القدرة", "status": "الحالة", "chip_certified": "مُصادق", "chip_implemented": "مُنفَّذ", "chip_experimental": "تجريبي", "chip_research_l": "بحثي", "cap_highlights": "أبرز القدرات", "callout_important": "مهم", "callout_note": "ملاحظة", "callout_warning": "تحذير"};
+window.NEXUS_LANG = "ar";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>
