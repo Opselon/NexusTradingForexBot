@@ -192,6 +192,57 @@ class TestVenvTransaction:
         assert "PARKED=True" in out, out + r.stderr
 
 
+class TestHealthyDetectResolvesPending:
+    def test_healthy_venv_consumes_stale_pending_marker(self, tmp_path):
+        """Regression (process-kill smoke GATE 08): a run killed after the
+        venv replacement completed but before the dependencies commit left
+        marker + parked rollback tree forever - healthy-detect now resolves
+        the transaction. Injected post-kill state: healthy venv + marker +
+        parked tree."""
+        home = tmp_path / "NexusHome"
+        (home / "state").mkdir(parents=True)
+
+        marker = home / "state" / "venv.pending-backup"
+        parked = home / "venv.stale.20260902-010101-aa"
+        parked.mkdir()
+        (parked / "pyvenv.cfg").write_text("home = previous", encoding="utf-8")
+        marker.write_text(parked.name, encoding="utf-8")
+        # Seed a genuinely HEALTHY replacement venv (post-kill state: creation
+        # finished, transaction never committed).
+        repo_py = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+        if not repo_py.exists():
+            pytest.skip("repo .venv python missing for healthy-venv seeding")
+        subprocess.run(
+            [str(repo_py), "-m", "venv", str(home / "venv")],
+            capture_output=True,
+            timeout=180,
+            check=True,
+        )
+
+        # Real (trivial) uv.cmd override: Install-Venv resolves uv BEFORE the
+        # healthy-detect branch, so the override must exist for the run to
+        # reach the transaction-resolution path under test.
+        stub_dir = tmp_path / "stubbin"
+        stub_dir.mkdir()
+        stub = stub_dir / "uv.cmd"
+        stub.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+        expr = (
+            dot(INSTALLER)
+            + f"$NexusHome = '{home.as_posix()}'; "
+            + f"$env:NEXUS_INSTALLER_UV_OVERRIDE = '{stub.as_posix()}'; "
+            + "try { Install-Venv; 'MARKER_GONE=' + (-not (Test-Path -LiteralPath '"
+            + marker.as_posix()
+            + "')); 'HEALTHY=' + (Test-VenvHealthy -VenvPython '"
+            + (home / "venv" / "Scripts" / "python.exe").as_posix()
+            + "') } catch { 'VENV_ERR=' + $_.Exception.Message }"
+        )
+        r = run_ps(expr, timeout=300)
+        out = r.stdout
+        assert "VENV_ERR=" not in out, out + r.stderr
+        assert "HEALTHY=True" in out, out + r.stderr
+        assert "MARKER_GONE=True" in out, out + r.stderr
+
+
 class TestLedgerTruthfulness:
     def test_failed_stage_records_ok_false_in_ledger(self, tmp_path):
         """V6: a failed stage must appear in install.json with ok=false."""

@@ -760,6 +760,14 @@ function Resolve-UvCmd {
     # Re-discover uv without reinstalling (cross-process stage drivers run
     # each stage in a fresh PowerShell process; $Script:UvCmd does not carry
     # over). Throws a clean error when uv is genuinely unavailable.
+    # NEXUS_INSTALLER_UV_OVERRIDE: test-harness seam (process-kill smoke);
+    # when set, it is the uv command - validated like any explicit override.
+    if (-not $Script:UvCmd) {
+        $envOverride = $env:NEXUS_INSTALLER_UV_OVERRIDE
+        if ($envOverride -and (Test-Path -LiteralPath $envOverride)) {
+            $Script:UvCmd = $envOverride
+        }
+    }
     if ($Script:UvCmd) {
         if ($Script:UvCmd -eq "uv") {
             if (Get-Command uv -ErrorAction SilentlyContinue) { return }
@@ -1520,6 +1528,14 @@ function Install-Venv {
 
     if (Test-VenvHealthy -VenvPython $venvPython) {
         Write-Success "Virtual environment already healthy at $venvDir"
+        # Transactional contract (process-kill smoke finding): if a previous
+        # run parked an old venv and died before the dependencies stage could
+        # commit, the healthy venv IS the completed replacement - resolve the
+        # open transaction here so the rollback source cannot linger forever.
+        if (Get-PendingVenvBackup) {
+            Write-Info "Resolving interrupted venv transaction (healthy replacement confirmed)"
+            Complete-VenvTransaction
+        }
         $env:VIRTUAL_ENV = $venvDir
         $env:UV_PYTHON = $venvPython
         return
