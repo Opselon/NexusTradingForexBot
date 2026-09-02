@@ -77,9 +77,7 @@ class ShadowEngine:
         self._decisions = []
         self._started = datetime.now(UTC)
         self._frozen_git_revision = _git_revision()
-        self._frozen_configuration_version = str(
-            getattr(self, "_configuration_version", "") or ""
-        )
+        self._frozen_configuration_version = str(getattr(self, "_configuration_version", "") or "")
         self._frozen_challenger_hash = challenger_ref.artifact_hash or ""
         self._frozen_champion_hash = champion.artifact_hash or ""
         run = ShadowRun(

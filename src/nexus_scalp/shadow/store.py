@@ -286,7 +286,9 @@ class ShadowStore:
             logger.error("[SHADOW] additive migration failed (isolated)", error=str(e))
 
     @staticmethod
-    def _add_missing_columns(conn: sqlite3.Connection, table: str, columns: list[tuple[str, str]]) -> None:
+    def _add_missing_columns(
+        conn: sqlite3.Connection, table: str, columns: list[tuple[str, str]]
+    ) -> None:
         try:
             existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table});")}
         except Exception:
@@ -296,7 +298,9 @@ class ShadowStore:
                 try:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl};")
                 except Exception as e:
-                    logger.error("[SHADOW] add column failed", table=table, column=name, error=str(e))
+                    logger.error(
+                        "[SHADOW] add column failed", table=table, column=name, error=str(e)
+                    )
 
     # ------------------------------------------------------------------
     # Writes

@@ -214,9 +214,7 @@ def _side_outcome(
     mfe_r_val = (mfe_usd / (risk_distance * contract_size)) if risk_distance else None
     mae_r_val = (mae_usd / (risk_distance * contract_size)) if risk_distance else None
 
-    if time_to_target is not None and (
-        time_to_stop is None or time_to_target <= time_to_stop
-    ):
+    if time_to_target is not None and (time_to_stop is None or time_to_target <= time_to_stop):
         exit_reason = "TARGET_HIT"
     elif time_to_stop is not None:
         exit_reason = "STOP_HIT"

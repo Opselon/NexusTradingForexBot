@@ -528,9 +528,7 @@ def register_model_governance_routes(app: Any) -> None:
                     try:
                         man = _json.loads(_mpath.read_text(encoding="utf-8"))
                         feature_schema_hash_value = str(
-                            man.get("feature_schema_hash")
-                            or man.get("feature_schema_id", "")
-                            or ""
+                            man.get("feature_schema_hash") or man.get("feature_schema_id", "") or ""
                         )
                         scaler_hash_value = str(man.get("scaler_hash", "") or "")
                         break

@@ -8,6 +8,7 @@ stability.
 
 Run: .venv/Scripts/python -m pytest tests/unit/test_operator_routes.py -q
 """
+
 from __future__ import annotations
 
 import sqlite3

@@ -55,7 +55,7 @@ def _query_signals(
     repo = get_audit_repo(request)
     limit = page_size + 1
     offset = (page - 1) * page_size
-    sql = _BASE_SELECT + (f" WHERE {where}" if where else "") + " ORDER BY id DESC"
+    sql = _BASE_SELECT + where + " ORDER BY id DESC"
     rows = fetch_rows_bounded(repo, sql, args, limit + offset)
     rows = rows[offset : offset + limit]
     has_more = len(rows) > page_size
@@ -113,7 +113,8 @@ def _filters(
     if hours_back is not None:
         clauses.append("generated_at >= ?")
         args.append(_cutoff(hours_back))
-    return (" AND ".join(clauses), tuple(args)) if clauses else ("", ())
+    joined = " AND ".join(clauses)
+    return ((" WHERE " + joined) if joined else "", tuple(args))
 
 
 def _cutoff(hours_back: int) -> str:
@@ -186,11 +187,35 @@ def decisions_stats(
     )
 
 
+@router.get("/no-trade/reasons", summary="NO_TRADE rejection reason distribution")
+def decisions_no_trade_reasons(request: Request) -> Any:
+    reasons = fetch_rows_bounded(
+        get_audit_repo(request),
+        "SELECT COALESCE(reason_code, 'UNKNOWN') AS reason, COUNT(*) AS n FROM audit_signals"
+        " WHERE action = 'NO_TRADE' GROUP BY reason ORDER BY n DESC",
+        (),
+        100,
+    )
+    total = fetch_rows_bounded(
+        get_audit_repo(request),
+        "SELECT COUNT(*) AS n FROM audit_signals WHERE action = 'NO_TRADE'",
+        (),
+        1,
+    )
+    return ok(
+        request,
+        {
+            "total": int(total[0]["n"]) if total else 0,
+            "reasons": {r["reason"]: int(r["n"]) for r in reasons},
+        },
+    )
+
+
 @router.get("/no-trade", summary="NO_TRADE analytics")
 def decisions_no_trade(request: Request) -> Any:
     page = _query_signals(
         request,
-        where="action = 'NO_TRADE'",
+        where=" WHERE action = 'NO_TRADE'",
         args=(),
         page=1,
         page_size=1,

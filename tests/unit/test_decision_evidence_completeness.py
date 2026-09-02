@@ -140,8 +140,7 @@ def test_guardian_sentinel_geometry_refused_rr_not_recorded() -> None:
 
 def test_directionless_row_is_inconclusive_not_fabricated() -> None:
     ticks = [
-        Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m)
-        for m in range(60)
+        Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m) for m in range(60)
     ]
     cands = build_candidates(
         [
@@ -243,10 +242,11 @@ def test_audit_signals_migration_adds_columns_without_touching_rows(tmp_path: Pa
 
 
 def test_fingerprint_reproducible_same_inputs() -> None:
-    cands = build_candidates([_row(decision_id="A"), _row(decision_id="B", timestamp=T0 + timedelta(minutes=1))])
+    cands = build_candidates(
+        [_row(decision_id="A"), _row(decision_id="B", timestamp=T0 + timedelta(minutes=1))]
+    )
     ticks = [
-        Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m)
-        for m in range(60)
+        Tick(timestamp=T0 + timedelta(minutes=m), bid=3300.0 + m, ask=3300.2 + m) for m in range(60)
     ]
     r1 = [walk_candidate(c, ticks, horizon_minutes=60) for c in cands]
     r2 = [walk_candidate(c, ticks, horizon_minutes=60) for c in cands]

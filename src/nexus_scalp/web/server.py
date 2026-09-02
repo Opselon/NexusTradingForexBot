@@ -1751,6 +1751,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_ux_attention() -> FileResponse:
         return FileResponse(WEB_DIR / "ux_attention.js")
 
+    # BUG-205: replay_panel.js was mounted in index.html (CHG-0043 part 5)
+    # but had NO serving route -> 404 on every dashboard load and the
+    # replay-on-chart panel silently never booted (console error, dead
+    # feature). Same class as the command_center_*.js 404 fix.
+    @app.get("/replay_panel.js")
+    def serve_replay_panel() -> FileResponse:
+        return FileResponse(WEB_DIR / "replay_panel.js")
+
     @app.get("/ux_palette.js")
     def serve_ux_palette() -> FileResponse:
         return FileResponse(WEB_DIR / "ux_palette.js")

@@ -92,7 +92,12 @@ def test_jsonable_converts_datetimes_and_enums() -> None:
 
 def test_build_page_shape() -> None:
     page = build_page([{"i": i} for i in range(3)], page=2, page_size=3, has_more=True)
-    assert page == {"items": [{"i": 0}, {"i": 1}, {"i": 2}], "page": 2, "page_size": 3, "has_more": True}
+    assert page == {
+        "items": [{"i": 0}, {"i": 1}, {"i": 2}],
+        "page": 2,
+        "page_size": 3,
+        "has_more": True,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +166,12 @@ def test_meta_block_shape(v1_client: TestClient) -> None:
 
 
 def test_engine_unavailable_truthful_503(v1_client: TestClient) -> None:
-    for path in ("/api/v1/market/quote", "/api/v1/positions", "/api/v1/risk/status", "/api/v1/model/status"):
+    for path in (
+        "/api/v1/market/quote",
+        "/api/v1/positions",
+        "/api/v1/risk/status",
+        "/api/v1/model/status",
+    ):
         r = v1_client.get(path)
         assert r.status_code == 503, path
         err = r.json()["error"]

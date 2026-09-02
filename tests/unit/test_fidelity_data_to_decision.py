@@ -288,7 +288,9 @@ def artifacts():
 def test_artifact_fingerprint_is_content_hash(artifacts) -> None:
     import hashlib
 
-    fp = hashlib.sha256((REPO / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt").read_bytes()).hexdigest()[:32]
+    fp = hashlib.sha256(
+        (REPO / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt").read_bytes()
+    ).hexdigest()[:32]
     assert artifacts.model_fingerprint == fp
     assert artifacts.num_features == 70
 
@@ -311,7 +313,9 @@ def test_inference_parity_replay_vs_live_shape(artifacts) -> None:
     liquid = compute_liquidity_features(
         bars, decision_at=bars[-1].timestamp, mid_price=(tick.bid + tick.ask) / 2, atr=fv.atr_m1
     )
-    vec70 = build_70d_vector(fv.to_tensor_input(), family_10=news10, liquidity_10=list(liquid.as_vector()))
+    vec70 = build_70d_vector(
+        fv.to_tensor_input(), family_10=news10, liquidity_10=list(liquid.as_vector())
+    )
     validate_70d_vector(vec70)
 
     arr = np.asarray(vec70, dtype=np.float64).reshape(1, -1)
@@ -348,7 +352,9 @@ def test_policy_parity_same_probs_same_action() -> None:
     from nexus_scalp.signals.policy import SignalPolicy
 
     bars = _bars(60)
-    tick = TickData(symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.2, volume=100)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.2, volume=100
+    )
     fv_engine = ScalpFeatureEngine(symbol="XAUUSD")
     fv = fv_engine.compute_from_bars(bars, tick)
     probs = torch.tensor([[0.26, 0.258, 0.246, 0.236]], dtype=torch.float32)
@@ -372,7 +378,9 @@ def test_guardian_gate_blocks_unsafe_regime_with_reason() -> None:
     from nexus_scalp.signals.policy import SignalPolicy
 
     bars = _bars(60)
-    tick = TickData(symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.9, volume=100)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=bars[-1].timestamp, bid=3306.0, ask=3306.9, volume=100
+    )
     fv_engine = ScalpFeatureEngine(symbol="XAUUSD")
     fv = fv_engine.compute_from_bars(bars, tick)
     state = MarketRegimeState(
@@ -389,9 +397,14 @@ def test_guardian_gate_blocks_unsafe_regime_with_reason() -> None:
         reason=RegimeReason.SPREAD_SCHMITT,
     )
     probs = torch.tensor([[0.1, 0.8, 0.05, 0.05]], dtype=torch.float32)
-    proposal = SignalPolicy().evaluate_probabilities(probs, current_tick=tick, feature_vector=fv, regime_state=state)
+    proposal = SignalPolicy().evaluate_probabilities(
+        probs, current_tick=tick, feature_vector=fv, regime_state=state
+    )
     assert proposal.action.value == "NO_TRADE"
-    assert "GUARDIAN" in (proposal.reason_code or "").upper() or "UNSAFE" in (proposal.reason_code or "").upper()
+    assert (
+        "GUARDIAN" in (proposal.reason_code or "").upper()
+        or "UNSAFE" in (proposal.reason_code or "").upper()
+    )
 
 
 # ---------------------------------------------------------------------------

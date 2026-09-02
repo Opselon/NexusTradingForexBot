@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/v1/signals", tags=["signals"])
 
 @router.get("/latest", summary="Latest signal (most recent audit_signals row)")
 def signals_latest(request: Request) -> Any:
-    rows = fetch_rows_bounded(get_audit_repo(request), _BASE_SELECT, (), 1)
+    rows = fetch_rows_bounded(get_audit_repo(request), _BASE_SELECT + " ORDER BY id DESC", (), 1)
     if not rows:
         return fail(request, "RESOURCE_NOT_FOUND", message="no signals recorded yet")
     return ok(request, _row_to_signal(rows[0]))
@@ -103,7 +103,7 @@ def _query_signals(
     repo = get_audit_repo(request)
     limit = page_size + 1
     offset = (page - 1) * page_size
-    sql = _BASE_SELECT + (f" WHERE {where}" if where else "") + " ORDER BY id DESC"
+    sql = _BASE_SELECT + where + " ORDER BY id DESC"
     rows = fetch_rows_bounded(repo, sql, args, limit + offset)
     rows = rows[offset : offset + limit]
     has_more = len(rows) > page_size

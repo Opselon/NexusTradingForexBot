@@ -29,7 +29,6 @@ sys.path.insert(0, str(GATE.parent))
 
 import runtime_gate as rg  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -54,11 +53,14 @@ def _run_stage_body(body, gate: rg.Gate) -> rg.StageResult:
 
 def _raising_body(exc: Exception, failure_class: str | None = None):
     if failure_class is None:
+
         def body(gate: rg.Gate, res: rg.StageResult) -> None:
             raise exc
     else:
+
         def body(gate: rg.Gate, res: rg.StageResult) -> None:
             raise rg._StageFailure(failure_class, str(exc))
+
     return body
 
 
@@ -85,9 +87,7 @@ class TestExitCodeContract:
     def test_invariant_violation_maps_to_contract_exit(self):
         gate = rg.Gate()
         gate.record(
-            rg.StageResult(
-                name="L9 INVARIANTS", status="FAIL", failure_class="INVARIANT_VIOLATION"
-            )
+            rg.StageResult(name="L9 INVARIANTS", status="FAIL", failure_class="INVARIANT_VIOLATION")
         )
         assert gate.exit_code() == rg.EXIT_CONTRACT_VIOLATION
 
@@ -103,40 +103,41 @@ class TestExitCodeContract:
     def test_environment_only_maps_to_blocked(self):
         gate = rg.Gate()
         gate.record(
-            rg.StageResult(
-                name="L0 STATIC", status="FAIL", failure_class="ENVIRONMENT_BLOCKED"
-            )
+            rg.StageResult(name="L0 STATIC", status="FAIL", failure_class="ENVIRONMENT_BLOCKED")
         )
         assert gate.exit_code() == rg.EXIT_ENVIRONMENT_BLOCKED
         gate2 = rg.Gate()
-        gate2.record(
-            rg.StageResult(name="L4 X", status="FAIL", failure_class="MISSING_ARTIFACT")
-        )
+        gate2.record(rg.StageResult(name="L4 X", status="FAIL", failure_class="MISSING_ARTIFACT"))
         assert gate2.exit_code() == rg.EXIT_ENVIRONMENT_BLOCKED
 
     def test_config_only_maps_to_config_error(self):
         gate = rg.Gate()
-        gate.record(rg.StageResult(name="L2 CONFIG", status="FAIL",
-                                   failure_class="CONFIG_ERROR"))
+        gate.record(rg.StageResult(name="L2 CONFIG", status="FAIL", failure_class="CONFIG_ERROR"))
         assert gate.exit_code() == rg.EXIT_CONFIG_ERROR
 
     def test_generic_runtime_failure(self):
         gate = rg.Gate()
-        gate.record(rg.StageResult(name="L5 SERVICE GRAPH", status="FAIL",
-                                   failure_class="SERVICE_CONSTRUCTION_ERROR"))
+        gate.record(
+            rg.StageResult(
+                name="L5 SERVICE GRAPH", status="FAIL", failure_class="SERVICE_CONSTRUCTION_ERROR"
+            )
+        )
         assert gate.exit_code() == rg.EXIT_RUNTIME_FAILURE
 
     def test_gate_crash_is_never_green(self):
         """A crashed gate must return 5, never 0 (fail-safe principle)."""
         proc = subprocess.run(
             [
-                sys.executable, "-c",
+                sys.executable,
+                "-c",
                 "import sys; sys.argv=['runtime_gate'];"
                 f"sys.path.insert(0, r'{GATE.parent}');"
                 "import runtime_gate as rg;"
-                "raise SystemExit(rg.EXIT_INTERNAL_GATE_ERROR)"
+                "raise SystemExit(rg.EXIT_INTERNAL_GATE_ERROR)",
             ],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         assert proc.returncode == rg.EXIT_INTERNAL_GATE_ERROR
 
@@ -174,8 +175,11 @@ class TestStageMachinery:
 
     def test_failure_lands_in_gate_failures_with_owner(self):
         gate = rg.Gate()
-        rg.run_stage(gate, "L4 MODEL/FEATURE",
-                     _raising_body(ValueError("x"), failure_class="MODEL_CONTRACT_ERROR"))
+        rg.run_stage(
+            gate,
+            "L4 MODEL/FEATURE",
+            _raising_body(ValueError("x"), failure_class="MODEL_CONTRACT_ERROR"),
+        )
         assert len(gate.failures) == 1
         assert gate.failures[0]["owner"] == rg.STAGE_OWNERS["L4"]
         assert gate.failures[0]["failure_class"] == "MODEL_CONTRACT_ERROR"
@@ -205,20 +209,38 @@ class TestStageMachinery:
 
 class TestJsonSchema:
     REQUIRED_TOP_LEVEL = (
-        "gate_version", "timestamp", "git_commit", "application_version",
-        "environment", "duration_ms", "status", "exit_code", "stages",
-        "invariants", "model", "feature_schema", "database", "engine",
-        "api", "shutdown", "failures", "warnings",
+        "gate_version",
+        "timestamp",
+        "git_commit",
+        "application_version",
+        "environment",
+        "duration_ms",
+        "status",
+        "exit_code",
+        "stages",
+        "invariants",
+        "model",
+        "feature_schema",
+        "database",
+        "engine",
+        "api",
+        "shutdown",
+        "failures",
+        "warnings",
     )
 
     REQUIRED_STAGE_FIELDS = (
-        "name", "status", "duration_ms", "evidence", "owner", "failure_class",
+        "name",
+        "status",
+        "duration_ms",
+        "evidence",
+        "owner",
+        "failure_class",
     )
 
     def test_gate_json_contains_all_contract_keys(self):
         gate = rg.Gate()
-        gate.record(rg.StageResult(name="L0 STATIC", status="PASS",
-                                   evidence={"ok": True}))
+        gate.record(rg.StageResult(name="L0 STATIC", status="PASS", evidence={"ok": True}))
         report = rg.gate_json(gate)
         for key in self.REQUIRED_TOP_LEVEL:
             assert key in report, f"missing JSON key: {key}"
@@ -241,9 +263,7 @@ class TestJsonSchema:
         assert report["status"] in ("CERTIFIED", "BLOCKED")
         names = [s["name"] for s in report["stages"]]
         assert names == sorted(names, key=lambda n: n)  # order preserved & valid
-        assert [s["name"] for s in report["stages"]][:3] == [
-            "L0 STATIC", "L1 IMPORT", "L2 CONFIG"
-        ]
+        assert [s["name"] for s in report["stages"]][:3] == ["L0 STATIC", "L1 IMPORT", "L2 CONFIG"]
 
 
 # ===========================================================================
@@ -267,10 +287,19 @@ class TestDeterminismAndSafety:
 
     def test_failure_class_table_complete(self):
         for cls in (
-            "CODE_DEFECT", "CONFIG_ERROR", "ENVIRONMENT_BLOCKED", "MISSING_ARTIFACT",
-            "DATABASE_SCHEMA_ERROR", "MODEL_CONTRACT_ERROR", "FEATURE_CONTRACT_ERROR",
-            "SERVICE_CONSTRUCTION_ERROR", "RUNTIME_BOOT_ERROR", "API_ERROR",
-            "SHUTDOWN_ERROR", "INVARIANT_VIOLATION", "INTERNAL_GATE_ERROR",
+            "CODE_DEFECT",
+            "CONFIG_ERROR",
+            "ENVIRONMENT_BLOCKED",
+            "MISSING_ARTIFACT",
+            "DATABASE_SCHEMA_ERROR",
+            "MODEL_CONTRACT_ERROR",
+            "FEATURE_CONTRACT_ERROR",
+            "SERVICE_CONSTRUCTION_ERROR",
+            "RUNTIME_BOOT_ERROR",
+            "API_ERROR",
+            "SHUTDOWN_ERROR",
+            "INVARIANT_VIOLATION",
+            "INTERNAL_GATE_ERROR",
         ):
             assert cls in rg.FAILURE_CLASS_EXIT
 
@@ -302,9 +331,7 @@ class TestFailureInjection:
     def test_missing_model(self, monkeypatch, tmp_path):
         gate = rg.Gate()
         gate.tmpdir = tmp_path
-        monkeypatch.setattr(
-            rg, "REPO_ROOT", tmp_path
-        )  # artifact path resolves under tmp -> absent
+        monkeypatch.setattr(rg, "REPO_ROOT", tmp_path)  # artifact path resolves under tmp -> absent
         with pytest.raises(rg._StageFailure) as ei:
             rg.l4_model_contract(gate, rg.StageResult(name="L4"))
         assert ei.value.failure_class == "MISSING_ARTIFACT"
@@ -398,8 +425,7 @@ class TestFailureInjection:
     def test_upstream_failure_skips_downstream(self):
         """Cheap-layer failure must SKIP every later stage (no misleading evidence)."""
         gate = rg.Gate()
-        gate.record(rg.StageResult(name="L1 IMPORT", status="FAIL",
-                                   failure_class="CODE_DEFECT"))
+        gate.record(rg.StageResult(name="L1 IMPORT", status="FAIL", failure_class="CODE_DEFECT"))
         for name, _body in rg.FULL_RUNTIME_STAGES:
             rg.skip_stage(gate, name, "upstream layer failed")
         assert gate.stage_status("L3") == "SKIP"
@@ -410,8 +436,9 @@ class TestFailureInjection:
         gate = rg.Gate()
         for i in range(9):
             gate.record(rg.StageResult(name=f"L{i} STAGE", status="PASS"))
-        gate.record(rg.StageResult(name="L9 INVARIANTS", status="FAIL",
-                                   failure_class="INVARIANT_VIOLATION"))
+        gate.record(
+            rg.StageResult(name="L9 INVARIANTS", status="FAIL", failure_class="INVARIANT_VIOLATION")
+        )
         assert gate.exit_code() != rg.EXIT_CERTIFIED
         assert "L9" in gate.failures[0]["stage"]
 
@@ -435,8 +462,10 @@ class TestHumanReport:
         gate = rg.Gate()
         gate.record(
             rg.StageResult(
-                name="L4 MODEL/FEATURE", status="FAIL",
-                failure_class="MODEL_CONTRACT_ERROR", reason="width split",
+                name="L4 MODEL/FEATURE",
+                status="FAIL",
+                failure_class="MODEL_CONTRACT_ERROR",
+                reason="width split",
             )
         )
         text = rg.human_report(gate)

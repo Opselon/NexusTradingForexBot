@@ -101,7 +101,7 @@ class HealthEntry:
     state: str = HEALTHY  # canonical taxonomy state
     optional: bool = False  # True: never blocks READY by design
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "category": self.category,
             "verdict": self.verdict,

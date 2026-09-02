@@ -261,7 +261,7 @@ def run_stage(gate: Gate, name: str, body: StageBody) -> StageResult:
         result.reason = str(exc)
         result.evidence.update(exc.evidence)
         result.evidence["stdout_tail"] = buffer.getvalue()[-800:]
-    except Exception as exc:  # noqa: BLE001 - gate must classify, never crash
+    except Exception as exc:
         result.status = "FAIL"
         result.failure_class = "INTERNAL_GATE_ERROR"
         result.reason = f"{type(exc).__name__}: {exc}"
@@ -541,7 +541,10 @@ def synthetic_bars(count: int = 240) -> tuple[list[Any], SimpleTick]:
         )
     last = bars[-1]
     tick = SimpleTick(
-        symbol="XAUUSD", timestamp=last.timestamp, bid=last.close, ask=last.close + 0.20,
+        symbol="XAUUSD",
+        timestamp=last.timestamp,
+        bid=last.close,
+        ask=last.close + 0.20,
         volume=float(last.tick_volume),
     )
     return bars, tick
@@ -551,8 +554,9 @@ def domain_tick(t: SimpleTick) -> Any:
     """Frozen TickData contract expected by policy/regime."""
     from nexus_scalp.domain.models import TickData
 
-    return TickData(symbol=t.symbol, timestamp=t.timestamp, bid=t.bid, ask=t.ask,
-                    volume=float(t.volume))
+    return TickData(
+        symbol=t.symbol, timestamp=t.timestamp, bid=t.bid, ask=t.ask, volume=float(t.volume)
+    )
 
 
 def l4_model_contract(gate: Gate, res: StageResult) -> None:
@@ -574,7 +578,8 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
     artifact = REPO_ROOT / AppConfig().model.model_artifact_path
     if not artifact.exists():
         raise _StageFailure(
-            "MISSING_ARTIFACT", f"configured champion artifact absent: {artifact}",
+            "MISSING_ARTIFACT",
+            f"configured champion artifact absent: {artifact}",
             path=str(artifact),
         )
     state = torch.load(artifact, map_location="cpu")
@@ -621,7 +626,9 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
         )
     gov = LiquidityGovernor(enabled=True)
     gov.compute_from_engine(
-        bars=bars, mid_price=float(bars[-1].close), atr=float(fv.atr_m1),
+        bars=bars,
+        mid_price=float(bars[-1].close),
+        atr=float(fv.atr_m1),
         decision_at=bars[-1].timestamp,
     )
     liq10 = [float(v) for v in gov.last_snapshot.features] if gov.last_snapshot else None
@@ -630,9 +637,7 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
             "FEATURE_CONTRACT_ERROR", "liquidity 10D block not produced for synthetic bars"
         )
     vec70 = build_70d_vector(base50, family_10=news_10d_from_context(None), liquidity_10=liq10)
-    vec70 = validate_70d_vector(
-        vec70, schema_hash=feature_schema_hash(), context="runtime_gate_l4"
-    )
+    vec70 = validate_70d_vector(vec70, schema_hash=feature_schema_hash(), context="runtime_gate_l4")
     # Scaler application must stay finite (the exact live transform).
     scaled_finite = None
     if scaler is not None:
@@ -640,9 +645,7 @@ def l4_model_contract(gate: Gate, res: StageResult) -> None:
         x = (np.array(vec70, dtype=np.float64) - mean) / std
         scaled_finite = bool(np.isfinite(x).all())
         if not scaled_finite:
-            raise _StageFailure(
-                "MODEL_CONTRACT_ERROR", "scaled vector has non-finite values"
-            )
+            raise _StageFailure("MODEL_CONTRACT_ERROR", "scaled vector has non-finite values")
     res.evidence = {
         "artifact": str(artifact.relative_to(REPO_ROOT)),
         "model_dim": model_dim,
@@ -669,7 +672,6 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
     with disposable persistence: tmp audit repo + NEXUS_SETTINGS_DB +
     PAPER adapter. Returns (engine, adapter, audit_repo)."""
     from nexus_scalp.adapters.database.audit_repository import AuditRepository
-    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
     from nexus_scalp.application.live_engine import LiveEngine
     from nexus_scalp.configuration.config import AppConfig
 
@@ -677,7 +679,7 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
     repo = AuditRepository(
         db_url=f"sqlite:///{gate.tmpdir / 'engine_audit.db'}", flush_interval_sec=0.05
     )
-    gate._engine_repo = repo  # noqa: SLF001 - gate-internal handle for L8
+    gate._engine_repo = repo
     adapter = _GatePaperAdapter(initial_balance=10_000.0, symbol="XAUUSD")
     adapter.connect()
     artifact = REPO_ROOT / AppConfig().model.model_artifact_path
@@ -822,21 +824,17 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
     base50 = engine._validate_50d_tensor(fv.to_tensor_input(), context="gate_base50")
     gov = engine.liquidity_governor
     gov.compute_from_engine(
-        bars=bars, mid_price=float(bars[-1].close), atr=float(fv.atr_m1),
+        bars=bars,
+        mid_price=float(bars[-1].close),
+        atr=float(fv.atr_m1),
         decision_at=bars[-1].timestamp,
     )
     snap = gov.last_snapshot
     liq10 = [float(v) for v in snap.features] if snap is not None else None
     if liq10 is None or len(liq10) != 10:
-        raise _StageFailure(
-            "FEATURE_CONTRACT_ERROR", "70D assembly input: liquidity block invalid"
-        )
-    vec70 = build_70d_vector(
-        base50, family_10=news_10d_from_context(None), liquidity_10=liq10
-    )
-    vec70 = validate_70d_vector(
-        vec70, schema_hash=feature_schema_hash(), context="runtime_gate_l6"
-    )
+        raise _StageFailure("FEATURE_CONTRACT_ERROR", "70D assembly input: liquidity block invalid")
+    vec70 = build_70d_vector(base50, family_10=news_10d_from_context(None), liquidity_10=liq10)
+    vec70 = validate_70d_vector(vec70, schema_hash=feature_schema_hash(), context="runtime_gate_l6")
 
     with engine._bundle_lock:
         bundle = engine._bundle
@@ -844,8 +842,7 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
         raise _StageFailure("MODEL_CONTRACT_ERROR", "model bundle absent at decision cycle")
     x_np = np.array(vec70, dtype=np.float32).reshape(1, -1)
     x_np = bundle.scaler.transform(x_np)
-    x = torch.nan_to_num(torch.tensor(x_np, dtype=torch.float32), nan=0.0, posinf=1.0,
-                         neginf=-1.0)
+    x = torch.nan_to_num(torch.tensor(x_np, dtype=torch.float32), nan=0.0, posinf=1.0, neginf=-1.0)
     bundle.model.eval()
     prior_threads = torch.get_num_threads()
     torch.set_num_threads(1)
@@ -856,9 +853,7 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
         torch.set_num_threads(prior_threads)
     probs_list = probs.detach().cpu().numpy().flatten().tolist()
     if len(probs_list) < 3 or not all(np.isfinite(v) for v in probs_list[:3]):
-        raise _StageFailure(
-            "MODEL_CONTRACT_ERROR", f"model output degenerate: {probs_list[:4]}"
-        )
+        raise _StageFailure("MODEL_CONTRACT_ERROR", f"model output degenerate: {probs_list[:4]}")
 
     # The REAL regime classifier + REAL policy + REAL pre-trade gates.
     regime_state = engine.regime_classifier.classify_tick(
@@ -884,7 +879,10 @@ def l6_decision_cycle(gate: Gate, res: StageResult) -> None:
     symbol_info = engine.adapter.get_symbol_info("XAUUSD")
     volume = 0.0
     if proposal.action in (
-        ActionType.BUY, ActionType.SELL, ActionType.BUY_MARKET, ActionType.SELL_MARKET
+        ActionType.BUY,
+        ActionType.SELL,
+        ActionType.BUY_MARKET,
+        ActionType.SELL_MARKET,
     ):
         volume, _sizing = engine.risk_engine.calculate_dynamic_volume(
             entry=float(proposal.proposed_entry),
@@ -924,13 +922,13 @@ def l7_api(gate: Gate, res: StageResult) -> None:
     app = create_app(engine_ref=gate.engine_ref)
     r_health = client_get(app, "/health")
     if r_health.status_code not in (200, 503):
-        raise _StageFailure("API_ERROR", f"/health returned {r_health.status_code}",
-                            status=r_health.status_code)
+        raise _StageFailure(
+            "API_ERROR", f"/health returned {r_health.status_code}", status=r_health.status_code
+        )
     health = r_health.json() if r_health.status_code == 200 else {}
     verdict = str(health.get("verdict", "?"))
     if r_health.status_code == 200 and verdict not in ("READY", "DEGRADED"):
-        raise _StageFailure("API_ERROR", f"/health verdict unexpected: {verdict}",
-                            verdict=verdict)
+        raise _StageFailure("API_ERROR", f"/health verdict unexpected: {verdict}", verdict=verdict)
     r_status = client_get(app, "/api/status")
     if r_status.status_code != 200:
         raise _StageFailure("API_ERROR", f"/api/status returned {r_status.status_code}")
@@ -1082,8 +1080,11 @@ def gate_json(gate: Gate) -> dict[str, Any]:
     commit = "NOT_RECORDED"
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=str(REPO_ROOT),
-            capture_output=True, text=True, timeout=10,
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if out.returncode == 0:
             commit = out.stdout.strip() or commit
@@ -1153,7 +1154,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable JSON only")
     parser.add_argument("--fast", action="store_true", help="static/import/config/contract tier")
     parser.add_argument(
-        "--evidence", action="store_true",
+        "--evidence",
+        action="store_true",
         help="persist JSON to artifacts/forensics/runtime_gate_result.json",
     )
     args = parser.parse_args(argv)
@@ -1180,8 +1182,13 @@ def main(argv: list[str] | None = None) -> int:
             run_stage(gate, "L3 DATABASE", l3_database)
             run_stage(gate, "L4 MODEL/FEATURE", l4_model_contract)
             if args.fast:
-                for name in ("L5 SERVICE GRAPH", "L6 DECISION CYCLE", "L7 API/HEALTH",
-                             "L8 SHUTDOWN", "L9 INVARIANTS"):
+                for name in (
+                    "L5 SERVICE GRAPH",
+                    "L6 DECISION CYCLE",
+                    "L7 API/HEALTH",
+                    "L8 SHUTDOWN",
+                    "L9 INVARIANTS",
+                ):
                     skip_stage(gate, name, "--fast tier (runtime boot excluded)")
             elif gate.stage_status("L3") == "FAIL" or gate.stage_status("L4") == "FAIL":
                 # DB/model contract failures make boot evidence misleading.

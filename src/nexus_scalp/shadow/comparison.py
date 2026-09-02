@@ -54,7 +54,7 @@ def _median(values: list[float]) -> float:
     s = sorted(values)
     n = len(s)
     mid = n // 2
-    return (s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0)
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
 class ShadowComparer:
@@ -225,9 +225,7 @@ class ShadowComparer:
             challenger_profit_factor=round(_profit_factor(resolved, True), 6),
             champion_tail_losses=sum(1 for d in resolved if d.hypothetical_r <= -1.5),
             challenger_tail_losses=sum(
-                1
-                for d in resolved
-                if (d.shadow_r if d.shadow_r is not None else 0.0) <= -1.5
+                1 for d in resolved if (d.shadow_r if d.shadow_r is not None else 0.0) <= -1.5
             ),
             champion_mfe_r=round(champ_mfe, 6),
             challenger_mfe_r=round(chal_mfe, 6),

@@ -7367,3 +7367,17 @@ down remain P2 follow-ups for the next shadow pass.
   semantics (RED until the feature-contract owner lands the guard).
   Owner: feature-contract domain (features/schema_contract.py,
   features/inference_validator.py).
+
+## BUG-205 - replay_panel.js mounted in index.html with NO serving route: 404 on every dashboard load, replay-on-chart panel never boots (2026-09-02, Nexus-Main client E2E acceptance)
+
+- SYMPTOM (black-box E2E, journey J1 rerun at tip): exactly one console error on a clean
+  dashboard load - `GET /replay_panel.js?v=20260902a 404`. The script tag landed with
+  CHG-0043 part 5 (ed68bb4) but server.py never received a matching route, so
+  window-level replay-panel boot silently never happens (dead feature + console error
+  on EVERY load, not just when the panel is opened).
+- CLASS: same serving-route omission as the command_center_*.js 404 fix (Nexus-Forensic-01);
+  assets must be verified over real HTTP, not by file presence in Web/.
+- FIX: @app.get("/replay_panel.js") FileResponse route in web/server.py (1 route added;
+  legacy route order untouched). Verified in the running client after restart:
+  404 -> 200, dashboard load console-error-free.
+- Classification: P2 UX-MAJOR (feature-breaking 404, no data loss).
