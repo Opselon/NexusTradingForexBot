@@ -26,11 +26,16 @@ def test_default_sqlite_path_uses_repo_artifacts_not_cwd(tmp_path, monkeypatch) 
 
 def test_audit_repository_relative_url_anchored_to_workspace(tmp_path, monkeypatch) -> None:
     """BUG-149: a relative sqlite URL passed to AuditRepository is anchored to
-    the canonical runtime workspace, not the process CWD."""
+    the canonical runtime workspace, not the process CWD.
+
+    BUG-223 coexistence: NEXUS_AUDIT_DB overrides the IMPLICIT default only.
+    This test passes the legacy default EXPLICITLY (positional), so the env
+    override must not hijack it and BUG-149 anchoring still applies."""
     import sqlite3
 
     from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
+    monkeypatch.delenv("NEXUS_AUDIT_DB", raising=False)
     monkeypatch.chdir(tmp_path)
     repo = AuditRepository(db_url="sqlite:///artifacts/audit.db", flush_interval_sec=3600.0)
     try:
