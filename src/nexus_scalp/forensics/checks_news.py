@@ -35,7 +35,7 @@ from nexus_scalp.forensics.models import (
     HealthStatus,
 )
 from nexus_scalp.forensics.references import (
-    FeatureReferenceRegistry,
+    FEATURE_REFERENCES,
 )
 
 
@@ -207,8 +207,17 @@ def check_news_availability_matrix() -> CheckResult:
     )
 
 
-#: process-wide registry for the availability matrix check
-FEATURE_REF_REGISTRY = FeatureReferenceRegistry()
+#: Process-wide registry for the availability matrix check.
+# BUG-193: this used to be a PRIVATE second ``FeatureReferenceRegistry()``
+# instance while ForensicHealthEngine._auto_freeze_references() froze the
+# golden liquidity references into the canonical
+# ``references.FEATURE_REFERENCES`` singleton - the check therefore never
+# saw the frozen references and the deploy gate emitted a false CRITICAL
+# (CHECK-NWS-03 FEATURE_CONTRACT_INCOMPLETE) on a healthy 70D system.
+# ONE process = ONE frozen-reference registry: this name is now an alias
+# of the canonical singleton (compat surface preserved for the facade +
+# tests); the freeze-once owner remains ForensicHealthEngine.
+FEATURE_REF_REGISTRY = FEATURE_REFERENCES
 
 
 # ---------------------------------------------------------------------------
