@@ -36,6 +36,7 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
 from nexus_scalp.execution.position_intelligence import (
     SmartMetricsInputs,
     _estimate_liquidation_impact,
@@ -383,9 +384,6 @@ class OrderLifecycleManager:
         # Advanced Telemetry Trackers
 
         # Local State Features (LSF) Engine & Desync State Trackers
-        self._hold_score_tracker: dict[int, int] = {}
-        self._base_hold_score_tracker: dict[int, int] = {}
-        self._last_reasons_tracker: dict[int, list[str]] = {}  # Track reasons per ticket
         self._rescue_registered_tickets: dict[int, bool] = {}
         self._last_modify_sl: dict[int, float] = {}
         self._entry_directions: dict[int, str] = {}
@@ -394,8 +392,11 @@ class OrderLifecycleManager:
         # to position_tracker.PositionTrackingLedger; compat properties below).
         self._tracking = PositionTrackingLedger()
 
+        # S6-escalation: hold-score state owner (dicts moved to
+        # hold_score_ledger.HoldScoreLedger; compat properties below).
+        self._hold_scores = HoldScoreLedger()
+
         # Throttling & spread tracking for dynamic hold score
-        self._last_hold_eval_time: dict[int, float] = {}
         self._last_telemetry_time: dict[int, float] = {}
         self._rolling_spreads: list[float] = []
 
@@ -2711,6 +2712,29 @@ class OrderLifecycleManager:
     def _entry_regime_state(self) -> dict:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._entry_regime_state
+
+    @property
+    def _hold_score_tracker(self) -> dict:
+        """Compatibility accessor — live hold-score dict owned by the ledger."""
+        return self._hold_scores._hold_score_tracker
+
+
+    @property
+    def _base_hold_score_tracker(self) -> dict:
+        """Compatibility accessor — live hold-score dict owned by the ledger."""
+        return self._hold_scores._base_hold_score_tracker
+
+
+    @property
+    def _last_reasons_tracker(self) -> dict:
+        """Compatibility accessor — live hold-score dict owned by the ledger."""
+        return self._hold_scores._last_reasons_tracker
+
+
+    @property
+    def _last_hold_eval_time(self) -> dict:
+        """Compatibility accessor — live hold-score dict owned by the ledger."""
+        return self._hold_scores._last_hold_eval_time
 
     def _ensure_ticket_bootstrap(
         self,
