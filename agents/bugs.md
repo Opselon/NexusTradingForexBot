@@ -7605,3 +7605,23 @@ assertions unchanged).
 
 Status: FIXED (machine streams clean on both paths; human UX unchanged).
 
+
+## BUG-216 - shadow/replay.py circular import (replay <-> _replay_pair/_replay_evidence) crashed the first evidence-pipeline run (2026-09-02, Hermes-Main, CHG-0047; FIXED)
+
+### Evidence
+- First `scripts/shadow_replay_evidence.py --bars 400` run: ImportError
+  "cannot import name 'session_of' ... partially initialized module"
+  (replay.py imported _replay_evidence, which imported _replay_pair, which
+  imported session_of back from replay.py).
+
+### Fix (parts 3/4, commits 43c2df3/bfe847f)
+- Single-source layering: replay.py owns the constants (BAR_MODE spread
+  re-exported from research.streaming_replay; MIN_RESOLVED_PAIRS, verdict
+  vocabulary, MATERIAL_DELTA_R) and ShadowReplayConfig; _replay_pair and
+  _replay_evidence import them (one direction only); replay.py re-exports
+  build_replay_evidence/promotion_verdict/classify_pair/session_of AFTER
+  definition with explicit noqa annotations. session_of lives in
+  _replay_pair (uses only production liquidity_engine session boundaries).
+
+### Status
+FIXED — verified by full pipeline run + 126 shadow-family tests PASS.
