@@ -130,6 +130,7 @@ print(client.decision_gates("req_ab12cd34")["data"])
 
 # errors raise a typed exception carrying the v1 error object:
 from nexus_scalp.api_client import NexusApiError
+
 try:
     client.decision_detail("req_missing")
 except NexusApiError as e:
