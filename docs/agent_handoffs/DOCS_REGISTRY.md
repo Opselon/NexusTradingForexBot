@@ -87,6 +87,44 @@ Validation: DOCS_HEALTH PASS (11 checks incl. built-site structure +
 Status: VERIFIED against live deployment
 ```
 
+
+
+## DOC-TASK-ID: DOCS-003 — Live 404 page-link fix (user report: "every link returns not found")
+
+```text
+DOC-TASK-ID: DOCS-003
+Agent: Nexus-Docs
+Task: Fix every internal page link 404ing on the live site; generate ALL pages
+      for ALL languages; upgrade UI/UX
+Root cause (live-verified by crawling the deployed site): page links were
+      built root-absolute ('/architecture/...') which resolve OUTSIDE the
+      /NexusTradingForexBot/ subpath -> 49/49 internal homepage links 404.
+      Same defect class as v2's asset fix, but for page URLs.
+Fix (v3 builder, 75c4de3 + a77a04e):
+  - LINK LAW: single page_href(target, lang, from_rel, from_lang) helper;
+    every internal link on every page is depth-relative (the source page's
+    /<lang>/ prefix counts toward its depth). Root-absolute internal links
+    are structurally impossible now.
+  - FULL TREES: every language builds EVERY page (334 pages total; missing
+    translations use the English source with an explicit notice) + real
+    section landing pages for every sidebar section.
+  - EN skips a separate /docs-hub/ (hub content is the root homepage);
+    fa/es/ar/de keep /<lang>/docs-hub/.
+  - UI/UX upgrade: section landing pages, homepage section grid, code copy
+    buttons, richer section cards.
+Validation:
+  - BUILT_LINK_AUDIT: 22,411 internal links across 335 built pages -> PASS
+    (wired into DOCS_HEALTH; one dead link fails the doctor)
+  - 75-page live sweep: 74/75 200; the single failure was the unlinked EN
+    /docs-hub/ path (fixed; sitemap + search index contain only the 4 valid
+    localized /<lang>/docs-hub/ URLs)
+  - USER_CLICK_SWEEP on the live deployment: 532 unique user-clickable links
+    across 9 representative pages (EN/FA/AR/ES/DE) -> 0 failures, PASS
+  - DOCS_LIVE_SMOKE = PASS (36 checks); Docs workflow green; live
+    site-meta revision == pushed HEAD
+Status: VERIFIED against live deployment
+```
+
 ## Out-of-scope defects observed (recorded only — owning agent notified via this registry)
 
 1. OBS-DOCS-001 (2026-09-02): project CI (ci.yml, "Code Quality & Tests") failing on
