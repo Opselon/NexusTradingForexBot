@@ -196,6 +196,10 @@ def doctor_cmd(
         _emit(payload, True)
         return
     if not json_mode:
+        # Human mode fetches its own entries: the JSON path above wraps its
+        # fetch in _json_quiet() and its `verdict, entries` bindings stay
+        # JSON-path-local (UnboundLocalError fix, 2026-09-02 UX pass).
+        verdict, entries = _health_entries()
         console.print(_banner(subtitle="system doctor · 21 checks"))
         table = Table(title="NEXUS SYSTEM HEALTH", box=box.SIMPLE_HEAD, show_lines=False)
         table.add_column("Check", style="bold white", no_wrap=True)

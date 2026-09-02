@@ -80,7 +80,6 @@ def register_diagnostics_state_routes(
     def get_status() -> dict[str, Any]:
         return get_system_state()
 
-
     # =========================================================================
     # RELEASE / UPDATE STATUS (CHG-0043, TASK-RUNTIME-TRUTH)
     # -------------------------------------------------------------------------
@@ -600,9 +599,9 @@ def register_diagnostics_state_routes(
                 "effective_dimension": (
                     getattr(engine, "effective_feature_dim", None) if engine else None
                 ),
-                "activation": (build_runtime_snapshot(include_update=False).get(
-                    "feature_activation"
-                )),
+                "activation": (
+                    build_runtime_snapshot(include_update=False).get("feature_activation")
+                ),
             },
             "model": {
                 "available": bool(state.get("model", {}).get("available")),
