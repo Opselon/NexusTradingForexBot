@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
@@ -46,7 +45,7 @@ from nexus_scalp.shadow._replay_evidence import (
     promotion_verdict,
     walk_pair_outcomes,
 )
-from nexus_scalp.shadow._replay_pair import classify_pair
+from nexus_scalp.shadow._replay_pair import classify_pair, session_of
 
 logger = get_logger("nexus_scalp.shadow.replay")
 
@@ -93,18 +92,6 @@ def dataset_fingerprint(records: list[dict[str, Any]], dataset_id: str) -> str:
         h.update("|".join(str(rec.get(k, "")) for k in sorted(rec.keys())).encode("utf-8"))
         h.update(b"\n")
     return h.hexdigest()[:32]
-
-
-def session_of(ts: datetime) -> str:
-    """UTC session bucket (production liquidity_engine session boundaries)."""
-    hour = ts.hour
-    if 0 <= hour < 8:
-        return "tokyo"
-    if 7 <= hour < 15:
-        return "london"
-    if 13 <= hour < 21:
-        return "ny"
-    return "overnight"
 
 
 @dataclass(frozen=True, slots=True)
