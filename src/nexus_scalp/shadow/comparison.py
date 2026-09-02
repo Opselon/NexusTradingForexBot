@@ -48,6 +48,15 @@ def _mean(values: list[float]) -> float:
     return (sum(values) / len(values)) if values else 0.0
 
 
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return (s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0)
+
+
 class ShadowComparer:
     """Aggregates shadow decisions into a multi-dimension comparison."""
 
@@ -68,25 +77,30 @@ class ShadowComparer:
         valid = [d for d in decisions if d.valid_comparison]
         invalid = [d for d in decisions if not d.valid_comparison]
 
-        # Champion-side R is derived from the SAME simulated price path, but
-        # applied to the champion's OWN action: when the two models disagree,
-        # one was directionally right and the other wrong on that path.
-        # (hypothetical_r is the challenger's realized R; the champion's is
-        # the same magnitude with the sign of its own directional correctness.)
+        # CHG-0046 D3: paired outcome comparison over RESOLVED records only.
+        # A record is outcome-resolved when outcome_status == RESOLVED (both
+        # sides walked by the certified resolver on the SAME tick path).
+        # For unresolved records every R-based metric contributes NOTHING
+        # (the previous behavior accumulated hardcoded 0.0s and fabricated
+        # champion-R as the mirrored -hypothetical_r, producing exact-zero
+        # "evidence" and flat-side losses — retired).
+        resolved = [d for d in valid if d.outcome_status == "RESOLVED"]
+        outcome_ready = len(resolved) >= 1
+
         champ_r: list[float] = []
         chal_r: list[float] = []
-        for d in valid:
-            chal_r.append(d.hypothetical_r)
-            if d.champion_action == d.challenger_action:
-                # Same direction: both models realise the same outcome.
-                champ_r.append(d.hypothetical_r)
-            else:
-                # Opposing directions on the same path: the champion's R is the
-                # opposite sign of the challenger's (one wins, one loses).
-                champ_r.append(-d.hypothetical_r)
+        deltas: list[float] = []
+        for d in resolved:
+            c_r = d.hypothetical_r
+            s_r = d.shadow_r if d.shadow_r is not None else 0.0
+            champ_r.append(c_r)
+            chal_r.append(s_r)
+            deltas.append(s_r - c_r)
 
         champion_exp = _mean(champ_r)
         challenger_exp = _mean(chal_r)
+        mean_delta_r = _mean(deltas)
+        median_delta_r = _median(deltas)
 
         by_regime: dict[str, dict[str, float]] = {}
         by_strategy: dict[str, dict[str, float]] = {}
@@ -100,22 +114,26 @@ class ShadowComparer:
             regime = d.shared_input.regime or "UNKNOWN"
             strat = d.champion_strategy_id or d.challenger_strategy_id or "UNKNOWN"
             session = d.shared_input.session or "ALL"
-            # Same derived champion-side R as the aggregate series above.
-            champ_r_side = (
-                d.hypothetical_r if d.champion_action == d.challenger_action else -d.hypothetical_r
-            )
             by_regime.setdefault(regime, {"champion_r": 0.0, "challenger_r": 0.0, "samples": 0})
-            by_regime[regime]["champion_r"] += champ_r_side
-            by_regime[regime]["challenger_r"] += d.hypothetical_r
-            by_regime[regime]["samples"] += 1
             by_strategy.setdefault(strat, {"champion_r": 0.0, "challenger_r": 0.0, "samples": 0})
-            by_strategy[strat]["champion_r"] += champ_r_side
-            by_strategy[strat]["challenger_r"] += d.hypothetical_r
-            by_strategy[strat]["samples"] += 1
-            by_strategy_samples[strat] += 1
             by_session.setdefault(session, {"champion_r": 0.0, "challenger_r": 0.0, "samples": 0})
-            by_session[session]["champion_r"] += champ_r_side
-            by_session[session]["challenger_r"] += d.hypothetical_r
+            # R contributions ONLY from outcome-resolved records (D3).
+            if d.outcome_status != "RESOLVED":
+                by_regime[regime]["samples"] += 1
+                by_strategy[strat]["samples"] += 1
+                by_session[session]["samples"] += 1
+                continue
+            c_r = d.hypothetical_r
+            s_r = d.shadow_r if d.shadow_r is not None else 0.0
+            by_regime[regime]["champion_r"] += c_r
+            by_regime[regime]["challenger_r"] += s_r
+            by_strategy[strat]["champion_r"] += c_r
+            by_strategy[strat]["challenger_r"] += s_r
+            by_session[session]["champion_r"] += c_r
+            by_session[session]["challenger_r"] += s_r
+            by_strategy_samples[strat] += 1
+            by_regime[regime]["samples"] += 1
+            by_strategy[strat]["samples"] += 1
             by_session[session]["samples"] += 1
 
         for _regime, agg in by_regime.items():
@@ -159,18 +177,19 @@ class ShadowComparer:
 
         agreement = sum(1 for d in valid if d.action_agreement) / len(valid) if valid else 0.0
 
-        champ_mfe = _mean([d.mfe_r for d in valid])
-        chal_mfe = _mean([d.mfe_r for d in valid])  # same simulated excursion for both
-        champ_mae = _mean([d.mae_r for d in valid])
-        chal_mae = _mean([d.mae_r for d in valid])
+        # D3: excursion/holding metrics over RESOLVED records, per side.
+        champ_mfe = _mean([d.mfe_r for d in resolved])
+        chal_mfe = _mean([d.shadow_mfe_r for d in resolved])
+        champ_mae = _mean([d.mae_r for d in resolved])
+        chal_mae = _mean([d.shadow_mae_r for d in resolved])
 
         champ_conf = _mean([d.champion_confidence for d in valid])
         chal_conf = _mean([d.challenger_confidence for d in valid])
         champ_cal = _calibration(valid, challenger=False)
         chal_cal = _calibration(valid, challenger=True)
 
-        champ_dd = _drawdown(valid, challenger=False)
-        chal_dd = _drawdown(valid, challenger=True)
+        champ_dd = _drawdown(resolved, challenger=False)
+        chal_dd = _drawdown(resolved, challenger=True)
 
         # Evidence status (spec 9 / 10)
         observed = len(valid)
@@ -197,18 +216,25 @@ class ShadowComparer:
             action_agreement_rate=round(agreement, 6),
             champion_expectancy_r=round(champion_exp, 6),
             challenger_expectancy_r=round(challenger_exp, 6),
+            mean_delta_r=round(mean_delta_r, 6) if outcome_ready else 0.0,
+            median_delta_r=round(median_delta_r, 6) if outcome_ready else 0.0,
+            outcome_resolved_count=len(resolved),
             champion_drawdown_r=round(champ_dd, 6),
             challenger_drawdown_r=round(chal_dd, 6),
-            champion_profit_factor=round(_profit_factor(valid, False), 6),
-            challenger_profit_factor=round(_profit_factor(valid, True), 6),
-            champion_tail_losses=sum(1 for d in valid if d.hypothetical_r <= -1.5),
-            challenger_tail_losses=sum(1 for d in valid if d.hypothetical_r <= -1.5),
+            champion_profit_factor=round(_profit_factor(resolved, False), 6),
+            challenger_profit_factor=round(_profit_factor(resolved, True), 6),
+            champion_tail_losses=sum(1 for d in resolved if d.hypothetical_r <= -1.5),
+            challenger_tail_losses=sum(
+                1
+                for d in resolved
+                if (d.shadow_r if d.shadow_r is not None else 0.0) <= -1.5
+            ),
             champion_mfe_r=round(champ_mfe, 6),
             challenger_mfe_r=round(chal_mfe, 6),
             champion_mae_r=round(champ_mae, 6),
             challenger_mae_r=round(chal_mae, 6),
-            champion_holding_sec=round(_mean([d.holding_duration_sec for d in valid]), 2),
-            challenger_holding_sec=round(_mean([d.holding_duration_sec for d in valid]), 2),
+            champion_holding_sec=round(_mean([d.holding_duration_sec for d in resolved]), 2),
+            challenger_holding_sec=round(_mean([d.shadow_holding_sec for d in resolved]), 2),
             champion_calibration=round(champ_cal, 6),
             challenger_calibration=round(chal_cal, 6),
             champion_avg_confidence=round(champ_conf, 6),

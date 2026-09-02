@@ -154,6 +154,14 @@ class ShadowDecisionRecord(BaseModel):
     holding_duration_sec: float = Field(default=0.0, ge=0.0)
     exit_reason: str = Field(default="")
     outcome_status: str = Field(default="NOT_RECORDED")  # PENDING/RESOLVED/NOT_RECORDED
+    # Shadow-side outcome fields (paired resolution, same market path).
+    shadow_r: float | None = Field(default=None)
+    shadow_mfe_r: float | None = Field(default=None)
+    shadow_mae_r: float | None = Field(default=None)
+    shadow_pnl_usd: float | None = Field(default=None)
+    shadow_holding_sec: float | None = Field(default=None)
+    shadow_exit_reason: str = Field(default="")
+    delta_r: float | None = Field(default=None)  # shadow_r - champion_R
 
     simulated: bool = Field(default=True, description="ALWAYS True; shadow/simulated")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -200,6 +208,13 @@ class ShadowComparison(BaseModel):
     valid_comparisons: int = Field(default=0, ge=0)
     invalid_comparisons: int = Field(default=0, ge=0)
     action_agreement_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    # CHG-0046 D3: PAIRED outcome evidence (shadow_r - champion_R per
+    # resolved record, same market path). All zero when no record is
+    # outcome-resolved — never presented as "equal performance".
+    mean_delta_r: float = Field(default=0.0)
+    median_delta_r: float = Field(default=0.0)
+    outcome_resolved_count: int = Field(default=0, ge=0)
 
     champion_expectancy_r: float = Field(default=0.0)
     challenger_expectancy_r: float = Field(default=0.0)

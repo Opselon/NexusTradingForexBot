@@ -147,6 +147,11 @@ def make_decision(
         mae_r=mae,
         holding_duration_sec=300.0,
         exit_reason="TP" if hypothetical_r > 0 else "SL",
+        shadow_r=hypothetical_r,
+        shadow_mfe_r=mfe,
+        shadow_mae_r=mae,
+        shadow_holding_sec=300.0,
+        outcome_status="RESOLVED",
         simulated=True,
     )
 
