@@ -418,17 +418,27 @@ class Shadow70Store(Shadow70Persistence):
             return []
         return self._query("SELECT * FROM shadow70_feature_health ORDER BY id DESC LIMIT 10;", ())
 
-    def disagreement_counts(self) -> dict[str, int]:
+    def disagreement_counts(self, valid_only: bool = True) -> dict[str, int]:
+        """Disagreement-class histogram.
+
+        CHG-0046 D9: counts VALID observations by default. The previous
+        unfiltered histogram mixed SHADOW_BLOCKED/error rows (no shadow
+        model, no comparison) into the disagreement taxonomy, poisoning
+        the UI agreement% with rows that never compared anything.
+        Historical invalid rows remain queryable via list_observations —
+        no evidence is deleted.
+        """
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return {}
         out: dict[str, int] = {}
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
             try:
-                for r in conn.execute(
-                    "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations "
-                    "GROUP BY disagreement;"
-                ).fetchall():
+                sql = "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations "
+                if valid_only:
+                    sql += "WHERE valid = 1 "
+                sql += "GROUP BY disagreement;"
+                for r in conn.execute(sql).fetchall():
                     out[str(r[0])] = int(r[1])
             finally:
                 conn.close()
@@ -447,7 +457,7 @@ class Shadow70Store(Shadow70Persistence):
                 row = conn.execute("SELECT COUNT(*) FROM shadow70_observations;").fetchone()
                 out["observations"] = int(row[0]) if row else 0
                 row = conn.execute(
-                    "SELECT COUNT(*) FROM shadow70_observations WHERE agreement = 1;"
+                    "SELECT COUNT(*) FROM shadow70_observations WHERE agreement = 1 AND valid = 1;"
                 ).fetchone()
                 out["agreements"] = int(row[0]) if row else 0
                 row = conn.execute(
