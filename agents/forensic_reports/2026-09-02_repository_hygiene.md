@@ -89,5 +89,15 @@ tracked probe corpus by design).
 - release/build/windows-x64/onedir empty subdirs — inside ignored build tree; harmless.
 - Foreign WIP (8 modified + 1 untracked files) remains intentionally UNCOMMITTED — owned by
   CHG-0049 / Agent-5 / docs-i18n work streams; this agent did not stage or commit any of it.
+## ADDENDUM (post-commit reconciliation, same day)
+- Nexus-Docs (site owner) commit c1f8bee superseded ONE line of 381730a:
+  `site/_site/` is UN-ignored by the owning agent ("re-unignore _site (parallel
+  re-ignore)") and a freshly rebuilt _site was re-tracked there. Owner design
+  accepted: Nexus-Docs intentionally commits _site snapshots alongside CI
+  rebuilds; scratch/* rules of 381730a remain fully in force.
+- Foreign WIP update: the 3 modified site/scripts files were absorbed into
+  c1f8bee by their owner; remaining uncommitted tree at report-close = 6
+  modified + 1 untracked files, all foreign WIP (CHG-0049 / Agent-5 S6 /
+  build_artifact.py author), PROTECTED and untouched by this task.
 - Taskboard row deliberately NOT appended: agents/taskboard.md carries uncommitted foreign WIP
   (Agent-5 section-18 row); appending would have absorbed it. This report is the registry entry.
