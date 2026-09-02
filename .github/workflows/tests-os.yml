@@ -50,8 +50,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
+          # pytest-cov ships in the [dev] extra installed above; a second
+          # resolver pass added ~10-20s on Windows/macOS runners for nothing.
           pip install -e ".[dev,web]"
-          pip install pytest-cov
 
       - name: Run Critical Suite
         shell: bash
