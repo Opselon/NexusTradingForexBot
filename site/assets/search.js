@@ -1,12 +1,53 @@
-/* Nexus docs search — client-side over the generated JSON index.
-   No external service; index ~ small enough to load once and filter. */
+/* Nexus docs search + progressive enhancement (mobile nav).
+   No external service: the index is fetched relative to the page so it works
+   under any base path (project Pages subpath included).
+   Core documentation remains fully readable without JavaScript. */
 (function () {
   "use strict";
+
+  var base = (function () {
+    var marker = "assets/search.js";
+    var scripts = document.querySelectorAll("script[src]");
+    for (var i = 0; i < scripts.length; i++) {
+      var src = scripts[i].getAttribute("src") || "";
+      if (src.indexOf(marker) !== -1) return src.slice(0, src.indexOf(marker));
+    }
+    return "";
+  })();
+
+  /* ------------------------------ mobile nav ------------------------------ */
+  var toggle = document.getElementById("nav-toggle");
+  var sidebar = document.getElementById("sidebar");
+  if (toggle && sidebar) {
+    toggle.addEventListener("click", function () {
+      var open = document.body.classList.toggle("nav-open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+    document.addEventListener("click", function (ev) {
+      if (
+        document.body.classList.contains("nav-open") &&
+        !sidebar.contains(ev.target) &&
+        ev.target !== toggle &&
+        !toggle.contains(ev.target)
+      ) {
+        document.body.classList.remove("nav-open");
+        toggle.setAttribute("aria-expanded", "false");
+      }
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && document.body.classList.contains("nav-open")) {
+        document.body.classList.remove("nav-open");
+        toggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+
+  /* -------------------------------- search -------------------------------- */
   var input = document.getElementById("doc-search");
   if (!input) return;
 
   var results = null;
-  var INDEX = window.NEXUS_SEARCH || [];
+  var INDEX = null;
   var currentLang = document.documentElement.lang || "en";
 
   function ensureContainer() {
@@ -20,7 +61,18 @@
   }
 
   function close() {
-    if (results) { results.remove(); results = null; }
+    if (results) {
+      results.remove();
+      results = null;
+    }
+  }
+
+  function loadIndex(cb) {
+    if (INDEX) return cb(INDEX);
+    fetch(base + "search-index.json")
+      .then(function (r) { return r.json(); })
+      .then(function (data) { INDEX = data; cb(data); })
+      .catch(function () { INDEX = []; cb(INDEX); });
   }
 
   function score(entry, q) {
@@ -38,23 +90,25 @@
   function render(q) {
     var box = ensureContainer();
     if (q.length < 2) { close(); return; }
-    var hits = [];
-    for (var i = 0; i < INDEX.length; i++) {
-      var s = score(INDEX[i], q);
-      if (s > 0) hits.push([s, INDEX[i]]);
-    }
-    hits.sort(function (a, b) { return b[0] - a[0]; });
-    box.innerHTML = "";
-    if (!hits.length) {
-      box.innerHTML = "<div class='search-empty'>—</div>";
-      return;
-    }
-    hits.slice(0, 8).forEach(function (pair) {
-      var e = pair[1];
-      var a = document.createElement("a");
-      a.href = e.u;
-      a.innerHTML = e.t + " <span class='hit-lang'>· " + e.l + "</span>";
-      box.appendChild(a);
+    loadIndex(function (INDEX) {
+      var hits = [];
+      for (var i = 0; i < INDEX.length; i++) {
+        var s = score(INDEX[i], q);
+        if (s > 0) hits.push([s, INDEX[i]]);
+      }
+      hits.sort(function (a, b) { return b[0] - a[0]; });
+      box.innerHTML = "";
+      if (!hits.length) {
+        box.innerHTML = "<div class='search-empty'>—</div>";
+        return;
+      }
+      hits.slice(0, 8).forEach(function (pair) {
+        var e = pair[1];
+        var a = document.createElement("a");
+        a.href = base + e.u.replace(/^\//, "");
+        a.innerHTML = e.t + " <span class='hit-lang'>· " + e.l + "</span>";
+        box.appendChild(a);
+      });
     });
   }
 
