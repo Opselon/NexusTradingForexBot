@@ -26,6 +26,20 @@ from typing import Any
 from . import environment as envmod
 from . import paths
 from .metadata import get_version_info
+from .state_taxonomy import (
+    AVAILABLE,
+    DEGRADED,
+    DISABLED,
+    ENABLED,
+    ERROR,
+    HEALTHY,
+    INFO,
+    MISSING,
+    NOT_CONFIGURED,
+    NOT_INITIALIZED,
+    NOT_RECORDED,
+    UNKNOWN,
+)
 
 # Categories known to the diagnostics/health contract.
 ALL_CATEGORIES = [
@@ -34,6 +48,7 @@ ALL_CATEGORIES = [
     "CONFIGURATION",
     "DATABASE",
     "MODEL",
+    "MODEL_CONTRACT",
     "FEATURE_SCHEMA",
     "GPU",
     "MT5",
@@ -58,6 +73,7 @@ CRITICAL_CATEGORIES = {
     "CONFIGURATION",
     "DATABASE",
     "MODEL",
+    "MODEL_CONTRACT",
     "FEATURE_SCHEMA",
 }
 
@@ -66,10 +82,25 @@ CheckFn = Callable[..., tuple[str, str, str]]  # (verdict, reason, suggestion)
 
 @dataclass
 class HealthEntry:
+    """Health check result (HEALTH_ENTRY v2, CHG-0043).
+
+    ``verdict`` keeps the legacy PASS/WARNING/FAIL vocabulary so existing
+    consumers (aggregate, web /health, exit codes) stay stable. ``state``
+    carries the canonical operator-facing state from state_taxonomy
+    (AVAILABLE/ENABLED/ACTIVE/DISABLED/NOT_CONFIGURED/NOT_INITIALIZED/
+    NOT_APPLICABLE/DEGRADED/UNKNOWN/MISSING/NOT_RECORDED/ERROR/HEALTHY/INFO)
+    so distinct truths are never collapsed into a bare WARN: a subsystem
+    that is merely DISABLED or NOT_CONFIGURED is an operator choice / lazy
+    first-use, not a defect (INFO-level), while DEGRADED/UNKNOWN mean the
+    capability is genuinely reduced (WARNING).
+    """
+
     category: str
-    verdict: str  # PASS | WARNING | FAIL
+    verdict: str  # PASS | WARNING | FAIL (legacy aggregate vocabulary)
     reason: str = ""
     suggestion: str = ""
+    state: str = HEALTHY  # canonical taxonomy state
+    optional: bool = False  # True: never blocks READY by design
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -77,13 +108,25 @@ class HealthEntry:
             "verdict": self.verdict,
             "reason": self.reason,
             "suggestion": self.suggestion,
+            "state": self.state,
+            "optional": self.optional,
         }
 
 
 def _db_health(db_path: Path) -> tuple[str, str]:
-    """Basic SQLite integrity probe. Returns (verdict, reason)."""
+    """SQLite integrity probe (verdict, reason).
+
+    CHG-0043: an absent audit.db before first engine run is
+    NOT_INITIALIZED (lazy first-use), not corruption — only an existing
+    but unreadable/corrupt database is a genuine failure.
+    """
     if not db_path.exists():
-        return "FAIL", f"database file missing: {db_path}"
+        # CHG-0043 truthfulness: no file YET is lazy initialization, not a
+        # broken install. Only an existing-but-unreadable/corrupt DB fails.
+        return (
+            "WARNING",
+            f"database not initialized yet (no file: {db_path.name})",
+        )
     try:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2)
         try:
@@ -240,9 +283,14 @@ class HealthEngine:
                 - tables
             )
             if missing:
-                entry.reason += f" · phase tables missing: {', '.join(missing)}"
-                entry.verdict = "WARNING"
-                entry.suggestion = "Run `nexus repair --database` to create missing phase tables."
+                # CHG-0043: phase tables (shadow/strategy/training/…) are
+                # created lazily by their owning subsystems on first use.
+                # Absence = NOT_INITIALIZED capability, not a degraded DB.
+                entry.reason += (
+                    f" · optional phase tables not created yet: {', '.join(missing)}"
+                )
+                entry.state = NOT_INITIALIZED
+                entry.suggestion = "Created automatically on first use of each subsystem."
         return entry
 
     def _migration_state(self) -> tuple[str, str]:
@@ -297,6 +345,8 @@ class HealthEngine:
                 "WARNING",
                 "no model artifact found — external/optional until training runs",
                 "Run `nexus setup`/`nexus repair --model` to initialize from the release bundle.",
+                state=NOT_INITIALIZED,
+                optional=True,
             )
         try:
             import torch  # type: ignore[import-not-found]
@@ -306,7 +356,12 @@ class HealthEngine:
                 if isinstance(sd, dict):
                     tensors = sd.get("state_dict", sd)
                     n = len(tensors) if isinstance(tensors, dict) else len(sd)
-                    return HealthEntry("MODEL", "PASS", f"{candidate} ({n} tensors)")
+                    return HealthEntry(
+                        "MODEL",
+                        "PASS",
+                        f"{candidate} ({n} tensors)",
+                        state=AVAILABLE,
+                    )
         except Exception:
             pass
         return HealthEntry(
@@ -314,6 +369,7 @@ class HealthEngine:
             "WARNING",
             f"artifact exists but could not be introspected: {candidate}",
             "Run `nexus doctor --verbose` for a full trace.",
+            state=DEGRADED,
         )
 
     def check_model_contract(self) -> HealthEntry:
@@ -505,22 +561,101 @@ class HealthEngine:
             )
 
     def check_feature_schema(self) -> HealthEntry:
-        try:
-            from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID, FEATURE_SCHEMAS
+        """FEATURE_SCHEMA truth (CHG-0043).
 
-            schema = FEATURE_SCHEMAS.resolve(ACTIVE_SCHEMA_ID)
+        The authoritative feature contract is the LOADED/CONFIGURED serving
+        bundle (live_engine.effective_feature_dim semantics), not the legacy
+        ``features/schema.py`` registry constant. Resolution order:
+        configured artifact identity -> canonical scalp_v3 module (when a
+        70D bundle is configured) -> legacy registry resolve. An absent
+        artifact reports UNKNOWN, never a fabricated contract.
+        """
+        cfg = self._load_config()
+        artifact = None
+        if cfg is not None and cfg is not False:
+            configured = getattr(getattr(cfg, "model", None), "model_artifact_path", None)
+            if configured:
+                p = Path(configured)
+                artifact = p if p.is_absolute() else self.workspace / p
+        if artifact is None and self.model_dir.exists():
+            matches = sorted(self.model_dir.rglob("model.pt"))
+            if matches:
+                artifact = matches[0]
+        if artifact is None or not artifact.exists():
             return HealthEntry(
                 "FEATURE_SCHEMA",
-                "PASS",
-                f"{schema.schema_id} / {schema.dimension}D (active contract)",
+                "WARNING",
+                "no model artifact present — serving contract not yet determined",
+                "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+                state=UNKNOWN,
+                optional=True,
+            )
+        try:
+            import torch  # type: ignore[import-not-found]
+
+            sd = torch.load(artifact, map_location="cpu", weights_only=True)
+            meta = sd.get("metadata") or sd.get("model_metadata") or {} if isinstance(sd, dict) else {}
+            model_dim = (
+                meta.get("dimension")
+                or meta.get("feature_dimension")
+                or meta.get("feature_schema_dimension")
+            )
+            if model_dim is None and isinstance(sd, dict):
+                state = sd.get("state_dict", sd)
+                first_w = next(
+                    (v for k, v in state.items() if "weight" in k and hasattr(v, "shape")),
+                    None,
+                )
+                if first_w is not None and len(first_w.shape) >= 2:
+                    model_dim = int(first_w.shape[-1])
+            model_schema = (
+                meta.get("schema_id")
+                or meta.get("feature_schema_id")
+                or meta.get("feature_schema_id_override")
             )
         except Exception as e:
             return HealthEntry(
                 "FEATURE_SCHEMA",
-                "FAIL",
-                f"schema registry failed: {e}",
-                "Reinstall the application bundle.",
+                "WARNING",
+                f"could not introspect artifact {artifact.name}: {e}",
+                "Run `nexus model-doctor`.",
+                state=UNKNOWN,
             )
+        if not model_dim:
+            return HealthEntry(
+                "FEATURE_SCHEMA",
+                "WARNING",
+                f"artifact {artifact.name} declares no feature dimension",
+                "Verify the artifact metadata (schema_id/dimension).",
+                state=UNKNOWN,
+            )
+        dim = int(model_dim)
+        if dim == 70:
+            try:
+                from nexus_scalp.features.schema_contract import (
+                    DIMENSION as CONTRACT_DIM,
+                    SCHEMA_ID as CONTRACT_ID,
+                )
+
+                if dim != int(CONTRACT_DIM):
+                    return HealthEntry(
+                        "FEATURE_SCHEMA",
+                        "FAIL",
+                        f"artifact declares {dim}D but the canonical 70D contract says {CONTRACT_DIM}D",
+                        "Do NOT serve this bundle — retrain/export against scalp_v3.",
+                        state=MISSING,
+                    )
+                schema = f"{CONTRACT_ID} / {CONTRACT_DIM}D"
+            except Exception:
+                schema = f"scalp_v3 / {dim}D"
+        else:
+            schema = f"scalp_v1 / {dim}D (legacy 50D)"
+        return HealthEntry(
+            "FEATURE_SCHEMA",
+            "PASS",
+            f"{schema} (serving bundle: {artifact.name})",
+            state=AVAILABLE,
+        )
 
     def check_gpu(self) -> HealthEntry:
         env = self.env()
@@ -549,11 +684,29 @@ class HealthEngine:
                 if env.mt5_available and env.os_name.lower() == "windows"
                 else "native module available",
             )
+        cfg = self._load_config()
+        mode = (
+            getattr(getattr(cfg, "execution", None), "mode", None)
+            if cfg is not None and cfg is not False
+            else None
+        )
+        mode_val = str(getattr(mode, "value", mode) or "").upper()
+        if "LIVE" not in mode_val:
+            # CHG-0043: the terminal is irrelevant outside LIVE execution.
+            return HealthEntry(
+                "MT5",
+                "PASS",
+                f"MetaTrader 5 not detected (not required for mode {mode_val or 'PAPER'})",
+                "",
+                state=NOT_APPLICABLE,
+                optional=True,
+            )
         return HealthEntry(
             "MT5",
             "WARNING",
-            "MetaTrader 5 not detected",
-            "Required only for LIVE execution; PAPER/SHADOW work without it.",
+            "MetaTrader 5 not detected (required for LIVE execution)",
+            "Install/launch the MetaTrader 5 terminal before going LIVE.",
+            state=MISSING,
         )
 
     def check_network(self) -> HealthEntry:
@@ -626,6 +779,8 @@ class HealthEngine:
             "WARNING",
             "no log files yet",
             "Logs appear after the first engine start.",
+            state=NOT_INITIALIZED,
+            optional=True,
         )
 
     def check_workers(self) -> HealthEntry:
@@ -644,6 +799,8 @@ class HealthEngine:
             "WARNING",
             f"worker checkpoint tables missing: {', '.join(sorted(missing))}",
             "Created automatically on first engine start.",
+            state=NOT_INITIALIZED,
+            optional=True,
         )
 
     def _check_phase(
@@ -660,15 +817,42 @@ class HealthEngine:
         )
 
     def check_news(self) -> HealthEntry:
+        """NEWS capability (CHG-0043): real schema table names.
+
+        The news schema (news/db_schema.py) creates ``news_articles`` /
+        ``news_impacts`` (plus worker/topic tables) - the doctor previously
+        probed ``articles``/``events`` which NEVER exist, producing a
+        permanent false WARN. An absent news.db before first news run is
+        NOT_INITIALIZED; a config-disabled feature is DISABLED (operator
+        choice); present-but-tableless is NOT_INITIALIZED.
+        """
+        cfg = self._load_config()
+        news_cfg = getattr(cfg, "news", None) if cfg is not None and cfg is not False else None
+        news_enabled = bool(getattr(news_cfg, "enabled", False)) if news_cfg else False
         tables = _db_tables(self.news_db_path) if self.news_db_path.exists() else set()
         if not tables:
+            reason = (
+                "news feature disabled in configuration (no news.db created)"
+                if not news_enabled
+                else "news.db not initialized yet (no tables created by first news run)"
+            )
+            suggestion = (
+                "Enable `news:` in config and run `nexus repair --news` to initialize."
+                if not news_enabled
+                else "Run `nexus repair --news` to initialize the news schema."
+            )
             return HealthEntry(
                 "NEWS",
                 "WARNING",
-                "news DB not initialized (feature disabled)",
-                "Enable `news:` in config and run `nexus repair --news`.",
+                reason,
+                suggestion,
+                state=DISABLED if not news_enabled else NOT_INITIALIZED,
+                optional=True,
             )
-        return self._check_phase("NEWS", tables, {"articles", "events"}, "News")
+        entry = self._check_phase("NEWS", tables, {"news_articles", "news_impacts"}, "News")
+        entry.state = ENABLED if news_enabled else DISABLED
+        entry.optional = True
+        return entry
 
     def check_experience(self) -> HealthEntry:
         tables = _db_tables(self.db_path)
@@ -686,9 +870,31 @@ class HealthEngine:
         return self._check_phase("TRAINING", tables, needs, "Training")
 
     def check_shadow(self) -> HealthEntry:
+        """SHADOW capability (CHG-0043).
+
+        Shadow tables (shadow/store.py ensure_schema) are created lazily on
+        the first shadow decision - absence is NOT_INITIALIZED, not a
+        degraded database. Shadow is an optional subsystem by design.
+        """
         tables = _db_tables(self.db_path)
         needs = {"shadow_runs", "shadow_decisions"}
-        return self._check_phase("SHADOW", tables, needs, "Shadow")
+        missing = needs - tables
+        if not missing:
+            return HealthEntry(
+                "SHADOW",
+                "PASS",
+                "Shadow tables present",
+                state=AVAILABLE,
+                optional=True,
+            )
+        return HealthEntry(
+            "SHADOW",
+            "WARNING",
+            "shadow tables not created yet (lazily initialized on first shadow run)",
+            "Created automatically on the first shadow decision.",
+            state=NOT_INITIALIZED,
+            optional=True,
+        )
 
     def check_accounting(self) -> HealthEntry:
         tables = _db_tables(self.db_path)
@@ -725,13 +931,19 @@ class HealthEngine:
                 f"NOT_CONFIGURED ({', '.join(missing) or 'unknown'})",
                 "Configure via the Web UI (Settings -> Telegram) or "
                 "NEXUS_TELEGRAM_BOT_TOKEN / NEXUS_TELEGRAM_ADMIN_ID env.",
+                state=NOT_CONFIGURED,
+                optional=True,
             )
         if not status["enabled"]:
+            # CHG-0043: an operator's choice to keep notifications off is
+            # not a health problem - report the truth without a warning.
             return HealthEntry(
                 "TELEGRAM",
-                "WARNING",
-                "configured but DISABLED",
+                "PASS",
+                "configured but DISABLED (operator choice - notifications inactive)",
                 "Enable Telegram in Settings to activate notifications.",
+                state=DISABLED,
+                optional=True,
             )
         return HealthEntry(
             "TELEGRAM",
@@ -792,6 +1004,7 @@ class HealthEngine:
             ("CONFIGURATION", self.check_configuration),
             ("DATABASE", self.check_database),
             ("MODEL", self.check_model),
+            ("MODEL_CONTRACT", self.check_model_contract),
             ("FEATURE_SCHEMA", self.check_feature_schema),
             ("GPU", self.check_gpu),
             ("MT5", self.check_mt5),
@@ -812,13 +1025,25 @@ class HealthEngine:
         entries: list[HealthEntry] = []
         for _category, fn in checks:
             try:
-                entries.append(fn())
+                entry = fn()
             except Exception as e:  # failure isolation
-                entries.append(
-                    HealthEntry(
-                        _category, "FAIL", f"check raised: {e}", "Run `nexus doctor --verbose`."
-                    )
+                entry = HealthEntry(
+                    _category,
+                    "FAIL",
+                    f"check raised: {e}",
+                    "Run `nexus doctor --verbose`.",
+                    state=ERROR,
                 )
+            if entry.state == HEALTHY:
+                # CHG-0043: derive the canonical state from the legacy verdict
+                # for checks that do not (yet) set an explicit state, so every
+                # entry carries a taxonomy word across the API/CLI/UI.
+                entry.state = {
+                    "PASS": HEALTHY,
+                    "WARNING": DEGRADED,
+                    "FAIL": ERROR,
+                }.get(entry.verdict, UNKNOWN)
+            entries.append(entry)
         return entries
 
     def overall(self, entries: list[HealthEntry] | None = None) -> tuple[str, list[HealthEntry]]:
