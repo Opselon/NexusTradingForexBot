@@ -1350,6 +1350,32 @@ shadow/research reads require the shared audit DB to exist (truthful 503
 otherwise); mutation surface = 5 safe POSTs only.
 
 
+### CHG-0043 addendum — Canonical API agent skill (2026-09-02, Nexus-Main)
+
+Change: agents/APISkill.md — machine-oriented operational contract for the whole
+API surface (CURRENT /api/v1 68 ops + LEGACY 280 dashboard routes + REMOVED
+src/nexus_scalp/api/v1 tree + DEPRECATED mappings). 28 sections: four status
+classes, verified legacy family table (10 modules + static), per-domain
+operational entries (purpose/returns/dependencies/errors/agent-use/CLI/tests/
+smoke), envelope+error+pagination+filter+time+idempotency contracts (all bounds
+verified from source: page_size 1..200, hours_back<=720, bars<=500), engine-
+dependency matrix (E/E-soft/DB/STATIC with engineless behavior), read/write
+classification (63 GET / 3 SAFE_VALIDATION / 1 REFRESH / 1 DIAGNOSTIC / 0
+EXECUTION_CAPABLE — NO REAL TRADING FROM AGENT API TESTS), CLI->API map (12
+commands), NexusApiClient contract, tooling reference (5 scripts + drift
+validator), test map (real files incl. tests/e2e_client/), security rules,
+performance contract, domain guidance, one-question-one-API routing, discovery
+workflow, extension/removal workflows, drift detection, historical
+reconciliation, skill self-audit (10/10).
+Tooling: scripts/dev/api_skill_drift_check.py — APISkill <-> live OpenAPI sync
+gate (parses machine-registry rows + domain headers; missing/extra ops or count
+mismatch -> exit 1). Battery at closure: DRIFT PASS 68/68, CONTRACT CHECK PASS,
+SMOKE PASS, snapshot/diff COMPATIBLE, unit+integration+state-truth suites green,
+ruff+mypy clean, all file refs resolve.
+Scope: agents/APISkill.md + scripts/dev/api_skill_drift_check.py ONLY. Zero API
+implementation changes (VERIFIED: no web/api_v1 commits since 03d0848 closure).
+Status: COMPLETE
+
 ## CHG-0046 — Shadow System Forensic, Hardening & Intelligence Upgrade (2026-09-02, Hermes-Main)
 
 Change: Shadow-owner forensic map (agents/forensic_reports/2026-09-02_shadow_forensic_map.md)
