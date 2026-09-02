@@ -43,4 +43,4 @@ nexus stop            # para --daemon; Ctrl+C en primer plano
 
 ## Siguiente paso
 
-- [Arquitectura](../architecture/overview.md) · [Estado](../project/status.md) · [FAQ](../reference/faq.md)
+- [Arquitectura](/architecture/overview/) · [Estado](/es/project/status/) · [FAQ](/reference/faq/)

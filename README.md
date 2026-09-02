@@ -4,7 +4,7 @@
 
 *Hexagonal, event-driven scalping runtime for MetaTrader 5 — primary market XAUUSD (Gold) M1.*
 
-**English** · [فارسی](docs/fa/index.md) · [Español](docs/es/index.md) · [العربية](docs/ar/index.md) · [Deutsch](docs/de/index.md) · 📚 [Documentation site](https://opselon.github.io/NexusTradingForexBot/)
+**English** · [فارسی](https://opselon.github.io/NexusTradingForexBot/fa/) · [Español](https://opselon.github.io/NexusTradingForexBot/es/) · [العربية](https://opselon.github.io/NexusTradingForexBot/ar/) · [Deutsch](https://opselon.github.io/NexusTradingForexBot/de/) · 📚 [Documentation site](https://opselon.github.io/NexusTradingForexBot/)
 
 [![Release](https://img.shields.io/github/v/tag/Opselon/NexusTradingForexBot?label=release&sort=semver&style=for-the-badge)](https://github.com/Opselon/NexusTradingForexBot/releases)
 [![CI](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml/badge.svg?style=for-the-badge)](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml)
@@ -32,7 +32,7 @@
 | :--- | :--- | :--- |
 | A developer | "What is this?" | [What is Nexus](#-what-is-nexus) · [Vision](docs/project/vision.md) |
 | A developer | "How do I run it?" | [Quickstart](#-quickstart) |
-| A developer | "How does the architecture work?" | [Architecture](#-architecture) · [Data flow](docs/architecture/data-flow.md) |
+| A developer | "How does the architecture work?" | [System at a glance](#%EF%B8%8F-system-at-a-glance) · [Data flow](docs/architecture/data-flow.md) |
 | A researcher | "How is validity established?" | [Research & validation](#-research--validation) |
 | A contributor | "How do I contribute?" | [Contributing](docs/contributing/contribution-guide.md) |
 | A Persian/Arabic/Spanish/German reader | "Where is my language?" | [Documentation hub](#-documentation) |
@@ -294,7 +294,7 @@ interactive confirmation.
 | [Reference](docs/reference/glossary.md) | CLI reference · glossary · terminology · **FAQ** |
 | [Contributing](docs/contributing/contribution-guide.md) | contribution guide · documentation workflow · adding a language |
 
-**Languages:** English (source) · [فارسی](docs/fa/index.md) · [Español](docs/es/index.md) · [العربية](docs/ar/index.md) · [Deutsch](docs/de/index.md) — coverage audited by `scripts/docs/check_translations.py`; RTL layouts for Persian/Arabic.
+**Languages:** English (source) · [فارسی](https://opselon.github.io/NexusTradingForexBot/fa/) · [Español](https://opselon.github.io/NexusTradingForexBot/es/) · [العربية](https://opselon.github.io/NexusTradingForexBot/ar/) · [Deutsch](https://opselon.github.io/NexusTradingForexBot/de/) — coverage audited by `scripts/docs/check_translations.py`; RTL layouts for Persian/Arabic.
 
 **Deep technical memory (agent-generated, preserved):**
 [`agents/skill.md`](agents/skill.md) (architecture map) ·

@@ -31,10 +31,10 @@ eigentliche Punkt.
 ## Was Sie von hier aus tun können
 
 - **Ausführen** — PAPER-Modus als Standard, niemals stillschweigend LIVE:
-  siehe [Schnellstart](getting-started/quickstart.md).
-- **Verstehen** — [Architektur](architecture/overview.md) und der
-  [Datenfluss](architecture/data-flow.md) von Tick zu Entscheidung.
-- **Die Forschung bewerten** — [Methodik](research/methodology.md) und
+  siehe [Schnellstart](/de/getting-started/quickstart/).
+- **Verstehen** — [Architektur](/architecture/overview/) und der
+  [Datenfluss](/architecture/data-flow/) von Tick zu Entscheidung.
+- **Die Forschung bewerten** — [Methodik](/research/methodology/) und
   [Projektstatus](project/status.md), je Fähigkeit evidenzgeprüft.
-- **Beitragen** — der [Beitragsleitfaden](contributing/contribution-guide.md)
+- **Beitragen** — der [Beitragsleitfaden](/contributing/contribution-guide/)
   destilliert einen Multi-Agenten-Engineering-Vertrag in einen menschlichen Workflow.

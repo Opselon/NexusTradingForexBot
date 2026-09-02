@@ -58,5 +58,5 @@ OrderManager (روتر ۶۰-سناریویی · ۱۱ وضعیت پوزیشن · 
 
 ## ادامه
 
-- [نقشه سیستم](system-map.md) (انگلیسی) · [جریان داده](data-flow.md) (انگلیسی)
+- [نقشه سیستم](/architecture/system-map/) (انگلیسی) · [جریان داده](/architecture/data-flow/) (انگلیسی)
 - نقشه داخلی معتبر: [`agents/skill.md`](https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/skill.md)

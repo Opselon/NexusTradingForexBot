@@ -26,10 +26,10 @@ first-class result. A validation layer that can say *no* is the entire point.
 ## What you can do from here
 
 - **Run it** — PAPER mode by default, never LIVE silently: see the
-  [Quickstart](getting-started/quickstart.md).
-- **Understand it** — [Architecture](architecture/overview.md) and the
-  tick-to-decision [data flow](architecture/data-flow.md).
-- **Judge the research** — [methodology](research/methodology.md) and the
-  [project status](project/status.md), graded per capability with evidence.
-- **Contribute** — the [contribution guide](contributing/contribution-guide.md)
+  [Quickstart](/getting-started/quickstart/).
+- **Understand it** — [Architecture](/architecture/overview/) and the
+  tick-to-decision [data flow](/architecture/data-flow/).
+- **Judge the research** — [methodology](/research/methodology/) and the
+  [project status](/project/status/), graded per capability with evidence.
+- **Contribute** — the [contribution guide](/contributing/contribution-guide/)
   distills a multi-agent engineering contract into human workflow.

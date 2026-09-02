@@ -43,4 +43,4 @@ nexus stop            # لوضع --daemon؛ أو Ctrl+C في المقدمة
 
 ## التالي
 
-- [نظرة البنية](../architecture/overview.md) · [الحالة](../project/status.md) · [الأسئلة الشائعة](../reference/faq.md)
+- [نظرة البنية](/architecture/overview/) · [الحالة](/ar/project/status/) · [الأسئلة الشائعة](/reference/faq/)

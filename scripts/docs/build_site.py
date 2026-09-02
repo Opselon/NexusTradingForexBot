@@ -1,16 +1,18 @@
-"""Build the Nexus Scalp Engine documentation site (GitHub Pages).
+"""NEXUS documentation site generator.
 
-Nexus-Docs owns this script. It renders `site/content/<lang>/*.md` (English
-source + translations) into a self-contained static site under `site/public/`:
+Builds the static multilingual GitHub Pages site from docs/ + site/content/
+into site/_site/ (the deploy root committed or uploaded by docs.yml).
 
-- pure HTML/CSS/vanilla-JS output (no framework, no external runtime deps)
-- per-language trees with a global language switcher
-- full RTL support for fa/ar (content RTL; code/CLI/paths stay LTR)
-- client-side search over a generated JSON index
-- responsive layout (sidebar -> mobile drawer), dark/light via prefers-color-scheme
-- version + capability status injected from pyproject.toml (no duplicated versions)
+Design:
+- zero external dependencies (stdlib only) so docs CI needs no npm/pip installs
+- deterministic output (no timestamps) so rebuilds are byte-stable and CI can
+  cache cleanly
+- client-side search over a tiny generated index (no external service)
+- full RTL support for fa/ar via per-language <html dir>, with LTR code blocks
+- language switcher on every page; missing translations fall back to English
+  and are flagged by scripts/docs/check_translations.py
 
-Usage:  python scripts/docs/build_site.py [--out site/public]
+Never modify anything under src/ or Web/ — docs-only surface (Nexus-Docs role).
 """
 
 from __future__ import annotations
@@ -18,412 +20,554 @@ from __future__ import annotations
 import html
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
+import site_config as _cfg
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "scripts" / "docs"))
-import site_config as cfg  # noqa: E402
+DOCS_DIR = REPO_ROOT / "docs"
+SITE_DIR = REPO_ROOT / "site"
+CONTENT_DIR = SITE_DIR / "content"
+OUT_DIR = SITE_DIR / "_site"
+PROJECT_VERSION = _cfg.repo_version()
+REPO_URL = "https://github.com/Opselon/NexusTradingForexBot"
+PAGES_URL = "https://opselon.github.io/NexusTradingForexBot/"
 
-try:
-    import markdown as _markdown  # repo venv has Markdown 3.x
-except ImportError:  # pragma: no cover
-    _markdown = None
-
-OUT_DEFAULT = REPO_ROOT / "site" / "public"
-CONTENT = REPO_ROOT / "site" / "content"
-
-MD_EXT = ["extra", "toc", "sane_lists", "admonition"]
-MD_EXT_CFG = {"toc": {"permalink": False}}
-
-# Landing-page id per nav entry -> source content file (per language tree)
-NAV_SOURCES = {
-    "start": "start",
-    "status": "status",
-    "architecture": "architecture",
-    "research": "research",
-    "validation": "validation",
-    "roadmap": "roadmap",
-    "reference": "reference",
-    "contributing": "contributing",
+LANGUAGES: dict[str, dict[str, str]] = {
+    "en": {"name": "English", "dir": "ltr", "native": "English"},
+    "fa": {"name": "فارسی", "dir": "rtl", "native": "فارسی"},
+    "es": {"name": "Español", "dir": "ltr", "native": "Español"},
+    "ar": {"name": "العربية", "dir": "rtl", "native": "العربية"},
+    "de": {"name": "Deutsch", "dir": "ltr", "native": "Deutsch"},
 }
 
+# Shared section labels per language (nav + UI chrome).
+UI: dict[str, dict[str, str]] = {
+    "en": {
+        "search": "Search docs…",
+        "home": "Home",
+        "docs": "Docs",
+        "repo": "GitHub",
+        "skip": "Skip to content",
+        "language": "Language",
+        "partial": "partially translated",
+        "version": "Version",
+        "status": "Project status",
+        "next": "Next",
+        "prev": "Previous",
+        "on_github": "Edit this page on GitHub",
+    },
+    "fa": {
+        "search": "جستجو در مستندات…",
+        "home": "خانه",
+        "docs": "مستندات",
+        "repo": "گیت‌هاب",
+        "skip": "پرش به محتوا",
+        "language": "زبان",
+        "partial": "ترجمه جزئی",
+        "version": "نسخه",
+        "status": "وضعیت پروژه",
+        "next": "بعدی",
+        "prev": "قبلی",
+        "on_github": "ویرایش این صفحه در گیت‌هاب",
+    },
+    "es": {
+        "search": "Buscar…",
+        "home": "Inicio",
+        "docs": "Docs",
+        "repo": "GitHub",
+        "skip": "Ir al contenido",
+        "language": "Idioma",
+        "partial": "traducción parcial",
+        "version": "Versión",
+        "status": "Estado del proyecto",
+        "next": "Siguiente",
+        "prev": "Anterior",
+        "on_github": "Editar esta página en GitHub",
+    },
+    "ar": {
+        "search": "ابحث في التوثيق…",
+        "home": "الرئيسية",
+        "docs": "التوثيق",
+        "repo": "جيت هب",
+        "skip": "الانتقال إلى المحتوى",
+        "language": "اللغة",
+        "partial": "ترجمة جزئية",
+        "version": "الإصدار",
+        "status": "حالة المشروع",
+        "next": "التالي",
+        "prev": "السابق",
+        "on_github": "تعديل هذه الصفحة على جيت هب",
+    },
+    "de": {
+        "search": "Dokumentation durchsuchen…",
+        "home": "Start",
+        "docs": "Doku",
+        "repo": "GitHub",
+        "skip": "Zum Inhalt springen",
+        "language": "Sprache",
+        "partial": "teilweise übersetzt",
+        "version": "Version",
+        "status": "Projektstatus",
+        "next": "Weiter",
+        "prev": "Zurück",
+        "on_github": "Diese Seite auf GitHub bearbeiten",
+    },
+}
 
-def parse_front_matter(text: str) -> tuple[dict, str]:
-    """Parse a minimal YAML front-matter block (key: value lines)."""
-    meta: dict[str, str] = {}
+NAV_SECTIONS: list[tuple[str, list[str]]] = [
+    ("getting-started", ["installation", "quickstart", "first-run", "configuration"]),
+    ("project", ["vision", "scope", "status", "capabilities", "roadmap", "milestones"]),
+    (
+        "architecture",
+        [
+            "overview",
+            "system-map",
+            "data-flow",
+            "runtime",
+            "research-stack",
+            "model-pipeline",
+            "execution-pipeline",
+            "observability",
+            "database",
+        ],
+    ),
+    (
+        "research",
+        [
+            "methodology",
+            "datasets",
+            "backtesting",
+            "walk-forward",
+            "out-of-sample",
+            "replay",
+            "counterfactuals",
+            "validation",
+            "reproducibility",
+        ],
+    ),
+    ("engineering", ["quality", "ci", "release-process", "security"]),
+    ("guides", ["cli", "troubleshooting", "common-workflows"]),
+    ("contributing", ["contribution-guide", "documentation", "add-language"]),
+    ("reference", ["cli-reference", "glossary", "terminology", "faq"]),
+]
+
+FM_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+TITLE_RE = re.compile(r"^#\s+(.+)$", re.MULTILINE)
+
+
+def parse_front_matter(text: str) -> tuple[dict[str, str], str]:
+    fm: dict[str, str] = {}
     body = text
-    if text.startswith("---"):
-        m = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.S)
-        if m:
-            for line in m.group(1).splitlines():
-                if ":" in line:
-                    k, _, v = line.partition(":")
-                    meta[k.strip()] = v.strip().strip("'\"")
-            body = text[m.end():]
-    return meta, body
+    m = FM_RE.match(text)
+    if m:
+        for line in m.group(1).splitlines():
+            if ":" in line:
+                key, _, val = line.partition(":")
+                fm[key.strip()] = val.strip().strip('"')
+        body = text[m.end() :]
+    return fm, body
 
 
-def md_to_html(text: str) -> str:
-    if _markdown is not None:
-        return _markdown.markdown(text, extensions=MD_EXT, extension_configs=MD_EXT_CFG)
-    raise SystemExit("The 'markdown' package is required to build the site (pip install markdown).")
+def render_markdown(src: str) -> str:
+    """Small deterministic markdown renderer (headings, code, tables, lists,
+    callouts, links, emphasis). Output is embedded in the page shell."""
+    out: list[str] = []
+    lines = src.splitlines()
+    i = 0
+    in_code = False
+    code_buf: list[str] = []
+    list_stack: list[str] = []
+    table_buf: list[str] = []
 
+    def esc(s: str) -> str:
+        return html.escape(s, quote=False)
 
-def repo_version() -> str:
-    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
-    return m.group(1) if m else "unknown"
+    def inline(s: str) -> str:
+        s = esc(s)
+        s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+        s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2">\1</a>', s)
+        s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+        s = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", r"<em>\1</em>", s)
+        s = re.sub(r"(https?://[^\s<)]+)", r'<a href="\1">\1</a>', s)
+        return s
 
-
-CSS = """:root{
-  --bg:#0d1117;--bg2:#161b22;--card:#161b22;--fg:#e6edf3;--muted:#8b949e;
-  --accent:#4c8dff;--accent2:#8a63d2;--border:#21262d;--ok:#3fb950;--warn:#d29922;
-  --code-bg:#0a0d12;--maxw:1180px;
-}
-@media (prefers-color-scheme: light){
-  :root{--bg:#ffffff;--bg2:#f6f8fa;--card:#f6f8fa;--fg:#1f2328;--muted:#59636e;
-        --accent:#0969da;--accent2:#8250df;--border:#d0d7de;--ok:#1a7f37;--warn:#9a6700;
-        --code-bg:#f6f8fa;}
-}
-*{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;font-family:-apple-system,'Segoe UI','Noto Sans','Noto Naskh Arabic','Vazirmatn',Roboto,Helvetica,Arial,sans-serif;
-     background:var(--bg);color:var(--fg);line-height:1.65;font-size:16px}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-code,pre,kbd,samp{font-family:ui-monospace,SFMono-Regular,'Cascadia Code',Consolas,monospace;
-     direction:ltr;unicode-bidi:embed;text-align:left}
-pre{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;
-    padding:14px 16px;overflow-x:auto;font-size:.875rem;line-height:1.55}
-code{background:var(--code-bg);border:1px solid var(--border);border-radius:5px;
-     padding:.12em .35em;font-size:.875em}
-pre code{border:0;padding:0;background:transparent}
-table{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:.93rem;display:block;overflow-x:auto}
-th,td{border:1px solid var(--border);padding:.5em .7em;text-align:start;vertical-align:top}
-th{background:var(--bg2)}
-blockquote{margin:1em 0;padding:.7em 1.1em;border-inline-start:4px solid var(--accent);
-           background:var(--bg2);border-radius:0 8px 8px 0;color:var(--fg)}
-blockquote p{margin:.3em 0}
-/* layout */
-.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;
-        padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)}
-.topbar .brand{font-weight:700;font-size:1.02rem;color:var(--fg);letter-spacing:.3px}
-.topbar .brand span{color:var(--accent)}
-.topbar .tagline{color:var(--muted);font-size:.82rem;display:none}
-@media(min-width:900px){.topbar .tagline{display:inline}}
-.topbar .spacer{flex:1}
-.langsel{background:var(--bg2);color:var(--fg);border:1px solid var(--border);
-         border-radius:7px;padding:5px 8px;font-size:.86rem}
-.ghlink{color:var(--fg);font-size:.9rem;border:1px solid var(--border);
-        border-radius:7px;padding:5px 10px}
-.ghlink:hover{text-decoration:none;border-color:var(--accent)}
-.layout{display:flex;max-width:var(--maxw);margin:0 auto;padding:0 16px;gap:28px}
-.sidebar{display:none;width:220px;flex-shrink:0;padding:22px 0}
-@media(min-width:960px){.sidebar{display:block}}
-.sidebar h4{margin:1.2em 0 .4em;font-size:.72rem;letter-spacing:.08em;
-            text-transform:uppercase;color:var(--muted)}
-.sidebar a{display:block;color:var(--fg);padding:3px 8px;border-radius:6px;font-size:.9rem}
-.sidebar a:hover{background:var(--bg2);text-decoration:none}
-.content{flex:1;min-width:0;padding:26px 0 80px}
-/* mobile nav */
-.menubtn{display:inline-flex;background:var(--bg2);border:1px solid var(--border);
-         color:var(--fg);border-radius:7px;padding:5px 11px;font-size:.95rem}
-@media(min-width:960px){.menubtn{display:none}}
-.drawer{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.5)}
-.drawer.open{display:block}
-.drawer nav{position:absolute;top:0;bottom:0;inset-inline-start:0;width:270px;
-            background:var(--bg);border-inline-end:1px solid var(--border);
-            padding:18px;overflow-y:auto}
-.drawer a{display:block;color:var(--fg);padding:9px 10px;border-radius:7px}
-.drawer a:hover{background:var(--bg2);text-decoration:none}
-/* hero + cards */
-.hero{border:1px solid var(--border);border-radius:12px;padding:26px 26px 20px;
-      background:linear-gradient(180deg,var(--bg2),var(--bg));margin:18px 0}
-.hero h1{margin:.1em 0 .2em;font-size:1.7rem;letter-spacing:.4px}
-.hero p.sub{color:var(--muted);margin:.2em 0;font-size:1.02rem}
-.badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.badge{font-size:.72rem;border:1px solid var(--border);border-radius:20px;
-       padding:2px 10px;color:var(--muted);background:var(--bg)}
-.badge.ok{color:var(--ok);border-color:var(--ok)}
-.badge.warn{color:var(--warn);border-color:var(--warn)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:16px 0}
-.card{border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:var(--card)}
-.card h3{margin:.1em 0 .3em;font-size:.98rem}
-.card p{margin:.2em 0;color:var(--muted);font-size:.88rem}
-.card a{font-weight:600}
-.callout{border:1px solid var(--border);border-inline-start:4px solid var(--warn);
-         background:var(--bg2);border-radius:8px;padding:12px 16px;margin:16px 0}
-.callout p{margin:.25em 0}
-.statuschip{display:inline-block;font-size:.74rem;border-radius:14px;padding:1px 9px;
-            border:1px solid var(--border);margin:1px}
-.statuschip.certified,.statuschip.implemented{color:var(--ok);border-color:var(--ok)}
-.statuschip.experimental,.statuschip.research{color:var(--accent2);border-color:var(--accent2)}
-.statuschip.planned{color:var(--muted)}
-/* search */
-.searchbox{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;
-           background:var(--bg2);color:var(--fg);font-size:.95rem;margin:8px 0}
-#search-results{border:1px solid var(--border);border-radius:8px;margin-bottom:14px;display:none}
-#search-results a{display:block;padding:8px 12px;border-bottom:1px solid var(--border)}
-#search-results a:last-child{border-bottom:0}
-#search-results a:hover{background:var(--bg2);text-decoration:none}
-.sr{font-size:.8rem;color:var(--muted)}
-footer{border-top:1px solid var(--border);margin-top:40px;padding:18px 20px 40px;
-       color:var(--muted);font-size:.85rem}
-footer .fl{display:flex;flex-wrap:wrap;gap:14px}
-/* RTL */
-html[dir="rtl"] body{font-family:'Vazirmatn','Noto Naskh Arabic','Segoe UI',Tahoma,sans-serif}
-html[dir="rtl"] pre,html[dir="rtl"] code,html[dir="rtl"] kbd{direction:ltr;unicode-bidi:embed}
-html[dir="rtl"] td,html[dir="rtl"] th{text-align:right}
-html[dir="rtl"] blockquote{border-inline-start:4px solid var(--accent)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@media print{.topbar,.sidebar,.drawer,footer{display:none}}
-"""
-
-JS = """
-(function(){
-  var drawer=document.getElementById('drawer');
-  var btn=document.getElementById('menubtn');
-  if(btn&&drawer){btn.addEventListener('click',function(){drawer.classList.toggle('open');});
-    drawer.addEventListener('click',function(e){if(e.target===drawer)drawer.classList.remove('open');});}
-  // copy buttons on code blocks
-  document.querySelectorAll('pre').forEach(function(pre){
-    var btn=document.createElement('button');
-    btn.className='copybtn';btn.type='button';btn.setAttribute('aria-label','Copy code');
-    btn.textContent='⧉';
-    btn.style.cssText='float:right;margin:6px;padding:2px 8px;font-size:.8rem;border:1px solid var(--border);'+
-      'border-radius:6px;background:var(--bg2);color:var(--muted);cursor:pointer';
-    btn.addEventListener('click',function(){
-      navigator.clipboard.writeText(pre.innerText.replace(/^\\s*⧉\\s*/,'')).then(function(){
-        btn.textContent='✓';setTimeout(function(){btn.textContent='⧉';},1200);});
-    });
-    pre.style.position='relative';pre.appendChild(btn);
-  });
-  // client-side search
-  var input=document.getElementById('searchbox'),res=document.getElementById('search-results'),IDX=null;
-  function esc(s){return s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');}
-  if(input){
-    fetch(REL+'search.json').then(function(r){return r.json();}).then(function(idx){IDX=idx;});
-    input.addEventListener('input',function(){
-      var q=input.value.trim().toLowerCase();
-      if(!res)return;
-      if(q.length<2){res.style.display='none';res.innerHTML='';return;}
-      if(!IDX)return;
-      var hits=[];
-      for(var i=0;i<IDX.length&&hits.length<8;i++){
-        var p=IDX[i];
-        var t=(p.title+' '+p.text).toLowerCase();
-        if(q.split(/\\s+/).every(function(w){return t.indexOf(w)>=0;})){
-          var pos=t.indexOf(q.split(/\\s+/)[0]);
-          var snip=p.text.substr(Math.max(0,pos-40),110);
-          hits.push('<a href="'+REL+p.href+'"><div>'+p.title+'</div><div class="sr">…'+snip+'…</div></a>');
-        }
-      }
-      res.innerHTML=hits.join('')||'<div class="sr" style="padding:8px 12px">—</div>';
-      res.style.display='block';
-    });
-  }
-})();
-"""
-
-
-def lang_switcher(current: str) -> str:
-    opts = []
-    for code, meta in cfg.LANGUAGES.items():
-        sel = " selected" if code == current else ""
-        opts.append(
-            f'<option value="{code}"{sel}>{meta["flag"]} {meta["name"]}</option>'
+    def flush_table() -> None:
+        nonlocal table_buf
+        if not table_buf:
+            return
+        rows = [r for r in table_buf if not re.match(r"^\s*\|[\s:|-]+\|\s*$", r)]
+        table_buf = []
+        if not rows:
+            return
+        cells = lambda r: [c.strip() for c in r.strip().strip("|").split("|")]  # noqa: E731
+        head = cells(rows[0])
+        out.append("<div class='table-wrap'><table>")
+        out.append(
+            "<thead><tr>" + "".join(f"<th>{inline(c)}</th>" for c in head) + "</tr></thead><tbody>"
         )
-    return (
-        '<select class="langsel" id="langsel" aria-label="Language">'
-        + "".join(opts)
-        + "</select>"
+        for r in rows[1:]:
+            out.append("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in cells(r)) + "</tr>")
+        out.append("</tbody></table></div>")
+
+    def close_lists() -> None:
+        while list_stack:
+            out.append(f"</{list_stack.pop()}>")
+
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().startswith("```"):
+            if in_code:
+                cls = "code-ltr"
+                out.append(
+                    f"<pre dir='ltr' class='{cls}'><code>{html.escape(chr(10).join(code_buf))}</code></pre>"
+                )
+                code_buf = []
+                in_code = False
+            else:
+                flush_table()
+                close_lists()
+                in_code = True
+            i += 1
+            continue
+        if in_code:
+            code_buf.append(line)
+            i += 1
+            continue
+        m = re.match(r"^(#{1,4})\s+(.*)$", line)
+        if m:
+            flush_table()
+            close_lists()
+            level = len(m.group(1))
+            slug = re.sub(r"[^a-z0-9-]", "", m.group(2).lower().replace(" ", "-"))[:60]
+            out.append(f"<h{level} id='{esc(slug)}'>{inline(m.group(2))}</h{level}>")
+            i += 1
+            continue
+        if line.strip().startswith("> [!"):
+            flush_table()
+            close_lists()
+            kind = "note"
+            mm = re.match(r"^>\s*\[!(\w+)\]", line)
+            if mm:
+                kind = mm.group(1).lower()
+            body_lines: list[str] = []
+            i += 1
+            while i < len(lines) and lines[i].startswith(">"):
+                body_lines.append(lines[i].lstrip(">").strip())
+                i += 1
+            out.append(
+                f"<div class='callout callout-{kind}' role='note'>"
+                f"<div class='callout-title'>{esc(kind.upper())}</div>"
+                + "".join(f"<p>{inline(b)}</p>" for b in body_lines if b)
+                + "</div>"
+            )
+            continue
+        if line.strip().startswith(">"):
+            flush_table()
+            close_lists()
+            quote: list[str] = []
+            while i < len(lines) and lines[i].strip().startswith(">"):
+                quote.append(lines[i].lstrip(">").strip())
+                i += 1
+            out.append(
+                "<blockquote>"
+                + "".join(f"<p>{inline(q)}</p>" for q in quote if q)
+                + "</blockquote>"
+            )
+            continue
+        if line.strip().startswith("|"):
+            table_buf.append(line)
+            i += 1
+            continue
+        flush_table()
+        ul_re = re.compile(r"^\s*[-*]\s+")
+        ol_re = re.compile(r"^\s*\d+\.\s+")
+        if ul_re.match(line):
+            if not list_stack or list_stack[-1] != "ul":
+                close_lists()
+                list_stack.append("ul")
+                out.append("<ul>")
+            out.append("<li>" + inline(ul_re.sub("", line)) + "</li>")
+            i += 1
+            continue
+        if ol_re.match(line):
+            if not list_stack or list_stack[-1] != "ol":
+                close_lists()
+                list_stack.append("ol")
+                out.append("<ol>")
+            out.append("<li>" + inline(ol_re.sub("", line)) + "</li>")
+            i += 1
+            continue
+        close_lists()
+        if line.strip() == "---":
+            out.append("<hr>")
+        elif line.strip():
+            out.append(f"<p>{inline(line.strip())}</p>")
+        i += 1
+    flush_table()
+    close_lists()
+    if in_code and code_buf:
+        out.append(
+            f"<pre dir='ltr' class='code-ltr'><code>{html.escape(chr(10).join(code_buf))}</code></pre>"
+        )
+    return "\n".join(out)
+
+
+def page_title(fm: dict[str, str], body: str, fallback: str) -> str:
+    if fm.get("title"):
+        return fm["title"]
+    m = TITLE_RE.search(body)
+    return m.group(1).strip() if m else fallback
+
+
+def md_pages_in(root: Path) -> list[Path]:
+    return sorted(p for p in root.rglob("*.md") if p.is_file())
+
+
+def strip_md_ext(p: Path, base: Path) -> str:
+    return p.relative_to(base).with_suffix("").as_posix()
+
+
+def find_translation(lang: str, rel: str) -> Path | None:
+    """Locate the best translation for rel (docs/-relative page id)."""
+    if lang == "en":
+        return DOCS_DIR / f"{rel}.md"
+    # site/content/<lang>/... mirrors docs/ tree (index.md → index.md)
+    cand = CONTENT_DIR / lang / f"{rel}.md"
+    if cand.exists():
+        return cand
+    # Flat core-page aliases (Nexus-Docs core set): section/page → flat name
+    _FLAT_ALIASES = {
+        "project/status": "status",
+        "project/vision": "start",
+        "project/roadmap": "roadmap",
+        "architecture/overview": "architecture",
+        "research/methodology": "research",
+        "research/validation": "validation",
+        "reference/faq": "reference",
+        "contributing/contribution-guide": "contributing",
+        "getting-started/quickstart": "start",
+    }
+    alias = _FLAT_ALIASES.get(rel)
+    if alias:
+        flat = CONTENT_DIR / lang / f"{alias}.md"
+        if flat.exists():
+            return flat
+    return None
+
+
+def source_revision(rel: str) -> str:
+    en = DOCS_DIR / f"{rel}.md"
+    if en.exists():
+        return f"en:{rel}@{PROJECT_VERSION}"
+    return f"en:{rel}@unknown"
+
+
+def lang_prefix(lang: str) -> str:
+    return "" if lang == "en" else f"/{lang}"
+
+
+def build_nav(lang: str, active: str) -> str:
+    ui = UI[lang]
+    parts = ["<nav class='sidebar' aria-label='primary'>"]
+    parts.append(f"<a class='nav-home' href='{lang_prefix(lang)}/'>{html.escape(ui['home'])}</a>")
+    for section, pages in NAV_SECTIONS:
+        parts.append(f"<div class='nav-section'>{html.escape(section.replace('-', ' '))}</div>")
+        parts.append("<ul class='nav-list'>")
+        for pg in pages:
+            rel = f"{section}/{pg}"
+            available = find_translation(lang, rel) is not None
+            cls = "active" if rel == active else ""
+            flag = (
+                ""
+                if (available or lang == "en")
+                else f" <span class='fallback-tag' title='{html.escape(ui['partial'])}'>•</span>"
+            )
+            parts.append(
+                f"<li><a class='{cls}' href='{lang_prefix(lang)}/{rel}/'>{html.escape(pg.replace('-', ' '))}</a>{flag}</li>"
+            )
+        parts.append("</ul>")
+    parts.append("</nav>")
+    return "\n".join(parts)
+
+
+def build_header(lang: str) -> str:
+    ui = UI[lang]
+    lang_links = " ".join(
+        f"<a href='{lang_prefix(code)}/' lang='{code}' hreflang='{code}'>{html.escape(LANGUAGES[code]['native'])}</a>"
+        for code in LANGUAGES
     )
+    return f"""<header class='site-header'>
+  <div class='brand'>
+    <a href='{lang_prefix(lang)}/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v{PROJECT_VERSION}</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='{html.escape(ui["search"])}' aria-label='{html.escape(ui["search"])}' autocomplete='off'>
+    <details class='lang-picker'>
+      <summary aria-label='{html.escape(ui["language"])}'>🌐 {html.escape(LANGUAGES[lang]["native"])}</summary>
+      <div class='lang-menu'>{lang_links}</div>
+    </details>
+    <a class='repo-link' href='{REPO_URL}'>{html.escape(ui["repo"])}</a>
+  </div>
+</header>"""
 
 
-def page_shell(
-    *,
-    lang: str,
-    title: str,
-    description: str,
-    body_html: str,
-    nav_html: str,
-    drawer_html: str,
-    rel: str,
-    extra_head: str = "",
-) -> str:
-    meta = cfg.LANGUAGES[lang]
-    dirattr = f' dir="{meta["dir"]}" lang="{lang}"' if meta["dir"] == "rtl" else f' lang="{lang}"'
-    tagline = html.escape(cfg.SITE_TAGLINE.get(lang, cfg.SITE_TAGLINE["en"]))
-    js = JS.replace("REL", json.dumps(rel))
+def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: bool) -> str:
+    ui = UI[lang]
+    direction = LANGUAGES[lang]["dir"]
+    edit_url = (
+        f"{REPO_URL}/edit/main/docs/{rel}.md"
+        if lang == "en"
+        else (f"{REPO_URL}/edit/main/site/content/{lang}/{rel}.md")
+    )
+    status_flag = (
+        ""
+        if (translated or lang == "en")
+        else (
+            f"<div class='translation-note'>{html.escape(ui['partial'])} — "
+            f"<a href='/{rel}/'>English</a></div>"
+        )
+    )
     return f"""<!DOCTYPE html>
-<html{dirattr}>
+<html lang='{lang}' dir='{direction}'>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="{html.escape(description)}">
-<title>{html.escape(title)} — {cfg.SITE_NAME}</title>
-<style>{CSS}</style>
-{extra_head}
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>{html.escape(title)} · Nexus Scalp Engine</title>
+<meta name='description' content='{html.escape(desc[:150])}'>
+<link rel='stylesheet' href='/assets/styles.css'>
+<link rel='icon' href='/assets/favicon.svg' type='image/svg+xml'>
 </head>
 <body>
-<header class="topbar">
-  <button class="menubtn" id="menubtn" aria-label="Menu" aria-expanded="false">☰</button>
-  <a class="brand" href="{rel}{lang}/index.html">{cfg.SITE_NAME.replace(" ", "<span> </span>")}</a>
-  <span class="tagline">{tagline}</span>
-  <span class="spacer"></span>
-  {lang_switcher(lang)}
-  <a class="ghlink" href="{cfg.REPO_URL}" title="GitHub repository">GitHub ↗</a>
-</header>
-<div class="drawer" id="drawer" role="dialog" aria-label="Navigation"><nav>{drawer_html}</nav></div>
-<div class="layout">
-  <aside class="sidebar" aria-label="Documentation navigation">{nav_html}</aside>
-  <main class="content" id="main">
-    <input class="searchbox" id="searchbox" type="search"
-           placeholder="{'جستجو…' if lang == 'fa' else 'Buscar…' if lang == 'es' else 'بحث…' if lang == 'ar' else 'Suche…' if lang == 'de' else 'Search docs…'}"
-           aria-label="Search documentation">
-    <div id="search-results"></div>
-{body_html}
-  </main>
-</div>
-<footer>
-  <div class="fl">
-    <a href="{cfg.REPO_URL}">GitHub</a>
-    <a href="{cfg.REPO_URL}/releases">Releases</a>
-    <a href="{cfg.REPO_URL}/issues">Issues</a>
-    <a href="{rel}{lang}/roadmap.html">Roadmap</a>
-    <a href="{rel}{lang}/status.html">Project status</a>
-    <span>v{repo_version()} · documentation built from source — statuses are evidence-graded</span>
-  </div>
+<a class='skip-link' href='#content'>{html.escape(ui["skip"])}</a>
+{build_header(lang)}
+<div class='layout'>
+{build_nav(lang, rel)}
+<main id='content' class='content' tabindex='-1'>
+{status_flag}
+{body}
+<footer class='page-footer'>
+  <a href='{edit_url}'>{html.escape(ui["on_github"])}</a> ·
+  {html.escape(ui["version"])} {PROJECT_VERSION} ·
+  <a href='{PAGES_URL}'>{PAGES_URL}</a>
 </footer>
-<script>{js}</script>
+</main>
+</div>
+<script src='/assets/search.js' defer></script>
 </body>
 </html>"""
 
 
-def render_nav(lang: str, active: str, pages: dict) -> tuple[str, str]:
-    """Sidebar + drawer navigation; nav label falls back to English."""
-    items = []
-    drawer = ['<h4 style="margin-top:0">NEXUS</h4>']
-    for pid, labels in cfg.NAV:
-        label = labels.get(lang) or labels["en"]
-        href = pages.get(pid) or pages.get(f"{pid}@en") or "#"
-        cur = ' aria-current="page" style="font-weight:700"' if pid == active else ""
-        items.append(f'<a href="{href}"{cur}>{html.escape(label)}</a>')
-        drawer.append(f'<a href="{href}">{html.escape(label)}</a>')
-    drawer.append('<h4>Repository</h4><a href="' + cfg.REPO_URL + '/releases">Releases ↗</a>'
-                  '<a href="' + cfg.REPO_URL + '/issues">Issues ↗</a>')
-    return "\n".join(items), "\n".join(drawer)
+def breadcrumbs(lang: str, rel: str) -> str:
+    crumbs: list[str] = []
+    acc: list[str] = []
+    for part in rel.split("/"):
+        acc.append(part)
+        crumbs.append(
+            f"<a href='{lang_prefix(lang)}/{'/'.join(acc)}/'>{html.escape(part.replace('-', ' '))}</a>"
+        )
+    return (
+        "<nav class='breadcrumbs' aria-label='breadcrumb'>🏠 / " + " / ".join(crumbs) + "</nav>"
+        if crumbs
+        else ""
+    )
 
 
-def build_language_tree(pages_by_lang: dict[str, dict[str, dict]]) -> None:
-    pass  # placeholder replaced in main flow
+def build_search_index(entries: list[dict[str, str]]) -> str:
+    slim = [
+        {"u": e["url"], "t": e["title"], "l": e["lang"], "x": e["text"][:1200]} for e in entries
+    ]
+    return "window.NEXUS_SEARCH=" + json.dumps(slim, ensure_ascii=False) + ";\n"
+
+
+def build_404(lang: str = "en") -> str:
+    ui = UI[lang]
+    body = "<h1>404</h1><p>This documentation page does not exist.</p><p><a href='/'>← Home</a></p>"
+    return shell(lang, "404", "Not found", body, "", True).replace(ui["search"], ui["search"])
 
 
 def main() -> int:
-    out_dir = OUT_DEFAULT
     argv = sys.argv[1:]
-    if "--out" in argv:
+    out_dir = OUT_DIR
+    if "--out" in argv:  # doctor/CI use a temp output for validation builds
         out_dir = Path(argv[argv.index("--out") + 1])
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    (out_dir / "assets").mkdir(parents=True)
 
-    # 1. Load all content: site/content/<lang>/<page>.md
-    trees: dict[str, dict[str, dict]] = {}
-    for lang in cfg.LANGUAGES:
-        trees[lang] = {}
-        ldir = CONTENT / lang
-        if not ldir.exists():
-            continue
-        for md in sorted(ldir.glob("*.md")):
-            pid = md.stem
-            meta, body = parse_front_matter(md.read_text(encoding="utf-8"))
-            trees[lang][pid] = {
-                "meta": meta,
-                "body": body,
-                "title": meta.get("title", pid),
-                "desc": meta.get("description", cfg.SITE_TAGLINE.get(lang, "")),
-            }
+    src_css = SITE_DIR / "assets" / "styles.css"
+    src_js = SITE_DIR / "assets" / "search.js"
+    src_icon = SITE_DIR / "assets" / "favicon.svg"
+    for src, dst in ((src_css, "styles.css"), (src_js, "search.js"), (src_icon, "favicon.svg")):
+        if src.exists():
+            shutil.copyfile(src, out_dir / "assets" / dst)
 
-    en = trees.get(cfg.SOURCE_LANG, {})
-    if "start" not in en:
-        print("ERROR: site/content/en/start.md missing — nothing to build", file=sys.stderr)
-        return 1
+    search_entries: list[dict[str, str]] = []
+    built = 0
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    search_index: list[dict] = []
-    pages_by_lang: dict[str, dict[str, str]] = {lang: {} for lang in cfg.LANGUAGES}
+    en_pages = md_pages_in(DOCS_DIR)
+    # Only build pages inside the docs IA tree (skip forensic archive noise).
+    ia_prefixes = tuple(f"{sec}/" for sec, _ in NAV_SECTIONS)
+    en_pages = [
+        p
+        for p in en_pages
+        if p.name == "index.md" or p.relative_to(DOCS_DIR).as_posix().startswith(ia_prefixes)
+    ]
 
-    # First pass: resolve URLs for cross-links (nav + language switcher)
-    for lang in cfg.LANGUAGES:
-        for pid in trees[lang]:
-            pages_by_lang[lang][pid] = f"../{lang}/{pid}.html"
-
-    def resolve(page_id: str, lang: str) -> str:
-        """URL of page_id in lang, falling back to English with the same rel depth."""
-        if page_id in trees[lang]:
-            return f"{page_id}.html"
-        if page_id in en:
-            return f"../en/{page_id}.html"
-        return "index.html"
-
-    # Second pass: render every page in every language
-    for lang, pages in trees.items():
-        ldir = out_dir / lang
-        ldir.mkdir(parents=True, exist_ok=True)
-        meta_cfg = cfg.LANGUAGES[lang]
-        for pid, page in pages.items():
-            # Translation fallback: missing pages in non-source languages render
-            # the English body with a bilingual notice (never a 404).
-            notice = ""
-            body = page["body"]
-            if lang != cfg.SOURCE_LANG and pid not in en:
-                notice = ""
-            if lang != cfg.SOURCE_LANG and pid in en and page["meta"].get("translation-status") != "complete":
-                en_title = en[pid]["title"]
-                notice = f'<div class="callout"><p>🇬🇧 This page shows the English source — {meta_cfg["name"]} translation in progress. <a href="../en/{pid}.html">Open English original</a>.</p></div>'
-            nav_html, drawer_html = render_nav(lang, pid, pages_by_lang[lang])
-            body_html = (
-                f'<section class="hero"><h1>{html.escape(page["title"])}</h1>'
-                f'<p class="sub">{html.escape(page["desc"])}</p>'
-                f'<div class="badges"><span class="badge ok">v{repo_version()}</span>'
-                f'<span class="badge">{lang.upper()} · {meta_cfg["dir"].upper()}</span>'
-                f'<span class="badge">evidence-graded documentation</span></div></section>'
-                + notice
-                + md_to_html(body)
-            )
-            html_text = page_shell(
-                lang=lang,
-                title=page["title"],
-                description=page["desc"],
-                body_html=body_html,
-                nav_html=nav_html,
-                drawer_html=drawer_html,
-                rel="../",
-            )
-            (ldir / f"{pid}.html").write_text(html_text, encoding="utf-8")
-            search_index.append(
+    for lang in LANGUAGES:
+        lang_root = out_dir if lang == "en" else out_dir / lang
+        if lang != "en":
+            lang_root.mkdir(parents=True, exist_ok=True)  # en renders at site root
+        for page in en_pages:
+            rel = strip_md_ext(page, DOCS_DIR)
+            translated = False
+            src_path = page
+            if lang != "en":
+                tpath = find_translation(lang, rel)
+                if tpath is None:
+                    continue  # build only translated pages under /<lang>/; EN covers the rest
+                src_path = tpath
+                translated = True
+            fm, body = parse_front_matter(src_path.read_text(encoding="utf-8"))
+            title = page_title(fm, body, rel)
+            desc = fm.get("description", f"{title} — Nexus Scalp Engine documentation")
+            html_body = render_markdown(body)
+            crumb = breadcrumbs(lang, rel)
+            if crumb:
+                html_body = crumb + "\n" + html_body
+            outpath = lang_root / rel / "index.html"
+            outpath.parent.mkdir(parents=True, exist_ok=True)
+            page_html = shell(lang, title, desc, html_body, rel, translated or lang == "en")
+            outpath.write_text(page_html, encoding="utf-8", newline="\n")
+            built += 1
+            search_entries.append(
                 {
-                    "href": f"{lang}/{pid}.html",
-                    "title": f"{page['title']} ({meta_cfg['name']})",
-                    "text": re.sub(r"\s+", " ", re.sub(r"[#*`>|{}\[\]]", " ", body))[:1200],
+                    "url": f"{lang_prefix(lang)}/{rel}/",
+                    "title": f"{title} [{lang}]",
+                    "lang": lang,
+                    "text": re.sub(r"<[^>]+>", " ", html_body)[:2000],
                 }
             )
 
-    # Root redirect -> English start page
-    (out_dir / "index.html").write_text(
-        f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
-        f'<meta http-equiv="refresh" content="0; url=en/start.html">'
-        f'<link rel="canonical" href="{cfg.PAGES_URL}/en/start.html">'
-        f"<title>{cfg.SITE_NAME}</title></head><body>"
-        f'<p>Redirecting to <a href="en/start.html">the documentation</a>…</p></body></html>',
-        encoding="utf-8",
-    )
+    # Root index: redirect-less landing built from EN index page.
+    en_index = out_dir / "index" / "index.html"
+    if en_index.exists():
+        (out_dir / "index.html").write_bytes(en_index.read_bytes())
 
-    (out_dir / "search.json").write_text(
-        json.dumps(search_index, ensure_ascii=False), encoding="utf-8"
+    # Favicon fallback + 404
+    if not (out_dir / "assets" / "favicon.svg").exists():
+        (out_dir / "assets" / "favicon.svg").write_text(
+            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='24' font-size='24'>⚡</text></svg>",
+            encoding="utf-8",
+        )
+    (out_dir / "404.html").write_text(build_404(), encoding="utf-8", newline="\n")
+    (out_dir / "search-index.json").write_text(
+        json.dumps(search_entries, ensure_ascii=False), encoding="utf-8", newline="\n"
     )
-    # nojekyll: serve everything as plain static files
-    (out_dir / ".nojekyll").write_text("", encoding="utf-8")
-
-    total_pages = sum(len(p) for p in trees.values())
-    print(f"Site built: {total_pages} pages across {len(trees)} languages -> {out_dir}")
+    print(f"BUILT pages={built} langs={len(LANGUAGES)} out={out_dir}")
     return 0
 
 

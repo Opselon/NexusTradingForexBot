@@ -31,10 +31,10 @@ validación que puede decir *no* es exactamente el punto.
 ## Qué puedes hacer desde aquí
 
 - **Ejecutarlo** — modo PAPER por defecto, nunca LIVE en silencio:
-  [inicio rápido](getting-started/quickstart.md).
-- **Entenderlo** — [arquitectura](architecture/overview.md) y el
-  [flujo de datos](architecture/data-flow.md) de tick a decisión.
-- **Juzgar la investigación** — [metodología](research/methodology.md) y el
+  [inicio rápido](/es/getting-started/quickstart/).
+- **Entenderlo** — [arquitectura](/architecture/overview/) y el
+  [flujo de datos](/architecture/data-flow/) de tick a decisión.
+- **Juzgar la investigación** — [metodología](/research/methodology/) y el
   [estado del proyecto](project/status.md), graduado por capacidad con evidencia.
-- **Contribuir** — la [guía de contribución](contributing/contribution-guide.md)
+- **Contribuir** — la [guía de contribución](/contributing/contribution-guide/)
   destila un contrato de ingeniería multi-agente en un flujo de trabajo humano.

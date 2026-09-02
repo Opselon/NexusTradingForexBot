@@ -29,10 +29,10 @@ XAUUSD (طلا) در تایم‌فریم M1 — که **۵۰ ویژگی علی**�
 ## از این‌جا چه می‌توانید بکنید؟
 
 - **اجرا کنید** — حالت PAPER پیش‌فرض است و هرگز بی‌اجازه LIVE نمی‌شود:
-  [شروع سریع](getting-started/quickstart.md).
-- **بفهمید چطور کار می‌کند** — [معماری](architecture/overview.md) و
-  [جریان داده](architecture/data-flow.md) از تیک تا تصمیم.
-- **پژوهش را قضاوت کنید** — [روش‌شناسی](research/methodology.md) و
+  [شروع سریع](/fa/getting-started/quickstart/).
+- **بفهمید چطور کار می‌کند** — [معماری](/fa/architecture/overview/) و
+  [جریان داده](/architecture/data-flow/) از تیک تا تصمیم.
+- **پژوهش را قضاوت کنید** — [روش‌شناسی](/research/methodology/) و
   [وضعیت پروژه](project/status.md) که برای هر قابلیت با شواهد درجه‌بندی شده است.
-- **مشارکت کنید** — [راهنمای مشارکت](contributing/contribution-guide.md)
+- **مشارکت کنید** — [راهنمای مشارکت](/contributing/contribution-guide/)
   قرارداد مهندسی چند-عاملی را به گردش کار انسانی تبدیل می‌کند.

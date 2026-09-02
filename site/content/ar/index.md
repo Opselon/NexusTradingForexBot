@@ -28,10 +28,10 @@ source-revision: en:site-content-index@2026-09-02
 ## ماذا يمكنك أن تفعل من هنا؟
 
 - **شغّله** — وضع PAPER افتراضيًا، ولا يتحول إلى LIVE بصمت أبدًا:
-  [البداية السريعة](getting-started/quickstart.md).
-- **افهم كيف يعمل** — [المعمارية](architecture/overview.md) و
-  [تدفق البيانات](architecture/data-flow.md) من التيك إلى القرار.
-- **قيّم البحث** — [المنهجية](research/methodology.md) و
+  [البداية السريعة](/ar/getting-started/quickstart/).
+- **افهم كيف يعمل** — [المعمارية](/architecture/overview/) و
+  [تدفق البيانات](/architecture/data-flow/) من التيك إلى القرار.
+- **قيّم البحث** — [المنهجية](/research/methodology/) و
   [حالة المشروع](project/status.md) المدرَّجة لكل قدرة مع الأدلة.
-- **ساهم** — [دليل المساهمة](contributing/contribution-guide.md) يقطّر عقد
+- **ساهم** — [دليل المساهمة](/contributing/contribution-guide/) يقطّر عقد
   هندسة متعدد الوكلاء إلى سير عمل بشري.
