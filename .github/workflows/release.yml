@@ -104,8 +104,8 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip setuptools wheel
+          # pytest-cov ships in the [dev] extra installed above.
           pip install -e ".[dev,web]"
-          pip install pytest-cov
       - name: Ruff lint
         run: ruff check .
       - name: Ruff format check
@@ -162,8 +162,8 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip setuptools wheel
+          # pytest-cov ships in the [dev] extra installed above.
           python -m pip install -e ".[dev,web,release]"
-          python -m pip install pytest-cov
           Write-Host "torch/pyinstaller ready"
       - name: Write build-info.json
         shell: pwsh
