@@ -5,6 +5,7 @@ elapsed interval (>= 3.0s) allowed; shared gate across telemetry + exit-log;
 survives repeated calls; cleanup releases the ticket; compat property returns
 the LIVE dict.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,8 +57,15 @@ class TestTelemetryThrottle:
     def test_no_authority(self):
         root = Path(__import__("nexus_scalp.execution.telemetry_throttle", fromlist=["x"]).__file__)
         text = root.read_text(encoding="utf-8")
-        for banned in ("adapter", "order_send", "close_position", "IMT5Port",
-                       "AuditRepository", "TelegramNotifier", "notifier"):
+        for banned in (
+            "adapter",
+            "order_send",
+            "close_position",
+            "IMT5Port",
+            "AuditRepository",
+            "TelegramNotifier",
+            "notifier",
+        ):
             assert banned not in text
 
     def test_manager_property_live_dict(self):
@@ -67,7 +75,10 @@ class TestTelemetryThrottle:
         assert "return self._telemetry._last_telemetry_time" in src
         # cleanup bundle still releases the entry via the live dict
         bundle = src.split("def _cleanup_ticket_state")[1].split("def ")[0]
-        assert "_last_telemetry_time.pop(ticket, None)" in bundle or "self._last_telemetry_time," in bundle
+        assert (
+            "_last_telemetry_time.pop(ticket, None)" in bundle
+            or "self._last_telemetry_time," in bundle
+        )
 
     def test_manager_throttle_wiring(self):
         """The institutional telemetry block uses the throttle owner."""

@@ -14,6 +14,7 @@ Contract (BUG-129):
     - first emission for an unseen ticket is always allowed (get(ticket, 0.0)
       semantics)
 """
+
 from __future__ import annotations
 
 
@@ -25,7 +26,9 @@ class TelemetryThrottle:
     def __init__(self) -> None:
         self._last_telemetry_time: dict[int, float] = {}
 
-    def may_emit(self, ticket: int, current_time: float, interval: float = DEFAULT_INTERVAL) -> bool:
+    def may_emit(
+        self, ticket: int, current_time: float, interval: float = DEFAULT_INTERVAL
+    ) -> bool:
         """Whether telemetry may be emitted now for this ticket."""
         return (current_time - self._last_telemetry_time.get(ticket, 0.0)) >= interval
 
