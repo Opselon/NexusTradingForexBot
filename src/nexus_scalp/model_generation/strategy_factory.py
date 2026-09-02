@@ -120,7 +120,9 @@ HUNTER_STRATEGIES: dict[str, HunterStrategy] = {
         rr_floor=1.8,
         max_spread_atr=0.40,
         atr_stop_mult=1.2,
-        atr_tp_mult=2.0,
+        # Derived RR = atr_tp_mult/atr_stop_mult must be >= rr_floor, else the
+        # RR_BELOW_FLOOR gate in _evaluate_one NO-GOs EVERY entry (dead strategy).
+        atr_tp_mult=2.4,  # 2.4/1.2 = 2.0 >= rr_floor 1.8
     ),
     "hunter_momentum_v1": HunterStrategy(
         strategy_id="hunter_momentum_v1",
@@ -156,7 +158,7 @@ HUNTER_STRATEGIES: dict[str, HunterStrategy] = {
         rr_floor=1.8,
         max_spread_atr=0.30,
         atr_stop_mult=0.9,
-        atr_tp_mult=1.6,
+        atr_tp_mult=1.8,  # 1.8/0.9 = 2.0 >= rr_floor 1.8 (was 1.6 -> 1.78 < 1.8, dead)
         regime_ok=("RANGING",),
     ),
     "hunter_reversal_v1": HunterStrategy(

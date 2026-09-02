@@ -77,3 +77,4 @@ tests/unit/test_web_ux_safety.py
 # BREAKING/STALE encodings (4.0/5.0) exceeded the [-3,+3] family bound; producer-side
 # repair mirrors the dataset clamp semantics. Companion to BUG-190/BUG-197.
 tests/unit/test_bug217_news_state_bounds.py
+tests/unit/test_strategy_factory_registry_invariant.py
