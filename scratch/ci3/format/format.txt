@@ -1,9 +1,0 @@
-unformatted: File would be reformatted
-   --> docs/api/API_REFERENCE.md:133:1
-    |
-132 | from nexus_scalp.api_client import NexusApiError
-133 +
-134 | try:
-    |
-
-1 file would be reformatted, 1441 files already formatted

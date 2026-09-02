@@ -1,7 +1,0 @@
-{
-  "check": "pytest",
-  "detail": "see pytest/junit.xml + pytest.txt",
-  "exit_code": 1,
-  "status": "failed",
-  "timestamp": "2026-09-02T03:45:20Z"
-}

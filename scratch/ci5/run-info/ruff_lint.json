@@ -1,7 +1,0 @@
-{
-  "check": "ruff_lint",
-  "detail": "violations found (see ruff/)",
-  "exit_code": 0,
-  "status": "passed",
-  "timestamp": "2026-09-02T04:11:14Z"
-}

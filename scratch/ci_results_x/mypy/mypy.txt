@@ -1,5 +1,0 @@
-src/nexus_scalp/database/engine.py:493: error: Incompatible types in assignment (expression has type "tuple[str, ...]", variable has type "list[str]")  [assignment]
-src/nexus_scalp/release/health.py:111: error: Dict entry 5 has incompatible type "str": "bool"; expected "str": "str"  [dict-item]
-src/nexus_scalp/news/pro_auto.py:284: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
-src/nexus_scalp/web/server.py:2579: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
-Found 2 errors in 2 files (checked 416 source files)

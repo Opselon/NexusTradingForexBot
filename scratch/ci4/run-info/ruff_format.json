@@ -1,7 +1,0 @@
-{
-  "check": "ruff_format",
-  "detail": "files would be reformatted (see format/)",
-  "exit_code": 0,
-  "status": "passed",
-  "timestamp": "2026-09-02T03:39:25Z"
-}
