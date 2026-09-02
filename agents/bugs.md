@@ -7289,3 +7289,30 @@ down remain P2 follow-ups for the next shadow pass.
 - doctor_cmd fetches `verdict, entries = _health_entries()` unconditionally
   before the human/JSON-branch split (commit ab83e22). 39 tests PASS
   (e2e_05 + test_runtime_truth_hardening.py 38).
+
+## BUG-197B - Live 70D news block slot 50 carried the RAW aggregate event count: every tick with >=4 active high-impact events failed the [-3,+3] contract and blocked ALL live 70D inference (2026-09-02, Nexus-Main client E2E acceptance)
+
+- CLASS: train/live feature-encoding divergence (BUG-190 sibling, one layer deeper).
+- DISCOVERED BY: black-box client E2E acceptance (golden user journey): engine booted
+  `--mode paper` yet every inference tick logged `70D contract validation failed: value 27.0
+  at index 50 (family=news) out of [-3,+3]`; 13,000+ occurrences in one engine stdout log;
+  header health badge locked on STALE (live_freshness overall=STALE, market/features/inference
+/decision all STALE) while MT5 connection reported CONNECTED — a technically competent user
+  could not tell from the UI WHY the engine showed no fresh intelligence.
+- MECHANISM: news_bridge training rows encode `active_high_impact_events` as a per-event
+  0/1 flag (max 1.0, asserted by test_news_block_semantics_train_vs_live_documented), but
+  governance/alignment.vectorize_news_context (slot 0, index 50) emitted the live
+  CurrentNewsContext.active_event_count AGGREGATE count verbatim. validate_70d_vector then
+  correctly rejected the whole vector (the guard worked; the producer lied). The BUG-190
+  smoke bundle (all-zero news training) masked slot-50 saturation; any real news load
+  (>=4 events -> count > 3.0) tripped the bound on EVERY tick.
+- FIX (smallest correct layer, 1 file): vectorize_news_context now encodes the bounded
+  flag `1.0 if raw >= 1 else max(0.0, raw)` at the training distribution maximum —
+  in-distribution AND in-bounds; raw count stays on the context object for observability.
+  Inference/retrain record builders untouched (they consume the same canonical projection).
+- REGRESSION: tests/unit/test_bug197_news_count_bounds.py (4 tests: bounds+in-distribution
+  for counts 0/1/2/5/27/500, zero-events->0.0, one-event->1.0, other slots keep real scores);
+  BUG-190 parity pin updated 27.0 -> 1.0 with BUG-197 citation (FAIL-BEFORE captured:
+  4/9 tests red pre-fix, 0 red post-fix).
+- NOTE: BUG-197 numbering was claimed mid-flight by the DB-platform owner (migration gate
+  hazard); this row takes BUG-197B per the duplicate/disambiguation rule.
