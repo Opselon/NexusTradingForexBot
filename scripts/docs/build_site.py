@@ -711,6 +711,26 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
     canonical = f"{PAGES_URL}{abs_url(rel, lang)}"
     locale_json = json.dumps(LOCALES[lang]["ui"], ensure_ascii=False)
     lang_json = json.dumps(lang)
+    hreflang_links = (
+        " ".join(
+            f"<link rel='alternate' hreflang='{code}' href='{PAGES_URL}{abs_url(rel, code)}'>"
+            for code in LANGUAGES
+        )
+        + f"<link rel='alternate' hreflang='x-default' href='{PAGES_URL}{abs_url(rel, 'en')}'>"
+    )
+    jsonld = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "TechArticle" if rel not in ("", "docs-hub") else "WebSite",
+            "headline": title,
+            "description": desc[:200],
+            "inLanguage": lang,
+            "url": canonical,
+            "author": {"@type": "Organization", "name": "Nexus Scalp Engine"},
+            "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"},
+        },
+        ensure_ascii=False,
+    )
     status_flag = (
         ""
         if (translated or lang == "en")
@@ -731,10 +751,16 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 <meta property='og:type' content='website'>
 <meta property='og:url' content='{canonical}'>
 <meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta name='twitter:card' content='summary'>
+<meta name='twitter:title' content='{html.escape(title)}'>
+<meta name='twitter:description' content='{html.escape(desc[:150])}'>
+{hreflang_links}
+<script type='application/ld+json'>{jsonld}</script>
 <link rel='stylesheet' href='{asset_href(rel, "styles.css", lang)}'>
 <link rel='icon' href='{asset_href(rel, "favicon.svg", lang)}' type='image/svg+xml'>
 </head>
 <body>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
 <a class='skip-link' href='#content'>{html.escape(ui["skip"])}</a>
 {build_header(lang, rel)}
 <div class='layout'>
@@ -907,6 +933,15 @@ def homepage_html(lang: str = "en") -> str:
 {whats_new}
 <section class='secs'><div class='section-head'><h2>📚 {html.escape(ui["explore_docs"])}</h2></div>
 <div class='sec-grid'>{grid}</div></section>
+<section class='pipe-block'><div class='section-head'><h2>⚙️ {html.escape(t(lang, "ui.how_it_works"))}</h2></div>
+<div class='pipe'>
+<a class='pipe-node' href='{page_href("architecture/data-flow/", lang, from_rel)}'>DATA → FEATURES</a>
+<a class='pipe-node' href='{page_href("architecture/model-pipeline/", lang, from_rel)}'>MODEL</a>
+<a class='pipe-node' href='{page_href("guides/api/", lang, from_rel)}'>STRATEGY / API</a>
+<a class='pipe-node' href='{page_href("architecture/execution-pipeline/", lang, from_rel)}'>RISK</a>
+<a class='pipe-node' href='{page_href("architecture/runtime/", lang, from_rel)}'>EXECUTION</a>
+<a class='pipe-node' href='{page_href("architecture/observability/", lang, from_rel)}'>OBSERVABILITY</a>
+</div></section>
 <section class='timeline-block'><div class='section-head'><h2>🗓️ {html.escape(ui["release_timeline"])}</h2>
 <a class='wn-more' href='{page_href("releases/", lang, from_rel)}'>{html.escape(ui["all_releases"])} →</a></div>
 <div class='timeline'>{timeline}</div></section>
@@ -1151,6 +1186,11 @@ def main() -> int:
             },
             indent=1,
         ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    (out_dir / "robots.txt").write_text(
+        "User-agent: *\nAllow: /\n\nSitemap: " + PAGES_URL + "/sitemap.xml\n",
         encoding="utf-8",
         newline="\n",
     )

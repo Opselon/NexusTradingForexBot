@@ -81,7 +81,8 @@
     "cap_highlights": "Capability highlights",
     "callout_important": "IMPORTANT",
     "callout_note": "NOTE",
-    "callout_warning": "WARNING"
+    "callout_warning": "WARNING",
+    "how_it_works": "How Nexus works"
   },
   "nav": {
     "getting-started": "Getting Started",

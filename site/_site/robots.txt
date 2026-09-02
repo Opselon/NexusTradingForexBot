@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://opselon.github.io/NexusTradingForexBot/sitemap.xml

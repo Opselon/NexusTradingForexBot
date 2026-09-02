@@ -443,3 +443,68 @@ a:focus-visible, summary:focus-visible, input:focus-visible, button:focus-visibl
   .sec-card:hover, .pillar:hover, .tl-item:hover { transform: none; }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* ================= nx-* design tokens (Elite layer) ====================== */
+:root {
+  --nx-bg: var(--bg);
+  --nx-bg-elevated: var(--card);
+  --nx-bg-soft: var(--accent-soft);
+  --nx-text: var(--fg);
+  --nx-text-muted: var(--muted);
+  --nx-border: var(--border);
+  --nx-accent: var(--accent);
+  --nx-accent-soft: var(--accent-soft);
+  --nx-accent-strong: var(--accent);
+  --nx-success: var(--ok);
+  --nx-warning: var(--warn);
+  --nx-danger: #f85149;
+  --nx-radius-sm: 7px; --nx-radius-md: 10px; --nx-radius-lg: 14px; --nx-radius-xl: 18px;
+  --nx-shadow-sm: var(--shadow); --nx-shadow-lg: var(--shadow-lg);
+  --nx-shadow-glow: 0 0 0 1px var(--accent-soft), 0 8px 30px var(--accent-soft);
+  --nx-space-1: 4px; --nx-space-2: 8px; --nx-space-3: 12px; --nx-space-4: 16px;
+  --nx-space-5: 24px; --nx-space-6: 32px; --nx-space-7: 48px; --nx-space-8: 64px;
+  --nx-content-width: 1180px; --nx-reading-width: 74ch;
+  --nx-duration-fast: 0.15s; --nx-duration-normal: 0.25s; --nx-duration-slow: 0.5s;
+  --nx-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* pipeline strip (HOW NEXUS WORKS) */
+.pipe {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--nx-space-3); margin: var(--nx-space-5) 0; counter-reset: pipe;
+}
+.pipe-node {
+  position: relative; border: 1px solid var(--border); border-radius: var(--nx-radius-md);
+  background: var(--card); padding: 14px 12px 12px; color: var(--fg);
+  text-align: center; font-size: 0.86rem; font-weight: 600;
+  transition: transform var(--nx-duration-fast) var(--nx-ease), border-color var(--nx-duration-fast) ease, box-shadow var(--nx-duration-fast) ease;
+}
+.pipe-node::before {
+  counter-increment: pipe; content: "0" counter(pipe);
+  display: block; font-size: 0.68rem; letter-spacing: 0.14em;
+  color: var(--accent); margin-bottom: 6px; font-weight: 800;
+}
+.pipe-node:hover {
+  text-decoration: none; transform: translateY(-3px);
+  border-color: var(--nx-accent); box-shadow: var(--nx-shadow-glow);
+}
+.pipe-node + .pipe-node::after {
+  content: "→"; position: absolute; inset-inline-start: -14px; top: 50%;
+  transform: translateY(-50%); color: var(--muted); font-size: 0.9rem;
+}
+[dir="rtl"] .pipe-node + .pipe-node::after { content: "←"; }
+
+/* reading progress + TOC */
+.reading-progress {
+  position: fixed; top: 0; inset-inline-start: 0; height: 3px; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--exp, var(--accent)));
+  z-index: 60; transition: width 0.08s linear; pointer-events: none;
+}
+.onthispage { font-size: 0.85rem; }
+.onthispage ul { list-style: none; margin: 0; padding-inline-start: 10px; border-inline-start: 1px solid var(--border); }
+.onthispage a { display: block; padding: 2px 8px; color: var(--muted); border-radius: 5px; }
+.onthispage a.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+
+@media (min-width: 1280px) {
+  .content.has-toc { max-width: 820px; }
+}

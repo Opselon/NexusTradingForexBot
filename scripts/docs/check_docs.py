@@ -364,6 +364,48 @@ def check_localization_gate() -> None:
     record("Localization gate (FA/AR)", ok, [detail])
 
 
+def check_seo_gate() -> None:
+    """Elite SEO gate: title/desc/canonical/OG/twitter/hreflang/JSON-LD per page."""
+    import subprocess
+
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "docs" / "check_seo.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=120,
+        check=False,
+    )
+    ok = proc.returncode == 0
+    detail = "ok" if ok else (proc.stdout.strip().splitlines()[-1] if proc.stdout else "failed")
+    record("SEO gate", ok, [detail])
+
+
+def check_perf_budget() -> None:
+    """Performance budget: CSS/JS sizes + largest HTML page."""
+    public = REPO_ROOT / "site" / "_site"
+    problems: list[str] = []
+    css = public / "assets" / "styles.css"
+    js = public / "assets" / "search.js"
+    css_kb = css.stat().st_size / 1024 if css.exists() else 0
+    js_kb = js.stat().st_size / 1024 if js.exists() else 0
+    if css_kb > 40:
+        problems.append(f"CSS {css_kb:.1f}KB > 40KB budget")
+    if js_kb > 12:
+        problems.append(f"JS {js_kb:.1f}KB > 12KB budget")
+    largest = 0
+    for h in public.rglob("*.html"):
+        largest = max(largest, h.stat().st_size)
+    if largest > 120 * 1024:
+        problems.append(f"largest HTML {largest // 1024}KB > 120KB budget")
+    record(
+        "Perf budget",
+        not problems,
+        problems[:6]
+        or [f"CSS {css_kb:.1f}KB / JS {js_kb:.1f}KB / largest HTML {largest // 1024}KB"],
+    )
+
+
 def check_mermaid() -> None:
     problems: list[str] = []
     for md in iter_markdown([DOCS, REPO_ROOT / "README.md"]):
@@ -497,6 +539,8 @@ def main() -> int:
     check_rtl_built_site()
     check_built_site_structure()
     check_localization_gate()
+    check_seo_gate()
+    check_perf_budget()
     check_mermaid()
     check_build()
     check_assets()
