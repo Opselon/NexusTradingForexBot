@@ -1549,3 +1549,50 @@ Scope (2026-09-02):
   remains final authority; no command logic duplicated in YAML beyond
   invocation).
 Status: IN_PROGRESS -> verification
+
+## CHG-0048 ADDENDUM - Post-churn re-certification (TASK-UX-01 followup, 2026-09-02, Nexus-Main UX)
+
+Scope: additive status update ONLY (original CHG-0048 scope unchanged, zero new
+runtime changes).
+
+Re-certified all 8 delivered parts at post-churn HEAD 5b9c726 (after the Control
+Center cc_* modules + /api/operator/*, BUG-205/206/209 fixes, docs Pages v2,
+runtime gate work landed on top):
+
+1. SERVED BUNDLE: all six ux_*.js assets resolve over their explicit
+   FileResponse routes via repo-venv TestClient create_app(engine_ref=None)
+   with HTTP 200 and BYTE-IDENTICAL content to disk (route identity proof).
+   /app.js (X-UI-Bundle-Source=REPO), /, /cc_state.js, /cc_components.js,
+   /control_center.js, /replay_panel.js also 200. Broken-local-refs gate
+   (test_frontend_assets_phase14) green.
+2. SUITES RE-RUN: tests/unit/test_web_ux_safety.py 28 passed (plus
+   test_frontend_assets_phase14.py: 69 passed combined); node --check 6/6 OK;
+   node --test tests/js 66 passed.
+3. INTERACTION MATRIX vs NEW cc_* LAYER (27 checks, scratch/ux_cert_matrix.js,
+   ALL_PASS, committed 43763f7):
+   - typed-LIVE guard (ux.js) vs CC Stop-Bot/Start confirmDialog
+     (cc_components.js): separate DOM roots (data-ux-* dialog vs
+     ccb-confirm-overlay), separate Esc/Enter handling, my global keydown
+     early-returns while the dialog is hidden, CC removes its keydown listener
+     on close -> the two-layer confirmation design coexists by construction.
+   - NXConn banner vs cc_state STALE semantics: disjoint scopes - NXConn is
+     global transport truth (SSE/fetch health), cc_state STALE is per-resource
+     data freshness (2.5x interval). cc_state never calls NXConn.*; the banner
+     is fed exclusively by app.js live-event call sites (>=10). No duplicate
+     event listeners (max one document-level keydown per my module), no id
+     collisions (a naive probe flagged 'tab' from both files; proven to be
+     VARIABLE names, not id literals - false positive corrected).
+   - Palette shortcut keys vs CC views: all 14 palette tabs exist in
+     index.html; palette contains no mode/stop commands (dangerous actions
+     remain behind the CC confirmDialog / typed-LIVE gates); Ctrl+K, Alt+1..4,
+     R do not collide with CC handlers (CC has no global keydown of its own).
+   - No broken-local-refs: every index.html local src/href resolves to a
+     served route (incl. vendor/fontawesome/all.min.css).
+4. DEFECTS IN MY FILES: NONE found at HEAD -> zero repairs required. The two
+   post-churn UX defects (BUG-205 replay_panel.js 404, BUG-206 CC blank panel)
+   were foreign-file defects and were fixed by their owners (580626f, 7c9401d).
+5. Registries updated additively: taskboard row
+   "TASK-UX-01 (post-churn certification)" + this addendum. Server restart to
+   serve the new bundle to a live browser remains a runtime-owner step (was
+   already pending at CHG-0048 closure; file-level serving routes verified
+   green at HEAD).
