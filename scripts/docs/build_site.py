@@ -629,6 +629,14 @@ def build_header(lang: str, rel: str) -> str:
   </div>
   <div class='header-actions'>
     <input id='doc-search' class='search' type='search' placeholder='{html.escape(ui["search"])}' aria-label='{html.escape(ui["search"])}' autocomplete='off'>
+    <details class='theme-picker'>
+      <summary aria-label='{html.escape(ui["theme"])}' title='{html.escape(ui["theme"])}'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ {html.escape(ui["theme_light"])}</button>
+        <button type='button' data-theme-set='dark'>☾ {html.escape(ui["theme_dark"])}</button>
+        <button type='button' data-theme-set='system'>🖥 {html.escape(ui["theme_system"])}</button>
+      </div>
+    </details>
     <details class='lang-picker'>
       <summary aria-label='{html.escape(ui["language"])}'>🌐 {html.escape(LANGUAGES[lang]["native"])}</summary>
       {lang_switcher(lang, rel, from_rel)}

@@ -42,6 +42,52 @@
     });
   }
 
+
+  /* ------------------------------ theme menu ----------------------------- */
+  var themePicker = document.querySelector(".theme-picker");
+  if (themePicker) {
+    themePicker.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("[data-theme-set]");
+      if (!btn) return;
+      var pref = btn.getAttribute("data-theme-set");
+      try { localStorage.setItem("nexus-theme", pref); } catch (e) {}
+      var dark = pref === "dark" || (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme-pref", pref);
+      themePicker.removeAttribute("open");
+    });
+  }
+
+  /* ----------------------------- copy code ------------------------------- */
+  var L = window.NEXUS_LOCALE || {};
+  function tr(key, fallback) { return (L && L[key]) || fallback; }
+  document.querySelectorAll(".copy-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var pre = btn.parentNode ? btn.parentNode.querySelector("pre") : null;
+      if (!pre) return;
+      var text = pre.innerText;
+      var done = function (ok) {
+        btn.textContent = ok ? "✓" : "✕";
+        btn.classList.add(ok ? "copied" : "copy-err");
+        setTimeout(function () {
+          btn.textContent = "⧉";
+          btn.classList.remove("copied", "copy-err");
+        }, 1400);
+        var live = document.getElementById("copy-live");
+        if (live) live.textContent = ok ? tr("copied", "Copied") : tr("copy_error", "Copy failed");
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+      } else { done(false); }
+    });
+  });
+  // aria-live region once
+  if (!document.getElementById("copy-live") && document.body) {
+    var live = document.createElement("span");
+    live.id = "copy-live"; live.className = "visually-hidden"; live.setAttribute("aria-live", "polite");
+    document.body.appendChild(live);
+  }
+
   /* -------------------------------- search -------------------------------- */
   var input = document.getElementById("doc-search");
   if (!input) return;
@@ -99,7 +145,7 @@
       hits.sort(function (a, b) { return b[0] - a[0]; });
       box.innerHTML = "";
       if (!hits.length) {
-        box.innerHTML = "<div class='search-empty'>—</div>";
+        box.innerHTML = "<div class='search-empty'>" + tr("no_results", "—") + "</div>";
         return;
       }
       hits.slice(0, 8).forEach(function (pair) {

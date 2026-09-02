@@ -360,3 +360,86 @@ a:focus-visible, summary:focus-visible, input:focus-visible, button:focus-visibl
 @media print {
   .site-header, .sidebar, .prev-next, .search-results { display: none; }
 }
+
+/* =================== P2 premium layer (data-theme + 3D) =================== */
+:root[data-theme="dark"] {
+  --bg: #0b1220; --fg: #e6ebf4; --muted: #97a2b6; --border: #232c3f;
+  --card: #111a2c; --accent: #4da3ff; --accent-fg: #06121f;
+  --accent-soft: rgba(77, 163, 255, 0.12);
+  --code-bg: #060b16; --code-fg: #dbe4f0;
+  --ok: #3fb950; --warn: #d29922; --exp: #b48cff;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+:root[data-theme="light"] {
+  --bg: #ffffff; --fg: #16202f; --muted: #5b6577; --border: #dde3ec;
+  --card: #f6f8fb; --accent: #0b62d6; --accent-fg: #ffffff;
+  --accent-soft: rgba(11, 98, 214, 0.09);
+  --code-bg: #0f172a; --code-fg: #e2e8f0;
+  --ok: #1a7f37; --warn: #b45309; --exp: #7c3aed;
+}
+
+/* layered surfaces + soft depth (hover-only transforms; no layout shift) */
+.hero {
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+.hero::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--accent-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--accent-soft) 1px, transparent 1px);
+  background-size: 34px 34px;
+  opacity: 0.35;
+  mask-image: radial-gradient(60% 80% at 70% 20%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(60% 80% at 70% 20%, #000 30%, transparent 100%);
+  pointer-events: none;
+}
+.hero::after {
+  content: "";
+  position: absolute; inset-inline-end: -60px; top: -60px;
+  width: 320px; height: 320px; border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+  pointer-events: none;
+}
+.sec-card, .pillar, .tl-item, .release-card {
+  transition: transform var(--duration-fast, 0.15s) var(--ease-standard, ease),
+              box-shadow var(--duration-fast, 0.15s) ease,
+              border-color var(--duration-fast, 0.15s) ease;
+  will-change: transform;
+}
+.sec-card:hover, .pillar:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg, 0 8px 28px rgba(15, 23, 42, 0.14));
+  border-color: var(--accent);
+}
+.copy-btn {
+  position: absolute; inset-inline-end: 10px; top: 10px; z-index: 2;
+  border: 1px solid rgba(255,255,255,0.25); background: rgba(15,23,42,0.55);
+  color: #e2e8f0; border-radius: 6px; padding: 2px 9px; cursor: pointer; font-size: 0.85rem;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.copy-btn:hover { background: rgba(15,23,42,0.8); transform: scale(1.05); }
+.copy-btn.copied { color: var(--ok); border-color: var(--ok); }
+.copy-btn.copy-err { color: var(--warn); border-color: var(--warn); }
+.codeblock { position: relative; }
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.theme-picker summary { cursor: pointer; }
+.theme-menu button {
+  display: block; width: 100%; text-align: start; padding: 6px 10px;
+  background: transparent; border: 0; border-radius: 6px; font-size: 0.9rem;
+  color: var(--fg); cursor: pointer;
+}
+.theme-menu button:hover { background: var(--card); }
+.reveal { opacity: 0; transform: translateY(10px); transition: opacity 0.4s ease, transform 0.4s ease; }
+.reveal.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hero::before, .hero::after { display: none; }
+  .sec-card:hover, .pillar:hover, .tl-item:hover { transform: none; }
+  .reveal { opacity: 1; transform: none; }
+}
