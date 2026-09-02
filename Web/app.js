@@ -3981,13 +3981,19 @@ function handleIncomingLiveTick(payload, opts) {
 
 
 
-    // AI Prediction Card
-
+    // AI Prediction Card — CHG-0048: humanized two-layer rendering when the
+    // humanizer is present (Layer 1 = plain-language why + honest confidence
+    // semantics; Layer 2 = the raw technical reason, preserved verbatim).
+    // Fallback: original behavior. Truth rules live in ux_signal.js.
+    if (window.NXSignal) {
+        window.NXSignal.render(payload);
+    } else {
     if (payload.ai_decision != null) setTxt('ai-decision-badge', payload.ai_decision);
 
     if (payload.ai_confidence != null) setTxt('ai-confidence', `Conf: ${(payload.ai_confidence * 100).toFixed(2)}%`);
 
     if (payload.ai_reason != null) setTxt('ai-reason-text', `"${payload.ai_reason}"`);
+    }
 
 
 
