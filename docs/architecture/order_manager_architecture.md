@@ -467,3 +467,50 @@ _run_protection_chain 264L, reconcile_missed_closes 204L.
   c1f8bee landed (site/_site re-tracking tug-of-war); resolved via clean
   merge e89681d; unrelated unstaged foreign WIP left untouched; HEAD ==
   origin/main verified at each step.
+
+
+## 19. S6 verification closure + stop-rule application
+
+### Verification (directive conditions 1-8)
+- FINAL_HEAD at verification time: dd857f3; remote subsequently advanced by
+  parallel owners (331b4b3, f8c2225) — all S6 commits (6c97bc7, 77295ea,
+  3a97cef, dd857f3) verified IN-ANCESTRY of the advancing HEAD.
+- TicketsCache regression fix independently verified: the
+  _live_tickets_cache @property exists (reads _tickets_cache.cache —
+  storage-identity proven), ZERO shadowing assignments remain, swap()/
+  pop_ticket() are the only publication paths (refresh, rebuild, cleanup).
+- Full 22-suite regression at FINAL_HEAD: all S6-owned suites green; ONE
+  failure (test_accounting_hedging hedging-order) proven PRE-EXISTING at
+  dd857f3 via git worktree (foreign accounting/market-calendar lineage:
+  744b62fd/4e6beedb/b396ef0e) — not S6-owned.
+- Commit scope audit: S6 commits touch only order_manager.py + new S6
+  modules + S6 goldens + architecture doc + taskboard. The one absorption
+  (56a0316: 470 pre-staged deletion-only artifact removals) is disclosed.
+- Release provenance: any artifact built from 77295ea is superseded;
+  builds must come from the exact FINAL_HEAD at acceptance time with
+  source==provenance==build-info==runtime commit.
+
+### Stop-rule application: VanishedTicketAutopsy NOT extracted
+Evidence (measured, not assumed):
+- The analysis span reads 13+ per-ticket dicts and performs an in-span
+  STATE MUTATION (self._forced_exit_mechanisms.pop) plus float()-wrapped
+  tracker reads with cross-field dependencies (initial_sl_val feeding
+  final_sl_val/was_sl_modified).
+- A zero-callback component would require either live-dict passing
+  (hidden state access, authority leak) or an evidence bundle + a
+  mutation callback (boundary-warping, plus 5+ callbacks through the
+  exception-isolation choreography).
+- Per the directive: EXTRACTION STOPPED. The 423L phase method remains
+  INTACT and remains the documented owner of the vanished-ticket
+  choreography (resolve -> outcome -> row -> experience -> notify ->
+  teardown). Its internal split into dict-returning sub-stages was also
+  rejected (same warp in weaker form).
+
+### Remaining seams (evidence-ranked, for the next task)
+1. reconcile_missed_closes (204L) — restart-gap close-loop; independent of
+   the loop; shares the autopsy/experience path. Medium candidate.
+2. _run_protection_chain (264L) — extractor blocked on the notifier-throttle
+   owner (DONE: TelemetryThrottle) — the chain is now stage-extractable
+   with an explicit skip-signal contract (already done in this cycle).
+3. manage_active_positions (378L) — now a linear typed-stage orchestrator;
+   further reduction requires dispatch-plan enrichment, not extraction.
