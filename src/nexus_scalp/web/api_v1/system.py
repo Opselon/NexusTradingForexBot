@@ -152,18 +152,21 @@ def system_version(request: Request) -> Any:
     return ok(request, dict(cache))
 
 
-_VERSION_CACHE: dict[str, Any] | None = None
+_VERSION_CACHE: dict[str, Any] = {}
 
 
-def _version_cache() -> dict[str, Any] | None:
-    global _VERSION_CACHE
-    if _VERSION_CACHE is None:
+def _version_cache() -> dict[str, Any]:
+    """Module-lifetime cache: build metadata changes only on rebuild.
+
+    Uses dict mutation (no global rebind) — single-entry memoization.
+    """
+    if not _VERSION_CACHE:
         try:
             from nexus_scalp.release.metadata import get_version_info
 
-            _VERSION_CACHE = get_version_info()
+            _VERSION_CACHE.update(get_version_info())
         except Exception:
-            _VERSION_CACHE = {}
+            _VERSION_CACHE.clear()
     return _VERSION_CACHE
 
 
