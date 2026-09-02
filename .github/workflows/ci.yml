@@ -230,6 +230,18 @@ jobs:
           exit 0
 
       # -------- Secret presence preflight (booleans ONLY — values never printed) --------
+      # -------- Runtime certification gate (CHG-0051): the ONE canonical composed-runtime command
+      # Same command agents run locally before pushing; CI stays final authority.
+      - name: Runtime certification gate
+        id: runtime_gate
+        continue-on-error: true
+        run: |
+          set +e
+          python scripts/ci/runtime_gate.py --json > "$CI_RESULTS_DIR/runtime_gate.json" 2> "$CI_RESULTS_DIR/runtime_gate.log"
+          rc=$?
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_gate "$rc" "see runtime_gate.json + runtime_gate.log" || true
+          exit 0
+
       - name: Secret presence check
         continue-on-error: true
         run: |
