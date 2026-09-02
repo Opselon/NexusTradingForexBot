@@ -1507,3 +1507,45 @@ leakage matrix, defects fixed). Remaining (documented): news-frame loader for
 sessions, checkpoint-resume streaming for very long windows. NOT touched:
 policy/regime/execution owners' WIP.
 Status: VERIFIED (research-only surface; zero live/broker impact)
+
+## CHG-0051 - Canonical Runtime Certification Gate (TASK-RUNTIME-GATE) (2026-09-02, Nexus-Main)
+
+CHANGE-ID: CHG-0051
+Agent: Nexus-Main (runtime verification / certification owner)
+Task: P0 runtime forensics + ONE canonical runtime gate.
+
+Scope (2026-09-02):
+  Forensic audit (no edits first): traced the REAL operator boot path
+  (NexusTradingForexBot.py -> AppConfig.load_from_yaml(configs/live.yaml) ->
+  adapter binding (Direct/Remote/Paper) -> LiveEngine.__init__ service graph
+  order -> _preflight_or_raise -> run_loop (connect, warmup, workers) ->
+  _process_tick_pipeline (features->70D->scaler->inference->regime->policy->
+  experience/intelligence/news/freshness gates->risk->dispatch) ->
+  _shutdown_async). Verified CLI start path (engine_boot.start_cmd) and its
+  PAPER=PaperMT5Adapter boundary (BUG-148), settings DB isolation seam
+  (NEXUS_SETTINGS_DB), AuditRepository injection seam (audit_repo kwarg),
+  exit-code SSOT (release/exit_codes.py), forensic deploy gate
+  (forensics/deploy_gate.py + ForensicHealthEngine) and HealthEngine
+  (release/health.py).
+
+  Delivered: scripts/ci/runtime_gate.py - the single canonical
+  pre-push runtime certification command. Layers L0..L9 with explicit
+  PASS/FAIL/SKIP per stage, deterministic exit codes (0 certified,
+  1 runtime failure, 2 configuration error, 3 environment blocked,
+  4 contract violation, 5 internal gate error), --json machine output,
+  --fast tier, --no-network is the DEFAULT (the gate never calls
+  providers/MT5/downloads; only loopback for the in-process API probe).
+  LIVE-TRADING SAFETY: paper adapter only, injected disposable
+  AuditRepository (artifacts/audit.db NEVER touched), NEXUS_SETTINGS_DB
+  isolated to a temp dir, order_send absence asserted (source + runtime).
+  The gate CALLS existing certified surfaces (schema_contract, features70,
+  liquidity_runtime, inference_validator, HealthEngine, deploy gate
+  engine) and does not reimplement them.
+
+  Determinism: seeded synthetic bar series (no random), fixed neutral
+  news block, monotonic-timestamp-free assertions.
+
+  CI: same command wired as an explicit ci.yml quality-job step (CI
+  remains final authority; no command logic duplicated in YAML beyond
+  invocation).
+Status: IN_PROGRESS -> verification
