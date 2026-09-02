@@ -88,8 +88,6 @@ class TestBug193SharedRegistryTruth:
         from nexus_scalp.forensics.engine import ForensicHealthEngine
         from nexus_scalp.forensics.references import FEATURE_REFERENCES
 
-        from nexus_scalp.forensics.engine import ForensicHealthEngine
-
         ForensicHealthEngine()  # freeze-once owner initializes the registry
         _patched_runtime_config(monkeypatch, liquidity=True)
         n0 = len(FEATURE_REFERENCES)
