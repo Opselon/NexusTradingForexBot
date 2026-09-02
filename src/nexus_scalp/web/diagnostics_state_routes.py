@@ -77,6 +77,22 @@ def register_diagnostics_state_routes(
     def get_status() -> dict[str, Any]:
         return get_system_state()
 
+
+    # =========================================================================
+    # RELEASE / UPDATE STATUS (CHG-0043, TASK-RUNTIME-TRUTH)
+    # -------------------------------------------------------------------------
+    # Offline-safe: reports LAST-KNOWN release/update truth from local
+    # records; NEVER contacts GitHub on the read path. The optional
+    # ?refresh=true query is the explicit bounded network path.
+    # =========================================================================
+    @app.get("/api/release/status")
+    def release_status(refresh: bool = False) -> dict[str, Any]:
+        from nexus_scalp.release import release_status as rs
+
+        if refresh:
+            return rs.refresh_from_github()
+        return rs.build_release_status()
+
     # Docker/native health probe (DOCKER-REPAIR, 2026-08-20):
     # * 200 with verdict READY or DEGRADED -> healthy
     # * 200 with verdict NOT READY           -> degraded (dependencies missing,

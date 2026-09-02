@@ -76,12 +76,30 @@ def version_cmd(
             info = {**info, "web_bundle": block.build()}
         except Exception:
             pass  # version truth never blocks the CLI
+        # CHG-0043: one canonical snapshot consumed by version/health/doctor/web
+        try:
+            from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
+
+            info["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
+        except Exception:
+            pass  # failure-isolated: identity still emits
+        try:
+            from nexus_scalp.release.release_status import build_release_status
+
+            info["release_status"] = build_release_status()
+        except Exception:
+            pass  # offline-safe: absence is UNKNOWN, never fabricated
         _emit(info, True)
         return
     if plain:
+        commit_txt = (
+            str(info.get("commit"))
+            if info.get("commit")
+            else str(info.get("commit_status") or "NOT_RECORDED")
+        )
         print(
             f"{PRODUCT_DISPLAY} version {info['version']} ({info['channel']}, "
-            f"{info['architecture']}, commit {info['commit'] or 'n/a'})"
+            f"{info['architecture']}, commit {commit_txt})"
         )
         return
     console.print(_banner(subtitle="version & build identity"))
@@ -97,8 +115,14 @@ def version_cmd(
         "feature_schema",
         "build_timestamp",
         "commit",
+        "commit_source",
+        "commit_status",
     ):
-        table.add_row(k.replace("_", " ").title(), str(info.get(k, "n/a")))
+        raw = info.get(k)
+        if k == "commit" and not raw:
+            # CHG-0043: unavailable identity is NOT_RECORDED, never n/a/None
+            raw = info.get("commit_status") or "NOT_RECORDED"
+        table.add_row(k.replace("_", " ").title(), str(raw) if raw else "UNKNOWN")
     console.print(table)
 
 
@@ -127,14 +151,26 @@ def doctor_cmd(
         console.print = lambda *a, **k: print(*[str(x) for x in a])  # type: ignore[assignment]
     verdict, entries = _health_entries()
     if json_mode and not fix:
-        _emit(
-            {
-                "overall": verdict,
-                "checks": [e.to_dict() for e in entries],
-                "environment": renv.format_hardware_block(renv.detect_environment()),
-            },
-            True,
-        )
+        payload = {
+            "overall": verdict,
+            "checks": [e.to_dict() for e in entries],
+            "environment": renv.format_hardware_block(renv.detect_environment()),
+        }
+        # CHG-0043: canonical snapshot + offline-safe release status so the
+        # doctor answer is ONE consistent truth surface (failure-isolated).
+        try:
+            from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
+
+            payload["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
+        except Exception:
+            pass
+        try:
+            from nexus_scalp.release.release_status import build_release_status
+
+            payload["release_status"] = build_release_status()
+        except Exception:
+            pass
+        _emit(payload, True)
         return
     if not json_mode:
         console.print(_banner(subtitle="system doctor · 21 checks"))
