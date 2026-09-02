@@ -490,16 +490,15 @@ class DatabaseMigrationEngine:
                 "timestamp TEXT",
             ),
         }
-        for table, col_defs in skeleton_heal.items():
-            heal_cols = list(col_defs)
+        for table, heal_col_defs in skeleton_heal.items():
+            heal_cols = list(heal_col_defs)
             if table not in {
                 r[0]
                 for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             }:
                 continue
             cols_now = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
-            col_defs2 = list(col_defs)
-            for col_def in col_defs2:
+            for col_def in heal_cols:
                 col_name = col_def.split()[0]
                 if col_name not in cols_now:
                     try:
