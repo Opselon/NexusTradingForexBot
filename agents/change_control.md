@@ -1309,3 +1309,34 @@ feature/model contracts, installer, CI workflows (except additive api-platform j
 Contracts: API_V1_ENVELOPE v1 (new), API_V1_PAGINATION v1 (new), API_V1_ERRORS v1 (new).
 Risk: MEDIUM (new public surface; mitigated: read-dominant, no trading mutations,
 sanitization layer, additive-only wiring, contract gates). Status: IN_PROGRESS
+
+
+## CHG-0046 — Shadow System Forensic, Hardening & Intelligence Upgrade (2026-09-02, Hermes-Main)
+
+Change: Shadow-owner forensic map (agents/forensic_reports/2026-09-02_shadow_forensic_map.md)
++ P0/P1 hardening per master brief. Proven verdict: Shadow = E (combination) of
+three parallel layers — PHASE-11 model comparison (dormant), TASK-6 governance
+shadow (dormant), TASK-05 70D observer (live hook, runtime IDLE). No outcome
+layer existed anywhere (hypothetical_r hardcoded 0.0; outcome "PENDING").
+Scope: src/nexus_scalp/shadow/** + governance/shadow_runtime.py (identity fields
+only) + live_engine.py shadow hooks (D1 identity, D5 fingerprint, D2
+normalization, D4 preloaded shadow70 inference) + web/model_governance_routes.py
+(attach fix D7) + hygiene/retention.py (shadow70 rules D10) + Web panel truth
+rendering. NOT touched: order_manager, policy, provider_gate, installer,
+regime engine, observability SSOT, training pipeline, RiskEngine, execution.
+P0 fixes: D1 champion identity (effective_*, bundle-authoritative), D2 action
+vocabulary normalization, D3 outcome layer (geometry at record time + offline
+certified-tick outcome resolver + paired Delta_R + champion-R direction rule),
+D4 preloaded 70D inference fn, D5 sha1 full-vector fingerprint, D6 scaler
+parity. P1: D7 attach meta-fallback, D8 liquidity provenance stamping +
+INPUT_MISMATCH, D9 valid-only counts, D10 retention, D11 run freeze (git
+revision + hash reverify at finalize). P2: D12 model-argmax confidence,
+D13 canonical status vocabulary, D14 run clock. Contracts: SHADOW_EVIDENCE v2
+(additive DB cols via lazy ALTER; historical rows preserved, missing
+provenance = NOT_RECORDED), SHADOW70_ATTACH v2 (meta fallback), no production
+policy/threshold changes, no auto-promotion. Risk: MEDIUM (observability-only
+surface; all shadow paths failure-isolated; zero order authority preserved).
+Required tests: identity parity, action normalization, outcome resolver
+determinism, scaler parity, attach gate, retention bounds, isolation reproofs.
+Status: IMPLEMENTING
+
