@@ -29,6 +29,22 @@ window.NX = window.NX || {};
 
   const inflight = {};
 
+  // BUG-212: network failures must reach the connectivity controller. The SSE
+  // path flips the banner via NXConn.setDown, but a browser that holds a
+  // half-open EventSource fires NO error event, and boot-time REST polling is
+  // the only periodic traffic — so the UI stayed visually UP while every
+  // request failed. Bounded: 2 consecutive failures arm the banner; any OK
+  // request resets (no flap on a single dropped call).
+  let connFailStreak = 0;
+  function noteConnFailure(kind) {
+    connFailStreak += 1;
+    if (window.NXConn && connFailStreak >= 2 && window.NXConn.state() !== 'DOWN') {
+      window.NXConn.setDown(kind === 'net' ? 'Network request failed. ' : ('Server error (HTTP ' + arguments[1] + '). '));
+    }
+  }
+  function noteConnOk() { connFailStreak = 0; if (window.NXConn) window.NXConn.setUp(); }
+
+
   async function request(url, opts, key) {
     const reqId = opts.headers && opts.headers['X-Request-ID'] || rid();
     const headers = Object.assign({ 'X-Request-ID': reqId }, (opts.headers || {}));
@@ -44,6 +60,7 @@ window.NX = window.NX || {};
         res = await fetch(url, init);
       } catch (err) {
         uiError(opts.component || 'api', opts.action || 'FETCH', url, 0, reqId, String(err && err.message || err));
+        noteConnFailure('net');
         return { ok: false, status: 0, error: { code: 'NETWORK_ERROR', message: 'Network request failed.', request_id: reqId } };
       }
       let body = null;
@@ -53,8 +70,10 @@ window.NX = window.NX || {};
         if (body && body.error) { code = body.error.code || code; message = body.error.message || message; }
         else if (body && body.detail) { message = typeof body.detail === 'string' ? body.detail : 'Request failed.'; }
         uiError(opts.component || 'api', opts.action || 'FETCH', url, res.status, reqId, 'code=' + code);
+        if (res.status >= 500) noteConnFailure('srv', res.status);
         return { ok: false, status: res.status, error: { code, message, request_id: reqId } };
       }
+      noteConnOk();
       return { ok: true, status: res.status, body: body || {}, request_id: reqId };
     })();
     if (opts.method === 'GET' || !opts.method) {

@@ -7526,3 +7526,22 @@ Status: FIXED (docs-tooling probe only; no site content changed).
   with a frozen `_time.monotonic` seam instead of `__new__` + manual attr.
 - Evidence: CI artifacts 9829506146 (run 633) + 9830824914 (run 653)
   FAILED line; local 5x solo PASS at HEAD 0382f15. Status: OPEN (referred).
+
+## BUG-214 - Client stayed visually UP through total network loss: 95+ failed REST requests never reached the connectivity controller (2026-09-02, Nexus-Main client E2E acceptance)
+
+- SYMPTOM (black-box E2E, browser-level offline for 30s): NXConn.state()=UP,
+  #conn-lost-banner hidden, badge RUNNING while 95+ requests failed
+  (requestfailed: /api/status, /api/operator/*, /api/account/* ...). The user sees a
+  live-looking dashboard with zero data flow.
+- MECHANISM: NXConn flips DOWN only from SSE onerror or fetchSystemSnapshot failure;
+  but (a) Chromium fires NO EventSource.onerror while it holds a half-open stream, and
+  (b) fetchSystemSnapshot runs only at boot and on SSE (re)open — periodic REST traffic
+  failing with NETWORK_ERROR is swallowed by NX.api.request()'s catch (returns {ok:false})
+  and never informs NXConn.
+- FIX (smallest correct layer, Web/api_client.js): request() reports to NXConn —
+  noteConnFailure on network exceptions and on HTTP>=5xx, noteConnOk on any success;
+  a 2-failure streak arms the banner (no single-drop flap). Evidence: FAIL-BEFORE 30s
+  offline -> UP/banner hidden; AFTER -> DOWN/banner visible; recovery on reconnect ->
+  UP/banner hidden automatically.
+- Classification: P1 DATA-FRESHNESS / RECOVERY (brief §27 no silent old data; §4/§8
+  journey: disconnection must be visible and recovery automatic).
