@@ -32,10 +32,11 @@ from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.features70 import news_10d_from_context
 from nexus_scalp.features.liquidity_engine import compute_liquidity_features
 from nexus_scalp.features.liquidity_runtime import build_70d_vector
-from nexus_scalp.features.schema_contract import NEWS_10D_NAMES, validate_70d_vector
 from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+from nexus_scalp.features.schema_contract import NEWS_10D_NAMES, validate_70d_vector
 from nexus_scalp.governance.alignment import vectorize_news_context
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
+from nexus_scalp.market_data.bar_aggregator import BarData as BarData
 from nexus_scalp.model_generation.news_bridge import (
     build_news_frame_from_db,
     news_context_at,
@@ -365,9 +366,9 @@ def test_guardian_gate_blocks_unsafe_regime_with_reason() -> None:
     from nexus_scalp.features.regime_classifier import (
         MarketRegimeClassifier,
         MarketRegimeState,
+        RecommendedExecutionType,
         RegimeReason,
         RegimeType,
-        RecommendedExecutionType,
     )
     from nexus_scalp.signals.policy import SignalPolicy
 
