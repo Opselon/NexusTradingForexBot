@@ -665,6 +665,10 @@ class StreamingReplayEngine:
         for ev in self._iter_events(source, max_events):
             self._process_event(state, ev)
         result = self._finalize_run(state)
+        # CHG-0043: keep the last run's bounded decision trace reachable for
+        # the API layer (decision drill-down serves ENGINE truth, never a
+        # chart-side recomputation). Observability only (INV-018).
+        self._last_decision_trace: list[dict[str, Any]] = list(state.decision_trace)
         logger.info(
             "[STREAMING_REPLAY] event=RUN_COMPLETE",
             run_id=rid,
