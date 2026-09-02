@@ -84,8 +84,6 @@ def analyze_file(path: str):
         return {"name": fn.name, "loc": span, "branches": branches, "self_attrs": len(attrs)}
 
     all_methods = [func_metrics(f) for f in top_funcs]
-    for c in classes:
-        all_methods.extend(func_metrics(n) for n in c.get("methods_nodes", []))
 
     # method details per class (re-walk to attach)
     class_details = []
