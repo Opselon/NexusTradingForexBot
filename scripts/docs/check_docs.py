@@ -347,6 +347,23 @@ def check_built_site_structure() -> None:
 
 
 # ---------------------------------------------------------------- 7. mermaid
+def check_localization_gate() -> None:
+    """P0 localization correctness: FA/AR chrome localized, EN-leak detection."""
+    import subprocess
+
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "docs" / "check_localization.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=120,
+        check=False,
+    )
+    ok = proc.returncode == 0
+    detail = "ok" if ok else (proc.stdout.strip().splitlines()[-1] if proc.stdout else "failed")
+    record("Localization gate (FA/AR)", ok, detail)
+
+
 def check_mermaid() -> None:
     problems: list[str] = []
     for md in iter_markdown([DOCS, REPO_ROOT / "README.md"]):
@@ -479,6 +496,7 @@ def main() -> int:
     check_translations_min()
     check_rtl_built_site()
     check_built_site_structure()
+    check_localization_gate()
     check_mermaid()
     check_build()
     check_assets()

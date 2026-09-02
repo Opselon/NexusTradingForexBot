@@ -3,8 +3,8 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Configuration · Nexus Scalp Engine</title>
-<meta name='description' content='How Nexus Scalp Engine configuration is structured — AppConfig bootstrap, runtime snapshots, settings DB, and the no-secrets-on-disk rules.'>
+<title>Configuration · نكسوس سكالب إنجين</title>
+<meta name='description' content='بنية إعداد Nexus Scalp Engine — تهيئة AppConfig، لقطات وقت التشغيل، قاعدة بيانات الإعدادات، وقواعد عدم تخزين الأسرار على القرص.'>
 <link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/getting-started/configuration/'>
 <meta property='og:title' content='Configuration'>
 <meta property='og:type' content='website'>
@@ -27,7 +27,7 @@
     <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
     <details class='lang-picker'>
       <summary aria-label='اللغة'>🌐 العربية</summary>
-      <div class='lang-menu'><a href='../../../getting-started/configuration/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+      <div class='lang-menu'><a href='../../../getting-started/configuration/' lang='en' hreflang='en'>English</a> <a href='../../../fa/getting-started/configuration/' lang='fa' hreflang='fa'>فارسی</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
     </details>
     <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب</a>
   </div>
@@ -37,112 +37,103 @@
 <a class='nav-home' href='../../../ar/'>الرئيسية</a>
 <div class='nav-section'><a class='active' href='../../../ar/getting-started/'>البداية</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/getting-started/installation/'>installation</a></li>
-<li><a class='' href='../../../ar/getting-started/quickstart/'>quickstart</a></li>
-<li><a class='' href='../../../ar/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='active' href='../../../ar/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/getting-started/installation/'>التثبيت</a></li>
+<li><a class='' href='../../../ar/getting-started/quickstart/'>البداية السريعة</a></li>
+<li><a class='' href='../../../ar/getting-started/first-run/'>التشغيل الأول</a></li>
+<li><a class='active' href='../../../ar/getting-started/configuration/'>الإعداد</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/project/'>المشروع</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/project/vision/'>vision</a></li>
-<li><a class='' href='../../../ar/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/project/status/'>status</a></li>
-<li><a class='' href='../../../ar/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/project/roadmap/'>roadmap</a></li>
-<li><a class='' href='../../../ar/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/vision/'>الرؤية والغاية</a></li>
+<li><a class='' href='../../../ar/project/scope/'>النطاق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/status/'>حالة المشروع</a></li>
+<li><a class='' href='../../../ar/project/capabilities/'>مصفوفة القدرات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/roadmap/'>خارطة الطريق</a></li>
+<li><a class='' href='../../../ar/project/milestones/'>المحطات</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/architecture/'>البنية</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/architecture/overview/'>overview</a></li>
-<li><a class='' href='../../../ar/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/overview/'>نظرة عامة</a></li>
+<li><a class='' href='../../../ar/architecture/system-map/'>خريطة النظام</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/data-flow/'>تدفق البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/runtime/'>وقت التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/research-stack/'>منظومة البحث</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/model-pipeline/'>خط أنابيب النموذج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/execution-pipeline/'>خط أنابيب التنفيذ</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/observability/'>قابلية المراقبة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/database/'>قاعدة البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/research/'>البحث</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/research/methodology/'>methodology</a></li>
-<li><a class='' href='../../../ar/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/research/validation/'>validation</a></li>
-<li><a class='' href='../../../ar/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/methodology/'>المنهجية</a></li>
+<li><a class='' href='../../../ar/research/datasets/'>مجموعات البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/backtesting/'>الاختبار الرجعي</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/out-of-sample/'>بوابة OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/replay/'>إعادة التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/counterfactuals/'>المضاد للواقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/validation/'>التحقق</a></li>
+<li><a class='' href='../../../ar/research/reproducibility/'>قابلية إعادة الإنتاج</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/engineering/'>الهندسة</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/quality/'>الجودة والاختبار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/ci/'>بنية CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/release-process/'>عملية الإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/security/'>الأمان</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/guides/'>أدلة</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/cli/'>دليل CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/troubleshooting/'>استكشاف الأخطاء</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/common-workflows/'>سير العمل الشائعة</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/contributing/'>المساهمة</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/contributing/contribution-guide/'>contribution guide</a></li>
-<li><a class='' href='../../../ar/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/contributing/contribution-guide/'>دليل المساهمة</a></li>
+<li><a class='' href='../../../ar/contributing/documentation/'>سير عمل التوثيق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/contributing/add-language/'>إضافة لغة</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/reference/'>مرجع</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../ar/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../ar/reference/faq/'>faq</a></li>
+<li><a class='' href='../../../ar/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/glossary/'>المسرد</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/terminology/'>المصطلحات والترجمات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/faq/'>الأسئلة الشائعة</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/releases/'>الإصدارات</a></div>
-<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.6 &amp; history</a></li></ul>
+<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.6 &amp; التاريخ</a></li></ul>
 </nav>
 <main id='content' class='content' tabindex='-1'>
-<div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../getting-started/configuration/'>الإنجليزية</a></div>
-<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../ar/getting-started/'>البداية</a> / <span class='crumb-current' aria-current='page'>configuration</span></nav>
-<h1 id='configuration'>Configuration</h1>
-<p>Configuration has three layers with different authorities. Mixing them up is a</p>
-<p>classic failure mode — read this page before editing YAML by hand.</p>
-<h2 id='1-appconfig-bootstrap--import--export'>1. <code>AppConfig</code> (bootstrap / import / export)</h2>
-<p><code>src/nexus_scalp/configuration/config.py</code> — loads the YAML contract</p>
-<p>(<code>configs/base.yaml</code> is the canonical base; <code>configs/live.yaml.example</code> is the</p>
-<p>live-shaped example). Used for bootstrap/import/export only.</p>
-<h2 id='2-runtime-configuration-authoritative-live-state'>2. Runtime configuration (authoritative live state)</h2>
-<p><code>RuntimeConfiguration</code> via <code>RuntimeConfigStore.get_snapshot()</code> is the</p>
-<p><strong>authoritative live state</strong> — versioned, hot-reloadable. Consumers must read</p>
-<p>through <code>get_snapshot()</code>, never cached constructor values. Scope tags decide</p>
-<p>when a change applies (<code>LIVE_IMMEDIATE</code> vs <code>NEXT_DECISION</code>).</p>
-<h2 id='3-settings-db-secrets--user-intent'>3. Settings DB (secrets + user intent)</h2>
-<p>Credentials (e.g. Telegram) live in the settings database via</p>
-<p><code>settings_service.set_telegram()</code> — <strong>never</strong> in <code>live.yaml</code> and never committed</p>
-<p>(INV-010). The UI save path routes through the same service.</p>
-<h2 id='key-risk-relevant-keys'>Key risk-relevant keys</h2>
+
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../ar/getting-started/'>البداية</a> / <span class='crumb-current' aria-current='page'>الإعداد</span></nav>
+<h1 id=''>الإعداد</h1>
+<p>للإعداد ثلاث طبقات بمرجعيات مختلفة. خلطها خطأ كلاسيكي — اقرأ هذه الصفحة قبل تحرير YAML يدويًا.</p>
+<h2 id='1-appconfig-----'>1. <code>AppConfig</code> (التهيئة / الاستيراد / التصدير)</h2>
+<p><code>src/nexus_scalp/configuration/config.py</code> — يحمّل عقد YAML (<code>configs/base.yaml</code> هو الأساس المرجعي؛ و<code>configs/live.yaml.example</code> مثال بصيغة live). يُستخدم للتهيئة والاستيراد والتصدير فقط.</p>
+<h2 id='2------'>2. إعداد وقت التشغيل (الحالة الحية المرجعية)</h2>
+<p><code>RuntimeConfiguration</code> عبر <code>RuntimeConfigStore.get_snapshot()</code> هي <strong>الحالة الحية المرجعية</strong> — مُسنة الإصدار وقابلة لإعادة التحميل الساخن. على المستهلكين القراءة عبر <code>get_snapshot()</code> لا القيم المخبأة من المُنشئ. وتحدد وسوم النطاق متى يسري التغيير (<code>LIVE_IMMEDIATE</code> مقابل <code>NEXT_DECISION</code>).</p>
+<h2 id='3-------'>3. قاعدة بيانات الإعدادات (الأسرار + نية المستخدم)</h2>
+<p>بيانات الاعتماد (مثل تيليجرام) تُخزَّن في قاعدة بيانات الإعدادات عبر <code>settings_service.set_telegram()</code> — <strong>أبدًا</strong> في <code>live.yaml</code> ولا تُرفع للمستودع أبدًا (INV-010). ومسار الحفظ في الواجهة يمر عبر الخدمة نفسها.</p>
+<h2 id='--'>مفاتيح المخاطر الرئيسية</h2>
 <div class='table-wrap'><table>
-<thead><tr><th>Key</th><th>Meaning</th></tr></thead><tbody>
-<tr><td><code>risk.max_concurrent_positions</code></td><td>exposure bound (first run: <code>1</code>)</td></tr>
-<tr><td><code>risk.risk_per_trade_pct</code></td><td>fractional-Kelly input, per-trade risk</td></tr>
-<tr><td><code>risk.max_account_drawdown_pct</code></td><td>drawdown stop</td></tr>
-<tr><td><code>liquidity_features_enabled</code></td><td>70D liquidity block governor (research path)</td></tr>
+<thead><tr><th>المفتاح</th><th>المعنى</th></tr></thead><tbody>
+<tr><td><code>risk.max_concurrent_positions</code></td><td>حد التعرض (التشغيل الأول: <code>1</code>)</td></tr>
+<tr><td><code>risk.risk_per_trade_pct</code></td><td>مدخل كِيلي الكسري، المخاطرة لكل صفقة</td></tr>
+<tr><td><code>risk.max_account_drawdown_pct</code></td><td>حد التراجع</td></tr>
+<tr><td><code>liquidity_features_enabled</code></td><td>متحكم كتلة السيولة 70D (مسار البحث)</td></tr>
 </tbody></table></div>
-<h2 id='validation'>Validation</h2>
-<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>nexus config                # inspect active configuration (secrets masked)
+<h2 id=''>التحقق</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>nexus config                # فحص الإعداد الفعّال (تُحجب الأسرار)
 nexus config --validate path/to/config.yaml</code></pre></div>
-<p>Invalid config or a failing pre-flight doctor check blocks engine start.</p>
-<h2 id='docker'>Docker</h2>
-<p><code>docker-compose.yml</code> + <code>.env.example</code> define the container env contract (safe</p>
-<p>defaults, no secrets). See <a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/docker.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/docker.md"></a><code>docs/docker.md</code></a>.</p>
-<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../ar/getting-started/first-run/'><span class='pn-label'>السابق</span><span class='pn-name'>First-Run Safety</span></a><a class='pn pn-next' href='../../../ar/project/'><span class='pn-label'>التالي</span><span class='pn-name'>المشروع</span></a></nav>
+<p>الإعداد غير الصالح أو فشل فحص doctor المسبق يحجب بدء المحرك.</p>
+<h2 id=''>دوكر</h2>
+<p>يحدد <code>docker-compose.yml</code> + <code>.env.example</code> عقد متغيرات البيئة للحاوية (افتراضيات آمنة بلا أسرار). التفاصيل في <a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/docker.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/docker.md"></a><code>docs/docker.md</code></a>.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../ar/getting-started/first-run/'><span class='pn-label'>السابق</span><span class='pn-name'>التشغيل الأول</span></a><a class='pn pn-next' href='../../../ar/project/'><span class='pn-label'>التالي</span><span class='pn-name'>المشروع</span></a></nav>
 <footer class='page-footer'>
   <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/getting-started/configuration.md'>تعديل هذه الصفحة على جيت هب</a> ·
-  الإصدار v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  الإصدار v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/3a11086'>3a11086</a> ·
   <a href='../../../ar/releases/'>كل الإصدارات</a>
 </footer>
 </main>

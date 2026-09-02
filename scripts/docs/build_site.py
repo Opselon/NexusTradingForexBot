@@ -26,7 +26,6 @@ Zero external dependencies (stdlib only). Deterministic output.
 Never modify anything under src/ or Web/ -- docs-only surface (Nexus-Docs role).
 """
 
-# ruff: noqa: RUF001  (Persian/Arabic UI strings are intentionally non-Latin)
 from __future__ import annotations
 
 import html
@@ -48,111 +47,70 @@ PROJECT_VERSION = _cfg.repo_version()
 REVISION = _cfg.repo_revision()
 REPO_URL = _cfg.REPO_URL
 PAGES_URL = _cfg.PAGES_URL
+LOCALES_DIR = SITE_DIR / "locales"
+
+
+def _load_locales() -> dict[str, dict]:
+    """P0.2 translation contract: site/locales/<lang>/ui.json is the SINGLE
+    source of truth for every user-visible generated string."""
+    locales: dict[str, dict] = {}
+    for lang in ("en", "fa", "ar", "es", "de"):
+        f = LOCALES_DIR / lang / "ui.json"
+        locales[lang] = json.loads(f.read_text(encoding="utf-8"))
+    return locales
+
+
+LOCALES = _load_locales()
+
+
+def t(lang: str, key: str) -> str:
+    """Translation lookup with dotted keys. Fallback chain (explicit):
+    lang value -> en value of the same key -> last path segment prettified.
+    The final fallback keeps unlisted IA pages (e.g. forensic extras) from
+    raising while still preferring real translations everywhere else."""
+
+    def lookup(l: str) -> str | None:
+        node: dict = LOCALES.get(l, LOCALES["en"])
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return None
+            node = node[part]
+        return str(node) if not isinstance(node, dict) else None
+
+    value = lookup(lang)
+    if value is None:
+        value = lookup("en")
+    if value is None:
+        value = key.rsplit(".", maxsplit=1)[-1].replace("-", " ").replace("_", " ")
+    return value
+
 
 LANGUAGES: dict[str, dict[str, str]] = {
-    "en": {"name": "English", "dir": "ltr", "native": "English"},
-    "fa": {"name": "فارسی", "dir": "rtl", "native": "فارسی"},
-    "es": {"name": "Español", "dir": "ltr", "native": "Español"},
-    "ar": {"name": "العربية", "dir": "rtl", "native": "العربية"},
-    "de": {"name": "Deutsch", "dir": "ltr", "native": "Deutsch"},
+    lang: {
+        "name": LOCALES[lang]["meta"]["name"],
+        "dir": LOCALES[lang]["meta"]["dir"],
+        "native": LOCALES[lang]["meta"]["native"],
+    }
+    for lang in ("en", "fa", "ar", "es", "de")
 }
 
-UI: dict[str, dict[str, str]] = {
-    "en": {
-        "search": "Search docs…",
-        "home": "Home",
-        "repo": "GitHub",
-        "skip": "Skip to content",
-        "language": "Language",
-        "partial": "English source shown — translation pending",
-        "version": "Version",
-        "next": "Next",
-        "prev": "Previous",
-        "on_github": "Edit this page on GitHub",
-        "menu": "Menu",
-        "whats_new": "What's New",
-        "all_releases": "All releases",
-        "get_started": "Get Started",
-        "view_architecture": "View Architecture",
-        "view_roadmap": "View Roadmap",
-        "english": "English",
-    },
-    "fa": {
-        "search": "جستجو در مستندات…",
-        "home": "خانه",
-        "repo": "گیت‌هاب",
-        "skip": "پرش به محتوا",
-        "language": "زبان",
-        "partial": "متن انگلیسی نمایش داده می‌شود — ترجمه در انتظار",
-        "version": "نسخه",
-        "next": "بعدی",
-        "prev": "قبلی",
-        "on_github": "ویرایش این صفحه در گیت‌هاب",
-        "menu": "منو",
-        "whats_new": "تازه‌ها",
-        "all_releases": "همه انتشارها",
-        "get_started": "شروع کنید",
-        "view_architecture": "معماری",
-        "view_roadmap": "نقشه راه",
-        "english": "انگلیسی",
-    },
-    "es": {
-        "search": "Buscar…",
-        "home": "Inicio",
-        "repo": "GitHub",
-        "skip": "Ir al contenido",
-        "language": "Idioma",
-        "partial": "Fuente en inglés — traducción pendiente",
-        "version": "Versión",
-        "next": "Siguiente",
-        "prev": "Anterior",
-        "on_github": "Editar esta página en GitHub",
-        "menu": "Menú",
-        "whats_new": "Novedades",
-        "all_releases": "Todas las versiones",
-        "get_started": "Comenzar",
-        "view_architecture": "Arquitectura",
-        "view_roadmap": "Hoja de ruta",
-        "english": "inglés",
-    },
-    "ar": {
-        "search": "ابحث في التوثيق…",
-        "home": "الرئيسية",
-        "repo": "جيت هب",
-        "skip": "الانتقال إلى المحتوى",
-        "language": "اللغة",
-        "partial": "المصدر الإنجليزي — الترجمة قيد الانتظار",
-        "version": "الإصدار",
-        "next": "التالي",
-        "prev": "السابق",
-        "on_github": "تعديل هذه الصفحة على جيت هب",
-        "menu": "القائمة",
-        "whats_new": "الجديد",
-        "all_releases": "كل الإصدارات",
-        "get_started": "ابدأ",
-        "view_architecture": "البنية",
-        "view_roadmap": "خارطة الطريق",
-        "english": "الإنجليزية",
-    },
-    "de": {
-        "search": "Doku durchsuchen…",
-        "home": "Start",
-        "repo": "GitHub",
-        "skip": "Zum Inhalt springen",
-        "language": "Sprache",
-        "partial": "Englische Quelle — Übersetzung ausstehend",
-        "version": "Version",
-        "next": "Weiter",
-        "prev": "Zurück",
-        "on_github": "Diese Seite auf GitHub bearbeiten",
-        "menu": "Menü",
-        "whats_new": "Neuigkeiten",
-        "all_releases": "Alle Releases",
-        "get_started": "Erste Schritte",
-        "view_architecture": "Architektur",
-        "view_roadmap": "Roadmap",
-        "english": "Englisch",
-    },
+
+def UI(lang: str) -> dict[str, str]:
+    """UI chrome strings resolved through the locale contract (P0.2)."""
+    return LOCALES[lang]["ui"]
+
+
+SECTION_TITLES_KEYS = {
+    "getting-started": "nav.getting-started",
+    "project": "nav.project",
+    "architecture": "nav.architecture",
+    "research": "nav.research",
+    "engineering": "nav.engineering",
+    "guides": "nav.guides",
+    "contributing": "nav.contributing",
+    "reference": "nav.reference",
+    "releases": "nav.releases",
+    "docs-hub": "pages.docs-hub",
 }
 
 SECTION_TITLES: dict[str, dict[str, str]] = {
@@ -480,7 +438,7 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
                 i += 1
             out.append(
                 f"<div class='callout callout-{kind}' role='note'>"
-                f"<div class='callout-title'>{esc(kind.upper())}</div>"
+                f"<div class='callout-title'>{esc(t(lang, 'ui.callout_' + kind) if LOCALES[lang]['ui'].get('callout_' + kind) else kind.upper())}</div>"
                 + "".join(f"<p>{inline(b)}</p>" for b in body_lines if b)
                 + "</div>"
             )
@@ -579,8 +537,16 @@ def find_translation(lang: str, rel: str) -> Path | None:
 
 
 def section_title(section: str, lang: str) -> str:
-    entry = SECTION_TITLES.get(section, {})
-    return entry.get(lang) or entry.get("en", section)
+    key = SECTION_TITLES_KEYS.get(section)
+    return t(lang, key) if key else section
+
+
+def page_title_key(page: str) -> str:
+    return "pages." + page
+
+
+def section_intro(section: str, lang: str) -> str:
+    return t(lang, "sections." + section)
 
 
 def build_nav(lang: str, active: str, from_rel: str) -> str:
@@ -588,7 +554,7 @@ def build_nav(lang: str, active: str, from_rel: str) -> str:
     landing pages (built for every language)."""
     parts = ["<nav class='sidebar' id='sidebar' aria-label='primary'>"]
     parts.append(
-        f"<a class='nav-home' href='{page_href('', lang, from_rel)}'>{html.escape(UI[lang]['home'])}</a>"
+        f"<a class='nav-home' href='{page_href('', lang, from_rel)}'>{html.escape(t(lang, 'ui.home'))}</a>"
     )
     for section, pages in NAV_SECTIONS:
         sec_cls = "active" if active.startswith(section) else ""
@@ -607,7 +573,7 @@ def build_nav(lang: str, active: str, from_rel: str) -> str:
                 else " <span class='fallback-tag' title='English source'>EN</span>"
             )
             parts.append(
-                f"<li><a class='{cls}' href='{page_href(rel, lang, from_rel)}'>{html.escape(pg.replace('-', ' '))}</a>{flag}</li>"
+                f"<li><a class='{cls}' href='{page_href(rel, lang, from_rel)}'>{html.escape(t(lang, 'pages.' + pg))}</a>{flag}</li>"
             )
         parts.append("</ul>")
     parts.append(
@@ -617,7 +583,7 @@ def build_nav(lang: str, active: str, from_rel: str) -> str:
     parts.append(
         "<ul class='nav-list'><li><a href='"
         + page_href("releases/", lang, from_rel)
-        + f"'>v{PROJECT_VERSION} &amp; history</a></li></ul>"
+        + f"'>v{PROJECT_VERSION} &amp; {html.escape(t(lang, 'ui.released_history'))}</a></li></ul>"
     )
     parts.append("</nav>")
     return "\n".join(parts)
@@ -651,7 +617,7 @@ def lang_switcher(lang: str, rel: str, from_rel: str) -> str:
 
 
 def build_header(lang: str, rel: str) -> str:
-    ui = UI[lang]
+    ui = UI(lang)
     from_rel = rel
     return f"""<header class='site-header'>
   <button class='nav-toggle' id='nav-toggle' aria-label='{html.escape(ui["menu"])}' aria-expanded='false' aria-controls='sidebar'>
@@ -689,7 +655,7 @@ def prev_next(lang: str, rel: str, from_rel: str) -> str:
         if r.endswith("/"):
             name = section_title(r.rstrip("/"), lang)
         else:
-            name = PAGE_TITLES.get(r) or r.rstrip("/").split("/")[-1].replace("-", " ")
+            name = t(lang, "pages." + r.rstrip("/").split("/")[-1])
         return (
             f"<a class='pn {cls}' href='{page_href(r, lang, from_rel)}'>"
             f"<span class='pn-label'>{html.escape(label)}</span>"
@@ -698,8 +664,8 @@ def prev_next(lang: str, rel: str, from_rel: str) -> str:
 
     return (
         "<nav class='prev-next' aria-label='pagination'>"
-        + link(prev_rel, "pn-prev", UI[lang]["prev"])
-        + link(next_rel, "pn-next", UI[lang]["next"])
+        + link(prev_rel, "pn-prev", t(lang, "ui.prev"))
+        + link(next_rel, "pn-next", t(lang, "ui.next"))
         + "</nav>"
     )
 
@@ -713,7 +679,7 @@ def breadcrumbs(lang: str, rel: str, from_rel: str) -> str:
     for i, part in enumerate(parts):
         acc.append(part)
         is_last = i == len(parts) - 1
-        name = section_title(part, lang) if i == 0 else part.replace("-", " ")
+        name = section_title(part, lang) if i == 0 else t(lang, "pages." + part)
         if is_last:
             crumbs.append(
                 f"<span class='crumb-current' aria-current='page'>{html.escape(name)}</span>"
@@ -726,7 +692,7 @@ def breadcrumbs(lang: str, rel: str, from_rel: str) -> str:
 
 
 def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: bool) -> str:
-    ui = UI[lang]
+    ui = UI(lang)
     direction = LANGUAGES[lang]["dir"]
     if lang == "en":
         src_rel = f"docs/{rel}.md" if rel else "docs/index.md"
@@ -748,7 +714,7 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>{html.escape(title)} · Nexus Scalp Engine</title>
+<title>{html.escape(title)} · {html.escape(t(lang, "ui.brand"))} {html.escape(t(lang, "ui.brand_dim"))}</title>
 <meta name='description' content='{html.escape(desc[:150])}'>
 <link rel='canonical' href='{canonical}'>
 <meta property='og:title' content='{html.escape(title)}'>
@@ -784,10 +750,10 @@ def build_404(lang: str = "en") -> str:
         "<div class='nf404'><h1>404</h1>"
         "<p class='nf404-lead'>This documentation page does not exist.</p>"
         "<div class='nf404-actions'>"
-        f"<a class='btn btn-primary' href='{page_href('', 'en', '')}'>Home</a> "
-        f"<a class='btn' href='{page_href('getting-started/quickstart/', 'en', '')}'>Quickstart</a> "
-        f"<a class='btn' href='{page_href('project/status/', 'en', '')}'>Project status</a> "
-        f"<a class='btn' href='{page_href('reference/faq/', 'en', '')}'>FAQ</a>"
+        f"<a class='btn btn-primary' href='{page_href('', 'en', '')}'>{html.escape(t('en', 'ui.nf404_home'))}</a> "
+        f"<a class='btn' href='{page_href('getting-started/quickstart/', 'en', '')}'>{html.escape(t('en', 'ui.quickstart_label'))}</a> "
+        f"<a class='btn' href='{page_href('project/status/', 'en', '')}'>{html.escape(t('en', 'ui.status_label'))}</a> "
+        f"<a class='btn' href='{page_href('reference/faq/', 'en', '')}'>{html.escape(t('en', 'ui.faq_label'))}</a>"
         "</div></div>"
     )
     return shell(lang, "404", "Not found", body, "", True)
@@ -818,7 +784,7 @@ def release_highlights(body: str, limit: int = 6) -> list[str]:
 
 def homepage_html(lang: str = "en") -> str:
     """Real homepage. from_rel='' so every href is site-root relative."""
-    ui = UI[lang]
+    ui = UI(lang)
     from_rel = ""
     releases = [r for r in load_releases() if not r.get("draft")]
     latest = releases[0] if releases else None
@@ -841,47 +807,38 @@ def homepage_html(lang: str = "en") -> str:
         )
     pillars = (
         "<section class='pillars'>"
-        "<div class='pillar'><h3>🧭 Evidence before claims</h3>"
-        "<p>Metrics without evidence render <code>n/a</code> — never fake zeros. Negative results are published: the flagship 70D research candidate was <strong>rejected</strong> by our own OOS gate.</p></div>"
-        "<div class='pillar'><h3>🔒 Safety by construction</h3>"
-        "<p>PAPER default · SHADOW with zero order authority · LIVE behind explicit confirmation · hard risk clamps (<code>HARD_MAX_LOTS</code>, margin ≤20%) enforced in the execution path.</p></div>"
-        "<div class='pillar'><h3>🔬 Deterministic research</h3>"
-        "<p>Purged + embargoed walk-forward, bit-exact replay, fingerprinted datasets/models, provenance on every run — the same feature contract for live, replay and training.</p></div>"
-        "<div class='pillar'><h3>👁️ Runtime truth</h3>"
-        "<p>Forensic observability: severity-split logs, incident correlation, deploy gate. Broker truth wins over stale state; gates are authorities, settings are intent.</p></div>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_evidence_t'])}</h3>"
+        f"<p>{html.escape(ui['pillar_evidence_b'])}</p></div>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_safety_t'])}</h3>"
+        f"<p>{html.escape(ui['pillar_safety_b'])}</p></div>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_research_t'])}</h3>"
+        f"<p>{html.escape(ui['pillar_research_b'])}</p></div>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_truth_t'])}</h3>"
+        f"<p>{html.escape(ui['pillar_truth_b'])}</p></div>"
         "</section>"
     )
     # capability highlight rows — hrefs via page_href (link law)
     cap_rows = [
-        ("architecture/data-flow", "Causal 50D feature engine", "chip-cert", "CERTIFIED"),
-        (
-            "architecture/execution-pipeline",
-            "Risk engine + execution clamps",
-            "chip-cert",
-            "CERTIFIED",
-        ),
-        ("research/validation", "Walk-forward + hard OOS gate", "chip-cert", "CERTIFIED"),
-        ("architecture/model-pipeline", "Artifact-first Model Factory", "chip-impl", "IMPLEMENTED"),
-        (
-            "architecture/research-stack",
-            "70D contract (Base+News+Liquidity)",
-            "chip-exp",
-            "EXPERIMENTAL",
-        ),
-        (
-            "research/counterfactuals",
-            "Counterfactual engine (NO_TRADE walk)",
-            "chip-res",
-            "RESEARCH",
-        ),
+        ("architecture/data-flow", ui["cap_engine"], "chip-cert", "CERTIFIED"),
+        ("architecture/execution-pipeline", ui["cap_risk"], "chip-cert", "CERTIFIED"),
+        ("research/validation", ui["cap_oos"], "chip-cert", "CERTIFIED"),
+        ("architecture/model-pipeline", ui["cap_factory"], "chip-impl", "IMPLEMENTED"),
+        ("architecture/research-stack", ui["cap_70d"], "chip-exp", "EXPERIMENTAL"),
+        ("research/counterfactuals", ui["cap_cf"], "chip-res", "RESEARCH"),
     ]
     caps = (
-        "<section class='cap-highlights'><div class='section-head'><h2>🧱 Capability highlights</h2>"
-        f"<a class='wn-more' href='{page_href('project/capabilities/', lang, from_rel)}'>Full matrix →</a></div>"
-        "<div class='table-wrap'><table><thead><tr><th>Capability</th><th>Status</th></tr></thead><tbody>"
+        "<section class='cap-highlights'><div class='section-head'><h2>🧱 "
+        + html.escape(t(lang, "ui.cap_highlights"))
+        + "</h2>"
+        + f"<a class='wn-more' href='{page_href('project/capabilities/', lang, from_rel)}'>{html.escape(ui['full_matrix'])} →</a></div>"
+        + "<div class='table-wrap'><table><thead><tr><th>"
+        + html.escape(t(lang, "ui.capability"))
+        + "</th><th>"
+        + html.escape(t(lang, "ui.status"))
+        + "</th></tr></thead><tbody>"
         + "".join(
             f"<tr><td><a href='{page_href(rel, lang, from_rel)}'>{html.escape(name)}</a></td>"
-            f"<td><span class='chip {chip}'>{label}</span></td></tr>"
+            f"<td><span class='chip {chip}'>{html.escape(t(lang, 'ui.' + label))}</span></td></tr>"
             for rel, name, chip, label in cap_rows
         )
         + "</tbody></table></div></section>"
@@ -900,7 +857,7 @@ def homepage_html(lang: str = "en") -> str:
     grid = "".join(
         f"<a class='sec-card' href='{page_href(sec + '/', lang, from_rel)}'>"
         f"<span class='sec-icon'>{icon}</span><h3>{html.escape(section_title(sec, lang))}</h3>"
-        f"<p>{html.escape(SECTION_INTROS[sec]['en'])}</p></a>"
+        f"<p>{html.escape(section_intro(sec, lang))}</p></a>"
         for sec, icon in section_icons.items()
     )
     hero_actions = (
@@ -910,26 +867,24 @@ def homepage_html(lang: str = "en") -> str:
         f"<a class='btn btn-ghost' href='{REPO_URL}'>GitHub ↗</a></div>"
     )
     status_line = (
-        f"<div class='hero-meta'><span class='chip chip-cert'>v{PROJECT_VERSION} released</span>"
-        f"<span class='chip'>rev {REVISION}</span>"
-        f"<span class='chip'>research: 50D live · 70D candidate</span></div>"
+        f"<div class='hero-meta'><span class='chip chip-cert'>v{PROJECT_VERSION} {html.escape(ui['chip_released'])}</span>"
+        f"<span class='chip'>{html.escape(ui['chip_rev'])} {REVISION}</span>"
+        f"<span class='chip'>{html.escape(ui['chip_research'])}</span></div>"
     )
     body = f"""
 <section class='hero'>
-  <div class='hero-kicker'>QUANTITATIVE TRADING RESEARCH &amp; EXECUTION PLATFORM</div>
-  <h1>Nexus <span class='grad'>Scalp Engine</span></h1>
-  <p class='hero-sub'>A research-driven, hexagonal, event-driven scalping platform for MetaTrader 5 —
-  causal features, governed deep models, an invariant risk engine, deterministic research tooling
-  and forensic observability in one auditable pipeline.</p>
+  <div class='hero-kicker'>{html.escape(ui["hero_kicker"])}</div>
+  <h1>{html.escape(ui["hero_title_a"])} <span class='grad'>{html.escape(ui["hero_title_b"])}</span></h1>
+  <p class='hero-sub'>{html.escape(ui["hero_sub"])}</p>
   {status_line}
   {hero_actions}
 </section>
 {pillars}
 {caps}
 {whats_new}
-<section class='secs'><div class='section-head'><h2>📚 Explore the documentation</h2></div>
+<section class='secs'><div class='section-head'><h2>📚 {html.escape(ui["explore_docs"])}</h2></div>
 <div class='sec-grid'>{grid}</div></section>
-<section class='timeline-block'><div class='section-head'><h2>🗓️ Release timeline</h2>
+<section class='timeline-block'><div class='section-head'><h2>🗓️ {html.escape(ui["release_timeline"])}</h2>
 <a class='wn-more' href='{page_href("releases/", lang, from_rel)}'>{html.escape(ui["all_releases"])} →</a></div>
 <div class='timeline'>{timeline}</div></section>
 """
@@ -944,12 +899,13 @@ def homepage_html(lang: str = "en") -> str:
 
 
 def releases_page_html(lang: str = "en") -> str:
+    ui = UI(lang)
     releases = [r for r in load_releases() if not r.get("draft")]
     blocks = []
     for r in releases:
         highs = release_highlights(r.get("body", ""), limit=8)
         items = "".join(f"<li>{html.escape(h)}</li>" for h in highs) or "<li>—</li>"
-        link = f"<a class='wn-more' href='{REPO_URL}/releases/tag/{r['tag_name']}'>GitHub release ↗</a>"
+        link = f"<a class='wn-more' href='{REPO_URL}/releases/tag/{r['tag_name']}'>{html.escape(ui['github_release'])} ↗</a>"
         blocks.append(
             f"<article class='release-card' id='{html.escape(r['tag_name'])}'>"
             f"<div class='section-head'><h2>{html.escape(r['tag_name'])}</h2>"
@@ -957,10 +913,9 @@ def releases_page_html(lang: str = "en") -> str:
             f"<ul class='wn-list'>{items}</ul>{link}</article>"
         )
     body = (
-        f"<section class='hero'><div class='hero-kicker'>RELEASE HISTORY</div>"
+        f"<section class='hero'><div class='hero-kicker'>{html.escape(ui['release_history_kicker'])}</div>"
         f"<h1>{html.escape(section_title('releases', lang))}</h1>"
-        "<p class='hero-sub'>Every release with its real highlights, derived from "
-        f"GitHub release metadata at build time. Version single-source: <code>pyproject.toml</code> (v{PROJECT_VERSION}).</p></section>"
+        f"<p class='hero-sub'>{html.escape(ui['releases_intro'])} <code>pyproject.toml</code> (v{PROJECT_VERSION}).</p></section>"
         + (
             "".join(blocks)
             if blocks
@@ -979,12 +934,23 @@ def releases_page_html(lang: str = "en") -> str:
 
 def section_landing_html(lang: str, section: str, pages: list[str]) -> str:
     """Landing page for a sidebar section: intro + card per page."""
+    ui = UI(lang)
     from_rel = f"{section}/"
     cards = []
     for pg in pages:
         rel = f"{section}/{pg}"
-        title = PAGE_TITLES.get(rel) or pg.replace("-", " ")
-        desc = PAGE_DESCRIPTIONS.get(rel, "")
+        # localization order: locale pages.* key -> translated front-matter -> EN
+        title = t(lang, "pages." + pg)
+        desc = ""
+        tpath = find_translation(lang, rel) if lang != "en" else None
+        if tpath is not None:
+            tfm, tbody = parse_front_matter(tpath.read_text(encoding="utf-8"))
+            if tfm.get("description"):
+                desc = tfm["description"]
+            key_title = LOCALES[lang]["pages"].get(pg)
+            title = key_title or page_title(tfm, tbody, title)
+        else:
+            desc = PAGE_DESCRIPTIONS.get(rel, "")
         translated = find_translation(lang, rel) is not None
         flag = "" if (translated or lang == "en") else " <span class='chip'>EN</span>"
         cards.append(
@@ -992,9 +958,9 @@ def section_landing_html(lang: str, section: str, pages: list[str]) -> str:
             f"<h3>{html.escape(title)}{flag}</h3><p>{html.escape(desc)}</p></a>"
         )
     body = (
-        f"<section class='hero'><div class='hero-kicker'>SECTION</div>"
+        f"<section class='hero'><div class='hero-kicker'>{html.escape(ui['section'])}</div>"
         f"<h1>{html.escape(section_title(section, lang))}</h1>"
-        f"<p class='hero-sub'>{html.escape(SECTION_INTROS.get(section, {}).get(lang, SECTION_INTROS.get(section, {}).get('en', '')))}</p></section>"
+        f"<p class='hero-sub'>{html.escape(section_intro(section, lang))}</p></section>"
         f"<div class='sec-grid sec-grid-wide'>{''.join(cards)}</div>"
     )
     return shell(
@@ -1137,7 +1103,7 @@ def main() -> int:
                     "url": abs_url(section, lang),
                     "title": f"{section_title(section, lang)} [{lang}]",
                     "lang": lang,
-                    "text": SECTION_INTROS.get(section, {}).get("en", ""),
+                    "text": section_intro(section, "en"),
                 }
             )
 

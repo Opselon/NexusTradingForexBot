@@ -3,7 +3,7 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Troubleshooting · Nexus Scalp Engine</title>
+<title>Troubleshooting · نکسوس اسکالپ انجین</title>
 <meta name='description' content='Common failure modes and honest diagnostics — doctor first, evidence second.'>
 <link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/guides/troubleshooting/'>
 <meta property='og:title' content='Troubleshooting'>
@@ -27,7 +27,7 @@
     <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
     <details class='lang-picker'>
       <summary aria-label='زبان'>🌐 فارسی</summary>
-      <div class='lang-menu'><a href='../../../guides/troubleshooting/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+      <div class='lang-menu'><a href='../../../guides/troubleshooting/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
     </details>
     <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب</a>
   </div>
@@ -37,77 +37,77 @@
 <a class='nav-home' href='../../../fa/'>خانه</a>
 <div class='nav-section'><a class='' href='../../../fa/getting-started/'>شروع</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/getting-started/installation/'>installation</a></li>
-<li><a class='' href='../../../fa/getting-started/quickstart/'>quickstart</a></li>
-<li><a class='' href='../../../fa/getting-started/first-run/'>first run</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/getting-started/configuration/'>configuration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/getting-started/installation/'>نصب</a></li>
+<li><a class='' href='../../../fa/getting-started/quickstart/'>شروع سریع</a></li>
+<li><a class='' href='../../../fa/getting-started/first-run/'>اجرای اول</a></li>
+<li><a class='' href='../../../fa/getting-started/configuration/'>پیکربندی</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../fa/project/'>پروژه</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/project/vision/'>vision</a></li>
-<li><a class='' href='../../../fa/project/scope/'>scope</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/project/status/'>status</a></li>
-<li><a class='' href='../../../fa/project/capabilities/'>capabilities</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/project/roadmap/'>roadmap</a></li>
-<li><a class='' href='../../../fa/project/milestones/'>milestones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/vision/'>چشم‌انداز و چرایی</a></li>
+<li><a class='' href='../../../fa/project/scope/'>محدوده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/status/'>وضعیت پروژه</a></li>
+<li><a class='' href='../../../fa/project/capabilities/'>ماتریس قابلیت‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/roadmap/'>نقشه راه</a></li>
+<li><a class='' href='../../../fa/project/milestones/'>نقاط عطف</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../fa/architecture/'>معماری</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/architecture/overview/'>overview</a></li>
-<li><a class='' href='../../../fa/architecture/system-map/'>system map</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/architecture/data-flow/'>data flow</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/architecture/runtime/'>runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/architecture/research-stack/'>research stack</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/architecture/model-pipeline/'>model pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/architecture/execution-pipeline/'>execution pipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/architecture/observability/'>observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/architecture/database/'>database</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/overview/'>نمای کلی</a></li>
+<li><a class='' href='../../../fa/architecture/system-map/'>نقشه سیستم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/data-flow/'>جریان داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/runtime/'>زمان اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/research-stack/'>پشته پژوهش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/model-pipeline/'>خط لوله مدل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/execution-pipeline/'>خط لوله اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/observability/'>مشاهده‌پذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/database/'>پایگاه داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../fa/research/'>پژوهش</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/research/methodology/'>methodology</a></li>
-<li><a class='' href='../../../fa/research/datasets/'>datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/research/backtesting/'>backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/research/walk-forward/'>walk forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/research/out-of-sample/'>out of sample</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/research/replay/'>replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/research/counterfactuals/'>counterfactuals</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/research/validation/'>validation</a></li>
-<li><a class='' href='../../../fa/research/reproducibility/'>reproducibility</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/methodology/'>روش‌شناسی</a></li>
+<li><a class='' href='../../../fa/research/datasets/'>دیتاست‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/backtesting/'>بک‌تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/out-of-sample/'>گیت OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/replay/'>بازپخش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/counterfactuals/'>خلاف‌واقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/validation/'>اعتبارسنجی</a></li>
+<li><a class='' href='../../../fa/research/reproducibility/'>بازتولیدپذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../fa/engineering/'>مهندسی</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/engineering/quality/'>quality</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/engineering/ci/'>ci</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/engineering/release-process/'>release process</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/engineering/security/'>security</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/quality/'>کیفیت و تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/ci/'>معماری CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/release-process/'>فرایند انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/security/'>امنیت</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='active' href='../../../fa/guides/'>راهنما</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/guides/cli/'>cli</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/guides/api/'>api</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='active' href='../../../fa/guides/troubleshooting/'>troubleshooting</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/guides/common-workflows/'>common workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/cli/'>راهنمای CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='active' href='../../../fa/guides/troubleshooting/'>عیب‌یابی</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/common-workflows/'>گردش‌کارهای رایج</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../fa/contributing/'>مشارکت</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/contributing/contribution-guide/'>contribution guide</a></li>
-<li><a class='' href='../../../fa/contributing/documentation/'>documentation</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/contributing/add-language/'>add language</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/contribution-guide/'>راهنمای مشارکت</a></li>
+<li><a class='' href='../../../fa/contributing/documentation/'>گردش‌کار مستندات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/add-language/'>افزودن زبان</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../fa/reference/'>مرجع</a></div>
 <ul class='nav-list'>
-<li><a class='' href='../../../fa/reference/cli-reference/'>cli reference</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/reference/glossary/'>glossary</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/reference/terminology/'>terminology</a> <span class='fallback-tag' title='English source'>EN</span></li>
-<li><a class='' href='../../../fa/reference/faq/'>faq</a></li>
+<li><a class='' href='../../../fa/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/glossary/'>واژه‌نامه</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/terminology/'>اصطلاحات و ترجمه‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/faq/'>پرسش‌های متداول</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../fa/releases/'>انتشارها</a></div>
-<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.6 &amp; history</a></li></ul>
+<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.6 &amp; تاریخچه</a></li></ul>
 </nav>
 <main id='content' class='content' tabindex='-1'>
-<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه در انتظار — <a href='../../guides/troubleshooting/'>انگلیسی</a></div>
-<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/guides/'>راهنما</a> / <span class='crumb-current' aria-current='page'>troubleshooting</span></nav>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است — <a href='../../guides/troubleshooting/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/guides/'>راهنما</a> / <span class='crumb-current' aria-current='page'>عیب‌یابی</span></nav>
 <h1 id='troubleshooting'>Troubleshooting</h1>
 <blockquote><p>Rule of thumb: <code>nexus doctor</code> first — it reports 19 diagnostic categories</p><p>with suggested fixes and is the same gate the engine runs pre-launch.</p></blockquote>
 <h2 id='engine-refuses-to-start'>Engine refuses to start</h2>
@@ -148,10 +148,10 @@
 <h2 id='escalation'>Escalation</h2>
 <p><code>nexus export-diagnostics</code> produces a sanitized ZIP (secrets redacted by</p>
 <p>contract). Attach it to an issue — never paste raw logs with credentials.</p>
-<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../fa/guides/api/'><span class='pn-label'>قبلی</span><span class='pn-name'>API Reference</span></a><a class='pn pn-next' href='../../../fa/guides/common-workflows/'><span class='pn-label'>بعدی</span><span class='pn-name'>Common Workflows</span></a></nav>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../fa/guides/api/'><span class='pn-label'>قبلی</span><span class='pn-name'>مرجع API</span></a><a class='pn pn-next' href='../../../fa/guides/common-workflows/'><span class='pn-label'>بعدی</span><span class='pn-name'>گردش‌کارهای رایج</span></a></nav>
 <footer class='page-footer'>
   <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/guides/troubleshooting.md'>ویرایش این صفحه در گیت‌هاب</a> ·
-  نسخه v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/4fbe921'>4fbe921</a> ·
+  نسخه v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/3a11086'>3a11086</a> ·
   <a href='../../../fa/releases/'>همه انتشارها</a>
 </footer>
 </main>
