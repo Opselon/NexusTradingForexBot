@@ -120,10 +120,19 @@ def gate_status_taxonomy() -> set[str]:
 
 
 def ci_status_taxonomy() -> set[str]:
-    """make_ci_results.py check statuses (the CI side of the taxonomy)."""
+    """make_ci_results.py check statuses (the CI side of the taxonomy).
+
+    CHG-0052 adds 'blocked' (run #685 class): a missing downstream result
+    after an upstream gate failure is BLOCKED, not errored. Classified via
+    `make_ci_results.py classify-gate --root-failure <check>`.
+    """
     maker = REPO_ROOT / "scripts" / "ci" / "make_ci_results.py"
     text = _read(maker)
-    return set(re.findall(r'"(passed|failed|errored|skipped)"', text))
+    found = set(re.findall(r'"(passed|failed|errored|skipped|blocked)"', text))
+    # classify-gate writes 'blocked' via _write_check(root, check, "blocked", ...)
+    if "classify_gate" in text and '"blocked"' in text:
+        found.add("blocked")
+    return found
 
 
 def gate_integrity_files() -> tuple[str, ...]:
@@ -172,14 +181,16 @@ def check_parity() -> ParityReport:
     )
 
     # 4. Status taxonomy compatibility: local gate's statuses must be a
-    # superset-compatible subset of CI's (shared vocabulary, no private states).
+    #    superset-compatible subset of CI's (shared vocabulary, no private states).
+    #    CHG-0052: 'blocked' is CI-only BY DESIGN — only CI can cancel a
+    #    downstream step mid-job; the local gate runs every stage to completion.
     g, c = gate_status_taxonomy(), ci_status_taxonomy()
     compatible = bool(g) and bool(c) and {"passed", "failed"} <= g <= (c | {"configuration_error"})
     rep.records.append(
         ParityRecord(
             "status_taxonomy",
             compatible,
-            f"local={sorted(g)} ci={sorted(c)}",
+            f"local={sorted(g)} ci={sorted(c)} ('blocked' is CI-only: cancelled-downstream state)",
         )
     )
 

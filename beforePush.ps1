@@ -306,8 +306,8 @@ $MypyVer = Get-ToolVer (& $VenvPy -m mypy --version 2>&1 | Select-Object -First 
 if ($PyVer -notmatch "3\.11") {
     Write-Warn "Local Python $PyVer vs CI Python 3.11 (pyproject target)."
 }
-if ($RuffVer -and $RuffVer -notmatch "0\.16\.3") {
-    Write-Warn "Local ruff $RuffVer vs pinned CI 0.16.3 - run: $VenvPy -m pip install -q ruff==0.16.3"
+if ($RuffVer -and $RuffVer -notmatch "0\.16\.5") {
+    Write-Warn "Local ruff $RuffVer vs pinned CI 0.16.5 - run: $VenvPy -m pip install -q ruff==0.16.5"
 }
 if ($env:GIT_TERMINAL_PROMPT) { $env:GIT_TERMINAL_PROMPT = "0" }
 
@@ -566,7 +566,22 @@ if ($ruffLintStatus -ne "PASSED") {
 }
 if ($ruffFmtStatus -ne "PASSED") {
     Show-Tail $FormatTxt "ruff format" 30
-    Write-Fail "ruff_format" "Ruff format $ruffFmtStatus (rc=$ruffFmtRc) - run .\beforePush.ps1 -Fix or '$VenvPy -m ruff format --config pyproject.toml .'." $ruffFmtRc
+    # CHG-0052 self-heal: re-run the formatter on the offending tree, then
+    # re-validate. Cheap (the offending file list is already known from the
+    # check pass) and prevents the recurring push->CI-ruff-format-fail loop.
+    Write-Warn "Ruff format FAILED - auto-repairing the working tree (same canonical ruff)..."
+    Write-Cmd "$VenvPy -m ruff format --config pyproject.toml ."
+    & $VenvPy -m ruff format --config pyproject.toml . *> $null
+    if ($LASTEXITCODE -ne 0) { Write-Fail "ruff_format_fix" "Ruff format auto-repair failed." $LASTEXITCODE }
+    Write-Cmd "$VenvPy -m ruff format --config pyproject.toml --check ."
+    & $VenvPy -m ruff format --config pyproject.toml --check . *> $FormatTxt
+    $ruffFmtRc = $LASTEXITCODE
+    $ruffFmtStatus = Resolve-Status $ruffFmtRc
+    if ($ruffFmtStatus -ne "PASSED") {
+        Show-Tail $FormatTxt "ruff format (post-repair)" 30
+        Write-Fail "ruff_format" "Ruff format still $ruffFmtStatus after auto-repair (rc=$ruffFmtRc)." $ruffFmtRc
+    }
+    Write-Success "Ruff format auto-repaired + re-verified OK (files were rewritten - commit them)."
 }
 if ($mypyStatus -ne "PASSED") {
     Show-Tail (Join-Path $CiRoot "mypy\mypy.txt") "mypy" 30
