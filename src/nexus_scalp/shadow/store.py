@@ -39,8 +39,9 @@ MAX_READ_LIMIT = 3000
 _INSERT_RUN_SQL = """
     INSERT OR REPLACE INTO shadow_runs (
         run_id, champion_model_id, champion_version, challenger_model_id,
-        challenger_version, status, started_at, finished_at, decision_count, error
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        challenger_version, status, started_at, finished_at, decision_count, error,
+        git_revision, configuration_version, challenger_artifact_hash, champion_artifact_hash
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
 
 _INSERT_DECISION_SQL = """
@@ -51,8 +52,13 @@ _INSERT_DECISION_SQL = """
         champion_action, champion_confidence, challenger_action, challenger_confidence,
         action_agreement, valid_comparison, invalid_reason,
         hypothetical_pnl_usd, hypothetical_r, mfe_r, mae_r, holding_duration_sec,
-        exit_reason, simulated, payload
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        exit_reason, simulated,
+        champion_entry, champion_sl, champion_tp, shadow_entry, shadow_sl, shadow_tp,
+        spread_usd, shadow_r, shadow_mfe_r, shadow_mae_r, shadow_pnl_usd,
+        shadow_holding_sec, shadow_exit_reason, delta_r, outcome_status,
+        payload
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
 
 _INSERT_COMPARISON_SQL = """
@@ -85,6 +91,7 @@ class ShadowStore:
         # tick (save_decision -> ensure_schema) is synchronous SQLite I/O on
         # the hot path. A miss re-checks; a hit skips all DDL entirely.
         self._schema_ensured: bool = False
+        self._additive_ensured: bool = False
 
     # ------------------------------------------------------------------
     # Schema
@@ -97,8 +104,13 @@ class ShadowStore:
         callers (ShadowEngine.record_shadow_decision -> save_decision) invoke
         this on every tick, so a per-tick sqlite3.connect + CREATE would be
         blocking I/O on the hot path.
+
+        CHG-0046 (SHADOW_EVIDENCE v2): additive column migration for the
+        paired-outcome + run-freeze fields. Legacy rows keep their values;
+        new columns are NULL/'' (= NOT_RECORDED) — historical evidence is
+        never rewritten, only extended.
         """
-        if self._schema_ensured:
+        if self._schema_ensured and self._additive_ensured:
             return
         if not self.audit_repo or not self.audit_repo._is_sqlite:
             return
@@ -220,6 +232,71 @@ class ShadowStore:
                 conn.close()
         except Exception as e:
             logger.error("[SHADOW] schema init failed", error=str(e))
+        # Additive SHADOW_EVIDENCE v2 columns — AFTER base tables exist.
+        self._ensure_additive_columns()
+
+    def _ensure_additive_columns(self) -> None:
+        """SHADOW_EVIDENCE v2 additive migration (runs at most once).
+
+        Adds the paired-outcome columns to shadow_decisions and the
+        run-freeze columns to shadow_runs when absent. Deterministic,
+        non-destructive: existing rows read back as NULL (NOT_RECORDED).
+        """
+        if self._additive_ensured or not self.audit_repo or not self.audit_repo._is_sqlite:
+            return
+        try:
+            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+            try:
+                self._add_missing_columns(
+                    conn,
+                    "shadow_decisions",
+                    [
+                        ("champion_entry", "REAL DEFAULT 0.0"),
+                        ("champion_sl", "REAL DEFAULT 0.0"),
+                        ("champion_tp", "REAL DEFAULT 0.0"),
+                        ("shadow_entry", "REAL DEFAULT 0.0"),
+                        ("shadow_sl", "REAL DEFAULT 0.0"),
+                        ("shadow_tp", "REAL DEFAULT 0.0"),
+                        ("spread_usd", "REAL DEFAULT 0.0"),
+                        ("shadow_r", "REAL"),
+                        ("shadow_mfe_r", "REAL"),
+                        ("shadow_mae_r", "REAL"),
+                        ("shadow_pnl_usd", "REAL"),
+                        ("shadow_holding_sec", "REAL"),
+                        ("shadow_exit_reason", "TEXT DEFAULT ''"),
+                        ("delta_r", "REAL"),
+                        ("outcome_status", "TEXT DEFAULT 'NOT_RECORDED'"),
+                    ],
+                )
+                self._add_missing_columns(
+                    conn,
+                    "shadow_runs",
+                    [
+                        ("git_revision", "TEXT DEFAULT ''"),
+                        ("configuration_version", "TEXT DEFAULT ''"),
+                        ("challenger_artifact_hash", "TEXT DEFAULT ''"),
+                        ("champion_artifact_hash", "TEXT DEFAULT ''"),
+                    ],
+                )
+                conn.commit()
+                self._additive_ensured = True
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[SHADOW] additive migration failed (isolated)", error=str(e))
+
+    @staticmethod
+    def _add_missing_columns(conn: sqlite3.Connection, table: str, columns: list[tuple[str, str]]) -> None:
+        try:
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table});")}
+        except Exception:
+            existing = set()
+        for name, ddl in columns:
+            if name not in existing:
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl};")
+                except Exception as e:
+                    logger.error("[SHADOW] add column failed", table=table, column=name, error=str(e))
 
     # ------------------------------------------------------------------
     # Writes
@@ -240,6 +317,11 @@ class ShadowStore:
             run.finished_at.isoformat() if run.finished_at else "",
             run.decision_count,
             run.error,
+            # CHG-0046 D11: run-freeze identity
+            run.git_revision,
+            run.configuration_version,
+            run.challenger_artifact_hash,
+            run.champion_artifact_hash,
         )
         try:
             self.audit_repo._queue.put_nowait((_INSERT_RUN_SQL, args))
@@ -282,6 +364,22 @@ class ShadowStore:
             decision.holding_duration_sec,
             decision.exit_reason,
             1 if decision.simulated else 0,
+            # CHG-0046: paired outcome + geometry fields (SHADOW_EVIDENCE v2)
+            decision.champion_entry,
+            decision.champion_sl,
+            decision.champion_tp,
+            decision.shadow_entry,
+            decision.shadow_sl,
+            decision.shadow_tp,
+            decision.spread_usd,
+            decision.shadow_r,
+            decision.shadow_mfe_r,
+            decision.shadow_mae_r,
+            decision.shadow_pnl_usd,
+            decision.shadow_holding_sec,
+            decision.shadow_exit_reason,
+            decision.delta_r,
+            decision.outcome_status,
             json.dumps(decision.model_dump(mode="json"), default=str),
         )
         try:
