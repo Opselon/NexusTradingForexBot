@@ -189,3 +189,37 @@ log_autopsy_fixes, accounting_hedging, rule_matrix.
   — they stay in the manager; extracting them is future work only with an
   explicit tracker-state owner.
 - Next: S6 manage_active_positions decomposition (last, highest risk).
+
+
+## 14. S6 manage_active_positions — dead-ticket autopsy sweep extraction (Agent-5)
+
+- Forensic phase map (1435L method): account snapshot refresh; falling-knife
+  protection; live-tickets cache rebuild (the ONLY lock, 12 critical
+  sections); Phase-14 reconcile close-loop (isolated); dead-ticket sweep +
+  autopsy + experience outcome + teardown (~460L); rolling spread; per-
+  position loop with 11 sections (bootstrap, protection refresh, tick
+  trackers, entry-mod/partial-close [broker], throttled hold-score,
+  trajectory+state, AI-flip [broker], protection priority chain, telemetry,
+  rule-matrix, arbitration, CLOSE/MODIFY dispatch [broker+audit]).
+- Side-effect ordering declared sacred and preserved: reconcile BEFORE
+  dead-sweep BEFORE no-positions return; protection priority chain order
+  byte-identical; teardown bundle atomic.
+- S6 seam extracted: _sweep_dead_tickets(symbol, positions, current_tick,
+  now, symbol_info, atr) — the vanished-ticket autopsy concern moved
+  VERBATIM as a method extraction on the same object (no dependency change,
+  no state duplication, no broker writes added). Call sits at the identical
+  position. `atr` passed explicitly (derived pre-loop from feature_vector).
+- Golden execution-trace tests (written PRE-extraction, green after):
+  vanished-ticket trace (deal lookup -> autopsy -> outcome -> teardown ->
+  cache release), BUG-046 window anchoring (>=24h, <=7d), live-ticket
+  survival. Characterization discovery: the Phase-14 reconcile close-loop
+  probes deal history even with zero positions (test corrected to real
+  behavior).
+- Pre-existing unrelated failure proven via git worktree at pre-S6 commit:
+  closed-loop BUG-140 integration expects p0e-bug140-1 while BUG-185 moved
+  the contract to p0e-bug185-1 (owner's lineage change, predates S6).
+- Remaining in manage_active_positions: the per-position loop (bootstrap,
+  protection refresh, trackers, entry-mod/partial-close, throttled scoring,
+  trajectory/state, AI-flip, protection chain, telemetry, rule-matrix,
+  arbitration, dispatch). Future extractions require tracker-state ownership
+  first (hold-value writes _rolling_spreads; trajectory/tick updaters).
