@@ -324,3 +324,54 @@ Remaining: the loop body still holds the protection/AI-flip priority chain
 and the broker dispatch (~250L combined). Prerequisites documented: dispatch
 extraction requires an execution-plan object; protection-chain extraction
 requires the notifier-throttle owner decision.
+
+
+## 17. S6-dispatch — ExecutionPlan + broker dispatcher extraction
+
+- ExecutionPlan (execution/execution_plan.py): frozen dataclass capturing
+  the decision stage's intent — action (CLOSE | MODIFY_SL | PARTIAL_CLOSE |
+  BREAK_EVEN | NORMAL_TRAIL), scenario, ticket, symbol, rule_target_sl,
+  tagged mechanism. Intent only: no broker access, no risk/policy logic,
+  no side effects; construction validated (non-empty action, positive
+  ticket).
+- Broker dispatcher: OrderLifecycleManager._execute_position_action(plan,
+  pos, ticket, now, atr, spread, min_stop_gap, price_current, rule_target_sl,
+  hold_score, protection, symbol_info, current_tick, scenario, action) —
+  the 175-line 5-branch dispatch moved VERBATIM from the per-position loop.
+  Preserves: monotonic SL safety floor (loosening rule targets zeroed),
+  _should_modify_sl gate, BUG-085 confirmed-modification tracking, BUG-087
+  broker-verified close ordering, forced-exit-mechanism tagging + failure
+  pop, split-sibling propagation, partial-close guard, notifier calls with
+  order-thread msg_id. The two trailing `continue` statements in the moved
+  block were documented no-ops (dispatch was the loop's final section) and
+  are annotated at their former sites.
+- The manager remains the orchestrator: decision -> ExecutionPlan ->
+  dispatcher; the dispatcher never originates actions.
+- Broker parity proven with spy-adapter goldens
+  (tests/unit/test_s6_dispatch_parity_golden.py): close_position called
+  exactly once with ticket=; success path sets _closed_tickets + releases
+  live-cache; failure path pops the mechanism; loosening MODIFY_SL zeroed
+  (no broker call); improving MODIFY_SL calls modify_position with exact
+  kwargs (ticket, stop_loss, take_profit) and advances _last_modify_sl +
+  _sl_modified_flags per BUG-085.
+- Measured: manage_active_positions 832L -> 684L; loop self.* fields
+  68 -> 61; branches 91 -> ~60 (dispatch branches moved); perf 0.73
+  ms/pass (1 live position) — no regression; 20 suites RC=0.
+
+### NEXT_SEAM (implementation-ready): Protection / AI-flip chain (~130L)
+- state owner: protection refresh already delegates to the S1 ledger; the
+  chain's remaining shared state is the notifier throttle
+  (_last_telemetry_time — shared with the institutional-telemetry block) and
+  _sl_modified_flags/_last_modify_sl (dispatch-owned, read here).
+- inputs: pos, protection snapshot, smart_metrics, evidence, hold_score,
+  atr, spread, price_current, feature_vector, probs, regime_state, now,
+  current_time, min_stop_gap, symbol_info.
+- outputs: (prot_score, ai_flip_detected, forced-mechanism tags mutated on
+  the manager as today).
+- side effects: notifier.notify_* calls (throttled), _forced_exit_mechanisms
+  writes, _capture_reversal_state (tracker), state transitions via the S2
+  machine.
+- blocking dependency: extract the notifier-throttle owner first (a 3-line
+  session-scoped throttle object) so the chain and telemetry share one
+  owner; then the chain becomes a stage method with the same verbatim-move
+  pattern used here.
