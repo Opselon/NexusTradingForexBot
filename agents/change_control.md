@@ -1451,3 +1451,42 @@ Status: COMPLETE
 - Risk: LOW (client-only presentation; worst case = cosmetic regression,
   covered by new UI-safety tests + existing Playwright e2e + deploy-drift tests).
 - Status: IMPLEMENTING
+
+
+CHANGE-ID: CHG-0050
+Agent: Nexus-Main (Database Platform owner)
+Task: TASK-DB-PLATFORM — Database Platform Overhaul (schema/migration/init/reconciliation + DB→API→client truth)
+
+Scope (2026-09-02):
+  Forensic inventory (no edits first): all CREATE TABLE/ALTER/migration/
+  repository/bootstrap paths mapped; operator-evidence root causes proven by
+  direct execution probes:
+  - BUG-197 CRITICAL: migration-gate baseline skeletons (gate runs BEFORE
+    AuditRepository in engine_boot) crashed fresh-install bootstrap with
+    "no column named rule_name"; reproduced, then healed additively in
+    database/engine._create_baseline_tables (rule_name/is_enabled/category/
+    parameters + ledger base columns + ticket TEXT→INTEGER PK retype ONLY on
+    the empty skeleton shape — legacy rows never rebuilt).
+  - BUG-199: manifest.py NEWS/CANDLE schema_version 1 → 2 (SSOT agreement
+    with registry-expected; pinned by regression test).
+  - BUG-200: /api/debug/state database section now probes the canonical
+    migration engine for schema_version + migration_state (was hard-coded
+    None → UI could never see schema truth; API was the first broken layer).
+  - BUG-201: release/versioning db_versions_provider reads the real
+    `migration_state` key (nonexistent `state` key yielded empty strings in
+    the operator snapshot); empty → UNKNOWN normalization.
+  - BUG-198: stale TestDbConsoleUiSurface now asserts the post-CHG-0032-A1
+    registration location (debug_research_routes), not server.py.
+  - test_health_never_raises_on_missing_database aligned to the CHG-0043
+    part-A NOT_INITIALIZED contract (absent DB = WARNING, not FAIL).
+  - docs/DATABASE_CATALOG.md: canonical per-table catalog with
+    REQUIRED_FOR_BOOT / REQUIRED_FOR_FEATURE / LAZY_INITIALIZED /
+    SHADOW_ONLY / OPTIONAL / FOREIGN_SCHEMA classification + DB→repo→API→UI
+    map + retention/perf/PG-portability status.
+  - tests/unit/test_database_platform_task_db.py: 12-test regression net
+    (manifest agreement, gate-first fresh install, legacy data preservation,
+    idempotency, API truth).
+
+NOT touched: installer/*, order_manager, provider_gate, regime, policy,
+shadow implementation, replay, observability SSOT, model training.
+Status: COMMITTED (19bf95b carried the tree; content verified at HEAD)
