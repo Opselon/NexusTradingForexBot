@@ -20,6 +20,7 @@ Usage:  python scripts/docs/check_docs.py [--quiet]
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import tempfile
@@ -239,6 +240,66 @@ def check_rtl_built_site() -> None:
     record("RTL+Switcher (built)", not problems, problems[:10] or ["ok"])
 
 
+def check_built_site_structure() -> None:
+    """Structural gates on the generated site: assets exist, pages reference
+    only relative paths, search index valid, mobile nav wired, version marker."""
+    public = REPO_ROOT / "site" / "_site"
+    problems: list[str] = []
+    if not public.exists():
+        record("Built-site structure", False, ["site/_site missing — run build_site.py"])
+        return
+    for required in (
+        "index.html",
+        "404.html",
+        ".nojekyll",
+        "sitemap.xml",
+        "search-index.json",
+        "site-meta.json",
+        "assets/styles.css",
+        "assets/search.js",
+        "assets/favicon.svg",
+        "releases/index.html",
+    ):
+        if not (public / required).exists():
+            problems.append(f"missing built file: {required}")
+    try:
+        idx = json.loads((public / "search-index.json").read_text(encoding="utf-8"))
+    except Exception as exc:
+        idx = []
+        problems.append(f"search-index.json invalid: {exc}")
+    for entry in idx:
+        url = entry.get("u", "")
+        probe = public / url.lstrip("/")
+        for cand in (probe, probe / "index.html", probe.with_suffix(".html")):
+            if cand.exists():
+                break
+        else:
+            problems.append(f"search index URL not built: {url}")
+    sitemap = (public / "sitemap.xml").read_text(encoding="utf-8")
+    for loc in re.findall(r"<loc>([^<]+)</loc>", sitemap):
+        tail = loc.split(".github.io/", 1)[-1] if ".github.io/" in loc else loc
+        probe = public / tail
+        if not (probe.exists() or (probe / "index.html").exists()):
+            problems.append(f"sitemap URL not built: {loc}")
+    try:
+        meta = json.loads((public / "site-meta.json").read_text(encoding="utf-8"))
+        import tomllib
+
+        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        expected = pyproject.get("project", {}).get("version")
+        if meta.get("version") != expected:
+            problems.append(f"site-meta version {meta.get('version')} != pyproject {expected}")
+    except Exception as exc:
+        problems.append(f"site-meta.json invalid: {exc}")
+    home = (public / "index.html").read_text(encoding="utf-8")
+    if "nav-toggle" not in home:
+        problems.append("mobile nav toggle missing")
+    js = (public / "assets" / "search.js").read_text(encoding="utf-8")
+    if "nav-open" not in js:
+        problems.append("search.js does not wire mobile nav")
+    record("Built-site structure", not problems, problems[:12] or ["ok"])
+
+
 # ---------------------------------------------------------------- 7. mermaid
 def check_mermaid() -> None:
     problems: list[str] = []
@@ -371,6 +432,7 @@ def main() -> int:
     check_links()
     check_translations_min()
     check_rtl_built_site()
+    check_built_site_structure()
     check_mermaid()
     check_build()
     check_assets()
