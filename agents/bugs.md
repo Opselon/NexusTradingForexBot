@@ -7272,3 +7272,20 @@ the real file); shadow70 _infer ran torch.load on the hot tick path.
 ### Status
 FIXED (parts 2-13); D13 canonical status vocabulary + D15 per-feature drill-
 down remain P2 follow-ups for the next shadow pass.
+
+## BUG-204 - nexus doctor --fix --json crashed with UnboundLocalError on 'entries' (cli/doctor.py, 2026-09-02, Hermes-Main; foreign CHG-0043-introduced, fixed under discovery duty during CHG-0046 critical-suite run)
+
+### Evidence
+- test_cli_end_to_end.py::test_e2e_05_doctor_fix_repairs_then_reverifies_to_ready
+  FAILED at tip: exit 1, UnboundLocalError("cannot access local variable
+  'entries'"). Reproduced via CliRunner on doctor.py:232.
+- Root cause: the json_mode early-return (line 174) returned before ANY
+  entries binding when --json was combined with --fix; the shared repair
+  path below then referenced entries. The 2026-09-02 UX-pass comment ("its
+  `verdict, entries` bindings stay JSON-path-local") documented the invariant
+  that the fix path violates.
+
+### Fix
+- doctor_cmd fetches `verdict, entries = _health_entries()` unconditionally
+  before the human/JSON-branch split (commit ab83e22). 39 tests PASS
+  (e2e_05 + test_runtime_truth_hardening.py 38).
