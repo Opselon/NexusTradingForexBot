@@ -32,8 +32,10 @@ from nexus_scalp.execution.order_manager import OrderLifecycleManager
 class RecordingAdapter(Mock):
     """MockMT5Adapter-compatible adapter that RECORDS every broker read."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        # **kwargs: Mock child-mock creation passes parent= (and other kwargs);
+        # rejecting them breaks auto-attribute creation on this subclass.
+        super().__init__(**kwargs)
         self.positions = []
         self.read_calls: list[tuple[str, tuple, dict]] = []
         self.close_calls: list[int] = []
@@ -57,7 +59,7 @@ def om():
     adapter = RecordingAdapter()
     repo = AuditRepository(db_url="sqlite:///:memory:")
     manager = OrderLifecycleManager(adapter=adapter, audit_repo=repo)
-    manager.deals = []
+    adapter.deals = []  # deal-history buffer lives on the ADAPTER (get_closed_deals_history reads self.deals)
     yield manager
     repo.close()
 
@@ -93,7 +95,7 @@ class TestS6DeadTicketAutopsyTrace:
         now = datetime.now(UTC)
         _seed_tracked_ticket(om, 201, now)
         # broker closed at a profit; deal matched by position_ticket
-        om.deals = [
+        om.adapter.deals = [
             {
                 "position_ticket": 201,
                 "ticket": 9001,
@@ -141,7 +143,7 @@ class TestS6DeadTicketAutopsyTrace:
         now = datetime.now(UTC)
         old_ts = now - timedelta(days=3)
         _seed_tracked_ticket(om, 202, old_ts)
-        om.deals = []
+        om.adapter.deals = []
         om.manage_active_positions("XAUUSD", _tick(now))
         window = [c for c in om.adapter.read_calls if c[0] == "get_closed_deals_history"]
         assert window, "lookup must run"

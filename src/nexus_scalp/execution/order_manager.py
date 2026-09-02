@@ -1666,7 +1666,10 @@ class OrderLifecycleManager:
                 logger.error(
                     "[RECONCILE] terminal pending sweep failed (isolated)", error=str(sweep_err)
                 )
-            self._live_tickets_cache = new_cache
+            # NOTE: do NOT assign self._live_tickets_cache here — that would
+            # shadow the @property with a plain instance attribute and
+            # desync every reader from the ledger-owned dict (found by the
+            # S6 dispatch/trace goldens). swap() + property is the path.
 
     def reconcile_pending_state(
         self, symbol: str | None = None, current_tick: TickData | None = None
