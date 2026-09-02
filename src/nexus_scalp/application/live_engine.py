@@ -690,6 +690,20 @@ class LiveEngine:
                 "[MODE] explicit operator override honored mode=%s", self._mode_override.value
             )
 
+        # BUG-212: boot-time adapter/mode alignment (defense in depth). The
+        # effective mode is now resolved (explicit override > settings DB >
+        # config), so the adapter boundary can be asserted INSIDE the engine:
+        # a PAPER boot must never keep a real broker adapter that any caller
+        # bound. Runs BEFORE OrderLifecycleManager construction so the order
+        # path is wired to the corrected boundary from the first tick.
+        # NOTE: static type checkers may narrow `self.adapter` to the
+        # constructor parameter type; that narrowing is re-widened here via
+        # the instance attribute assignment below.
+        _boot_adapter = self.align_adapter_to_boot_mode(adapter, self.config.execution.mode)
+        if _boot_adapter is not self.adapter:
+            self.adapter = _boot_adapter
+            adapter = _boot_adapter  # keep the local used by later __init__ wiring consistent
+
         self.notifier = TelegramNotifier(
             bot_token=bot_token,
             admin_id=admin_id,
@@ -3997,6 +4011,41 @@ class LiveEngine:
                     self._last_chart_snapshot_time = time.time()
                     self.server_state.update_live_visuals(bars_list, real_overlays)
             policy_decision = proposal
+            # =================================================================
+            # BUG-212: SHADOW EXECUTION BOUNDARY (observation-only mutations).
+            # -----------------------------------------------------------------
+            # SHADOW means "live data, live prediction, NO execution". The
+            # position-management pass above keeps running (protective
+            # observation), but this engine must never MUTATE broker state
+            # from the decision path: entries, lifecycle actions, AI
+            # reversals and intelligent hedges are all downgraded to logged
+            # NO_TRADE observations before any order authority is consulted.
+            # The proposal itself stays recorded (audit + experience ledger
+            # see the full counterfactual), so shadow evidence is preserved.
+            # =================================================================
+            if (
+                self.config.execution.mode == ExecutionMode.SHADOW
+                and policy_decision.action != ActionType.NO_TRADE
+            ):
+                _shadow_action = policy_decision.action
+                policy_decision = proposal.model_copy(
+                    update={
+                        "action": ActionType.NO_TRADE,
+                        "reason_code": "SHADOW_OBSERVATION_ONLY",
+                        "rejection_reason": (
+                            f"SHADOW mode is observation-only: {_shadow_action.value} suppressed"
+                        ),
+                        "final_action": "NO_TRADE",
+                        "is_ai_reversal": False,
+                        "reversal_action": None,
+                    }
+                )
+                logger.info(
+                    "[SHADOW_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED "
+                    "suppressed_action=%s ticket=%s",
+                    _shadow_action.value,
+                    getattr(proposal, "ticket", 0) or 0,
+                )
             if policy_decision.action != ActionType.NO_TRADE:
                 # ---------------------------------------------------------------
                 # AI POSITION REVERSAL: close-then-flip, never stack
@@ -4460,6 +4509,16 @@ class LiveEngine:
                 )
 
                 if hedge_order:
+                    # BUG-212: SHADOW observation-only — an intelligent hedge
+                    # is an order mutation; log the counterfactual and skip
+                    # the broker write.
+                    if self.config.execution.mode == ExecutionMode.SHADOW:
+                        logger.info(
+                            "[SHADOW_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED "
+                            "suppressed_action=HEDGE_LIMIT original_ticket=%s",
+                            pos.ticket,
+                        )
+                        continue
                     logger.info(
                         "Dispatching intelligent hedging limit order",
                         original_ticket=pos.ticket,
@@ -5706,6 +5765,64 @@ class LiveEngine:
                 self._runtime_mode,
                 mode,
             )
+
+    # ------------------------------------------------------------------
+    # BUG-212: boot-time adapter/mode alignment (hard simulation boundary).
+    # ------------------------------------------------------------------
+    def align_adapter_to_boot_mode(
+        self,
+        adapter: IMT5Port,
+        mode: ExecutionMode | None = None,
+    ) -> IMT5Port:
+        """Align the execution adapter with the EFFECTIVE boot mode.
+
+        BUG-212: the primary launcher (NexusTradingForexBot.py) historically
+        bound DirectMT5Adapter for every win32 boot regardless of mode, so a
+        PAPER boot stayed wired to the real terminal. The engine itself must
+        own the boundary: whenever the effective mode is PAPER the
+        simulation adapter is REQUIRED and a real broker adapter passed by
+        any caller is replaced BEFORE the first tick (same boot rule as
+        engine_boot.py's BUG-148 guard; SHADOW keeps its live adapter per
+        the shadow-observation contract). Returns the adapter that should
+        be used (the same object when no change is needed) without
+        connecting or disconnecting anything: the caller decides the
+        connect lifecycle.
+        """
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        effective = mode or self.config.execution.mode
+        try:
+            effective = ExecutionMode(str(effective).strip().upper())
+        except ValueError:
+            logger.warning(
+                "[MODE] align_adapter_to_boot_mode: unknown mode %r (no change)",
+                effective,
+            )
+            return adapter
+
+        # BOOT rule mirrors the engine_boot.py BUG-148 guard exactly:
+        # PAPER boots REQUIRE the simulation adapter. SHADOW boots KEEP the
+        # live-data (prediction) adapter by contract - shadow evidence must
+        # observe the REAL feed/positions; its no-mutation guarantee is
+        # enforced by the decision-path boundary (BUG-212 SHADOW_BOUNDARY),
+        # not by adapter identity. (set_execution_mode's PAPER+SHADOW swap
+        # is the HOT-switch behavior and stays unchanged.)
+        wants_simulation = effective == ExecutionMode.PAPER
+        is_simulation = isinstance(adapter, PaperMT5Adapter)
+
+        if wants_simulation and not is_simulation:
+            replacement: IMT5Port = PaperMT5Adapter(
+                symbol=self.config.execution.symbol,
+                initial_balance=float(getattr(self, "_last_balance", 0.0) or 0.0) or 10000.0,
+            )
+            logger.warning(
+                "[MODE] BUG-212 adapter realigned to simulation boundary "
+                "effective_mode=%s previous_adapter=%s",
+                effective.value,
+                type(adapter).__name__,
+            )
+            return replacement
+        return adapter
 
     def set_execution_mode(self, mode: ExecutionMode, *, source: str = "WEB_UI") -> dict:
         """BUG-148: HOT execution-mode switch (operator authority, UI + CLI).
