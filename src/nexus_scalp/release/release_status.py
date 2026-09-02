@@ -107,6 +107,30 @@ def _history_rows(limit: int = 10) -> list[dict[str, Any]]:
     return rows
 
 
+def _recent_commit_titles(limit: int = 5, remote: str = "origin/main") -> list[str]:
+    """Actual commit titles between HEAD and the remote ref (never invented).
+
+    Returns [] when the ref is unknown or git is unavailable — callers must
+    treat absence as UNKNOWN, not as 'no changes'.
+    """
+    try:
+        probe = subprocess.run(
+            ["git", "rev-parse", "--verify", "-q", remote],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if probe.returncode != 0:
+            return []
+        out = subprocess.run(
+            ["git", "log", f"HEAD..{remote}", "--pretty=format:%s", f"-n{limit}"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if out.returncode != 0:
+            return []
+        return [line.strip() for line in out.stdout.splitlines() if line.strip()]
+    except Exception:
+        return []
+
+
 def build_release_status(include_git_counts: bool = True) -> dict[str, Any]:
     """Offline-safe, last-known release/update status (never fabricates)."""
     home = _update_home()
@@ -158,6 +182,10 @@ def build_release_status(include_git_counts: bool = True) -> dict[str, Any]:
     if revision_ahead:
         update_status = STATUS_REVISION_AHEAD
 
+    # Real change summary: actual commit titles from the remote ref when we
+    # are genuinely behind; empty list = UNKNOWN (never fabricated).
+    changes = _recent_commit_titles(5) if (behind or 0) > 0 else []
+
     return {
         "contract": "RELEASE_STATUS v1",
         "generated_at": datetime.now(UTC).isoformat(),
@@ -169,6 +197,7 @@ def build_release_status(include_git_counts: bool = True) -> dict[str, Any]:
         "available_commit": available_commit,
         "commits_behind": behind,  # None = UNKNOWN (never fabricated)
         "commits_ahead": ahead,
+        "changes": changes,
         "update_status": update_status,
         "update_state": str(state.get("state") or "UNKNOWN"),
         "update_state_at": state.get("updated_at"),
