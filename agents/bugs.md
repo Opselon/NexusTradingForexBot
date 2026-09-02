@@ -7480,3 +7480,28 @@ pass - discovered during deploy-gate verification, referred NOT fixed)
 
 Status: FIXED (docs-tooling probe only; no site content changed).
 
+## BUG-211 - Primary launcher binds DirectMT5Adapter in PAPER/SHADOW boots: `--mode paper` still connects the real broker adapter and the engine manages REAL (demo) positions in non-LIVE modes (2026-09-02, Nexus-Main client E2E acceptance)
+
+- SYMPTOM (black-box E2E): booted `NexusTradingForexBot.py --mode paper`; banner prints
+  `Paper guard  PAPER  Default safe` but the very next line binds
+  `Execution Adapter → Direct Native MetaTrader 5 (Win32 IPC)`. /api/live/state then
+  reports MT5 CONNECTED with the real demo account login and lists a REAL open position
+  (magic 99999, broker ticket) that the engine actively manages while configured_mode=PAPER
+  (later UI-switched to SHADOW — same direct adapter, `manage_active_positions` still runs).
+- ROOT CAUSE: `src/nexus_scalp/cli/engine_boot.py:379` implements the BUG-148 adapter-boundary
+  rule (PAPER boots use PaperMT5Adapter so no broker touch is possible), but the PRIMARY
+  launcher `NexusTradingForexBot.py` (the canonical entrypoint) never received that guard:
+  it always binds DirectMT5Adapter on win32 regardless of mode, and no boot-time adapter/mode
+  alignment exists in LiveEngine (the PaperMT5Adapter swap in set_execution_mode only runs on
+  a UI/CLI mode CHANGE, never at boot).
+- IMPACT: (a) `--mode paper` is not the documented hard simulation boundary — the engine
+  stays wired to the real terminal (account/positions BROKER_NATIVE); (b) in SHADOW
+  ("live prediction, no execution") the engine still manages real positions (SL/TP/BE
+  lifecycles) via OrderManager because neither engine nor OrderManager gates on execution
+  mode; (c) UI mode semantics (PAPER=simulated fills) contradict the execution truth.
+- FIX OWNER: engine/launcher owner. Smallest correct repair: mirror the engine_boot.py
+  BUG-148 guard in NexusTradingForexBot.py (bind PaperMT5Adapter for PAPER boots), align the
+  adapter at LiveEngine boot from the effective mode (same rules as set_execution_mode), and
+  make position mutation observation-only in SHADOW.
+- E2E classification: P0-adjacent SAFETY (paper/shadow trust boundary). No real order was
+  placed by this pass (no dispatch occurred; the position pre-dates the session).
