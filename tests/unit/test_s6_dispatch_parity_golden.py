@@ -63,9 +63,9 @@ def _plan(action="CLOSE", **kw):
 class TestExecutionPlanContract:
     def test_frozen_intent(self):
         plan = _plan()
-        import pydantic
+        import dataclasses
 
-        with pytest.raises(pydantic.ValidationError):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             plan.action = "CLOSE"  # frozen
 
     def test_validation_rules(self):
