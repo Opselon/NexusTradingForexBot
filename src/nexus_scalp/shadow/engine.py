@@ -147,18 +147,36 @@ class ShadowEngine:
         champion_strategy_id: str,
         decision_id: str = "",
         feature_vector: list[float] | None = None,
+        champion_entry: float = 0.0,
+        champion_sl: float = 0.0,
+        champion_tp: float = 0.0,
+        shadow_entry: float = 0.0,
+        shadow_sl: float = 0.0,
+        shadow_tp: float = 0.0,
+        spread_usd: float = 0.0,
     ) -> ShadowDecisionRecord | None:
         """
-        Records one parallel Champion/Challenger decision using the SAME live
+        Records one parallel Champion/Champion decision using the SAME live
         feature vector. Returns the record, or None when shadow is disabled.
 
         This function NEVER executes anything: the Challenger output is a
         hypothetical proposal only.
+
+        CHG-0046: actions are normalized onto the canonical vocabulary
+        (BUY/SELL/NO_TRADE/WAIT) BEFORE any comparison — the policy emits
+        BUY/SELL while model argmax emits BUY_MARKET/SELL_MARKET, and raw
+        string equality fabricated disagreements (D2). Risk geometry for
+        BOTH sides is captured at record time (D3): the outcome resolver
+        fills hypothetical_r / mfe_r / mae_r afterwards from certified
+        ticks; nothing here invents outcomes.
         """
         if self.active_challenger is None or not self.active_run_id:
             return None
 
+        from nexus_scalp.shadow.compat import normalize_action
+
         runtime = self.active_challenger
+        champ_action_canonical = normalize_action(champion_action)
         shared_input = SharedInputRef(
             timestamp=timestamp,
             symbol=symbol,
@@ -216,17 +234,26 @@ class ShadowEngine:
             champion=champion_ref,
             challenger=runtime.ref or ShadowModelRef(model_id="", model_version=""),
             shared_input=shared_input,
-            champion_action=champion_action,
+            champion_action=champ_action_canonical,
             champion_confidence=champion_confidence,
             champion_probabilities=champion_probabilities,
             champion_strategy_id=champion_strategy_id,
-            challenger_action=challenger_action,
+            challenger_action=normalize_action(challenger_action),
             challenger_confidence=challenger_conf,
             challenger_probabilities=challenger_probs,
-            action_agreement=(valid and champion_action == challenger_action),
+            action_agreement=(
+                valid and champ_action_canonical == normalize_action(challenger_action)
+            ),
             valid_comparison=valid,
             invalid_reason=invalid_reason,
-            hypothetical_r=0.0,  # resolved on exit simulation
+            champion_entry=champion_entry,
+            champion_sl=champion_sl,
+            champion_tp=champion_tp,
+            shadow_entry=shadow_entry,
+            shadow_sl=shadow_sl,
+            shadow_tp=shadow_tp,
+            spread_usd=spread_usd,
+            outcome_status="PENDING",  # resolved ONLY by the certified tick resolver
         )
         self._decisions.append(decision)
         self.store.save_decision(decision)

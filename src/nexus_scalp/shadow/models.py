@@ -130,13 +130,21 @@ class ShadowDecisionRecord(BaseModel):
     valid_comparison: bool = Field(default=True)
     invalid_reason: str = Field(default="")
 
-    # Hypothetical risk (shadow only)
+    # Hypothetical risk geometry (shadow only) — captured AT RECORD TIME;
+    # never invented later. 0.0 = not applicable (flat) / NOT_RECORDED.
     hypothetical_risk_pct: float = Field(default=0.0, ge=0.0)
     hypothetical_volume: float = Field(default=0.0, ge=0.0)
-    hypothetical_sl: float = Field(default=0.0, ge=0.0)
-    hypothetical_tp: float = Field(default=0.0, ge=0.0)
+    champion_entry: float = Field(default=0.0, ge=0.0)
+    champion_sl: float = Field(default=0.0, ge=0.0)
+    champion_tp: float = Field(default=0.0, ge=0.0)
+    shadow_entry: float = Field(default=0.0, ge=0.0)
+    shadow_sl: float = Field(default=0.0, ge=0.0)
+    shadow_tp: float = Field(default=0.0, ge=0.0)
+    spread_usd: float = Field(default=0.0, ge=0.0)
 
-    # Hypothetical outcome (shadow only)
+    # Hypothetical outcome (shadow only) — filled ONLY by the certified
+    # tick outcome resolver (research.counterfactual semantics). A zero
+    # R with outcome_status PENDING is NOT evidence of a flat outcome.
     hypothetical_entry: float = Field(default=0.0, ge=0.0)
     hypothetical_exit: float = Field(default=0.0, ge=0.0)
     hypothetical_pnl_usd: float = Field(default=0.0)
@@ -145,6 +153,7 @@ class ShadowDecisionRecord(BaseModel):
     mae_r: float = Field(default=0.0)
     holding_duration_sec: float = Field(default=0.0, ge=0.0)
     exit_reason: str = Field(default="")
+    outcome_status: str = Field(default="NOT_RECORDED")  # PENDING/RESOLVED/NOT_RECORDED
 
     simulated: bool = Field(default=True, description="ALWAYS True; shadow/simulated")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
