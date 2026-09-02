@@ -1327,7 +1327,27 @@ NOT touched: legacy routes (zero behavior change), trading/execution/risk intern
 feature/model contracts, installer, CI workflows (except additive api-platform job last).
 Contracts: API_V1_ENVELOPE v1 (new), API_V1_PAGINATION v1 (new), API_V1_ERRORS v1 (new).
 Risk: MEDIUM (new public surface; mitigated: read-dominant, no trading mutations,
-sanitization layer, additive-only wiring, contract gates). Status: IN_PROGRESS
+sanitization layer, additive-only wiring, contract gates). Status: COMPLETE (2026-09-02 closure)
+
+Closure evidence (executed):
+- Canonical tree consolidated to src/nexus_scalp/web/api_v1 (commit e51a910);
+  superseded src/nexus_scalp/api removed; 67->68 operations live (no-trade/reasons added).
+- Contract+integration tests: 35 PASS (e1d7724) — envelope, pagination
+  no-dup/no-skip/window-slice invariants, filter composition, secret scan,
+  method-abuse, bounded query/path fuzz, additive legacy wiring proof.
+- DX layer landed (absorbed into 7b8618a during parallel BUG-211 push prep;
+  files verified in HEAD): nexus api CLI (12 commands), NexusApiClient,
+  scripts/dev api_smoke/api_contract_check/api_openapi_snapshot/api_openapi_diff/api_benchmark.
+- Gates at closure: API CONTRACT CHECK = PASS (68 operations/68 paths);
+  API_SMOKE = PASS (embedded); API_BENCHMARK = PASS (0 routes over p95 250ms
+  after health TTL-cache+prewarm / O(1) database-status / version memo repairs);
+  ruff + mypy clean on api_v1 + wiring + CLI + client; ruff --fix applied to tools.
+- docs/api/API_REFERENCE.md (part 4) examples executed against a live uvicorn
+  instance of the v1 app: DOC_EXAMPLES_VERIFIED = PASS.
+Known limitations (documented, not defects): no WebSocket/SSE duplication
+(legacy SSE retained); /market/bars bounded to engine-local aggregator bars;
+shadow/research reads require the shared audit DB to exist (truthful 503
+otherwise); mutation surface = 5 safe POSTs only.
 
 
 ## CHG-0046 — Shadow System Forensic, Hardening & Intelligence Upgrade (2026-09-02, Hermes-Main)

@@ -91,10 +91,9 @@ def _prewarm_health_cache(app: FastAPI) -> None:
     def _warm_bound() -> None:
         from nexus_scalp.web.api_v1.system import _health_block
 
-        class _Bind:  # minimal request-like shim exposing app.state
-            app = app
-
-        _health_block(_Bind())  # type: ignore[arg-type]
+        bind: Any = type("_Bind", (), {})()  # minimal request-like shim exposing app.state
+        bind.app = app
+        _health_block(bind)  # type: ignore[arg-type]
 
     threading.Thread(target=_warm_bound, name="v1-health-prewarm", daemon=True).start()
 
