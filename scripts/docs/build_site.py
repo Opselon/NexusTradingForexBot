@@ -564,8 +564,21 @@ def main() -> int:
             encoding="utf-8",
         )
     (out_dir / "404.html").write_text(build_404(), encoding="utf-8", newline="\n")
+    (out_dir / ".nojekyll").write_text("", encoding="utf-8")
     (out_dir / "search-index.json").write_text(
         json.dumps(search_entries, ensure_ascii=False), encoding="utf-8", newline="\n"
+    )
+    # sitemap.xml for search engines (PAGES_URL + local paths)
+    urls = [f"{PAGES_URL}/"]
+    for entry in search_entries:
+        urls.append(f"{PAGES_URL}{entry['url']}")
+    (out_dir / "sitemap.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "".join(f"  <url><loc>{u}</loc></url>\n" for u in urls)
+        + "</urlset>",
+        encoding="utf-8",
+        newline="\n",
     )
     print(f"BUILT pages={built} langs={len(LANGUAGES)} out={out_dir}")
     return 0
