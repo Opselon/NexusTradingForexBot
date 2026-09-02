@@ -86,12 +86,19 @@ class StrategyEvaluator:
         self._degraded_log_ts: dict[str, float] = {}
 
     def _should_repeat_degraded(self, strategy_id: str, min_gap_sec: float = 600.0) -> bool:
-        """True at most once per min_gap_sec per family (bounded repetition)."""
+        """True at most once per min_gap_sec per family (bounded repetition).
+
+        BUG-213 root fix: the "never logged yet" sentinel is ``None`` (absent
+        key), NOT ``0.0``. Comparing against ``time.monotonic()`` epoch-0 made
+        the first call machine-state dependent — on any host whose monotonic
+        clock is younger than ``min_gap_sec`` (<600s uptime, typical for fresh
+        CI runners) the first event was wrongly suppressed.
+        """
         import time as _time
 
         now = _time.monotonic()
-        last = self._degraded_log_ts.get(strategy_id, 0.0)
-        if now - last >= min_gap_sec:
+        last = self._degraded_log_ts.get(strategy_id)
+        if last is None or now - last >= min_gap_sec:
             self._degraded_log_ts[strategy_id] = now
             # bounded memory: keep only the most recent 512 families
             if len(self._degraded_log_ts) > 512:

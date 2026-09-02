@@ -7545,3 +7545,22 @@ Status: FIXED (docs-tooling probe only; no site content changed).
   UP/banner hidden automatically.
 - Classification: P1 DATA-FRESHNESS / RECOVERY (brief §27 no silent old data; §4/§8
   journey: disconnection must be visible and recovery automatic).
+
+## BUG-213 - ROOT FIX (2026-09-02, Hermes-Main supervisor): _should_repeat_degraded used monotonic-epoch-0 sentinel; first DEGRADED log suppressed on fresh CI runners (<600s uptime)
+
+### Root cause (proven)
+- experience/evaluator.py: `_degraded_log_ts.get(strategy_id, 0.0)` compared
+  `now - 0.0 >= min_gap_sec` against `time.monotonic()`. On any host whose
+  monotonic epoch is younger than min_gap_sec (fresh CI runner, <600s boot),
+  the FIRST call wrongly returned False -> the edge-triggered DEGRADED log
+  was suppressed exactly where the guardrails pin demands it fire.
+- This matches the CI-only signature (local hosts have large monotonic
+  values; solo runs always pass because monotonic() >> 600 by test time on
+  long-lived machines).
+- Fix: absent key is the "never logged" sentinel (`None`), not 0.0; first
+  call now always True, edge semantics unchanged for repeat suppression.
+- Verified: test_observability_guardrails.py 38/38 green; ruff check+format
+  clean; py_compile OK.
+
+Status: FIXED (root fix, not test weakening; test kept as the original pin).
+
