@@ -5,6 +5,7 @@ attribute names must return the LEDGER's live dicts (single source of truth),
 drops are ticket-scoped, and the ledger stores state only (no policy/eval/
 broker/audit authority).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,11 +54,17 @@ class TestHoldScoreOwnership:
         assert led._hold_score_tracker[B] == 90
 
     def test_no_authority(self):
-        src = Path(HoldScoreLedger.__module__.replace(".", "/") + ".py")
         root = Path(__import__("nexus_scalp.execution.hold_score_ledger", fromlist=["x"]).__file__)
         text = root.read_text(encoding="utf-8")
-        for banned in ("adapter", "order_send", "close_position", "IMT5Port",
-                       "AuditRepository", "TelegramNotifier", "evaluate_profit_giveback"):
+        for banned in (
+            "adapter",
+            "order_send",
+            "close_position",
+            "IMT5Port",
+            "AuditRepository",
+            "TelegramNotifier",
+            "evaluate_profit_giveback",
+        ):
             assert banned not in text, f"ledger must not gain {banned} authority"
 
     def test_cleanup_bundle_still_releases_hold_state(self):
@@ -66,6 +73,5 @@ class TestHoldScoreOwnership:
 
         src = Path(om_mod.__file__).read_text(encoding="utf-8")
         bundle = src.split("def _cleanup_ticket_state")[1].split("def ")[0]
-        for f in ("_hold_score_tracker", "_base_hold_score_tracker",
-                  "_last_reasons_tracker"):
+        for f in ("_hold_score_tracker", "_base_hold_score_tracker", "_last_reasons_tracker"):
             assert f"self.{f}," in bundle, f"cleanup must keep {f} in the atomic bundle"
