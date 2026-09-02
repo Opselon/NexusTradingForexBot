@@ -7140,3 +7140,135 @@ release/state_taxonomy.py + release/runtime_snapshot.py).
 - Banner renders CONFIGURED mode pre-connect while runtime_mode may append
   LIVE_CONFIGURED / MT5_DISCONNECTED later (UI badge shows the honest pair; banner
   transitional state documented, owner: runtime-truth).
+
+
+## BUG-197 - Fresh-install ordering hazard: migration-gate baseline skeletons crash AuditRepository bootstrap ("table trading_rules_config has no column named rule_name") (2026-09-02, Nexus-Main DB platform owner)
+
+### Evidence (reproduced before fix)
+- Runtime order is engine_boot._run_engine → run_startup_migration_gate FIRST,
+  LiveEngine → AuditRepository AFTER (verified by source order + probe).
+- On a fresh DB, the gate's `_create_baseline_tables` built skeletons from the
+  manifest: trading_rules_config(id, rule_id TEXT) and audit_ledger with
+  ticket TEXT (not PK). AuditRepository._seed_trading_rules then raised
+  `sqlite3.OperationalError: table trading_rules_config has no column named
+  rule_name` → fresh install could not boot.
+- Probe: bare migrate → AuditRepository(db_url) → crash reproduced; reverse
+  order (bootstrap first) succeeded — proving the gate-first path is broken.
+
+### Fix (database/data-plane side only)
+- engine._create_baseline_tables now HEALS the skeleton before commit:
+  additive app-required columns (rule_name/is_enabled/category/parameters;
+  ledger base columns) and an audit_ledger.ticket retype (TEXT→INTEGER PK)
+  performed ONLY on the empty skeleton shape — legacy DBs with rows are
+  never rebuilt (migration §5 contract).
+- Regression net: tests/unit/test_database_platform_task_db.py
+  (TestBaselineSkeletonHeal) pins gate-first fresh install → bootstrap OK,
+  seeded rules present, ledger PK INTEGER, legacy rows preserved.
+
+## BUG-198 - Stale UI-surface test: TestDbConsoleUiSurface asserted the pre-CHG-0032-A1 server.py import text and failed on every run (2026-09-02, Nexus-Main DB platform owner)
+
+### Evidence
+- CI run 603 (3900909) + local: test_server_registers_console_router failed
+  with `assert 'db_console' in server.py` — but the router registration was
+  extracted to web/debug_research_routes.py (fa15bb8, include verified
+  present at runtime). The feature works; the test asserted a stale location.
+
+### Fix
+- Test now asserts the truthful current location (debug_research_routes
+  includes db_console_router). No production change.
+
+
+## BUG-199 - Manifest/registry SSOT drift: NEWS + CANDLE_INTEL manifest schema_version stayed 1 after their -0002 migrations (registry expected 2) (2026-09-02, Nexus-Main DB platform owner)
+
+### Evidence
+- registry.expected_version_for_domain = baseline(1) + migrations = 2 for
+  news and candle_intel; manifest.NEWS_SCHEMA_VERSION / CANDLE_SCHEMA_VERSION
+  were 1 → manifest.expected_version_for contradicted the migration engine.
+- Probe printed: `news: manifest_version=1 registry_expected=2 -> MISMATCH`
+  (same for candle_intel). Engine correctness unaffected (it reads the
+  registry), but every manifest-side consumer saw a stale expected version.
+
+### Fix
+- manifest.py versions pinned to 2 with SSOT-rule comments; pinned for all
+  three domains by tests/unit/test_database_platform_task_db.py
+  (TestManifestRegistryAgreement).
+
+## BUG-200 - /api/debug/state database section hard-coded schema_version=None: UI could never see the schema version (first broken layer = API) (2026-09-02, Nexus-Main DB platform owner)
+
+### Evidence
+- debug_snapshot._database_section returned `"schema_version": None  # not
+  probed per request` for every domain while the DB was healthy (audit v7,
+  news v2, candle v2 on the real operator DB). The Debug DB card therefore
+  rendered nothing version-like — a DB→API→client visibility defect where
+  the DB held the truth and the API dropped it.
+
+### Fix
+- _probe now queries the canonical migration engine status (single version
+  lookup, bounded; failure isolated to NOT_RECORDED, never fabricated) and
+  adds migration_state. Verified live: audit 7 / news 2 / candle 2 now flow
+  to /api/debug/state. Regression: TestDebugSnapshotDatabaseSection.
+
+## BUG-201 - release.versioning.default_db_versions_provider read nonexistent st['state'] key: operator snapshot showed empty migration state for every domain (2026-09-02, Nexus-Main DB platform owner)
+
+### Evidence
+- engine.status() exposes `migration_state` (there is no `state` key);
+  probe returned `{'audit': {...'state': ''...}, news/candle same}` — the
+  operator summary database section carried empty strings to the client.
+
+### Fix
+- Read `migration_state`, normalize to UNKNOWN when absent (never empty).
+  Verified live: DB_MIGRATION_NOT_REQUIRED reported for all three domains.
+  Regression: TestDbVersionsProviderState.
+
+## BUG-203 - Shadow evidence layer fabricated outcomes and identities (PHASE-11 + TASK-05 shadow, 2026-09-02, Hermes-Main, CHG-0046 forensic)
+
+### Symptom
+Shadow produced "comparisons" that could never support a promotion decision:
+champion identity recorded as scalp_v1/50D while the live champion serves
+scalp_v3/70D (registry + live probe corroborate); BUY-vs-BUY_MARKET counted as
+ACTION_DISAGREEMENT; expectancy/drawdown/calibration computed over hardcoded
+0.0 hypothetical_r (grep: no resolver ever wrote it); champion-R derived as
+the mirrored -hypothetical_r (a flat champion "lost" the shadow's loss);
+shadow70 attach structurally impossible (model.meta.json has no
+feature_schema_hash/scaler_hash keys + '.pt.scaler.npz' scaler naming missed
+the real file); shadow70 _infer ran torch.load on the hot tick path.
+
+### Evidence
+- live_engine.py:5141-5148 recorded FEATURE_SCHEMA_ID/FEATURE_DIM class attrs
+  (scalp_v1/50D) vs /api/live/state feature_dimension=70 scalp_v3.
+- shadow/engine.py:229 `hypothetical_r=0.0  # resolved on exit simulation`
+  with zero writers anywhere in src/.
+- comparison.py:86 `champ_r.append(-d.hypothetical_r)` on any action mismatch.
+- shadow70/models.py:266 raw-string comparison; policy ActionType emits
+  BUY/SELL (domain/enums.py:30) vs argmax BUY_MARKET/SELL_MARKET.
+- model_governance_routes.py:503-521 manifest-only hash fill; :473
+  `str(path) + ".scaler.npz"` (canonical bundle ships model.scaler.npz).
+- live_engine.py:5123 salted `hash(tuple(x50[:5]))` fingerprint.
+
+### Fix (CHG-0046 parts 2-13, commits 6427596..7e84ac9)
+- identity: effective_feature_schema_id/effective_feature_dim everywhere a
+  shadow record is stamped (bundle-authoritative, D1/D1b).
+- comparison: canonical action normalization (shadow/compat.normalize_action);
+  paired outcome resolver (shadow/outcomes.py, TICK_COUNTERFACTUAL v1
+  semantics: side-aware fills, walk-end R, flat=0.0, NOT_RECORDED discipline,
+  deterministic); R metrics restricted to outcome_status==RESOLVED rows with
+  mean/median Delta_R + outcome_resolved_count; geometry captured at record
+  time (champion entry/SL/TP from the real proposal + tick spread).
+- attach/load: meta.json fallback + computed feature_schema_hash +
+  live-file scaler sha256 + canonical sibling naming; inference fn closes
+  over a model loaded ONCE (hot path never torch.load's).
+- scaler parity: scale_like_champion (std floor 1e-3 + clip [-5,5]) in both
+  shadow runtimes — the challenger is evaluated under its training transform.
+- provenance/truth: deterministic full-vector sha1 fingerprint; liquidity
+  causal state + calculation version stamped per observation; valid-only
+  disagreement/agreement counts; run-freeze identity (git rev + config +
+  artifact hashes) with ARTIFACT_REPLACED run invalidation; retention rules
+  for all shadow tables (raw 70D telemetry bounded 30d, evidence never
+  deleted); additive SHADOW_EVIDENCE v2 DB migration (legacy rows NULL).
+- 22 regression tests (test_shadow_hardening_chg0046.py) + critical_suite
+  wiring; shadow family ~190 tests green; zero order authority preserved; no
+  auto-promotion path added.
+
+### Status
+FIXED (parts 2-13); D13 canonical status vocabulary + D15 per-feature drill-
+down remain P2 follow-ups for the next shadow pass.

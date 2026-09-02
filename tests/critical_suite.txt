@@ -7,6 +7,8 @@ tests/unit/test_model_governance_phase16.py
 tests/unit/test_shadow_phase11.py
 tests/unit/test_shadow70_runtime.py
 tests/unit/test_shadow70_safety.py
+tests/unit/test_shadow70_health_drift.py
+tests/unit/test_shadow_hardening_chg0046.py
 tests/unit/test_model_benchmark_phase13b.py
 tests/unit/test_schema_70d_reconciliation.py
 tests/unit/test_70d_contract_parity_task3.py
