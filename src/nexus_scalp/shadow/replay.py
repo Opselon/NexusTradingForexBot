@@ -1,4 +1,4 @@
-"""Shadow Challenger Replay Evidence Pipeline (CHG-0047).
+"""Shadow Challenger Replay Evidence Pipeline (CHG-0047) — core module.
 
 Runs the VALIDATED-CHALLENGER -> SHADOW-ATTACH -> IDENTICAL-INPUTS ->
 CHAMPION vs CHALLENGER INFERENCE -> PAIRED OUTCOMES -> EVIDENCE ARTIFACT
@@ -7,22 +7,26 @@ replay data. Proves the hardened Shadow (CHG-0046, SHADOW_EVIDENCE v2)
 can produce real, reproducible, side-aware challenger evidence without
 fabricating a single metric.
 
+MODULE LAYOUT (import-cycle free):
+    replay.py (this module)   — constants, config, dataset fingerprint
+    _replay_pair.py           — pair classification + session buckets
+    _replay_evidence.py       — outcome walking + evidence + verdict
+
 HOW IT WORKS (zero foreign edits):
   * The SAME deterministic bar records stream through TWO independent
     StreamingReplayEngine sessions (research/streaming_replay.py,
     CHG-0035 — used read-only): one with the CHAMPION artifact, one with
     the CHALLENGER artifact. The engine is deterministic (test-enforced
     there), so row i of both decision traces is the SAME market state.
-  * Pairs are joined on timestamp + decision_index and every pair is
-    classified on TWO levels: MODEL level (argmax action + argmax
-    confidence from the raw 4-prob vector) and POLICY level (the frozen
-    SignalPolicy action recorded in the trace).
-  * Paired outcomes come from shadow.outcomes.resolve_paired: side-aware
+  * Pairs are joined on timestamp + decision_index and classified on TWO
+    levels: MODEL level (argmax action + argmax confidence over the raw
+    4-prob head vector) and POLICY level (the frozen SignalPolicy action
+    recorded in the trace).
+  * Paired outcomes come from shadow.outcomes.resolve_pared: side-aware
     fills, walk-end honest R, flat=0.0, geometry from the RECORDED
     proposal (entry/SL/TP in the trace rows). Unusable geometry ->
     NOT_RECORDED (never zero). The market path is the engine's own
-    bar-mode convention (bid=close, ask=close+0.20) applied identically
-    to BOTH sides.
+    bar-mode convention applied IDENTICALLY to BOTH sides.
   * Model identity, artifact hashes, schema identity, dataset
     fingerprint, git revision and configuration version are embedded in
     the artifact; a run re-identifies its challenger, so replacing the
@@ -39,31 +43,9 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.shadow._replay_evidence import (
-    build_replay_evidence,
-    promotion_verdict,
-    walk_pair_outcomes,
+from nexus_scalp.research.streaming_replay import (  # noqa: F401  (re-export)
+    BAR_MODE_SYNTHETIC_SPREAD_USD,
 )
-from nexus_scalp.shadow._replay_pair import classify_pair, session_of
-
-logger = get_logger("nexus_scalp.shadow.replay")
-
-__all__ = [
-    "ShadowReplayConfig",
-    "build_replay_evidence",
-    "classify_pair",
-    "dataset_fingerprint",
-    "promotion_verdict",
-    "session_of",
-    "walk_pair_outcomes",
-]
-
-#: Bar-mode synthetic spread used by StreamingReplayEngine itself
-#: (research/streaming_replay.BAR_MODE_SYNTHETIC_SPREAD_USD). Imported so
-#: the outcome walk uses the engine's OWN execution convention — one
-#: constant, one source of truth.
-BAR_MODE_SYNTHETIC_SPREAD_USD = 0.20
 
 #: Minimum resolved pairs before any superiority claim is graded
 #: (mirrors ShadowComparer.DEFAULT_MIN_SAMPLES semantics).
@@ -76,6 +58,15 @@ VERDICT_REJECTED = "CHALLENGER_REJECTED"
 
 #: ΔR beyond this magnitude marks a material behavioral difference.
 MATERIAL_DELTA_R: float = 0.10
+
+from nexus_scalp.shadow._replay_evidence import (  # noqa: E402, F401  (re-export; constants above must exist first to break the import cycle)
+    build_replay_evidence,
+    promotion_verdict,
+)
+from nexus_scalp.shadow._replay_pair import (  # noqa: E402, F401  (re-export)
+    classify_pair,
+    session_of,
+)
 
 
 def dataset_fingerprint(records: list[dict[str, Any]], dataset_id: str) -> str:
