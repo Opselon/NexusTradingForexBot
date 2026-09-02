@@ -7085,3 +7085,51 @@ Status: FIXED (uncommitted at discovery; committed with CHG-0043 part 1)
   confirm. Regression tests: tests/unit/test_web_ux_safety.py
 - Classification: P1 UI-safety. Status: FIXED in this pass (client-side
   confirmation; server-side LIVE-arm authorization remains the runtime owner's).
+
+## BUG-195 - State-semantic contradictions: launcher mode=PAPER vs runtime LIVE; total_features=50 vs 70D contract; fallback=17 vs fallback_features=0; Telegram NOT_CONFIGURED vs configured (2026-09-02, Nexus-Main contradiction forensics)
+
+- **Severity**: MEDIUM overall (C-001 MEDIUM observability; C-002/C-002b MEDIUM observability; C-003 LOW; C-004 LOW)
+- **Confidence**: HIGH (reproduced from logs/info/2026/09/2026-09-02.log boot 02:16:08-02:16:25 + source paths)
+
+### Contradictions
+1. **C-001**: launcher line "Bootstrapping Engine Subsystems ... mode=PAPER" while the
+   same boot binds the settings-DB effective mode (LIVE) at LiveEngine construction
+   (settings DB > YAML per BUG-148; configs/live.yaml still says PAPER-ish defaults).
+   One boot, two mode truths in one log.
+2. **C-002**: `[FEATURE_STATUS] total_features=50` while the loaded bundle is 70D
+   scalp_v3 (`model_input` truth = effective_feature_dim). The 50 is the BASE block
+   (to_tensor_input()), not the model input width.
+3. **C-002b** (BUG-070-5 residual): `[WARMUP] COMPLETE fallback_features=0` vs
+   `[FEATURE_STATUS] fallback=17` - different stages (HTF vs base zero-reads) wearing
+   nearly identical names, so the pair reads as a contradiction.
+4. **C-003**: `[TELEGRAM] BLOCKED_NOT_CONFIGURED reason=BOT_TOKEN_OR_ADMIN_MISSING`
+   while `[TELEGRAM_CONFIG] configured=True token_present=True admin_id_present=True
+   enabled=False`. DISABLED (user choice) is not NOT_CONFIGURED (missing creds).
+5. **C-004**: `[MODE] runtime_mode=...` re-logged every 5s (~2k/day) with zero state
+   change - truth-independent log lines dilute real transitions.
+6. **C-006 (doc)**: `features/schema.py:95 ACTIVE_SCHEMA_ID="scalp_v1"` vs configured
+   70D artifact - known registry-lag artifact (nse-50d-legacy-70d-canonical skill);
+   runtime uses bundle-authoritative effective_* (BUG-125). NOT a runtime defect.
+
+### Root cause
+State printers carried scope-less labels: each layer printed ITS stage-local value
+using a name that readers interpret as the global truth. No single canonical
+vocabulary existed at the log/UI layer (CHG-0043 TASK-RUNTIME-TRUTH now builds one:
+release/state_taxonomy.py + release/runtime_snapshot.py).
+
+### Fix (670bb2a, this commit; C-004 edge-trigger + C-002 label fix via 8603e70)
+- C-001: launcher logs `launch_mode + configured_mode + mode` (effective) together.
+- C-002/C-002b: warmup logs now `base_features=50 model_input_features={effective}
+  feature_schema={effective_schema}` + `base_fallbacks / htf_fallbacks` scope labels.
+- C-003: reason renamed `DELIVERY_DISABLED (ENABLED=false - credentials presence is
+  NOT a send intent)`; redaction test pin updated.
+- C-004: `[MODE]` emission edge-triggered via `_last_logged_runtime_mode`.
+- Regression: tests/unit/test_state_contradiction_forensics.py (C-001 source
+  contract + C-004 edge-trigger property) + test_12/13 scope-honest warmup labels.
+
+### Not fixed here (explicit)
+- `/api/status` aggregate rank leaves IDLE/DISABLED at READY-weight 0 (semantic gap,
+  TASK-RUNTIME-TRUTH owns the taxonomy rollout).
+- Banner renders CONFIGURED mode pre-connect while runtime_mode may append
+  LIVE_CONFIGURED / MT5_DISCONNECTED later (UI badge shows the honest pair; banner
+  transitional state documented, owner: runtime-truth).
