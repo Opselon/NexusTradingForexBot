@@ -129,6 +129,37 @@ Status: VERIFIED against live deployment
 
 ## DOC-TASK-ID: DOCS-004 — P0 localization repair + P1/P2 UI system (user steer 2026-09-02)
 
+- P0 root cause: UI chrome was partially hard-coded English regardless of
+  locale (nav page names = raw slugs; hero/pillars/capability rows/section
+  intros/404/releases intro/callout titles = EN literals).
+- P0 fix (translation contract): site/locales/<lang>/ui.json = SINGLE source
+  of truth (en/fa/ar/es/de), key parity verified (0 missing keys); builder
+  resolves EVERY generated user-visible string via t(lang, key); t() fallback:
+  lang value -> en value -> prettified key. New full FA/AR translations:
+  getting-started/first-run + configuration.
+- Gates: check_localization.py = LOCALIZATION_GATE (FA/AR chrome assertions +
+  English-leak detector with technical-English allowlist), wired into
+  DOCS_HEALTH as a deploy-blocking gate. coverage_report.py = machine-readable
+  coverage matrix (fa/ar 13 translated / 45 fallback; es/de 11/47; 0 missing
+  keys; RTL status).
+- P1: header theme picker (light/dark/system; localStorage persisted; no-FOUC
+  boot before paint; localized labels); NEXUS_LOCALE runtime bundle per page;
+  copy-code with localized feedback (FA/AR/EN) + aria-live; search no-results
+  localized.
+- P2: data-theme token overrides; hero grid + radial glow layers (hover-only
+  depth, no layout shift); card lift; reduced-motion disables decorative
+  layers.
+- DELIVERY FORENSIC: live site went stale after the P0 commit because the
+  Docs run failed at the mypy step (record() arg-type — my error). Deploy is
+  gated on CI health by design; fixed (6b16928..a2dc1cb) and deploy followed.
+- Validation: LOCALIZATION_GATE PASS / DOCS_HEALTH PASS (12 checks) /
+  BUILT_LINK_AUDIT PASS / ruff+mypy clean / node --check search.js OK /
+  LIVE: /fa/ hero+nav+theme picker+locale bundle verified (rev == HEAD).
+- Commits: 02d5855 (P0) · a2dc1cb (mypy fix + rebuild) · 4830d72 (locale
+  bundle) · c1f8bee (P1/P2) · this record.
+- Status: VERIFIED against live deployment.
+
+
 
 
 ## Out-of-scope defects observed (recorded only — owning agent notified via this registry)
