@@ -7381,3 +7381,37 @@ down remain P2 follow-ups for the next shadow pass.
   legacy route order untouched). Verified in the running client after restart:
   404 -> 200, dashboard load console-error-free.
 - Classification: P2 UX-MAJOR (feature-breaking 404, no data loss).
+
+## BUG-209 - Stale API-surface probe: CHECK-API-01 greps only server.py and misses
+endpoints moved to extracted route modules (false DEGRADED) (2026-09-02, Hermes-UI release-blocker
+pass - discovered during deploy-gate verification, referred NOT fixed)
+
+- Symptom: `test_forensic_monitoring_task11.py::TestMonitor19UiApi::
+  test_api_surface_present` and `test_post70d_monitoring_activation.py::
+  TestPost70d20UiApi::test_api_surface_present` FAIL at tip: the check
+  returns DEGRADED `API_SURFACE_MISSING` for /api/news/sources and
+  /api/research/health while BOTH endpoints demonstrably exist and serve
+  (live-verified: registered in web/news_liquidity_mslie_routes.py:514 and
+  web/debug_research_routes.py:1306, wired via app.include_router).
+- Root cause (reproduced with a fresh interpreter):
+  `check_api_200_but_wrong()` (forensics/checks_observability.py:346)
+  greps ONLY `server.__file__` text for the endpoint strings. Since
+  CHG-0032-A1 Steps 3A-3E (2117daf etc.) the route definitions live in
+  extracted `web/<domain>_routes.py` modules registered through
+  include_router, so the server.py-only grep can never see them. The
+  probe is stale relative to the current web architecture.
+- Correct shape: resolve the FULL registered route surface via the
+  FastAPI app (create_app().openapi() paths or app.routes) instead of
+  grepping one file; the CHG-0032-A1 gates already prove OpenAPI 249→
+  stable parity is the source of truth.
+- Impact: false DEGRADED (not CRITICAL - gate verdict REVIEW_REQUIRED,
+  not BLOCK), two perpetually-red tests in the monitoring suites.
+- Classification: P2 (false-positive health signal + stale tests).
+  Category: Observability/probe staleness. Owner: forensics observability
+  domain (checks_observability.py). NOT fixed here: outside the
+  BUG-193/BUG-196 remediation scope (HARD SCOPE clause 2).
+- Evidence commands: repo venv python; `from nexus_scalp.web import
+  server`; grep each endpoint string in server.py (False for the two)
+  vs in the owning route modules (True for both); pytest both test files
+  (FAIL reproduced at tip 86b13d6).
+  Status: OPEN.

@@ -4126,502 +4126,17 @@ class OrderLifecycleManager:
                 error=str(reconcile_err),
             )
 
-        active_tickets = {pos.ticket for pos in positions} if positions else set()
-        tracked_tickets = set(self._entry_timestamps.keys())
-        dead_tickets = tracked_tickets - active_tickets
-
-        if dead_tickets:
-            # ------------------------------------------------------------------
-            # BUG-046 FIX: lifecycle-based deal lookup (never host-1h-only).
-            # The MT5 broker/server clock can be hours ahead of the host clock,
-            # so a `now - 1h` window misses closes that happened minutes ago in
-            # wall time but are older in broker/server time. Anchor the query to
-            # the OLDEST tracked entry time and bound it to a sensible minimum so
-            # the window ALWAYS covers the complete position lifecycle.
-            # ------------------------------------------------------------------
-            try:
-                oldest_entry = min(
-                    (
-                        self._entry_timestamps[t]
-                        for t in dead_tickets
-                        if self._entry_timestamps.get(t)
-                    ),
-                    default=None,
-                )
-                hours_back = 24
-                if oldest_entry is not None:
-                    age_hours = (now - oldest_entry).total_seconds() / 3600.0
-                    hours_back = max(24, int(age_hours) + 2)
-                # Bounded: never scan more than 7 days per sweep (positions are
-                # scalps; anything older is outside the legit lifecycle).
-                hours_back = min(hours_back, 24 * 7)
-                history_deals = self.adapter.get_closed_deals_history(
-                    symbol=symbol, hours_back=hours_back
-                )
-                logger.debug(
-                    "[BROKER_OUTCOME] event=LOOKUP_START",
-                    tickets=len(dead_tickets),
-                    oldest_entry=oldest_entry.isoformat() if oldest_entry else None,
-                    hours_back=hours_back,
-                    now=now.isoformat(),
-                )
-            except Exception as e:
-                logger.error("Failed to retrieve closed deals history for ledger", error=e)
-                history_deals = []
-
-            for dead_ticket in dead_tickets:
-                entry = self._entry_prices.get(dead_ticket, 0.0)
-                tp_price = self._entry_tps.get(dead_ticket, 0.0)
-                sl_price = self._entry_sls.get(dead_ticket, 0.0)
-                entry_time = self._entry_timestamps.get(dead_ticket)
-                duration_sec = (now - entry_time).total_seconds() if entry_time else 0.0
-                vol = self._last_known_volume.get(dead_ticket, 0.0)
-                direction = self._entry_directions.get(dead_ticket, "BUY")
-
-                matched_deal = next(
-                    (d for d in history_deals if d.get("position_ticket") == dead_ticket), None
-                )
-                if matched_deal is None:
-                    # BUG-088/089 (TASK-7): the live 24h deal window can miss a
-                    # close (restart gap, window expiry). Fall back to the DURABLE
-                    # broker-deal capture (audit_broker_deals, position_id join)
-                    # before conceding FALLBACK_ESTIMATE/UNKNOWN.
-                    try:
-                        durable = self.audit.get_broker_deals_for_position(dead_ticket)
-                    except Exception:
-                        durable = []
-                    if durable:
-                        matched_deal = durable[0]
-                        history_deals = list(history_deals) + durable
-                        logger.debug(
-                            "[BROKER_OUTCOME] event=DURABLE_DEAL_FALLBACK",
-                            ticket=dead_ticket,
-                            deals=len(durable),
-                        )
-
-                # ------------------------------------------------------------------
-                # BUG-046 FIX: never default missing broker truth to zero.
-                # When no deal matched, realized PnL is UNKNOWN, not $0. The old
-                # code wrote profit_usd=0.0 which corrupted every closed outcome
-                # (R=0) and starved the research engine. A deterministic
-                # price-delta FALLBACK_ESTIMATE is used ONLY when entry/exit
-                # prices + volume + contract size are all authoritative; otherwise
-                # the value is left None and the outcome layer records UNKNOWN.
-                # ------------------------------------------------------------------
-                profit_usd = None
-                swap_usd = None
-                comm_usd = None
-                exit_price = entry
-                status_str = "CLOSED"
-
-                if matched_deal:
-                    profit_usd = matched_deal.get("profit", 0.0)
-                    swap_usd = matched_deal.get("swap", 0.0)
-                    comm_usd = matched_deal.get("commission", 0.0)
-                    exit_price = matched_deal.get("price", 0.0)
-                    deal_reason_code = matched_deal.get("reason", 0)
-                    comment = matched_deal.get("comment", "")
-                    logger.debug(
-                        "[BROKER_OUTCOME] event=MATCHED",
-                        ticket=dead_ticket,
-                        source="BROKER_HISTORY",
-                        position_ticket=matched_deal.get("position_ticket"),
-                        profit=profit_usd,
-                    )
-
-                    if (
-                        "NSE_CLOSE" in comment
-                        or "emergency" in comment.lower()
-                        or "cut" in comment.lower()
-                    ):
-                        status_str = "MANUALLY_CLOSED"
-                    elif (
-                        deal_reason_code == 5  # DEAL_REASON_TP (BUG-083)
-                        or "tp" in comment.lower()
-                        or (profit_usd > 0 and abs(exit_price - tp_price) < 0.10)
-                    ):
-                        status_str = "CLOSED_TP"
-                    elif (
-                        deal_reason_code in (4, 6)  # DEAL_REASON_SL / SO (BUG-083)
-                        or "sl" in comment.lower()
-                        or (profit_usd < 0 and abs(exit_price - sl_price) < 0.10)
-                    ):
-                        status_str = "CLOSED_SL"
-                    else:
-                        status_str = "MANUALLY_CLOSED" if deal_reason_code in (1, 2) else "CLOSED"
-                else:
-                    # No broker deal matched. Fall back to a deterministic price
-                    # estimate ONLY when authoritative prices are available, and
-                    # flag it explicitly (FALLBACK_ESTIMATE) so consumers know it
-                    # is not broker truth.
-                    exit_price = current_tick.bid if direction == "BUY" else current_tick.ask
-                    if entry > 0.0 and exit_price > 0.0 and vol > 0.0:
-                        contract_sz = self._resolve_contract_size(symbol_info)
-                        price_delta = (
-                            (exit_price - entry)
-                            if "BUY" in str(direction).upper()
-                            else (entry - exit_price)
-                        )
-                        profit_usd = float(price_delta) * float(vol) * contract_sz
-                        swap_usd = 0.0
-                        comm_usd = 0.0
-                        logger.debug(
-                            "[BROKER_OUTCOME] event=RECONSTRUCTION_FALLBACK",
-                            ticket=dead_ticket,
-                            source="FALLBACK_ESTIMATE",
-                            entry=entry,
-                            exit=exit_price,
-                            volume=vol,
-                            estimated_profit=profit_usd,
-                        )
-                    else:
-                        # Not enough evidence: explicit UNKNOWN (never zero).
-                        logger.warning(
-                            "[BROKER_OUTCOME] event=MATCH_FAILED",
-                            ticket=dead_ticket,
-                            reason="NO_BROKER_DEAL_AND_NO_PRICE_EVIDENCE",
-                            searched_hours_back=hours_back,
-                            deals_found=len(history_deals),
-                        )
-
-                # =============================================================
-                # MODULE A: SINGLE DATA-RICH AUTOPSY ROW PER CLOSED TRADE
-                # =============================================================
-                mae_val = float(self._mae_tracker.get(dead_ticket, 0.0))
-                mfe_val = float(self._mfe_tracker.get(dead_ticket, 0.0))
-                initial_sl_val = float(sl_price)
-                final_sl_val = float(self._last_modify_sl.get(dead_ticket, initial_sl_val))
-
-                # was_sl_modified: True only when trailing/breakeven actually shifted the SL.
-                # Phase 14: also honour the explicit modification flag - a
-                # breakeven/trailing lock that was applied in-process but later
-                # reconciled must survive the autopsy (BUG-045 anomaly E).
-                was_sl_modified = bool(
-                    self._sl_modified_flags.get(dead_ticket, False)
-                    or abs(final_sl_val - initial_sl_val) > 1e-9
-                )
-
-                # is_risk_free_hit: closed on a stop that had already been moved into profit.
-                is_risk_free_hit = 0
-                if direction == "BUY":
-                    if final_sl_val >= entry and abs(exit_price - final_sl_val) < 0.15:
-                        is_risk_free_hit = 1
-                elif (
-                    final_sl_val <= entry
-                    and final_sl_val > 0.0
-                    and abs(exit_price - final_sl_val) < 0.15
-                ):
-                    is_risk_free_hit = 1
-
-                # ---- Exit mechanism resolution (engine intent overrides broker heuristic) ----
-                forced_mechanism = self._forced_exit_mechanisms.pop(dead_ticket, None)
-                # Phase 14: map to the canonical taxonomy via broker evidence
-                # (DEAL_REASON + SL/TP geometry + protective context). A stop-out
-                # is NEVER labelled MANUAL_CLOSE merely because the internal
-                # state machine performed protection logic first (BUG-045).
-                (
-                    exit_mechanism,
-                    exit_reason_source,
-                    exit_evidence,
-                    exit_reason_confidence,
-                ) = classify_exit_with_evidence(
-                    deal_reason_code=matched_deal.get("reason", 0) if matched_deal else 0,
-                    comment=matched_deal.get("comment", "") if matched_deal else "",
-                    profit_usd=profit_usd,
-                    exit_price=exit_price,
-                    tp_price=tp_price,
-                    sl_price=sl_price,
-                    final_sl=final_sl_val,
-                    entry_price=entry,
-                    was_sl_modified=bool(was_sl_modified),
-                    direction=direction,
-                    forced_mechanism=forced_mechanism,
-                )
-
-                # Phase 14: authoritative broker closure reconstruction. When the
-                # broker deal evidence is available (multi-deal aggregation
-                # included), the realized result comes from the DEAL path - never
-                # from a stale floating-PnL default of zero (BUG-045).
-                broker_outcome = reconstruct_broker_outcome(
-                    ticket=dead_ticket,
-                    symbol=symbol,
-                    direction=direction,
-                    deals=history_deals,
-                    matched_deal=matched_deal,
-                    entry_price=entry,
-                    initial_sl=initial_sl_val,
-                    final_sl=final_sl_val,
-                    tp_price=tp_price,
-                    volume=vol,
-                    fallback_exit_price=exit_price,
-                    close_time=now,
-                    entry_time=entry_time,
-                )
-                if broker_outcome.reconstruction_source != "NONE":
-                    profit_usd = broker_outcome.gross_profit
-                    comm_usd = broker_outcome.commission
-                    swap_usd = broker_outcome.swap
-                    exit_price = broker_outcome.exit_price
-                    # BUG-088 (TASK-7): when the broker reconstruction aggregated
-                    # multiple OUT deals, reclassify on the AGGREGATE PnL + the
-                    # aggregated comment/reason so a partial-fill family is never
-                    # classified by a single deal's sign.
-                    if len(history_deals) > 1:
-                        try:
-                            deal_gross = sum(
-                                float(d.get("profit", 0.0) or 0.0)
-                                for d in history_deals
-                                if d.get("position_ticket") == dead_ticket
-                            )
-                            profit_usd = deal_gross
-                        except Exception:
-                            pass
-
-                # ---- Quant risk excursions converted to account currency ----
-                mae_usd = self._price_delta_to_usd(min(mae_val, 0.0), vol, symbol_info)
-                mfe_usd = self._price_delta_to_usd(max(mfe_val, 0.0), vol, symbol_info)
-                # Prefer directly observed USD peaks when the tick loop tracked them.
-                peak_dd_usd = float(self._peak_drawdown_usd.get(dead_ticket, 0.0))
-                peak_win_usd = float(self._peak_profit_usd.get(dead_ticket, 0.0))
-                if peak_dd_usd < 0.0:
-                    mae_usd = peak_dd_usd
-                if peak_win_usd > 0.0:
-                    mfe_usd = peak_win_usd
-
-                open_time_str = (
-                    entry_time.isoformat()
-                    if hasattr(entry_time, "isoformat")
-                    else str(entry_time or "")
-                )
-                close_time_str = now.isoformat() if hasattr(now, "isoformat") else str(now)
-
-                self.audit.log_ledger_closed(
-                    ticket=dead_ticket,
-                    symbol=symbol,
-                    direction=direction,
-                    volume=vol,
-                    entry_price=entry,
-                    exit_price=exit_price,
-                    status=status_str,
-                    pnl=profit_usd,
-                    commission=comm_usd,
-                    swap=swap_usd,
-                    duration_sec=duration_sec,
-                    timestamp_str=close_time_str,
-                    mae=mae_val,
-                    mfe=mfe_val,
-                    initial_sl_price=initial_sl_val,
-                    final_sl_price=final_sl_val,
-                    is_risk_free_hit=is_risk_free_hit,
-                    exit_mechanism=exit_mechanism,
-                    # --- Institutional autopsy fields ---
-                    order_id=self._entry_order_ids.get(dead_ticket, ""),
-                    open_time=open_time_str,
-                    close_time=close_time_str,
-                    entry_reason=self._entry_reasons.get(dead_ticket, ""),
-                    ai_confidence_at_open=self._entry_confidences.get(dead_ticket, 0.0),
-                    market_regime_at_open=self._entry_regimes.get(dead_ticket, ""),
-                    was_sl_modified=int(was_sl_modified),
-                    mae_usd=mae_usd,
-                    mfe_usd=mfe_usd,
-                    account_balance_after=self._last_account_balance,
-                    account_equity_after=self._last_account_equity,
-                    drawdown_percent_after=self._current_drawdown_percent(),
-                    # DEBUG-AUDIT (2026-08-18): full chart-state fingerprint at
-                    # dispatch persisted to the ledger for post-hoc setup/strategy
-                    # attribution of every closed trade.
-                    entry_setup_snapshot=json.dumps(
-                        self._entry_setup_snapshots.get(dead_ticket, {})
-                    ),
-                    exit_reason_source=exit_reason_source,
-                    exit_evidence=exit_evidence,
-                    exit_reason_confidence=exit_reason_confidence,
-                    reversal_events_json=json.dumps(self._reversal_events.get(dead_ticket, [])),
-                )
-
-                # =============================================================
-                # PHASE 08: EXPERIENCE OUTCOME ATTRIBUTION
-                # -------------------------------------------------------------
-                # Records the append-only outcome for the decision that produced
-                # this ticket, including full execution/behaviour evidence so the
-                # experience layer can attribute the result across strategy,
-                # entry, management, exit and execution quality.
-                #
-                # Fully isolated: any failure here is logged and ignored. The
-                # autopsy row above is already persisted, and no execution
-                # decision depends on this call.
-                # =============================================================
-                if self.experience_engine is not None:
-                    self._record_experience_outcome(
-                        dead_ticket=dead_ticket,
-                        now=now,
-                        entry=entry,
-                        exit_price=exit_price,
-                        initial_sl_val=initial_sl_val,
-                        vol=vol,
-                        atr=atr,
-                        symbol_info=symbol_info,
-                        profit_usd=profit_usd,
-                        comm_usd=comm_usd,
-                        swap_usd=swap_usd,
-                        mae_val=mae_val,
-                        mfe_val=mfe_val,
-                        mae_usd=mae_usd,
-                        mfe_usd=mfe_usd,
-                        duration_sec=duration_sec,
-                        exit_mechanism=exit_mechanism,
-                        was_sl_modified=bool(was_sl_modified),
-                        broker_outcome=broker_outcome,
-                    )
-
-                net_pnl_log = "UNKNOWN"
-                if profit_usd is not None:
-                    net_pnl_log = f"${(profit_usd - (comm_usd or 0.0) - (swap_usd or 0.0)):+.2f}"
-                    self._net_pnl_by_ticket[dead_ticket] = (
-                        float(profit_usd) - float(comm_usd or 0.0) - float(swap_usd or 0.0)
-                    )
-                self._exit_mechanism_by_ticket[dead_ticket] = exit_mechanism
-
-                logger.info(
-                    "[LEDGER AUTOPSY] Closed trade recorded",
-                    ticket=dead_ticket,
-                    direction=direction,
-                    exit_mechanism=exit_mechanism,
-                    entry_reason=self._entry_reasons.get(dead_ticket, ""),
-                    net_pnl=net_pnl_log,
-                    mae_usd=f"${mae_usd:+.2f}",
-                    mfe_usd=f"${mfe_usd:+.2f}",
-                    was_sl_modified=was_sl_modified,
-                )
-
-                if self.notifier:
-                    try:
-                        msg_id = self._order_message_ids.get(dead_ticket)
-                        orig_risk = self._initial_risks.get(dead_ticket, 0.0)
-                        profit_pct = 0.0
-                        if profit_usd is not None and entry > 0.0:
-                            profit_pct = abs(exit_price - entry) / entry * 100.0
-                            if (profit_usd + (swap_usd or 0.0) + (comm_usd or 0.0)) < 0:
-                                profit_pct = -profit_pct
-
-                        total_net_profit = (
-                            profit_usd + (swap_usd or 0.0) + (comm_usd or 0.0)
-                            if profit_usd is not None
-                            else 0.0
-                        )
-
-                        if (
-                            status_str == "MANUALLY_CLOSED"
-                            and matched_deal
-                            and (
-                                "NSE_CLOSE" in matched_deal.get("comment", "")
-                                or "emergency" in matched_deal.get("comment", "").lower()
-                                or "cut" in matched_deal.get("comment", "").lower()
-                            )
-                        ):
-                            mae_val = self._mae_tracker.get(dead_ticket, 0.0)
-                            dd_pct = (abs(mae_val) / max(atr, 0.50)) * 100.0
-                            self.notifier.notify_emergency_cut(
-                                ticket=dead_ticket,
-                                score=self._hold_score_tracker.get(dead_ticket, 100),
-                                reasons=matched_deal.get("comment", "")
-                                if matched_deal
-                                else "NSE Emergency Cut",
-                                saved_usd=abs(total_net_profit)
-                                if total_net_profit < 0
-                                else total_net_profit,
-                                trigger_source="Algorithm Position Router",
-                                drawdown_pct=dd_pct,
-                                reply_to_message_id=msg_id,
-                            )
-                        elif status_str == "CLOSED_TP":
-                            self.notifier.notify_tp_touched(
-                                ticket=dead_ticket,
-                                symbol=symbol,
-                                entry=entry,
-                                tp_price=tp_price,
-                                exit_price=exit_price,
-                                profit_usd=total_net_profit,
-                                profit_pct=profit_pct,
-                                duration_sec=duration_sec,
-                                reply_to_message_id=msg_id,
-                            )
-                        elif status_str == "CLOSED_SL":
-                            self.notifier.notify_sl_touched(
-                                ticket=dead_ticket,
-                                symbol=symbol,
-                                entry=entry,
-                                sl_price=sl_price,
-                                exit_price=exit_price,
-                                loss_usd=total_net_profit,
-                                loss_pct=profit_pct,
-                                duration_sec=duration_sec,
-                                risk_usd=orig_risk,
-                                reply_to_message_id=msg_id,
-                            )
-                        else:
-                            # BUG-081: Telegram consumes the CANONICAL outcome.
-                            # The exit label/evidence come from the same classifier
-                            # result written to the ledger (AccountingCore /
-                            # ExperienceLedger) — never re-inferred from the broker
-                            # reason code, and never defaulted to MANUAL.
-                            self.notifier.notify_canonical_close(
-                                ticket=dead_ticket,
-                                symbol=symbol,
-                                entry=entry,
-                                exit_price=exit_price,
-                                profit_usd=total_net_profit,
-                                duration_sec=duration_sec,
-                                exit_reason=exit_mechanism,
-                                evidence=f"{exit_reason_source} | {exit_evidence}",
-                                initial_sl=initial_sl_val,
-                                final_sl=final_sl_val,
-                                strategy=self._entry_reasons.get(dead_ticket, ""),
-                                regime=self._entry_regimes.get(dead_ticket, ""),
-                                confidence=self._entry_confidences.get(dead_ticket, 0.0),
-                                realized_r=total_net_profit / max(orig_risk, 1e-9)
-                                if orig_risk > 0.0
-                                else 0.0,
-                                mfe_usd=mfe_usd,
-                                mae_usd=mae_usd,
-                                reply_to_message_id=msg_id,
-                            )
-                    except Exception as e:
-                        logger.error("Failed to notify closed trade", error=e)
-
-        for dead_ticket in dead_tickets:
-            oid = self._entry_order_ids.get(dead_ticket, "")
-            if self.lifecycle_tracker is not None:
-                try:
-                    net_realized = self._net_pnl_by_ticket.get(dead_ticket, 0.0)
-                    risk_dist = self._initial_risks.get(dead_ticket, 0.0)
-                    realized_r = net_realized / max(risk_dist, 1e-9) if risk_dist > 0.0 else 0.0
-                    final_mechanism = self._forced_exit_mechanisms.get(
-                        dead_ticket
-                    ) or self._exit_mechanism_by_ticket.get(dead_ticket, "")
-                    self.lifecycle_tracker.finalize_exit(
-                        ticket=dead_ticket,
-                        realized_pnl_usd=net_realized,
-                        realized_r=realized_r,
-                        exit_mechanism=final_mechanism,
-                        at=now,
-                    )
-                except Exception as finalize_err:
-                    logger.error(
-                        "[POSITION_TRACK] finalize failed (isolated)",
-                        ticket=dead_ticket,
-                        error=str(finalize_err),
-                    )
-            # TASK-7: a broker-gone ticket is positively closed; the exit-pending
-            # reason is cleared once the autopsy row carries the decision evidence.
-            self._closed_tickets[dead_ticket] = True
-            self._exit_pending_final_reason.pop(dead_ticket, None)
-            self._cleanup_ticket_state(dead_ticket)
-            # BUG-081: prune the fill-family context once the final sibling
-            # has closed (bounded registry lifecycle).
-            if oid:
-                self._prune_bound_context(oid)
-
+        # S6 seam: vanished-ticket autopsy sweep extracted verbatim (same
+        # object, same call position — after reconcile_missed_closes, before
+        # the no-positions return).
+        self._sweep_dead_tickets(
+            symbol=symbol,
+            positions=positions,
+            current_tick=current_tick,
+            now=now,
+            symbol_info=symbol_info,
+            atr=atr,
+        )
         if not positions:
             return []
 
@@ -5457,6 +4972,519 @@ class OrderLifecycleManager:
                         )
 
         return positions
+
+    def _sweep_dead_tickets(
+        self,
+        symbol: str,
+        positions: list[Position],
+        current_tick: TickData,
+        now: datetime,
+        symbol_info: SymbolInfo | None,
+        atr: float,
+    ) -> None:
+        """
+        Vanished-ticket autopsy sweep (S6 seam): for every tracked ticket that
+        disappeared from the broker's open-positions list, resolve the closing
+        deal (history + durable fallback), write the single data-rich autopsy
+        row, record the experience outcome, emit telemetry, and release the
+        per-ticket state. Extracted VERBATIM from manage_active_positions
+        (S6; behavior-preserving method extraction on the same object).
+        """
+        active_tickets = {pos.ticket for pos in positions} if positions else set()
+        tracked_tickets = set(self._entry_timestamps.keys())
+        dead_tickets = tracked_tickets - active_tickets
+
+        if dead_tickets:
+            # ------------------------------------------------------------------
+            # BUG-046 FIX: lifecycle-based deal lookup (never host-1h-only).
+            # The MT5 broker/server clock can be hours ahead of the host clock,
+            # so a `now - 1h` window misses closes that happened minutes ago in
+            # wall time but are older in broker/server time. Anchor the query to
+            # the OLDEST tracked entry time and bound it to a sensible minimum so
+            # the window ALWAYS covers the complete position lifecycle.
+            # ------------------------------------------------------------------
+            try:
+                oldest_entry = min(
+                    (
+                        self._entry_timestamps[t]
+                        for t in dead_tickets
+                        if self._entry_timestamps.get(t)
+                    ),
+                    default=None,
+                )
+                hours_back = 24
+                if oldest_entry is not None:
+                    age_hours = (now - oldest_entry).total_seconds() / 3600.0
+                    hours_back = max(24, int(age_hours) + 2)
+                # Bounded: never scan more than 7 days per sweep (positions are
+                # scalps; anything older is outside the legit lifecycle).
+                hours_back = min(hours_back, 24 * 7)
+                history_deals = self.adapter.get_closed_deals_history(
+                    symbol=symbol, hours_back=hours_back
+                )
+                logger.debug(
+                    "[BROKER_OUTCOME] event=LOOKUP_START",
+                    tickets=len(dead_tickets),
+                    oldest_entry=oldest_entry.isoformat() if oldest_entry else None,
+                    hours_back=hours_back,
+                    now=now.isoformat(),
+                )
+            except Exception as e:
+                logger.error("Failed to retrieve closed deals history for ledger", error=e)
+                history_deals = []
+
+            for dead_ticket in dead_tickets:
+                entry = self._entry_prices.get(dead_ticket, 0.0)
+                tp_price = self._entry_tps.get(dead_ticket, 0.0)
+                sl_price = self._entry_sls.get(dead_ticket, 0.0)
+                entry_time = self._entry_timestamps.get(dead_ticket)
+                duration_sec = (now - entry_time).total_seconds() if entry_time else 0.0
+                vol = self._last_known_volume.get(dead_ticket, 0.0)
+                direction = self._entry_directions.get(dead_ticket, "BUY")
+
+                matched_deal = next(
+                    (d for d in history_deals if d.get("position_ticket") == dead_ticket), None
+                )
+                if matched_deal is None:
+                    # BUG-088/089 (TASK-7): the live 24h deal window can miss a
+                    # close (restart gap, window expiry). Fall back to the DURABLE
+                    # broker-deal capture (audit_broker_deals, position_id join)
+                    # before conceding FALLBACK_ESTIMATE/UNKNOWN.
+                    try:
+                        durable = self.audit.get_broker_deals_for_position(dead_ticket)
+                    except Exception:
+                        durable = []
+                    if durable:
+                        matched_deal = durable[0]
+                        history_deals = list(history_deals) + durable
+                        logger.debug(
+                            "[BROKER_OUTCOME] event=DURABLE_DEAL_FALLBACK",
+                            ticket=dead_ticket,
+                            deals=len(durable),
+                        )
+
+                # ------------------------------------------------------------------
+                # BUG-046 FIX: never default missing broker truth to zero.
+                # When no deal matched, realized PnL is UNKNOWN, not $0. The old
+                # code wrote profit_usd=0.0 which corrupted every closed outcome
+                # (R=0) and starved the research engine. A deterministic
+                # price-delta FALLBACK_ESTIMATE is used ONLY when entry/exit
+                # prices + volume + contract size are all authoritative; otherwise
+                # the value is left None and the outcome layer records UNKNOWN.
+                # ------------------------------------------------------------------
+                profit_usd = None
+                swap_usd = None
+                comm_usd = None
+                exit_price = entry
+                status_str = "CLOSED"
+
+                if matched_deal:
+                    profit_usd = matched_deal.get("profit", 0.0)
+                    swap_usd = matched_deal.get("swap", 0.0)
+                    comm_usd = matched_deal.get("commission", 0.0)
+                    exit_price = matched_deal.get("price", 0.0)
+                    deal_reason_code = matched_deal.get("reason", 0)
+                    comment = matched_deal.get("comment", "")
+                    logger.debug(
+                        "[BROKER_OUTCOME] event=MATCHED",
+                        ticket=dead_ticket,
+                        source="BROKER_HISTORY",
+                        position_ticket=matched_deal.get("position_ticket"),
+                        profit=profit_usd,
+                    )
+
+                    if (
+                        "NSE_CLOSE" in comment
+                        or "emergency" in comment.lower()
+                        or "cut" in comment.lower()
+                    ):
+                        status_str = "MANUALLY_CLOSED"
+                    elif (
+                        deal_reason_code == 5  # DEAL_REASON_TP (BUG-083)
+                        or "tp" in comment.lower()
+                        or (profit_usd > 0 and abs(exit_price - tp_price) < 0.10)
+                    ):
+                        status_str = "CLOSED_TP"
+                    elif (
+                        deal_reason_code in (4, 6)  # DEAL_REASON_SL / SO (BUG-083)
+                        or "sl" in comment.lower()
+                        or (profit_usd < 0 and abs(exit_price - sl_price) < 0.10)
+                    ):
+                        status_str = "CLOSED_SL"
+                    else:
+                        status_str = "MANUALLY_CLOSED" if deal_reason_code in (1, 2) else "CLOSED"
+                else:
+                    # No broker deal matched. Fall back to a deterministic price
+                    # estimate ONLY when authoritative prices are available, and
+                    # flag it explicitly (FALLBACK_ESTIMATE) so consumers know it
+                    # is not broker truth.
+                    exit_price = current_tick.bid if direction == "BUY" else current_tick.ask
+                    if entry > 0.0 and exit_price > 0.0 and vol > 0.0:
+                        contract_sz = self._resolve_contract_size(symbol_info)
+                        price_delta = (
+                            (exit_price - entry)
+                            if "BUY" in str(direction).upper()
+                            else (entry - exit_price)
+                        )
+                        profit_usd = float(price_delta) * float(vol) * contract_sz
+                        swap_usd = 0.0
+                        comm_usd = 0.0
+                        logger.debug(
+                            "[BROKER_OUTCOME] event=RECONSTRUCTION_FALLBACK",
+                            ticket=dead_ticket,
+                            source="FALLBACK_ESTIMATE",
+                            entry=entry,
+                            exit=exit_price,
+                            volume=vol,
+                            estimated_profit=profit_usd,
+                        )
+                    else:
+                        # Not enough evidence: explicit UNKNOWN (never zero).
+                        logger.warning(
+                            "[BROKER_OUTCOME] event=MATCH_FAILED",
+                            ticket=dead_ticket,
+                            reason="NO_BROKER_DEAL_AND_NO_PRICE_EVIDENCE",
+                            searched_hours_back=hours_back,
+                            deals_found=len(history_deals),
+                        )
+
+                # =============================================================
+                # MODULE A: SINGLE DATA-RICH AUTOPSY ROW PER CLOSED TRADE
+                # =============================================================
+                mae_val = float(self._mae_tracker.get(dead_ticket, 0.0))
+                mfe_val = float(self._mfe_tracker.get(dead_ticket, 0.0))
+                initial_sl_val = float(sl_price)
+                final_sl_val = float(self._last_modify_sl.get(dead_ticket, initial_sl_val))
+
+                # was_sl_modified: True only when trailing/breakeven actually shifted the SL.
+                # Phase 14: also honour the explicit modification flag - a
+                # breakeven/trailing lock that was applied in-process but later
+                # reconciled must survive the autopsy (BUG-045 anomaly E).
+                was_sl_modified = bool(
+                    self._sl_modified_flags.get(dead_ticket, False)
+                    or abs(final_sl_val - initial_sl_val) > 1e-9
+                )
+
+                # is_risk_free_hit: closed on a stop that had already been moved into profit.
+                is_risk_free_hit = 0
+                if direction == "BUY":
+                    if final_sl_val >= entry and abs(exit_price - final_sl_val) < 0.15:
+                        is_risk_free_hit = 1
+                elif (
+                    final_sl_val <= entry
+                    and final_sl_val > 0.0
+                    and abs(exit_price - final_sl_val) < 0.15
+                ):
+                    is_risk_free_hit = 1
+
+                # ---- Exit mechanism resolution (engine intent overrides broker heuristic) ----
+                forced_mechanism = self._forced_exit_mechanisms.pop(dead_ticket, None)
+                # Phase 14: map to the canonical taxonomy via broker evidence
+                # (DEAL_REASON + SL/TP geometry + protective context). A stop-out
+                # is NEVER labelled MANUAL_CLOSE merely because the internal
+                # state machine performed protection logic first (BUG-045).
+                (
+                    exit_mechanism,
+                    exit_reason_source,
+                    exit_evidence,
+                    exit_reason_confidence,
+                ) = classify_exit_with_evidence(
+                    deal_reason_code=matched_deal.get("reason", 0) if matched_deal else 0,
+                    comment=matched_deal.get("comment", "") if matched_deal else "",
+                    profit_usd=profit_usd,
+                    exit_price=exit_price,
+                    tp_price=tp_price,
+                    sl_price=sl_price,
+                    final_sl=final_sl_val,
+                    entry_price=entry,
+                    was_sl_modified=bool(was_sl_modified),
+                    direction=direction,
+                    forced_mechanism=forced_mechanism,
+                )
+
+                # Phase 14: authoritative broker closure reconstruction. When the
+                # broker deal evidence is available (multi-deal aggregation
+                # included), the realized result comes from the DEAL path - never
+                # from a stale floating-PnL default of zero (BUG-045).
+                broker_outcome = reconstruct_broker_outcome(
+                    ticket=dead_ticket,
+                    symbol=symbol,
+                    direction=direction,
+                    deals=history_deals,
+                    matched_deal=matched_deal,
+                    entry_price=entry,
+                    initial_sl=initial_sl_val,
+                    final_sl=final_sl_val,
+                    tp_price=tp_price,
+                    volume=vol,
+                    fallback_exit_price=exit_price,
+                    close_time=now,
+                    entry_time=entry_time,
+                )
+                if broker_outcome.reconstruction_source != "NONE":
+                    profit_usd = broker_outcome.gross_profit
+                    comm_usd = broker_outcome.commission
+                    swap_usd = broker_outcome.swap
+                    exit_price = broker_outcome.exit_price
+                    # BUG-088 (TASK-7): when the broker reconstruction aggregated
+                    # multiple OUT deals, reclassify on the AGGREGATE PnL + the
+                    # aggregated comment/reason so a partial-fill family is never
+                    # classified by a single deal's sign.
+                    if len(history_deals) > 1:
+                        try:
+                            deal_gross = sum(
+                                float(d.get("profit", 0.0) or 0.0)
+                                for d in history_deals
+                                if d.get("position_ticket") == dead_ticket
+                            )
+                            profit_usd = deal_gross
+                        except Exception:
+                            pass
+
+                # ---- Quant risk excursions converted to account currency ----
+                mae_usd = self._price_delta_to_usd(min(mae_val, 0.0), vol, symbol_info)
+                mfe_usd = self._price_delta_to_usd(max(mfe_val, 0.0), vol, symbol_info)
+                # Prefer directly observed USD peaks when the tick loop tracked them.
+                peak_dd_usd = float(self._peak_drawdown_usd.get(dead_ticket, 0.0))
+                peak_win_usd = float(self._peak_profit_usd.get(dead_ticket, 0.0))
+                if peak_dd_usd < 0.0:
+                    mae_usd = peak_dd_usd
+                if peak_win_usd > 0.0:
+                    mfe_usd = peak_win_usd
+
+                open_time_str = (
+                    entry_time.isoformat()
+                    if hasattr(entry_time, "isoformat")
+                    else str(entry_time or "")
+                )
+                close_time_str = now.isoformat() if hasattr(now, "isoformat") else str(now)
+
+                self.audit.log_ledger_closed(
+                    ticket=dead_ticket,
+                    symbol=symbol,
+                    direction=direction,
+                    volume=vol,
+                    entry_price=entry,
+                    exit_price=exit_price,
+                    status=status_str,
+                    pnl=profit_usd,
+                    commission=comm_usd,
+                    swap=swap_usd,
+                    duration_sec=duration_sec,
+                    timestamp_str=close_time_str,
+                    mae=mae_val,
+                    mfe=mfe_val,
+                    initial_sl_price=initial_sl_val,
+                    final_sl_price=final_sl_val,
+                    is_risk_free_hit=is_risk_free_hit,
+                    exit_mechanism=exit_mechanism,
+                    # --- Institutional autopsy fields ---
+                    order_id=self._entry_order_ids.get(dead_ticket, ""),
+                    open_time=open_time_str,
+                    close_time=close_time_str,
+                    entry_reason=self._entry_reasons.get(dead_ticket, ""),
+                    ai_confidence_at_open=self._entry_confidences.get(dead_ticket, 0.0),
+                    market_regime_at_open=self._entry_regimes.get(dead_ticket, ""),
+                    was_sl_modified=int(was_sl_modified),
+                    mae_usd=mae_usd,
+                    mfe_usd=mfe_usd,
+                    account_balance_after=self._last_account_balance,
+                    account_equity_after=self._last_account_equity,
+                    drawdown_percent_after=self._current_drawdown_percent(),
+                    # DEBUG-AUDIT (2026-08-18): full chart-state fingerprint at
+                    # dispatch persisted to the ledger for post-hoc setup/strategy
+                    # attribution of every closed trade.
+                    entry_setup_snapshot=json.dumps(
+                        self._entry_setup_snapshots.get(dead_ticket, {})
+                    ),
+                    exit_reason_source=exit_reason_source,
+                    exit_evidence=exit_evidence,
+                    exit_reason_confidence=exit_reason_confidence,
+                    reversal_events_json=json.dumps(self._reversal_events.get(dead_ticket, [])),
+                )
+
+                # =============================================================
+                # PHASE 08: EXPERIENCE OUTCOME ATTRIBUTION
+                # -------------------------------------------------------------
+                # Records the append-only outcome for the decision that produced
+                # this ticket, including full execution/behaviour evidence so the
+                # experience layer can attribute the result across strategy,
+                # entry, management, exit and execution quality.
+                #
+                # Fully isolated: any failure here is logged and ignored. The
+                # autopsy row above is already persisted, and no execution
+                # decision depends on this call.
+                # =============================================================
+                if self.experience_engine is not None:
+                    self._record_experience_outcome(
+                        dead_ticket=dead_ticket,
+                        now=now,
+                        entry=entry,
+                        exit_price=exit_price,
+                        initial_sl_val=initial_sl_val,
+                        vol=vol,
+                        atr=atr,
+                        symbol_info=symbol_info,
+                        profit_usd=profit_usd,
+                        comm_usd=comm_usd,
+                        swap_usd=swap_usd,
+                        mae_val=mae_val,
+                        mfe_val=mfe_val,
+                        mae_usd=mae_usd,
+                        mfe_usd=mfe_usd,
+                        duration_sec=duration_sec,
+                        exit_mechanism=exit_mechanism,
+                        was_sl_modified=bool(was_sl_modified),
+                        broker_outcome=broker_outcome,
+                    )
+
+                net_pnl_log = "UNKNOWN"
+                if profit_usd is not None:
+                    net_pnl_log = f"${(profit_usd - (comm_usd or 0.0) - (swap_usd or 0.0)):+.2f}"
+                    self._net_pnl_by_ticket[dead_ticket] = (
+                        float(profit_usd) - float(comm_usd or 0.0) - float(swap_usd or 0.0)
+                    )
+                self._exit_mechanism_by_ticket[dead_ticket] = exit_mechanism
+
+                logger.info(
+                    "[LEDGER AUTOPSY] Closed trade recorded",
+                    ticket=dead_ticket,
+                    direction=direction,
+                    exit_mechanism=exit_mechanism,
+                    entry_reason=self._entry_reasons.get(dead_ticket, ""),
+                    net_pnl=net_pnl_log,
+                    mae_usd=f"${mae_usd:+.2f}",
+                    mfe_usd=f"${mfe_usd:+.2f}",
+                    was_sl_modified=was_sl_modified,
+                )
+
+                if self.notifier:
+                    try:
+                        msg_id = self._order_message_ids.get(dead_ticket)
+                        orig_risk = self._initial_risks.get(dead_ticket, 0.0)
+                        profit_pct = 0.0
+                        if profit_usd is not None and entry > 0.0:
+                            profit_pct = abs(exit_price - entry) / entry * 100.0
+                            if (profit_usd + (swap_usd or 0.0) + (comm_usd or 0.0)) < 0:
+                                profit_pct = -profit_pct
+
+                        total_net_profit = (
+                            profit_usd + (swap_usd or 0.0) + (comm_usd or 0.0)
+                            if profit_usd is not None
+                            else 0.0
+                        )
+
+                        if (
+                            status_str == "MANUALLY_CLOSED"
+                            and matched_deal
+                            and (
+                                "NSE_CLOSE" in matched_deal.get("comment", "")
+                                or "emergency" in matched_deal.get("comment", "").lower()
+                                or "cut" in matched_deal.get("comment", "").lower()
+                            )
+                        ):
+                            mae_val = self._mae_tracker.get(dead_ticket, 0.0)
+                            dd_pct = (abs(mae_val) / max(atr, 0.50)) * 100.0
+                            self.notifier.notify_emergency_cut(
+                                ticket=dead_ticket,
+                                score=self._hold_score_tracker.get(dead_ticket, 100),
+                                reasons=matched_deal.get("comment", "")
+                                if matched_deal
+                                else "NSE Emergency Cut",
+                                saved_usd=abs(total_net_profit)
+                                if total_net_profit < 0
+                                else total_net_profit,
+                                trigger_source="Algorithm Position Router",
+                                drawdown_pct=dd_pct,
+                                reply_to_message_id=msg_id,
+                            )
+                        elif status_str == "CLOSED_TP":
+                            self.notifier.notify_tp_touched(
+                                ticket=dead_ticket,
+                                symbol=symbol,
+                                entry=entry,
+                                tp_price=tp_price,
+                                exit_price=exit_price,
+                                profit_usd=total_net_profit,
+                                profit_pct=profit_pct,
+                                duration_sec=duration_sec,
+                                reply_to_message_id=msg_id,
+                            )
+                        elif status_str == "CLOSED_SL":
+                            self.notifier.notify_sl_touched(
+                                ticket=dead_ticket,
+                                symbol=symbol,
+                                entry=entry,
+                                sl_price=sl_price,
+                                exit_price=exit_price,
+                                loss_usd=total_net_profit,
+                                loss_pct=profit_pct,
+                                duration_sec=duration_sec,
+                                risk_usd=orig_risk,
+                                reply_to_message_id=msg_id,
+                            )
+                        else:
+                            # BUG-081: Telegram consumes the CANONICAL outcome.
+                            # The exit label/evidence come from the same classifier
+                            # result written to the ledger (AccountingCore /
+                            # ExperienceLedger) — never re-inferred from the broker
+                            # reason code, and never defaulted to MANUAL.
+                            self.notifier.notify_canonical_close(
+                                ticket=dead_ticket,
+                                symbol=symbol,
+                                entry=entry,
+                                exit_price=exit_price,
+                                profit_usd=total_net_profit,
+                                duration_sec=duration_sec,
+                                exit_reason=exit_mechanism,
+                                evidence=f"{exit_reason_source} | {exit_evidence}",
+                                initial_sl=initial_sl_val,
+                                final_sl=final_sl_val,
+                                strategy=self._entry_reasons.get(dead_ticket, ""),
+                                regime=self._entry_regimes.get(dead_ticket, ""),
+                                confidence=self._entry_confidences.get(dead_ticket, 0.0),
+                                realized_r=total_net_profit / max(orig_risk, 1e-9)
+                                if orig_risk > 0.0
+                                else 0.0,
+                                mfe_usd=mfe_usd,
+                                mae_usd=mae_usd,
+                                reply_to_message_id=msg_id,
+                            )
+                    except Exception as e:
+                        logger.error("Failed to notify closed trade", error=e)
+
+        for dead_ticket in dead_tickets:
+            oid = self._entry_order_ids.get(dead_ticket, "")
+            if self.lifecycle_tracker is not None:
+                try:
+                    net_realized = self._net_pnl_by_ticket.get(dead_ticket, 0.0)
+                    risk_dist = self._initial_risks.get(dead_ticket, 0.0)
+                    realized_r = net_realized / max(risk_dist, 1e-9) if risk_dist > 0.0 else 0.0
+                    final_mechanism = self._forced_exit_mechanisms.get(
+                        dead_ticket
+                    ) or self._exit_mechanism_by_ticket.get(dead_ticket, "")
+                    self.lifecycle_tracker.finalize_exit(
+                        ticket=dead_ticket,
+                        realized_pnl_usd=net_realized,
+                        realized_r=realized_r,
+                        exit_mechanism=final_mechanism,
+                        at=now,
+                    )
+                except Exception as finalize_err:
+                    logger.error(
+                        "[POSITION_TRACK] finalize failed (isolated)",
+                        ticket=dead_ticket,
+                        error=str(finalize_err),
+                    )
+            # TASK-7: a broker-gone ticket is positively closed; the exit-pending
+            # reason is cleared once the autopsy row carries the decision evidence.
+            self._closed_tickets[dead_ticket] = True
+            self._exit_pending_final_reason.pop(dead_ticket, None)
+            self._cleanup_ticket_state(dead_ticket)
+            # BUG-081: prune the fill-family context once the final sibling
+            # has closed (bounded registry lifecycle).
+            if oid:
+                self._prune_bound_context(oid)
 
     def reconcile_missed_closes(
         self,
