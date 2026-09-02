@@ -447,10 +447,16 @@ class Shadow70Store(Shadow70Persistence):
         return out
 
     def summary(self) -> dict[str, Any]:
-        """Summary over persisted rows (spec 46: real data, no fake values)."""
+        """Summary over persisted rows (spec 46: real data, no fake values).
+
+        BUG-221: read path — ensure_schema() first so a fresh database
+        reports an honest empty summary (available=True, zero counts)
+        instead of '[SHADOW70] summary failed: no such table'.
+        """
         out: dict[str, Any] = {"available": False, "observations": 0, "agreements": 0}
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return out
+        self.ensure_schema()
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
             try:

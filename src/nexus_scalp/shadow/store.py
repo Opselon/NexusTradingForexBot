@@ -587,10 +587,19 @@ class ShadowStore:
         return out
 
     def summary(self) -> dict[str, Any]:
-        """Shadow dashboard summary."""
+        """Shadow dashboard summary.
+
+        BUG-221: on a fresh database the shadow tables may not exist yet
+        (schema is created lazily by the write path). summary() is a READ
+        path used by the API/UI; without ensure_schema() it logged
+        '[SHADOW] summary failed: no such table: shadow_runs' and returned
+        available=False — presenting a healthy empty store as unavailable.
+        ensure_schema() is idempotent + flag-guarded (no hot-path cost).
+        """
         out: dict[str, Any] = {"available": False, "runs": {}, "decisions": 0, "promotions": 0}
         if not self.audit_repo or not self.audit_repo._is_sqlite:
             return out
+        self.ensure_schema()
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
             try:
