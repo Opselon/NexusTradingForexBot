@@ -587,12 +587,23 @@ function Expand-NexusZipSafe {
         [Parameter(Mandatory = $true)][string]$Destination
     )
     if (-not (Test-Path -LiteralPath $ZipPath)) { throw "ZIP not found: $ZipPath" }
+    $destExisted = Test-Path -LiteralPath $Destination
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     $destRoot = [System.IO.Path]::GetFullPath(($Destination + "\"))
     $destRootUpper = $destRoot.ToUpperInvariant()
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ZipPath).ProviderPath)
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ZipPath).ProviderPath)
+    } catch {
+        # Corrupt/not-a-zip artifacts fail at OpenRead - before the entry
+        # loop. Clean the extraction dir we created and rethrow so the
+        # caller sees the honest failure (steer: no partial-install residue).
+        if (-not $destExisted) {
+            Remove-Item -LiteralPath $Destination -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw "ZIP is corrupt or not an archive: $($_.Exception.Message)"
+    }
     try {
         foreach ($entry in $zip.Entries) {
             $name = $entry.FullName
@@ -612,6 +623,14 @@ function Expand-NexusZipSafe {
         }
         # All entries validated: extract with the framework extractor.
         Expand-Archive -LiteralPath $ZipPath -DestinationPath $Destination -Force
+    } catch {
+        # Failed extraction must leave no residue: an empty extraction dir from
+        # a rejected artifact would look like a "partial install" to later
+        # lifecycle probes. Remove it only if WE created it.
+        if (-not $destExisted) {
+            Remove-Item -LiteralPath $Destination -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw
     } finally {
         $zip.Dispose()
     }
@@ -1356,9 +1375,15 @@ function Install-Repository {
         $ErrorActionPreference = "Continue"
         try {
             # 1. SSH (only useful when the caller has keys configured).
+            #    Clone --branch <default> so the checkout lands on a real
+            #    commit even when the default branch name differs between
+            #    the origin's HEAD and this host's init.defaultBranch: an
+            #    unborn 'master' checkout (remote 'main' not checked out)
+            #    fails every later rev-parse/checkout (the 2026-09-01
+            #    local-origin lifecycle E2E failure class).
             Write-Info "Trying SSH clone..."
             $env:GIT_SSH_COMMAND = "ssh -o BatchMode=yes -o ConnectTimeout=5"
-            & git clone --depth 1 $Script:RepoUrlSsh $InstallDir 2>$null
+            & git clone --depth 1 --branch $Branch $Script:RepoUrlSsh $InstallDir 2>$null
             if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
             $env:GIT_SSH_COMMAND = $null
 
@@ -1366,7 +1391,7 @@ function Install-Repository {
             if (-not $cloneSuccess) {
                 if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
                 Write-Info "SSH failed, trying HTTPS clone..."
-                & git clone --depth 1 $Script:RepoUrlHttps $InstallDir 2>$null
+                & git clone --depth 1 --branch $Branch $Script:RepoUrlHttps $InstallDir 2>$null
                 if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
             }
 
@@ -1455,6 +1480,24 @@ function Test-VenvHealthy {
         return $false
     }
 }
+function Remove-StaleVenvBackups {
+    # Idempotent sweep of parked venv trees from interrupted/committed
+    # transactions. NEVER runs while a pending-backup marker exists: that
+    # tree is the rollback source until the dependencies stage commits it.
+    param([int]$AgeMinutes = 10)
+    $pendingMarker = Join-Path $NexusHome "state\venv.pending-backup"
+    if (Test-Path -LiteralPath $pendingMarker -PathType Leaf) {
+        Write-Info "Pending venv transaction detected - keeping parked rollback trees"
+        return
+    }
+    Get-ChildItem $NexusHome -Directory -Filter "venv.stale.*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-$AgeMinutes) } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem $NexusHome -Directory -Filter "venv.failed.*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-$AgeMinutes) } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 
 function Install-Venv {
     if ($NoVenv) {
@@ -1539,15 +1582,7 @@ function Install-Venv {
         [System.IO.File]::WriteAllText((Join-Path $NexusHome "state\venv.pending-backup"), $venvBackupName, $utf8NoBom0)
         Write-Info "Previous venv parked at $venvBackupName until the dependency install is verified"
     }
-    # Clean stale parked venvs from earlier runs (older than 10 minutes),
-    # but NEVER sweep while a pending-backup marker exists: that tree is
-    # the rollback source until the dependencies stage commits it.
-    $pendingMarker = Join-Path $NexusHome "state\venv.pending-backup"
-    if (-not (Test-Path -LiteralPath $pendingMarker -PathType Leaf)) {
-        Get-ChildItem $NexusHome -Directory -Filter "venv.stale.*" -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-10) } |
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    Remove-StaleVenvBackups
 }
 
 # ============================================================================
@@ -1580,12 +1615,18 @@ function Complete-VenvTransaction {
         Write-WarnMsg "Old venv parked at $backupName (a process still holds files in it); it will be cleaned up on the next install"
     }
     Remove-Item -LiteralPath (Join-Path $NexusHome "state\venv.pending-backup") -Force -ErrorAction SilentlyContinue
+    # Sweep failed-replacement trees now that the transaction committed
+    # (handles from the old venv are typically released by the next run;
+    # best-effort - a still-held tree stays for a later sweep).
+    Remove-StaleVenvBackups
 }
 
 function Restore-VenvBackup {
     # Rollback: the dependency stage failed after Install-Venv replaced the
     # venv. Park the unusable replacement and restore the previous working
-    # venv so Nexus stays usable (Hermes #83149 class).
+    # venv so Nexus stays usable (Hermes #83149 class). The failed
+    # replacement tree is deliberately KEPT (may still be locked); it is
+    # swept by Remove-StaleVenvBackups on a later lifecycle operation.
     $backupName = Get-PendingVenvBackup
     if (-not $backupName) { return }
     try {
@@ -2527,8 +2568,16 @@ function Invoke-Stage {
         # so a partial install's progress survives process death.
         if (-not $Script:_StageResults) { $Script:_StageResults = @{} }
         $Script:_StageResults[$StageDef.Name] = $result
-        if ($result.ok) {
+        # Ledger truthfulness: record FAILED stage results too - a crash-
+        # recovery reader must see the failure, not just its absence.
+        if ($result.ok -or -not $result.skipped) {
+            # Write-InstallStateFromSession records last_successful_stage as
+            # the CURRENT stage name; for a failed stage that would lie.
+            # Pass the truthful flag through so the ledger never claims a
+            # success that did not happen (steer 17: no impossible states).
+            $Script:_LedgerStageFailed = (-not $result.ok)
             try { Write-InstallStateFromSession } catch { }
+            $Script:_LedgerStageFailed = $false
         }
         if ($Json -or $PSBoundParameters.ContainsKey("Stage") -or $Script:_DriverMode) {
             # Protocol mode: every stage emits exactly one JSON frame on
@@ -2563,7 +2612,14 @@ function Write-InstallStateFromSession {
         installed_at          = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
         nexus_home            = $NexusHome
         install_dir           = $InstallDir
-        last_successful_stage = $StageDef.Name
+        # Ledger truthfulness (steer 17): a FAILED stage's flush must never
+        # advance last_successful_stage past the last genuinely-OK stage.
+        last_successful_stage = if ($Script:_LedgerStageFailed) {
+            $prevLast = if ($previous -and $previous.last_successful_stage) { $previous.last_successful_stage } else { $null }
+            if ($prevLast -ne $StageDef.Name) { $prevLast } else { $null }
+        } else {
+            $StageDef.Name
+        }
         source_mode           = if ($Script:_SourceMode) { $Script:_SourceMode } else { "git" }
         git_tracking          = if ($Script:_GitTracking) { $Script:_GitTracking } else { "ok" }
         stages                = $stageRecords
