@@ -325,7 +325,7 @@ def test_cli_doctor_json_never_raises() -> None:
     assert "environment" in data
 
 
-def test_cli_exit_codes_contract() -> None:
+def test_cli_exit_codes_contract(tmp_path: Path) -> None:
     """Exit-code contract: 0 success, 2 usage, 4 release verification."""
     from typer.testing import CliRunner
 
@@ -339,8 +339,11 @@ def test_cli_exit_codes_contract() -> None:
     # usage error -> typer BadParameter = 2
     res = runner.invoke(app, ["test", "--mode", "bogus"])
     assert res.exit_code == xc.EXIT_USAGE
-    # verify-release on a non-release dir -> 4
-    res = runner.invoke(app, ["verify-release", "--root", "."])
+    # verify-release on a non-release dir -> 4. Root points at an EMPTY
+    # tmp dir, never the live repository: the secrets-scan check rglobs the
+    # whole tree (398s measured on this checkout with .worktrees), and the
+    # empty-dir non-release contract is already pinned by e2e_14 + e2e_66.
+    res = runner.invoke(app, ["verify-release", "--root", str(tmp_path)])
     if res.exit_code != xc.EXIT_OK:
         assert res.exit_code == xc.EXIT_RELEASE
     # health exit 0

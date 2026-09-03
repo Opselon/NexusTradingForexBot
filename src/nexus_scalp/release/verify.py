@@ -409,7 +409,14 @@ class ReleaseVerifier:
         hits: list[str] = []
         scanned = 0
         for p in self.root.rglob("*"):
-            if not p.is_file():
+            try:
+                is_file = p.is_file()
+            except OSError:
+                # Entries that vanish mid-walk or cannot be lstat'ed (broken
+                # symlinks, racing deletes, reparse-point paths) are skipped,
+                # never fatal: a verify run must always produce a verdict.
+                continue
+            if not is_file:
                 continue
             if p.suffix.lower() in (
                 ".pyc",
@@ -423,7 +430,10 @@ class ReleaseVerifier:
                 ".7z",
             ):
                 continue
-            if p.stat().st_size > 2 * 1024 * 1024:
+            try:
+                if p.stat().st_size > 2 * 1024 * 1024:
+                    continue
+            except OSError:
                 continue
             try:
                 # STRICT decode: errors='ignore' can transmogrify non-ASCII

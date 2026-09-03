@@ -221,8 +221,11 @@ UX_ASSETS = [
 
 
 class TestServeRoutes:
+    # pytest 9: class-scoped fixture must not be an instance method
+    # (PytestRemovedIn10Warning) - @classmethod is the sanctioned shape.
     @pytest.fixture(scope="class")
-    def client(self):
+    @classmethod
+    def client(cls):
         pytest.importorskip("fastapi")
         try:
             from fastapi.testclient import TestClient
