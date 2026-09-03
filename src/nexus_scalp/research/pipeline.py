@@ -632,54 +632,85 @@ class ResearchPipeline:
             )
 
         # ------------------------------------------------------------------
-        # 5. ROBUSTNESS
+        # 5. ROBUSTNESS (BUG-233: short-circuit when OOS failed)
         # ------------------------------------------------------------------
-        if obs is not None:
-            gate = obs.create_gate(
-                sid,
-                run_id,
-                GateType.ROBUSTNESS,
-                status=GateStatus.QUEUED,
-                order_index=4,
-                dataset_version=family_ds.dataset_id,
-            )
-            obs.record_event(sid, run_id, "GATE_QUEUED", "robustness queued", gate_id=gate.gate_id)
-            gate = obs.start_gate(gate.gate_id)
-            obs.record_event(
-                sid, run_id, "GATE_STARTED", "robustness started", gate_id=gate.gate_id
-            )
-        rob = self.robustness.evaluate(family_ds, strategy_id=sid, strategy_version=version)
-        rob_data = rob.model_dump(mode="json")
-        if obs is not None:
-            rob_status = GateStatus.PASSED if rob.status == "PASS" else GateStatus.FAILED
-            gate = obs.finish_gate(
-                gate.gate_id,
-                status=rob_status,
-                failure_reason=rob.reason,
-                failure_class=(
-                    FailureClass.RESEARCH
-                    if rob_status == GateStatus.FAILED
-                    else FailureClass.UNKNOWN
-                ),
-                result=rob_data,
-                retryable=False,
-                evidence=EvidenceArtifact.create(
+        if oos.status != "PASS":
+            if obs is not None:
+                gate = obs.create_gate(
                     sid,
                     run_id,
-                    EvidenceKind.ROBUSTNESS_RESULT,
-                    rob_data,
-                    gate_id=gate.gate_id,
+                    GateType.ROBUSTNESS,
+                    status=GateStatus.BLOCKED,
+                    order_index=4,
                     dataset_version=family_ds.dataset_id,
-                ),
-            )
-            obs.record_event(
-                sid,
-                run_id,
-                "GATE_PASSED" if rob_status == GateStatus.PASSED else "GATE_FAILED",
-                f"robustness {rob.status}",
-                payload={"gate": "ROBUSTNESS"},
-                gate_id=gate.gate_id,
-            )
+                )
+                gate = obs.finish_gate(
+                    gate.gate_id,
+                    status=GateStatus.BLOCKED,
+                    failure_reason="OOS failed — chain stopped",
+                    failure_class=FailureClass.RESEARCH,
+                    result={"reason": "OOS failed — chain stopped", "blocked": True},
+                    retryable=False,
+                )
+                obs.record_event(
+                    sid,
+                    run_id,
+                    "GATE_BLOCKED",
+                    "robustness BLOCKED (OOS failed — chain stopped)",
+                    payload={"gate": "ROBUSTNESS", "reason": "OOS failed — chain stopped"},
+                    gate_id=gate.gate_id,
+                )
+            rob = None
+            rob_data = None
+        else:
+            if obs is not None:
+                gate = obs.create_gate(
+                    sid,
+                    run_id,
+                    GateType.ROBUSTNESS,
+                    status=GateStatus.QUEUED,
+                    order_index=4,
+                    dataset_version=family_ds.dataset_id,
+                )
+                obs.record_event(
+                    sid, run_id, "GATE_QUEUED", "robustness queued", gate_id=gate.gate_id
+                )
+                gate = obs.start_gate(gate.gate_id)
+                obs.record_event(
+                    sid, run_id, "GATE_STARTED", "robustness started", gate_id=gate.gate_id
+                )
+            rob = self.robustness.evaluate(family_ds, strategy_id=sid, strategy_version=version)
+            rob_data = rob.model_dump(mode="json")
+            if obs is not None:
+                rob_status = GateStatus.PASSED if rob.status == "PASS" else GateStatus.FAILED
+                gate = obs.finish_gate(
+                    gate.gate_id,
+                    status=rob_status,
+                    failure_reason=rob.reason,
+                    failure_class=(
+                        FailureClass.RESEARCH
+                        if rob_status == GateStatus.FAILED
+                        else FailureClass.UNKNOWN
+                    ),
+                    result=rob_data,
+                    retryable=False,
+                    evidence=EvidenceArtifact.create(
+                        sid,
+                        run_id,
+                        EvidenceKind.ROBUSTNESS_RESULT,
+                        rob_data,
+                        gate_id=gate.gate_id,
+                        dataset_version=family_ds.dataset_id,
+                    ),
+                )
+                obs.record_event(
+                    sid,
+                    run_id,
+                    "GATE_PASSED" if rob_status == GateStatus.PASSED else "GATE_FAILED",
+                    f"robustness {rob.status}",
+                    payload={"gate": "ROBUSTNESS"},
+                    gate_id=gate.gate_id,
+                )
 
         # ------------------------------------------------------------------
         # 6. SCORE + VERDICT
@@ -791,7 +822,7 @@ class ResearchPipeline:
                 "expectancy_r": bt.expectancy_r,
                 "oos_expectancy_r": oos.oos_expectancy_r,
                 "oos_status": oos.status,
-                "robustness_status": rob.status,
+                "robustness_status": (rob.status if rob is not None else "BLOCKED"),
                 "score": score.final_score if score else 0.0,
                 "verdict": score.verdict if score else "INCONCLUSIVE",
                 "family_samples": len(family_ds.samples),
@@ -800,11 +831,11 @@ class ResearchPipeline:
                     if oos.status != "PASS"
                     else (
                         "ROBUSTNESS"
-                        if rob.status != "PASS"
+                        if (rob is not None and rob.status != "PASS")
                         else ("WALK_FORWARD" if (wf is not None and not wf.passed) else "")
                     )
                 ),
-                "rejection_reason": oos.reason or rob.reason or "",
+                "rejection_reason": (oos.reason or (rob.reason if rob is not None else "") or ""),
             },
             status="COMPLETED",
             run_outcome=run_outcome,
