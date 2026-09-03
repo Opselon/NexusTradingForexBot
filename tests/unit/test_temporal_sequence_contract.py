@@ -10,12 +10,14 @@ Contract (file:line refs):
 - This test pins the SHARED contract by proving: same causal window => same sequence tensor train vs live.
   One builder (SequenceBuilder) is the ONLY builder (Do NOT invent a second builder).
 """
+
 from __future__ import annotations
 
 import numpy as np
 import polars as pl
 import torch
 
+from nexus_scalp.model_generation.architectures import TCNAttentionV1
 from nexus_scalp.model_generation.sequence import SequenceBuilder
 from nexus_scalp.model_generation.temporal_contract import (
     CANONICAL_EMBARGO_BARS,
@@ -24,7 +26,6 @@ from nexus_scalp.model_generation.temporal_contract import (
     CANONICAL_SEQ_LEN,
     get_canonical_sequence_builder,
 )
-from nexus_scalp.model_generation.architectures import TCNAttentionV1
 
 
 def _synthetic_70d_frame(n: int = 64, seed: int = 7) -> pl.DataFrame:
@@ -34,7 +35,9 @@ def _synthetic_70d_frame(n: int = 64, seed: int = 7) -> pl.DataFrame:
         d[f"feat_{i}"] = rng.normal(0, 0.6, size=n).astype(float).tolist()
     # strictly-increasing M1 timestamps (60s steps) in microseconds — required for gap checks
     base_us = 1_700_000_000_000_000
-    d["timestamp"] = (base_us + np.arange(n, dtype=np.int64) * 60_000_000).astype("datetime64[us]").tolist()
+    d["timestamp"] = (
+        (base_us + np.arange(n, dtype=np.int64) * 60_000_000).astype("datetime64[us]").tolist()
+    )
     d["symbol"] = ["XAUUSD"] * n
     d["timeframe"] = ["M1"] * n
     d["label"] = rng.integers(0, 3, size=n).tolist()
@@ -64,10 +67,18 @@ def test_gap_invalidates_window_and_not_else() -> None:
     fixed = pl.DataFrame(rows)
     builder = SequenceBuilder(seq_len=16, max_gap_us=CANONICAL_MAX_GAP_US)
     seq = builder.build(fixed, news_enabled=False)
+
     # Gap is between rows 19 (17:34) and 20 (17:55) = 21m > 10m => every window that
     # includes both sides is invalid. Windows fully before (indices 0..19) or
     # fully after (20..39) remain valid.
-    assert 0 < int(seq["valid"].sum()) < int(seq["valid"].shape[0])
+    valid = seq["valid"]
+    assert int(valid[:20].sum()) > 0, "pre-gap windows must stay valid"
+    assert int(valid[20:].sum()) > 0, "post-gap windows must stay valid"
+    # windows ENDING at rows 5..19 (i.e. any window whose 16-bar history crosses the
+    # 19->20 gap) must be invalid; the tail (fully post-gap) stays valid
+    assert not valid[5:20].any(), "gap-straddling windows must be invalid"
+    assert valid[:5].all(), "early pre-gap windows stay valid"
+    assert valid[20:].all(), "post-gap windows stay valid"
 
 
 def test_l16_and_l32_both_supported() -> None:
