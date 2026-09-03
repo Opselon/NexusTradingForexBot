@@ -102,8 +102,8 @@ class TestMarketplaceApiSurface:
         sys.path.insert(0, str(_REPO_ROOT / "src"))
         from fastapi import FastAPI
 
-        from nexus_scalp.web.api_v1_wiring import _include_routers
         from nexus_scalp.web.api_v1.errors import register_v1_exception_handlers
+        from nexus_scalp.web.api_v1_wiring import _include_routers
 
         app = FastAPI(title="mkt-contract-test")
         register_v1_exception_handlers(app)
