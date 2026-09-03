@@ -126,6 +126,31 @@ installer reports a well-formed skipped frame instead of corrupting state.
 If the network fails mid-install, simply re-run the same command; completed
 stages are detected and skipped.
 
+## Download integrity (INSTALL-VERIFY)
+
+Every artifact the installer downloads passes an integrity gate before it is
+used:
+
+- **Partial-file staging + atomic move** — an interrupted download can never
+  be mistaken for a complete artifact.
+- **Size floor (`-MinBytes`) + empty-file rejection** — truncated downloads
+  are retried, never installed.
+- **SHA256 pin (`-ExpectedSha256`)** — when a digest is configured (e.g. the
+  PortableGit pin in the script, or a release checksum manifest), a mismatch
+  **BLOCKS** the install: the artifact is deleted and the stage fails with the
+  expected vs actual digest.
+- **Telemetry** — every download records host, byte count, attempt count,
+  expected/actual SHA256, verification mode and outcome into
+  `state\install.json` (`download_telemetry`) and `logs\installer.log`.
+- **Availability states** — `state\install.json:install_state` is
+  `AVAILABLE` (verified complete), `DEGRADED` (usable but via a fallback
+  path: ZIP acquisition, unhashed third-party asset, partial progress) or
+  `BLOCKED` (a failed gate). Never trust "the download started" as "the
+  install succeeded" — check the state file.
+
+The complete download → install → activation → first-run truth table lives in
+`docs/INSTALL_INTEGRITY.md`.
+
 ## Python / Git / Node details
 
 - **Python**: provisioned user-scoped through `uv` into `<NexusHome>\bin`.
