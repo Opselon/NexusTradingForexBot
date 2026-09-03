@@ -501,6 +501,17 @@ def main() -> None:
                 border_style="yellow",
             )
         )
+
+    # BUG-232: resolve the EFFECTIVE boot mode BEFORE binding the execution
+    # adapter. Precedence (mirrors the engine's BUG-148 rule):
+    #     explicit --mode  >  settings DB execution.mode  >  YAML default
+    # Previously the launcher read only the YAML (PAPER safe default) and
+    # bound the simulation adapter, while the engine later re-bound the mode
+    # to the persisted LIVE value — leaving a PAPER adapter wired under a
+    # LIVE badge (stale 2000 seed price everywhere, BUG-231's upstream
+    # cause). Reading the same settings DB here keeps launcher and engine
+    # consistent, and the UI's saved LIVE choice survives restarts without
+    # re-confirmation (persistence + single ask).
     if args.mode:
         from nexus_scalp.domain.enums import ExecutionMode
 
@@ -509,35 +520,57 @@ def main() -> None:
             "shadow": ExecutionMode.SHADOW,
             "live": ExecutionMode.LIVE,
         }[args.mode]
-        config.execution.mode = chosen
+        _mode_origin = "CLI override"
+    else:
+        from nexus_scalp.domain.enums import ExecutionMode
+
+        chosen = config.execution.mode
+        _mode_origin = "config default"
+        try:
+            from nexus_scalp.settings import load_settings_service
+
+            _row = load_settings_service().db.get("execution.mode")
+            if _row is not None and _row.value is not None:
+                _persisted = str(_row.value).strip().upper()
+                if _persisted in {m.value for m in ExecutionMode}:
+                    chosen = ExecutionMode(_persisted)
+                    _mode_origin = "persisted settings DB"
+        except Exception as _mode_err:
+            logger.warning("[MODE] launcher persisted-mode probe failed (non-fatal): %s", _mode_err)
+    config.execution.mode = chosen
+    console.print(
+        Panel(
+            f"[bold]Mode → [cyan]{chosen.value}[/cyan][/bold]  [dim](from {_mode_origin})[/dim]",
+            border_style="cyan",
+        )
+    )
+    if chosen == ExecutionMode.LIVE:
         console.print(
             Panel(
-                f"[bold]Mode override → [cyan]{chosen.value}[/cyan][/bold]  [dim](use nexus setup to persist)[/dim]",
-                border_style="cyan",
+                "[bold red]LIVE trading requested via launcher[/bold red]\n[dim]You will see a confirmation before real orders.[/dim]",
+                border_style="red",
             )
         )
-        if chosen == ExecutionMode.LIVE:
-            console.print(
-                Panel(
-                    "[bold red]LIVE trading requested via launcher[/bold red]\n[dim]You will see a confirmation before real orders.[/dim]",
-                    border_style="red",
-                )
-            )
-            # Require explicit yes on TTY
-            if sys.stdin.isatty():
-                try:
-                    ans = input("Confirm LIVE trading? Type YES to continue: ").strip()
-                    if ans != "YES":
-                        console.print(
-                            Panel(
-                                "[yellow]LIVE not confirmed — aborting.[/yellow]",
-                                border_style="yellow",
-                            )
+        # Require explicit yes on TTY — BUT only when the choice did NOT come
+        # from the persisted settings DB. BUG-232: the operator already
+        # confirmed LIVE once in the UI (that save IS the confirmation and is
+        # persisted); re-asking on every boot defeated persistence ("switch
+        # to live should save for next time"). A fresh --mode live CLI
+        # override still confirms once per session.
+        if _mode_origin == "CLI override" and sys.stdin.isatty():
+            try:
+                ans = input("Confirm LIVE trading? Type YES to continue: ").strip()
+                if ans != "YES":
+                    console.print(
+                        Panel(
+                            "[yellow]LIVE not confirmed — aborting.[/yellow]",
+                            border_style="yellow",
                         )
-                        sys.exit(1)
-                except (EOFError, KeyboardInterrupt):
-                    console.print(Panel("[yellow]Aborted.[/yellow]", border_style="yellow"))
+                    )
                     sys.exit(1)
+            except (EOFError, KeyboardInterrupt):
+                console.print(Panel("[yellow]Aborted.[/yellow]", border_style="yellow"))
+                sys.exit(1)
 
     # 4. Configure System Observability Logging Engine
     configure_logging(
@@ -624,7 +657,16 @@ def main() -> None:
     # 6. Instantiate & Launch Live Trading Engine Event Loop Concurrently with Web Server
     web_port = find_available_port(start_port=8080)
     try:
-        engine = LiveEngine(config=config, adapter=adapter)
+        # BUG-232: pass the launcher-resolved mode as the EXPLICIT operator
+        # override so the engine cannot re-derive a different mode from the
+        # settings DB and desynchronize the adapter boundary again. The
+        # launcher already applied the full precedence chain (CLI > settings
+        # DB > YAML) at adapter-binding time.
+        engine = LiveEngine(
+            config=config,
+            adapter=adapter,
+            mode_override=config.execution.mode,
+        )
         try:
             engine._preflight_or_raise()
         except Exception as e:
