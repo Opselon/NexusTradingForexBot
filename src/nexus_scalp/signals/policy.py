@@ -1304,6 +1304,24 @@ class SignalPolicy:
                 execution_mode=execution_mode,
                 override_reason="TICK_VELOCITY_TRIGGERED",
                 decision_stage="TICK_SWEEP_EXECUTION",
+                # EXPLAINABILITY CONTRACT (2026-09-03): the tick-sweep path
+                # applies its OWN confidence floor (sweep_conf_thresh, stricter
+                # in range) instead of the standard-flow gate. Persist the
+                # evidence - observability only (INV-018).
+                risk_checks={
+                    "decision_path": "TICK_SWEEP",
+                    "confidence_gate_applied": True,
+                    "sweep_conf_threshold": float(sweep_conf_thresh),
+                    "sweep_direction_prob": float(sweep_conf),
+                    "model_confidence_verdict": "SWEEP_PATH_THRESHOLD",
+                    "structural_gate": {
+                        "price_pierced_liquidity": True,
+                        "reversal_detected": True,
+                        "ofi_flip": True,
+                        "velocity_reverses": True,
+                        "direction": direction,
+                    },
+                },
                 htf_score=float(trend_strength),
                 smc_score=sweep_conf,
                 confidence_before_filters=sweep_conf,
@@ -1404,6 +1422,25 @@ class SignalPolicy:
                 smc_score=float(confidence),
                 confidence_before_filters=float(confidence_before_filters),
                 confidence_after_filters=float(confidence),
+                # EXPLAINABILITY CONTRACT (2026-09-03, counterfactual
+                # forensic): the predictive-limit path replaces the model
+                # confidence gate with a STRUCTURAL gate. The audit row must
+                # prove which gate ran and what it verified - observability
+                # only, never a decision input (INV-018).
+                risk_checks={
+                    "decision_path": "PREDICTIVE_LIMIT",
+                    "confidence_gate_applied": False,
+                    "model_confidence": float(confidence),
+                    "model_confidence_verdict": "NOT_REQUIRED_STRUCTURAL_PATH",
+                    "structural_gate": {
+                        "valid_ob": True,
+                        "order_block_type": int(order_block_type),
+                        "smc_god_mode": bool(smc_god_mode_active),
+                        "total_exposure": int(total_exposure),
+                        "min_rr_enforced": float(actual_rr),
+                        "equilibrium_entry": float(target_entry_price),
+                    },
+                },
             )
         return None
 
