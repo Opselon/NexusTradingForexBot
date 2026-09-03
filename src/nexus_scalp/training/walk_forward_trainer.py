@@ -465,9 +465,7 @@ class WalkForwardTrainer:
             # the explicit persist decision so the engine's BUG-235 guard
             # (and any other consumer) can never mistake this for an accepted
             # model replacement.
-            _skip = should_persist_candidate(
-                trained=False, insufficient_rows=True
-            )
+            _skip = should_persist_candidate(trained=False, insufficient_rows=True)
             logger.info(
                 "Persist decision: REJECT",
                 reason=_skip.reason,
@@ -527,9 +525,7 @@ class WalkForwardTrainer:
             logger.warning(
                 "Insufficient post-purge labeled rows for online fine-tuning", samples=len(y)
             )
-            _skip_labels = should_persist_candidate(
-                trained=False, insufficient_labels=True
-            )
+            _skip_labels = should_persist_candidate(trained=False, insufficient_labels=True)
             logger.info(
                 "Persist decision: REJECT",
                 reason=_skip_labels.reason,
@@ -676,7 +672,11 @@ class WalkForwardTrainer:
                 preds_all.extend(preds.cpu().numpy().tolist())
                 targets_all.extend(by.cpu().numpy().tolist())
                 probs_all.append(probs.cpu().numpy())
-        probs_arr = np.concatenate(probs_all, axis=0) if probs_all else np.empty((0, int(self.CANONICAL_NUM_CLASSES)))
+        probs_arr = (
+            np.concatenate(probs_all, axis=0)
+            if probs_all
+            else np.empty((0, int(self.CANONICAL_NUM_CLASSES)))
+        )
         preds_arr = np.array(preds_all, dtype=np.int64)
         total_samples = len(preds_arr) if len(preds_arr) > 0 else 1
         class_counts = np.bincount(preds_arr, minlength=self.NUM_CLASSES)
@@ -812,9 +812,7 @@ class WalkForwardTrainer:
                     "epochs_requested": epochs,
                 },
             )
-            logger.info(
-                "Persist decision: REJECT", reason=_zero.reason, persist=False
-            )
+            logger.info("Persist decision: REJECT", reason=_zero.reason, persist=False)
             return attach_decision(working_model.to(torch.device("cpu")), _zero)
         # Condition 3: new model must strictly beat the baseline validation loss.
         loss_improved = final_val_loss <= baseline_val_loss + 1e-4
@@ -1032,6 +1030,7 @@ class WalkForwardTrainer:
         # ---------------------------------------------------------------------
         try:
             from nexus_scalp.model_generation.architectures import CANONICAL_CLASS_COUNT
+
             _canonical = int(CANONICAL_CLASS_COUNT)
         except Exception:
             _canonical = int(self.CANONICAL_NUM_CLASSES)
@@ -1452,12 +1451,20 @@ class WalkForwardTrainer:
             # FIX #1+#8: unified temporal contract (read by live_engine).
             "temporal_contract": {
                 "version": "1.0.0",
-                "seq_len": int(getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN) if isinstance(getattr(self, "_declared_seq_len", None), int) else CANONICAL_SEQ_LEN),
+                "seq_len": int(
+                    getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN)
+                    if isinstance(getattr(self, "_declared_seq_len", None), int)
+                    else CANONICAL_SEQ_LEN
+                ),
                 "max_gap_us": int(CANONICAL_MAX_GAP_US),
                 "purge_gap_bars": int(self.purge_gap or CANONICAL_PURGE_BARS),
                 "embargo_bars": int(self.embargo_bars or CANONICAL_EMBARGO_BARS),
             },
-            "seq_len": int(getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN) if isinstance(getattr(self, "_declared_seq_len", None), int) else CANONICAL_SEQ_LEN),
+            "seq_len": int(
+                getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN)
+                if isinstance(getattr(self, "_declared_seq_len", None), int)
+                else CANONICAL_SEQ_LEN
+            ),
             "max_gap_us": int(CANONICAL_MAX_GAP_US),
             # MODEL_CLASS_CONTRACT v1 (Fix #3 + Fix #6):
             #  - label_contract: the neural label identity (3-class, not WAIT).
