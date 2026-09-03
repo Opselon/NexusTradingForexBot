@@ -472,7 +472,9 @@ class LiveEngine:
             _boot_source = str(getattr(self.config.execution.mode, "value", "") or "").upper()
         except Exception:
             _boot_source = ""
-        self._boot_account_source = _boot_source if _boot_source in ("LIVE", "PAPER", "SHADOW") else "LIVE"
+        self._boot_account_source = (
+            _boot_source if _boot_source in ("LIVE", "PAPER", "SHADOW") else "LIVE"
+        )
 
         # =====================================================================
         # RUNTIME CONFIGURATION (hot reload core): the authoritative
