@@ -1739,3 +1739,12 @@ Risk: LOW (test-layer + non-trading tooling; production equivalence probes recor
 Dependencies: user test-reduction mission (continuous loop); complements TASKBOARD-CI-TIME-ATTACK-20260903
 Required tests: test_dependency_cache.py (new), test_release_system.py, test_web_ux_safety.py, test_dependency_intelligence.py, test_cli_end_to_end.py, observability guardrails suite
 Status: IMPLEMENTED (local gates green; critical-suite re-run pending in this pass)
+
+CHANGE-ID: CHG-0057
+Agent: Nexus-Main (orchestrator, repairer-of-record for UI) + Nexus-Coder (A2 backend subagent, 5cc34926+ebf0fd57)
+Role: Strategy Marketplace Epic Orchestration (Phase 1-8 backend + UI + BUG-233 short-circuit)
+Task: Strategy Marketplace, Isolated Research DB & Adaptive Live Strategy Runtime (NX-MKT EPIC)
+Scope: src/nexus_scalp/marketplace/** (13 packs, scoring/measurement/repair/snapshot/service/store), src/nexus_scalp/research/pipeline.py (BUG-233), src/nexus_scalp/web/api_v1/** (12-route marketplace router + wiring mount), Web/marketplace.js + Web/index.html sidebar+section + Web/app.js switchTab hook, tests/unit/test_research_gate_shortcircuit_bug233.py / test_marketplace_backend.py / test_web_marketplace_contract.py
+Risk: LOW-MEDIUM (additive, isolated DB, no direct MT5/risk/execution mutation; hot-reload contract is an additive snapshot store, live_engine wiring expressly deferred until the tree is quiet).
+Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+format pass on all touched files; py_compile pass; API wiring verified via FastAPI app.openapi() (12 /api/v1/marketplace paths, 80 total routes); forensics matched: next free IDs verified at commit (BUG-236/CHG-0057), heavy parallel tree churn respected (owned-files-only staging, no git add -A).
+
