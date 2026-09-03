@@ -346,11 +346,13 @@ def check_chart_semantic_health(bars: list[dict[str, Any]] | None = None) -> Che
 def check_api_200_but_wrong() -> CheckResult:
     """§37: semantic health for the known API endpoints.
 
-    Offline: verifies the endpoints EXIST in the server module so the check
-    is meaningful; runtime probing is performed by the API integration layer.
+    Offline: verifies the endpoints are REGISTERED on the FastAPI app by
+    querying the app's own OpenAPI path surface (``create_app()`` +
+    ``openapi()``). Since CHG-0032-A1 the routes live in extracted
+    ``web/<domain>_routes.py`` modules registered via ``include_router``,
+    so a source-text grep of ``server.__file__`` can no longer see them.
+    Runtime probing is performed by the API integration layer.
     """
-    from nexus_scalp.web import server  # type: ignore[import-not-found]
-
     endpoints = {
         "/api/status": False,
         "/api/chart/history": False,
@@ -358,31 +360,33 @@ def check_api_200_but_wrong() -> CheckResult:
         "/api/research/health": False,
         "/api/mt5/status": False,
     }
-    src = ""
     try:
-        src = server.__file__ or ""
-    except Exception:
-        src = ""
-    if src:
-        try:
-            text = Path(src).read_text(errors="replace")
-            for ep in endpoints:
-                endpoints[ep] = f'"{ep}"' in text or f"'{ep}'" in text
-        except OSError:
-            pass
+        from nexus_scalp.web.server import create_app  # type: ignore[import-not-found]
+
+        app = create_app()
+        paths = set(app.openapi().get("paths", {}))
+        for ep in endpoints:
+            endpoints[ep] = ep in paths
+    except Exception as exc:  # isolation boundary: never fabricate a PASS
+        return _unknown(
+            "CHECK-API-01",
+            f"cannot build web app to enumerate routes: {type(exc).__name__}: {exc}",
+            endpoints,
+            "all semantic-health endpoints exist",
+        )
     missing = [ep for ep, ok in endpoints.items() if not ok]
     if missing:
         return CheckResult(
             "CHECK-API-01",
             HealthStatus.DEGRADED,
-            evidence=f"semantic-health endpoints absent from server: {missing}",
+            evidence=f"semantic-health endpoints not registered on app: {missing}",
             observed=endpoints,
             expected="all semantic-health endpoints exist",
             detail="API_SURFACE_MISSING",
         )
     return _ok(
         "CHECK-API-01",
-        "all semantic-health endpoints exist in server",
+        "all semantic-health endpoints registered on app",
         endpoints,
         "all semantic-health endpoints exist",
     )
