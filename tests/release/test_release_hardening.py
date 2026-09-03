@@ -24,9 +24,20 @@ from pathlib import Path
 
 import pytest
 
-from nexus_scalp.release import metadata as rmeta
+# BUG-210 xdist-stability shim: the suite may run with CWD redirected to a
+# pytest tmp dir by a concurrently-collected module (a collection-time chdir
+# is session-global under pytest-xdist and deterministic per worker).
+# Importing nexus_scalp while cwd == repo root would let the release
+# metadata CWD fallback resolve the repo-root build-info.json and poison
+# get_version_info() for every later test in THIS worker. Anchor repo-root
+# imports to the file location instead of CWD.
+_REPO_PARENT = str(Path(__file__).resolve().parents[2])
+if _REPO_PARENT not in sys.path:
+    sys.path.insert(0, _REPO_PARENT)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from nexus_scalp.release import metadata as rmeta  # noqa: E402
+
+REPO_ROOT = Path(_REPO_PARENT)
 RELEASE_YML = REPO_ROOT / ".github" / "workflows" / "release.yml"
 GUARD_ID = "BUG166_MISSING_PRESTAGE_CONTRACT"
 
@@ -284,14 +295,39 @@ def test_old_bug_fails_before_runtime_identity_rejected(
     misread as valid stamped identity. get_version_info falls back to
     _git_commit()/now() only OUTSIDE a frozen bundle; a frozen CLI with no
     payload must be DETECTABLE as unstamped (this is what the release smoke
-    test asserts against the real binary)."""
+    test asserts against the real binary).
+
+    BUG-210 hardening: the 'no build-info anywhere reachable' premise is
+    enforced against BOTH leak directions (a repo-root CWD reintroducing
+    the dev-machine's stale stamp, and any inherited sys module state) so
+    the assertion validates the guarded contract, not worker-CWD luck.
+    Test-only isolation; production metadata semantics unchanged."""
     fake_exe = tmp_path / "NexusScalpEngine-CLI.exe"
     fake_exe.write_bytes(b"MZ")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(fake_exe), raising=False)
     monkeypatch.delattr(sys, "_MEIPASS", raising=False)
     monkeypatch.chdir(tmp_path)
-    # Remove repo/cwd escape hatches: no build-info.json anywhere reachable
+    # BUG-210 hardening: the frozen candidate scan ends with a repo-root
+    # CWD escape hatch. Chdir alone is not enough when a parallel worker
+    # redirected CWD to the REPO ROOT (a collection-time chdir from a
+    # module under test leaks session-wide under pytest-xdist): the stale
+    # repo-root build-info.json then resolves and poisons the identity.
+    # A tmp-dir CWD cannot carry a pyproject.toml, so the package-relative
+    # parent-walk returns to the true repo root deterministically. Cut the
+    # escape hatch at its source: point metadata.__file__ at a shadow copy
+    # inside tmp_path (only reachable via tmp_path itself). The production
+    # candidate list and its order are unchanged (test-only seam).
+    assert rmeta.__file__ is not None
+    shadow_pkg = tmp_path / "nexus_scalp" / "release"
+    shadow_pkg.mkdir(parents=True)
+    (shadow_pkg / "__init__.py").write_bytes(b"")
+    (shadow_pkg / "metadata.py").write_bytes(b"# shadow marker (BUG-210)\n")
+    monkeypatch.setattr(rmeta, "__file__", str(shadow_pkg / "metadata.py"), raising=False)
+    # Pin the premise BEFORE the identity verdict: a frozen exe whose only
+    # reachable stamp is a stale repo-root build-info.json must NOT be
+    # misread as valid stamped identity. (Fails-before guard for the old
+    # 'Commit: None + runtime timestamp' BUG-174 failure mode.)
     assert rmeta.get_build_info_file() is None
     info = rmeta.get_version_info()
     # the unstamped profile: commit falls back to _git_commit() (None outside a
