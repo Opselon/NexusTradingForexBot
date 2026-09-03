@@ -110,13 +110,17 @@ class ScalpNet(nn.Module):
     def __init__(
         self,
         num_features: int = 50,  # 50D Master FeatureVector alignment
-        num_classes: int = 4,  # Classes: 0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET, 3=WAIT
+        num_classes: int = 4,  # Legacy serving default (MLFIX-T4): NO_TRADE/BUY/SELL + WAIT policy bridge
         hidden_dim: int = 128,  # Latent channel capacity
         num_heads: int = 4,  # Attention heads
         dropout_rate: float = 0.25,
     ) -> None:
         super().__init__()
 
+        if not isinstance(num_classes, int) or num_classes < 2:
+            raise ValueError(
+                f"MODEL_CLASS_CONTRACT VIOLATION: ScalpNet num_classes must be an int >= 2, got {num_classes!r}"
+            )
         self.num_features = num_features
         self.num_classes = num_classes
         self.hidden_dim = hidden_dim
@@ -164,6 +168,12 @@ class ScalpNet(nn.Module):
         Returns:
             torch.Tensor: Class probabilities or raw logits.
         """
+        if self.num_classes < 2:
+            raise RuntimeError(f"MODEL_CLASS_CONTRACT VIOLATION: num_classes={self.num_classes} < 2")
+        if self.classifier.out_features != self.num_classes:
+            raise RuntimeError(
+                f"MODEL_CLASS_CONTRACT VIOLATION: head classes {self.classifier.out_features} != declared {self.num_classes}"
+            )
         is_2d_input = x.dim() == 2
 
         if is_2d_input:

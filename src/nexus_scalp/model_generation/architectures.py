@@ -1,4 +1,15 @@
-"""TCN_ATTENTION_V1 — First New Architecture Benchmark Candidate (PHASE 13B).
+"""MLFIX-T4 MODEL CLASS CONTRACT SSoT (PHI):
+
+LABEL_SCHEMA_3CLASS_V1.class_count = 3 (NO_TRADE / BUY_MARKET / SELL_MARKET).
+CANONICAL_CLASS_COUNT below is the SOOT for all model head size decisions.
+Any factory, trainer, runtime, or integrity gate that derives a head width must
+read it from here or from a declared manifest field — never re-define its
+own literal 3 or 4. The legacy ScalpNet serving path keeps a 4-wide head for
+backward compat, but the CANONICAL contract for fresh builds is 3-class unless
+a legacy meta declares 4. WAIT (class index 3) is a policy-derived state and
+never a training label.
+
+TCN_ATTENTION_V1 — First New Architecture Benchmark Candidate (PHASE 13B).
 
 A dedicated causal-temporal model that competes FAIRLY with the legacy
 ScalpNet baseline under identical data/labels/splits/purge/embargo/friction.
@@ -33,6 +44,9 @@ import torch.nn.functional as F
 from torch import nn
 
 ARCHITECTURE_VERSION = "1.0.0"
+
+CANONICAL_CLASS_COUNT = 3
+CANONICAL_CLASSES = ["NO_TRADE", "BUY_MARKET", "SELL_MARKET"]
 
 
 class CausalConv1dBlock(nn.Module):
