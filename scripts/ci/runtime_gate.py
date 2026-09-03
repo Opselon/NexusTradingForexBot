@@ -1308,7 +1308,20 @@ def main(argv: list[str] | None = None) -> int:
         for f in gate.failures:
             print(f"\n  [{f['stage']}] {f['failure_class']}: {f['reason']}")
             print(f"            owner: {f['owner']}")
-    return code
+    # Deterministic CI teardown: the gate has already emitted its contract
+    # output (JSON + evidence) and detached root console handlers to stderr.
+    # torch 2.14.0+cpu C++ destructors + live daemon threads (AuditDB_Worker,
+    # candle_intel writer) race at Python teardown on Linux CI and abort with
+    # "terminate called without an active exception" (rc=134) AFTER a
+    # successful CERTIFIED run (see NX-RUNTIMEGATE-ABORT probes 1-9, jobs
+    # 100640886194/100658737805). Joining/closing daemon threads here would
+    # couple the certification harness to operator shutdown semantics and
+    # cannot reliably drain torch's native destructors; the correct
+    # gate-side-only fix is a hard exit after emit, bypassing teardown.
+    # Operator runtime (live_engine/audit/order_manager) is untouched.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":
