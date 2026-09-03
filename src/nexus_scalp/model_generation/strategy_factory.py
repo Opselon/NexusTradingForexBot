@@ -260,7 +260,17 @@ class StrategyFactory:
     ) -> EntryDecision:
         """Evaluate one setup against its compatible strategies.
 
-        Returns the best GO decision (highest RR) or a NO_GO decision.
+        Returns the best GO decision (highest RR among the compatible
+        strategies) or a NO_GO decision.
+
+        On the all-NO_GO path the reported decision is the candidate with the
+        MOST rejection reasons (richest explanation of why this setup cannot
+        trade), tie-broken by the lowest strategy_id for determinism. It is
+        never simply the first candidate in ``self.strategies`` iteration
+        order: dict order decides which strategy is "first", and that
+        candidate may carry a thin single-gate rejection (e.g. SESSION_GATE)
+        while a later compatible strategy holds the real blocker (e.g.
+        REGIME_NOT_OK + SPREAD_TOO_WIDE). GO selection is unaffected.
         """
         candidates: list[EntryDecision] = []
         for sid, strat in self.strategies.items():
@@ -278,13 +288,15 @@ class StrategyFactory:
                 decision="NO_GO",
                 reasons=("NO_COMPATIBLE_STRATEGY",),
             )
-        # prefer GO with highest RR; else the first NO_GO with fullest reasons
+        # prefer GO with highest RR; else the NO_GO with the MOST reasons
+        # (richest explanation), tie-broken by lowest strategy_id so the
+        # reported decision is deterministic regardless of dict order.
         gos = [c for c in candidates if c.decision == "GO"]
         if gos:
             return max(
                 gos, key=lambda c: (c.tp_distance or 0.0) / max(c.stop_distance or 1e-9, 1e-9)
             )
-        return candidates[0]
+        return min(candidates, key=lambda c: (-len(c.reasons), c.strategy_id))
 
     def _evaluate_one(
         self, strat: HunterStrategy, setup: SetupDetection, row: dict[str, Any]
