@@ -7985,3 +7985,10 @@ item 1 / researcher TDF-R2 Q2+Q2b; LATENT risk fixed, alarm-only; FIXED here)
   identical data repeatedly and pollute the rings - worse than the hazard); the WARNING is
   the audit-visible signal operators asked for; if automation ever needs a hard tripwire,
   extend compute_live_freshness consumers instead of reclassifying duplicates.
+
+## BUG-230 - Classifier WARMUP placeholder counted as a confirmed range market in SignalPolicy (2026-09-03, Nexus-Strategy-Swarm regime seam audit; FIXED here)
+- SEVERITY: P2 (strategy seam; engine HTF warmup gate already fail-closes entries) | STATUS: FIXED | SURFACE: src/nexus_scalp/signals/policy.py (is_range_market), src/nexus_scalp/features/regime_classifier.py:259-274 (WARMUP emitter, unchanged)
+- SYMPTOM: for the classifier's first min_ticks_for_stats (15) ticks, classify_tick returns the synthetic placeholder RANGING_MEAN_REVERSION / prob 0.50 / reason WARMUP with zero real rolling data. SignalPolicy's is_range_market only checked regime_type == RANGING, so a zero-data synthetic state set is_range_market=True - enabling the stat-arb LIMIT channel and the +0.10 range confidence penalty on fabricated state.
+- FIX: a WARMUP-reason regime state no longer satisfies the regime half of is_range_market (policy.py); kumo-inside / tk-distance structure conditions still apply on their own merits. No new gates, no entry relaxation; the engine-level HTF warmup gate remains the primary fail-closed entry protection.
+- REGRESSION: tests/unit/test_policy_warmup_range_seam_bug230.py (2: WARMUP carries range_penalty=0 in decision evidence; confirmed DEFAULT_RANGE still carries the penalty - proving range handling was not disabled). Registered in tests/critical_suite.txt (same commit f85fe661).
+- EVIDENCE: regime seam audit (deleg_5403e37d) flagged the seam as HIDDEN-RISK; verification: test_policy 10 + flip pins 3 + throttle pins 2 + bug132 calibration 19 green; ruff/mypy clean.
