@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
-import os
 import platform
 import re
 import subprocess
@@ -136,52 +135,18 @@ def get_build_info_file() -> Path | None:
         # back to Commit None + a runtime-generated timestamp. The onedir
         # path is unchanged (payloads land in _internal/).
         meipass = getattr(sys, "_MEIPASS", None)
-        # BUG-210 (2026-09-03): during a parallel xdist critical-suite run a
-        # worker can execute this scan with CWD redirected to the repo root
-        # (collection-time chdir from another module leaks session-wide), so
-        # the CWD escape hatch resolved the DEV MACHINE's stale untracked
-        # build-info.json (v9.0.3 stamp) as "stamped identity" for a fake
-        # frozen exe under test. A packaged EXE must report ITS OWN bundle
-        # identity only - never whatever stamp happens to sit in the CWD of
-        # a test worker (version truth, BUG-092/093). PYTEST_CURRENT_TEST is
-        # set by pytest for the duration of every test (monotonic worker
-        # counter), so this seam is scoped to test sessions only.
         candidates = [
             exe_base / "build-info.json",
             exe_base / "_internal" / "build-info.json",
             *(  # onefile payload dir (empty string guard: never match cwd)
                 [Path(meipass) / "build-info.json"] if meipass else []
             ),
-            *(  # BUG-210: CWD escape hatch suppressed during pytest runs -
-                # a redirected worker CWD must never inject a foreign stamp
-                # into a frozen-bundle identity check.
-                [] if "PYTEST_CURRENT_TEST" in os.environ else [Path.cwd() / "build-info.json"]
-            ),
+            Path.cwd() / "build-info.json",
             Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
-        ]
-    elif "PYTEST_CURRENT_TEST" in os.environ:
-        # BUG-210: inside a pytest session the exe_base IS the source tree
-        # (tests import the source package), so a redirected worker CWD
-        # must not inject a foreign stamp here either. The repo-relative
-        # anchor candidates stay; CWD does not.
-        candidates = [
-            exe_base / "build-info.json",
-            exe_base / "_internal" / "build-info.json",
-            # a stamp EXPLICITLY written into the (tmp) CWD by the test
-            # itself is still authoritative - only the raw CWD probe is
-            # dropped when it points at the source tree (the dev machine's
-            # stale untracked repo-root stamp), never when it is a tmp dir.
-            *([Path.cwd() / "build-info.json"] if Path.cwd() != exe_base.parent.parent else []),
         ]
     else:
         candidates = [
-            *(  # BUG-210: same pytest-session guard as the frozen branch -
-                # source runs keep repo-cwd first OUTSIDE tests; inside a
-                # test session a redirected CWD would leak a foreign stamp
-                # into identity-sensitive assertions (test_release_system
-                # owns its stamps explicitly via tmp dirs).
-                [] if "PYTEST_CURRENT_TEST" in os.environ else [Path.cwd() / "build-info.json"]
-            ),
+            Path.cwd() / "build-info.json",
             exe_base / "build-info.json",
             exe_base / "_internal" / "build-info.json",
             Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
