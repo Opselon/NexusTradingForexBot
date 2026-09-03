@@ -207,6 +207,7 @@ def train_variant(
         purge_gap_bars=15,
         artifact_save_path=paths["model"],
         feature_schema_id=variant_schema_id(variant),
+        smoke=smoke,
     )
     t0 = time.perf_counter()
     trainer.train_and_validate(df=df_labeled, feature_cols=cols)

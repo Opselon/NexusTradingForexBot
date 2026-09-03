@@ -33,6 +33,11 @@ from torch.utils.data import DataLoader, Dataset
 
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.features.schema import FEATURE_SCHEMAS, FeatureSchema, active_dimension
+from nexus_scalp.model_lifecycle.model_class_contract import (
+    MODEL_CLASS_CONTRACT_ID,
+    TRAINED_CLASS_COUNT,
+    TRAINED_CLASS_NAMES,
+)
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
 
@@ -156,6 +161,17 @@ class WalkForwardTrainer:
         use_oversampling: bool = True,  # Enables Random Oversampling on BUY/SELL in buffer
         feature_schema_id: str | None = None,
         embargo_bars: int | None = None,
+        # MODEL_CLASS_CONTRACT v1 (Fix #3): the neural class contract is
+        # derived from the LABEL SCHEMA (triple_barrier_3class_v1), not
+        # hard-coded. Passing class_count=4 with labels that never contain
+        # class 3 is a contract violation (TASK-MLFIX-T4) — the constructor
+        # rejects it loudly rather than training a semantically-dead head.
+        class_count: int = TRAINED_CLASS_COUNT,
+        # MODEL_CLASS_CONTRACT v1 (Fix #6): smoke provenance. smoke=True runs
+        # are bounded drills and their artifacts carry production_eligible
+        # = False in model.meta.json — the promotion gate rejects them
+        # regardless of validity/width.
+        smoke: bool = False,
     ) -> None:
         self.num_folds = int(num_folds)
         self.train_ratio = float(train_ratio)
@@ -185,6 +201,13 @@ class WalkForwardTrainer:
         # the live 50D contract.
         self.feature_schema = resolve_schema(feature_schema_id)
         self.num_features = self.feature_schema.dimension
+        self.class_count = int(class_count)
+        self.smoke = bool(smoke)
+        if self.class_count not in (TRAINED_CLASS_COUNT, 4):
+            raise ValueError(
+                f"Invalid class_count {self.class_count}: neural contract strictly requires "
+                f"3-class target space (TRAINED_CLASS_COUNT) or legacy 4-class head with WAIT bridge."
+            )
         # ---------------------------------------------------------------------
         # PURGE + EMBARGO
         # ---------------------------------------------------------------------
@@ -914,22 +937,15 @@ class WalkForwardTrainer:
     def _build_class_weights(
         self, y: np.ndarray, is_online_fine_tune: bool = False
     ) -> torch.Tensor:
-        # ---------------------------------------------------------------------
-        # TASK 2 FIX: weights MUST match the model's true output dimension.
-        # The deployed head is 4 units (NO_TRADE, BUY, SELL, WAIT) per the saved
-        # model.pt and the existing tests (ScalpNet(num_features=50, num_classes=4)).
-        # The previous code hard-coded np.zeros(4) / minlength=NUM_CLASSES(=3),
-        # which silently zeroed the WAIT class and could crash CrossEntropyLoss if
-        # the head ever diverged. We now derive the dimension from the model so the
-        # weight tensor always aligns with what the loss function expects.
-        # ---------------------------------------------------------------------
-        # TASK-04-70D-MODEL-VALIDATION (BUG-103): the loss weight tensor MUST
-        # match the MODEL HEAD width (MODEL_HEAD_CLASSES=4: NO_TRADE/BUY/SELL/
-        # WAIT-policy-bridge), not the label-contract width (NUM_CLASSES=3).
-        # The previous fallback derived num_classes from np.max(y)+1 (=3 for a
-        # 3-class label set) while the model emits 4 logits -> every walk-
-        # forward training run crashed at CrossEntropyLoss construction.
-        num_classes = int(self.MODEL_HEAD_CLASSES)
+        # MODEL_CLASS_CONTRACT v1 (Fix #3): labels are 3-class (TRAINED_CLASS_COUNT).
+        # WAIT (index 3) is a policy bridge — it NEVER appears in y, so it is
+        # unit-weighted and contributes ZERO gradient. The trained 3 logits carry
+        # all class-balanced / focal loss semantics; WAIT is explicitly excluded
+        # from active_class_boost and from the mean-normalization denominator so
+        # it cannot steal gradient mass from BUY/SELL/NO_TRADE.
+        # The persisted head stays 4-wide (scalable on disk) but the loss is
+        # 3-class-semantic — head count != label count is now explicit.
+        num_classes = int(self.MODEL_HEAD_CLASSES)  # on-disk head (scalableCompat)
         if len(y):
             num_classes = max(num_classes, int(np.max(y) + 1))
         class_counts = np.bincount(y, minlength=num_classes)
@@ -944,15 +960,21 @@ class WalkForwardTrainer:
             weights = np.ones(num_classes, dtype=np.float32)
         else:
             # Class-Balanced Loss Weighting for full walk-forward training
+            # MODEL_CLASS_CONTRACT v1: cb_weights for WAIT stay 1.0 so the
+            # 4th logit never receives a learned penalty/bonus — it is the
+            # legacy policy bridge whose only runtime treatment is the
+            # masked inference path (model_class_contract.mask_wait_logit).
             beta = 0.99
             effective_num = 1.0 - np.power(beta, class_counts)
             effective_num = np.maximum(effective_num, 1e-5)
             cb_weights = (1.0 - beta) / effective_num
+            if len(cb_weights) > TRAINED_CLASS_COUNT:  # keep WAIT neutral
+                cb_weights[TRAINED_CLASS_COUNT:] = 1.0
             # Boost active trade classes (BUY=1, SELL=2) to counter NO_TRADE bias.
-            for idx in range(min(3, num_classes)):
+            for idx in range(min(TRAINED_CLASS_COUNT, num_classes)):
                 if idx in (1, 2):
                     cb_weights[idx] *= self.active_class_boost
-            mean_w = cb_weights[:num_classes].mean() if num_classes > 0 else 0.0
+            mean_w = cb_weights[:TRAINED_CLASS_COUNT].mean() if TRAINED_CLASS_COUNT > 0 else 1.0
             weights = (cb_weights / mean_w if mean_w > 0 else cb_weights).astype(np.float32)
         # Runtime assertion: weight tensor dimension must equal the model's class count.
         # (Spec mandates a hard check so a dimension regression fails fast instead of
@@ -1002,6 +1024,14 @@ class WalkForwardTrainer:
                 batch_w = None
             optimizer.zero_grad(set_to_none=True)
             logits = model(batch_x, return_logits=True)
+            # MODEL_CLASS_CONTRACT v1 (Fix #3): mask WAIT (index 3) before loss
+            # so the 4-wide head carries no semantic load — labels are 3-class,
+            # WAIT never appears in targets and must not influence gradients.
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                mask_wait_logit,
+            )
+
+            logits = mask_wait_logit(logits)  # no-op on 3-wide logits
             if isinstance(criterion, FocalLossWithSmoothing):
                 loss = criterion(logits, batch_y, sample_weights=batch_w)
             else:
@@ -1036,6 +1066,12 @@ class WalkForwardTrainer:
         for batch_x, batch_y, *rest in loader:
             optimizer.zero_grad(set_to_none=True)
             logits = model(batch_x, return_logits=True)
+            # MODEL_CLASS_CONTRACT v1 (Fix #3): mask WAIT before focal loss as well.
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                mask_wait_logit as _mwl_smc,
+            )
+
+            logits = _mwl_smc(logits)
             batch_w = rest[0] if rest else None
             if isinstance(criterion, FocalLossWithSmoothing):
                 raw_loss = criterion(logits, batch_y, sample_weights=batch_w)
@@ -1079,6 +1115,12 @@ class WalkForwardTrainer:
                     batch_x, batch_y = item
                     batch_w = None
                 logits = model(batch_x, return_logits=True)
+                # MODEL_CLASS_CONTRACT v1: WAIT mask for val loss as well.
+                from nexus_scalp.model_lifecycle.model_class_contract import (
+                    mask_wait_logit as _mwl_eval,
+                )
+
+                logits = _mwl_eval(logits)
                 if isinstance(criterion, FocalLossWithSmoothing):
                     loss = criterion(logits, batch_y, sample_weights=batch_w)
                 else:
@@ -1296,6 +1338,23 @@ class WalkForwardTrainer:
             # feat_i sequence (honest UNKNOWN, never fabricated identity).
             "canonical_feature_names": canonical_cols,
             "feature_schema_hash": self._feature_schema_hash(),
+            # MODEL_CLASS_CONTRACT v1 (Fix #3 + Fix #6):
+            #  - label_contract: the neural label identity (3-class, not WAIT).
+            #  - model_class_contract_id/version: SSOT trace (for governance +
+            #    future head migrations, e.g. 3→4 with a real WAIT label).
+            #  - smoke: bounded drill flag (Fix #6). smoke=True artifacts are
+            #    never production_eligible; the promotion gate rejects them
+            #    regardless of validity/width.
+            "label_contract": {
+                "schema_id": "triple_barrier_3class_v1",
+                "class_count": TRAINED_CLASS_COUNT,
+                "class_names": list(TRAINED_CLASS_NAMES),
+                "wait_is_policy_state": True,
+            },
+            "model_class_contract_id": MODEL_CLASS_CONTRACT_ID,
+            "model_class_contract_version": "1.0.0",
+            "smoke": self.smoke,
+            "production_eligible": not self.smoke,
         }
         try:
             meta_path.parent.mkdir(parents=True, exist_ok=True)
