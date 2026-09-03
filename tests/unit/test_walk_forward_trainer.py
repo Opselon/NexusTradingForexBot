@@ -146,6 +146,72 @@ def test_wf_fine_tune_rolls_back_on_all_nan_buffer(tmp_path):
             assert torch.isfinite(v).all(), f"non-finite tensor persisted to checkpoint: {k}"
 
 
+def test_wf_zero_improvement_early_stop_skips_quality_gate_rejection(tmp_path, monkeypatch):
+    """BUG-228 regression: when early stopping fires because NO epoch beat the
+    baseline validation loss, best_state IS the baseline state_dict. The
+    pre-BUG-228 code ran that unchanged model through the quality gate, which
+    rejected it (accuracy_delta is 0.0 by construction) and logged a red
+    QUALITY GATE REJECTION + "atomic revert" - a no-op misreported as a
+    failure (live evidence 2026-09-03). The contract now: a
+    zero-improvement run returns the baseline weights, does NOT write a
+    checkpoint, and does NOT emit the rejection log."""
+    trainer = WalkForwardTrainer(
+        num_folds=3,
+        epochs_per_fold=1,
+        min_rows_per_train_split=10,
+        min_rows_per_test_split=5,
+        artifact_save_path=tmp_path / "wf_bug228" / "model.pt",
+    )
+    base_model = ScalpNet(num_features=50, num_classes=4)
+    initial_state = {k: v.clone() for k, v in base_model.state_dict().items()}
+    num_rows = 120
+    rng = np.random.RandomState(11)
+    data = {name: rng.randn(num_rows).tolist() for name in FEATURE_NAMES}
+    labels = ["NO_TRADE", "BUY_MARKET", "SELL_MARKET"]
+    data["label"] = [labels[idx % 3] for idx in range(num_rows)]
+    data["label_evaluated"] = [True] * num_rows
+    data["is_purged"] = [False] * num_rows
+    df = pl.DataFrame(data)
+    # Capture-mechanism-independent observability: monkeypatch the module
+    # logger and builtins.print. (capsys is unreliable for the structured
+    # logger under pytest-xdist workers, and the pre-BUG-228 code emitted
+    # the red banner via raw print with ANSI escapes.)
+    from unittest.mock import MagicMock
+
+    import nexus_scalp.training.walk_forward_trainer as wf_module
+
+    mock_logger = MagicMock()
+    monkeypatch.setattr(wf_module, "logger", mock_logger)
+    print_calls: list = []
+    monkeypatch.setattr("builtins.print", lambda *a, **k: print_calls.append(a))
+
+    returned = trainer.fine_tune_online(
+        live_model=base_model,
+        recent_df=df,
+        feature_cols=FEATURE_NAMES,
+        # epochs=3 so early-stopping patience (max(2, epochs//2) = 2) can fire;
+        # a divergent LR guarantees NO epoch beats the baseline val loss, which
+        # leaves best_state == baseline_state - the exact BUG-228 trigger.
+        epochs=3,
+        learning_rate=1.0,
+        max_holding_bars=5,
+        verify_health=True,
+    )
+    # The zero-improvement path must log the honest INFO skip and must NOT
+    # run the gate rejection (logger.error) or the raw ANSI print().
+    info_msgs = " | ".join(str(c.args[0]) for c in mock_logger.info.call_args_list)
+    assert "no improvement over baseline" in info_msgs, info_msgs
+    mock_logger.error.assert_not_called()
+    assert print_calls == [], f"raw print() emitted: {print_calls!r}"
+    # Returned model must be the untouched baseline (zero-improvement skip).
+    for k, v in returned.state_dict().items():
+        assert torch.equal(v, initial_state[k]), f"baseline weight moved for {k}"
+    # No checkpoint may be written for a rejected/no-op run.
+    assert not (tmp_path / "wf_bug228" / "model.pt").exists(), (
+        "zero-improvement run must not overwrite the checkpoint"
+    )
+
+
 def test_wf_checkpoint_roundtrip_persists_exact_weights(tmp_path):
     """BUG-169 (directive #43/#30 learning-loop battery): the atomic checkpoint
     must survive a save -> unload -> reload cycle with byte-equivalent tensors

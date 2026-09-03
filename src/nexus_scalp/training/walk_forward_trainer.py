@@ -726,6 +726,27 @@ class WalkForwardTrainer:
                 f"Dominance breach: max class ratio ({max_dominance:.1%}) > threshold ({dominance_threshold:.1%})"
             )
         quality_gate_passed = len(rejection_reasons) == 0
+        # BUG-228: early stopping restores the *best* state seen so far. When NO
+        # epoch ever beat the baseline validation loss, best_state IS the baseline
+        # state, so the candidate handed to the quality gate is the unchanged
+        # production model. Running it through the gate then reads as a scary red
+        # QUALITY GATE REJECTION + "atomic revert" even though nothing ever
+        # moved - a no-op misreported as a failure (observed 2026-09-03:
+        # accepted=False, accuracy_delta=0.0, "revert" of identical weights).
+        # The honest outcome for a zero-improvement run is a plain skip: keep the
+        # baseline, skip the checkpoint write, and log exactly that.
+        zero_improvement = bool(
+            early_stopping_triggered and self._state_dicts_equal(best_state, baseline_state)
+        )
+        if zero_improvement:
+            logger.info(
+                "Online fine-tune produced no improvement over baseline; keeping baseline weights",
+                val_acc=round(val_acc, 3),
+                baseline_acc=round(baseline_acc, 3),
+                epochs_requested=epochs,
+                early_stopping_triggered=early_stopping_triggered,
+            )
+            return working_model.to(torch.device("cpu"))
         # Condition 3: new model must strictly beat the baseline validation loss.
         loss_improved = final_val_loss <= baseline_val_loss + 1e-4
         # Condition 4: early stopping must NOT have triggered, unless the new model is
@@ -760,8 +781,15 @@ class WalkForwardTrainer:
             self._save_scaler(scaler)
             ret_model = working_model
         else:
-            red_alert = "\033[41m\033[97m[QUALITY GATE REJECTION] Newly fine-tuned model rejected due to weak accuracy or SELL dominance. Atomically reverting to baseline! \033[0m"
-            print(f"[error] {red_alert}")
+            # BUG-228: raw ANSI escape codes bypass the structured logger and
+            # render as a bare "[error] ..." line in log sinks (no logger name,
+            # module, or timestamp). Route through logger.error so the rejection
+            # is queryable like every other engine event.
+            logger.error(
+                "[QUALITY GATE REJECTION] Newly fine-tuned model rejected due to "
+                "weak accuracy or SELL dominance. Atomically reverting to baseline.",
+                reasons=rejection_reasons,
+            )
             logger.warning(
                 "New model REJECTED by quality gate. Rolling back to healthy baseline.",
                 accepted=False,
@@ -776,6 +804,18 @@ class WalkForwardTrainer:
     # =========================================================================
     # INTERNAL: VALIDATION & FILTERS
     # =========================================================================
+    @staticmethod
+    def _state_dicts_equal(a: dict, b: dict) -> bool:
+        """BUG-228: exact-tensor equality of two state_dicts.
+        Used to distinguish a fine-tune that never moved any weight
+        (early stop restored the baseline as "best") from a genuine
+        candidate that failed the quality gate. Every key must exist in
+        both dicts and every tensor must be bit-identical.
+        """
+        if a.keys() != b.keys():
+            return False
+        return all(torch.equal(a[k], b[k]) for k in a)
+
     def _validate_training_frame(self, df: pl.DataFrame, feature_cols: list[str]) -> None:
         """
         Validates a training frame against the BOUND feature schema.
