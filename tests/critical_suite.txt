@@ -84,3 +84,4 @@ tests/unit/test_predictive_limit_explainability_bug226.py
 tests/unit/test_temporal_liquidity_phase20.py
 tests/unit/test_policy_flip_protection_pins_bug227.py
 tests/unit/test_mslie_sweep_window_pins_bug227.py
+tests/unit/test_policy_throttle_pins_bug227.py
