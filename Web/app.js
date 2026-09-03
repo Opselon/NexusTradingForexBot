@@ -3806,6 +3806,19 @@ function handleIncomingLiveTick(payload, opts) {
         const __d = (payload.price_digits != null) ? payload.price_digits : (String(payload.symbol||"").startsWith("XAU")||String(payload.symbol||"").startsWith("GOLD") ? 2 : 5);
         setTxt('quick-bid', payload.bid != null ? payload.bid.toFixed(__d) : '—');
         setTxt('quick-ask', payload.ask != null ? payload.ask.toFixed(__d) : '—');
+        // BUG-232: provenance watermark on the price panels — when the mode
+        // and the data source disagree, the panels are visibly flagged so a
+        // stale paper price can never masquerade as a live quote.
+        const srcEl = document.getElementById('quick-price-source');
+        if (srcEl) {
+            const src = payload.data_source || payload.provenance?.price || null;
+            srcEl.textContent = src ? ('SRC: ' + src) : '';
+            srcEl.className = 'text-[9px] font-mono ' + (
+                payload.mode_source_mismatch
+                    ? 'text-rose-400 font-bold animate-pulse'
+                    : 'text-textMuted'
+            );
+        }
     }
 
     if (payload.regime != null) setTxt('quick-regime', payload.regime);
@@ -3834,7 +3847,17 @@ function handleIncomingLiveTick(payload, opts) {
 
     if (modeBadge && runtimeMode) {
 
-        modeBadge.textContent = runtimeMode;
+        // BUG-232: a LIVE badge is only real when the backend-confirmed data
+        // source is the live MT5 feed. A LIVE badge over the paper simulator
+        // is rendered as a hard MISMATCH error, never as healthy LIVE.
+        const mismatch = payload.mode_source_mismatch === true;
+        const dataSource = payload.data_source || null;
+
+        modeBadge.textContent = mismatch
+            ? runtimeMode + ' ⚠ SOURCE=' + (dataSource || 'UNKNOWN')
+            : (dataSource && String(runtimeMode).indexOf('LIVE') === 0
+                ? runtimeMode + ' · ' + dataSource
+                : runtimeMode);
 
         const isLive = String(runtimeMode).indexOf('LIVE') === 0;
 
@@ -3842,9 +3865,17 @@ function handleIncomingLiveTick(payload, opts) {
 
         modeBadge.className = 'text-[10px] px-2 py-0.5 rounded font-black border ' +
 
-            (isLive && !isDegraded
+            (mismatch
+
+                ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse'
+
+                : isLive && !isDegraded && dataSource === 'MT5_LIVE'
 
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+
+                : isLive && dataSource === 'PAPER_SIMULATION'
+
+                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
 
                 : isDegraded
 

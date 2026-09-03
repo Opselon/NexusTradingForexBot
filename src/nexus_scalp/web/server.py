@@ -948,6 +948,28 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 runtime_mode = None
 
+            # BUG-232: adapter-identity truth for the UI. The mode badge and
+            # every price panel must be able to prove WHICH source produced
+            # the displayed values — a LIVE badge over the paper simulator
+            # (BUG-232 incident) is now detectable client-side as a hard
+            # MISMATCH instead of silently showing a 2000 seed price.
+            try:
+                from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+                adapter_class = type(engine.adapter).__name__
+                data_source = (
+                    "PAPER_SIMULATION"
+                    if isinstance(engine.adapter, PaperMT5Adapter)
+                    else ("MT5_LIVE" if engine.adapter.is_connected() else "MT5_DISCONNECTED")
+                )
+                mode_source_mismatch = bool(
+                    str(runtime_mode).startswith("LIVE") and data_source == "PAPER_SIMULATION"
+                )
+            except Exception:
+                adapter_class = None
+                data_source = None
+                mode_source_mismatch = False
+
             # Fetch regime state & ATR from the exact synchronized last state
             try:
                 reg_state = engine._last_regime_state
@@ -1560,6 +1582,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "symbol": symbol,
             "execution_mode": execution_mode,
             "runtime_mode": runtime_mode,
+            # BUG-232: backend-confirmed data source + adapter identity. The
+            # UI renders mode_source_mismatch as a hard error badge and never
+            # treats a LIVE badge as real without data_source == MT5_LIVE.
+            "data_source": data_source,
+            "adapter_class": adapter_class,
+            "mode_source_mismatch": mode_source_mismatch,
             "tick_stale": tick_stale,
             "tick_freshness_ms": tick_freshness_ms,
             "provenance": {

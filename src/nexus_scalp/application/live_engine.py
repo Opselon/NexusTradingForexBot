@@ -464,6 +464,11 @@ class LiveEngine:
 
             self.audit = AuditRepository(config=load_database_config("audit"))
         self.force_fresh_model = bool(force_fresh_model)
+        # BUG-232: mode-session generation. Bumped on every cross-boundary
+        # hot-swap; stale-tick / stale-proposal checks compare against it so
+        # an event derived from the old adapter's feed can never mutate the
+        # new mode's state (the PAPER->LIVE 2000.08 dispatch defect).
+        self._mode_session_generation: int = 0
         # BUG-226: boot-time provenance tag for the audit stream. Derived from
         # the EFFECTIVE execution mode after the BUG-212 adapter alignment, so
         # a PAPER boot tags every ledger row and snapshot it writes as PAPER
@@ -5879,6 +5884,54 @@ class LiveEngine:
         wants_simulation = effective == ExecutionMode.PAPER
         is_simulation = isinstance(adapter, PaperMT5Adapter)
 
+        # BUG-232: the mirror-image guard. A LIVE boot must NEVER run on the
+        # simulation adapter. This is the exact production failure of
+        # 2026-09-03 18:48: the launcher bound PaperMT5Adapter from the
+        # YAML-PAPER default, the engine re-bound execution.mode to the
+        # persisted LIVE value, and the old alignment logic only handled
+        # PAPER<-real — leaving the paper simulator (seed price 2000.00,
+        # login 9990001) wired under a LIVE badge. A LIVE boot that finds a
+        # paper adapter swaps in the real broker adapter from config before
+        # the first tick.
+        if not wants_simulation and is_simulation and effective == ExecutionMode.LIVE:
+            import sys as _sys
+
+            replacement_real: IMT5Port | None = None
+            if _sys.platform == "win32":
+                try:
+                    from nexus_scalp.adapters.mt5.mt5_adapter import (
+                        HAS_NATIVE_MT5,
+                        DirectMT5Adapter,
+                    )
+
+                    if HAS_NATIVE_MT5:
+                        mt5_cfg = getattr(self.config, "mt5", None)
+                        replacement_real = DirectMT5Adapter(
+                            account=getattr(mt5_cfg, "account", None),
+                            password=getattr(mt5_cfg, "password", None),
+                            server=getattr(mt5_cfg, "server", None),
+                            timeout=getattr(mt5_cfg, "timeout_ms", 5000),
+                            retries=getattr(mt5_cfg, "retries", 3),
+                        )
+                except Exception as build_err:
+                    logger.error(
+                        "[MODE] BUG-232 LIVE-boot paper->real adapter build failed: %s",
+                        build_err,
+                    )
+                    replacement_real = None
+            if replacement_real is None:
+                from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
+
+                replacement_real = RemoteMT5GatewayAdapter()
+            logger.warning(
+                "[MODE] BUG-232 LIVE boot realigned to real-broker boundary "
+                "effective_mode=%s previous_adapter=%s replacement=%s",
+                effective.value,
+                type(adapter).__name__,
+                type(replacement_real).__name__,
+            )
+            return replacement_real
+
         if wants_simulation and not is_simulation:
             replacement: IMT5Port = PaperMT5Adapter(
                 symbol=self.config.execution.symbol,
@@ -5933,7 +5986,12 @@ class LiveEngine:
                 if hasattr(old_adapter, "disconnect"):
                     old_adapter.disconnect()
                 new_adapter = PaperMT5Adapter(
-                    initial_balance=float(getattr(self, "_last_balance", 0.0) or 0.0) or 10000.0
+                    initial_balance=float(getattr(self, "_last_balance", 0.0) or 0.0) or 10000.0,
+                    # BUG-232: the simulation must track the ACTIVE symbol.
+                    # The old hot-swap built the paper adapter without a
+                    # symbol, so it fell back to EURUSD conventions while the
+                    # engine traded XAUUSD (wrong digits/spread/seed).
+                    symbol=self.config.execution.symbol,
                 )
                 self.adapter = new_adapter
                 self.order_manager.adapter = new_adapter
@@ -5972,6 +6030,22 @@ class LiveEngine:
                 "mode": mode.value,
             }
 
+        # BUG-232: ATOMIC STATE TRANSITION — a hot-swap must invalidate every
+        # piece of state derived from the OLD adapter's market data before the
+        # new pipeline is allowed to act. The BUG-231 production incident
+        # (stale PAPER-geometry SELL_LIMIT at 2000.08 dispatched to the real
+        # 4442 broker) is exactly this hole: the adapter changed but the
+        # signal policy's cached price/last-order state, the aggregator's
+        # paper bars, and in-flight proposals survived the swap.
+        if swapped:
+            try:
+                self._invalidate_cross_mode_state(old_mode, mode)
+            except Exception as invalidation_err:
+                logger.error(
+                    "[MODE] cross-mode state invalidation failed (isolated): %s",
+                    invalidation_err,
+                )
+
         self._update_runtime_mode()
         return {
             "success": True,
@@ -5980,6 +6054,117 @@ class LiveEngine:
             "adapter_swapped": swapped,
             "runtime_mode": self._runtime_mode,
         }
+
+    def _invalidate_cross_mode_state(
+        self, old_mode: ExecutionMode, new_mode: ExecutionMode
+    ) -> None:
+        """BUG-232: drop PAPER-derived state when leaving simulation (and
+        vice versa) so no stale tick/price/proposal can cross the boundary.
+
+        Isolated by contract: never raises, never blocks the swap result.
+        """
+        import time as _time
+
+        now_iso = datetime.now(UTC).isoformat()
+        old_is_paper = old_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW)
+        new_is_paper = new_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW)
+        if old_is_paper == new_is_paper:
+            return  # same boundary class — nothing cross-mode to invalidate
+
+        # 1) Bump the session generation: every stale-tick / stale-proposal
+        #    check compares against this. Anything stamped with the previous
+        #    generation is rejected downstream.
+        old_gen = getattr(self, "_mode_session_generation", 0)
+        self._mode_session_generation = old_gen + 1
+        logger.warning(
+            "[MODE] BUG-232 state invalidation old=%s new=%s generation=%s->%s",
+            old_mode.value,
+            new_mode.value,
+            old_gen,
+            self._mode_session_generation,
+        )
+
+        # 2) Signal policy caches: last executed price/time and last active
+        #    direction are PAPER-geometry state. Clear them so the next
+        #    proposal can only be derived from the NEW adapter's tick.
+        policy = getattr(self, "signal_policy", None)
+        if policy is not None:
+            for attr in (
+                "last_order_price",
+                "last_order_time",
+                "_last_active_direction",
+                "_last_active_direction_time",
+            ):
+                try:
+                    setattr(policy, attr, None)
+                except Exception:
+                    pass
+            try:
+                policy._last_executed_price = 0.0
+            except Exception:
+                pass
+
+        # 3) Drop any engine-staged pending proposals/ticks stamped before
+        #    the swap (defensive: their tick provenance is the old adapter).
+        for attr in ("_pending_proposals", "_latest_tick", "_last_tick"):
+            try:
+                if hasattr(self, attr):
+                    setattr(self, attr, None)
+            except Exception:
+                pass
+
+        # 3b) BUG-231 continuation: the M1 bar aggregator still holds bars
+        #     minted from the OLD adapter's synthetic ticks (paper random-walk
+        #     @2000 for metals). Without a purge, the next completed-bar
+        #     window mixes stale paper bars with fresh live bars and the
+        #     feature/predictive-limit geometry stays 2000-relative (observed
+        #     live 2026-09-03 14:48-16:19 UTC, audit_signals 1069937..1076824).
+        #     A empty aggregator re-warms from the NEW adapter's history via
+        #     the existing BUG-054 reseed path in _cold_start_warmup /
+        #     _resync_from_broker.
+        aggregator = getattr(self, "aggregator", None)
+        if aggregator is not None:
+            try:
+                # reseed([]) atomically clears all history (BUG-054 contract);
+                # an empty aggregator re-warms from the NEW adapter's history
+                # via _cold_start_warmup / _resync_from_broker.
+                aggregator.reseed([])
+                logger.warning(
+                    "[MODE] BUG-231 aggregator history purged (paper bars "
+                    "must not cross the execution boundary)"
+                )
+            except Exception as agg_err:
+                logger.warning(
+                    "[MODE] aggregator purge failed (non-fatal, next reseed will realign): %s",
+                    agg_err,
+                )
+            try:
+                self.warmup_state = "WARMING_UP"
+                self._warmup_attempt = 0
+                logger.info(
+                    "[MODE] warmup state reset to WARMING_UP — HTF/feature "
+                    "chain will re-derive from the new adapter's bars via "
+                    "the 15s periodic readiness re-evaluation"
+                )
+            except Exception:
+                pass
+
+        # 4) Reset the tick-stagnation clock so the watchdog does not
+        #    immediately "reconnect" while the new adapter warms up.
+        self._last_tick_processed_time = _time.time()
+
+        # 5) BUG-232: drop the cached account snapshot. It was captured from
+        #    the OLD adapter; serving it under the new mode made the UI show
+        #    a paper account (login 9990001 / 10000.0) after a PAPER->LIVE
+        #    swap. The next tick loop refreshes it from the new adapter.
+        self._account_snapshot = None
+
+        logger.info(
+            "[MODE] BUG-232 cross-mode state invalidated at=%s swap=%s->%s",
+            now_iso,
+            old_mode.value,
+            new_mode.value,
+        )
 
     def _notify_startup(self, account: AccountInfo | None) -> None:
         if not account:

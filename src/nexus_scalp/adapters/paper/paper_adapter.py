@@ -16,9 +16,10 @@ FX-style 5-digit specs, which would corrupt every risk/lot calculation performed
 against this adapter.
 """
 
+import os
 import random
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from nexus_scalp.adapters.mt5.diagnostics import MT5ConnectionState
 from nexus_scalp.adapters.mt5.providers import (
@@ -57,6 +58,21 @@ class PaperMT5Adapter(IMT5Port):
     In-Memory Paper Trading Broker Adapter for simulation and offline execution.
     """
 
+    # BUG-232: plausible per-instrument seed baselines. The old hard-coded
+    # 2000.00 metal seed froze every PAPER session at a price ~2,400 USD away
+    # from the real XAUUSD market, so every PAPER-derived proposal was
+    # structurally invalid the moment it touched any real reference (the
+    # BUG-231 10016 storm). The seed is overridable via NEXUS_PAPER_SEED_<SYM>
+    # (e.g. NEXUS_PAPER_SEED_XAUUSD=4430.5) for replay experiments.
+    _SEED_BASELINES: ClassVar[dict[str, float]] = {
+        "XAUUSD": 4400.00,
+        "XAGUSD": 28.00,
+        "EURUSD": 1.08500,
+        "GBPUSD": 1.27000,
+        "USDJPY": 150.000,
+    }
+    _DEFAULT_SEED = 2000.00  # fallback for unknown 2-digit instruments
+
     def __init__(self, initial_balance: float = 10000.0, symbol: str = "EURUSD") -> None:
         self.symbol = symbol
         self.balance = initial_balance
@@ -64,13 +80,32 @@ class PaperMT5Adapter(IMT5Port):
         self._connected = False
         self._is_metal = self._symbol_is_metal(symbol)
         #: Starting mid price, chosen to match the instrument's quote convention.
-        self._current_price = 2000.00 if self._is_metal else 1.08500
+        self._current_price = self._seed_price(symbol)
         self._positions: list[Position] = []
         self._ticket_counter = 100001
         # BUG-226: execution provenance of the account this adapter represents.
         # Always 'PAPER' for the simulation adapter; the engine and the
         # audit-repository read it to tag ledger rows and snapshots.
         self.current_account_source: str = "PAPER"
+
+    @classmethod
+    def _seed_price(cls, symbol: str) -> float:
+        """BUG-232: plausible seed price for the simulated instrument.
+
+        Precedence: NEXUS_PAPER_SEED_<SYMBOL> env > per-instrument baseline >
+        legacy 2000.00 default (unknown 2-digit instruments).
+        """
+        upper = (symbol or "").upper()
+        env_key = f"NEXUS_PAPER_SEED_{upper}"
+        try:
+            raw = os.environ.get(env_key, "").strip()
+            if raw:
+                return float(raw)
+        except Exception:
+            pass
+        if upper in cls._SEED_BASELINES:
+            return cls._SEED_BASELINES[upper]
+        return cls._DEFAULT_SEED
 
     # ------------------------------------------------------------------
     # Instrument conventions
@@ -390,16 +425,34 @@ class PaperMT5Adapter(IMT5Port):
     # ------------------------------------------------------------------
 
     def get_last_tick(self, symbol: str) -> TickData:
-        """Generates realistic micro-movement tick snapshots."""
-        digits = self._quote_digits(symbol)
-        if digits == 2:
-            step = random.choice([-0.02, -0.01, 0.0, 0.01, 0.02])
-            spread = 0.20
-        else:
-            step = random.choice([-0.00002, -0.00001, 0.0, 0.00001, 0.00002])
-            spread = 0.00012  # 1.2 pips
+        """Generates realistic micro-movement tick snapshots.
 
-        self._current_price = round(self._current_price + step, digits)
+        BUG-232: volatility scales with the instrument so the simulated
+        stream is a usable market (gold moves in 5-30 cent bursts with
+        occasional trend steps, not ±2 cents around a dead seed). The walk is
+        mean-reverting to the seed baseline so long sessions cannot drift to
+        absurd levels.
+        """
+        digits = self._quote_digits(symbol)
+        upper = (symbol or "").upper()
+        if digits == 2:
+            # gold-class: burst moves + rare momentum step, spread 25-45c
+            step = random.choice([-0.30, -0.15, -0.08, -0.02, 0.0, 0.02, 0.08, 0.15, 0.30, 0.45])
+            spread = round(random.uniform(0.25, 0.45), 2)
+            baseline = self._seed_price(upper)
+        else:
+            step = random.choice(
+                [-0.00030, -0.00015, -0.00008, -0.00002, 0.0, 0.00002, 0.00008, 0.00015, 0.00030]
+            )
+            spread = 0.00012  # 1.2 pips
+            baseline = self._seed_price(upper)
+
+        candidate = self._current_price + step
+        # Mean-revert toward the seed when the walk drifts > 2% away.
+        if baseline > 0 and abs(candidate - baseline) > baseline * 0.02:
+            candidate = baseline + (candidate - baseline) * 0.5
+
+        self._current_price = round(candidate, digits)
         bid = round(self._current_price, digits)
         ask = round(bid + spread, digits)
 
