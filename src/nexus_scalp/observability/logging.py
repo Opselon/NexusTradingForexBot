@@ -618,7 +618,7 @@ def configure_logging(
     renderer: Any = (
         structlog.processors.JSONRenderer()
         if json_format
-        else structlog.dev.ConsoleRenderer(colors=False, pad_event=0)
+        else structlog.dev.ConsoleRenderer(colors=False, pad_event_to=0)
     )
     formatter = structlog.stdlib.ProcessorFormatter(
         foreign_pre_chain=shared_processors,
@@ -627,7 +627,7 @@ def configure_logging(
             renderer,
         ],
     )
-    console_renderer: Any = structlog.dev.ConsoleRenderer(colors=True, pad_event=28)
+    console_renderer: Any = structlog.dev.ConsoleRenderer(colors=True, pad_event_to=28)
     console_formatter = structlog.stdlib.ProcessorFormatter(
         foreign_pre_chain=shared_processors,
         processors=[

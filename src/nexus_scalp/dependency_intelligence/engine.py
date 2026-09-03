@@ -14,6 +14,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from nexus_scalp.dependency_intelligence import ANALYZER_VERSION
 from nexus_scalp.dependency_intelligence.analyzers.di import DIAnalyzer
@@ -49,9 +50,52 @@ class DependencyIntelligenceEngine:
         self.root = Path(root).resolve()
         self.pkg_root = pkg_root
 
+    def _fingerprint(self) -> tuple[int, int]:
+        """(file_count, max_mtime_ns) over scanned .py files - cache key.
+
+        Deliberately cheap (os.scandir walk, no parsing): the whole point is
+        to avoid the 9-13s full AST rescan when nothing changed.
+        """
+        files = 0
+        newest = 0
+        for path in self.root.rglob("*.py"):
+            rel = path.relative_to(self.root)
+            if any(part in {"__pycache__", ".venv", "node_modules"} for part in rel.parts):
+                continue
+            if rel.parts and rel.parts[0] == "scratch":
+                continue
+            files += 1
+            try:
+                m = path.stat().st_mtime_ns
+            except OSError:
+                continue
+            newest = max(newest, m)
+        return files, newest
+
+    def _cache_path(self) -> Path:
+        return Path("artifacts/dependency_intelligence/cache.json")
+
     def analyze(self, use_cache: bool = True) -> AnalysisResult:
         started = time.time()
         stats = AnalysisStats()
+
+        key = None
+        if use_cache:
+            try:
+                key = (self.pkg_root, ANALYZER_VERSION, *self._fingerprint())
+            except OSError:
+                key = None
+            cached = self._load_cache(key)
+            if cached is not None:
+                graph, files_analyzed, parse_errors = cached
+                stats.files_analyzed = files_analyzed
+                stats.parse_errors = len(parse_errors)
+                stats.cache_hits = 1
+                stats.nodes = len(graph.nodes)
+                stats.edges = len(graph.edges)
+                stats.duration_ms = round((time.time() - started) * 1000.0, 2)
+                return AnalysisResult(graph=graph, stats=stats)
+            stats.cache_misses = 1
 
         scanner = Scanner(self.root, self.pkg_root)
         scan = scanner.scan()
@@ -69,10 +113,57 @@ class DependencyIntelligenceEngine:
         graph.repository_root = str(self.root)
         graph.generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+        # Store AFTER DI enrichment: the cached graph must equal the fresh
+        # AnalysisResult.graph (REGISTERS/FACTORY_CREATES edges included).
+        if use_cache and key is not None:
+            self._store_cache(key, graph, scan.files_analyzed, scan.parse_errors)
+
         stats.nodes = len(graph.nodes)
         stats.edges = len(graph.edges)
         stats.duration_ms = round((time.time() - started) * 1000.0, 2)
         return AnalysisResult(graph=graph, stats=stats)
+
+    # -- result cache -----------------------------------------------------
+    # The dependency CLI (scan/graph/validate/impact/explain/path) rebuilds a
+    # full 437-file AST graph on EVERY invocation (~10-14s each); the critical
+    # suite's CLI e2e tests invoke it 7x per run. A fingerprint-keyed result
+    # cache collapses those to one build per tree state. Non-trading module;
+    # behavior identical for identical trees (verified by test_dependency_cache).
+
+    def _load_cache(self, key) -> tuple[DependencyGraph, int, list[str]] | None:
+        import json
+
+        path = self._cache_path()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if payload.get("key") != list(key):
+            return None
+        try:
+            graph = DependencyGraph.from_dict(payload["graph"])
+        except Exception:
+            return None
+        return graph, int(payload["files_analyzed"]), list(payload.get("parse_errors", []))
+
+    def _store_cache(
+        self, key, graph: DependencyGraph, files_analyzed: int, parse_errors: list[Any]
+    ) -> None:
+        import json
+
+        path = self._cache_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "key": list(key),
+                "graph": graph.to_dict(),
+                "files_analyzed": files_analyzed,
+                "parse_errors": parse_errors,
+            }
+            path.write_text(json.dumps(payload, default=str), encoding="utf-8")
+        except OSError:
+            # Cache is best-effort; a read-only tree must never fail analysis.
+            pass
 
     # -- artifact export ------------------------------------------------
 

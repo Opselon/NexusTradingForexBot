@@ -219,3 +219,78 @@ class DependencyGraph:
             "nodes": [n.to_dict() for n in self.nodes.values()],
             "edges": [e.to_dict() for e in self.edges],
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DependencyGraph:
+        """Lossless inverse of to_dict() for the canonical node/edge fields.
+
+        Unknown/extra keys are ignored (forward-compatible cache format);
+        enum fields tolerate legacy raw values via NodeKind(value) fallthrough
+        to the nearest safe default (MODULE / IMPORT / UNKNOWN).
+        """
+        graph = cls(
+            analyzer_version=str(data.get("analyzer_version", "0.1.0")),
+            repository_root=str(data.get("repository_root", "")),
+            generated_at=str(data.get("generated_at", "")),
+            metadata=dict(data.get("metadata", {})),
+        )
+        for nd in data.get("nodes", []):
+            try:
+                kind = NodeKind(nd.get("kind", "MODULE"))
+            except ValueError:
+                kind = NodeKind.MODULE
+            try:
+                layer = Layer(nd.get("layer", "unknown"))
+            except ValueError:
+                layer = Layer.UNKNOWN
+            try:
+                status = ResolutionStatus(nd.get("status", "UNKNOWN"))
+            except ValueError:
+                status = ResolutionStatus.UNKNOWN
+            try:
+                criticality = Criticality(nd.get("criticality", "UNKNOWN"))
+            except ValueError:
+                criticality = Criticality.UNKNOWN
+            graph.add_node(
+                DependencyNode(
+                    id=str(nd.get("id", "")),
+                    qualified_name=str(nd.get("qualified_name", "")),
+                    display_name=str(nd.get("display_name", "")),
+                    kind=kind,
+                    module=str(nd.get("module", "")),
+                    package=str(nd.get("package", "")),
+                    file=str(nd.get("file", "")),
+                    layer=layer,
+                    status=status,
+                    confidence=float(nd.get("confidence", CONFIDENCE_PROVEN)),
+                    criticality=criticality,
+                    metadata=dict(nd.get("metadata", {})),
+                )
+            )
+        for ed in data.get("edges", []):
+            try:
+                edge_kind = EdgeKind(ed.get("kind", "IMPORT"))
+            except ValueError:
+                edge_kind = EdgeKind.IMPORT
+            try:
+                resolution = ResolutionStatus(ed.get("resolution", "UNKNOWN"))
+            except ValueError:
+                resolution = ResolutionStatus.UNKNOWN
+            ev = ed.get("evidence", {}) or {}
+            graph.add_edge(
+                DependencyEdge(
+                    source=str(ed.get("source", "")),
+                    target=str(ed.get("target", "")),
+                    kind=edge_kind,
+                    confidence=float(ed.get("confidence", CONFIDENCE_PROVEN)),
+                    resolution=resolution,
+                    evidence=Evidence(
+                        evidence_type=str(ev.get("evidence_type", "unknown")),
+                        file=str(ev.get("file", "")),
+                        line=int(ev.get("line", 0)),
+                        reason=str(ev.get("reason", "")),
+                    ),
+                    metadata=dict(ed.get("metadata", {})),
+                )
+            )
+        return graph

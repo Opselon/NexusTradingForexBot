@@ -8053,3 +8053,15 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
   * Persisted mode after swaps = LIVE in the isolated settings DB (survives restart by construction; launcher honors it without re-asking).
 - GATES: ruff check + format clean on all touched files, mypy clean, py_compile clean, focused mode-boundary net 64 passed, broader regression (packaged-db-mode, accounting core, order lifecycle/exit, audit isolation) 112 passed.
 - RESIDUAL RISKS: (1) paper seed baselines are static — a NEXUS_PAPER_SEED_<SYM> override exists for replay realism; PAPER remains a simulation and its levels are not the live market by design. (2) The BUG-231 adapter-level recovery (cause-aware retry) is unchanged and still armed. (3) Full per-tick provenance stamping end-to-end remains an enhancement (tracked, not a current defect — the swap path invalidates all cached state synchronously on the same loop thread, so no stale event can cross).
+
+
+## BUG-233 - verify-release secrets-scan crashes on vanished/broken tree entries (FileNotFoundError from Path.rglob walk) (2026-09-03, Nexus-Main test-reduction pass)
+
+- SEVERITY: P2 (release-gate robustness; verify-release must always produce a verdict, never an unhandled crash) | STATUS: FIXED
+- SURFACE: src/nexus_scalp/release/verify.py::_secrets_scan
+- SYMPTOM (reproduced by probe on this checkout): `nexus verify-release --root <tree>` raised FileNotFoundError (WinError 3) mid-walk when the scanned tree contained a reparse/broken nested path (observed: .worktrees/subagent-*/.worktrees/subagent-*/... path that vanished between rglob enumeration and stat). rglob() enumerates lazily; entries can disappear or become unreadable between enumeration and p.is_file()/p.stat().
+- ROOT CAUSE: per-file p.is_file() and p.stat() were unguarded; any OSError escaping the loop crashed verify_release BEFORE any verdict was emitted (fail-crash instead of fail-safe).
+- FIX: is_file() and stat() are each wrapped in try/except OSError -> skip the entry and continue. Decode path already had (UnicodeDecodeError, OSError) handling; the size guard and lstat path now share the same discipline. Scan semantics unchanged for all normally-readable files.
+- REGRESSION TEST: tests/unit/test_release_system.py::test_secrets_scan_survives_unreadable_entries (new; monkeypatched Path.is_file raising OSError for one entry -> scan completes, verdict emitted, other files still scanned).
+- VERIFICATION: py_compile, ruff check+format, mypy src clean; new regression test green; the original probe (398s scan over 1.1GB worktree tree) now completes with a FAIL verdict carrying the synthetic test-credential hits instead of crashing.
+- NOTE (owner handoff, not this fix): the same scan is a wall-time hazard when --root points at a huge tree (measured 398s on a 1.1GB local tree). Release CI only ever scans the portable bundle (small). Consider a size cap or ignore-list for the CLI default if operator-facing scans of dev trees become common.

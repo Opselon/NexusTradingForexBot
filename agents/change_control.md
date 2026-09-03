@@ -1724,3 +1724,18 @@ Risk: MEDIUM-HIGH (execution-adjacent; mitigated by 35 offline regression tests 
 Dependencies: BUG-231; independent of CHG-0053
 Required tests: tests/unit/test_pending_recovery_cause_aware.py (all green); focused -k "pending or mt5 or recovery" suite = 130 passed / 1 skipped / 0 failed; ruff check+format, mypy, py_compile clean
 Status: IMPLEMENTED->VERIFIED (offline); live MT5 smoke NOT executed (safety contract: no live order placement during verification)
+
+CHANGE-ID: CHG-0056
+Agent: Nexus-Main
+Role: Orchestrator / Test-Suite Reduction & Critical-Gate Optimization (user mission 2026-09-03)
+Task: PASS-1 - evidence-driven test-suite reduction: kill the critical gate's measured wall-time hotspots without losing protected coverage
+Scope: tests/unit/test_release_system.py (test_cli_exit_codes_contract verify-release root '.' -> tmp_path; same non-release-dir->EXIT_RELEASE contract, empty-dir case already pinned by test_cli_end_to_end.py::test_e2e_14 + e2e_66); tests/unit/test_web_ux_safety.py (pytest-9 sanctioned @classmethod class-scoped fixture; PytestRemovedIn10Warning removed); src/nexus_scalp/observability/logging.py (structlog 26.1 pad_event -> pad_event_to; identical rendered output, DeprecationWarning removed); src/nexus_scalp/release/verify.py (BUG-233 OSError guards in _secrets_scan, fail-safe verdict instead of crash); src/nexus_scalp/dependency_intelligence/{engine,models}.py (fingerprint-keyed result cache for the full AST scan + DependencyGraph.from_dict; 7 repeated 10-14s scans per critical-suite run collapse to 1 build + 0.3s cache hits; non-trading tooling module, output equivalence verified node/edge-identical)
+Affected files: the five above + agents/bugs.md (BUG-233) + agents/taskboard.md (TASK-NX-TESTRED-P1) + tests/unit/test_dependency_cache.py (new regression)
+Affected functions/classes: DependencyIntelligenceEngine.analyze/_fingerprint/_load_cache/_store_cache; DependencyGraph.from_dict (new classmethod); ReleaseVerifier._secrets_scan; configure_logging (kwarg rename only); test_cli_exit_codes_contract (fixture arg only)
+Contracts touched: NONE (no trading, risk, execution, model, persistence, or API contract touched). Dependency-intelligence CLI JSON outputs byte-equivalent on unchanged trees (cached result == fresh result; verified probe: 1403 nodes / 4531 edges both paths)
+Runtime paths touched: NONE (dependency scanner is a dev/CI tool, never on the tick path; verify.py runs only in release verification)
+Owners affected: dependency_intelligence (previously unowned tooling), observability/logging (renderer kwarg only), release/verify (robustness fix, BUG-233 filed)
+Risk: LOW (test-layer + non-trading tooling; production equivalence probes recorded; mypy/ruff/format clean)
+Dependencies: user test-reduction mission (continuous loop); complements TASKBOARD-CI-TIME-ATTACK-20260903
+Required tests: test_dependency_cache.py (new), test_release_system.py, test_web_ux_safety.py, test_dependency_intelligence.py, test_cli_end_to_end.py, observability guardrails suite
+Status: IMPLEMENTED (local gates green; critical-suite re-run pending in this pass)
