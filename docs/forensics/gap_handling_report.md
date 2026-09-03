@@ -66,10 +66,16 @@ Reproduction of the raw audit numbers:
 import csv
 from datetime import datetime, timezone
 from collections import Counter
-rows=[]
+
+rows = []
 with open("data/raw/XAUUSD_M1.csv", newline="") as f:
-    for row in csv.DictReader(f): rows.append(row)
-ts=[datetime.fromisoformat(r["time_utc"].replace("Z","+00:00")) for r in rows]
-gaps=[(i, ts[i-1], ts[i], (ts[i]-ts[i-1]).total_seconds()) for i in range(1,len(ts)) if (ts[i]-ts[i-1]).total_seconds()>60]
-print(len(gaps), max(g[3] for g in gaps)/3600)
+    for row in csv.DictReader(f):
+        rows.append(row)
+ts = [datetime.fromisoformat(r["time_utc"].replace("Z", "+00:00")) for r in rows]
+gaps = [
+    (i, ts[i - 1], ts[i], (ts[i] - ts[i - 1]).total_seconds())
+    for i in range(1, len(ts))
+    if (ts[i] - ts[i - 1]).total_seconds() > 60
+]
+print(len(gaps), max(g[3] for g in gaps) / 3600)
 ```
