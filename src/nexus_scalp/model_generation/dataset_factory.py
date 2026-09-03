@@ -22,6 +22,7 @@ from typing import Any
 import polars as pl
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
+from nexus_scalp.model_generation.lineage import LabelOrigin, stamp_manifest
 from nexus_scalp.model_generation.models import DatasetManifest
 from nexus_scalp.model_generation.sample_factory import SampleFactory, samples_to_frame
 from nexus_scalp.observability.logging import get_logger
@@ -115,8 +116,16 @@ class DatasetFactory:
         seed: int = 42,
         generation_version: str = "1.0.0",
         dataset_id: str | None = None,
+        label_origin: str | LabelOrigin = LabelOrigin.CLEAN_HISTORICAL,
     ) -> dict[str, Any]:
-        """Builds + persists a dataset artifact. Returns the handle dict."""
+        """Builds + persists a dataset artifact. Returns the handle dict.
+
+        MLFIX-T7 lineage: every persisted dataset manifest is stamped with
+        its label_origin (default CLEAN_HISTORICAL for the offline bar path).
+        Callers feeding paper/live-derived frames MUST pass the matching
+        origin — the production hard guard (lineage.assert_production_eligible)
+        refuses tainted manifests at candidate-mint time.
+        """
         samples = self.sample_factory.build_samples(
             df,
             symbol=symbol,
@@ -207,10 +216,15 @@ class DatasetFactory:
             strategy_context_version=strategy_version,
         )
 
+        # MLFIX-T7: lineage stamp travels with the manifest (production
+        # eligibility of any candidate trained on this dataset is decided
+        # from this field, never inferred).
+        manifest_payload = stamp_manifest(manifest.model_dump(mode="json"), label_origin)
+
         handle = self.store.save_dataset(
             real_id,
             frame.drop("_split"),
-            manifest.model_dump(mode="json"),
+            manifest_payload,
         )
         handle["dataset_id"] = real_id
         handle["counts"] = counts
