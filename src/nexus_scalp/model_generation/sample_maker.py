@@ -26,7 +26,6 @@ import polars as pl
 
 from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_generation.strategy_factory import (
-    DEFAULT_HUNTER_STRATEGY,
     StrategyFactory,
 )
 from nexus_scalp.observability.logging import get_logger
@@ -78,7 +77,7 @@ class HunterSampleMaker:
         self,
         detector: SetupDetector | None = None,
         strategy_factory: StrategyFactory | None = None,
-        default_strategy: str = DEFAULT_HUNTER_STRATEGY,
+        default_strategy: str | None = None,
     ) -> None:
         self.detector = detector or SetupDetector()
         self.strategy_factory = strategy_factory or StrategyFactory()

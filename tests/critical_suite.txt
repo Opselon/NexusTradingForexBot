@@ -78,3 +78,4 @@ tests/unit/test_web_ux_safety.py
 # repair mirrors the dataset clamp semantics. Companion to BUG-190/BUG-197.
 tests/unit/test_bug217_news_state_bounds.py
 tests/unit/test_strategy_factory_registry_invariant.py
+tests/unit/test_hunter_sample_strategy_coverage.py
