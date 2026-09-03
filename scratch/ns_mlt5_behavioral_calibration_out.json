@@ -1,0 +1,60 @@
+{
+  "thresholds": {
+    "logit_std_min": 0.15,
+    "max_prob_floor": 0.35,
+    "wait_mass_ceiling": 0.3,
+    "sensitivity_floor": 0.02
+  },
+  "measurements": {
+    "fresh_init": {
+      "logit_std_mean": 0.0579,
+      "max_prob_mean": 0.2832,
+      "wait_mass_mean": 0.2047,
+      "margin_sensitivity": 0.0093,
+      "moved_tensors": 0
+    },
+    "epsilon_diverged": {
+      "logit_std_mean": 0.058,
+      "max_prob_mean": 0.283,
+      "wait_mass_mean": 0.2051,
+      "margin_sensitivity": 0.0106,
+      "moved_tensors": 30
+    },
+    "degraded_shuffled": {
+      "logit_std_mean": 0.0461,
+      "max_prob_mean": 0.2787,
+      "wait_mass_mean": 0.2551,
+      "margin_sensitivity": 0.0212,
+      "moved_tensors": 21
+    },
+    "trained_50d_main": {
+      "logit_std_mean": 0.0679,
+      "max_prob_mean": 0.2945,
+      "wait_mass_mean": 0.2381,
+      "margin_sensitivity": 0.023,
+      "moved_tensors": 24
+    },
+    "trained_70d_news": {
+      "logit_std_mean": 0.0526,
+      "max_prob_mean": 0.2996,
+      "wait_mass_mean": 0.1935,
+      "margin_sensitivity": 0.04,
+      "moved_tensors": 24
+    },
+    "champion_70d_liquidity": {
+      "logit_std_mean": 0.4041,
+      "max_prob_mean": 0.3679,
+      "wait_mass_mean": 0.1423,
+      "margin_sensitivity": 0.2012,
+      "moved_tensors": 16
+    }
+  },
+  "verdicts": {
+    "fresh_init": "FAIL:logit_std+max_prob+sensitivity",
+    "epsilon_diverged": "FAIL:logit_std+max_prob+sensitivity",
+    "degraded_shuffled": "FAIL:logit_std+max_prob",
+    "trained_50d_main": "FAIL:logit_std+max_prob",
+    "trained_70d_news": "FAIL:logit_std+max_prob",
+    "champion_70d_liquidity": "PASS"
+  }
+}
