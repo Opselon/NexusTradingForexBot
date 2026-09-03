@@ -67,10 +67,10 @@ def make_seed_spec(
     req = required_features_from_dsl(dsl)
     # compatibility contract: schema + dimension pinned to current canonical
     try:
-        from nexus_scalp.features.schema_contract import (
-            CANONICAL_FEATURE_DIMENSION,
-            CANONICAL_FEATURE_SCHEMA_ID,
-        )
+        from nexus_scalp.features.schema import active_dimension as _active_dim
+        from nexus_scalp.research.candidates import CANONICAL_FEATURE_SCHEMA_ID
+
+        CANONICAL_FEATURE_DIMENSION = int(_active_dim())
     except Exception:
         CANONICAL_FEATURE_SCHEMA_ID = "scalp_v3"  # type: ignore[no-redef]
         CANONICAL_FEATURE_DIMENSION = 70  # type: ignore[no-redef]
