@@ -781,10 +781,19 @@ class SignalPolicy:
         # Decision Engine (Fast Liquidity Reversal & Smart Order Routing)
         # ----------------------------------------------------------------------
         proposed_action = ActionType.NO_TRADE
+        # BUG-229 (TASK-TDF Q3): the DEFAULT label below is the "no rule
+        # fired / no candidate" outcome, NOT a regime event. The old
+        # REGIME_*/RANGE_BOUND_SIDEWAYS/NEUTRAL_MARKET strings made
+        # reason-code analytics blame the market regime for every idle
+        # tick. The regime value stays embedded as a suffix (recoverable
+        # context); explicit rule-path codes are byte-identical and
+        # overwrite this default below. The code deliberately avoids the
+        # "REGIME_" substring so the audit_repository regime-fallback
+        # partition never matches it.
         reason_code = (
-            f"REGIME_{regime_type.value}"
+            f"NO_CANDIDATE_{regime_type.value}"
             if regime_type
-            else ("RANGE_BOUND_SIDEWAYS" if is_range_market else "NEUTRAL_MARKET")
+            else ("NO_CANDIDATE_RANGE_MARKET" if is_range_market else "NO_CANDIDATE_NEUTRAL_MARKET")
         )
         target_entry_price = current_tick.ask
 
