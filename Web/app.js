@@ -1671,6 +1671,13 @@ function switchTab(tabId, element) {
 
     }
 
+    if (tabId === 'tab-marketplace') {
+        // CHG-0058: Strategy Marketplace tab (init on first open + refresh after)
+        if (window.NX && window.NX.marketplace) {
+            try { window.NX.marketplace.render(); } catch (e) { console.warn('[Marketplace] render failed:', e); }
+        }
+    }
+
     if (tabId === 'tab-news') {
         loadNewsState();
         if (window.NewsIntel && NewsIntel.startProConsole) { try { NewsIntel.startProConsole(); } catch(_){} }
