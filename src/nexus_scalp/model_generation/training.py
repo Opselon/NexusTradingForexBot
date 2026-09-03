@@ -239,7 +239,7 @@ class CandidateTrainer:
         cb_weights = cb_weights / cb_weights.mean()
         # head may be 4-wide (ScalpNet NO_TRADE/BUY/SELL/WAIT) — WAIT never
         # appears in labels, gets unit weight
-        model_num_classes = int(getattr(model, "num_classes", None) or experiment.class_count or 4)
+        model_num_classes = int(getattr(model, "num_classes", None) or experiment.class_count or 3)
         if model_num_classes > 3:
             cb_weights = np.concatenate([cb_weights, np.ones(model_num_classes - 3)])
         alpha_t = torch.tensor(cb_weights, dtype=torch.float32)

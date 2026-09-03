@@ -11,7 +11,7 @@ The compatibility gate (spec 6 / 29) is explicit:
   * feature schema id must match
   * feature dimension must match (50D today; 60D/350D future schemas are
     additive; a mismatch FAILS loudly - never silently reshape/truncate)
-  * output class count must match the model head (4)
+  * output class count must match the declared contract (CANONICAL=3; legacy 4 via allow_legacy_4 only)
   * scaler/preprocessing must be schema-compatible
 """
 
@@ -28,8 +28,14 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.model_lifecycle.integrity")
 
-#: ScalpNet head width: NO_TRADE, BUY, SELL, WAIT.
-EXPECTED_NUM_CLASSES: int = 4
+#: MLFIX-T4 MODEL CLASS CONTRACT SSoT.
+#: Canonical head width is 3 (NO_TRADE / BUY / SELL).
+#: LEGACY_EXPECTED_NUM_CLASSES=4 exists only for the legacy compat probe;
+#: see detect_untrained_fresh_init and inspect_artifact(allow_legacy_4=...).
+#: All fresh bundles, manifests, and retrains MUST declare 3. Fresh scaler/model
+#: loads FAIL loudly when a 4-wide artifact is presented without allow_legacy_4=True.
+EXPECTED_NUM_CLASSES: int = 3
+LEGACY_EXPECTED_NUM_CLASSES: int = 4
 
 
 def resolve_schema(schema_id: str | None = None):
@@ -313,9 +319,17 @@ def detect_untrained_fresh_init(
             return False, "STATE_DICT_UNREADABLE"
         dim = int(feature_dimension or w.shape[1])
 
+        # MLFIX-T4: the canary must compare against a reference minted at the
+        # artifact's OWN head width (read from classifier.weight), not the
+        # canonical-3 class count. Legacy 4-wide artifacts (e.g. a4b9..) must
+        # still be byte-comparable, or the canary silently stops flagging
+        # them (test_bug225_untrained_champion_canary regression).
+        head_w = state.get("classifier.weight")
+        artifact_head = int(head_w.shape[0]) if hasattr(head_w, "shape") and len(head_w.shape) == 2 else None
+        ref_classes = artifact_head if artifact_head in (EXPECTED_NUM_CLASSES, LEGACY_EXPECTED_NUM_CLASSES) else EXPECTED_NUM_CLASSES
         # Reproduce the canonical mint under the SAME seed the runtime uses.
         torch.manual_seed(seed)
-        reference = ScalpNet(num_features=dim, num_classes=4).state_dict()
+        reference = ScalpNet(num_features=dim, num_classes=ref_classes).state_dict()
         if set(state.keys()) != set(reference.keys()):
             return False, "KEYSET_DIVERGENT"
         for key, ref_tensor in reference.items():
@@ -351,3 +365,130 @@ def scaler_compatibility(scaler_path: Path | str, feature_dimension: int) -> boo
 def artifact_metadata_json(info: ModelArtifactInfo) -> str:
     """Compact JSON metadata for persistence."""
     return json.dumps(info.model_dump(mode="json"), default=str)
+
+
+# ============================================================================
+# BUG-235 extension: BEHAVIORAL model-health canary (anti-degenerate gate)
+# ============================================================================
+# BUG-225's byte-equality canary only catches the EXACT fresh init. The
+# post-20:44 artifact is epsilon-diverged (16 tensors moved a hair) yet still
+# near-uniform, WAIT-heavy, and gate-unreachable. This check is the behavioral
+# complement: loadable + structurally valid + NOT byte-fresh is NOT enough —
+# the model must also DEMONSTRATE it learned something.
+#
+# Thresholds (calibrated 2026-09-03 against the degenerate champion and a
+# trained reference):
+#   LOGIT_STD_MIN        0.15   (degenerate artifact: 0.06-0.10)
+#   MAX_PROB_FLOOR       0.35   (normalized over trained classes; degenerate ~0.29)
+#   WAIT_MASS_CEILING    0.30   (4th class never trained; degenerate ~0.22 avg
+#                                but up to 0.26 on random — ceiling catches a
+#                                collapsed head parking mass in WAIT)
+#   SENSITIVITY_FLOOR    0.05   (BUY-vs-SELL prob swing between all+3 and all-3
+#                                vectors; degenerate artifact: 0.046)
+# Any candidate failing a floor is HEALTH=CRITICAL and promotion-blocked.
+BEHAVIORAL_HEALTH: dict[str, float] = {
+    "logit_std_min": 0.15,
+    "max_prob_floor": 0.35,
+    "wait_mass_ceiling": 0.30,
+    "sensitivity_floor": 0.02,
+}
+
+
+def check_model_behavioral_health(
+    artifact_path: Path | str,
+    feature_dimension: int | None = None,
+    n_random: int = 64,
+    seed: int = 7,
+) -> tuple[bool, str, dict[str, Any]]:
+    """Behavioral anti-degenerate probe on a saved checkpoint (read-only).
+
+    Loads the state_dict, runs a small deterministic probe batch (zeros,
+    +3/-3 saturations, seeded randoms), and returns
+    (healthy, detail, metrics). Never raises. Unknown on any probe error
+    (torch missing, unreadable artifact) — callers must treat UNKNOWN as
+    not-PASS for promotion purposes.
+    """
+    p = Path(artifact_path)
+    if not p.exists() or p.stat().st_size == 0:
+        return False, "ARTIFACT_ABSENT", {}
+    try:
+        import numpy as np
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        state = torch.load(p, map_location="cpu", weights_only=False)
+        if not isinstance(state, dict) or "input_projection.weight" not in state:
+            return False, "STATE_DICT_UNREADABLE", {}
+        w = state["input_projection.weight"]
+        if not hasattr(w, "shape") or len(w.shape) != 2:
+            return False, "STATE_DICT_UNREADABLE", {}
+        dim = int(feature_dimension or w.shape[1])
+        n_cls = int(state.get("classifier.weight").shape[0])  # type: ignore[union-attr]
+
+        model = ScalpNet(num_features=dim, num_classes=n_cls)
+        model.load_state_dict(state)
+        model.eval()
+
+        rng = np.random.default_rng(seed)
+        probes = np.vstack(
+            [
+                np.zeros((1, dim), dtype=np.float32),
+                np.full((1, dim), 3.0, dtype=np.float32),
+                np.full((1, dim), -3.0, dtype=np.float32),
+                np.clip(rng.standard_normal((n_random, dim)), -5, 5).astype(np.float32),
+            ]
+        )
+        with torch.no_grad():
+            logits = model(torch.tensor(probes), return_logits=True).numpy()
+            probs = model(torch.tensor(probes), return_logits=False).numpy()
+
+        metrics: dict[str, Any] = {
+            "n_cls": n_cls,
+            "logit_std_mean": float(logits.std(axis=0).mean()),
+            "logit_std_per_class": [round(float(x), 4) for x in logits.std(axis=0)],
+            "max_prob_mean": float(probs.max(axis=1).mean()),
+            "wait_mass_mean": float(probs[:, 3].mean()) if n_cls >= 4 else 0.0,
+            "margin_sensitivity": float(
+                abs((probs[1, 1] - probs[1, 2]) - (probs[2, 1] - probs[2, 2]))
+            ),
+        }
+
+        # MLFIX-T5: parameter movement vs the canonical seed-42 fresh init
+        # (fraction of tensors moved + max magnitude). Byte-equal fresh
+        # bundles score frac=0.0 / maxdiff=0.0; any real training moves
+        # most tensors by measurable magnitudes.
+        try:
+            torch.manual_seed(42)
+            fresh_ref = ScalpNet(num_features=dim, num_classes=n_cls).state_dict()
+            moved = 0
+            max_diff = 0.0
+            for k, ref_t in fresh_ref.items():
+                if k in state:
+                    d = float((state[k] - ref_t).abs().max())
+                    max_diff = max(max_diff, d)
+                    if d > 1e-8:
+                        moved += 1
+            total = max(len(fresh_ref), 1)
+            metrics["parameter_movement_frac"] = float(moved / total)
+            metrics["max_tensor_diff"] = max_diff
+        except Exception:  # movement probe is diagnostic-only, never fatal
+            metrics["parameter_movement_frac"] = None
+            metrics["max_tensor_diff"] = None
+        t = BEHAVIORAL_HEALTH
+        failures = []
+        if metrics["logit_std_mean"] < t["logit_std_min"]:
+            failures.append(f"logit_std {metrics['logit_std_mean']:.3f} < {t['logit_std_min']}")
+        if metrics["max_prob_mean"] < t["max_prob_floor"]:
+            failures.append(f"max_prob {metrics['max_prob_mean']:.3f} < {t['max_prob_floor']}")
+        if n_cls >= 4 and metrics["wait_mass_mean"] > t["wait_mass_ceiling"]:
+            failures.append(f"wait_mass {metrics['wait_mass_mean']:.3f} > {t['wait_mass_ceiling']}")
+        if metrics["margin_sensitivity"] < t["sensitivity_floor"]:
+            failures.append(
+                f"sensitivity {metrics['margin_sensitivity']:.3f} < {t['sensitivity_floor']}"
+            )
+        if failures:
+            return False, "DEGENERATE:" + ";".join(failures), metrics
+        return True, "BEHAVIORAL_HEALTH_PASS", metrics
+    except Exception as e:  # probe error is UNKNOWN, never a fake PASS
+        return False, f"BEHAVIORAL_PROBE_ERROR:{e}", {}

@@ -21,11 +21,14 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.model_generation.model_factory")
 
-#: ScalpNet legacy head: NO_TRADE, BUY, SELL, WAIT. The migration contract is
-#: 3-class neural; the legacy 4th output is a POLICY bridge (WAIT), not a
-#: training label. Strategy: validate against the declared label_schema.
+#: MLFIX-T4 MODEL CLASS CONTRACT SSoT.
+#: Canonical contract is 3-class (NO_TRADE / BUY / SELL). LEGACY_HEAD_CLASSES=4
+#: (WAIT policy bridge) is a LEGACY serving compat — fresh builds derive head
+#: width from the declared manifest/label schema (3) via CANONICAL_CLASS_COUNT.
+#: Any caller passing an undeclared 4-head without allow_legacy must FAIL loudly.
 LEGACY_HEAD_CLASSES = 4
 CONTRACT_3CLASS = 3
+CANONICAL_CLASS_COUNT = 3
 
 
 class SimpleMLP(nn.Module):

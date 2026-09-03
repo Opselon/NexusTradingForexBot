@@ -675,11 +675,16 @@ def test_aihub_11_invalid_champion_does_not_become_active(tmp_path) -> None:
 def test_aihub_14_70d_candidate_never_promotes_automatically() -> None:
     """No automatic promotion exists: a valid 70D candidate stays CANDIDATE;
     there is no code path that turns it into the LIVE Champion (INV-015)."""
-    from nexus_scalp.model_lifecycle.integrity import EXPECTED_NUM_CLASSES
+    from nexus_scalp.model_lifecycle.integrity import (
+        EXPECTED_NUM_CLASSES,
+        LEGACY_EXPECTED_NUM_CLASSES,
+    )
 
-    # The canonical class contract is still 4 — verified by the loader gate
-    # EXPECTED_NUM_CLASSES; a 70D candidate cannot flip it.
-    assert EXPECTED_NUM_CLASSES == 4
+    # MLFIX-T4: canonical class contract is now 3 (NO_TRADE/BUY/SELL); the
+    # legacy 4-wide (WAIT) contract is retained only for compat probing via
+    # LEGACY_EXPECTED_NUM_CLASSES. A 70D candidate cannot flip either.
+    assert EXPECTED_NUM_CLASSES == 3
+    assert LEGACY_EXPECTED_NUM_CLASSES == 4
 
 
 def test_aihub_15_model_inventory_distinguishes_lifecycle(tmp_path) -> None:
