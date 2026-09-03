@@ -277,6 +277,56 @@ def _load_state_dict_shapes(path: Path) -> dict[str, tuple[int, ...]]:
         return {}
 
 
+def detect_untrained_fresh_init(
+    artifact_path: Path | str,
+    feature_dimension: int | None = None,
+    seed: int = 42,
+) -> tuple[bool, str]:
+    """BUG-225: semantic corruption canary — is the checkpoint a fresh random init?
+
+    The live engine pins the process-global torch RNG (``torch.manual_seed(42)``)
+    in ``WalkForwardTrainer.__init__`` before the artifact load path runs, so a
+    ScalpNet minted by ANY fresh-weights path (cold-start bootstrap, force_fresh,
+    collapse recovery) is BYTE-IDENTICAL across every mint. A checkpoint that
+    equals that canonical fresh init is therefore untrained random weights — the
+    engine would serve near-uniform softmax probabilities forever
+    (normalized directional confidence capped ~0.335 < the 0.40 base threshold),
+    which manifests as permanent NO_TRADE / INSUFFICIENT_CONFIDENCE.
+
+    Structural gates (BUG-141 width check, CLASS_HEAD probe, schema hash) all
+    PASS on such an artifact because the corruption is semantic, not structural.
+    This canary closes that gap. Returns (is_fresh_init, detail).
+    """
+    p = Path(artifact_path)
+    if not p.exists() or p.stat().st_size == 0:
+        return False, "ARTIFACT_ABSENT"
+    try:
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        state = torch.load(p, map_location="cpu", weights_only=False)
+        if not isinstance(state, dict) or "input_projection.weight" not in state:
+            return False, "STATE_DICT_UNREADABLE"
+        w = state["input_projection.weight"]
+        if not hasattr(w, "shape") or len(w.shape) != 2:
+            return False, "STATE_DICT_UNREADABLE"
+        dim = int(feature_dimension or w.shape[1])
+
+        # Reproduce the canonical mint under the SAME seed the runtime uses.
+        torch.manual_seed(seed)
+        reference = ScalpNet(num_features=dim, num_classes=4).state_dict()
+        if set(state.keys()) != set(reference.keys()):
+            return False, "KEYSET_DIVERGENT"
+        for key, ref_tensor in reference.items():
+            if key not in state or not torch.equal(state[key], ref_tensor):
+                return False, f"DIVERGES_AT:{key}"
+        return True, "BYTE_EQUAL_TO_FRESH_INIT"
+    except Exception as e:  # torch missing / corrupted file: not a freshness verdict
+        logger.warning("[MODEL] fresh-init canary failed (isolated)", error=str(e))
+        return False, f"CANARY_ERROR:{e}"
+
+
 def scaler_compatibility(scaler_path: Path | str, feature_dimension: int) -> bool:
     """
     Verifies the persisted scaler matches the declared feature dimension.

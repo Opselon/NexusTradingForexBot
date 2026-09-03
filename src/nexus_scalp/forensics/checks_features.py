@@ -274,6 +274,63 @@ def check_model_artifact() -> CheckResult:
     )
 
 
+def check_model_semantic_health() -> CheckResult:
+    """BUG-225: the champion checkpoint must not be untrained random weights.
+
+    Structural identity gates (BUG-141 width guard, class-head probe, schema
+    hash, BUG-166 fingerprint match) all PASS on a checkpoint that was minted
+    by a fresh-weights path (cold-start bootstrap / force_fresh / collapse
+    recovery) and never trained — the corruption is SEMANTIC. A fresh init
+    emits near-uniform softmax probabilities, so the policy confidence gate
+    (base 0.40 + range/survival penalties) is mathematically unreachable and
+    the engine degrades to permanent NO_TRADE / INSUFFICIENT_CONFIDENCE while
+    every dashboard looks green.
+
+    Detection: the runtime pins torch's global RNG to seed 42 before any
+    ScalpNet mint, so ALL fresh inits are byte-identical. Byte-equality with
+    that canonical init is therefore an exact, causal untrained-weights
+    verdict (see integrity.detect_untrained_fresh_init).
+    """
+    info = _champion_artifact_info()
+    if not info.get("found"):
+        return _unknown(
+            "CHECK-MDL-02",
+            "no champion artifact on disk — semantic health unobservable",
+            info,
+            "a champion artifact",
+        )
+    try:
+        from nexus_scalp.model_lifecycle.integrity import detect_untrained_fresh_init
+
+        fresh, detail = detect_untrained_fresh_init(info["path"])
+    except Exception as e:
+        return _unknown(
+            "CHECK-MDL-02",
+            f"fresh-init canary unavailable ({e})",
+            info,
+            "torch + scalp_net importable",
+        )
+    if fresh:
+        return CheckResult(
+            "CHECK-MDL-02",
+            HealthStatus.CRITICAL,
+            evidence=(
+                "champion checkpoint is BYTE-IDENTICAL to the canonical seed-42 "
+                "fresh ScalpNet init — untrained random weights are serving live "
+                "decisions (permanent NO_TRADE / confidence gate unreachable)"
+            ),
+            observed={**info, "canary_detail": detail},
+            expected="checkpoint weights divergent from any fresh random init",
+            detail="UNTRAINED_CHAMPION_ARTIFACT",
+        )
+    return _ok(
+        "CHECK-MDL-02",
+        f"champion weights are trained (fresh-init canary: {detail})",
+        {**info, "canary_detail": detail},
+        "checkpoint weights divergent from any fresh random init",
+    )
+
+
 def check_model_dimension_contract() -> CheckResult:
     """INV-70D-013/014: active schema dimension must equal artifact dimension.
 
