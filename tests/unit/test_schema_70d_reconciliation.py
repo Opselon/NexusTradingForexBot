@@ -191,9 +191,11 @@ def test_current_70d_05_candidate_discovery_truth():
     if not wf.exists():
         pytest.skip("no wf_candidate artifact in this environment")
     m = json.loads(wf.read_text(encoding="utf-8"))
-    # The smoke artifact declares 70D / 4-class head
+    # CANONICAL-3 CONTRACT (model_class_contract v1): the artifact declares a
+    # 3-class neural head (NO_TRADE/BUY_MARKET/SELL_MARKET); WAIT is a policy
+    # state, never a label (SSoT: TRAINED_CLASS_COUNT=3).
     assert m.get("num_features") == 70
-    assert m.get("model_head_classes") == 4
+    assert m.get("model_head_classes") == 3
     # Truthful discovery: the manifest does NOT claim validation evidence it
     # does not have (no validation_result, no dataset_id provenance).
     assert not m.get("validation_result")
@@ -202,7 +204,10 @@ def test_current_70d_05_candidate_discovery_truth():
 
 def test_current_70d_06_candidate_model_integrity():
     """TEST-CURRENT-70D-06 — the on-disk 70D artifact loads as input-70D,
-    output-4-class (structural integrity independent of its schema tag)."""
+    output-3-class (structural integrity independent of its schema tag).
+    Canonical-3 contract: fresh trainer builds write a 3-wide head
+    (SSoT: TRAINED_CLASS_COUNT=3); the legacy 4-wide WAIT-bridge head is
+    compat-only and never emitted by the current trainer."""
     import torch
 
     pt = REPO_ROOT / "artifacts/model_generation/models/wf_candidate/model.pt"
@@ -212,7 +217,7 @@ def test_current_70d_06_candidate_model_integrity():
     ip = s.get("input_projection.weight")
     clf = s.get("classifier.weight")
     assert ip is not None and int(ip.shape[1]) == 70
-    assert clf is not None and int(clf.shape[0]) == 4
+    assert clf is not None and int(clf.shape[0]) == 3
 
 
 def test_current_70d_07_dataset_truth():
@@ -382,11 +387,12 @@ def test_current_70d_17_head3_weight_integrity_detection():
         model_version="1.0.0",
         feature_schema_id="scalp_v3",  # canonical check target
         feature_dimension=70,
-        num_classes=4,
+        num_classes=3,  # canonical-3 contract (TRAINED_CLASS_COUNT)
     )
-    # The artifact is structurally 70D/4-class and must pass integrity even
-    # though its meta tag is scalp_v4 (integrity is about the TENSORS).
-    assert info.actual_output_classes is None or info.actual_output_classes == 4
+    # The artifact is structurally 70D/3-class (canonical head) and integrity
+    # must reflect the TENSORS: actual_output_classes comes from the on-disk
+    # classifier width, which the canonical trainer writes as 3-wide.
+    assert info.actual_output_classes is None or info.actual_output_classes == 3
     if info.actual_output_classes is not None:
         assert info.integrity_ok in (True, False)
 

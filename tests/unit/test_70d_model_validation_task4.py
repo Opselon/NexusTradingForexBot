@@ -914,7 +914,10 @@ def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
     model.eval()
     with torch.inference_mode():
         out = model(torch.randn(2, 70))
-    assert out.shape == (2, 4)
+    # CANONICAL-3 CONTRACT (SSoT: architectures.CANONICAL_CLASS_COUNT=3 /
+    # TRAINED_CLASS_COUNT=3): the walk-forward trainer builds a 3-wide head
+    # (NO_TRADE/BUY/SELL); WAIT is a policy state, never a neural output.
+    assert out.shape == (2, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -1006,4 +1009,6 @@ def test_70d_model_33_manifest_input_dimension_no_double_count() -> None:
 
     rt = validate_and_load(res["model_id"], root=str(REPO_ROOT / "artifacts/model_generation"))
     pred = rt.predict(np.random.default_rng(1).normal(0, 1, 72))
-    assert len(pred["probabilities"]) == 4
+    # CANONICAL-3 CONTRACT: the runtime builds the head from the manifest's
+    # class_count (defaults to 3, SSoT CANONICAL_CLASS_COUNT) -> 3 probabilities.
+    assert len(pred["probabilities"]) == 3
