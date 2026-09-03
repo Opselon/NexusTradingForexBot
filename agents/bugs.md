@@ -7936,3 +7936,52 @@ Status: FIXED (CI lane usable without private artifacts; local strictness kept).
 - EVIDENCE: py_compile OK; ruff check + ruff format --check clean (2 files); mypy policy.py clean (no issues in 1 source file); new suite 9/9 PASS RC=0 (serial + xdist); affected-suite run test_policy + flip/throttle pins + confidence_semantics_repair + audit_db_growth_bug054 + web_ux_safety + fidelity_data_to_decision = 77 passed RC=0. Commit 05682884 pushed to origin/main (19f8673e..05682884).
 - NOT-CHANGED: any threshold, risk behavior, proposed_action logic, guardian, hysteresis, explicit rule-path codes, audit_repository regime fallback, Web humanizer tables, historical forensic docs.
 - RISKS/NOTES: historical audit.db rows keep the old REGIME_* strings (never rewritten - append-only evidence); new NO_CANDIDATE_* rows will only appear post-deploy. Any consumer doing prefix analytics on REGIME_* will see the default-branch share move to NO_CANDIDATE_* from deploy time onward - that is the intended correction.
+## BUG-TDF-Q2 - Regime state staleness on the BUG-169 duplicate-tick path: a frozen/duplicate
+quote stream can reuse _regime_last_state indefinitely with NO freshness check - the
+classifier's hysteresis 'never get stuck frozen' guarantee silently assumes fresh ticks
+keep arriving (2026-09-03, Hermes-Coder TASK-ID NX-TDFQ2-TICKAGE, TASK-TDF Phase2 R4
+item 1 / researcher TDF-R2 Q2+Q2b; LATENT risk fixed, alarm-only; FIXED here)
+- SEVERITY: MEDIUM (latent: 09-02 freeze episode was proven genuine-spread with fresh ticks
+  re-asserting CHOP, so no live episode is attributed to this defect; but the frozen-stream
+  hazard was real and unobservable) | STATUS: FIXED
+- SURFACE: src/nexus_scalp/application/live_engine.py - BUG-169 dedup seam only (duplicate
+  tick => reuse _regime_last_state at the former :3600-3606); no classifier change, no
+  Schmitt-guard change, no threshold/policy semantic change.
+- ROOT CAUSE (proven, researcher TDF-R2 package): BUG-169 correctly skips classify_tick() for
+  duplicate ticks (identical bid/ask>0 or timestamp) to protect the rolling rings, and reuses
+  the cached MarketRegimeState. Reuse had NO age bound: on a frozen/duplicate feed the same
+  state - including FREEZE_ALL / HIGH_SPREAD_CHOP - persists indefinitely while the engine
+  reports healthy, contradicting regime_classifier.py's hysteresis comment (563-570).
+- FIX (alarm-only, dedup contract preserved; forcing reclassification on duplicate data would
+  re-push the duplicate into _ts/_log_ret/_ofi and skew tick_velocity/rv_5m/norm_ofi):
+  1. live_engine stamps _regime_state_classified_at = time.time() on every successful fresh
+     classify_tick() (the reuse path's provenance of freshness).
+  2. new _assert_regime_state_freshness(tick) runs ONLY on the dedup-reuse branch: when the
+     reused state's age exceeds algo.regime_state_max_age_sec (default 300s, generous - normal
+     duplicate reuse spans seconds), emits a rate-limited (1 per max_age window) structured
+     WARNING: event=STALE_STATE_REUSED ALARM_ONLY mode=dedup_reuse state_age=<s>
+     max_age_sec=<s> symbol regime reason tick_ts. Never raises, never mutates state, never
+     reclassifies (O(1); a missing stamp is treated as stale - honest UNKNOWN, alarm fires).
+  3. configurable via configs/base.yaml + configs/live.yaml algo.regime_state_max_age_sec
+     (existing config pattern), validated 1..86400 in runtime_config (hot-reloadable via the
+     runtime snapshot -> to_algo_config projection; engine reads config.algo per guard call).
+- REGRESSION TESTS: tests/unit/test_live_engine_regime_state_freshness.py (NEW file, 6 tests,
+  xdist-safe, BUG-112/118 rules: clock monkeypatched via le.time, module logger monkeypatched -
+  no caplog/capsys): stale reuse >max-age fires exactly one structured STALE_STATE_REUSED
+  WARNING naming regime identity; rate-limit window semantics; young reuse is fully silent
+  (fresh-stream behavior unchanged); guard NEVER calls classify_tick on duplicate data and
+  never swaps cached state identity (BUG-169 contract pin); missing stamp => alarm with
+  state_age=unknown; config default + base.yaml/live.yaml keys pinned.
+- GATES: ruff check + ruff format --check clean (4 touched files); mypy live_engine/config/
+  runtime_config clean (no issues in 3 source files); py_compile OK; new suite 6/6 PASS RC=0;
+  runtime-config suites (hot_reload + engine_hot_reload) + regime suites (bug227 pins + bug132
+  calibration) 42 passed RC=0. test_htf_warmup_gate 5 failures PROVEN pre-existing at HEAD~
+  (BUG-212 PAPER boot alignment x FakeMT5Adapter interaction, already disclosed in taskboard
+  TASK-NX-BUG212-PAPERA row) - unrelated to this change.
+- NOT-CHANGED: BUG-169 dedup predicate, classify_tick() calls on fresh ticks, regime
+  classifier internals (incl. Schmitt trigger + hysteresis), 50D live contract, 70D governed
+  boundary, thresholds, execution/risk behavior.
+- RISKS/NOTES: alarm-only by design (a forced reclassify on frozen quotes would classify
+  identical data repeatedly and pollute the rings - worse than the hazard); the WARNING is
+  the audit-visible signal operators asked for; if automation ever needs a hard tripwire,
+  extend compute_live_freshness consumers instead of reclassifying duplicates.
