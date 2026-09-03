@@ -10,12 +10,14 @@ Contract (file:line refs):
 - This test pins the SHARED contract by proving: same causal window => same sequence tensor train vs live.
   One builder (SequenceBuilder) is the ONLY builder (Do NOT invent a second builder).
 """
+
 from __future__ import annotations
 
 import numpy as np
 import polars as pl
 import torch
 
+from nexus_scalp.model_generation.architectures import TCNAttentionV1
 from nexus_scalp.model_generation.sequence import SequenceBuilder
 from nexus_scalp.model_generation.temporal_contract import (
     CANONICAL_EMBARGO_BARS,
@@ -24,7 +26,6 @@ from nexus_scalp.model_generation.temporal_contract import (
     CANONICAL_SEQ_LEN,
     get_canonical_sequence_builder,
 )
-from nexus_scalp.model_generation.architectures import TCNAttentionV1
 
 
 def _synthetic_70d_frame(n: int = 64, seed: int = 7) -> pl.DataFrame:
@@ -34,7 +35,9 @@ def _synthetic_70d_frame(n: int = 64, seed: int = 7) -> pl.DataFrame:
         d[f"feat_{i}"] = rng.normal(0, 0.6, size=n).astype(float).tolist()
     # strictly-increasing M1 timestamps (60s steps) in microseconds — required for gap checks
     base_us = 1_700_000_000_000_000
-    d["timestamp"] = (base_us + np.arange(n, dtype=np.int64) * 60_000_000).astype("datetime64[us]").tolist()
+    d["timestamp"] = (
+        (base_us + np.arange(n, dtype=np.int64) * 60_000_000).astype("datetime64[us]").tolist()
+    )
     d["symbol"] = ["XAUUSD"] * n
     d["timeframe"] = ["M1"] * n
     d["label"] = rng.integers(0, 3, size=n).tolist()
