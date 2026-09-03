@@ -1,0 +1,59 @@
+{
+  "probe": "ns_audit_label",
+  "labeler": "TripleBarrierLabeler",
+  "horizon": {
+    "claimed": 15,
+    "actual_init": 15,
+    "eval_rows": 32
+  },
+  "tp_sl_multiples": {
+    "claimed_tp": 1.1,
+    "claimed_sl": 1.0,
+    "actual_tp": 1.1,
+    "actual_sl": 1.0,
+    "match": true
+  },
+  "tp_sl_semantics_note": "TP=atr*1.1, SL=atr*1.0 per __init__ default; verified below with spread=0.",
+  "friction_usd": {
+    "claimed": 0.35,
+    "actual": 0.35,
+    "match": true
+  },
+  "spread_awareness_feasibility": {
+    "note": "tp_dist=1.1 <= eff_friction(1.2) -> NO_TRADE, stride advance, is_eval_sample stays False for those first rows",
+    "actual_tp_dist": 1.1,
+    "low_spread_eff": 0.35,
+    "high_spread_eff": 1.2,
+    "high_infeasible_expected": true
+  },
+  "tail_handling": {
+    "horizon_tail_truncated": true,
+    "eval_mask_last_15_sum": 5,
+    "note": "horizon = min(15, n-1-i); last bar never eval; tail bars may still eval if horizon>=1"
+  },
+  "barrier_precedence": {
+    "simultaneous_dual_TP_same_bar_labels_first_bar": 0,
+    "expected": 0,
+    "collides_correctly": true,
+    "note": "buy_hit_tp && sell_hit_tp in same step => label 0 (neutralize, line 166)",
+    "entry_asked": "buy_entry=close+half_spread, sell_entry=close-half_spread per triple_barrier.py:109-110",
+    "buy_TP_and_buy_SL_same_bar": 0,
+    "same_bar_always_neutralizes": true
+  },
+  "purge_embargo_advancer": {
+    "embargo_bars": 3,
+    "no_trade_stride_bars": 3,
+    "win_advances_by_exit_plus_embargo": "exit_step + embargo_bars (line 222)",
+    "loss_advances_by_stride": "no_trade_stride_bars (line 224)",
+    "tail_bound": "i += min(step_advance, max(1, n-1-i)) (line 226)"
+  },
+  "live_census_XAUUSD_M1_100k": {
+    "rows": 100000,
+    "eval_rows": 5752,
+    "buy": 1599,
+    "sell": 1539,
+    "no_trade": 96862,
+    "skipped_invalid_atr_note": "estimated via local atr14 conv; exact census comes from dataset pipeline"
+  },
+  "fold_boundary_purge_embargo_note": "WalkForwardTrainer._split_fold_with_embargo uses purge_gap_bars=15 and embargo_bars=15 (15/15 at fold boundaries). This audit confirms the labeler's own embargo_bars=3 is the intra-trajectory spacing; the fold-level 15/15 purge+embargo is enforced in training, not inside label_dataframe. Both are required: 3 bars between evaluated trajectories and 15 bars of padding around fold edges (reported in model_generation/datasets/t70d_f1_full_m1)."
+}
