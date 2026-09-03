@@ -95,6 +95,7 @@ from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
 from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
+from nexus_scalp.model_lifecycle.persist_decision import decision_of
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
 from nexus_scalp.model_lifecycle.worker import TrainingWorker
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -5714,7 +5715,44 @@ class LiveEngine:
             )
             updated_model.eval()
 
-            # Refresh scaler + persist weights
+            # BUG-235/236 (MLFIX-T3-CLOSE): the trainer attaches an explicit
+            # PersistDecision to every returned model. Honor it: a rejected /
+            # zero-improvement / gate-failed candidate must NEVER be persisted
+            # (no scaler reload, no atomic save, no bundle swap, no trainer
+            # rebind, no provenance re-registration, no "SUCCESS" claim) —
+            # otherwise degenerate paper-model labels self-perpetuate through
+            # the live artifact.
+            decision = decision_of(updated_model)
+            if decision is not None and not decision.persist:
+                logger.info(
+                    f"ASYNC RETRAIN SKIPPED: {decision.detail or 'candidate rejected'} "
+                    f"(reason={decision.reason})",
+                    persist=False,
+                )
+                # No improvement was persisted: the retrain clock resets so
+                # the engine retries after a full interval instead of
+                # hammering the gate every bar.
+                self._bars_since_last_retrain = 0
+                return
+
+            # Legacy fallback (pre-PersistDecision trainers): the model
+            # carries only the old boolean tag.
+            if decision is None and getattr(updated_model, "_finetune_accepted", True) is False:
+                if getattr(updated_model, "_finetune_zero_improvement", False):
+                    _legacy_detail = "zero improvement over baseline; baseline kept"
+                    _legacy_reason = "ZERO_IMPROVEMENT_BASELINE_KEPT"
+                else:
+                    _legacy_detail = "quality gate rejected the candidate; baseline kept"
+                    _legacy_reason = "QUALITY_GATE_FAILED"
+                logger.info(
+                    f"ASYNC RETRAIN SKIPPED: {_legacy_detail} (reason={_legacy_reason})",
+                    persist=False,
+                )
+                self._bars_since_last_retrain = 0
+                return
+
+            # Refresh scaler + persist weights (reached ONLY for accepted
+            # candidates — no wasted IO on a rejected one).
             scaler = self._load_scaler_artifacts(bundle.artifact_path)
             self._save_model_weights_atomic(updated_model, bundle.artifact_path)
 
