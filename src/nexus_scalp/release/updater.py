@@ -817,9 +817,15 @@ class UpdatePlanBuilder:
                 "source archives are not used for end-user updates"
             )
             return None
-        # Installer / portable ZIP preferred over the raw onedir exe.
+        # BUG-237: prefer the PORTABLE ZIP over the Inno setup.exe - the zip
+        # installs headless on every mode (portable/EXE/Inno) and carries
+        # build-info.json + release-manifest.json for full verification; the
+        # setup.exe is a secondary payload (GUI-launched, Inno-verified).
         for a in packaged:
-            if "-setup.exe" in str(a.get("name", "")) or str(a.get("name", "")).endswith(".zip"):
+            if str(a.get("name", "")).endswith(".zip"):
+                return a
+        for a in packaged:
+            if "-setup.exe" in str(a.get("name", "")):
                 return a
         return packaged[0]
 
@@ -2509,6 +2515,14 @@ class UpdateOrchestrator:
 
     # ------------------------------------------------------------------ internals
     def _verify_payload_manifest(self, artifact: Path, plan: dict[str, Any]) -> None:
+        # BUG-237: the Inno SETUP payload is an EXE, not a zip - opening it
+        # with zipfile raised BadZipFile -> "artifact is not a valid zip" even
+        # though the SHA-256 was fine. The installer embeds SHA256SUMS.txt +
+        # release-manifest.json itself (BUG-166 pre-stage); its integrity gate
+        # is the artifact SHA-256, so the zip-manifest pass applies to the
+        # portable .zip payload only.
+        if str(plan.get("artifact_name", "")).endswith("-setup.exe"):
+            return
         """Verify release-manifest.json INSIDE the payload (bundled by CI).
 
         The embedded manifest lists every payload file (portable-rooted). To
