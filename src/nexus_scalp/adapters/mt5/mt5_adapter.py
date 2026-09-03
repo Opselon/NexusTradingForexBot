@@ -1877,11 +1877,19 @@ class DirectMT5Adapter(IMT5Port):
                 return False, price, stop_loss, take_profit
 
         # 1) align entry to tick size, then 2) push to the legal side.
+        # BUG-231 follow-up (2026-09-03 live log 20:02:09 + 20:18:06): the
+        # original repair only moved the entry when it sat on the WRONG side
+        # (<= bid for sells). An entry ABOVE the bid but INSIDE the
+        # stops-level distance (legit "too close" case, e.g. entry 4491.53
+        # vs bid 4491.35 with min_gap 0.50) was left untouched -> repaired
+        # geometry identical to the failed request -> REPAIR_REJECTED even
+        # though a perfectly valid RR-preserving repair existed. Now the
+        # push condition is the stops-level distance, not merely the side.
         new_price = round(round(price / tick_size) * tick_size, digits)
         if is_sell:
-            if new_price <= float(tick.bid):
+            if float(tick.bid) + min_gap - new_price > 1e-9:
                 new_price = float(tick.bid) + min_gap
-        elif new_price >= float(tick.ask):
+        elif new_price - (float(tick.ask) - min_gap) > 1e-9:
             new_price = float(tick.ask) - min_gap
         new_price = round(round(new_price / tick_size) * tick_size, digits)
 
