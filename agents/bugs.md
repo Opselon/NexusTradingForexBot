@@ -7414,7 +7414,43 @@ pass - discovered during deploy-gate verification, referred NOT fixed)
   server`; grep each endpoint string in server.py (False for the two)
   vs in the owning route modules (True for both); pytest both test files
   (FAIL reproduced at tip 86b13d6).
-  Status: OPEN.
+
+  ### RESOLUTION (2026-09-03, Hermes-Coder, commit 5bcd2c28)
+  - Fix shape: `check_api_200_but_wrong()` (forensics/checks_observability.py)
+    rewritten to resolve the REAL registered route surface —
+    `from nexus_scalp.web.server import create_app; app = create_app();
+    paths = set(app.openapi()["paths"])` — and test each of the 5
+    semantic-health endpoints against that OpenAPI path set. The
+    `server.__file__` source-text grep is REMOVED (no endpoint-existence
+    by source grep remains in the check).
+  - Honesty guarantee: app construction/OpenAPI enumeration is wrapped in
+    try/except; on failure the check returns UNKNOWN via `_unknown(...)`
+    with the exception class+message as evidence — never a fabricated PASS.
+  - Cost: create_app()+openapi() measured ~sub-second (dry-run probe
+    scratch/ns_probe_bug209_fixspec_dryrun.py: PASS, all 5 endpoints
+    registered, app.routes agreement=True). Acceptable per-check cost.
+  - Tests: the two perpetually-red tests
+    (test_forensic_monitoring_task11.py::TestMonitor19UiApi::
+    test_api_surface_present, test_post70d_monitoring_activation.py::
+    TestPost70d20UiApi::test_api_surface_present) were NOT modified, NOT
+    skipped, NOT deleted — their contract (endpoints exist ->
+    CheckResult PASS with all observed values True) is unchanged and now
+    passes against the real mechanism.
+  - Verification at tip (repo venv, 2026-09-03):
+    pytest tests/unit/test_forensic_monitoring_task11.py
+    tests/unit/test_post70d_monitoring_activation.py = 130 collected
+    (87+43), all PASSED, RC=0. Forensics/observability family
+    (+test_forensic_incident_center_task, test_bug162_forensic_cli_gate,
+    test_observability_contract_freeze, test_observability_guardrails)
+    = 208 collected, all PASSED, RC=0.
+    py_compile OK; ruff check OK; ruff format --check OK; mypy (touched
+    file) "Success: no issues found in 1 source file".
+    tests/integration/test_engine_runtime_launch.py = 1 skipped
+    (engine log absent — unchanged pre-existing skip, not a regression).
+  - Contract impact: none (check-internal probe mechanism only;
+    CheckResult id CHECK-API-01, detail API_SURFACE_MISSING, 5-endpoint
+    set, status vocabulary all preserved).
+  Status: FIXED (2026-09-03, Hermes-Coder, commit 5bcd2c28 — see RESOLUTION above).
 
 ## BUG-206 - Operational Control Center tab rendered a BLANK panel: control_center.js renders INTO cc-* view elements that index.html never shipped (2026-09-02, Nexus-Main client E2E acceptance)
 
