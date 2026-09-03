@@ -16,11 +16,6 @@ information and no cross-boundary contamination.
 
 from __future__ import annotations
 
-from typing import Any
-
-import numpy as np
-import polars as pl
-
 # =============================================================================
 # CANONICAL TEMPORAL SEQUENCE CONTRACT (TASK MLFIX-T2 / PHASE 14 UNIFICATION)
 # =============================================================================
@@ -73,8 +68,11 @@ import polars as pl
 # engine falls back to the 2D path with an explicit logged warning - the
 # fallback is visible, never silent.
 # =============================================================================
-
 from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+import polars as pl
 
 #: Canonical sequence length (see module docstring for the L=32 evidence).
 SEQUENCE_LENGTH: int = 32
@@ -138,7 +136,7 @@ class SequenceBuilder:
     def __init__(
         self,
         seq_len: int | None = None,
-        max_gap_us: int | None | str = "contract",
+        max_gap_us: int | str | None = "contract",
     ) -> None:
         # ``seq_len=None`` / ``max_gap_us="contract"`` (sentinel) = take the
         # CANONICAL contract values (L=32, gap=15min). An explicit int wins
