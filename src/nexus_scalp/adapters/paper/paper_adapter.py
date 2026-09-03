@@ -67,6 +67,10 @@ class PaperMT5Adapter(IMT5Port):
         self._current_price = 2000.00 if self._is_metal else 1.08500
         self._positions: list[Position] = []
         self._ticket_counter = 100001
+        # BUG-226: execution provenance of the account this adapter represents.
+        # Always 'PAPER' for the simulation adapter; the engine and the
+        # audit-repository read it to tag ledger rows and snapshots.
+        self.current_account_source: str = "PAPER"
 
     # ------------------------------------------------------------------
     # Instrument conventions

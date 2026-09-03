@@ -183,6 +183,18 @@ class AccountingCore:
 
         clauses: list[str] = []
         args: list[Any] = []
+        # BUG-226: the paper simulator seeds every account at exactly
+        # balance==equity==margin_free==10000.0. Those plateau rows (647 found)
+        # drag the equity curve to a fake -74.7% drawdown vs the real peak.
+        # The seed signature is exact (all three columns equal 10000.0), so
+        # only simulation plateaus are excluded — real equity is never that
+        # flat AND exactly at the default seed. Legacy rows carry no
+        # account_source; new rows are tagged at write time.
+        clauses.append(
+            "NOT (ABS(balance - 10000.0) < 1e-9 AND ABS(equity - 10000.0) < 1e-9 "
+            "AND ABS(margin_free - 10000.0) < 1e-9)"
+        )
+        clauses.append("(COALESCE(account_source,'') != 'PAPER')")
         if since is not None:
             clauses.append("timestamp >= ?")
             args.append(ensure_utc(since).strftime("%Y-%m-%d %H:%M:%S"))
@@ -240,6 +252,30 @@ class AccountingCore:
 
         clauses = ["status != 'OPENED'"]
         args: list[Any] = []
+        # BUG-226: execution provenance filter. PAPER rows (simulation-account
+        # trades that landed in the shared audit DB — e.g. a hot-swap to PAPER
+        # or a paper-boot writing to the canonical artifacts tree) must never
+        # contaminate performance metrics. The exclusion is three-legged:
+        #   1. explicitly PAPER-tagged rows (account_source = 'PAPER'),
+        #   2. legacy untagged rows whose ticket is below the real-broker
+        #      ticket space (MT5 position tickets are >= 1e11; the paper
+        #      adapter allocates tickets from 100001 upward) — includes the
+        #      -75,341.78 phantom (ticket 100002, entry 2000.08 = the paper
+        #      simulator seed price vs a real-market exit price),
+        #   3. rows whose entry/exit price pair is physically impossible for
+        #      the instrument lifetime (entry at the 2000.08 seed, exit at the
+        #      live 4430.46) — the defensive net for any untagged hybrid row.
+        # Raw rows are RETAINED in the table (contract s47: never rewrite
+        # broker history); they are only excluded from derived metrics.
+        clauses.append("(COALESCE(account_source,'') != 'PAPER')")
+        clauses.append(
+            "NOT (COALESCE(CAST(ticket AS INTEGER), 0) < 100000000000 "
+            "AND CAST(ticket AS INTEGER) >= 100000)"
+        )
+        clauses.append(
+            "NOT (COALESCE(entry_price,0) BETWEEN 1999.0 AND 2001.0 "
+            "AND COALESCE(exit_price,0) > 4000.0)"
+        )
         # TASK-1 forensic audit (2026-08-18): ledger timestamps are stored in
         # TWO formats — legacy "YYYY-MM-DD HH:MM:SS" and live "YYYY-MM-DDTHH:MM:SS+00:00".
         # A raw lexicographic comparison treats 'T' (0x54) > ' ' (0x20), so a

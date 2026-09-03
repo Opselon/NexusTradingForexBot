@@ -403,16 +403,16 @@ class TestSnapshots:
             login=1,
             trade_mode=0,
             leverage=100,
-            balance=10000.0,
-            equity=10000.0,
+            balance=10250.0,
+            equity=10250.0,
             margin=0.0,
-            margin_free=10000.0,
+            margin_free=10250.0,
         )
         # Force first write
         audit._last_snapshot_time = 0.0
-        audit.log_account_snapshot(acc, 10000.0)
+        audit.log_account_snapshot(acc, 10250.0)
         # Same balance within 60s -> throttled, no second row
-        audit.log_account_snapshot(acc, 10000.0)
+        audit.log_account_snapshot(acc, 10250.0)
         # BUG-162: a fixed sleep races the background AuditDB worker under
         # xdist load (CI run #475 observed even the FIRST row missing).
         # flush() is the bounded read-after-write primitive - use it.
@@ -425,23 +425,23 @@ class TestSnapshots:
             login=1,
             trade_mode=0,
             leverage=100,
-            balance=10000.0,
-            equity=10000.0,
+            balance=10250.0,
+            equity=10250.0,
             margin=0.0,
-            margin_free=10000.0,
+            margin_free=10250.0,
         )
         acc2 = AccountInfo(
             login=1,
             trade_mode=0,
             leverage=100,
-            balance=10050.0,
-            equity=10060.0,
+            balance=10300.0,
+            equity=10310.0,
             margin=0.0,
-            margin_free=10060.0,
+            margin_free=10310.0,
         )
         audit._last_snapshot_time = 0.0
-        audit.log_account_snapshot(acc1, 10000.0)
-        audit.log_account_snapshot(acc2, 10060.0)
+        audit.log_account_snapshot(acc1, 10250.0)
+        audit.log_account_snapshot(acc2, 10310.0)
         _flush(audit)
         assert len(core.load_snapshots()) == 2
 
@@ -467,8 +467,8 @@ class TestPeriodAggregation:
         _ledger_closed(
             audit, 2, exit_price=1998.0, pnl=-100.0, close_ts=d2, exit_mechanism="HARD_SL_HIT"
         )
-        _snapshot_row(audit, 10000.0, 10000.0, ts=datetime(2026, 8, 15, 0, 0, 1, tzinfo=UTC))
-        _snapshot_row(audit, 10100.0, 10100.0, ts=datetime(2026, 8, 15, 23, 59, 0, tzinfo=UTC))
+        _snapshot_row(audit, 10250.0, 10250.0, ts=datetime(2026, 8, 15, 0, 0, 1, tzinfo=UTC))
+        _snapshot_row(audit, 10350.0, 10350.0, ts=datetime(2026, 8, 15, 23, 59, 0, tzinfo=UTC))
 
         report = core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 15, 12, 0, tzinfo=UTC))
         assert report.total_trades == 2
@@ -483,8 +483,8 @@ class TestPeriodAggregation:
         assert report.profit_factor == pytest.approx(1.98)
         assert report.best_trade == pytest.approx(198.0)
         assert report.worst_trade == pytest.approx(-100.0)
-        assert report.starting_balance == pytest.approx(10000.0)
-        assert report.ending_balance == pytest.approx(10100.0)
+        assert report.starting_balance == pytest.approx(10250.0)
+        assert report.ending_balance == pytest.approx(10350.0)
 
     def test_weekly_aggregation(self, audit, core) -> None:
         # Monday of W33: 2026-08-10; trades on Tue and Fri of the same week.
