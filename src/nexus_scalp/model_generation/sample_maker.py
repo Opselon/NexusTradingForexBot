@@ -250,5 +250,5 @@ def attach_hunter_metadata(
     m["direction"] = hunter.get("direction")
     m["stop_distance"] = hunter.get("stop_distance")
     m["tp_distance"] = hunter.get("tp_distance")
-    m["entry_reasons"] = hunter.get("reasons", ())
+    m["entry_reasons"] = tuple(hunter.get("reasons", ()) or ())
     return m

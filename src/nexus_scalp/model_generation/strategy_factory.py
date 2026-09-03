@@ -308,9 +308,14 @@ class StrategyFactory:
             if not session_hit:
                 reasons.append(f"SESSION_GATE({strat.session_gate})")
 
-        if strat.direction_alignment and setup.factors.get("direction", 0) == 0:
+        if strat.direction_alignment and not setup.factors.get("direction", 0):
             reasons.append("NO_DIRECTION_ALIGNMENT")
 
+        setup_direction = setup.factors.get("direction")
+        if setup_direction not in (1.0, -1.0, 1, -1):
+            # Directionless setup: never fabricate a side. Persist None so
+            # downstream readers can distinguish "unknown" from SELL.
+            setup_direction = None
         stop_dist = setup.factors.get("stop_hunt_depth_atr") or 0.0
         if stop_dist == 0.0:
             stop_dist = atr * strat.atr_stop_mult
@@ -326,7 +331,11 @@ class StrategyFactory:
                 reasons=tuple(reasons),
                 stop_distance=round(stop_dist, 4),
                 tp_distance=round(tp_dist, 4),
-                direction=("BUY" if setup.factors.get("direction", 0) > 0 else "SELL"),
+                direction=(
+                    "BUY"
+                    if setup_direction is not None and setup_direction > 0
+                    else ("SELL" if setup_direction is not None else None)
+                ),
             )
 
         return EntryDecision(
@@ -336,7 +345,11 @@ class StrategyFactory:
             reasons=("HUNTER_QUALIFIED",),
             stop_distance=round(stop_dist, 4),
             tp_distance=round(tp_dist, 4),
-            direction=("BUY" if setup.factors.get("direction", 0) > 0 else "SELL"),
+            direction=(
+                "BUY"
+                if setup_direction is not None and setup_direction > 0
+                else ("SELL" if setup_direction is not None else None)
+            ),
         )
 
     @staticmethod
