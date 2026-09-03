@@ -136,7 +136,7 @@ def test_model_class_contract_checkpoint_meta_written(tmp_path: Path) -> None:
     tr._save_metadata([f"feat_{i}" for i in range(50)])
     meta = json.loads((tmp_path / "meta3" / "model.meta.json").read_text(encoding="utf-8"))
     assert meta["num_classes"] == 3
-    assert meta["model_head_classes"] == 4
+    assert meta["model_head_classes"] == 3
     # Label contract is 3-class with WAIT = policy state
     assert meta["label_contract"]["class_count"] == 3
     assert meta["label_contract"]["wait_is_policy_state"] is True

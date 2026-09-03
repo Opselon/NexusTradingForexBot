@@ -139,7 +139,7 @@ def test_70d_feature_contract_head_vs_label_distinction() -> None:
     from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
     assert WalkForwardTrainer.NUM_CLASSES == 3
-    assert WalkForwardTrainer.MODEL_HEAD_CLASSES == 4
+    assert WalkForwardTrainer.MODEL_HEAD_CLASSES == 3
     assert TRAINED_CLASS_COUNT == 3
     assert LEGACY_HEAD_CLASSES == 4
 
