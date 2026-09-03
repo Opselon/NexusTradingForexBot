@@ -1693,3 +1693,12 @@ runtime gate work landed on top):
 - RISK: LOW-MEDIUM (execution-adjacent but engine-level only; order_manager untouched;
   no dispatch-path change in LIVE). Owner sign-off: runtime-truth owner notified via
   taskboard row TASK-NX-BUG212-PAPERA.
+## CHG-0054 - BUG-228 zero-improvement fine-tune skip + structured gate-rejection logging (2026-09-03, Nexus-Main)
+- AGENT: Nexus-Main | ROLE: Orchestrator / Training-Loop Reliability | TASK: fix quality-gate misfire on unchanged-baseline candidates
+- SCOPE: src/nexus_scalp/training/walk_forward_trainer.py::fine_tune_online tail only (+ new static helper _state_dicts_equal); tests/unit/test_walk_forward_trainer.py (+1 regression test); agents/bugs.md (+BUG-228); docs/agent_handoffs/ (+handoff)
+- MOTIVATION: every early-stop-without-improvement window emitted a red [QUALITY GATE REJECTION] + "Atomically reverting to baseline!" for a model whose weights never moved (live evidence 2026-09-03T13:04, accuracy_delta=0.0). Misleading incident signal + raw ANSI print() bypassing the structured logger.
+- BEHAVIOR CHANGE: (a) zero-improvement runs (early_stopping_triggered AND best_state==baseline_state) now skip the gate, log INFO 'no improvement over baseline; keeping baseline weights', return baseline, write no checkpoint; (b) genuine gate rejections route the banner through logger.error instead of raw ANSI print. Gate thresholds, gate semantics, and rollback for real candidates unchanged. No shared function signature changed (SHARED API UNCHANGED); no runtime hot path affected (trainer runs off-loop via asyncio.to_thread).
+- INVARIANTS: INV-002 (learning places no orders) untouched; baseline-preserving contract kept - the skip path preserves baseline weights exactly like the previous rollback did, minus the false failure report.
+- TESTS: test_wf_zero_improvement_early_stop_skips_quality_gate_rejection (new, red-on-prefx scenario: epochs=3, lr=1.0 divergence -> early stop without improvement); full test_walk_forward_trainer.py 6/6 green; ruff+format+mypy+CRITICAL suite via beforePush before commit.
+- RISK: LOW (isolated trainer tail; failure mode is a calmer honest log instead of a false red alarm; genuine rejections still reject and roll back).
+
