@@ -445,7 +445,18 @@ class LiveEngine:
     # ----------------------------
     # FIX #1+#8: live temporal contract helpers
     # ----------------------------
+    # (attribute declarations live here so __init__'s early
+    #  _rebind_live_temporal_contract() call sees them initialized)
+    def _live_sequence_defaults(self) -> None:
+        self._live_sequence_buffer: deque[list[float]] = deque(maxlen=64)
+        self._live_sequence_seq_len: int = 32
+        self._live_sequence_max_gap_us: int = 10 * 60 * 1_000_000
+        self._live_last_bar_ts_us: int | None = None
+        self._live_sequence_gap_invalid: bool = False
+
     def _rebind_live_temporal_contract(self) -> None:
+        if not hasattr(self, "_live_sequence_buffer"):
+            self._live_sequence_defaults()
         try:
             from nexus_scalp.model_generation.temporal_contract import (
                 CANONICAL_MAX_GAP_US,
@@ -1291,12 +1302,9 @@ class LiveEngine:
         )
 
         self._rolling_feature_records: deque[dict] = deque(maxlen=4000)
-        # FIX #1+#8: live sequence deque for unified (1, L, 70) inference
-        self._live_sequence_buffer: deque[list[float]] = deque(maxlen=64)
-        self._live_sequence_seq_len: int = 32
-        self._live_sequence_max_gap_us: int = 10 * 60 * 1_000_000
-        self._live_last_bar_ts_us: int | None = None
-        self._live_sequence_gap_invalid: bool = False
+        # FIX #1+#8: live sequence deque declared+initialized in the class
+        # header (see _live_sequence_defaults above); _rebind_live_temporal_contract
+        # already ran during __init__ earlier (before bundle load ordering).
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
         self._retrain_task: asyncio.Task | None = None
