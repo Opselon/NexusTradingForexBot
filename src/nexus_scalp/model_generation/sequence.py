@@ -145,7 +145,7 @@ class SequenceBuilder:
             max_gap_us = SEQUENCE_CONTRACT.max_gap_us
         self.seq_len = max(2, int(seq_len))
         #: max allowed inter-bar gap in microseconds; None = no gap check
-        self.max_gap_us = max_gap_us  # type: ignore[assignment]
+        self.max_gap_us: int | None = int(max_gap_us) if max_gap_us is not None else None
 
     def build(
         self,
