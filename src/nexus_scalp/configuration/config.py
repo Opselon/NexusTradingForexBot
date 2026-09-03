@@ -98,6 +98,11 @@ class AlgoConfig(BaseModel):
     min_confirmation_duration: float = Field(default=2.5, ge=0.0, le=60.0)
     min_observation_count: int = Field(default=10, ge=1, le=200)
 
+    # BUG-TDF-Q2: max age (seconds) of a REUSED regime state (BUG-169
+    # duplicate-tick path) before the tick-freshness guard alarms.
+    # Generous default: normal duplicate reuse spans only seconds.
+    regime_state_max_age_sec: float = Field(default=300.0, ge=1.0, le=86400.0)
+
     # Recovery Manager Parameters
     recovery_budget_pct_of_r: float = Field(default=0.50, ge=0.05, le=1.0)
     min_recovery_horizon_sec: float = Field(default=30.0, ge=5.0, le=300.0)

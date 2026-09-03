@@ -99,6 +99,7 @@ class RiskSnapshot:
 @dataclass(frozen=True)
 class AlgorithmSnapshot:
     atr_sl_buffer_multiplier: float = 1.5
+    regime_state_max_age_sec: float = 300.0
     min_risk_reward_ratio: float = 1.8
     min_rr_high_confidence: float = 1.2
     high_confidence_threshold: float = 0.95
@@ -280,6 +281,7 @@ class RuntimeConfiguration:
             },
             "algo": {
                 "atr_sl_buffer_multiplier": self.algo.atr_sl_buffer_multiplier,
+                "regime_state_max_age_sec": self.algo.regime_state_max_age_sec,
                 "min_risk_reward_ratio": self.algo.min_risk_reward_ratio,
                 "min_rr_high_confidence": self.algo.min_rr_high_confidence,
                 "high_confidence_threshold": self.algo.high_confidence_threshold,
@@ -347,6 +349,7 @@ class RuntimeConfiguration:
     def to_algo_config(self) -> AlgoConfig:
         """Project the snapshot back to the bootstrap AlgoConfig schema."""
         return AlgoConfig(
+            regime_state_max_age_sec=self.algo.regime_state_max_age_sec,
             atr_sl_buffer_multiplier=self.algo.atr_sl_buffer_multiplier,
             min_risk_reward_ratio=self.algo.min_risk_reward_ratio,
             min_rr_high_confidence=self.algo.min_rr_high_confidence,
@@ -539,6 +542,9 @@ class PersistentConfigStore:
 
 # Validation bounds mirroring the bootstrap schema Field() constraints.
 _VALIDATORS: dict[str, Callable[[Any], bool]] = {
+    "algo.regime_state_max_age_sec": lambda v: (
+        isinstance(v, (int, float)) and 1.0 <= float(v) <= 86400.0
+    ),
     "algo.atr_sl_buffer_multiplier": lambda v: (
         isinstance(v, (int, float)) and 0.5 <= float(v) <= 4.0
     ),
@@ -720,6 +726,7 @@ def build_runtime_configuration(
             max_allowed_lots=float(cur["risk.max_allowed_lots"]),
         ),
         algo=AlgorithmSnapshot(
+            regime_state_max_age_sec=float(cur["algo.regime_state_max_age_sec"]),
             atr_sl_buffer_multiplier=float(cur["algo.atr_sl_buffer_multiplier"]),
             min_risk_reward_ratio=float(cur["algo.min_risk_reward_ratio"]),
             min_rr_high_confidence=float(cur["algo.min_rr_high_confidence"]),
@@ -767,6 +774,7 @@ def _empty_values() -> dict[str, Any]:
         "risk.enforce_stop_loss": True,
         "risk.max_margin_usage_pct": 10.0,
         "risk.max_allowed_lots": 2.0,
+        "algo.regime_state_max_age_sec": 300.0,
         "algo.atr_sl_buffer_multiplier": 1.5,
         "algo.min_risk_reward_ratio": 1.8,
         "algo.min_rr_high_confidence": 1.2,
@@ -812,6 +820,7 @@ def _apply_bootstrap(cur: dict[str, Any], bootstrap: AppConfig) -> dict[str, Any
     out["risk.max_margin_usage_pct"] = rk.max_margin_usage_pct
     out["risk.max_allowed_lots"] = rk.max_allowed_lots
     al = bootstrap.algo
+    out["algo.regime_state_max_age_sec"] = al.regime_state_max_age_sec
     out["algo.atr_sl_buffer_multiplier"] = al.atr_sl_buffer_multiplier
     out["algo.min_risk_reward_ratio"] = al.min_risk_reward_ratio
     out["algo.min_rr_high_confidence"] = al.min_rr_high_confidence

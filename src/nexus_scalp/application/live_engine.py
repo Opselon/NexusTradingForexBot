@@ -2465,6 +2465,52 @@ class LiveEngine:
         except TypeError:
             return MarketRegimeClassifier(symbol=symbol)
 
+    def _assert_regime_state_freshness(self, tick: TickData) -> None:
+        """BUG-TDF-Q2: alarm when a REUSED regime state is too old.
+
+        Researcher TDF-R2 Q2/Q2b: the BUG-169 duplicate-tick path reuses
+        ``_regime_last_state`` without any freshness check, so a frozen
+        quote stream can hold the last regime (e.g. FREEZE_ALL /
+        HIGH_SPREAD_CHOP) indefinitely — the classifier's hysteresis
+        "never stuck frozen" guarantee silently assumes fresh ticks.
+
+        ALARM-ONLY by design: forcing a reclassification from duplicate
+        tick data would push the duplicate into the classifier's rolling
+        rings (skewing tick_velocity / rv_5m / norm_ofi) and break the
+        BUG-169 dedup contract. Instead a distinct, rate-limited,
+        structured WARNING names the staleness (event=STALE_STATE_REUSED,
+        audit-visible regime identity + ages) so operators/automation can
+        detect a frozen feed. Never raises; never mutates state.
+        """
+        if getattr(self, "_regime_last_state", None) is None:
+            return  # nothing cached yet; the fresh-tick path will stamp it
+        try:
+            max_age_sec = float(
+                getattr(getattr(self.config, "algo", None), "regime_state_max_age_sec", 300.0)
+            )
+        except (TypeError, ValueError):
+            max_age_sec = 300.0
+        classified_at = getattr(self, "_regime_state_classified_at", None)
+        now = time.time()
+        if classified_at is not None and (now - float(classified_at)) <= max_age_sec:
+            return  # state proven fresh within the window: silent
+        if (now - getattr(self, "_regime_stale_warn_at", 0.0)) < max_age_sec:
+            return  # already alarmed inside this window (rate-limit)
+        self._regime_stale_warn_at = now
+        state_age = f"{now - float(classified_at):.1f}s" if classified_at is not None else "unknown"
+        logger.warning(
+            "[REGIME] event=STALE_STATE_REUSED ALARM_ONLY mode=dedup_reuse "
+            "state_age=%s max_age_sec=%.1f symbol=%s regime=%s reason=%s "
+            "tick_ts=%s (frozen/duplicate quote stream suspected; "
+            "BUG-169 dedup preserved: duplicate NOT reclassified)",
+            state_age,
+            max_age_sec,
+            tick.symbol,
+            getattr(getattr(self, "_regime_last_state", None), "regime_type", "UNKNOWN"),
+            getattr(getattr(self, "_regime_last_state", None), "reason", "UNKNOWN"),
+            tick.timestamp.isoformat(),
+        )
+
     # -------------------------
     # Model / scaler bundle
     # -------------------------
@@ -3617,6 +3663,12 @@ class LiveEngine:
                     current_tick=tick,
                     is_macro_news_window=False,
                 )
+                # BUG-TDF-Q2 (TDF-R2 Q2/Q2b): a frozen/duplicate quote
+                # stream can keep the reused state alive indefinitely.
+                # Alarm-only freshness guard (BUG-169 dedup contract
+                # preserved: duplicates are never re-pushed into the
+                # classifier's rolling rings).
+                self._assert_regime_state_freshness(tick=tick)
             else:
                 regime_state = self.regime_classifier.classify_tick(
                     current_tick=tick,
@@ -3626,6 +3678,9 @@ class LiveEngine:
                 self._regime_last_bid = float(tick.bid)
                 self._regime_last_ask = float(tick.ask)
                 self._regime_last_state = regime_state
+                # BUG-TDF-Q2: stamp when the cached state was last
+                # PROVEN fresh by a successful classify_tick() call.
+                self._regime_state_classified_at = time.time()
 
             # Manage open positions
             # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded

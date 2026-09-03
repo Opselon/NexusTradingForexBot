@@ -28,6 +28,7 @@ model:
   liquidity_features_enabled: true
 
 algo:
+  regime_state_max_age_sec: 300.0
   atr_sl_buffer_multiplier: 1.5
   min_risk_reward_ratio: 1.8
   ai_zone_confidence_threshold: 0.60
