@@ -43,6 +43,7 @@ def _include_routers(app: FastAPI) -> None:
         decisions,
         incidents,
         market,
+        marketplace,
         positions,
         research,
         risk,
@@ -63,6 +64,7 @@ def _include_routers(app: FastAPI) -> None:
         research,
         shadow,
         incidents,
+        marketplace,
     ):
         app.include_router(module.router)
 

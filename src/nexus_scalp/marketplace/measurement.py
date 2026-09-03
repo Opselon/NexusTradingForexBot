@@ -133,11 +133,14 @@ def backtest_metrics(
     if dataset is None or not dataset.samples:
         return None
     try:
+        from nexus_scalp.research.models import ExecutionAssumptions
+
         return compute_backtest(
             list(dataset.samples),
             strategy_id=strategy_id,
             strategy_version=strategy_version,
             dataset_id=dataset.dataset_id,
+            assumptions=ExecutionAssumptions(),
         )
     except Exception:
         return None
