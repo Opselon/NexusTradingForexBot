@@ -93,9 +93,9 @@ class SequenceBuilder:
             )
             gap_ok = True
             if self.max_gap_us is not None:
-                ts_prev = _ts_us(window[0])
+                ts_prev = _ts_us(window[0].get(timestamp_col))
                 for r in window[1:]:
-                    ts_cur = _ts_us(r)
+                    ts_cur = _ts_us(r.get(timestamp_col))
                     if ts_cur - ts_prev > self.max_gap_us:
                         gap_ok = False
                         break
