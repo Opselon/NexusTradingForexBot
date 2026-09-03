@@ -33,6 +33,22 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.features.scalp_features")
 
 # ==============================================================================
+# SHARED HTF HISTORY CONTRACT -- MLPWR-06-02 / BUG-234
+# ==============================================================================
+# The 50D engine computes HTF features (h1_momentum, m30_structure, ...) by
+# aggregating the FULL completed_bars list passed to compute_from_bars
+# (aggregate_bars over period 60/240 ...).  The TRAIN builder and the LIVE
+# caller MUST pass the same bounded causal window so feat_41/42 train==live.
+# This constant is the SINGLE SOURCE OF TRUTH for that window, consumed by:
+#   - Training: model_generation/schema_v2.compute_70d_frame  (and incremental)
+#   - Live:     application/live_engine._process_tick_pipeline (aggregator cap)
+#   - Replay:   model_generation/replay.replay_70d_vector
+# Value 4000 M1 bars approx 66h (approx 2.7 trading days), exactly the LIVE aggregator
+# cap (live_engine ~3618) and the historical LIQUIDITY_HISTORY_LIMIT -- kept
+# identical so HTF and liquidity share the same causal horizon.
+HTF_HISTORY_BARS: int = 4000
+
+# ==============================================================================
 # HELPERS FOR MTF AGGREGATION & S/R DETECTION
 # ==============================================================================
 

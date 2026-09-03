@@ -68,7 +68,7 @@ from nexus_scalp.features.liquidity_engine import (
     internal_external_distances,
     liquidity_confluence,
 )
-from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+from nexus_scalp.features.scalp_features import HTF_HISTORY_BARS, ScalpFeatureEngine
 from nexus_scalp.market_data.bar_aggregator import BarData
 
 #: Bounded lookback for detect_reactive_sweep (BUG-106): the detector only
@@ -619,8 +619,11 @@ def compute_70d_frame_fast(
             ask=float(b["close"]) + spread,
             volume=int(b.get("tick_volume", 0) or 0),
         )
-        window = all_bars[max(0, i - 54) : i + 1]
-        fv = engine.compute_from_bars(window, tick)
+        # --- liquidity: incremental, same semantics ---
+        # BUG-234: HTF window parity — pass full causal history so h1/m30
+        # train == live. Base features still see only the last 55 (engine slices internally).
+        fv_window = all_bars[max(0, i + 1 - HTF_HISTORY_BARS) : i + 1]
+        fv = engine.compute_from_bars(fv_window, tick)
         x50 = fv.to_tensor_input()
 
         # --- liquidity: incremental, same semantics ---

@@ -216,7 +216,7 @@ def replay_70d_vector(
         news_10d_from_context,
     )
     from nexus_scalp.features.liquidity_engine import compute_liquidity_features
-    from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+    from nexus_scalp.features.scalp_features import HTF_HISTORY_BARS, ScalpFeatureEngine
     from nexus_scalp.features.schema_contract import (
         canonical_feature_names,
         feature_schema_hash,
@@ -254,6 +254,8 @@ def replay_70d_vector(
 
     engine = ScalpFeatureEngine(symbol=symbol)
     # Canonical windows (EXACTLY as compute_70d_frame):
+    #   - 50D engine HTF  -> bounded HTF_HISTORY_BARS window (MLPWR-06-02: base_window
+    #                       was min_bars=55 so feat_41/42 train!=replay)
     #   - 50D engine     -> 55-bar causal window (all_bars[max(0,i-54):i+1])
     #   - liquidity      -> FULL causal history (all_bars[:i+1]) so HTF
     #                       buckets / session pools / confluence match.
@@ -279,8 +281,11 @@ def replay_70d_vector(
         ask=float(visible[-1]["close"]) + spread,
         volume=int(visible[-1].get("tick_volume", 0) or 0),
     )
-    base_window = bars[-min_bars:]
-    fv = engine.compute_from_bars(base_window, tick)
+    # BUG-234 contract: the 50D engine HTF features must see the
+    # same bounded history as training (HTF_HISTORY_BARS), not just 55 -- otherwise
+    # replay and dataset diverge at feat_41/42.
+    _htf_window = bars[-HTF_HISTORY_BARS:] if len(bars) > HTF_HISTORY_BARS else bars
+    fv = engine.compute_from_bars(_htf_window, tick)
     x50 = fv.to_tensor_input()
     liquid = compute_liquidity_features(
         bars,

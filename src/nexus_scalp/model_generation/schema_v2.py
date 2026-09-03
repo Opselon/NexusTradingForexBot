@@ -31,7 +31,7 @@ import polars as pl
 
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.liquidity_engine import compute_liquidity_features
-from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+from nexus_scalp.features.scalp_features import HTF_HISTORY_BARS, ScalpFeatureEngine
 from nexus_scalp.features.schema_augment import (
     NUM_EXTRA_60D,
     compute_60d_extras,
@@ -152,7 +152,11 @@ def compute_60d_frame(
         # pre-built BarData list and slicing windows keeps 100k-row builds
         # tractable (the 4-thread data_gate pattern took minutes for 50D;
         # the 60D experimental build is a one-off, bounded run).
-        fv = engine.compute_from_bars(all_bars[max(0, i - 54) : i + 1], tick)
+        # BUG-234: pass full LIQUIDITY_HISTORY_LIMIT window so HTF features
+        # (h1_momentum, m30_structure) train == live.
+        fv = engine.compute_from_bars(
+            all_bars[max(0, i + 1 - LIQUIDITY_HISTORY_LIMIT) : i + 1], tick
+        )
         x50 = fv.to_tensor_input()
         extras = compute_60d_extras(
             opens=w_open,
@@ -346,7 +350,9 @@ LIQUIDITY_SCHEMA_ID = "scalp_liquidity_v1"
 #: compute_liquidity_features per row is O(n^2) AND breaks train==live parity
 #: (live sees <=4000 bars, training saw 100K+). 4000 M5 bars = ~14 days,
 #: sufficient for completed D1 buckets (1440 bars).
-LIQUIDITY_HISTORY_LIMIT: int = 4000
+LIQUIDITY_HISTORY_LIMIT: int = (
+    HTF_HISTORY_BARS  # alias of the shared HTF contract (scalp_features.HTF_HISTORY_BARS)
+)
 
 #: Where the liquidity engine's 10 features start inside the 60D vector.
 LIQUIDITY_EXTRA_START: int = 50
@@ -608,14 +614,17 @@ def compute_70d_frame(
             ask=float(b["close"]) + spread,
             volume=int(b.get("tick_volume", 0) or 0),
         )
-        window = all_bars[max(0, i - 54) : i + 1]
+        window = all_bars[max(0, i + 1 - LIQUIDITY_HISTORY_LIMIT) : i + 1]
         fv = engine.compute_from_bars(window, tick)
         x50 = fv.to_tensor_input()
 
         # TASK-03-70D-PARITY fix: the liquidity engine must see the
         # SAME full causal history the live governor sees (all
         # closed bars <= ts) so HTF buckets / session pools /
-        # confluence match train == live. 50D window unchanged.
+        # confluence match train == live. 50D window unchanged (BUG-234
+        # HTF parity already handled: compute_from_bars now sees the
+        # same HTF depth on both TRAIN and LIVE paths, so 41/42 are no
+        # longer TRAIN-zero / LIVE-nonzero).
         liquid = compute_liquidity_features(
             all_bars[max(0, i + 1 - LIQUIDITY_HISTORY_LIMIT) : i + 1],
             decision_at=ts,

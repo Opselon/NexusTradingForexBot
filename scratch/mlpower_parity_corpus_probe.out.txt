@@ -1,7 +1,7 @@
-window n=120 seed=7: max_delta=3.000e+00 mismatches=1 [{'index': 41, 'name': 'htf_h1_momentum', 'family': 'base', 'train': 0.0, 'live': 3.0, 'delta': 3.0, 'status': 'MISMATCH'}]
-window n=240 seed=11: max_delta=3.000e+00 mismatches=2 [{'index': 41, 'name': 'htf_h1_momentum', 'family': 'base', 'train': 0.0, 'live': 3.0, 'delta': 3.0, 'status': 'MISMATCH'}, {'index': 42, 'name': 'htf_m30_structure', 'family': 'base', 'train': 0.0, 'live': 1.0, 'delta': 1.0, 'status': 'MISMATCH'}]
-window n=240 seed=23: max_delta=3.000e+00 mismatches=2 [{'index': 41, 'name': 'htf_h1_momentum', 'family': 'base', 'train': 0.0, 'live': 3.0, 'delta': 3.0, 'status': 'MISMATCH'}, {'index': 42, 'name': 'htf_m30_structure', 'family': 'base', 'train': 0.0, 'live': 1.0, 'delta': 1.0, 'status': 'MISMATCH'}]
-PARITY VERDICT: MISMATCH
+window n=120 seed=7: max_delta=0.000e+00 mismatches=0 
+window n=240 seed=11: max_delta=0.000e+00 mismatches=0 
+window n=240 seed=23: max_delta=0.000e+00 mismatches=0 
+PARITY VERDICT: MATCH (train==live, all 70 dims)
 canonical names: 70 | hash: 235b8fccc96b7e0e
 idx50=active_high_impact_events idx60=bsl_distance_atr idx69=post_sweep_displacement
 
@@ -10,19 +10,9 @@ idx50=active_high_impact_events idx60=bsl_distance_atr idx69=post_sweep_displace
   "n_bars": 120,
   "seed": 7,
   "schema_hash": "235b8fccc96b7e0e",
-  "max_delta": 3.0,
-  "mismatch_count": 1,
-  "mismatches": [
-   {
-    "index": 41,
-    "name": "htf_h1_momentum",
-    "family": "base",
-    "train": 0.0,
-    "live": 3.0,
-    "delta": 3.0,
-    "status": "MISMATCH"
-   }
-  ],
+  "max_delta": 0.0,
+  "mismatch_count": 0,
+  "mismatches": [],
   "rows": [
    {
     "index": 0,
@@ -397,10 +387,10 @@ idx50=active_high_impact_events idx60=bsl_distance_atr idx69=post_sweep_displace
     "index": 41,
     "name": "htf_h1_momentum",
     "family": "base",
-    "train": 0.0,
+    "train": 3.0,
     "live": 3.0,
-    "delta": 3.0,
-    "status": "MISMATCH"
+    "delta": 0.0,
+    "status": "MATCH"
    },
    {
     "index": 42,
@@ -660,28 +650,9 @@ idx50=active_high_impact_events idx60=bsl_distance_atr idx69=post_sweep_displace
   "n_bars": 240,
   "seed": 11,
   "schema_hash": "235b8fccc96b7e0e",
-  "max_delta": 3.0,
-  "mismatch_count": 2,
-  "mismatches": [
-   {
-    "index": 41,
-    "name": "htf_h1_momentum",
-    "family": "base",
-    "train": 0.0,
-    "live": 3.0,
-    "delta": 3.0,
-    "status": "MISMATCH"
-   },
-   {
-    "index": 42,
-    "name": "htf_m30_structure",
-    "family": "base",
-    "train": 0.0,
-    "live": 1.0,
-    "delta": 1.0,
-    "status": "MISMATCH"
-   }
-  ],
+  "max_delta": 0.0,
+  "mismatch_count": 0,
+  "mismatches": [],
   "rows": [
    {
     "index": 0,
@@ -1056,19 +1027,19 @@ idx50=active_high_impact_events idx60=bsl_distance_atr idx69=post_sweep_displace
     "index": 41,
     "name": "htf_h1_momentum",
     "family": "base",
-    "train": 0.0,
+    "train": 3.0,
     "live": 3.0,
-    "delta": 3.0,
-    "status": "MISMATCH"
+    "delta": 0.0,
+    "status": "MATCH"
    },
    {
     "index": 42,
     "name": "htf_m30_structure",
     "family": "base",
-    "train": 0.0,
+    "train": 1.0,
     "live": 1.0,
-    "delta": 1.0,
-    "status": "MISMATCH"
+    "delta": 0.0,
+    "status": "MATCH"
    },
    {
     "index": 43,
@@ -1319,28 +1290,9 @@ idx50=active_high_impact_events idx60=bsl_distance_atr idx69=post_sweep_displace
   "n_bars": 240,
   "seed": 23,
   "schema_hash": "235b8fccc96b7e0e",
-  "max_delta": 3.0,
-  "mismatch_count": 2,
-  "mismatches": [
-   {
-    "index": 41,
-    "name": "htf_h1_momentum",
-    "family": "base",
-    "train": 0.0,
-    "live": 3.0,
-    "delta": 3.0,
-    "status": "MISMATCH"
-   },
-   {
-    "index": 42,
-    "name": "htf_m30_structure",
-    "family": "base",
-    "train": 0.0,
-    "live": 1.0,
-    "delta": 1.0,
-    "status": "MISMATCH"
-   }
-  ],
+  "max_delta": 0.0,
+  "mismatch_count": 0,
+  "mismatches": [],
   "rows": [
    {
     "index": 0,
@@ -1715,19 +1667,19 @@ idx50=active_high_impact_events idx60=bsl_distance_atr idx69=post_sweep_displace
     "index": 41,
     "name": "htf_h1_momentum",
     "family": "base",
-    "train": 0.0,
+    "train": 3.0,
     "live": 3.0,
-    "delta": 3.0,
-    "status": "MISMATCH"
+    "delta": 0.0,
+    "status": "MATCH"
    },
    {
     "index": 42,
     "name": "htf_m30_structure",
     "family": "base",
-    "train": 0.0,
+    "train": 1.0,
     "live": 1.0,
-    "delta": 1.0,
-    "status": "MISMATCH"
+    "delta": 0.0,
+    "status": "MATCH"
    },
    {
     "index": 43,
