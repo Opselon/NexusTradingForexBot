@@ -117,6 +117,11 @@
                             <i class="fa-solid fa-flask-vial text-lg w-5 text-accentCyan"></i>
                             <span>Strategy Research</span>
                         </button>
+                        <button onclick="switchTab('tab-marketplace', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-store text-lg w-5 text-accentCyan"></i>
+                            <span>Strategy Marketplace</span>
+                            <span id="mkt-nav-state" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">MKT</span>
+                        </button>
                         <button onclick="switchTab('tab-factory', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
                             <i class="fa-solid fa-industry text-lg w-5 text-accentCyan"></i>
                             <span>Strategy Factory</span>
@@ -1542,6 +1547,9 @@
             </section>
 
 <!-- TAB: STRATEGY FACTORY (2026-08-20) -->
+            <section id="tab-marketplace" class="tab-content hidden space-y-6">
+                <!-- Marketplace Tab: content is initialized by Web/marketplace.js on first open -->
+            </section>
             <section id="tab-factory" class="tab-content hidden space-y-6">
                 <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
                     <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
@@ -3554,5 +3562,6 @@
     <script src="ux_palette.js?v=20260902a"></script>
     <script src="app.js?v=20260902a"></script>
     <script src="replay_panel.js?v=20260902a"></script>
+<script src="marketplace.js"></script>
 </body>
 </html>
