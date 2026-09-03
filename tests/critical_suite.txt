@@ -87,3 +87,4 @@ tests/unit/test_mslie_sweep_window_pins_bug227.py
 tests/unit/test_policy_throttle_pins_bug227.py
 tests/unit/test_policy_warmup_range_seam_bug230.py
 tests/unit/test_hunter_min_quality_pins_bug227.py
+tests/unit/test_quality_tier_pins_bug227.py
