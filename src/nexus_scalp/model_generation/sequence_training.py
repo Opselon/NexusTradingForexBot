@@ -58,7 +58,7 @@ class SequenceCandidateTrainer:
         self,
         store: ArtifactStore | None = None,
         seq_len: int | None = None,
-        max_gap_us: int | None | str = "contract",
+        max_gap_us: int | str | None = "contract",
     ) -> None:
         from nexus_scalp.model_generation.sequence import SEQUENCE_CONTRACT
 
