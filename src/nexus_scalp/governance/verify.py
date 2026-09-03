@@ -55,6 +55,8 @@ VERIFY_GATES: tuple[str, ...] = (
     "shadow_evidence_recorded",
     "news_contract_valid",
     "liquidity_contract_valid",
+    # MODEL_CLASS_CONTRACT v1 (Fix #6): smoke artifact quarantine.
+    "production_eligible",
 )
 
 
@@ -248,6 +250,26 @@ def verify_candidate(
         )
     else:
         _gate("liquidity_contract_valid", False, "not provided", "SKIP")
+
+    # 15. Smoke quarantine (MODEL_CLASS_CONTRACT v1 / Fix #6):
+    #     smoke=True artifacts are bounded drills (2 folds, 1 epoch, 3000 rows)
+    #     and are NEVER production-eligible. Rejected regardless of validity or
+    #     width — a smoke artifact cannot reach CHAMPION via any path.
+    _smoke = bool(mf.get("smoke") is True)
+    _prod = mf.get("production_eligible")
+    # When _prod is explicitly False, always fail. When _prod is missing but
+    # smoke is True, fail on smoke alone (covers pre-quarantine smoke artifacts
+    # that carry smoke=True but no production_eligible field yet).
+    _smoke_blocked = _smoke or (_prod is False)
+    _gate(
+        "production_eligible",
+        not _smoke_blocked,
+        (
+            f"smoke={_smoke} production_eligible={_prod!r} — smoke quorum must be rejected"
+            if _smoke_blocked
+            else f"smoke={_smoke} production_eligible={_prod!r}"
+        ),
+    )
 
     # ---------------------------------------------------------------
     # Eligibility (spec 18 / 19): EVERY mandatory gate must be explicit.
