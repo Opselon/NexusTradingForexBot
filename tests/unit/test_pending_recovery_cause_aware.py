@@ -435,6 +435,34 @@ def test_repair_refused_when_geometry_cannot_preserve_meaning(
     assert abs((new_price - new_tp) - 16.76) < 1e-6  # original reward distance kept
 
 
+def test_repair_pushes_entry_inside_stops_level_even_above_bid(
+    adapter: Any, fake_mt5: FakeMT5
+) -> None:
+    """BUG-231 follow-up (live log 20:02:09 + 20:18:06, 2026-09-03):
+
+    A SELL_LIMIT entry ABOVE the bid but INSIDE the stops-level distance
+    (entry 4491.53 vs bid 4491.35, min_gap 0.50) must still be pushed to
+    bid+min_gap. The old repair only moved wrong-side entries, so the
+    repaired geometry equaled the failed request and the call aborted with
+    REPAIR_REJECTED although a valid RR-preserving repair existed.
+    """
+    bid, ask = 4491.35, 4491.62
+    ok, new_price, new_sl, new_tp = adapter._repair_pending_request(
+        symbol=SYMBOL,
+        order_type=OrderType.SELL_LIMIT,
+        price=4491.53,
+        stop_loss=4497.39,
+        take_profit=4480.98,
+        volume=0.10,
+        tick=SimpleNamespace(bid=bid, ask=ask),
+        sym_info=fake_mt5.symbol_info(SYMBOL),
+    )
+    assert ok is True
+    assert new_price == pytest.approx(bid + STOPS_LEVEL * POINT)  # pushed to bid+0.50
+    assert abs((new_sl - new_price) - (4497.39 - 4491.53)) < 1e-6  # risk kept
+    assert abs((new_price - new_tp) - (4491.53 - 4480.98)) < 1e-6  # reward kept
+
+
 # ----------------------------------------------------------------------
 # 6) Idempotency guard preserved
 # ----------------------------------------------------------------------
