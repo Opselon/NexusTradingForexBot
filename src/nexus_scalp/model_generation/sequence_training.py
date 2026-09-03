@@ -48,19 +48,29 @@ _MAX_GRAD_NORM = 1e4
 
 
 class SequenceCandidateTrainer:
-    """Trains one sequence-model candidate (e.g. TCN_ATTENTION_V1)."""
+    """Trains one sequence-model candidate (e.g. TCN_ATTENTION_V1).
+
+    Defaults are the canonical SequenceContract (L=32, gap=15min); explicit
+    values win (benchmark matrix: L=8/16 ablations).
+    """
 
     def __init__(
         self,
         store: ArtifactStore | None = None,
-        seq_len: int = 16,
-        max_gap_us: int | None = None,
+        seq_len: int | None = None,
+        max_gap_us: int | None | str = "contract",
     ) -> None:
+        from nexus_scalp.model_generation.sequence import SEQUENCE_CONTRACT
+
+        if seq_len is None:
+            seq_len = SEQUENCE_CONTRACT.sequence_length
+        if max_gap_us == "contract":
+            max_gap_us = SEQUENCE_CONTRACT.max_gap_us
         self.store = store or ArtifactStore()
         self.model_factory = ModelFactory()
         self.label_schema = default_label_schema()
-        self.seq_len = seq_len
-        self.max_gap_us = max_gap_us
+        self.seq_len = int(seq_len)
+        self.max_gap_us = max_gap_us  # type: ignore[assignment]
 
     def train_candidate(
         self,
@@ -230,6 +240,17 @@ class SequenceCandidateTrainer:
             build_metadata={
                 "trainer": "SequenceCandidateTrainer",
                 "seq_len": self.seq_len,
+                "max_gap_us": self.max_gap_us,
+                "trained_mode": "sequence",
+                "sequence_contract": {
+                    "sequence_length": self.seq_len,
+                    "feature_dim": input_dim,
+                    "max_gap_us": self.max_gap_us,
+                    "schema_id": str(dataset_frame["feature_schema_id"][0])
+                    if "feature_schema_id" in dataset_frame.columns
+                    else "scalp_v1",
+                    "contract_version": "1",
+                },
                 "input_dimension": input_dim,
                 "news_features": news_cols,
             },

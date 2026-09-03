@@ -1347,6 +1347,22 @@ class WalkForwardTrainer:
             return None
 
     def _save_metadata(self, feature_cols: list[str]) -> None:
+        # FIX #1+#8: emit the unified temporal contract alongside the training
+        # config so TRAIN | OFFLINE | LIVE can agree on (B, L, 70). The contract
+        # itself lives in model_generation/temporal_contract.py; this just
+        # records which L / gap / purge+embargo the artifact was trained under.
+        try:
+            from nexus_scalp.model_generation.temporal_contract import (
+                CANONICAL_EMBARGO_BARS,
+                CANONICAL_MAX_GAP_US,
+                CANONICAL_PURGE_BARS,
+                CANONICAL_SEQ_LEN,
+            )
+        except Exception:
+            CANONICAL_SEQ_LEN = 32  # type: ignore[no-redef]
+            CANONICAL_MAX_GAP_US = 10 * 60 * 1_000_000  # type: ignore[no-redef]
+            CANONICAL_PURGE_BARS = 15  # type: ignore[no-redef]
+            CANONICAL_EMBARGO_BARS = 15  # type: ignore[no-redef]
         meta_path = self._get_meta_path()
         tmp_path = meta_path.with_name(meta_path.name + ".tmp")
         canonical_cols = self._canonical_feature_columns(feature_cols)
@@ -1384,6 +1400,16 @@ class WalkForwardTrainer:
             # feat_i sequence (honest UNKNOWN, never fabricated identity).
             "canonical_feature_names": canonical_cols,
             "feature_schema_hash": self._feature_schema_hash(),
+            # FIX #1+#8: unified temporal contract (read by live_engine).
+            "temporal_contract": {
+                "version": "1.0.0",
+                "seq_len": int(getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN) if isinstance(getattr(self, "_declared_seq_len", None), int) else CANONICAL_SEQ_LEN),
+                "max_gap_us": int(CANONICAL_MAX_GAP_US),
+                "purge_gap_bars": int(self.purge_gap or CANONICAL_PURGE_BARS),
+                "embargo_bars": int(self.embargo_bars or CANONICAL_EMBARGO_BARS),
+            },
+            "seq_len": int(getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN) if isinstance(getattr(self, "_declared_seq_len", None), int) else CANONICAL_SEQ_LEN),
+            "max_gap_us": int(CANONICAL_MAX_GAP_US),
         }
         try:
             meta_path.parent.mkdir(parents=True, exist_ok=True)

@@ -436,7 +436,93 @@ class LiveEngine:
                     _eff_dim0,
                 )
                 self._online_train_disabled = True
+        # FIX #1+#8: also rebind live temporal sequence contract
+        try:
+            self._rebind_live_temporal_contract()
+        except Exception:
+            pass
 
+    # ----------------------------
+    # FIX #1+#8: live temporal contract helpers
+    # ----------------------------
+    def _rebind_live_temporal_contract(self) -> None:
+        try:
+            from nexus_scalp.model_generation.temporal_contract import CANONICAL_MAX_GAP_US, CANONICAL_SEQ_LEN
+        except Exception:
+            return
+        meta = None
+        try:
+            import json as _json
+            from pathlib import Path as _Path
+            b = self._bundle
+            mp = getattr(b, "artifact_path", None) if b is not None else None
+            if mp is not None:
+                meta_p = _Path(str(mp)).with_suffix(".meta.json")
+                if meta_p.exists():
+                    meta = _json.loads(meta_p.read_text(encoding="utf-8"))
+        except Exception:
+            meta = None
+        seq_len = None
+        max_gap = None
+        if isinstance(meta, dict):
+            tc = meta.get("temporal_contract")
+            if isinstance(tc, dict):
+                v = tc.get("seq_len")
+                if isinstance(v, int) and v > 0: seq_len = int(v)
+                g = tc.get("max_gap_us")
+                if isinstance(g, int) and g >= 0: max_gap = int(g)
+            if seq_len is None:
+                v2 = meta.get("seq_len")
+                if isinstance(v2, int) and v2 > 0: seq_len = int(v2)
+            if max_gap is None:
+                g2 = meta.get("max_gap_us")
+                if isinstance(g2, int) and g2 >= 0: max_gap = int(g2)
+        if isinstance(seq_len, int) and seq_len >= 2:
+            self._live_sequence_seq_len = int(seq_len)
+            try:
+                from collections import deque as _dq
+                old = list(self._live_sequence_buffer)
+                self._live_sequence_buffer = _dq(old[-int(seq_len):], maxlen=max(64, int(seq_len)))
+            except Exception: pass
+        else:
+            self._live_sequence_seq_len = int(CANONICAL_SEQ_LEN)
+        self._live_sequence_max_gap_us = int(max_gap) if isinstance(max_gap, int) else int(CANONICAL_MAX_GAP_US)
+    def _maybe_build_live_sequence_tensor(self, x_scaled_now, bar_ts=None):
+        try:
+            import torch as _torch
+        except Exception: return None
+        try:
+            if bar_ts is not None:
+                ts_us = None
+                if hasattr(bar_ts, "timestamp"): ts_us = int(bar_ts.timestamp() * 1_000_000)
+                elif isinstance(bar_ts, int): ts_us = int(bar_ts)
+                if ts_us is not None:
+                    last = getattr(self, "_live_last_bar_ts_us", None)
+                    if last is not None and ts_us - int(last) > int(self._live_sequence_max_gap_us):
+                        self._live_sequence_gap_invalid = True
+                        self._live_sequence_buffer.clear()
+                    self._live_last_bar_ts_us = int(ts_us)
+        except Exception: pass
+        if getattr(self, "_live_sequence_gap_invalid", False): return None
+        if self._live_sequence_buffer is None: return None
+        self._live_sequence_buffer.append([float(v) for v in x_scaled_now])
+        need = int(self._live_sequence_seq_len)
+        if len(self._live_sequence_buffer) < need: return None
+        if len(x_scaled_now) != 70: return None
+        try:
+            arr = _torch.tensor(list(self._live_sequence_buffer)[-need:], dtype=_torch.float32)
+            return arr.unsqueeze(0)
+        except Exception: return None
+    def note_bar_gap(self, gap_us: int) -> None:
+        if int(gap_us) > int(self._live_sequence_max_gap_us):
+            self._live_sequence_gap_invalid = True
+            self._live_sequence_buffer.clear()
+        else:
+            self._live_sequence_gap_invalid = False
+    def reset_live_sequence(self) -> None:
+        self._live_sequence_buffer.clear()
+        self._live_sequence_gap_invalid = False
+        self._live_last_bar_ts_us = None
     def __init__(
         self,
         config: AppConfig,
@@ -1180,6 +1266,12 @@ class LiveEngine:
         )
 
         self._rolling_feature_records: deque[dict] = deque(maxlen=4000)
+        # FIX #1+#8: live sequence deque for unified (1, L, 70) inference
+        self._live_sequence_buffer: deque[list[float]] = deque(maxlen=64)
+        self._live_sequence_seq_len: int = 32
+        self._live_sequence_max_gap_us: int = 10 * 60 * 1_000_000
+        self._live_last_bar_ts_us: int | None = None
+        self._live_sequence_gap_invalid: bool = False
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
         self._retrain_task: asyncio.Task | None = None
@@ -5193,7 +5285,15 @@ class LiveEngine:
 
         x_np = bundle.scaler.transform(x_np)
         _trace.mark(LatencyStage.T3_SCALER_DONE)
-        x = torch.tensor(x_np, dtype=torch.float32)
+        seq_x = None
+        try:
+            seq_x = self._maybe_build_live_sequence_tensor(x_scaled_now=x_np[0].tolist(), bar_ts=None)
+        except Exception:
+            seq_x = None
+        if seq_x is not None:
+            x = seq_x
+        else:
+            x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
         _trace.mark(LatencyStage.T4_TENSOR_DONE)
 
