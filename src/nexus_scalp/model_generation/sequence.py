@@ -127,9 +127,6 @@ class SequenceContract:
 SEQUENCE_CONTRACT: SequenceContract = SequenceContract()
 
 
-
-
-
 class SequenceBuilder:
     """Builds fixed-length causal sequences from a labeled dataset frame."""
 
