@@ -21,6 +21,7 @@ from nexus_scalp.domain.models import TickData, TradeProposal
 from nexus_scalp.features.regime_classifier import (
     MarketRegimeState,
     RecommendedExecutionType,
+    RegimeReason,
     RegimeType,
 )
 from nexus_scalp.features.scalp_features import FeatureVector
@@ -292,8 +293,18 @@ class SignalPolicy:
         is_inside_kumo = not feature_vector.is_above_kumo and not feature_vector.is_below_kumo
         small_displacement = abs(disp) < dynamic_min_displacement
 
+        # BUG-230: the classifier's WARMUP state (first min_ticks_for_stats
+        # ticks) emits RANGING_MEAN_REVERSION with prob 0.50 as a synthetic
+        # placeholder - NOT a confirmed range market. Treating it as one let
+        # the stat-arb LIMIT channel and the range confidence penalty fire on
+        # synthetic state before the regime engine had any real data. The
+        # engine-level HTF warmup gate already fail-closes entries during
+        # model warmup; this closes the regime-side seam (positions managed
+        # by other paths keep their protective logic - this only affects the
+        # range classification of NEW candidates).
+        _warmup_regime = bool(regime_state and regime_state.reason == RegimeReason.WARMUP)
         is_range_market = (
-            (regime_type == RegimeType.RANGING_MEAN_REVERSION)
+            (regime_type == RegimeType.RANGING_MEAN_REVERSION and not _warmup_regime)
             or is_inside_kumo
             or (tk_distance < (atr * 0.20) and small_displacement)
         )
