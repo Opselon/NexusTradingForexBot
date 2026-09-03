@@ -36,6 +36,14 @@ class IMT5Port(ABC):
     Abstract Port defining mandatory operations for communicating with MetaTrader 5.
     """
 
+    #: BUG-226: execution provenance of the account this adapter represents
+    #: ('LIVE' | 'PAPER' | 'SHADOW'). Concrete adapters set it in __init__
+    #: (PaperMT5Adapter -> 'PAPER', broker adapters -> 'LIVE'); used to tag
+    #: ledger rows and account snapshots so accounting can exclude PAPER
+    #: provenance from performance metrics. Deliberately NOT abstract: this
+    #: is metadata, not a broker operation.
+    current_account_source: str = "LIVE"
+
     @abstractmethod
     def connect(self) -> bool:
         """Establishes connection with terminal or remote gateway."""

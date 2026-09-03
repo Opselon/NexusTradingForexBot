@@ -332,6 +332,10 @@ class OrderLifecycleManager:
         self.adapter = adapter
         self.mt5_adapter = adapter
         self.audit = audit_repo or AuditRepository()
+        # BUG-226: provenance of the account feeding this audit stream. The
+        # engine sets this from the effective boot mode; ledger writes read it
+        # at write time so a hot-swap is reflected per-trade.
+        self.current_account_source = "LIVE"
         self.notifier = notifier
         self.rule_matrix = rule_matrix
         self.algo_config = algo_config or AlgoConfig()
@@ -3072,6 +3076,23 @@ class OrderLifecycleManager:
     # ACTIVE POSITION MONITORING & LIFECYCLE EXECUTION LOOP
     # =========================================================================
 
+    def _ledger_account_source(self) -> str:
+        """BUG-226: execution provenance of the currently bound adapter.
+
+        'PAPER' when the simulation adapter is bound, otherwise 'LIVE'.
+        Read at write time (never cached) so a set_execution_mode hot-swap is
+        reflected on every subsequent ledger row. Never raises: provenance is
+        observability and must not block the trade path on a probe failure.
+        """
+        try:
+            from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+            if isinstance(self.adapter, PaperMT5Adapter):
+                return "PAPER"
+        except Exception:
+            pass
+        return "LIVE"
+
     @staticmethod
     def _pending_field(pending: Any, *names: str, default: Any = None) -> Any:
         """
@@ -4187,6 +4208,7 @@ class OrderLifecycleManager:
                 self._entry_atr[ticket] = float(atr)
                 self._entry_spread[ticket] = max(0.0, current_tick.ask - current_tick.bid)
 
+                self.audit.current_account_source = self._ledger_account_source()
                 # Robust Financial Ledger opened record
                 self.audit.log_ledger_opened(
                     ticket=ticket,
@@ -4202,6 +4224,10 @@ class OrderLifecycleManager:
                     ai_confidence_at_open=self._entry_confidences.get(ticket, 0.0),
                     market_regime_at_open=self._entry_regimes.get(ticket, ""),
                     initial_sl_price=pos.sl,
+                    # BUG-226: execution provenance of the account this trade
+                    # ran on, read live from the bound adapter so an engine
+                    # hot-swap (set_execution_mode) is reflected per-trade.
+                    account_source=self._ledger_account_source(),
                 )
 
                 # [EXPANDED] Try to associate message ID with this ticket!
@@ -5507,6 +5533,7 @@ class OrderLifecycleManager:
             exit_evidence=exit_evidence,
             exit_reason_confidence=exit_reason_confidence,
             reversal_events_json=json.dumps(self._reversal_events.get(dead_ticket, [])),
+            account_source=self._ledger_account_source(),
         )
 
         # =============================================================
@@ -5905,6 +5932,7 @@ class OrderLifecycleManager:
                     exit_evidence=exit_evidence,
                     exit_reason_confidence=exit_reason_confidence,
                     reversal_events_json=json.dumps(self._reversal_events.get(ticket, [])),
+                    account_source=self._ledger_account_source(),
                 )
 
                 if self.experience_engine is not None:

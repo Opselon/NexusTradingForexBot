@@ -193,8 +193,8 @@ def wired_app(tmp_path):
         exit_mechanism="HARD_SL_HIT",
         strategy_id="strat_alpha",
     )
-    _snapshot(repo, now_utc.replace(hour=0, minute=0, second=1, microsecond=0), 10000.0, 10000.0)
-    _snapshot(repo, now_utc.replace(hour=23, minute=59, second=0, microsecond=0), 10100.0, 10100.0)
+    _snapshot(repo, now_utc.replace(hour=0, minute=0, second=1, microsecond=0), 10250.0, 10250.0)
+    _snapshot(repo, now_utc.replace(hour=23, minute=59, second=0, microsecond=0), 10350.0, 10350.0)
 
     engine.accounting_worker.start()
     engine.accounting_worker.tick()
@@ -324,8 +324,8 @@ class TestAccountingApi:
         assert data["available"] is True
         assert len(data["equity_curve"]) >= 2
         # Real snapshots: first balance 10000, last balance 10100
-        assert data["equity_curve"][0]["balance"] == pytest.approx(10000.0)
-        assert data["equity_curve"][-1]["balance"] == pytest.approx(10100.0)
+        assert data["equity_curve"][0]["balance"] == pytest.approx(10250.0)
+        assert data["equity_curve"][-1]["balance"] == pytest.approx(10350.0)
 
     def test_drawdown_endpoint(self, wired_app) -> None:
         _, _, app = wired_app
@@ -335,7 +335,7 @@ class TestAccountingApi:
         data = res.json()
         assert data["has_data"] is True
         assert data["sample_count"] >= 2
-        assert data["current_equity"] == pytest.approx(10100.0)
+        assert data["current_equity"] == pytest.approx(10350.0)
 
     def test_trade_forensics_endpoint(self, wired_app) -> None:
         _, _, app = wired_app

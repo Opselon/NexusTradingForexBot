@@ -464,6 +464,15 @@ class LiveEngine:
 
             self.audit = AuditRepository(config=load_database_config("audit"))
         self.force_fresh_model = bool(force_fresh_model)
+        # BUG-226: boot-time provenance tag for the audit stream. Derived from
+        # the EFFECTIVE execution mode after the BUG-212 adapter alignment, so
+        # a PAPER boot tags every ledger row and snapshot it writes as PAPER
+        # (LIVE remains the safe default when the mode is unknown).
+        try:
+            _boot_source = str(getattr(self.config.execution.mode, "value", "") or "").upper()
+        except Exception:
+            _boot_source = ""
+        self._boot_account_source = _boot_source if _boot_source in ("LIVE", "PAPER", "SHADOW") else "LIVE"
 
         # =====================================================================
         # RUNTIME CONFIGURATION (hot reload core): the authoritative
@@ -1144,6 +1153,9 @@ class LiveEngine:
             # PnL / R / exit mechanism.
             lifecycle_tracker=self.intelligence_lifecycle,
         )
+        # BUG-226: seed the audit-stream provenance from the effective boot
+        # mode; the accounting layer filters PAPER-tagged rows out of metrics.
+        self.audit.current_account_source = self._boot_account_source
 
         # Online training toolchain
         self.trainer = WalkForwardTrainer(
@@ -5869,6 +5881,9 @@ class LiveEngine:
                 self.adapter = new_adapter
                 self.order_manager.adapter = new_adapter
                 self.order_manager.mt5_adapter = new_adapter
+                # BUG-226: provenance follows the adapter so ledger rows and
+                # account snapshots written under simulation are tagged PAPER.
+                new_adapter.current_account_source = "PAPER"
                 new_adapter.connect()
                 swapped = True
             elif not wants_simulation and is_simulation:
@@ -5887,6 +5902,8 @@ class LiveEngine:
                 self.adapter = new_adapter_direct
                 self.order_manager.adapter = new_adapter_direct
                 self.order_manager.mt5_adapter = new_adapter_direct
+                # BUG-226: back to the real broker — provenance returns to LIVE.
+                new_adapter_direct.current_account_source = "LIVE"
                 new_adapter_direct.connect()
                 swapped = True
         except Exception as swap_err:

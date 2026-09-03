@@ -97,6 +97,12 @@ class AuditRepository:
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
         self._running = False
         self._worker_thread: threading.Thread | None = None
+        # BUG-226: execution provenance of the account feeding this audit
+        # stream ('LIVE' / 'PAPER' / 'SHADOW'). The engine sets this from the
+        # effective mode; ledger + snapshot writes read it at write time so a
+        # hot-swap is reflected per-row. AccountingCore excludes PAPER rows
+        # from performance metrics.
+        self.current_account_source: str = "LIVE"
 
         # BUG-149: the legacy relative default ("sqlite:///artifacts/audit.db")
         # anchors to the raw process CWD. When frozen, anchor to the canonical
@@ -412,6 +418,11 @@ class AuditRepository:
             # TASK-3: reversal/regime snapshots observed while the position
             # was open (model flip, regime change) — bounded JSON, null-safe.
             ("reversal_events_json", "TEXT DEFAULT '[]'"),
+            # BUG-226: execution provenance of the account the trade ran on
+            # ('' legacy, 'LIVE', 'PAPER', 'SHADOW'). AccountingCore filters
+            # PAPER rows out of every performance metric; raw evidence is
+            # retained (never rewritten — contract s47).
+            ("account_source", "TEXT DEFAULT ''"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE audit_ledger ADD COLUMN {col_def[0]} {col_def[1]};")
@@ -446,6 +457,16 @@ class AuditRepository:
             );
             """
         )
+        # BUG-226: execution provenance of the account each snapshot observed.
+        # ('' legacy, 'LIVE', 'PAPER', 'SHADOW'); AccountingCore excludes the
+        # PAPER seed plateau (balance==equity==margin_free==10000.0) and any
+        # PAPER-tagged row from drawdown/equity metrics.
+        try:
+            conn.execute(
+                "ALTER TABLE audit_account_snapshots ADD COLUMN account_source TEXT DEFAULT '';"
+            )
+        except Exception:
+            pass
 
         # Broker-history normalized copy: audit_broker_orders / _deals / _trades
         # + sync watermark (created idempotently; identity = broker tickets).
@@ -1767,6 +1788,11 @@ class AuditRepository:
         Only write a snapshot to the database if the balance has changed
         or if at least 60 seconds have elapsed since the last snapshot,
         minimizing database write footprint.
+
+        BUG-226: rows are tagged with the account provenance of the bound
+        adapter ('PAPER' when the simulation adapter is wired in, 'LIVE'
+        otherwise) so the accounting layer can exclude simulation plateaus
+        from drawdown/equity metrics without rewriting history.
         """
         if not self._is_sqlite:
             return
@@ -1784,8 +1810,8 @@ class AuditRepository:
 
         query = """
             INSERT INTO audit_account_snapshots
-            (timestamp, balance, equity, margin_free, peak_equity)
-            VALUES (?, ?, ?, ?, ?)
+            (timestamp, balance, equity, margin_free, peak_equity, account_source)
+            VALUES (?, ?, ?, ?, ?, ?)
         """
         from datetime import UTC, datetime
 
@@ -1795,6 +1821,7 @@ class AuditRepository:
             account.equity,
             account.margin_free,
             peak_equity,
+            str(getattr(self, "current_account_source", "") or "LIVE"),
         )
 
         try:
@@ -1815,12 +1842,16 @@ class AuditRepository:
         ai_confidence_at_open: float = 0.0,
         market_regime_at_open: str = "",
         initial_sl_price: float = 0.0,
+        account_source: str = "",
     ) -> None:
         """
         Logs the opening of a position to the financial ledger.
 
         Captures the immutable entry context (reason, AI confidence, regime, initial SL)
         so the closing autopsy row can be assembled without re-deriving history.
+        `account_source` records execution provenance (BUG-226): 'LIVE' / 'PAPER' /
+        'SHADOW' — '' for legacy rows. AccountingCore excludes PAPER provenance
+        from every performance metric; the raw row itself is never rewritten.
         """
         if not self._is_sqlite:
             return
@@ -1829,8 +1860,8 @@ class AuditRepository:
             INSERT INTO audit_ledger
             (ticket, symbol, direction, volume, entry_price, status, timestamp,
              order_id, open_time, open_price, entry_reason, ai_confidence_at_open,
-             market_regime_at_open, initial_sl_price)
-            VALUES (?, ?, ?, ?, ?, 'OPENED', ?, ?, ?, ?, ?, ?, ?, ?)
+             market_regime_at_open, initial_sl_price, account_source)
+            VALUES (?, ?, ?, ?, ?, 'OPENED', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticket) DO NOTHING
         """
         args = (
@@ -1847,6 +1878,7 @@ class AuditRepository:
             float(ai_confidence_at_open),
             market_regime_at_open,
             float(initial_sl_price),
+            str(account_source or ""),
         )
         try:
             self._queue.put_nowait((query, args))
@@ -2026,6 +2058,7 @@ class AuditRepository:
         exit_evidence: str = "",
         exit_reason_confidence: float = 0.0,
         reversal_events_json: str = "[]",
+        account_source: str = "",
     ) -> None:
         """
         Writes EXACTLY ONE data-rich autopsy row per closed trade.
@@ -2083,10 +2116,9 @@ class AuditRepository:
              market_regime_at_open, was_sl_modified, MAE_usd, MFE_usd,
              account_balance_after, account_equity_after, drawdown_percent_after,
              entry_setup_snapshot, exit_reason_source, exit_evidence,
-             exit_reason_confidence, reversal_events_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?)
+             exit_reason_confidence, reversal_events_json, account_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticket) DO UPDATE SET
                 exit_price=excluded.exit_price,
                 status=excluded.status,
@@ -2122,7 +2154,8 @@ class AuditRepository:
                 exit_reason_source=CASE WHEN excluded.exit_reason_source != '' THEN excluded.exit_reason_source ELSE audit_ledger.exit_reason_source END,
                 exit_evidence=CASE WHEN excluded.exit_evidence != '' THEN excluded.exit_evidence ELSE audit_ledger.exit_evidence END,
                 exit_reason_confidence=excluded.exit_reason_confidence,
-                reversal_events_json=CASE WHEN excluded.reversal_events_json != '[]' THEN excluded.reversal_events_json ELSE audit_ledger.reversal_events_json END
+                reversal_events_json=CASE WHEN excluded.reversal_events_json != '[]' THEN excluded.reversal_events_json ELSE audit_ledger.reversal_events_json END,
+                account_source=CASE WHEN excluded.account_source != '' THEN excluded.account_source ELSE audit_ledger.account_source END
         """
         args = (
             ticket,
@@ -2165,6 +2198,7 @@ class AuditRepository:
             exit_evidence,
             float(exit_reason_confidence or 0.0),
             reversal_events_json or "[]",
+            str(account_source or ""),
         )
         try:
             self._queue.put_nowait((query, args))
