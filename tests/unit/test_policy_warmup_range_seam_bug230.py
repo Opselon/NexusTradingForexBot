@@ -90,9 +90,9 @@ def test_warmup_state_is_not_confirmed_range() -> None:
     rc = proposal.risk_checks or {}
     if rc:
         assert float(rc.get("range_penalty", 0.0)) == 0.0, rc
-        assert float(rc.get("effective_threshold", 0.0)) == float(
-            rc.get("base_threshold", 0.20)
-        ), rc
+        assert float(rc.get("effective_threshold", 0.0)) == float(rc.get("base_threshold", 0.20)), (
+            rc
+        )
 
 
 def test_confirmed_range_still_applies_penalty() -> None:
