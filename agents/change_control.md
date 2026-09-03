@@ -1693,7 +1693,7 @@ runtime gate work landed on top):
 - RISK: LOW-MEDIUM (execution-adjacent but engine-level only; order_manager untouched;
   no dispatch-path change in LIVE). Owner sign-off: runtime-truth owner notified via
   taskboard row TASK-NX-BUG212-PAPERA.
-## CHG-0054 - BUG-228 zero-improvement fine-tune skip + structured gate-rejection logging (2026-09-03, Nexus-Main)
+## CHG-0055 - BUG-228 zero-improvement fine-tune skip + structured gate-rejection logging (2026-09-03, Nexus-Main)
 - AGENT: Nexus-Main | ROLE: Orchestrator / Training-Loop Reliability | TASK: fix quality-gate misfire on unchanged-baseline candidates
 - SCOPE: src/nexus_scalp/training/walk_forward_trainer.py::fine_tune_online tail only (+ new static helper _state_dicts_equal); tests/unit/test_walk_forward_trainer.py (+1 regression test); agents/bugs.md (+BUG-228); docs/agent_handoffs/ (+handoff)
 - MOTIVATION: every early-stop-without-improvement window emitted a red [QUALITY GATE REJECTION] + "Atomically reverting to baseline!" for a model whose weights never moved (live evidence 2026-09-03T13:04, accuracy_delta=0.0). Misleading incident signal + raw ANSI print() bypassing the structured logger.
@@ -1702,3 +1702,25 @@ runtime gate work landed on top):
 - TESTS: test_wf_zero_improvement_early_stop_skips_quality_gate_rejection (new, red-on-prefx scenario: epochs=3, lr=1.0 divergence -> early stop without improvement); full test_walk_forward_trainer.py 6/6 green; ruff+format+mypy+CRITICAL suite via beforePush before commit.
 - RISK: LOW (isolated trainer tail; failure mode is a calmer honest log instead of a false red alarm; genuine rejections still reject and roll back).
 
+
+CHANGE-ID: CHG-0055
+Agent: Nexus-Recovery (orchestrated by Nexus-Main)
+Role: Execution / Cause-Aware Pending Order Recovery
+Task: BUG-231 - pending-order dispatch is not cause-aware (wrong 10016 retcode labels + blind 3x resend of a structurally-invalid SELL_LIMIT; stale PAPER signal geometry survived PAPER->LIVE hot-swap)
+Scope:
+- src/nexus_scalp/adapters/mt5/mt5_adapter.py (place_pending_order retry loop rewrite; new PENDING_RETCODE_MAP, _classify_pending_retcode, _validate_pending_request, _repair_pending_request, _log_recovery; _translate_retcode relabel)
+- src/nexus_scalp/adapters/mt5/diagnostics.py (RETCODE_LABELS corrected to official MQL5 mapping)
+- tests/unit/test_pending_recovery_cause_aware.py (NEW, 35 offline regression tests)
+- agents/bugs.md (BUG-231), agents/change_control.md (this row), agents/taskboard.md (TASK-BUG231 row)
+Affected functions/classes:
+- DirectMT5Adapter.place_pending_order (behavior change: cause-aware bounded retry; signature unchanged)
+- DirectMT5Adapter._translate_retcode (SEMANTIC CHANGE: label VALUES corrected; signature unchanged)
+- NEW: DirectMT5Adapter._classify_pending_retcode/_validate_pending_request/_repair_pending_request/_log_recovery
+- diagnostics.RETCODE_LABELS (values corrected; dict name kept)
+Contracts touched: MT5 adapter port behavior (IMT5Port implementation internals; no port signature change); observability logging adds recovery_state fields. No DB schema change. No feature/model contract. No strategy logic change.
+Runtime paths touched: order dispatch path (pending orders only; market orders untouched); hot path impact positive (structurally-invalid requests now abort in O(1) without 3x broker round-trips).
+Owners affected: Hermes-MT5 (adapter owner), Hermes-Execution (order_manager untouched but consumes adapter), Hermes-Runtime (live_engine hot-swap revalidation HANDOFF - open item, NOT in this change).
+Risk: MEDIUM-HIGH (execution-adjacent; mitigated by 35 offline regression tests incl. exact production scenario + idempotency guard preserved + valid-request path regression-tested)
+Dependencies: BUG-231; independent of CHG-0053
+Required tests: tests/unit/test_pending_recovery_cause_aware.py (all green); focused -k "pending or mt5 or recovery" suite = 130 passed / 1 skipped / 0 failed; ruff check+format, mypy, py_compile clean
+Status: IMPLEMENTED->VERIFIED (offline); live MT5 smoke NOT executed (safety contract: no live order placement during verification)

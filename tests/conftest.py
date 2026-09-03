@@ -19,9 +19,31 @@ execution.mode, leaking into tests/unit/test_mt5_status_endpoint.py).
 
 from __future__ import annotations
 
-import logging
+# ---------------------------------------------------------------------------
+# Worktree import isolation (BUG-231 test harness): the dev venv's
+# __editable__ .pth pins nexus_scalp to the MAIN checkout's src/. When the
+# suite runs inside an isolated git worktree (.../.worktrees/<name>), that
+# pin would silently import the MAIN checkout's adapter instead of the
+# worktree copy under test. Prepend the worktree's src/ and purge any
+# pre-imported nexus_scalp modules BEFORE anything imports them. On the
+# main checkout and in CI the condition is false -> no-op.
+# ---------------------------------------------------------------------------
+import os
+import sys
 
-import pytest
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if os.sep + ".worktrees" + os.sep in _ROOT + os.sep:
+    _SRC = os.path.join(_ROOT, "src")
+    if os.path.isdir(os.path.join(_SRC, "nexus_scalp")):
+        if _SRC not in sys.path:
+            sys.path.insert(0, _SRC)
+        for _name in [_m for _m in list(sys.modules) if _m.startswith("nexus_scalp")]:
+            del sys.modules[_name]
+
+
+import logging  # noqa: E402
+
+import pytest  # noqa: E402
 
 # Daemon worker threads (telegram notifier heartbeat, audit DB worker) can log
 # into pytest's closed stdout at teardown. The stdlib logging module would print

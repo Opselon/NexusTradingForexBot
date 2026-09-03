@@ -32,26 +32,40 @@ from typing import Any
 logger = logging.getLogger("nexus_scalp.adapters.mt5.diagnostics")
 
 #: MT5 trade-server return codes relevant to runtime diagnostics.
+#:
+#: OFFICIAL MQL5 labels per
+#: https://www.mql5.com/en/docs/constants/errorswarnings/enum_trade_return_codes
+#: (BUG-226 forensic correction: 10016=INVALID_STOPS, 10017=TRADE_DISABLED,
+#: 10018=MARKET_CLOSED, 10019=NO_MONEY, 10020=PRICE_CHANGED, 10021=PRICE_OFF,
+#: 10022=INVALID_EXPIRATION, 10023=ORDER_CHANGED, 10024=TOO_MANY_REQUESTS —
+#: the previous map was shifted by two codes from 10016 onward and
+#: misdiagnosed the production 10016 rejection).
 RETCODE_LABELS: dict[int, str] = {
     10004: "REQUOTE",
     10006: "REJECTED",
-    10013: "INVALID_STOPS",
+    10007: "CANCELLED",
+    10008: "PLACED",
+    10009: "DONE",
+    10010: "DONE_PARTIAL",
+    10011: "ERROR",
+    10012: "TIMEOUT",
+    10013: "INVALID",
     10014: "INVALID_VOLUME",
     10015: "INVALID_PRICE",
-    10016: "TRADE_DISABLED_OR_FREEZE_LEVEL",
-    10017: "MARKET_CLOSED",
-    10018: "NO_MONEY",
-    10019: "PRICE_CHANGED",
-    10020: "PRICE_OFF",
-    10021: "NO_CHANGES",
-    10022: "TRADE_EXPERT_DISABLED",
-    10023: "TOO_MANY_REQUESTS",
-    10024: "NO_ORDER",
+    10016: "INVALID_STOPS",
+    10017: "TRADE_DISABLED",
+    10018: "MARKET_CLOSED",
+    10019: "NO_MONEY",
+    10020: "PRICE_CHANGED",
+    10021: "PRICE_OFF",
+    10022: "INVALID_EXPIRATION",
+    10023: "ORDER_CHANGED",
+    10024: "TOO_MANY_REQUESTS",
     10025: "UNKNOWN_SYMBOL",
     10026: "ORDER_LOCKED",
-    10027: "LONG_ONLY_MODE",
-    10028: "LIMIT_ORDERS",
-    10029: "VOLUME_LIMIT",
+    10027: "LONG_ONLY",
+    10028: "SHORT_ONLY",
+    10029: "FROZEN",
     10030: "UNSUPPORTED_FILLING",
     10031: "NO_CONNECTION",
 }
