@@ -235,15 +235,17 @@ Scalers: `70d_liquidity/model.scaler.npz` mtime 09-03 06:11 -- any retrain must 
 
 | Item | Status |
 |---|---|
-| HTF window fix (MLPWR-06-02) -- BUG row + code + parity pin | PENDING (P0) |
-| F1 sequence windows | IN_PROGRESS |
-| F2 sequence trainer + meta v2 | IN_PROGRESS |
-| F3 live sequence feed | PENDING (after F2) |
-| F4 calibration | PENDING |
-| F5 full-history retrain (needs HTF fix + F1-F2) | PENDING -- **BLOCKED until HTF fix lands** |
-| F6 gates run + report | PENDING |
-| F7 behavioral gate + persist-path guard | PENDING (P0) |
+| F1 full-history dataset (t70d_f1_full_m1, 99,946 rows / 26,947 eval, stride2, parity 0) | **DONE** (commit ccb7765c) |
+| F2 sequence trainer (t70d_seq_v1 TCN+MHA L=32; t70d_seq_v2_tuned) | **DONE** (same windows 70/15/15; VAL 0.429/0.448, OOS 0.377/0.371) |
+| F2b 2D baseline same windows (t70d_2d_baseline_same_windows) | **DONE** (VAL 0.447, OOS 0.391, balAcc 0.367) |
+| F3 live sequence feed | DEFERRED (no OOS gain over 2D on this data; revisit after 1y retrain) |
+| F4 calibration (temperature scaling) | **DONE** (T=0.73/0.68/0.58/0.81; ECE 1.7-4.1%) |
+| F5 full-frame lossless candidate (t70d_v1_full, sha c8c0b5b) | **DONE** -- CANDIDATE, NOT promoted (Gate 6 OOS FAIL: 36.7% < majority 57%) |
+| F6 gates run + report | **DONE** -- docs/forensics/t70d_master_forensic_report_2026-09-03.md (A-K) |
+| F7 behavioral gate + persist-path guard | PENDING (P0, next lane) |
+| HTF window fix (MLPWR-06-02) -- BUG row + code + parity pin | PENDING (P0, **pre-retrain blocker**) |
 | Retire `v1.0.0` contaminated fallbacks | PENDING (after CHAMPION) |
+| 1-year M1 acquisition + news-aware retrain + liquidity ablation | PENDING (roadmap §9, highest leverage) |
 
 ---
 ## 12. VERIFIED ML LEARNING-CHAIN MAP (do NOT re-investigate; from audited pass)
@@ -317,6 +319,7 @@ Pre-push gate: `beforePush.sh` / `beforePush.ps1` via `.venv/Scripts/python.exe 
 - 2026-09-03 ~21:20 +03:30 -- Nexus-Main: handoff v2. Prior orchestrator draft (198L) + independently re-verified second draft merged into single doc (380L). Re-verification: canary 7/7, detect_untrained_fresh_init on 3 artifacts, depth-grid + caller-grid probes re-executed, live /health + /api/status on 8099, ASYNC RETRAIN log line, artifact mtimes.
 - 2026-09-03 ~22:00 +03:30 -- Principal Incident Investigator (PINC, adversarial lane): **CONSOLIDATED MLFix.md (this file) -- single continuable doc.** Merged MLFixing.md (381L) + MLFix.MD (129L) + tonight's independent forensic session (A-I probes, weight forensics, offline-vs-scaler, WAIT leakage, provenance chain, first-broken-state isolation). New evidence: `a4b95406088ed618` is epsilon-diverged fresh noise (20 tensors still byte-equal, logit std 0.06-0.10), not a trained champion; 500-random mean_max 0.283; WAIT 22% mass leak; HTF window asymmetry quantified; engine STOPPED so no new LIVE tick was captured (read-only session). Roadmap re-sequenced: HTF fix (P0) and behavioral gate (P0) are now explicit blockers before F5 retrain.
 - Evidence base: BUG-225/228/217/197B/190/185/141/183 ledger rows; commits `3f5f9db7`, `52615bf7`, `c576dfac`, `6b893f04`, `203f1873`, `11ea316`, `454dbba5`; MLPWR probe outputs (scratch/, re-executed tonight); PINC probes `scratch/ns_pinc_probe_r2.*` + `scratch/ns_pinc_exp2_offlive.py`.
+- 2026-09-03 ~23:20 +03:30 -- Nexus-Main (MASTER 70D program): **F1-F6 executed and pushed (commit `ccb7765c`).** F1 full-history 70D dataset built (t70d_f1_full_m1: 99,946 rows, stride2 -> 26,947 eval, fast-vs-slow parity 0 mismatches, sha 9ea84e40beb8ff17). F2/F2b sequence harness (TCNAttentionV1 L=32 + tuned) and 2D baseline trained on identical chronological 70/15/15 windows with train-only scaler + class weights + early stop: OOS balanced-accuracy 0.365-0.368 vs smoke 0.335, directional precision 0.240-0.245 (all still BELOW majority 57% => no edge on this data). F4 lossless full-frame polish candidate t70d_v1_full (sha c8c0b5b06d4c094d) registered as CANDIDATE; live champion NOT replaced (Gate 6 honestly FAIL). F6 gated report: docs/forensics/t70d_master_forensic_report_2026-09-03.md (A-K with confusion matrices, hashes, repro commands). Artifacts (gitignored): artifacts/model_generation/models/{t70d_seq_v1,t70d_seq_v2_tuned,t70d_2d_baseline_same_windows,t70d_full_retrain}/ + datasets/t70d_f1_full_m1/. Next P0 lanes unchanged: HTF window fix THEN 1-year data + 34-fold production retrain (MLFix section 9).
 
 
 
