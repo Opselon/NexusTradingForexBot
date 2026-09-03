@@ -8065,3 +8065,22 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
 - REGRESSION TEST: tests/unit/test_release_system.py::test_secrets_scan_survives_unreadable_entries (new; monkeypatched Path.is_file raising OSError for one entry -> scan completes, verdict emitted, other files still scanned).
 - VERIFICATION: py_compile, ruff check+format, mypy src clean; new regression test green; the original probe (398s scan over 1.1GB worktree tree) now completes with a FAIL verdict carrying the synthetic test-credential hits instead of crashing.
 - NOTE (owner handoff, not this fix): the same scan is a wall-time hazard when --root points at a huge tree (measured 398s on a 1.1GB local tree). Release CI only ever scans the portable bundle (small). Consider a size cap or ignore-list for the CLI default if operator-facing scans of dev trees become common.
+
+
+## BUG-234 — TRAIN vs LIVE HTF window asymmetry (MLPWR-06-02): feat_41 (h1_momentum) and feat_42 (m30_structure) structurally 0.0 in every training row vs real live depth (2026-09-03, Nexus-Main ML lane)
+
+- SEVERITY: P0 (training/inference feature divergence — same class as BUG-190/197B/217) | STATUS: FIX_IN_PROGRESS
+- SURFACE: `src/nexus_scalp/model_generation/schema_v2.py::compute_70d_frame` (and `compute_60d_frame`), `src/nexus_scalp/features/scalp_features.py::ScalpFeatureEngine.compute_from_bars`
+- SYMPTOM: Full-vector parity corpus is bit-exact on 68/70 features (`PARITY VERDICT: MISMATCH`, max_delta 3.0, TOL 1e-12) — mismatches ONLY at idx 41 `htf_h1_momentum` (train 0.0 / live 3.0) and idx 42 `htf_m30_structure` (train 0.0 / live 1.0). In live serving, 2,206 signals on 2026-09-03 were decided on a feature regime the model never saw during training; scaler std on feat_42 is 0.001 (training-variance floor) so live values saturate immediately to clip limit.
+- ROOT CAUSE (PROVEN): `ScalpFeatureEngine.compute_from_bars` slices the last 55 bars for base features (`:526 tail_bars = completed_bars[-55:]`) but aggregates HTF (`:741-744`) from the FULL `completed_bars` list passed in. The TRAIN builder `schema_v2.py:611` passed `window = all_bars[max(0, i-54):i+1]` (always 55 bars), yielding ≤1 H1 bucket (needs ≥2, i.e. ≥120 bars) and ≤1 M30 bucket (needs ≥5, i.e. ≥150 bars) — making both features structurally 0.0 across the entire training history. The LIVE caller `live_engine.py:3618` passes the aggregator's full depth (~900 to 4000 bars), producing real nonzero values.
+- FIX: `schema_v2.py::compute_70d_frame` (and `compute_60d_frame`, `compute_liquidity_frame`) now passes the full causal history window `all_bars[max(0, i + 1 - LIQUIDITY_HISTORY_LIMIT) : i + 1]` (up to 4000 bars, matching the live aggregator depth and matching the existing liquidity-builder call) to `compute_from_bars`. Base features are unaffected (still sliced `[-55:]` internally); HTF features now see real history, restoring bit-exact parity across train and live.
+
+
+## BUG-235 — LiveEngine async retrain unconditionally persists baseline weights on zero-improvement / quality-gate rejection (self-perpetuating degenerate artifact) (2026-09-03, Nexus-Main ML lane)
+
+- SEVERITY: P1 (model integrity self-perpetuation) | STATUS: FIX_IN_PROGRESS
+- SURFACE: `src/nexus_scalp/application/live_engine.py::_trigger_async_online_fine_tune`
+- SYMPTOM: When online fine-tuning fails the quality gate or produces zero improvement, `WalkForwardTrainer.fine_tune_online` returns the unchanged baseline model (after logging BUG-228 honest skip or rejection). However, `_trigger_async_online_fine_tune` unconditionally called `self._save_model_weights_atomic(updated_model, bundle.artifact_path)` and `self._register_active_model(..., replaced=True)`. This updated the on-disk mtime (e.g. 20:44:00 tonight), re-persisted identical/degenerate weights, and logged `ASYNC RETRAIN SUCCESS` — misreporting a rejected training pass as a successful deployment and masking artifact stagnation.
+- ROOT CAUSE (PROVEN): `_trigger_async_online_fine_tune` did not inspect whether the returned model was accepted or merely the reverted baseline before calling the atomic save and provenance re-registration.
+- FIX: `WalkForwardTrainer.fine_tune_online` now returns a structured result or `LiveEngine` compares `_state_dicts_equal(updated_model.state_dict(), bundle.model.state_dict())` (or inspects an `accepted` flag); if the model is unchanged / rejected, the atomic disk write and provenance replacement are SKIPPED, logging `ASYNC RETRAIN SKIPPED (baseline kept)` instead of `ASYNC RETRAIN SUCCESS`.
+
