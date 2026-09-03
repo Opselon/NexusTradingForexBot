@@ -82,6 +82,18 @@ def test_all_14_setup_types_reach_a_compatible_strategy() -> None:
         decision = factory.evaluate(setup, row, None)
         assert decision.decision in {"GO", "NO_GO"}
         assert "NO_COMPATIBLE_STRATEGY" not in (decision.reasons or ())
+        # Regression hardening (BUG-226 review): a NO_GO for a clean
+        # quality-0.95 setup under a REGIME-MATCHED row must be caused
+        # ONLY by regime/session gates - never by RR/quality floors
+        # (those would re-introduce dead strategies).
+        forbidden = {
+            r
+            for r in (decision.reasons or ())
+            if r.startswith("RR_BELOW_FLOOR")
+            or r.startswith("QUALITY_BELOW_FLOOR")
+            or r == "NO_DIRECTION_ALIGNMENT"
+        }
+        assert not forbidden, (setup_type, forbidden)
         assert decision.strategy_id != "hunter_smc_v1" or setup_type in (
             "ORDER_BLOCK",
             "FVG",
