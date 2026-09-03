@@ -33,6 +33,10 @@ from torch.utils.data import DataLoader, Dataset
 
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.features.schema import FEATURE_SCHEMAS, FeatureSchema, active_dimension
+from nexus_scalp.model_lifecycle.persist_decision import (
+    attach_decision,
+    should_persist_candidate,
+)
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
 
@@ -123,8 +127,16 @@ class WalkForwardTrainer:
     #: compatibility with existing call sites and regression tests).
     NUM_FEATURES: int = active_dimension()
     NUM_CLASSES: int = 3
-    #: ScalpNet's deployed head width (NO_TRADE, BUY, SELL, WAIT).
-    MODEL_HEAD_CLASSES: int = 4
+    #: MLFIX-T4 MODEL CLASS CONTRACT: canonical contract is 3-class (NO_TRADE/BUY/SELL).
+    #: LEGACY_HEAD_CLASSES=4 is retained only to route LEGACY 4-wide artifacts through
+    #: the legacy compat path (inspect+reject or legacy loader). Fresh retrains use
+    #: canonical num_classes=3 (from LABEL_SCHEMA_3CLASS_V1 / CANONICAL_CLASS_COUNT).
+    #: Live inference must never silently alias a 3-class model onto a 4-wide loader.
+    CANONICAL_NUM_CLASSES: int = 3
+    # LEGACY 4-wide head (serving artifact a4b9..) — compat-only; rejected unless caller opts in.
+    LEGACY_HEAD_CLASSES: int = 4
+    # Back-compat alias: tests that import MODEL_HEAD_CLASSES still see canonical 3.
+    MODEL_HEAD_CLASSES: int = 3
 
     def __init__(
         self,
@@ -426,7 +438,19 @@ class WalkForwardTrainer:
                 available=len(recent_df),
                 required_min=purge_len + 30,
             )
-            return copy.deepcopy(target_model)
+            # BUG-236: nothing was trained -> nothing may be persisted. Attach
+            # the explicit persist decision so the engine's BUG-235 guard
+            # (and any other consumer) can never mistake this for an accepted
+            # model replacement.
+            _skip = should_persist_candidate(
+                trained=False, insufficient_rows=True
+            )
+            logger.info(
+                "Persist decision: REJECT",
+                reason=_skip.reason,
+                persist=False,
+            )
+            return attach_decision(copy.deepcopy(target_model), _skip)
         valid_df = recent_df.slice(0, len(recent_df) - purge_len)
         X_raw, y = self._extract_X_y(valid_df, feature_cols)
         # BUG-182B: fail loud BEFORE any training work when the target model's
@@ -480,7 +504,15 @@ class WalkForwardTrainer:
             logger.warning(
                 "Insufficient post-purge labeled rows for online fine-tuning", samples=len(y)
             )
-            return copy.deepcopy(target_model)
+            _skip_labels = should_persist_candidate(
+                trained=False, insufficient_labels=True
+            )
+            logger.info(
+                "Persist decision: REJECT",
+                reason=_skip_labels.reason,
+                persist=False,
+            )
+            return attach_decision(copy.deepcopy(target_model), _skip_labels)
         # Compute Exponential Time-Decay Sample Weights across valid buffer
         time_weights = _compute_time_decay_weights(
             len(y), half_life_bars=self.time_decay_half_life_bars
@@ -621,7 +653,7 @@ class WalkForwardTrainer:
                 preds_all.extend(preds.cpu().numpy().tolist())
                 targets_all.extend(by.cpu().numpy().tolist())
                 probs_all.append(probs.cpu().numpy())
-        probs_arr = np.concatenate(probs_all, axis=0) if probs_all else np.empty((0, 4))
+        probs_arr = np.concatenate(probs_all, axis=0) if probs_all else np.empty((0, int(self.CANONICAL_NUM_CLASSES)))
         preds_arr = np.array(preds_all, dtype=np.int64)
         total_samples = len(preds_arr) if len(preds_arr) > 0 else 1
         class_counts = np.bincount(preds_arr, minlength=self.NUM_CLASSES)
@@ -746,7 +778,21 @@ class WalkForwardTrainer:
                 epochs_requested=epochs,
                 early_stopping_triggered=early_stopping_triggered,
             )
-            return working_model.to(torch.device("cpu"))
+            # BUG-236: zero improvement => persist=False (recorded reason).
+            # The baseline is returned UNTOUCHED and NO artifact is written.
+            _zero = should_persist_candidate(
+                trained=True,
+                zero_improvement=True,
+                metrics={
+                    "val_acc": round(val_acc, 3),
+                    "baseline_acc": round(baseline_acc, 3),
+                    "epochs_requested": epochs,
+                },
+            )
+            logger.info(
+                "Persist decision: REJECT", reason=_zero.reason, persist=False
+            )
+            return attach_decision(working_model.to(torch.device("cpu")), _zero)
         # Condition 3: new model must strictly beat the baseline validation loss.
         loss_improved = final_val_loss <= baseline_val_loss + 1e-4
         # Condition 4: early stopping must NOT have triggered, unless the new model is
@@ -799,7 +845,44 @@ class WalkForwardTrainer:
             )
             working_model.load_state_dict(baseline_state)
             ret_model = working_model
-        return ret_model.to(torch.device("cpu"))
+        # BUG-236 (MLFIX-T3): ONE explicit, auditable persist decision for
+        # every outcome. persist=False paths carry a machine-readable reason
+        # and the returned model carries NO authorization to be written:
+        # no checkpoint, no scaler, no metadata, no champion/registry update
+        # may follow from the decision below. (The only sanctioned rejected
+        # write is an explicit REJECTED registry row, which is the ENGINE's
+        # lifecycle-store concern — never a replacement claim.)
+        if not verify_health:
+            # Documented test/bypass path: health gate explicitly skipped, so
+            # health_ok mirrors that bypass (accept is trainer-authoritative).
+            _decision = should_persist_candidate(
+                trained=True,
+                zero_improvement=False,
+                quality_gate_passed=True,
+                health_ok=True,
+                accepted=True,
+                metrics={"accepted": True, "health_check": "BYPASSED"},
+            )
+        else:
+            _decision = should_persist_candidate(
+                trained=True,
+                zero_improvement=False,
+                quality_gate_passed=accepted,
+                health_ok=True,
+                accepted=accepted,
+                rejection_reasons=None if accepted else rejection_reasons,
+                metrics={
+                    "val_acc": round(val_acc, 3),
+                    "baseline_acc": round(baseline_acc, 3),
+                    "accuracy_delta": round(val_acc - baseline_acc, 3),
+                },
+            )
+        logger.info(
+            "Persist decision",
+            persist=_decision.persist,
+            reason=_decision.reason,
+        )
+        return attach_decision(ret_model.to(torch.device("cpu")), _decision)
 
     # =========================================================================
     # INTERNAL: VALIDATION & FILTERS
@@ -877,9 +960,8 @@ class WalkForwardTrainer:
     def _create_model(self, num_features: int) -> ScalpNet:
         """
         Constructs a ScalpNet for the given input width.
-        The head stays at `MODEL_HEAD_CLASSES` (4: NO_TRADE/BUY/SELL/WAIT) which is
-        what the deployed artifact and the live inference path expect; only the
-        INPUT width follows the feature schema.
+        MLFIX-T4: head is the CANONICAL 3-class contract (NO_TRADE/BUY/SELL).
+        Legacy 4-wide (WAIT) is compat-only. Fresh construction uses 3.
         """
         if num_features != self.num_features:
             logger.warning(
@@ -888,7 +970,7 @@ class WalkForwardTrainer:
                 schema=self.feature_schema.schema_id,
                 schema_dimension=self.num_features,
             )
-        model = ScalpNet(num_features=num_features, num_classes=self.MODEL_HEAD_CLASSES)
+        model = ScalpNet(num_features=num_features, num_classes=int(self.CANONICAL_NUM_CLASSES))
         model.to(self.device)
         return model
 
@@ -915,21 +997,22 @@ class WalkForwardTrainer:
         self, y: np.ndarray, is_online_fine_tune: bool = False
     ) -> torch.Tensor:
         # ---------------------------------------------------------------------
-        # TASK 2 FIX: weights MUST match the model's true output dimension.
-        # The deployed head is 4 units (NO_TRADE, BUY, SELL, WAIT) per the saved
-        # model.pt and the existing tests (ScalpNet(num_features=50, num_classes=4)).
-        # The previous code hard-coded np.zeros(4) / minlength=NUM_CLASSES(=3),
-        # which silently zeroed the WAIT class and could crash CrossEntropyLoss if
-        # the head ever diverged. We now derive the dimension from the model so the
-        # weight tensor always aligns with what the loss function expects.
+        # MLFIX-T4 MODEL CLASS CONTRACT: CANONICAL CLASSES = 3
+        # (NO_TRADE=0 / BUY=1 / SELL=2). The weights tensor MUST be 3-wide
+        # for every fresh build — derived from CANONICAL_NUM_CLASSES (the
+        # SSoT in architectures.py) and the label schema, NEVER from the
+        # legacy 4-wide serving head. The loss index set is {0,1,2}; writing
+        # a 4-wide weight when labels are 3-wide silently eats 22% of the
+        # softmax mass through an untrained WAIT logit (M4 incident).
+        # Legacy 4-wide artifacts are rejected at the compat gate and never
+        # reach this path without allow_legacy_4=True.
         # ---------------------------------------------------------------------
-        # TASK-04-70D-MODEL-VALIDATION (BUG-103): the loss weight tensor MUST
-        # match the MODEL HEAD width (MODEL_HEAD_CLASSES=4: NO_TRADE/BUY/SELL/
-        # WAIT-policy-bridge), not the label-contract width (NUM_CLASSES=3).
-        # The previous fallback derived num_classes from np.max(y)+1 (=3 for a
-        # 3-class label set) while the model emits 4 logits -> every walk-
-        # forward training run crashed at CrossEntropyLoss construction.
-        num_classes = int(self.MODEL_HEAD_CLASSES)
+        try:
+            from nexus_scalp.model_generation.architectures import CANONICAL_CLASS_COUNT
+            _canonical = int(CANONICAL_CLASS_COUNT)
+        except Exception:
+            _canonical = int(self.CANONICAL_NUM_CLASSES)
+        num_classes = _canonical
         if len(y):
             num_classes = max(num_classes, int(np.max(y) + 1))
         class_counts = np.bincount(y, minlength=num_classes)
@@ -937,10 +1020,9 @@ class WalkForwardTrainer:
         class_counts = class_counts[:num_classes]
         total_samples = len(y)
         if is_online_fine_tune and self.use_oversampling:
-            # BUGFIX: Oversampling already balanced the buffer.
-            # Use unit weights across the active model classes to prevent double-compounding
-            # penalty on the majority (NO_TRADE) class. The WAIT class is also unit-weighted
-            # so it is never silently suppressed.
+            # BUGFIX (MLFIX-T4): Oversampling already balanced the buffer.
+            # Use unit weights across the CANONICAL 3 classes. No WAIT class
+            # exists in the canonical contract — never allocate weight[3].
             weights = np.ones(num_classes, dtype=np.float32)
         else:
             # Class-Balanced Loss Weighting for full walk-forward training
@@ -954,9 +1036,9 @@ class WalkForwardTrainer:
                     cb_weights[idx] *= self.active_class_boost
             mean_w = cb_weights[:num_classes].mean() if num_classes > 0 else 0.0
             weights = (cb_weights / mean_w if mean_w > 0 else cb_weights).astype(np.float32)
-        # Runtime assertion: weight tensor dimension must equal the model's class count.
-        # (Spec mandates a hard check so a dimension regression fails fast instead of
-        # corrupting training.)
+        # Runtime assertion: weight tensor dimension must equal the CANONICAL class count (3).
+        # Any 4-wide weight writing is a contract violation.
+        # Never silently alias loss indices to a legacy dimension.
         assert len(weights) == num_classes, (
             f"Invalid class weight dimension: {len(weights)} != {num_classes}"
         )
@@ -1270,8 +1352,14 @@ class WalkForwardTrainer:
         canonical_cols = self._canonical_feature_columns(feature_cols)
         payload = {
             "num_features": self.num_features,
-            "num_classes": self.NUM_CLASSES,
-            "model_head_classes": self.MODEL_HEAD_CLASSES,
+            # MLFIX-T4 MODEL CLASS CONTRACT SSoT (PHI):
+            # meta.num_classes and meta.model_head_classes are BOTH the
+            # CANONICAL class count (3). They are LOUD rejection handles:
+            # any artifact loader that finds head != meta.num_classes must
+            # FAIL (never silently reshape). Legacy 4-wide artifacts retain
+            # their own meta (4); this fresh meta declares 3.
+            "num_classes": int(self.CANONICAL_NUM_CLASSES),
+            "model_head_classes": int(self.CANONICAL_NUM_CLASSES),
             "feature_schema_id": self.feature_schema.schema_id,
             "feature_schema_dimension": self.feature_schema.dimension,
             "feature_columns": feature_cols,
