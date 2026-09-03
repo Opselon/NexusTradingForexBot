@@ -5323,7 +5323,19 @@ class LiveEngine:
         torch.set_num_threads(1)
         try:
             with torch.inference_mode():
-                probs = bundle.model(x)
+                logits = bundle.model(x, return_logits=True)
+                # MODEL_CLASS_CONTRACT v1 (Fix #3): WAIT (index 3) is a legacy
+                # policy bridge — it is MASKED before softmax so it cannot
+                # steal probability mass from the trained 3 classes.  3-wide
+                # logits pass through unchanged; 4-wide logits have WAIT
+                # forced to -1e4 (≈0 prob) while keeping the on-disk 4-head
+                # geometry intact.  No shape change, no calibration drift on
+                # the trained slice.
+                from nexus_scalp.model_lifecycle.model_class_contract import (
+                    masked_softmax,
+                )
+
+                probs = masked_softmax(logits)
         finally:
             torch.set_num_threads(_prior_threads)
         _trace.mark(LatencyStage.T6_MODEL_DONE)

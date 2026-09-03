@@ -292,6 +292,51 @@ def gate_reproducibility(run_id: str, dataset_id: str, schema_id: str, seed: int
     )
 
 
+def gate_production_eligible(meta: dict[str, Any] | None) -> GateResult:
+    """GATE (MODEL_CLASS_CONTRACT v1 / Fix #6): smoke artifacts NEVER promote.
+
+    A smoke artifact (2 folds x 1 epoch on SMOKE_MIN_ROWS=3000 tails, see
+    three_model.train_variant smoke=True provenance + WalkForwardTrainer
+    smoke metadata) is a bounded drill, not production evidence.  Regardless
+    of width, schema, or any validity gate, a smoke artifact must be REJECTED
+    by promotion — production_eligible must be True.
+
+    Absence of the field is treated as NOT eligible (closed-world): legacy
+    artifacts without the field must be retrained through the current contract
+    to acquire it.  Only artifacts written by the current trainer carry the
+    flag honestly (WalkForwardTrainer._save_metadata sets it from its smoke
+    input).
+    """
+    meta = meta or {}
+    prod = meta.get("production_eligible")
+    smoke = bool(meta.get("smoke") is True)
+    blocked = smoke or (prod is False)
+    # When the field is absent and smoke is not proven, treat as ineligible
+    # unless smoke is explicitly absent and prod is True — honest provenance.
+    if "production_eligible" not in meta and not smoke:
+        # No field, not smoke: ambiguous legacy — mark INCONCLUSIVE (omitted)
+        # so verify_candidate's skipped-class treats it as insufficient evidence.
+        # For the gates runner (which treats non-pass as fail), return FAIL.
+        blocked = True
+    ok = not blocked
+    reason = ""
+    if blocked:
+        reason = (
+            f"smoke={smoke} production_eligible={prod!r} — smoke quorum must be rejected "
+            "(Fix #6: smoke artifacts are never production-eligible)"
+        )
+    logger.info(
+        "[MODEL] event=VALIDATION_GATE gate=PRODUCTION_ELIGIBLE status=%s",
+        "PASS" if ok else "FAIL",
+    )
+    return GateResult(
+        gate="GATE_PRODUCTION_ELIGIBLE",
+        passed=ok,
+        details={"production_eligible": prod, "smoke": smoke},
+        reason=reason or "ok",
+    )
+
+
 def check_model_collapse(
     predictions: list[int] | None = None,
     probabilities: list[list[float]] | None = None,
