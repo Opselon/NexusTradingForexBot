@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from nexus_scalp.adapters.mt5.diagnostics import (
+    RETCODE_LABELS,
     MT5CallDiagnostic,
     MT5ConnectionState,
     run_mt5_call,
@@ -76,6 +77,65 @@ else:
     mt5 = None
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# BUG-226: OFFICIAL MQL5 trade-server return-code map.
+#
+# The previous in-method map misdiagnosed 10016 as "TRADE_DISABLED /
+# FREEZE_LEVEL" (it is officially INVALID_STOPS) and shifted every code from
+# 10017 onward by two positions (10017 is TRADE_DISABLED, 10018 MARKET_CLOSED,
+# 10019 NO_MONEY, ... 10029 FROZEN). During the 2026-09-03 production incident
+# the bot triple-rejected a structurally-invalid SELL_LIMIT with 10016 while
+# logging it as a broker freeze — the wrong label sent forensics after the
+# wrong failure class.
+# Source: mql5.com/en/docs/constants/errorswarnings/enum_trade_return_codes
+# ---------------------------------------------------------------------------
+PENDING_RETCODE_MAP: dict[int, str] = {
+    10004: "REQUOTE - Price changed during order dispatch",
+    10006: "REJECTED - Broker rejected the execution request",
+    10007: "CANCELLED - Request cancelled by trader or expert",
+    10008: "PLACED - Order placed (pending accepted)",
+    10009: "DONE - Request completed successfully",
+    10010: "DONE_PARTIAL - Request partially completed",
+    10011: "ERROR - Request processing error",
+    10012: "TIMEOUT - Request timed out",
+    10013: "INVALID - Invalid request",
+    10014: "INVALID_VOLUME - Invalid volume in the request",
+    10015: "INVALID_PRICE - Invalid price in the request",
+    10016: "INVALID_STOPS - Invalid stops in the request",
+    10017: "TRADE_DISABLED - Trade is disabled",
+    10018: "MARKET_CLOSED - Financial market is currently closed",
+    10019: "NO_MONEY - Insufficient account free margin",
+    10020: "PRICE_CHANGED - Prices changed (re-quote)",
+    10021: "PRICE_OFF - There are no quotes to process the request",
+    10022: "INVALID_EXPIRATION - Invalid order expiration date",
+    10023: "ORDER_CHANGED - Order state changed",
+    10024: "TOO_MANY_REQUESTS - Too frequent requests",
+    10025: "UNKNOWN_SYMBOL - Unknown symbol",
+    10026: "ORDER_LOCKED - Order or position frozen",
+    10027: "LONG_ONLY - Only long positions allowed on symbol",
+    10028: "SHORT_ONLY - Only short positions allowed on symbol",
+    10029: "FROZEN - Order or position frozen by broker (close/modification banned)",
+    10030: "UNSUPPORTED_FILLING - Filling mode unsupported by broker",
+    10031: "NO_CONNECTION - No connection with trade server",
+}
+assert PENDING_RETCODE_MAP[10016].startswith("INVALID_STOPS")
+assert PENDING_RETCODE_MAP[10017].startswith("TRADE_DISABLED")
+assert PENDING_RETCODE_MAP[10018].startswith("MARKET_CLOSED")
+assert set(RETCODE_LABELS) <= set(PENDING_RETCODE_MAP), "RETCODE_LABELS ⊆ PENDING_RETCODE_MAP"
+for _code, _label in RETCODE_LABELS.items():
+    assert PENDING_RETCODE_MAP[_code].startswith(_label), (
+        f"retcode {_code}: adapter description {_label!r} diverges from diagnostics label"
+    )
+
+#: Cause classes for pending-order recovery (BUG-226).
+#: TRANSIENT   — broker-side state may resolve on its own; retry with backoff.
+#: REPAIRABLE  — the REQUEST ITSELF is structurally invalid for the current
+#:               market state; a validated geometry repair may make it legal.
+#: HARD_REJECT — anything else (including unknown codes and 10029 FROZEN):
+#:               never re-send, never repair; abort and surface the cause.
+_PENDING_CLASS_TRANSIENT: frozenset[int] = frozenset({10004, 10012, 10020, 10021, 10031})
+_PENDING_CLASS_REPAIRABLE: frozenset[int] = frozenset({10013, 10015, 10016})
 
 
 class DirectMT5Adapter(IMT5Port):
@@ -1247,36 +1307,120 @@ class DirectMT5Adapter(IMT5Port):
         import time
 
         max_retries = 3
+        retry_budget_s = 0.5  # total wall-clock budget for the whole loop
+        deadline = time.monotonic() + retry_budget_s
         last_retcode = 0
         last_err = ""
+        repair_used = False  # ONE validated repair per call (BUG-226)
+        original_price, original_sl, original_tp = price, stop_loss, take_profit
 
         for attempt in range(1, max_retries + 1):
-            req_price = price
+            # Fresh market view for THIS attempt: validate / repair / send all
+            # use the same snapshot so decisions are cause-consistent.
             tick = mt5.symbol_info_tick(symbol)
-            if tick:
-                sym_info = mt5.symbol_info(symbol)
-                min_gap = (
-                    (sym_info.trade_stops_level * sym_info.point)
-                    if sym_info and sym_info.trade_stops_level > 0
-                    else 0.10
-                )
-                min_gap = max(min_gap, 0.10)
+            sym_info = mt5.symbol_info(symbol)
 
-                if order_type == OrderType.BUY_LIMIT and req_price >= tick.ask:
-                    req_price = round(tick.ask - min_gap, 2)
-                elif order_type == OrderType.SELL_LIMIT and req_price <= tick.bid:
-                    req_price = round(tick.bid + min_gap, 2)
-                elif order_type == OrderType.BUY_STOP and req_price <= tick.ask:
-                    req_price = round(tick.ask + min_gap, 2)
-                elif order_type == OrderType.SELL_STOP and req_price >= tick.bid:
-                    req_price = round(tick.bid - min_gap, 2)
+            ok, reasons = self._validate_pending_request(
+                symbol=symbol,
+                order_type=order_type,
+                price=price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                volume=volume,
+                tick=tick,
+                sym_info=sym_info,
+            )
+
+            if not ok:
+                # Cause-aware recovery (BUG-226): never blind-resend a
+                # structurally-invalid request. Classify from the PRIOR
+                # retcode; the first pass is a pre-flight check and treats
+                # invalid geometry as REPAIRABLE once.
+                if attempt == 1:
+                    cls = "REPAIRABLE"
+                    prior = 0
+                else:
+                    cls = self._classify_pending_retcode(last_retcode)
+                    prior = last_retcode
+                if cls != "REPAIRABLE" or repair_used:
+                    self._log_recovery(
+                        symbol=symbol,
+                        order_type=order_type,
+                        retcode=prior,
+                        recovery_state="VALIDATION_FAILED",
+                        recovery_reason=",".join(reasons),
+                        attempt=attempt,
+                        elapsed_ms=int((time.monotonic() - deadline + retry_budget_s) * 1000),
+                        original_entry=original_price,
+                        original_sl=original_sl,
+                        original_tp=original_tp,
+                        tick=tick,
+                    )
+                    logger.error(
+                        "place_pending_order aborted pre-send for %s: structurally-invalid "
+                        "request will NOT be sent. Reasons: %s (prior retcode %s: %s)",
+                        symbol,
+                        ",".join(reasons),
+                        prior,
+                        (last_err or self._translate_retcode(prior)) if prior else "pre-flight",
+                    )
+                    return 0
+
+                # ONE validated repair, preserving original risk/reward distances.
+                repair_used = True
+                repaired, new_price, new_sl, new_tp = self._repair_pending_request(
+                    symbol=symbol,
+                    order_type=order_type,
+                    price=price,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    volume=volume,
+                    tick=tick,
+                    sym_info=sym_info,
+                )
+                if not repaired or (new_price, new_sl, new_tp) == (price, stop_loss, take_profit):
+                    self._log_recovery(
+                        symbol=symbol,
+                        order_type=order_type,
+                        retcode=prior,
+                        recovery_state="REPAIR_REJECTED",
+                        recovery_reason=",".join(reasons),
+                        attempt=attempt,
+                        elapsed_ms=int((time.monotonic() - deadline + retry_budget_s) * 1000),
+                        original_entry=original_price,
+                        original_sl=original_sl,
+                        original_tp=original_tp,
+                        tick=tick,
+                    )
+                    logger.error(
+                        "place_pending_order aborted pre-send for %s: validated repair "
+                        "impossible without changing risk/reward geometry. Reasons: %s",
+                        symbol,
+                        ",".join(reasons),
+                    )
+                    return 0
+
+                self._log_recovery(
+                    symbol=symbol,
+                    order_type=order_type,
+                    retcode=prior,
+                    recovery_state="REPAIRED",
+                    recovery_reason=",".join(reasons),
+                    attempt=attempt,
+                    elapsed_ms=int((time.monotonic() - deadline + retry_budget_s) * 1000),
+                    original_entry=original_price,
+                    original_sl=original_sl,
+                    original_tp=original_tp,
+                    tick=tick,
+                )
+                price, stop_loss, take_profit = new_price, new_sl, new_tp
 
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,
                 "symbol": symbol,
                 "volume": volume,
                 "type": mt5_order_type,
-                "price": req_price,
+                "price": price,
                 "sl": stop_loss,
                 "tp": take_profit,
                 "magic": 888101,
@@ -1296,6 +1440,32 @@ class DirectMT5Adapter(IMT5Port):
 
             last_retcode = result.retcode if result else mt5.last_error()
             last_err = self._translate_retcode(last_retcode)
+
+            # CAUSE-AWARE RECOVERY: classify the failure. HARD_REJECT aborts
+            # immediately — a structurally-invalid request is never re-sent.
+            cls = self._classify_pending_retcode(last_retcode)
+            if cls == "HARD_REJECT":
+                self._log_recovery(
+                    symbol=symbol,
+                    order_type=order_type,
+                    retcode=last_retcode,
+                    recovery_state="HARD_ABORT",
+                    recovery_reason=last_err,
+                    attempt=attempt,
+                    elapsed_ms=int((time.monotonic() - deadline + retry_budget_s) * 1000),
+                    original_entry=original_price,
+                    original_sl=original_sl,
+                    original_tp=original_tp,
+                    tick=mt5.symbol_info_tick(symbol),
+                )
+                logger.error(
+                    "place_pending_order HARD-abort for %s: retcode %s (%s) is not "
+                    "retryable — no further sends.",
+                    symbol,
+                    last_retcode,
+                    last_err,
+                )
+                return 0
 
             # IDEMPOTENCY GUARD: before retrying, verify whether an equivalent
             # pending order already exists on the broker. The previous send may
@@ -1328,17 +1498,57 @@ class DirectMT5Adapter(IMT5Port):
                 if t_info is None or not t_info.connected:
                     mt5.initialize()  # Fast re-handshake with local Win32 IPC process
 
-            if attempt < max_retries:
-                logger.warning(
-                    "Fast-Act Pending Order Retry %s/%s for %s. Retcode: %s (%s). Retrying in 25ms...",
-                    attempt,
-                    max_retries,
-                    symbol,
-                    last_retcode,
-                    last_err,
+            # Budget + backoff gate for TRANSIENT/REPAIRABLE classes.
+            elapsed = time.monotonic()
+            if attempt >= max_retries or elapsed >= deadline:
+                self._log_recovery(
+                    symbol=symbol,
+                    order_type=order_type,
+                    retcode=last_retcode,
+                    recovery_state=("TRANSIENT_RETRY" if cls == "TRANSIENT" else "REPAIRED"),
+                    recovery_reason=last_err,
+                    attempt=attempt,
+                    elapsed_ms=int((elapsed - deadline + retry_budget_s) * 1000),
+                    original_entry=original_price,
+                    original_sl=original_sl,
+                    original_tp=original_tp,
+                    tick=mt5.symbol_info_tick(symbol),
                 )
-                time.sleep(0.025)
+                break
 
+            backoff_s = 0.025 if attempt == 1 else 0.05
+            logger.warning(
+                "[PENDING_RECOVERY] symbol=%s order_type=%s retcode=%s retcode_description=%s "
+                "recovery_state=%s recovery_reason=%s attempt=%s elapsed_ms=%s "
+                "original_entry=%s original_sl=%s original_tp=%s — retrying in %sms",
+                symbol,
+                order_type.value if isinstance(order_type, OrderType) else order_type,
+                last_retcode,
+                last_err,
+                "TRANSIENT_RETRY" if cls == "TRANSIENT" else "REPAIR_PENDING",
+                last_err,
+                attempt,
+                int((time.monotonic() - deadline + retry_budget_s) * 1000),
+                original_price,
+                original_sl,
+                original_tp,
+                int(backoff_s * 1000),
+            )
+            time.sleep(backoff_s)
+
+        self._log_recovery(
+            symbol=symbol,
+            order_type=order_type,
+            retcode=last_retcode,
+            recovery_state="TRANSIENT_RETRY",
+            recovery_reason="retry budget or attempt cap exhausted",
+            attempt=max_retries,
+            elapsed_ms=int((time.monotonic() - deadline + retry_budget_s) * 1000),
+            original_entry=original_price,
+            original_sl=original_sl,
+            original_tp=original_tp,
+            tick=mt5.symbol_info_tick(symbol),
+        )
         logger.error(
             "place_pending_order failed after %s fast-act retries. Retcode: %s (%s)",
             max_retries,
@@ -1492,20 +1702,257 @@ class DirectMT5Adapter(IMT5Port):
         return mt5.ORDER_FILLING_RETURN
 
     def _translate_retcode(self, retcode: int) -> str:
-        retcode_map = {
-            10004: "REQUOTE - Price changed during order dispatch",
-            10006: "REJECTED - Broker rejected the execution request",
-            10013: "INVALID_STOPS - Stop Loss or Take Profit is too close to current price",
-            10014: "INVALID_VOLUME - Requested lot volume is invalid or exceeds broker limits",
-            10015: "INVALID_PRICE - Invalid entry price specified for order type",
-            10016: "TRADE_DISABLED / FREEZE_LEVEL - Order modification frozen by broker",
-            10018: "MARKET_CLOSED - Financial market is currently closed",
-            10019: "NO_MONEY - Insufficient account free margin for requested lot volume",
-            10021: "NO_CHANGES - Order SL/TP modification is identical to existing state",
-            10030: "UNSUPPORTED_FILLING - Filling mode unsupported by broker",
-            10031: "NO_CONNECTION - No connection with trade server",
-        }
-        return retcode_map.get(retcode, f"UNKNOWN_MT5_RETCODE ({retcode})")
+        return PENDING_RETCODE_MAP.get(retcode, f"UNKNOWN_MT5_RETCODE ({retcode})")
+
+    def _classify_pending_retcode(self, retcode: int) -> str:
+        """Cause class for a failed pending-order retcode (BUG-226).
+
+        TRANSIENT   -> broker state may resolve itself; retry with backoff.
+        REPAIRABLE  -> request structurally invalid; ONE validated repair.
+        HARD_REJECT -> never re-send (includes unknown codes and 10029 FROZEN).
+        """
+        if retcode in _PENDING_CLASS_TRANSIENT:
+            return "TRANSIENT"
+        if retcode in _PENDING_CLASS_REPAIRABLE:
+            return "REPAIRABLE"
+        return "HARD_REJECT"
+
+    def _validate_pending_request(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+        volume: float,
+        tick: Any = None,
+        sym_info: Any = None,
+    ) -> tuple[bool, list[str]]:
+        """Pre-dispatch structural validation of a pending request (BUG-226).
+
+        Validates, against the CURRENT broker tick and symbol constraints:
+        volume bounds/step, price tick-size alignment, entry side relative to
+        the market, stops_level minimum distance, freeze_level distance, and
+        SL/TP geometry relative to the entry. Returns (ok, reasons).
+
+        ``tick``/``sym_info`` default to a fresh ``mt5.symbol_info_tick`` /
+        ``mt5.symbol_info`` fetch; the retry loop passes its already-fetched
+        snapshot to guarantee validate/repair/send use the SAME market view.
+        """
+        if sym_info is None:
+            sym_info = mt5.symbol_info(symbol) if mt5 is not None else None
+        if tick is None:
+            tick = mt5.symbol_info_tick(symbol) if mt5 is not None else None
+        if sym_info is None:
+            return False, ["no_symbol_info"]
+        if tick is None:
+            return False, ["no_tick"]
+
+        reasons: list[str] = []
+        point = float(sym_info.point)
+        stops_level = float(getattr(sym_info, "trade_stops_level", 0) or 0)
+        freeze_level = float(getattr(sym_info, "trade_freeze_level", 0) or 0)
+
+        # --- volume ------------------------------------------------------
+        vol_min = float(getattr(sym_info, "volume_min", 0.0) or 0.0)
+        vol_max = float(getattr(sym_info, "volume_max", 0.0) or 0.0)
+        vol_step = float(getattr(sym_info, "volume_step", 0.01) or 0.01)
+        if volume < vol_min - 1e-9:
+            reasons.append("volume_below_min")
+        if volume > vol_max + 1e-9:
+            reasons.append("volume_above_max")
+        if vol_step > 0:
+            steps = round(volume / vol_step)
+            if abs(volume - steps * vol_step) > 1e-9:
+                reasons.append("volume_not_multiple_of_step")
+
+        # --- market reference + min gaps ---------------------------------
+        spread = float(tick.ask) - float(tick.bid)
+        min_gap = max(stops_level * point, 0.0)
+        if stops_level == 0:
+            min_gap = max(min_gap, spread)
+
+        is_buy_side = order_type in (OrderType.BUY_LIMIT, OrderType.BUY_STOP)
+        is_sell_side = order_type in (OrderType.SELL_LIMIT, OrderType.SELL_STOP)
+        if not (is_buy_side or is_sell_side):
+            reasons.append("not_a_pending_type")
+            return False, reasons
+
+        # --- entry side ---------------------------------------------------
+        market_ref = float(tick.ask) if is_buy_side else float(tick.bid)
+        if is_buy_side and price >= float(tick.ask):
+            reasons.append("price_not_below_ask")
+        if is_sell_side and price <= float(tick.bid):
+            reasons.append("price_not_above_bid")
+        if abs(price - market_ref) < min_gap - 1e-9:
+            reasons.append("entry_inside_stops_level")
+
+        # --- tick-size alignment ------------------------------------------
+        tick_size = float(getattr(sym_info, "trade_tick_size", 0) or 0) or point
+        if tick_size > 0:
+            steps = round(price / tick_size)
+            if abs(price - steps * tick_size) > 1e-9:
+                reasons.append("price_not_tick_aligned")
+
+        # --- SL/TP geometry ------------------------------------------------
+        min_stop_dist = max(stops_level * point, 0.10)
+        if is_sell_side:
+            if stop_loss > 0 and stop_loss <= price + min_stop_dist - 1e-9:
+                reasons.append("sl_not_above_entry")
+            if take_profit > 0 and take_profit >= price - min_stop_dist + 1e-9:
+                reasons.append("tp_not_below_entry")
+        else:
+            if stop_loss > 0 and stop_loss >= price - min_stop_dist + 1e-9:
+                reasons.append("sl_not_below_entry")
+            if take_profit > 0 and take_profit <= price + min_stop_dist - 1e-9:
+                reasons.append("tp_not_above_entry")
+
+        # --- freeze level ---------------------------------------------------
+        if freeze_level > 0:
+            if abs(price - market_ref) <= freeze_level * point + 1e-9:
+                reasons.append("entry_inside_freeze_level")
+            if (
+                is_sell_side
+                and stop_loss > 0
+                and abs(stop_loss - float(tick.bid)) <= (freeze_level * point + 1e-9)
+            ):
+                reasons.append("sl_inside_freeze_level")
+            if (
+                not is_sell_side
+                and stop_loss > 0
+                and abs(stop_loss - float(tick.ask)) <= (freeze_level * point + 1e-9)
+            ):
+                reasons.append("sl_inside_freeze_level")
+
+        return (len(reasons) == 0, reasons)
+
+    def _repair_pending_request(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+        volume: float,
+        tick: Any,
+        sym_info: Any,
+    ) -> tuple[bool, float, float, float]:
+        """Single order-preserving geometry repair for a pending request (BUG-226).
+
+        Aligns the entry to the tick size, pushes it to the legal side of the
+        market with the required minimum gap, then re-derives SL/TP from the
+        NEW entry using the ORIGINAL absolute risk (|entry-sl|) and reward
+        (|tp-entry|) distances — preserving the original risk/reward ratio.
+        Refuses (ok=False) when the original geometry is itself inconsistent
+        (SL/TP on wrong sides of the entry) or the repair would invert it.
+        """
+        if tick is None or sym_info is None:
+            return False, price, stop_loss, take_profit
+
+        point = float(sym_info.point)
+        stops_level = float(getattr(sym_info, "trade_stops_level", 0) or 0)
+        spread = float(tick.ask) - float(tick.bid)
+        min_gap = max(stops_level * point, spread)
+        min_gap = max(min_gap, 0.10)
+        tick_size = float(getattr(sym_info, "trade_tick_size", 0) or 0) or point
+        digits = int(getattr(sym_info, "digits", 2))
+
+        # Original absolute risk/reward distances (require > 0).
+        risk_dist = abs(price - stop_loss) if stop_loss > 0 else 0.0
+        reward_dist = abs(take_profit - price) if take_profit > 0 else 0.0
+
+        is_sell = order_type in (OrderType.SELL_LIMIT, OrderType.SELL_STOP)
+
+        # Original stops must sit on their correct sides of the entry; a
+        # flipped SL/TP cannot be repaired without silently inverting risk.
+        if stop_loss > 0:
+            if is_sell and stop_loss <= price:
+                return False, price, stop_loss, take_profit
+            if not is_sell and stop_loss >= price:
+                return False, price, stop_loss, take_profit
+        if take_profit > 0:
+            if is_sell and take_profit >= price:
+                return False, price, stop_loss, take_profit
+            if not is_sell and take_profit <= price:
+                return False, price, stop_loss, take_profit
+
+        # 1) align entry to tick size, then 2) push to the legal side.
+        new_price = round(round(price / tick_size) * tick_size, digits)
+        if is_sell:
+            if new_price <= float(tick.bid):
+                new_price = float(tick.bid) + min_gap
+        elif new_price >= float(tick.ask):
+            new_price = float(tick.ask) - min_gap
+        new_price = round(round(new_price / tick_size) * tick_size, digits)
+
+        # Guard: pushing may have flipped the side again via rounding.
+        if is_sell and new_price <= float(tick.bid):
+            return False, price, stop_loss, take_profit
+        if not is_sell and new_price >= float(tick.ask):
+            return False, price, stop_loss, take_profit
+
+        # 3) re-derive stops from the NEW entry with ORIGINAL distances,
+        #    re-aligned to tick size. Entry moved DOWN for sells (only
+        #    direction repairs move it) => risk shrinks and reward grows
+        #    symmetrically; both stay positive, ratio preserved.
+        new_sl = stop_loss
+        new_tp = take_profit
+        if stop_loss > 0:
+            raw_sl = new_price + risk_dist if is_sell else new_price - risk_dist
+            new_sl = round(round(raw_sl / tick_size) * tick_size, digits)
+        if take_profit > 0:
+            raw_tp = new_price - reward_dist if is_sell else new_price + reward_dist
+            new_tp = round(round(raw_tp / tick_size) * tick_size, digits)
+
+        # Post-conditions: correct sides and minimum gaps from the new entry.
+        min_stop_dist = max(stops_level * point, 0.10)
+        if stop_loss > 0:
+            if is_sell and new_sl <= new_price + min_stop_dist:
+                return False, price, stop_loss, take_profit
+            if not is_sell and new_sl >= new_price - min_stop_dist:
+                return False, price, stop_loss, take_profit
+        if take_profit > 0:
+            if is_sell and new_tp >= new_price - min_stop_dist:
+                return False, price, stop_loss, take_profit
+            if not is_sell and new_tp <= new_price + min_stop_dist:
+                return False, price, stop_loss, take_profit
+
+        return True, new_price, new_sl, new_tp
+
+    def _log_recovery(
+        self,
+        *,
+        symbol: str,
+        order_type: OrderType,
+        retcode: int,
+        recovery_state: str,
+        recovery_reason: str,
+        attempt: int,
+        elapsed_ms: int,
+        original_entry: float,
+        original_sl: float,
+        original_tp: float,
+        tick: Any,
+    ) -> None:
+        """Single structured recovery observability record (BUG-226)."""
+        logger.warning(
+            "[PENDING_RECOVERY] symbol=%s order_type=%s retcode=%s retcode_description=%s "
+            "recovery_state=%s recovery_reason=%s attempt=%s elapsed_ms=%s "
+            "original_entry=%s original_sl=%s original_tp=%s current_bid=%s current_ask=%s",
+            symbol,
+            order_type.value if isinstance(order_type, OrderType) else order_type,
+            retcode,
+            PENDING_RETCODE_MAP.get(int(retcode), f"UNKNOWN_MT5_RETCODE ({retcode})"),
+            recovery_state,
+            recovery_reason,
+            attempt,
+            elapsed_ms,
+            original_entry,
+            original_sl,
+            original_tp,
+            float(tick.bid) if tick is not None else None,
+            float(tick.ask) if tick is not None else None,
+        )
 
     def _assert_connected(self) -> None:
         if not self._connected or not HAS_NATIVE_MT5 or mt5 is None:
