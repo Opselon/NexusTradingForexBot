@@ -95,8 +95,12 @@ def main(argv: list[str] | None = None) -> int:
         import subprocess
 
         git_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=REPO
-        ).stdout.strip()
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=REPO,
+            check=False,
+        ).stdout.strip() or "UNKNOWN"
     except Exception:
         pass
 
@@ -190,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     feat_cols = [f"feat_{i}" for i in range(70)]
     log.write("[PILOT] training start (canonical trainer, isolated output)\n")
     t_train = time.perf_counter()
-    model = trainer.train_and_validate(pilot, feat_cols)
+    trainer.train_and_validate(pilot, feat_cols)
     train_sec = time.perf_counter() - t_train
     log.write(f"[PILOT] training finished in {train_sec:.1f}s\n")
 
