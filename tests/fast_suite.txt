@@ -1,0 +1,43 @@
+# ============================================================================
+# tests/fast_suite.txt — PASS2 GATE SPLIT (fast tier)
+# Hermes-DevOps, 2026-09-03. Target: < 60s wall on dev box (single proc).
+#
+# Selection criteria (from agent1_raw.json profiling, 277 files / 3809 tests):
+#   - pure-logic / unit-level only: NO sqlite/db fixtures, NO torch,
+#     NO tmp_path lifecycle sweeps, NO sleeps, NO subprocess CLIs.
+#   - smallest LOC-per-test files first; every file verified CLEAN against
+#     a sqlite|tmp_path|torch|create_engine|sessionmaker source scan.
+#   - deliberately EXCLUDES everything that stays in critical_suite.txt
+#     (P1 safety: risk/accounting/model contracts) — fast tier is additive
+#     pre-push smoke, not a replacement.
+# Run: pytest $(grep -vE '^\s*#|^\s*$' tests/fast_suite.txt | tr '\n' ' ') -q
+# ============================================================================
+tests/unit/test_accounting_normalize.py
+tests/unit/test_factory_score_parse_bug130.py
+tests/unit/news/test_news_source_factory.py
+tests/unit/test_p2b_console_ring.py
+tests/unit/test_bug232_launcher_mode_persistence.py
+tests/unit/test_liveengine_init_order_bug130.py
+tests/unit/test_bug222_esc_sinks.py
+tests/unit/test_cli_pro_ux.py
+tests/unit/test_bug197_news_count_bounds.py
+tests/unit/test_shadow70_news_family.py
+tests/unit/test_three_model_pipeline.py
+tests/unit/test_news_pro_auto_console.py
+tests/unit/test_s6_hold_score_ownership_golden.py
+tests/unit/test_domain_models.py
+tests/unit/test_s6_telemetry_throttle_golden.py
+tests/unit/test_accounting_retention.py
+tests/ci/test_classify_changes.py
+tests/unit/news/test_pro_auto.py
+tests/unit/news/ingest/test_deduplicator.py
+tests/unit/test_time_machine.py
+tests/unit/test_ai_attribution.py
+tests/unit/test_s6_tickets_cache_golden.py
+tests/unit/test_spatial_layout.py
+tests/unit/test_market_calendar_bug134.py
+tests/unit/test_perf02_account_refresh_throttle.py
+tests/unit/test_survival_drawdown_runtime_bug132.py
+tests/unit/test_command_center_adversarial.py
+tests/unit/test_state_contradiction_forensics.py
+tests/unit/test_mt5_history_reconstruction.py

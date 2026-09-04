@@ -111,6 +111,14 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Cache dependency intelligence graph
+        uses: actions/cache@v4
+        with:
+          path: artifacts/dependency_intelligence/cache.json
+          key: dep-graph-v1-${{ hashFiles('src/nexus_scalp/**/*.py') }}
+          restore-keys: |
+            dep-graph-v1-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel

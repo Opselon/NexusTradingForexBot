@@ -1,0 +1,56 @@
+# ============================================================================
+# tests/slow_suite.txt — PASS2 GATE SPLIT (slow tier)
+# Hermes-DevOps, 2026-09-03. Nightly / pre-release tier. NOT in the <3min
+# pre-push critical gate.
+#
+# 17 files demoted from critical_suite.txt (231.83s → est. ~100-115s).
+# Estimated savings from Pass-1 per-test durations (crit_after_pass1.txt):
+#
+#   ~111.7s  test_model_benchmark_phase13b.py   (torch benchmark battery:
+#                                             64.8s file + 5 more 12-17s tests)
+#   ~108.2s  test_70d_bug106_incremental_phase19.py (46.7+19.9+14.6+14.0+12.9s
+#                                             20k-benchmark / parity builds)
+#   ~104.7s  test_accounting_api.py             (integration; 9-10s TestClient
+#                                             setups x ~12, serial DB fixture)
+#    ~93.4s  test_cli_end_to_end.py             (subprocess CLI E2E; 5 tests
+#                                             9-23s each, serialized spawns)
+#    ~26.0s  test_accounting_hedging.py         (13.9+12.1s audit-writer
+#                                             regression paths)
+#    ~24.7s  test_model_generation_phase13.py   (9-8s artifact/hash validation)
+#    ~15.6s  test_accounting_core.py            (7.9+7.7s worker restart/dedup)
+#    ~14.2s  test_70d_model_validation_task4.py (14.25s deterministic training
+#                                             smoke; rest skips on artifacts)
+#     ~9.0s  test_trade_lifecycle_task3.py      (9.0s TL04 close-path)
+#    ~13.4s  test_experience_intelligence.py    (1700-LOC learning-loop battery)
+#    ~12.6s  test_liquidity_runtime_integration_phase18.py (1202-LOC runtime)
+#    ~12.2s  test_model_governance_phase16.py   (1665-LOC governance)
+#    ~11.4s  test_shadow70_runtime.py           (1082-LOC shadow runtime)
+#    ~10.4s  test_shadow_phase11.py             (shadow promotion pipeline)
+#     ~9.8s  test_research_phase09b.py          (991-LOC research battery)
+#     ~9.4s  test_model_lifecycle_phase10.py    (phase10 lifecycle incl. torch)
+#     ~9.2s  test_performance_report_intelligence.py (report intelligence)
+#
+# Sum of listed call-time ≈ 596s serial → -xdist workers ≈ the ~120s shaved
+# off the critical wall clock. All files remain P2/P3-owned: they still run
+# in CI nightly and before releases.
+#
+# Run:
+#   .venv/Scripts/python.exe -m pytest $(grep -vE '^\s*#|^\s*$' tests/slow_suite.txt | tr '\n' ' ') -n auto --dist loadgroup -q
+# ============================================================================
+tests/unit/test_model_benchmark_phase13b.py
+tests/slow/test_70d_incremental.py  # heavy: benchmark + extended parity (smoke stays in critical)
+tests/integration/test_accounting_api.py
+tests/unit/test_cli_end_to_end.py
+tests/unit/test_accounting_hedging.py
+tests/unit/test_model_generation_phase13.py
+tests/unit/test_accounting_core.py
+tests/unit/test_70d_model_validation_task4.py
+tests/unit/test_trade_lifecycle_task3.py
+tests/unit/test_experience_intelligence.py
+tests/unit/test_liquidity_runtime_integration_phase18.py
+tests/unit/test_model_governance_phase16.py
+tests/unit/test_shadow70_runtime.py
+tests/unit/test_shadow_phase11.py
+tests/unit/test_research_phase09b.py
+tests/unit/test_model_lifecycle_phase10.py
+tests/unit/test_performance_report_intelligence.py
