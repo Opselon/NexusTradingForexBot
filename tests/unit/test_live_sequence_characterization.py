@@ -59,7 +59,9 @@ class TestLiveSequenceContract:
 
     def test_rebind_from_meta(self):
         st = LiveSequenceService.defaults()
-        LiveSequenceService.rebind_from_meta(st, {"temporal_contract": {"seq_len": 16, "max_gap_us": 999}})
+        LiveSequenceService.rebind_from_meta(
+            st, {"temporal_contract": {"seq_len": 16, "max_gap_us": 999}}
+        )
         assert st.seq_len == 16
         assert st.max_gap_us == 999
 

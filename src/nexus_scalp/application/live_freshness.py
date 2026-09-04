@@ -50,9 +50,7 @@ class LiveFreshnessService:
     # --- pure stage classifier (verbatim from LiveEngine) -----------------
 
     @staticmethod
-    def stage_freshness(
-        stamp: datetime | None, max_age_sec: float
-    ) -> tuple[str, float | None]:
+    def stage_freshness(stamp: datetime | None, max_age_sec: float) -> tuple[str, float | None]:
         """Return (state, age_ms) for one stage given its last-update stamp."""
         if stamp is None:
             return "UNKNOWN", None
@@ -160,9 +158,7 @@ class LiveFreshnessService:
                 result["error"] = "adapter.get_tick returned None"
                 return result
             completed_bars = aggregator.get_completed_bars()
-            fv = feature_engine.compute_from_bars(
-                completed_bars=completed_bars, current_tick=tick
-            )
+            fv = feature_engine.compute_from_bars(completed_bars=completed_bars, current_tick=tick)
             mkt_hash = hashlib.sha1(
                 f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}".encode()
             ).hexdigest()[:16]

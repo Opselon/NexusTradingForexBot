@@ -32,7 +32,9 @@ class LiveSequenceService:
         )
 
     @staticmethod
-    def rebind_from_meta(state: LiveSequenceState, meta: dict | None, bundle_path: str | None = None) -> None:
+    def rebind_from_meta(
+        state: LiveSequenceState, meta: dict | None, bundle_path: str | None = None
+    ) -> None:
         try:
             from nexus_scalp.model_generation.temporal_contract import (
                 CANONICAL_MAX_GAP_US,
@@ -63,7 +65,7 @@ class LiveSequenceService:
             state.seq_len = int(seq_len)
             try:
                 old = list(state.buffer)
-                state.buffer = deque(old[-int(seq_len):], maxlen=max(64, int(seq_len)))
+                state.buffer = deque(old[-int(seq_len) :], maxlen=max(64, int(seq_len)))
             except Exception:
                 pass
         else:
@@ -71,7 +73,9 @@ class LiveSequenceService:
         state.max_gap_us = int(max_gap) if isinstance(max_gap, int) else int(CANONICAL_MAX_GAP_US)
 
     @staticmethod
-    def maybe_build_sequence_tensor(state: LiveSequenceState, x_scaled_now: list[float], bar_ts: object = None) -> object | None:
+    def maybe_build_sequence_tensor(
+        state: LiveSequenceState, x_scaled_now: list[float], bar_ts: object = None
+    ) -> object | None:
         try:
             import torch as _torch
         except Exception:
