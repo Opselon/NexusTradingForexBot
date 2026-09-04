@@ -919,8 +919,17 @@ def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
         cols[f"feat_{i}"] = rng.normal(0, 1, n)
     df = pl.DataFrame(cols)
     feat_cols = [f"feat_{i}" for i in range(70)]
+    # Synthetic dataset → label_origin=UNKNOWN. The production guard (lineage:
+    # CLEAN_HISTORICAL without governance_override) would block it. This test
+    # exercises the *pipeline* path, not the production provenance path, so it
+    # opts in with governance_override=True (the guard still logs the override
+    # but does not crash; BUG-103 is the head-width crash being exercised here).
     tr = WalkForwardTrainer(
-        num_folds=3, feature_schema_id="scalp_v4", epochs_per_fold=1, purge_gap_bars=5
+        num_folds=3,
+        feature_schema_id="scalp_v4",
+        epochs_per_fold=1,
+        purge_gap_bars=5,
+        governance_override=True,
     )
     model = tr.train_and_validate(df, feat_cols)
     assert model.num_features == 70
