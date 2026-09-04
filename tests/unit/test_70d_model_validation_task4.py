@@ -954,15 +954,24 @@ def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
 def test_70d_model_32_default_save_path_not_live_champion() -> None:
     """BUG-104 regression: a bare WalkForwardTrainer() must NEVER default to
     the live Champion artifact path. Only an explicit operator-supplied path
-    may target it (LiveEngine passes it deliberately)."""
+    may target it (LiveEngine passes it deliberately).
+
+    P0-2026-09-04 UPDATE: the default is now an ISOLATED candidate path —
+    wf_candidate was retired after the 34x10 producer launched directly into
+    the champion bundle. The default must live under
+    artifacts/model_generation/models/ and never under the serving tree."""
     import inspect
 
     from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
     sig = inspect.signature(WalkForwardTrainer.__init__)
     default = sig.parameters["artifact_save_path"].default
+    default_norm = str(default).replace("\\", "/")
     assert str(default) != "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
-    assert "wf_candidate" in str(default)
+    assert "artifacts/models/scalp" not in default_norm, (
+        f"default save path must never resolve into the serving tree, got {default}"
+    )
+    assert "model_generation/models" in default_norm
 
 
 # ---------------------------------------------------------------------------
