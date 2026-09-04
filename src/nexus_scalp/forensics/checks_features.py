@@ -331,6 +331,42 @@ def check_model_semantic_health() -> CheckResult:
     )
 
 
+def check_model_behavioral_health() -> CheckResult:
+    """CHG-0057: behavioral anti-degenerate model-health gate (+ CHECK-MDL-02)."""
+    info = _champion_artifact_info()
+    if not info.get("found"):
+        return _unknown(
+            "CHECK-MDL-04", "no champion artifact to behavioral-check", info, "champion artifact"
+        )
+    try:
+        from nexus_scalp.model_lifecycle.integrity import BEHAVIORAL_HEALTH
+        from nexus_scalp.model_lifecycle.integrity import check_model_behavioral_health as probe
+
+        healthy, detail, metrics = probe(info["path"])
+    except Exception as e:
+        return _unknown(
+            "CHECK-MDL-04", f"behavioral probe unavailable ({e})", info, "torch + model"
+        )
+    observed = {**info, "detail": detail, **metrics}
+    if not healthy and detail.startswith("DEGENERATE:"):
+        return CheckResult(
+            "CHECK-MDL-04",
+            HealthStatus.CRITICAL,
+            evidence=f"champion behavioral health FAIL: {detail}",
+            observed=observed,
+            expected=f"logit_std >= {BEHAVIORAL_HEALTH['logit_std_min']}, max_prob >= {BEHAVIORAL_HEALTH['max_prob_floor']}, wait_mass <= {BEHAVIORAL_HEALTH['wait_mass_ceiling']}, sensitivity >= {BEHAVIORAL_HEALTH['sensitivity_floor']}",
+            detail="DEGENERATE_BEHAVIORAL_HEALTH",
+        )
+    if not healthy:
+        return _unknown("CHECK-MDL-04", detail, observed, "behavioral probe")
+    return _ok(
+        "CHECK-MDL-04",
+        f"champion behavioral health PASS ({detail})",
+        observed,
+        "behavioral thresholds met",
+    )
+
+
 def check_model_dimension_contract() -> CheckResult:
     """INV-70D-013/014: active schema dimension must equal artifact dimension.
 

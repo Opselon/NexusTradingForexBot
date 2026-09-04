@@ -136,6 +136,7 @@ class ForensicHealthEngine:
             "Model": [
                 C.check_model_artifact,
                 C.check_model_semantic_health,
+                C.check_model_behavioral_health,
                 C.check_model_dimension_contract,
             ],
             "Parity": [

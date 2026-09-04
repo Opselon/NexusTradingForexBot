@@ -36,6 +36,7 @@ from nexus_scalp.forensics.checks_features import (  # noqa: F401  # noqa: F401
     check_feature_schema_registry,
     check_liquidity_feature_health,
     check_model_artifact,
+    check_model_behavioral_health,
     check_model_dimension_contract,
     check_model_semantic_health,
     check_training_live_parity_canary,
