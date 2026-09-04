@@ -23,8 +23,8 @@
 | MODEL CAPACITY | **NOT the problem** | 331,492 params (70D) / 267,492 (alt count), 1.3 MB, dual-path ScalpNet v3 (causal TCN 3 layers + MHA 4 heads + ResNet MLP). Architecture sound. |
 | TRAINER | **PROBLEM (primary)** | Live artifact `a4b95406088ed618` (mtime 2026-09-03 20:44) traces to `train_variant('70d_liquidity', smoke=True)` -> 2 folds × 1 epoch over ~675 rows (BUG-141 recovery 454dbba5). 331k params cannot learn a 3-class policy in 2 epochs. |
 | CURRENT WEIGHTS | **DEGENERATE (epsilon-diverged)** | Tonight's independent probes (PINC): 20/31 tensors byte-identical to seed-42 fresh init; 16 tensors epsilon-drift (max 0.004 on input head, 0.16 on classifier bias). Logit std 0.06-0.10, KL(uniform)=0.012. |
-| DATASET | **PROBLEM (primary)** | Only `data/raw/XAUUSD_M1.csv`: 100,000 bars, 2026-05-01 -> 2026-08-17 (3.5 months, 78 gaps >1m, largest 53h). Triple-Barrier yields only 5,752 evaluated rows (BUY 1,599 / SELL 1,539 / NO_TRADE 2,614). Research sets largest 2,892 rows / 4 days. |
-| LABELS | **Sound but sparse** | Purged Triple-Barrier v3.6 (TP 1.1×ATR, SL 1.0×ATR, horizon 15, $0.35 friction, spread-aware) causal; stride-3 + MAE ⇒ only 5.75% evaluable. |
+| DATASET | **PROBLEM (primary)** | Only `data/raw/XAUUSD_M1.csv`: 100,000 bars, 2026-05-01 -> 2026-08-17 (3.5 months, 78 gaps >1m, largest 53h). Triple-Barrier yields only 5,752 evaluated rows (BUY 1,599 / SELL 1,539 / NO_TRADE 2,614) — **historical tail-era figure at stride 3 (§2)**. Research sets largest 2,892 rows / 4 days. **RECONCILED 2026-09-04:** authoritative full-history dataset is `ds_70d_clean_m1_20260904` — 99,946 rows / 26,947 eval (stride 2, purge 15 + embargo 15, sha `3ae687ea`, see §11.1) — not a contradiction, but tail vs full-history (§8 F5 stride 3→2 mitigation now realized). |
+| LABELS | **Sound but sparse** | Purged Triple-Barrier v3.6 (TP 1.1×ATR, SL 1.0×ATR, horizon 15, $0.35 friction, spread-aware) causal; stride-3 + MAE ⇒ only 5.75% evaluable. On the authoritative full-history dataset the same barriers at **stride 2** yield 26,947 eval rows (see §11.1; barriers identical, captured in `label_config_hash`). |
 | LEAKAGE | **No critical leak found** | Windowed builders, news `published_at <= t`, liquidity `t <= decision_at`, scaler fit on TRAIN per fold. Final production scaler on 100% is standard. |
 | TEMPORAL CONTEXT | **Architecture OK / usage BROKEN** | ScalpNet has 3D sequence path (TCN+attention) but live feeds single 2D vector `(1,70)` -> MLP path only; seq_len=1. Temporal receptive field = hand-crafted features (≤55 bars) only. |
 | FEATURE QUALITY | **Good but exploits HTF asymmetry** | 50D base causal; news 10D (12->10 mapping) usually zero in smoke build; liquidity 10D causality-gated. HTF feat41/42 are TRAIN-zero vs LIVE-3.0 (MLPWR-06-02). |
@@ -49,12 +49,15 @@
 - Both byte-identical to seed-42 fresh init (TRUE, `BYTE_EQUAL_TO_FRESH_INIT`), hash `0872ae0b85b3c74b`. Any boot serving these serves noise.
 
 ### Data inventory
+
+> **Historical sparsity note (tail-era, preserved).** When this doc was written on the tail=3000 smoke build, §1/§2 quoted **5,752 eval rows at stride 3** over the full 100k M1 span (the labeler's yield at that stride). That figure is historical and remains below for provenance. The authoritative post-fix dataset (§11.1) is `ds_70d_clean_m1_20260904` — 99,946 rows / 26,947 eval at stride 2, purge 15+15 (sha `3ae687ea`, verified on disk).
+
 | Source | Size | Range | Notes |
 |---|---|---|---|
 | `data/raw/XAUUSD_M1.csv` | 100,000 bars | 2026-05-01 17:15 -> 2026-08-17 19:24 UTC | 0 dup timestamps; 78 gaps >1m largest 53h; spread avg 8 pts p95 24 max 622 |
 | `data/raw/XAUUSD_M5/M15/H1/H4/D1` | present | same window | usable for HTF |
 | `artifacts/model_generation/datasets/*` | 66-2,942 rows | ≤5 days each | toy-scale; M1+scalp_v3 has 66 rows |
-| Labels over full M1 | 5,752 eval rows | -- | BUY 1,599 / SELL 1,539 / NO_TRADE 2,614 |
+| Labels over full M1 *(historical, stride 3)* | 5,752 eval rows | -- | BUY 1,599 / SELL 1,539 / NO_TRADE 2,614 | — tail-era sparsity (stride 3) preserved for provenance; see post-fix full-history addendum §11.1 |
 
 ### Tonight's canary snapshot (2026-09-03 ~21:30 local)
 - `70d_liquidity` (70): `(False, 'DIVERGES_AT:input_projection.weight')` -- epsilon-diverged, NOT trained quality.
@@ -235,7 +238,7 @@ Scalers: `70d_liquidity/model.scaler.npz` mtime 09-03 06:11 -- any retrain must 
 
 | Item | Status |
 |---|---|
-| F1 full-history dataset (t70d_f1_full_m1, 99,946 rows / 26,947 eval, stride2, parity 0) | **DONE** (commit ccb7765c) |
+| F1 full-history dataset (t70d_f1_full_m1, 99,946 rows / 26,947 eval, stride2, parity 0) | **DONE** (commit ccb7765c) — superseded by authoritative `ds_70d_clean_m1_20260904` (same counts, contract-clean; see §11.1) |
 | F2 sequence trainer (t70d_seq_v1 TCN+MHA L=32; t70d_seq_v2_tuned) | **DONE** (same windows 70/15/15; VAL 0.429/0.448, OOS 0.377/0.371) |
 | F2b 2D baseline same windows (t70d_2d_baseline_same_windows) | **DONE** (VAL 0.447, OOS 0.391, balAcc 0.367) |
 | F3 live sequence feed | DEFERRED (no OOS gain over 2D on this data; revisit after 1y retrain) |
@@ -257,6 +260,46 @@ Scalers: `70d_liquidity/model.scaler.npz` mtime 09-03 06:11 -- any retrain must 
 | 1-year M1 acquisition + news-aware retrain + liquidity ablation | PENDING (roadmap §9, highest leverage) |
 
 ---
+## 11.1 RECONCILED ADDENDUM — tail sparsity vs full-history dataset (2026-09-04)
+
+> **No contradiction:** the 5,752 figure and the 99,946 / 26,947 figures describe different scopes of the same M1 history.
+
+| Scope | Where quoted | Rows | Eval rows | Stride | Purge / Embargo | Dataset ID | sha256 (prefix) | Status |
+|---|---|---|---|---|---|---|---|---|
+| Full M1 span, historical labeler | §1 DATASET / §2 Data inventory / §8 F5 (tail-era) | 100,000 bars | **5,752** (BUY 1,599 / SELL 1,539 / NO_TRADE 2,614) | **3** | 15 / 15 | — (no artifact; smoke tail=3000) | — | **Historical — preserved** |
+| Full M1 span, post-fix full-history | §11 F1 (t70d_f1_full_m1, commit ccb7765c) | **99,946** | **26,947** (eval: NO_TRADE 14,898 / BUY 6,261 / SELL 5,788; total NO_TRADE 87,897 incl. non-eval; sha `ca237ec9…`) | **2** | 15 / 15 | `t70d_f1_full_m1` | `ca237ec913ba9cb5` | Superseded (parity-proven pilot) |
+| Full M1 span, authoritative post-fix | **This addendum** | **99,946** | **26,947** (BUY 6,261 / SELL 5,788 / NO_TRADE 14,898; see manifest `label_distribution`) | **2** | **15 / 15** | **`ds_70d_clean_m1_20260904`** | **`3ae687eaaa1f32a6`** (full `3ae687eaaa1f32a64c6d8acc1ab92d4ab9bceb0949d11cfe9e83ea852e3260fe`) | **Authoritative** |
+
+**Why the eval count jumps 5,752 → 26,947:** §8 F5’s RETRAIN-ONLY mitigation widens evaluable coverage by `no_trade_stride_bars 3→2` (documented deviation; barriers TP 1.1×ATR / SL 1.0×ATR / horizon 15 / $0.35 friction identical, captured in `label_config_hash`). Same bars, same barriers, denser sampling of the NO_TRADE class — not a data contradiction.
+
+**Authoritative manifest (verified on disk 2026-09-04):**
+
+```
+artifacts/model_generation/datasets/ds_70d_clean_m1_20260904/dataset_manifest.json
+  dataset_id: ds_70d_clean_m1_20260904
+  rows:       99,946  (train 69,962 / val 14,991 / test 14,993; chronological 70/15/15)
+  eval_rows:  26,947  (label_distribution: NO_TRADE 14,898 / BUY 6,261 / SELL 5,788)
+  temporal:   2026-05-01 18:09 UTC → 2026-08-17 19:24 UTC
+  purge:      purge_gap_bars 15, embargo_bars 15, labeler_embargo_bars 3
+  stride:     no_trade_stride_bars 2
+  lineage:    CLEAN_HISTORICAL (production_eligible true, governance_override false)
+  dataset_sha256: 3ae687eaaa1f32a64c6d8acc1ab92d4ab9bceb0949d11cfe9e83ea852e3260fe
+  feature_schema: scalp_v3 (hash 235b8fccc96b7e0e), label_schema triple_barrier_3class_v1
+  parquet sha256 == dataset_sha256 (verified: polars read 99,946 rows, 101 cols)
+  verification.json: all_gates_pass true (verify_70d_artifact, gap_safe L=32, label_integrity, lineage)
+```
+
+**Verify locally:**
+
+```bash
+cat artifacts/model_generation/datasets/ds_70d_clean_m1_20260904/dataset_manifest.json | python -m json.tool | head -80
+# or: .venv/Scripts/python.exe -c "import polars as pl; print(pl.read_parquet('artifacts/model_generation/datasets/ds_70d_clean_m1_20260904/dataset.parquet').height)"
+```
+
+**Reading guidance:** treat every pre-2026-09-04 mention of “5,752 eval rows” as the tail-era sparsity baseline that motivated §8 F5. Treat `ds_70d_clean_m1_20260904` (99,946 / 26,947) as the current authoritative full-history dataset for any retrain, audit, or F1 citation. `t70d_f1_full_m1` is the same row/eval count at the same stride/purge but is superseded by the contract-clean `ds_70d` artifact (BUG-234 HTF 4000, temporal L=32 gap-safe, 3-class, CLEAN_HISTORICAL).
+
+---
+
 ## 12. VERIFIED ML LEARNING-CHAIN MAP (do NOT re-investigate; from audited pass)
 
 - Outcomes: `execution/order_manager.py:6067` -> `experience/intelligence.py:608 record_trade_outcome` -> ledger `record_outcome` (idempotency key) -> research worker `_refresh_dataset` rebuilds from immutable ledger.
@@ -329,6 +372,7 @@ Pre-push gate: `beforePush.sh` / `beforePush.ps1` via `.venv/Scripts/python.exe 
 - 2026-09-03 ~22:00 +03:30 -- Principal Incident Investigator (PINC, adversarial lane): **CONSOLIDATED MLFix.md (this file) -- single continuable doc.** Merged MLFixing.md (381L) + MLFix.MD (129L) + tonight's independent forensic session (A-I probes, weight forensics, offline-vs-scaler, WAIT leakage, provenance chain, first-broken-state isolation). New evidence: `a4b95406088ed618` is epsilon-diverged fresh noise (20 tensors still byte-equal, logit std 0.06-0.10), not a trained champion; 500-random mean_max 0.283; WAIT 22% mass leak; HTF window asymmetry quantified; engine STOPPED so no new LIVE tick was captured (read-only session). Roadmap re-sequenced: HTF fix (P0) and behavioral gate (P0) are now explicit blockers before F5 retrain.
 - Evidence base: BUG-225/228/217/197B/190/185/141/183 ledger rows; commits `3f5f9db7`, `52615bf7`, `c576dfac`, `6b893f04`, `203f1873`, `11ea316`, `454dbba5`; MLPWR probe outputs (scratch/, re-executed tonight); PINC probes `scratch/ns_pinc_probe_r2.*` + `scratch/ns_pinc_exp2_offlive.py`.
 - 2026-09-04 03:05 +03:30 -- Nexus-Main (7-agent ROOT FIX sprint, wave 1 COMPLETE): 6 subagents executed Fixes #1-#10 in isolated worktrees, all merged to main. HTF parity (BUG-234, 783d3da1), temporal contract (temporal_contract.py L=32, gap=10min, 649a26b7), 3-class head SSoT (a9155c79 + model_class_contract.py), persist-decision API (BUG-236, 986a89df), behavioral health gate CHG-0057 (f4447536), lineage module (139b2325/3bf58800/c979e423), data/gap audit (44b230c7). Orchestrator reconciled cross-agent conflicts (4a48834a, 6c7bf637) and consolidated 9 new test files (72ac451f, 4479 test lines). CI mypy/ruff fixups: da4d0c12, cd6882bb, 591c6da5, 4b2c5e3c. Wave-2 (clean dataset regen + production retrain) unblocks when CI is green.
+- 2026-09-04 06:55 +03:30 -- reconciler (subagent-sa-0): **RECONCILED tail vs full-history sparsity.** Verified on disk `artifacts/model_generation/datasets/ds_70d_clean_m1_20260904/dataset_manifest.json` (dataset_id `ds_70d_clean_m1_20260904`, rows 99,946 / eval 26,947, dataset_sha256 `3ae687eaaa1f32a6…3ae687eaaa1f32a64c6d8acc1ab92d4ab9bceb0949d11cfe9e83ea852e3260fe`, purge 15+15, no_trade_stride_bars 2, feature_schema_hash `235b8fccc96b7e0e`, lineage CLEAN_HISTORICAL; parquet 99,946 rows verified via polars). Patched MLFix.md §1/§2/§11 to preserve the historical 5,752-eval tail-era table (stride 3, tail=3000 smoke) while marking it as historical and pointing to the authoritative full-history dataset; added §11.1 reconciled addendum (tail vs full-history table, manifest excerpt, verify commands, reading guidance). No new forensic report (artifacts/model_generation gap pre-existed; implementation failure absent). Edits own only MLFix.md.
 - 2026-09-03 ~23:20 +03:30 -- Nexus-Main (MASTER 70D program): **F1-F6 executed and pushed (commit `ccb7765c`).** F1 full-history 70D dataset built (t70d_f1_full_m1: 99,946 rows, stride2 -> 26,947 eval, fast-vs-slow parity 0 mismatches, sha 9ea84e40beb8ff17). F2/F2b sequence harness (TCNAttentionV1 L=32 + tuned) and 2D baseline trained on identical chronological 70/15/15 windows with train-only scaler + class weights + early stop: OOS balanced-accuracy 0.365-0.368 vs smoke 0.335, directional precision 0.240-0.245 (all still BELOW majority 57% => no edge on this data). F4 lossless full-frame polish candidate t70d_v1_full (sha c8c0b5b06d4c094d) registered as CANDIDATE; live champion NOT replaced (Gate 6 honestly FAIL). F6 gated report: docs/forensics/t70d_master_forensic_report_2026-09-03.md (A-K with confusion matrices, hashes, repro commands). Artifacts (gitignored): artifacts/model_generation/models/{t70d_seq_v1,t70d_seq_v2_tuned,t70d_2d_baseline_same_windows,t70d_full_retrain}/ + datasets/t70d_f1_full_m1/. Next P0 lanes unchanged: HTF window fix THEN 1-year data + 34-fold production retrain (MLFix section 9).
 
 
