@@ -342,6 +342,40 @@ Quality docs → [docs/engineering/quality.md](docs/engineering/quality.md)
 
 ---
 
+## ⭐ If Nexus was useful — a star is the best thank you
+
+<p align="center">
+  <sub>Helped you learn, research, or trade smarter — even a little?</sub><br>
+  <strong>One click · 2 seconds · fuels months of open research. We'd be truly grateful. 🙏</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Opselon/NexusTradingForexBot">
+    <img src="https://img.shields.io/github/stars/Opselon/NexusTradingForexBot?style=for-the-badge&logo=github&label=%E2%AD%90%20Star%20this%20repo&color=yellow" alt="Star this repo" />
+  </a>
+  <br>
+  <sub>If this project is usable or profitable for you, please consider starring — it helps others discover Nexus and motivates the next release.</sub>
+</p>
+
+> [!TIP]
+> **No sign-up, no cost, no catch — just a ⭐.** That one star tells GitHub this research matters, pushes Nexus to more traders and researchers, and is the kindest way to say *thank you* if Nexus delivered any value to you.
+
+## Star History
+
+<p align="center">
+<a href="https://www.star-history.com/?repos=opselon%2Fnexustradingforexbot&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&legend=top-left" />
+ </picture>
+</a>
+</p>
+
+<p align="center"><sub>Every ⭐ you gave made this curve — thank you for being part of it.</sub></p>
+
+---
+
 ## 📚 Documentation
 
 **Site:** <https://opselon.github.io/NexusTradingForexBot/>
@@ -399,40 +433,6 @@ pics/              Screenshots
 1. Read the [contribution guide](docs/contributing/contribution-guide.md).
 2. Claim a task in [`agents/taskboard.md`](agents/taskboard.md) or open an issue with a `[Research]` / `[Proposal]` tag.
 3. Fork & submit a PR — atomic commits (`<Name>: <summary>`), Ruff, strict mypy, pytest coverage. **Evidence-based changes only.**
-
----
-
-## ⭐ If Nexus was useful — a star is the best thank you
-
-<p align="center">
-  <sub>Helped you learn, research, or trade smarter — even a little?</sub><br>
-  <strong>One click · 2 seconds · fuels months of open research. We'd be truly grateful. 🙏</strong>
-</p>
-
-<p align="center">
-  <a href="https://github.com/Opselon/NexusTradingForexBot">
-    <img src="https://img.shields.io/github/stars/Opselon/NexusTradingForexBot?style=for-the-badge&logo=github&label=%E2%AD%90%20Star%20this%20repo&color=yellow" alt="Star this repo" />
-  </a>
-  <br>
-  <sub>If this project is usable or profitable for you, please consider starring — it helps others discover Nexus and motivates the next release.</sub>
-</p>
-
-> [!TIP]
-> **No sign-up, no cost, no catch — just a ⭐.** That one star tells GitHub this research matters, pushes Nexus to more traders and researchers, and is the kindest way to say *thank you* if Nexus delivered any value to you.
-
-## Star History
-
-<p align="center">
-<a href="https://www.star-history.com/?repos=opselon%2Fnexustradingforexbot&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&legend=top-left" />
- </picture>
-</a>
-</p>
-
-<p align="center"><sub>Every ⭐ you gave made this curve — thank you for being part of it.</sub></p>
 
 ---
 
