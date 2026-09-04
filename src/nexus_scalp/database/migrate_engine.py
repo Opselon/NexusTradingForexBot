@@ -232,7 +232,8 @@ class SqliteToPostgresMigrator:
                     if ct in {"INTEGER", "TEXT", "BLOB"}:
                         pass
             except Exception as exc:
-                issues.append(f"{t}: column audit failed: {exc}")
+                logger.warning("migrate column audit failed for %s", t, exc_info=exc)
+                issues.append(f"{t}: column audit failed: {type(exc).__name__}")
         volume = src_size if src_size is not None else 0
         return {
             "source": self._src_driver.name,

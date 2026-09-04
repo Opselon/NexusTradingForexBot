@@ -128,8 +128,9 @@ def register_diagnostics_state_routes(
         except HTTPException:
             raise
         except Exception as exc:
+            logger.warning("health probe unhealthy", exc_info=exc)
             raise HTTPException(
-                status_code=503, detail={"verdict": "UNHEALTHY", "error": str(exc)}
+                status_code=503, detail={"verdict": "UNHEALTHY", "error": type(exc).__name__}
             ) from exc
 
     # TASK-11: Database health / hygiene state (real backend data — never fake).
@@ -444,23 +445,28 @@ def register_diagnostics_state_routes(
         try:
             findings["accounting"] = broker_ledger_divergence(db)
         except Exception as exc:
-            findings["accounting"] = {"error": str(exc)[:200]}
+            logger.warning("forensic accounting check failed", exc_info=exc)
+            findings["accounting"] = {"error": type(exc).__name__}
         try:
             findings["timebase"] = clock_skew(db)
         except Exception as exc:
-            findings["timebase"] = {"error": str(exc)[:200]}
+            logger.warning("forensic timebase check failed", exc_info=exc)
+            findings["timebase"] = {"error": type(exc).__name__}
         try:
             findings["outcome"] = outcome_forensics(db, 500)
         except Exception as exc:
-            findings["outcome"] = {"error": str(exc)[:200]}
+            logger.warning("forensic outcome check failed", exc_info=exc)
+            findings["outcome"] = {"error": type(exc).__name__}
         try:
             findings["learning"] = learning_pipeline_rates(db)
         except Exception as exc:
-            findings["learning"] = {"error": str(exc)[:200]}
+            logger.warning("forensic learning check failed", exc_info=exc)
+            findings["learning"] = {"error": type(exc).__name__}
         try:
             findings["split_fill"] = split_fill_groups(db)
         except Exception as exc:
-            findings["split_fill"] = {"error": str(exc)[:200]}
+            logger.warning("forensic split_fill check failed", exc_info=exc)
+            findings["split_fill"] = {"error": type(exc).__name__}
 
         # Reconcile stored incidents (impact + evidence) in place — never
         # create new incidents here (idempotent by incident_id).
@@ -1198,7 +1204,29 @@ def register_diagnostics_state_routes(
             )
             mig = SqliteToPostgresMigrator(src, dst, MigrationOptions(dry_run=True))
             preview = mig.preview()
-            return {"success": True, "preview": preview}
+            # Defense-in-depth (CodeQL py/stack-trace-exposure): the preview
+            # dict is built from driver internals; keep only schema-shaped
+            # fields and strip any exception-text-carrying keys before it
+            # reaches the client.
+            safe_preview = {
+                k: v
+                for k, v in preview.items()
+                if k
+                in {
+                    "source",
+                    "destination",
+                    "tables",
+                    "table_details",
+                    "rows",
+                    "estimated_volume_bytes",
+                    "issues",
+                    "warnings",
+                }
+            }
+            safe_preview["issues"] = [
+                i for i in safe_preview.get("issues") or [] if isinstance(i, str)
+            ][:100]
+            return {"success": True, "preview": safe_preview}
         except Exception as e:
             log_web_error(logger, "/api/db/manage/preview", None, e)
             return _err("DB_MIGRATION_PREVIEW_FAILED")

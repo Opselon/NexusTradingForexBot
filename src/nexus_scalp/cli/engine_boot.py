@@ -295,7 +295,7 @@ def _spawn_daemon(cmd: list[str]) -> None:
     claimed = False
     fd: int | None = None
     try:
-        fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         claimed = True
     except FileExistsError:
         claimed = False
@@ -339,7 +339,7 @@ def _spawn_daemon(cmd: list[str]) -> None:
             # path can no longer race a live claim's write.
             pidfile.unlink(missing_ok=True)
             try:
-                fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 claimed = True
             except FileExistsError:
                 console.print(
