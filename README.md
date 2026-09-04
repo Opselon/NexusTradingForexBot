@@ -110,34 +110,6 @@ Enforced in code and contracts, not just stated:
 Deep technical detail: [architecture overview](docs/architecture/overview.md) ·
 [agents/runtime_invariants.md](agents/runtime_invariants.md).
 
-## Core capabilities
-
-Legend: ✅ Certified · 🟢 Implemented · 🟡 Experimental · 🔵 Research · 📌 Planned
-— full evidence-graded matrix: [docs/project/capabilities.md](docs/project/capabilities.md)
-
-| Capability | Status | Note |
-| :--- | :--- | :--- |
-| Causal 50D feature engine (`scalp_v1`) | ✅ Certified | live contract · deterministic NaN/Inf fallback |
-| Risk engine + execution clamps | ✅ Certified | margin ≤20% · `HARD_MAX_LOTS=10` · circuit breaker |
-| Shadow runtime (zero order authority) | ✅ Certified | live feed, `simulated=True`, no orders |
-| Walk-forward + hard OOS gate | ✅ Certified | OOS failure ⇒ REJECTED (proven on 70D) |
-| Windows installer + update/rollback | ✅ Certified | SHA-256 · manifests · SBOM |
-| Provider health gate (LLM services) | ✅ Certified | bounded retries · auto-disable |
-| ScalpNet + artifact-first Model Factory | 🟢 Implemented | manifests; inference needs no DB |
-| Execution router (60 scenarios, 11 states) | 🟢 Implemented | golden-tested seams; atomic teardown |
-| Immutable accounting + experience loop | 🟢 Implemented | trade autopsy, behavior detection |
-| Incident response & forensic health | 🟢 Implemented | deploy gate · correlation |
-| Control Center UI (FastAPI SPA) | 🟢 Implemented | SSE/WS · live chart overlays |
-| 70D contract (`scalp_v3`) + liquidity/news blocks | 🟢 Implemented (research) | candidate-only; **negative OOS evidence so far** |
-| News intelligence (bounded gate) | 🟡 Experimental | opt-in; can never force a trade |
-| Counterfactual engine (NO_TRADE walk) | 🔵 Research | 2095 decisions walked; stratified evidence |
-| Temporal features / MSLIE perception | 🔵 Research | never active without governance |
-| Multi-broker | 📌 Planned | `IMT5Port` is the seam; nothing else exists yet |
-
-**Engine-enforced safety invariants:** research/strategy/news workers never
-hold order authority · OOS failure ⇒ REJECTED · schema mismatch fails loudly ·
-candidates never promote themselves.
-
 ## Architecture at a glance
 
 ```text
