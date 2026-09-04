@@ -57,7 +57,7 @@ def run_observability_selftest() -> dict[str, Any]:
             checks[name] = "PASS"
         except AssertionError as exc:
             checks[name] = "FAIL"
-            failures.append(f"{name}: {type(exc).__name__}")
+            failures.append(f"{name}: {exc}")
         except Exception as exc:  # absolute isolation
             checks[name] = "FAIL"
             failures.append(f"{name}: unexpected {type(exc).__name__}")
