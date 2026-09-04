@@ -31,6 +31,10 @@ Resolver = Callable[[], object]
 
 _STATE_UNAVAILABLE: Final = "STATE_UNAVAILABLE"
 _NO_PROBE: Final = "NO_PROBE_REGISTERED"
+# Section-level marker: the snapshot section could not be OBSERVED (build
+# failure / missing / wrong shape). Distinct from "observed and verified
+# absent" so resolvers can emit taxonomy UNKNOWN instead of NOT_CONFIGURED.
+STATE_UNAVAILABLE_KEY: Final = "_state_section_unavailable"
 
 # ---------------------------------------------------------------------------
 # Live-engine probe plug point.
@@ -100,11 +104,22 @@ def _build_snapshot() -> dict[str, object]:
 
 
 def _snapshot_section(name: str) -> dict[str, object]:
+    """Read one CHG-0043 snapshot section with taxonomy-honest failure.
+
+    State-truth ruling (NX-STP0): a section that CANNOT be observed
+    (snapshot build failed / section missing / wrong shape) is UNKNOWN in
+    the state taxonomy — the operator must be able to distinguish "this
+    truth is unobservable right now" from "verified absent configuration"
+    (NOT_CONFIGURED). Resolvers map an empty section to their own verified
+    -absent state only where absence is genuinely verifiable.
+    """
     try:
         section = _build_snapshot().get(name)
     except Exception:
-        return {}
-    return dict(section) if isinstance(section, dict) else {}
+        return {STATE_UNAVAILABLE_KEY: True}
+    if not isinstance(section, dict):
+        return {STATE_UNAVAILABLE_KEY: True}
+    return dict(section)
 
 
 def _resolve_identity() -> dict[str, object]:
@@ -131,13 +146,19 @@ def _resolve_web_bundle_block() -> dict[str, object]:
     try:
         return dict(RuntimeVersionBlock().build())
     except Exception:
-        return {}
+        # Bundle unobservable — marked, never an empty dict masquerading as
+        # "verified absent" (resolvers translate the marker to taxonomy
+        # UNKNOWN).
+        return {STATE_UNAVAILABLE_KEY: True}
 
 
 def _resolve_configured_mode() -> object:
     section = _resolve_runtime_mode_section()
+    if section.get(STATE_UNAVAILABLE_KEY):
+        # Section unobservable: taxonomy UNKNOWN, never a fabricated mode.
+        return "UNKNOWN"
     value = section.get("configured_mode")
-    return value if value else _STATE_UNAVAILABLE
+    return value if value else "UNKNOWN"
 
 
 def _resolve_actual_engine_mode() -> object:
@@ -150,32 +171,49 @@ def _resolve_health() -> object:
 
 def _resolve_version() -> object:
     identity = _resolve_identity()
+    if identity.get(STATE_UNAVAILABLE_KEY):
+        # Section unobservable: taxonomy UNKNOWN, never a fabricated version.
+        return "UNKNOWN"
     value = identity.get("version")
-    return value if value else _STATE_UNAVAILABLE
+    return value if value else "UNKNOWN"
 
 
 def _resolve_commit() -> object:
     # CHG-0043: unstamped builds carry commit=None + commit_status NOT_RECORDED;
     # None IS the truth, not a failure.
-    return _resolve_identity().get("commit", _STATE_UNAVAILABLE)
+    identity = _resolve_identity()
+    if identity.get(STATE_UNAVAILABLE_KEY):
+        # Section unobservable: taxonomy UNKNOWN.
+        return "UNKNOWN"
+    return identity.get("commit", _STATE_UNAVAILABLE)
 
 
 def _resolve_build_target_schema() -> object:
     identity = _resolve_identity()
+    if identity.get(STATE_UNAVAILABLE_KEY):
+        # Section unobservable: taxonomy UNKNOWN, never defaulted to 50D.
+        return "UNKNOWN"
     value = identity.get("feature_schema")
-    return value if value else _STATE_UNAVAILABLE
+    return value if value else "UNKNOWN"
 
 
 def _resolve_live_active_schema() -> object:
     block = _resolve_web_bundle_block()
+    if block.get(STATE_UNAVAILABLE_KEY):
+        # Bundle unobservable: taxonomy UNKNOWN (bundle failure maps to the
+        # same marker shape as snapshot sections).
+        return "UNKNOWN"
     schema = block.get("feature_schema")
     if isinstance(schema, dict):
-        return schema.get("id") or _STATE_UNAVAILABLE
-    return schema if schema else _STATE_UNAVAILABLE
+        return schema.get("id") or "UNKNOWN"
+    return schema if schema else "UNKNOWN"
 
 
 def _resolve_model_dimension() -> object:
     model = _resolve_model_section()
+    if model.get(STATE_UNAVAILABLE_KEY):
+        # Section unobservable: taxonomy UNKNOWN, never a verified-absent lie.
+        return "UNKNOWN"
     registry = model.get("registry_champion")
     if isinstance(registry, dict) and registry.get("available"):
         dim = registry.get("feature_dimension")
@@ -186,6 +224,9 @@ def _resolve_model_dimension() -> object:
 
 def _resolve_model_identity() -> object:
     model = _resolve_model_section()
+    if model.get(STATE_UNAVAILABLE_KEY):
+        # Section unobservable: taxonomy UNKNOWN, never a verified-absent lie.
+        return "UNKNOWN"
     registry = model.get("registry_champion")
     if isinstance(registry, dict) and registry.get("available"):
         schema_id = registry.get("feature_schema_id")
@@ -196,6 +237,9 @@ def _resolve_model_identity() -> object:
 
 def _resolve_db_state() -> object:
     capability = _resolve_db_capability()
+    if capability.get(STATE_UNAVAILABLE_KEY):
+        # Section unobservable: taxonomy UNKNOWN, never a verified-absent lie.
+        return "UNKNOWN"
     audit = capability.get("audit")
     if audit == "AVAILABLE":
         return "READY"

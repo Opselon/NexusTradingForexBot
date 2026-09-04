@@ -298,8 +298,6 @@ def rankings(
     "/seeds/{seed_id}/repair", summary="Create a repaired seed from a trigger (evolution operators)"
 )
 def repair_seed(request: Request, seed_id: str, body: RepairBody) -> Any:
-    import json
-
     from nexus_scalp.marketplace.repair import mutated_seed_from_trigger, repair_record_payload
 
     svc = _service(request)

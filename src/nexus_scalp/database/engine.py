@@ -272,8 +272,10 @@ class DatabaseMigrationEngine:
             def __enter__(self) -> _Lock:
                 try:
                     fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                    os.write(fd, str(os.getpid()).encode())
-                    os.close(fd)
+                    try:
+                        os.write(fd, str(os.getpid()).encode())
+                    finally:
+                        os.close(fd)
                     self.acquired = True
                 except FileExistsError:
                     self.acquired = False

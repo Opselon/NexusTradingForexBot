@@ -33,12 +33,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from nexus_scalp.observability._tg_core_protocol import _TelegramCoreProto
 
-if TYPE_CHECKING:
-    from nexus_scalp.observability.telegram_notifier import NotificationRecord  # noqa: F401
+# NOTE: no module-level (or TYPE_CHECKING) import of telegram_notifier here —
+# the facade imports THIS module at module level, so any reverse edge recreates
+# the notifier <-> transport cycle (CodeQL py/unsafe-cyclic-import). Runtime
+# uses below import inside functions; type references use quoted names.
 
 # Category constants — defined locally to break the facade cycle; facade
 # re-imports the same values from here (single source is this module's
