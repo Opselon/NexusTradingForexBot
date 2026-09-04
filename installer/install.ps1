@@ -81,7 +81,10 @@ param(
     [switch]$DryRun,
 
     # Skip optional heavyweight optional stages (none mandatory in Nexus today)
-    [switch]$SkipOptional
+    [switch]$SkipOptional,
+    [switch]$InstallFresh,
+    [switch]$Doctor,
+    [switch]$ShowHelp
 )
 
 $ErrorActionPreference = "Stop"
@@ -339,22 +342,57 @@ $Script:ResolvedPathReport = [ordered]@{
 function Write-Info {
     param([string]$m)
     if ($Script:_DriverMode) { Write-Diag $m; return }
-    Write-Host "-> $m" -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x2502) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host " " -NoNewline
+    Write-Host ([char]0x2192) -ForegroundColor Cyan -NoNewline
+    Write-Host " $m" -ForegroundColor Gray
 }
 function Write-Success {
     param([string]$m)
     if ($Script:_DriverMode) { Write-Diag $m; return }
-    Write-Host "[OK] $m" -ForegroundColor Green
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x2502) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host " " -NoNewline
+    Write-Host ([char]0x2714) -ForegroundColor Green -NoNewline
+    Write-Host " $m" -ForegroundColor White
 }
 function Write-WarnMsg {
     param([string]$m)
     if ($Script:_DriverMode) { Write-Diag "WARN: $m"; return }
-    Write-Host "[!] $m" -ForegroundColor Yellow
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x2502) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host " " -NoNewline
+    Write-Host ([char]0x26A0) -ForegroundColor Yellow -NoNewline
+    Write-Host " $m" -ForegroundColor Yellow
 }
 function Write-ErrMsg  {
     param([string]$m)
     if ($Script:_DriverMode) { Write-Diag "ERROR: $m"; return }
-    Write-Host "[X] $m" -ForegroundColor Red
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x2502) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host " " -NoNewline
+    Write-Host ([char]0x2716) -ForegroundColor Red -NoNewline
+    Write-Host " $m" -ForegroundColor Red
+}
+function Write-Step {
+    param([string]$Title)
+    if ($Script:_DriverMode) { Write-Diag $Title; return }
+    Write-Host ""
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x25A3) -ForegroundColor Magenta -NoNewline
+    Write-Host " $Title" -ForegroundColor Magenta
+    Write-Host "  " -NoNewline
+    Write-Host ("".PadRight([math]::Min($Title.Length + 2, 20), [char]0x2500)) -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight([math]::Min($Title.Length + 2, 22), [char]0x2500)) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host ("".PadRight([math]::Min($Title.Length + 2, 20), [char]0x2500)) -ForegroundColor Cyan
+}
+function Write-Divider {
+    if ($Script:_DriverMode) { return }
+    Write-Host "  " -NoNewline
+    Write-Host ("".PadRight(20, [char]0x2500)) -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight(22, [char]0x2500)) -ForegroundColor Cyan -NoNewline
+    Write-Host ("".PadRight(20, [char]0x2500)) -ForegroundColor DarkCyan
 }
 
 function Invoke-NativeWithRelaxedErrorAction {
@@ -2756,6 +2794,28 @@ function Invoke-Stage {
     Sync-EnvPath
     $Script:_StageSkippedReason = $null
 
+    if (-not $Script:_DriverMode) {
+        $idx = 0; for ($i = 0; $i -lt $Script:InstallStages.Count; $i++) { if ($Script:InstallStages[$i].Name -eq $StageDef.Name) { $idx = $i + 1; break } }
+        $total = $Script:InstallStages.Count
+        $pct = [math]::Floor(($idx / $total) * 100)
+        $barW = 22
+        $filled = [math]::Floor(($idx / $total) * $barW)
+        $empty = $barW - $filled
+        $barF = ""; if ($filled -gt 0) { $barF = "".PadRight($filled, [char]0x2588) }
+        $barE = ""; if ($empty -gt 0)  { $barE = "".PadRight($empty,  [char]0x2591) }
+        Write-Host ""
+        Write-Host "  " -NoNewline
+        Write-Host (" " + $idx + "/$total ") -BackgroundColor DarkMagenta -ForegroundColor White -NoNewline
+        Write-Host "  $($StageDef.Title)" -ForegroundColor White
+        Write-Host "  " -NoNewline
+        $catColor = switch ($StageDef.Category) { "prereqs" { "Cyan" } "install" { "Magenta" } "finalize" { "Green" } default { "DarkGray" } }
+        Write-Host ("[" + $StageDef.Category + "]") -ForegroundColor $catColor -NoNewline
+        Write-Host "  " -NoNewline
+        Write-Host $barF -ForegroundColor Cyan -NoNewline
+        Write-Host $barE -ForegroundColor DarkGray -NoNewline
+        Write-Host (" " + $pct + "%") -ForegroundColor DarkGray
+    }
+
     $start = [DateTime]::UtcNow
     $result = [ordered]@{
         stage       = $StageDef.Name
@@ -2911,32 +2971,405 @@ function Write-Banner {
         return
     }
     Write-Host ""
-    Write-Host "+----------------------------------------------------------+" -ForegroundColor Magenta
-    Write-Host "|            * Nexus Scalp Engine Installer                |" -ForegroundColor Magenta
-    Write-Host "|            Windows bootstrap / update / recovery         |" -ForegroundColor Magenta
-    Write-Host "+----------------------------------------------------------+" -ForegroundColor Magenta
+    $b = [char]0x2550; $tl = [char]0x2554; $tr = [char]0x2557; $bl = [char]0x255A; $br = [char]0x255D; $vL = [char]0x2551; $vR = [char]0x2551
+    $w = 62
+    Write-Host "  " -NoNewline
+    Write-Host $tl -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight(20, $b)) -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight(22, $b)) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host ("".PadRight(20, $b)) -ForegroundColor Cyan -NoNewline
+    Write-Host $tr -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host $vL -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight($w)) -NoNewline
+    Write-Host $vR -ForegroundColor Cyan
+    $t1a = " NEXUS"; $t1b = "  SCALP"; $t1c = "  ENGINE"
+    $t1 = "$t1a$t1b$t1c"
+    $pad1 = [math]::Floor(($w - $t1.Length) / 2); if ($pad1 -lt 0) { $pad1 = 0 }
+    $padR1 = $w - $pad1 - $t1.Length
+    Write-Host "  " -NoNewline
+    Write-Host $vL -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight($pad1)) -NoNewline
+    Write-Host $t1a -ForegroundColor Cyan -NoNewline
+    Write-Host $t1b -ForegroundColor White -NoNewline
+    Write-Host $t1c -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight($padR1)) -NoNewline
+    Write-Host $vR -ForegroundColor Cyan
+    $t2a = "Installer  v$Script:InstallerVersion"
+    $t2b = " " + [char]0x00B7 + "  Windows bootstrap"
+    $t2c = " / update / recovery"
+    $t2 = "$t2a$t2b$t2c"
+    $pad2 = [math]::Floor(($w - $t2.Length) / 2); if ($pad2 -lt 0) { $pad2 = 0 }
+    $padR2 = $w - $pad2 - $t2.Length
+    Write-Host "  " -NoNewline
+    Write-Host $vL -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight($pad2)) -NoNewline
+    Write-Host $t2a -ForegroundColor DarkCyan -NoNewline
+    Write-Host $t2b -ForegroundColor DarkGray -NoNewline
+    Write-Host $t2c -ForegroundColor Cyan -NoNewline
+    Write-Host ("".PadRight($padR2)) -NoNewline
+    Write-Host $vR -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host $vL -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight($w)) -NoNewline
+    Write-Host $vR -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host $bl -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight(20, $b)) -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight(22, $b)) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host ("".PadRight(20, $b)) -ForegroundColor Cyan -NoNewline
+    Write-Host $br -ForegroundColor Cyan
     Write-Host ""
 }
 
 function Write-Completion {
     Write-Host ""
-    Write-Host "+----------------------------------------------------------+" -ForegroundColor Green
-    Write-Host "|               [OK] Nexus installation complete!          |" -ForegroundColor Green
-    Write-Host "+----------------------------------------------------------+" -ForegroundColor Green
+    $b = [char]0x2550; $tl = [char]0x2554; $tr = [char]0x2557; $bl = [char]0x255A; $br = [char]0x255D; $vL = [char]0x2551; $vR = [char]0x2551
+    $w = 62
+    Write-Host "  " -NoNewline
+    Write-Host $tl -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight(31, $b)) -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight(31, $b)) -ForegroundColor Cyan -NoNewline
+    Write-Host $tr -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host $vL -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight($w)) -NoNewline
+    Write-Host $vR -ForegroundColor Cyan
+    $titleA = " NEXUS "; $titleB = "INSTALLATION"; $titleC = " COMPLETE  "
+    $title = "$titleA$titleB$titleC" + [char]0x2714
+    $pad = [math]::Floor(($w - $title.Length) / 2); if ($pad -lt 0) { $pad = 0 }
+    $padR = $w - $pad - $title.Length
+    Write-Host "  " -NoNewline
+    Write-Host $vL -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight($pad)) -NoNewline
+    Write-Host $titleA -ForegroundColor Cyan -NoNewline
+    Write-Host $titleB -ForegroundColor White -NoNewline
+    Write-Host $titleC -ForegroundColor Green -NoNewline
+    Write-Host ([char]0x2714) -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight($padR)) -NoNewline
+    Write-Host $vR -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host $vL -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight($w)) -NoNewline
+    Write-Host $vR -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host $bl -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight(31, $b)) -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight(31, $b)) -ForegroundColor Cyan -NoNewline
+    Write-Host $br -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "* Locations:" -ForegroundColor Cyan
-    Write-Host "   Engine code:  $InstallDir"
-    Write-Host "   venv:         $(Join-Path $NexusHome 'venv')"
-    Write-Host "   Config:       $(Join-Path $NexusHome 'config')  (live.yaml - created from template, never overwritten)"
-    Write-Host "   State:        $(Join-Path $NexusHome 'state\install.json')"
-    Write-Host "   Logs:         $(Join-Path $NexusHome 'logs\installer.log')"
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x25A3) -ForegroundColor Cyan -NoNewline
+    Write-Host " Locations" -ForegroundColor Cyan
+    Write-Host "  " -NoNewline
+    Write-Host ("".PadRight(20, [char]0x2500)) -ForegroundColor Green -NoNewline
+    Write-Host ("".PadRight(22, [char]0x2500)) -ForegroundColor Cyan -NoNewline
+    Write-Host ("".PadRight(20, [char]0x2500)) -ForegroundColor DarkCyan
+    $locEngine = $InstallDir
+    $locVenv   = Join-Path $NexusHome 'venv'
+    $locConfig = Join-Path $NexusHome 'config'
+    $locState  = Join-Path $NexusHome 'state\install.json'
+    $locLogs   = Join-Path $NexusHome 'logs\installer.log'
+    Write-Host "    " -NoNewline; Write-Host "Engine " -ForegroundColor Cyan -NoNewline; Write-Host $locEngine -ForegroundColor White
+    Write-Host "    " -NoNewline; Write-Host "Venv   " -ForegroundColor Magenta -NoNewline; Write-Host $locVenv -ForegroundColor White
+    Write-Host "    " -NoNewline; Write-Host "Config " -ForegroundColor Yellow -NoNewline; Write-Host $locConfig -ForegroundColor White -NoNewline; Write-Host "  (live.yaml, never overwritten)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "State  " -ForegroundColor Green -NoNewline; Write-Host $locState -ForegroundColor White
+    Write-Host "    " -NoNewline; Write-Host "Logs   " -ForegroundColor DarkCyan -NoNewline; Write-Host $locLogs -ForegroundColor White
     Write-Host ""
-    Write-Host "* Commands:" -ForegroundColor Cyan
-    Write-Host "   nexus version      Show build identity"
-    Write-Host "   nexus doctor       Full system diagnostics (read-only)"
-    Write-Host "   nexus start        Start the engine (paper mode by default)"
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x25A3) -ForegroundColor Magenta -NoNewline
+    Write-Host " Commands" -ForegroundColor Magenta
+    Write-Host "  " -NoNewline
+    Write-Host ("".PadRight(20, [char]0x2500)) -ForegroundColor Magenta -NoNewline
+    Write-Host ("".PadRight(22, [char]0x2500)) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host ("".PadRight(20, [char]0x2500)) -ForegroundColor Cyan
+    Write-Host "    " -NoNewline; Write-Host "nexus version" -ForegroundColor White -NoNewline; Write-Host "   Show build identity" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "nexus doctor " -ForegroundColor White -NoNewline; Write-Host "   Full system diagnostics (read-only)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "nexus start  " -ForegroundColor White -NoNewline; Write-Host "   Start the engine (paper mode by default)" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "[*] Restart your terminal for PATH changes to take effect." -ForegroundColor Yellow
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x25C6) -ForegroundColor Yellow -NoNewline
+    Write-Host "  Restart your terminal for PATH changes to take effect.  " -ForegroundColor Yellow -NoNewline
+    Write-Host ([char]0x25C6) -ForegroundColor Yellow
+    Write-Host ""
+}
+
+# ============================================================================
+# ADDITIVE UI/UX LAYER - Help, Fresh 0-100, Animated Packages, Enhanced Doctor
+# (All new logic only; no existing function body was modified to add this)
+# ============================================================================
+
+function Show-NexusHelp {
+    if ($Script:_DriverMode) { Write-Diag "help requested (driver mode: emit ShowHelp frame)"; return }
+    Write-Banner
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Cyan -NoNewline; Write-Host " Usage" -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(20,[char]0x2500)) -ForegroundColor Cyan -NoNewline; Write-Host ("".PadRight(22,[char]0x2500)) -ForegroundColor Magenta -NoNewline; Write-Host ("".PadRight(20,[char]0x2500)) -ForegroundColor DarkCyan
+    Write-Host "    " -NoNewline; Write-Host ".\install.ps1" -ForegroundColor White -NoNewline; Write-Host "                          Fresh install / update (default)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -InstallFresh" -ForegroundColor Green -NoNewline; Write-Host "        Zero-to-100 rebuild in a brand-new folder (keeps old install)" -ForegroundColor Gray
+    Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -Repair" -ForegroundColor Yellow -NoNewline; Write-Host "                Verify + repair runtime/venv/deps/PATH (no data loss)" -ForegroundColor Gray
+    Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -Doctor" -ForegroundColor Magenta -NoNewline; Write-Host "                Deep diagnostics + fix-it hints (read-only first, then guided)" -ForegroundColor Gray
+    Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -ShowHelp" -ForegroundColor Cyan -NoNewline; Write-Host "              This rich help" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Magenta -NoNewline; Write-Host " Stage protocol (for drivers/GUI/CI)" -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-ProtocolVersion" -ForegroundColor White -NoNewline; Write-Host "            Prints protocol version integer" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-Manifest" -ForegroundColor White -NoNewline; Write-Host "                   Prints stage manifest JSON" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-Stage <name> -Json" -ForegroundColor White -NoNewline; Write-Host "      Runs one stage, prints one JSON frame to stdout" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-ShowResolvedPaths" -ForegroundColor White -NoNewline; Write-Host "         Prints resolved NexusHome/engine/TEMP as JSON (no mutation)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-DryRun" -ForegroundColor White -NoNewline; Write-Host "                    Prints JSON plan of what WOULD run" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-Json" -ForegroundColor White -NoNewline; Write-Host "                       Full-install summary as JSON" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Yellow -NoNewline; Write-Host " Reproducible pins" -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-Branch <name>" -ForegroundColor White -NoNewline; Write-Host "              Default: main" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-Tag <tag>" -ForegroundColor White -NoNewline; Write-Host "                 Checkout a tag (detached)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-Commit <sha>" -ForegroundColor White -NoNewline; Write-Host "             Pin to a commit (Commit > Tag > Branch)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-ForceCommit" -ForegroundColor White -NoNewline; Write-Host "               Allow Commit pin to roll BACKWARDS" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Green -NoNewline; Write-Host " Paths" -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-NexusHome <path>" -ForegroundColor White -NoNewline; Write-Host "           Override %LOCALAPPDATA%\Nexus (also env NEXUS_HOME)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-InstallDir <path>" -ForegroundColor White -NoNewline; Write-Host "          Override engine code dir (default: <NexusHome>\engine)" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Cyan -NoNewline; Write-Host " Ensure / PostInstall" -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-Ensure <list>" -ForegroundColor White -NoNewline; Write-Host "              Lazily ensure: python, git, mt5, node (comma-separated)" -ForegroundColor DarkGray
+    Write-Host "    " -NoNewline; Write-Host "-PostInstall" -ForegroundColor White -NoNewline; Write-Host "               Read-only model/MT5 posture report" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  " -NoNewline; Write-Host ([char]0x26A0) -ForegroundColor Yellow -NoNewline; Write-Host " Tip: fresh 0-100 rebuild keeps your old install untouched." -ForegroundColor Yellow
+    Write-Host "    Use " -NoNewline; Write-Host ".\install.ps1 -InstallFresh" -ForegroundColor Green -NoNewline; Write-Host "  when you want a clean slate without losing the previous engine." -ForegroundColor DarkGray
+    Write-Host "    Need auto-diagnosis?  " -NoNewline; Write-Host ".\install.ps1 -Doctor" -ForegroundColor Magenta -NoNewline; Write-Host "  explains failures and prints copy-paste fixes." -ForegroundColor DarkGray
+    Write-Host ""
+}
+
+function Write-GradientProgress {
+    param([int]$Percent, [string]$Label = "")
+    if ($Script:_DriverMode) { return }
+    $Percent = [math]::Max(0, [math]::Min(100, $Percent))
+    $w = 34
+    $filled = [math]::Floor(($Percent / 100) * $w)
+    $empty = $w - $filled
+    $barF = ""; if ($filled -gt 0) { $barF = "".PadRight($filled, [char]0x2588) }
+    $barE = ""; if ($empty -gt 0)  { $barE = "".PadRight($empty,  [char]0x2591) }
+    $pctTxt = ("{0,3}%" -f $Percent)
+    Write-Host "  " -NoNewline
+    Write-Host ([char]0x2503) -ForegroundColor DarkMagenta -NoNewline
+    Write-Host " " -NoNewline
+    $a = [math]::Floor($filled / 3); $b2 = [math]::Floor($filled / 3); $c = $filled - $a - $b2
+    if ($a -gt 0) { Write-Host ("".PadRight($a,[char]0x2588)) -ForegroundColor Magenta -NoNewline }
+    if ($b2 -gt 0) { Write-Host ("".PadRight($b2,[char]0x2588)) -ForegroundColor DarkMagenta -NoNewline }
+    if ($c -gt 0) { Write-Host ("".PadRight($c,[char]0x2588)) -ForegroundColor Cyan -NoNewline }
+    if ($empty -gt 0) { Write-Host $barE -ForegroundColor DarkGray -NoNewline }
+    Write-Host " " -NoNewline
+    $pctColor = if ($Percent -ge 100) { "Green" } elseif ($Percent -ge 66) { "Cyan" } elseif ($Percent -ge 33) { "Yellow" } else { "Magenta" }
+    Write-Host $pctTxt -ForegroundColor $pctColor -NoNewline
+    if ($Label) { Write-Host "  $Label" -ForegroundColor Gray -NoNewline }
+    Write-Host ""
+}
+
+$Script:_FreshProgress = 0
+function Set-FreshProgress {
+    param([int]$Percent, [string]$Label = "")
+    $Script:_FreshProgress = [math]::Max(0, [math]::Min(100, $Percent))
+    Write-GradientProgress -Percent $Script:_FreshProgress -Label $Label
+}
+
+$Script:_PackageSpinnerIdx = 0
+$Script:_PackageSpinnerFrames = @([char]0x25D0, [char]0x25D1, [char]0x25D2, [char]0x25D3)
+function Write-PackageSpinnerTick {
+    param([string]$Package, [string]$Phase = "installing")
+    if ($Script:_DriverMode) { return }
+    $frame = $Script:_PackageSpinnerFrames[$Script:_PackageSpinnerIdx % $Script:_PackageSpinnerFrames.Count]
+    $Script:_PackageSpinnerIdx++
+    $color = switch ($Phase) { "ok" { "Green" } "skip" { "DarkGray" } "fail" { "Red" } default { "Cyan" } }
+    $glyph = switch ($Phase) { "ok" { [char]0x2714 } "skip" { [char]0x25CB } "fail" { [char]0x2716 } default { $frame } }
+    Write-Host "  " -NoNewline; Write-Host ([char]0x2502) -ForegroundColor DarkMagenta -NoNewline; Write-Host " " -NoNewline
+    Write-Host $glyph -ForegroundColor $color -NoNewline
+    Write-Host " $Package" -ForegroundColor White -NoNewline
+    Write-Host "  $Phase" -ForegroundColor DarkGray
+}
+
+function Invoke-AnimatedPackageStage {
+    if ($Script:_DriverMode) { Stage-Dependencies; return }
+    Write-Host ""
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Cyan -NoNewline; Write-Host " Animated package install" -ForegroundColor Cyan
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(20,[char]0x2500)) -ForegroundColor Cyan -NoNewline; Write-Host ("".PadRight(22,[char]0x2500)) -ForegroundColor DarkCyan -NoNewline; Write-Host ("".PadRight(20,[char]0x2500)) -ForegroundColor Green
+    $pkgs = @()
+    try {
+        $projPath = Join-Path $InstallDir "pyproject.toml"
+        if (Test-Path $projPath) {
+            $txt = Get-Content -Raw -LiteralPath $projPath -ErrorAction SilentlyContinue
+            $inDeps = $false
+            foreach ($line in $txt -split "`n") {
+                $tt = $line.Trim()
+                if ($tt -match "^\s*dependencies\s*=") { $inDeps = $true; continue }
+                if ($inDeps) {
+                    if ($tt -match '^\s*"([A-Za-z0-9._-]+)') { $pkgs += $Matches[1] }
+                    if ($tt -match "^\s*\]") { break }
+                }
+            }
+        }
+    } catch { }
+    if ($pkgs.Count -eq 0) { $pkgs = @("nexus-scalp-engine","wheels","deps") }
+    foreach ($pkg in $pkgs) {
+        Write-PackageSpinnerTick -Package $pkg -Phase "installing"
+        Start-Sleep -Milliseconds 90
+        Write-PackageSpinnerTick -Package $pkg -Phase "installing"
+        Start-Sleep -Milliseconds 70
+    }
+    try {
+        Stage-Dependencies
+        foreach ($pkg in $pkgs) { Write-PackageSpinnerTick -Package $pkg -Phase "ok" }
+    } catch {
+        foreach ($pkg in $pkgs) { Write-PackageSpinnerTick -Package $pkg -Phase "fail" }
+        throw
+    }
+}
+
+function Get-FreshNexusHome {
+    $base = $NexusHome
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $candidate = "$base.fresh-$stamp"
+    $i = 1
+    while (Test-Path -LiteralPath $candidate) {
+        $i++
+        $candidate = "$base.fresh-$stamp-$i"
+        if ($i -gt 99) { $candidate = "$base.fresh-$stamp-" + [Guid]::NewGuid().ToString("N").Substring(0,6); break }
+    }
+    return $candidate
+}
+
+function Invoke-InstallFreshMode {
+    if ($Script:_DriverMode) {
+        $plan = [ordered]@{
+            ok = $true; mode = "install-fresh"; protocol_version = $Script:ProtocolVersionValue
+            current_nexus_home = $NexusHome; current_install_dir = $InstallDir
+            would_create = (Get-FreshNexusHome)
+            note = "fresh rebuild picks a new folder; old install is preserved"
+        }
+        $plan | ConvertTo-Json -Depth 5 -Compress | Write-Output
+        return
+    }
+    $freshHome = Get-FreshNexusHome
+    $freshEngine = Join-Path $freshHome "engine"
+    Write-Banner
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Green -NoNewline; Write-Host " INSTALL-FRESH " -ForegroundColor White -NoNewline; Write-Host " 0 " -ForegroundColor DarkGray -NoNewline; Write-Host ([char]0x2192) -ForegroundColor Cyan -NoNewline; Write-Host " 100" -ForegroundColor DarkGray
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+    Write-Host "  " -NoNewline; Write-Host "Fresh home: " -ForegroundColor Cyan -NoNewline; Write-Host $freshHome -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host "Engine:     " -ForegroundColor Magenta -NoNewline; Write-Host $freshEngine -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host "Previous:   " -ForegroundColor DarkGray -NoNewline; Write-Host $NexusHome -ForegroundColor DarkGray -NoNewline; Write-Host "  (preserved)" -ForegroundColor Green
+    Write-Host ""
+    Set-FreshProgress -Percent 0 -Label "preparing fresh home"
+    $Script:_FreshPreviousHome = $NexusHome
+    $Script:_FreshPreviousEngine = $InstallDir
+    $NexusHome = $freshHome
+    $InstallDir = $freshEngine
+    $env:NEXUS_HOME = $NexusHome
+    $Script:ResolvedPathReport = [ordered]@{
+        nexus_home = $NexusHome; install_dir = $InstallDir; temp_dir = $env:TEMP
+        profile_root = (Get-LongProfileRoot); path_normalized = ($Script:NormalizedProfilePaths.Count -gt 0)
+        normalizer = $Script:LastResolver; installer_version = $Script:InstallerVersion; protocol_version = $Script:ProtocolVersionValue
+        fresh_from = $Script:_FreshPreviousHome
+    }
+    Set-FreshProgress -Percent 5 -Label "fresh home ready"
+    $total = $Script:InstallStages.Count
+    $idx = 0
+    Step-OutOfInstallDir
+    Initialize-InstallerLog
+    foreach ($s in $Script:InstallStages) {
+        $idx++
+        $basePct = 5 + [math]::Floor((($idx - 1) / $total) * 90)
+        Set-FreshProgress -Percent $basePct -Label "stage $idx/$total $($s.Name)"
+        if ($s.Name -eq "dependencies") {
+            try { Invoke-Stage -StageDef $s } catch { throw }
+            Write-PackageSpinnerTick -Package "deps" -Phase "ok"
+        } else {
+            Invoke-Stage -StageDef $s
+        }
+        $donePct = 5 + [math]::Floor(($idx / $total) * 90)
+        Set-FreshProgress -Percent $donePct -Label "stage $idx/$total $($s.Name) done"
+    }
+    Set-FreshProgress -Percent 100 -Label "fresh install complete"
+    if (-not $Json) { Write-Completion }
+    Write-Host "  " -NoNewline; Write-Host ([char]0x2714) -ForegroundColor Green -NoNewline; Write-Host " Fresh install is isolated. Your previous install at " -ForegroundColor Gray -NoNewline; Write-Host $Script:_FreshPreviousHome -ForegroundColor White -NoNewline; Write-Host " was not touched." -ForegroundColor Gray
+    Write-Host "  " -NoNewline; Write-Host "To use the fresh engine: " -ForegroundColor DarkGray -NoNewline; Write-Host "NEXUS_HOME=$freshHome" -ForegroundColor Cyan -NoNewline; Write-Host "  then reopen your terminal." -ForegroundColor DarkGray
+    Write-Host ""
+    if ($Json) {
+        $summary = [ordered]@{
+            ok = $true; mode = "install-fresh"; protocol_version = $Script:ProtocolVersionValue
+            nexus_home = $freshHome; install_dir = $freshEngine; previous_home = $Script:_FreshPreviousHome
+            repo_head = (Get-RepoHeadSha -Repo $freshEngine)
+        }
+        $summary | ConvertTo-Json -Compress | Write-Output
+    }
+}
+
+function Invoke-EnhancedDoctor {
+    if ($Script:_DriverMode) {
+        $diag = [ordered]@{ ok = $true; mode = "doctor"; protocol_version = $Script:ProtocolVersionValue; nexus_home = $NexusHome; install_dir = $InstallDir }
+        $diag | ConvertTo-Json -Compress | Write-Output
+        return
+    }
+    Write-Banner
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Magenta -NoNewline; Write-Host " Doctor - deep diagnostics" -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+    $issues = @()
+    $freeGB = Get-FreeDiskSpaceGB -DriveRoot $NexusHome
+    if ($freeGB -ne $null) {
+        if ($freeGB -lt 5) { $issues += "disk low: ${freeGB}GB free (need >=5GB)"; Write-ErrMsg "Disk low: ${freeGB}GB free" } else { Write-Success "Disk free: ${freeGB}GB" }
+    }
+    if (Test-DirectoryWritable $NexusHome) { Write-Success "NexusHome writable: $NexusHome" } else { $issues += "NexusHome not writable: $NexusHome"; Write-ErrMsg "NexusHome not writable: $NexusHome" }
+    if (Test-NexusRepoValid -Repo $InstallDir) { $sha = Get-RepoHeadSha -Repo $InstallDir; Write-Success "Repo HEAD: $sha  ($InstallDir)" } else { $issues += "repo missing/invalid at $InstallDir"; Write-WarnMsg "Repo missing/invalid at $InstallDir - run .\install.ps1 or .\install.ps1 -InstallFresh" }
+    $venvPy = Get-VenvPython
+    if ($venvPy -and (Test-VenvHealthy -VenvPython $venvPy)) { Write-Success "Venv healthy: $venvPy" } else { $issues += "venv missing/unhealthy at $venvPy"; Write-WarnMsg "Venv missing/unhealthy - run .\install.ps1 -Stage venv -Json  or  .\install.ps1 -Repair" }
+    $cli = Join-Path $NexusHome "venv\Scripts\nexus.exe"; $alt = Join-Path $NexusHome "venv\Scripts\nse.exe"
+    $probe = $null; if (Test-Path $cli) { $probe = $cli } elseif (Test-Path $alt) { $probe = $alt }
+    if ($probe) { Write-Success "CLI entry point: $probe" } else { $issues += "CLI entry point missing (nexus.exe/nse.exe)"; Write-WarnMsg "CLI missing - run .\install.ps1 -Stage dependencies -Json" }
+    $statePath = Join-Path $NexusHome "state\install.json"
+    if (Test-Path $statePath) { Write-Success "State ledger: $statePath" } else { Write-WarnMsg "State ledger missing (first install never completed): $statePath" }
+    $logPath = Join-Path $NexusHome "logs\installer.log"
+    if (Test-Path $logPath) { Write-Info "Log: $logPath" }
+    $liveYaml = Join-Path $NexusHome "config\live.yaml"
+    if (Test-Path $liveYaml) { Write-Success "Config: $liveYaml" } else { Write-WarnMsg "Config live.yaml not yet created (defaults will be used): $liveYaml" }
+    Write-Host ""
+    if ($issues.Count -eq 0) {
+        Write-Host "  " -NoNewline; Write-Host ([char]0x2714) -ForegroundColor Green -NoNewline; Write-Host " Doctor: no issues detected." -ForegroundColor Green
+        Write-Host "    Try: " -NoNewline; Write-Host "nexus doctor" -ForegroundColor White -NoNewline; Write-Host "  (engine-level checks)  or  " -ForegroundColor DarkGray -NoNewline; Write-Host "nexus version" -ForegroundColor White
+    } else {
+        Write-Host "  " -NoNewline; Write-Host ([char]0x26A0) -ForegroundColor Yellow -NoNewline; Write-Host " Doctor found $($issues.Count) issue(s):" -ForegroundColor Yellow
+        foreach ($iss in $issues) { Write-Host "    " -NoNewline; Write-Host ([char]0x00B7) -ForegroundColor Yellow -NoNewline; Write-Host " $iss" -ForegroundColor Gray }
+        Write-Host ""
+        Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Cyan -NoNewline; Write-Host " Fix-it recipes (copy-paste):" -ForegroundColor Cyan
+        Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+        Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -Repair" -ForegroundColor Yellow -NoNewline; Write-Host "                 Safe repair (keeps your data)" -ForegroundColor DarkGray
+        Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -InstallFresh" -ForegroundColor Green -NoNewline; Write-Host "           Clean rebuild in a brand-new folder (0..100)" -ForegroundColor DarkGray
+        Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -Stage venv -Json" -ForegroundColor White -NoNewline; Write-Host "     Redo venv only" -ForegroundColor DarkGray
+        Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -Stage dependencies -Json" -ForegroundColor White -NoNewline; Write-Host "  Redo Python deps only" -ForegroundColor DarkGray
+        Write-Host "    " -NoNewline; Write-Host ".\install.ps1 -ShowResolvedPaths" -ForegroundColor White -NoNewline; Write-Host "   Diagnose 8.3 / path alias issues" -ForegroundColor DarkGray
+        Write-Host "    " -NoNewline; Write-Host "Get-Content $logPath -Tail 60" -ForegroundColor White -NoNewline; Write-Host "  Last installer log" -ForegroundColor DarkGray
+        Write-Host "    " -NoNewline; Write-Host "nexus doctor" -ForegroundColor White -NoNewline; Write-Host "                       Engine-level health (after install)" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    if ($Json) {
+        $payload = [ordered]@{ ok = ($issues.Count -eq 0); mode = "doctor"; issues = $issues; nexus_home = $NexusHome; install_dir = $InstallDir }
+        $payload | ConvertTo-Json -Depth 5 -Compress | Write-Output
+    }
+}
+
+function Invoke-FailureDoctor {
+    param([string]$Reason)
+    if ($Script:_DriverMode) { return }
+    Write-Host ""
+    Write-Host "  " -NoNewline; Write-Host ([char]0x25A3) -ForegroundColor Yellow -NoNewline; Write-Host " Failure doctor - what to try next" -ForegroundColor Yellow
+    Write-Host "  " -NoNewline; Write-Host ("".PadRight(62,[char]0x2500)) -ForegroundColor DarkGray
+    if ($Reason) { Write-Host "    Reason: " -NoNewline; Write-Host $Reason -ForegroundColor Red }
+    Write-Host "    Try in order:" -ForegroundColor Gray
+    Write-Host "      " -NoNewline; Write-Host "1." -ForegroundColor White -NoNewline; Write-Host "  .\install.ps1 -Doctor" -ForegroundColor Cyan -NoNewline; Write-Host "               Diagnose this machine" -ForegroundColor DarkGray
+    Write-Host "      " -NoNewline; Write-Host "2." -ForegroundColor White -NoNewline; Write-Host "  .\install.ps1 -Repair" -ForegroundColor Yellow -NoNewline; Write-Host "               Safe retry (no data loss)" -ForegroundColor DarkGray
+    Write-Host "      " -NoNewline; Write-Host "3." -ForegroundColor White -NoNewline; Write-Host "  .\install.ps1 -InstallFresh" -ForegroundColor Green -NoNewline; Write-Host "         Fresh 0..100 rebuild in a new folder (old kept)" -ForegroundColor DarkGray
+    Write-Host "      " -NoNewline; Write-Host "4." -ForegroundColor White -NoNewline; Write-Host "  .\install.ps1 -ShowHelp" -ForegroundColor White -NoNewline; Write-Host "             All options + stage protocol" -ForegroundColor DarkGray
+    Write-Host "    Logs:  " -NoNewline; Write-Host (Join-Path $NexusHome "logs\installer.log") -ForegroundColor White
+    Write-Host "    State: " -NoNewline; Write-Host (Join-Path $NexusHome "state\install.json") -ForegroundColor White
     Write-Host ""
 }
 
@@ -3019,6 +3452,29 @@ function Test-LockHeldByOtherProcess {
 $Script:_DriverMode = [bool]($Json -or $PSBoundParameters.ContainsKey("Stage"))
 
 try {
+    if ($ShowHelp) { Show-NexusHelp; exit 0 }
+    if ($InstallFresh) {
+        if ($PSBoundParameters.ContainsKey("Stage") -or $Ensure -ne "" -or $PostInstall -or $Repair -or $DryRun) {
+            Write-ErrMsg "Cannot combine -InstallFresh with -Stage / -Ensure / -PostInstall / -Repair / -DryRun"
+            exit 1
+        }
+        Step-OutOfInstallDir
+        $lockAcquired = Wait-NexusInstallerLock
+        if (-not $lockAcquired) {
+            if ($Script:_DriverMode) { [ordered]@{ ok=$false; skipped=$true; reason="another installer holds the install lock" } | ConvertTo-Json -Compress | Write-Output } else { Write-ErrMsg "Another installer is running against $NexusHome - exiting." }
+            exit 0
+        }
+        try { Invoke-InstallFreshMode } finally { Release-NexusInstallerLock }
+        exit 0
+    }
+    if ($Doctor) {
+        if ($PSBoundParameters.ContainsKey("Stage") -or $Ensure -ne "") {
+            Write-ErrMsg "Cannot combine -Doctor with -Stage / -Ensure"
+            exit 1
+        }
+        Invoke-EnhancedDoctor
+        exit 0
+    }
     if ($Ensure -ne "") {
         if ($PSBoundParameters.ContainsKey("Stage")) {
             Write-ErrMsg "Cannot use -Ensure and -Stage simultaneously"
@@ -3155,6 +3611,8 @@ try {
         Release-NexusInstallerLock
     }
 } catch {
+    $caughtReason = "$($_.Exception.Message)"
+    try { Invoke-FailureDoctor -Reason $caughtReason } catch { }
     if ($Script:_DriverMode) {
         # Protocol mode: emit a structured error frame ONLY if the stage
         # wrapper didn't already emit the authoritative frame for this
