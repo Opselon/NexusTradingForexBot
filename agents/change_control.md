@@ -1748,3 +1748,12 @@ Scope: src/nexus_scalp/marketplace/** (13 packs, scoring/measurement/repair/snap
 Risk: LOW-MEDIUM (additive, isolated DB, no direct MT5/risk/execution mutation; hot-reload contract is an additive snapshot store, live_engine wiring expressly deferred until the tree is quiet).
 Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+format pass on all touched files; py_compile pass; API wiring verified via FastAPI app.openapi() (12 /api/v1/marketplace paths, 80 total routes); forensics matched: next free IDs verified at commit (BUG-236/CHG-0057), heavy parallel tree churn respected (owned-files-only staging, no git add -A).
 
+
+## CHG-0058 - Execution pipeline deep forensic + single-authority/teardown/idempotency hardening (2026-09-05, Agent 12)
+
+- AGENT: Agent 12 (Nexus-Main orchestrated) | ROLE: Execution / OrderManager / Protection / Recovery Forensics
+- TASK: user brief 2026-09-05 — deep forensic + development + root-cause fix of the REAL execution pipeline
+- SCOPE (expected): src/nexus_scalp/execution/*.py (order_manager.py, position_state_machine.py, protection_ledger.py, recovery_budget.py, tickets_cache.py, position_tracker.py), src/nexus_scalp/risk/risk_engine.py (read-only verify unless bypass found), adapters (semantic verification), tests/unit/test_agent12_* (new), agents registries, docs/agent_handoffs/
+- OBJECTIVES: (1) prove ONE authoritative dispatch path (no second execution path anywhere); (2) 60-scenario router coverage map; (3) TradeProposal execution_id traceability end-to-end; (4) policy/confluence boundary respected before dispatch; (5) risk clamps authoritative (HARD_MAX_LOTS=10.0, MAX_TOTAL_EXPOSURE=1, free-margin 20%, 30s re-quote lock, 1.0 ATR drift, 3-rejection SAFE_MODE) with no bypass; (6) 11-state machine coherence; (7) protection ledger monotonic/NaN guards; (8) atomic per-ticket teardown (state+ledger+budget+tombstones); (9) recovery budget bounds (horizon clamp 30600s); (10) protective exit priority, no duplicate/contradictory exits; (11) INV-011 broker truth; (12) idempotency INV-005/006; (13) adapter semantic parity (Win32/ZMQ/paper); (14) partial-fill/rejection semantics; (15) EXIT_CLASSIFICATION v3 (UNKNOWN stays UNKNOWN); (16) [EXEC_TRACE] visibility; (17) accounting consistency; (18) paper/shadow/live boundaries (shadow zero order authority); (19) race analysis
+- CONSTRAINTS: every confirmed defect FIXED + regression test; no safety weakening; commit-per-step; beforePush quality gate; evidence-based findings only (no invented bugs)
+- STATUS: IMPLEMENTING
