@@ -761,6 +761,7 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
 <link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
 <link rel='stylesheet' href='{asset_href(rel, "styles.css", lang)}'>
+<link rel='stylesheet' href='{asset_href(rel, "docs-enhance.css", lang)}'>
 <link rel='icon' href='{asset_href(rel, "favicon.svg", lang)}' type='image/svg+xml'>
 </head>
 <body>
@@ -802,6 +803,7 @@ window.NEXUS_LANG = {lang_json};
   }} catch (e) {{}}
 }})();
 </script>
+<script src='{asset_href(rel, "docs-enhance.js", lang)}' defer></script>
 <script src='{asset_href(rel, "search.js", lang)}' defer></script>
 </body>
 </html>"""
@@ -1180,7 +1182,15 @@ def main() -> int:
     src_css = SITE_DIR / "assets" / "styles.css"
     src_js = SITE_DIR / "assets" / "search.js"
     src_icon = SITE_DIR / "assets" / "favicon.svg"
-    for src, dst in ((src_css, "styles.css"), (src_js, "search.js"), (src_icon, "favicon.svg")):
+    src_enhance_css = SITE_DIR / "assets" / "docs-enhance.css"
+    src_enhance_js = SITE_DIR / "assets" / "docs-enhance.js"
+    for src, dst in (
+        (src_css, "styles.css"),
+        (src_js, "search.js"),
+        (src_icon, "favicon.svg"),
+        (src_enhance_css, "docs-enhance.css"),
+        (src_enhance_js, "docs-enhance.js"),
+    ):
         if src.exists():
             shutil.copyfile(src, out_dir / "assets" / dst)
     # pics used on the homepage (Control Center screenshot)
