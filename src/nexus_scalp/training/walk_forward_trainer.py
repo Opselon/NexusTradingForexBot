@@ -24,6 +24,7 @@ import json
 import math
 import random
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -207,6 +208,9 @@ class WalkForwardTrainer:
         # blocked unless the operator passes governance_override=True.
         label_origin: str | LabelOrigin | None = None,
         governance_override: bool = False,
+        # P0-2026-09-04 CHAMPION GUARD: explicit operator opt-in required to
+        # write a canonical variant bundle (see assert_not_champion_path).
+        allow_champion_save: bool = False,
     ) -> None:
         self.num_folds = int(num_folds)
         self.train_ratio = float(train_ratio)
@@ -1654,6 +1658,47 @@ class WalkForwardTrainer:
         except Exception as err:
             logger.error("Failed to save training metadata", path=str(meta_path), error=str(err))
             raise
+        # P0-2026-09-04: stamp dataset provenance onto the metadata AFTER the
+        # standard payload is written. dataset_id/sha and the bound feature
+        # schema hash are required for every non-smoke run — a production
+        # candidate with dataset_id=null is exactly the historical P0.
+        self._stamp_dataset_provenance(meta_path)
+
+    def _stamp_dataset_provenance(self, meta_path: Path) -> None:
+        """Merge bound dataset provenance into the metadata (required non-smoke).
+
+        Provenance may arrive explicitly (declare_dataset_provenance / the
+        bound dataset manifest via bind_dataset) or be resolved from the
+        dataset_id the producer was launched with. When nothing is bound and
+        a dataset context exists in the producer call chain, the metadata
+        records dataset_id=null HONESTLY and smoke-only artifacts remain
+        eligible — but a NON-SMOKE artifact without provenance is rejected at
+        the emission gate (never published).
+        """
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as err:  # pragma: no cover - defensive
+            logger.warning("Provenance stamp skipped: meta unreadable", error=str(err))
+            return
+        prov = getattr(self, "_dataset_provenance", None) or {}
+        if prov:
+            meta.setdefault("dataset_id", prov.get("dataset_id"))
+            meta["dataset_sha256"] = prov.get("dataset_sha256")
+            if prov.get("feature_schema_hash"):
+                meta["feature_schema_hash"] = prov["feature_schema_hash"]
+            if prov.get("label_schema_id"):
+                meta["label_schema_id"] = prov["label_schema_id"]
+            if prov.get("source_dataset_id"):
+                meta["source_dataset_id"] = prov["source_dataset_id"]
+                meta["source_dataset_sha256"] = prov.get("source_dataset_sha256")
+            meta["provenance_stamped_at"] = datetime.now(UTC).isoformat()
+        try:
+            tmp = meta_path.with_name(meta_path.name + ".prov.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+            tmp.replace(meta_path)
+        except Exception as err:  # pragma: no cover - defensive
+            logger.warning("Provenance stamp rewrite failed", error=str(err))
 
     # =========================================================================
     # INTERNAL: SEEDING
