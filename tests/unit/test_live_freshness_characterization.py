@@ -39,6 +39,7 @@ def _snapshot(**overrides):
 
 # === GOLDEN 1: stage freshness boundaries ===
 
+
 class TestStageFreshness:
     def test_none_is_unknown(self):
         svc = LiveFreshnessService()
@@ -82,6 +83,7 @@ class TestStageFreshness:
 
 # === GOLDEN 2: compute aggregation ===
 
+
 class TestComputeFreshness:
     def test_all_fresh_overall_fresh(self):
         svc = LiveFreshnessService()
@@ -115,9 +117,16 @@ class TestComputeFreshness:
         svc = LiveFreshnessService()
         fresh = svc.compute_freshness(_snapshot())
         assert set(fresh.keys()) == {
-            "market", "features", "inference", "decision",
-            "overall", "max_age_sec", "sequences", "monotonic_tick_ms",
-            "hashes", "telemetry",
+            "market",
+            "features",
+            "inference",
+            "decision",
+            "overall",
+            "max_age_sec",
+            "sequences",
+            "monotonic_tick_ms",
+            "hashes",
+            "telemetry",
         }
         assert fresh["max_age_sec"] == 30.0
         assert fresh["sequences"]["tick"] == 1
@@ -140,10 +149,12 @@ class TestComputeFreshness:
 
 # === GOLDEN 3: gate downgrade ===
 
+
 class TestGateProposal:
     def _proposal(self, action="BUY", confidence=0.5):
         from nexus_scalp.domain.enums import ActionType
         from nexus_scalp.domain.models import TradeProposal
+
         amap = {"BUY": ActionType.BUY, "SELL": ActionType.SELL, "BUY_MARKET": ActionType.BUY_MARKET}
         return TradeProposal(
             request_id="test",
@@ -168,9 +179,12 @@ class TestGateProposal:
 
     def test_stale_blocked_to_no_trade(self):
         from nexus_scalp.domain.enums import ActionType
+
         svc = LiveFreshnessService()
         proposal = self._proposal()
-        stale = svc.compute_freshness(_snapshot(last_tick_timestamp=datetime.now(UTC) - timedelta(seconds=900)))
+        stale = svc.compute_freshness(
+            _snapshot(last_tick_timestamp=datetime.now(UTC) - timedelta(seconds=900))
+        )
         out, blocked = svc.gate_proposal(stale, proposal)
         assert blocked is True
         assert out.action == ActionType.NO_TRADE
@@ -188,24 +202,33 @@ class TestGateProposal:
 
 # === GOLDEN 4: diagnose localization ===
 
+
 class TestDiagnoseFreshness:
     def _engine_snapshot(self, **overrides):
         return _snapshot(**overrides)
 
     def test_market_none_frozen_at_market(self):
         svc = LiveFreshnessService()
+
         class FakeAdapter:
-            def get_tick(self, symbol): return None
+            def get_tick(self, symbol):
+                return None
+
         class FakeAgg:
-            def get_completed_bars(self): return []
+            def get_completed_bars(self):
+                return []
+
         class FakeFE:
-            def compute_from_bars(self, completed_bars=None, current_tick=None):  # noqa: ARG002
+            def compute_from_bars(self, completed_bars=None, current_tick=None):
                 raise AssertionError("should not be called when tick is None")
+
         snap = self._engine_snapshot()
         res = svc.diagnose(
             snap,
-            adapter=FakeAdapter(), aggregator=FakeAgg(), feature_engine=FakeFE(),
-            build_vector_fn=lambda fv: ([0.0]*50, {}),
+            adapter=FakeAdapter(),
+            aggregator=FakeAgg(),
+            feature_engine=FakeFE(),
+            build_vector_fn=lambda fv: ([0.0] * 50, {}),
             get_bundle_fn=lambda: None,
             run_inference_fn=lambda x: None,
             symbol="XAUUSD",
@@ -215,13 +238,18 @@ class TestDiagnoseFreshness:
 
     def test_exception_falls_back_to_unknown(self):
         svc = LiveFreshnessService()
+
         class BadAdapter:
-            def get_tick(self, symbol): raise RuntimeError("boom")
+            def get_tick(self, symbol):
+                raise RuntimeError("boom")
+
         snap = self._engine_snapshot()
         res = svc.diagnose(
             snap,
-            adapter=BadAdapter(), aggregator=None, feature_engine=None,
-            build_vector_fn=lambda fv: ([0.0]*50, {}),
+            adapter=BadAdapter(),
+            aggregator=None,
+            feature_engine=None,
+            build_vector_fn=lambda fv: ([0.0] * 50, {}),
             get_bundle_fn=lambda: None,
             run_inference_fn=lambda x: None,
             symbol="XAUUSD",
@@ -240,23 +268,33 @@ class TestDiagnoseFreshness:
             last: float = 4628.25
 
         tick = FakeTick()
-        mkt_hash = hashlib.sha1(f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}".encode()).hexdigest()[:16]
+        mkt_hash = hashlib.sha1(
+            f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}".encode()
+        ).hexdigest()[:16]
 
         class FakeAdapter:
-            def get_tick(self, symbol): return tick
+            def get_tick(self, symbol):
+                return tick
+
         class FakeAgg:
-            def get_completed_bars(self): return []
+            def get_completed_bars(self):
+                return []
+
         class FakeFV:
-            def to_tensor_input(self): return [0.1] * 50
+            def to_tensor_input(self):
+                return [0.1] * 50
+
         class FakeFE:
-            def compute_from_bars(self, completed_bars=None, current_tick=None):  # noqa: ARG002
+            def compute_from_bars(self, completed_bars=None, current_tick=None):
                 return FakeFV()
 
         snap = self._engine_snapshot(last_raw_market_hash=mkt_hash)
-        res = svc = LiveFreshnessService().diagnose(
+        res = LiveFreshnessService().diagnose(
             snap,
-            adapter=FakeAdapter(), aggregator=FakeAgg(), feature_engine=FakeFE(),
-            build_vector_fn=lambda fv: ([0.0]*50, {}),
+            adapter=FakeAdapter(),
+            aggregator=FakeAgg(),
+            feature_engine=FakeFE(),
+            build_vector_fn=lambda fv: ([0.0] * 50, {}),
             get_bundle_fn=lambda: None,
             run_inference_fn=lambda x: None,
             symbol="XAUUSD",

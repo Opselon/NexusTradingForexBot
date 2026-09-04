@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from nexus_scalp.application.live_workers import WorkerSupervisor
@@ -27,7 +28,9 @@ class TestWorkerSupervisor:
     def test_start_worker_success(self):
         w = FakeWorker()
         state = {"started": False}
-        res = WorkerSupervisor.start_worker("test", w, state["started"], lambda v: state.update(started=v))
+        res = WorkerSupervisor.start_worker(
+            "test", w, state["started"], lambda v: state.update(started=v)
+        )
         assert res is True
         assert state["started"] is True
         assert w.started is True
@@ -35,7 +38,9 @@ class TestWorkerSupervisor:
     def test_start_worker_idempotent(self):
         w = FakeWorker()
         state = {"started": True}
-        res = WorkerSupervisor.start_worker("test", w, state["started"], lambda v: state.update(started=v))
+        res = WorkerSupervisor.start_worker(
+            "test", w, state["started"], lambda v: state.update(started=v)
+        )
         assert res is True
         assert w.started is False  # not called again
 
@@ -43,7 +48,9 @@ class TestWorkerSupervisor:
         w = FakeWorker()
         w.fail_start = True
         state = {"started": False}
-        res = WorkerSupervisor.start_worker("test", w, state["started"], lambda v: state.update(started=v))
+        res = WorkerSupervisor.start_worker(
+            "test", w, state["started"], lambda v: state.update(started=v)
+        )
         assert res is False
         assert state["started"] is False
 
@@ -58,6 +65,7 @@ class TestWorkerSupervisor:
     @pytest.mark.asyncio
     async def test_kick_worker_executes_and_cleans(self):
         called = False
+
         def work():
             nonlocal called
             called = True
