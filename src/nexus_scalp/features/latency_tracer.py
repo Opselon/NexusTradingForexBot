@@ -207,7 +207,13 @@ class LatencyStats:
     samples: list[float] = field(default_factory=list)
 
     def add(self, ms: float) -> None:
-        self.samples.append(ms)
+        try:
+            v = float(ms)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(v):
+            return
+        self.samples.append(v)
         if len(self.samples) > self.max_samples:
             self.samples = self.samples[-self.max_samples :]
 

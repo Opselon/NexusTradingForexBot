@@ -125,6 +125,8 @@ KNOWN_FAILURE_CLASSES: dict[str, tuple[str, str]] = {
     "SHADOW_OUTCOME_ZERO": ("MODEL", "LOW"),
     "OUTCOME_SUSPECT": ("LEDGER", "LOW"),
     "SPLIT_FILL_CONTEXT_MISSING": ("LEARNING", "MEDIUM"),
+    # OBS-PERF-RESILIENCE: hot-path fault visibility.
+    "SLOW_INFERENCE": ("MODEL", "MEDIUM"),
 }
 
 #: Incidents that are terminal for data integrity — severity must be evidence-driven.
