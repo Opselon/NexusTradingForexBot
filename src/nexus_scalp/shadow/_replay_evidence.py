@@ -266,7 +266,7 @@ def promotion_verdict(evidence: dict[str, Any], min_resolved_pairs: int) -> dict
         }
     reasons.append(f"paired delta within noise band (mean {mean_d:.4f}R, median {med_d:.4f}R)")
     return {
-        "verdict": VERDICT_INSUFFICIENT,
+        "verdict": _VI,
         "resolved_pairs": resolved,
         "required_pairs": min_resolved_pairs,
         "reasons": reasons,
