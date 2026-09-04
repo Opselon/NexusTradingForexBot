@@ -1500,7 +1500,22 @@ class LiveEngine:
         current bundle is released and the new one becomes authoritative.
         In-flight inference completes against the old bundle under the
         bundle lock. Never replaces a healthy model with an invalid artifact.
+
+        P0-2026-09-04 SECURITY HARDENING (hot-swap governance):
+          * path allow-list — the swap target must resolve inside the
+            approved artifact roots (traversal / symlink escape / arbitrary
+            external files rejected before any load);
+          * bundle coherence — a manifest.json next to the artifact is
+            verified against the actual bytes when present (stale sidecar /
+            hash mismatch rejected);
+          * safe load — weights_only state_dict deserialization with
+            declared-width verification (no arbitrary pickle objects);
+          * metadata/head coherence — model.meta.json class count must equal
+            the actual tensor head; a rejected candidate (REJECTED lifecycle
+            or production_eligible=False when the field exists) cannot be
+            activated through the swap path.
         """
+        from nexus_scalp.training.safe_loader import SafeLoadError, load_state_dict_safe
 
         new_path = Path(new_artifact_path)
         old_path = Path(self.config.model.model_artifact_path)
@@ -1514,12 +1529,68 @@ class LiveEngine:
                 "reason": "ARTIFACT_MISSING",
                 "runtime_applied": False,
             }
+        # P0 hardening: allow-list BEFORE any load (never trust the caller).
         try:
+            from nexus_scalp.training.champion_guard import resolve_under
+
+            resolved = resolve_under(new_path)
+        except Exception as path_err:
+            logger.error(
+                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED reason=PATH_REJECTED detail=%s",
+                path_err,
+            )
+            return {
+                "success": False,
+                "reason": "PATH_REJECTED",
+                "detail": str(path_err),
+                "runtime_applied": False,
+            }
+        del resolved
+        try:
+            # Governance coherence: verify the bundle manifest when present.
+            manifest_path = new_path.parent / "manifest.json"
+            meta_path = new_path.with_suffix(".meta.json")
+            if manifest_path.exists():
+                import hashlib
+                import json as _json
+
+                manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+                h = hashlib.sha256(new_path.read_bytes()).hexdigest()
+                if str(manifest.get("model_sha256", "")) and h != manifest["model_sha256"]:
+                    return {
+                        "success": False,
+                        "reason": "BUNDLE_HASH_MISMATCH",
+                        "runtime_applied": False,
+                    }
+                if manifest.get("production_eligible") is False:
+                    return {
+                        "success": False,
+                        "reason": "CANDIDATE_NOT_PRODUCTION_ELIGIBLE",
+                        "runtime_applied": False,
+                    }
+            if meta_path.exists():
+                import json as _json
+
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+                if meta.get("production_eligible") is False:
+                    return {
+                        "success": False,
+                        "reason": "CANDIDATE_NOT_PRODUCTION_ELIGIBLE",
+                        "runtime_applied": False,
+                    }
+            # Safe deserialization + declared-width verification (dimension
+            # gate: the artifact's own declared contract, as before).
+            expected_dim = self._expected_num_features_for_artifact(new_path)
+
+            def _safe_state():
+                return load_state_dict_safe(
+                    new_path, expected_input_dim=expected_dim, check_approved_root=False
+                )
+
+            await asyncio.to_thread(_safe_state)
             # Load + validate the NEW bundle in isolation (never touching
             # the serving bundle). _load_or_create_bundle raises on dimension
             # mismatch and quarantines corrupt checkpoints.
-            import asyncio
-
             new_bundle = await asyncio.to_thread(
                 self._load_or_create_bundle, model_path=new_path, force_fresh=False
             )
