@@ -31,24 +31,24 @@
 
 | File | Status | Purpose | Notes / Lineage |
 |---|---|---|---|
-| [`CONTRACT_AUDIT_REPORT.md`](../../CONTRACT_AUDIT_REPORT.md) | **ACTIVE** | Contract audit (production contracts, current guidance) | **ACTIVE** — maps current 50D live vs 70D candidate contracts |
-| [`MLFix.md`](../../MLFix.md) | **ACTIVE / CANONICAL** | 70D XAUUSD Model: Forensic Findings, Fix Plan & Future Roadmap | Supersedes `MLFixing.md` (§11.1 full-history reconciliation addendum, 42 KB) |
-| [`MLFixing.md`](../../MLFixing.md) | **HISTORICAL / SUPERSEDED** | Earlier ML-lane handoff (done-so-far + future path) | Preserved historical precursor to `MLFix.md` (21 KB) |
-| [`MODEL_ARTIFACT_FORENSICS.md`](../../MODEL_ARTIFACT_FORENSICS.md) | **EVIDENCE** | Model artifact forensics (33-pt analysis) | Root entry point; byte-identical to `artifacts/forensics/model_artifact_forensics_20260904.md` |
-| [`CLEANUP_FINAL_CONCLUSION.md`](../../CLEANUP_FINAL_CONCLUSION.md) | **REFERENCE** | Disposition conclusion + Pages/model accounting | Closing report of the 6-stash disposition |
-| [`STASH_INTEGRATION_MATRIX.md`](../../STASH_INTEGRATION_MATRIX.md) | **REFERENCE** | Decision matrix: 0× INTEGRATE, 2× DUPLICATE, 3× OBSOLETE, 1× CONFLICTING | Built from read-only `/tmp/stash-{0..5}.patch` verification |
-| [`STASH_FINAL_DISPOSITION.md`](../../STASH_FINAL_DISPOSITION.md) | **HISTORICAL** | Final drop sequence for the 6 audited stashes | Companion to `CLEANUP_FINAL_CONCLUSION.md` |
-| [`GITHUB_PAGES_FINAL_STATE.md`](../../GITHUB_PAGES_FINAL_STATE.md) | **REFERENCE** | Pages deployment verification after P3 | References `site/_site` state at `4261c3d2`/`a5e2ccc4` |
-| [`MAIN_INTEGRATION_REPORT.md`](../../MAIN_INTEGRATION_REPORT.md) | **REFERENCE** | Integration report for the recovery-kit into `main` | Consolidated view of `345932e3` contents |
-| [`FORENSIC_BASELINE.md`](../../FORENSIC_BASELINE.md) | **HISTORICAL** | Pre-recovery baseline snapshot (pre-`979624fc`) | Superseded by `recovery-kit 345932e3`; keep as baseline evidence |
-| [`FORENSIC_RECOVERY_REPORT.md`](../../FORENSIC_RECOVERY_REPORT.md) | **EVIDENCE** | Summary of the 6-stash recovery operation | Parent of `forensic_recovery_20260904/` reports |
-| [`RECOVERED_AGENT_WORK_SUMMARY.md`](../../RECOVERED_AGENT_WORK_SUMMARY.md) | **EVIDENCE** | Summary of agent work recovered during the operation | Supporting evidence, not guidance |
-| [`PILOT_VALIDATION_RESULT.md`](../../PILOT_VALIDATION_RESULT.md) | **EVIDENCE** | Pilot validation result for time-bounded training | Validates pilot subset before 34x10 full run |
-| [`MODEL_READINESS_REPORT.md`](../../MODEL_READINESS_REPORT.md) | **EVIDENCE** | 14-gate model readiness audit | Evidence of 70D candidate gate checks |
-| [`MODEL_RETRAIN_POSTMORTEM.md`](../../MODEL_RETRAIN_POSTMORTEM.md) | **EVIDENCE** | Postmortem on partially trained worker state | Forensic trace of worker 25032 |
-| [`MODEL_CONTINUATION_REPORT.md`](../../MODEL_CONTINUATION_REPORT.md) | **HISTORICAL** | Next gated sequence after postmortem | Historical handoff for ML retraining |
-| [`TEAM_FINAL_MODEL_CONCLUSION.md`](../../TEAM_FINAL_MODEL_CONCLUSION.md) | **EVIDENCE** | Multi-agent model consensus summary | Evidence of 3-class vs 4-head incoherence resolution |
-| [`SECURITY_AUDIT_SEC_CAPITAL_DATA_BROKER.md`](../../SECURITY_AUDIT_SEC_CAPITAL_DATA_BROKER.md) | **REFERENCE** | Security audit finding snapshot (SEC-CAPITAL / DATA-BROKER) | Keep as reference, not active policy |
+| [`CONTRACT_AUDIT_REPORT.md`](CONTRACT_AUDIT_REPORT.md) | **ACTIVE** | Contract audit (production contracts, current guidance) | **ACTIVE** — maps current 50D live vs 70D candidate contracts |
+| [`MLFix.md`](MLFix.md) | **ACTIVE / CANONICAL** | 70D XAUUSD Model: Forensic Findings, Fix Plan & Future Roadmap | Supersedes `MLFixing.md` (§11.1 full-history reconciliation addendum, 42 KB) |
+| [`MLFixing.md`](archive/MLFixing.md) | **HISTORICAL / SUPERSEDED** | Earlier ML-lane handoff (done-so-far + future path) | Preserved historical precursor to `MLFix.md` (21 KB) |
+| [`MODEL_ARTIFACT_FORENSICS.md`](MODEL_ARTIFACT_FORENSICS.md) | **EVIDENCE** | Model artifact forensics (33-pt analysis) | Root entry point; byte-identical to `artifacts/forensics/model_artifact_forensics_20260904.md` |
+| [`CLEANUP_FINAL_CONCLUSION.md`](CLEANUP_FINAL_CONCLUSION.md) | **REFERENCE** | Disposition conclusion + Pages/model accounting | Closing report of the 6-stash disposition |
+| [`STASH_INTEGRATION_MATRIX.md`](STASH_INTEGRATION_MATRIX.md) | **REFERENCE** | Decision matrix: 0× INTEGRATE, 2× DUPLICATE, 3× OBSOLETE, 1× CONFLICTING | Built from read-only `/tmp/stash-{0..5}.patch` verification |
+| [`STASH_FINAL_DISPOSITION.md`](STASH_FINAL_DISPOSITION.md) | **HISTORICAL** | Final drop sequence for the 6 audited stashes | Companion to `CLEANUP_FINAL_CONCLUSION.md` |
+| [`GITHUB_PAGES_FINAL_STATE.md`](GITHUB_PAGES_FINAL_STATE.md) | **REFERENCE** | Pages deployment verification after P3 | References `site/_site` state at `4261c3d2`/`a5e2ccc4` |
+| [`MAIN_INTEGRATION_REPORT.md`](MAIN_INTEGRATION_REPORT.md) | **REFERENCE** | Integration report for the recovery-kit into `main` | Consolidated view of `345932e3` contents |
+| [`FORENSIC_BASELINE.md`](FORENSIC_BASELINE.md) | **HISTORICAL** | Pre-recovery baseline snapshot (pre-`979624fc`) | Superseded by `recovery-kit 345932e3`; keep as baseline evidence |
+| [`FORENSIC_RECOVERY_REPORT.md`](FORENSIC_RECOVERY_REPORT.md) | **EVIDENCE** | Summary of the 6-stash recovery operation | Parent of `forensic_recovery_20260904/` reports |
+| [`RECOVERED_AGENT_WORK_SUMMARY.md`](RECOVERED_AGENT_WORK_SUMMARY.md) | **EVIDENCE** | Summary of agent work recovered during the operation | Supporting evidence, not guidance |
+| [`PILOT_VALIDATION_RESULT.md`](PILOT_VALIDATION_RESULT.md) | **EVIDENCE** | Pilot validation result for time-bounded training | Validates pilot subset before 34x10 full run |
+| [`MODEL_READINESS_REPORT.md`](MODEL_READINESS_REPORT.md) | **EVIDENCE** | 14-gate model readiness audit | Evidence of 70D candidate gate checks |
+| [`MODEL_RETRAIN_POSTMORTEM.md`](MODEL_RETRAIN_POSTMORTEM.md) | **EVIDENCE** | Postmortem on partially trained worker state | Forensic trace of worker 25032 |
+| [`MODEL_CONTINUATION_REPORT.md`](MODEL_CONTINUATION_REPORT.md) | **HISTORICAL** | Next gated sequence after postmortem | Historical handoff for ML retraining |
+| [`TEAM_FINAL_MODEL_CONCLUSION.md`](TEAM_FINAL_MODEL_CONCLUSION.md) | **EVIDENCE** | Multi-agent model consensus summary | Evidence of 3-class vs 4-head incoherence resolution |
+| [`SECURITY_AUDIT_SEC_CAPITAL_DATA_BROKER.md`](SECURITY_AUDIT_SEC_CAPITAL_DATA_BROKER.md) | **REFERENCE** | Security audit finding snapshot (SEC-CAPITAL / DATA-BROKER) | Keep as reference, not active policy |
 
 ---
 
