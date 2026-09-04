@@ -211,7 +211,11 @@ def test_p0_case8_stale_sidecar_hash_binding_rejected(tmp_path: Path) -> None:
     d.mkdir()
     torch.save(_state(3), d / "model.pt")
     (d / "model.meta.json").write_text(json.dumps(_meta()), encoding="utf-8")
-    np.savez(d / "model.scaler.npz", mean=np.zeros(70, dtype=np.float32), std=np.ones(70, dtype=np.float32))
+    np.savez(
+        d / "model.scaler.npz",
+        mean=np.zeros(70, dtype=np.float32),
+        std=np.ones(70, dtype=np.float32),
+    )
     manifest = eg.build_bundle_manifest(
         bundle_dir=d,
         dataset_id="ds_70d_clean_m1_20260904",
@@ -249,4 +253,6 @@ def test_p0_case9_traversal_and_external_paths_rejected(tmp_path: Path) -> None:
     with pytest.raises(ChampionPathError):
         resolve_under("C:/Windows/win.ini")
     with pytest.raises(ChampionPathError):
-        resolve_under("artifacts/model_generation/models/../../models/scalp/XAUUSD/70d_liquidity/model.pt")
+        resolve_under(
+            "artifacts/model_generation/models/../../models/scalp/XAUUSD/70d_liquidity/model.pt"
+        )

@@ -53,7 +53,11 @@ def _make_valid_bundle(d: Path, head: int = 3, dim: int = 70, eligible: bool = T
         "dataset_sha256": "3ae687eaaa1f32a64c6d8acc1ab92d4ab9bceb0949d11cfe9e83ea852e3260fe",
     }
     (d / "model.meta.json").write_text(json.dumps(meta), encoding="utf-8")
-    np.savez(d / "model.scaler.npz", mean=np.zeros(dim, dtype=np.float32), std=np.ones(dim, dtype=np.float32))
+    np.savez(
+        d / "model.scaler.npz",
+        mean=np.zeros(dim, dtype=np.float32),
+        std=np.ones(dim, dtype=np.float32),
+    )
     manifest = eg.build_bundle_manifest(
         bundle_dir=d,
         dataset_id="ds_70d_clean_m1_20260904",
@@ -210,7 +214,7 @@ async def test_hot_swap_accepts_valid_candidate(tmp_path: Path) -> None:
                 return x
 
     def _fake_load(model_path, force_fresh):
-            return _FakeBundle()
+        return _FakeBundle()
 
     eng._load_or_create_bundle = _fake_load
 

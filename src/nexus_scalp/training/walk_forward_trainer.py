@@ -573,7 +573,8 @@ class WalkForwardTrainer:
                 meta,
                 dataset_id=prov.get("dataset_id"),
                 dataset_sha256=prov.get("dataset_sha256"),
-                feature_schema_hash=meta.get("feature_schema_hash") or prov.get("feature_schema_hash"),
+                feature_schema_hash=meta.get("feature_schema_hash")
+                or prov.get("feature_schema_hash"),
                 feature_schema_id=str(self.feature_schema.schema_id),
                 seq_len=meta.get("seq_len"),
                 scaler_mean_dim=int(mean.size),
@@ -587,7 +588,10 @@ class WalkForwardTrainer:
                 dataset_sha256=str(prov.get("dataset_sha256") or "UNBOUND"),
                 feature_schema_id=str(self.feature_schema.schema_id),
                 feature_schema_hash=str(meta.get("feature_schema_hash") or ""),
-                label_schema_id=str((meta.get("label_contract") or {}).get("schema_id") or "triple_barrier_3class_v1"),
+                label_schema_id=str(
+                    (meta.get("label_contract") or {}).get("schema_id")
+                    or "triple_barrier_3class_v1"
+                ),
                 architecture="ScalpNet",
                 architecture_version=str(meta.get("model_class_contract_version") or "1.0.0"),
                 git_commit=eg.git_commit_head(),
@@ -596,7 +600,8 @@ class WalkForwardTrainer:
                 fold_count=int(self.num_folds),
                 epoch_count=int(self.epochs),
                 lineage=str(meta.get("label_origin") or "UNKNOWN"),
-                production_eligible=bool(meta.get("production_eligible")) and bool(prov.get("dataset_id")),
+                production_eligible=bool(meta.get("production_eligible"))
+                and bool(prov.get("dataset_id")),
                 extra={
                     "label_origin": meta.get("label_origin"),
                     "smoke": bool(self.smoke),
@@ -608,9 +613,7 @@ class WalkForwardTrainer:
                     "embargo_bars": int(self.embargo_bars),
                 },
             )
-            (staging / "manifest.json").write_text(
-                json.dumps(manifest, indent=2), encoding="utf-8"
-            )
+            (staging / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             # 5) verify staged bundle from disk, then commit atomically
             eg.verify_bundle_against_manifest(staging)
             eg.publish_bundle_atomic(staging, target_dir)

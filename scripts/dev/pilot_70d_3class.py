@@ -94,13 +94,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         import subprocess
 
-        git_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=REPO,
-            check=False,
-        ).stdout.strip() or "UNKNOWN"
+        git_sha = (
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=REPO,
+                check=False,
+            ).stdout.strip()
+            or "UNKNOWN"
+        )
     except Exception:
         pass
 
@@ -154,9 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     subset_hash = hashlib.sha256(
         pl.concat([pilot["sample_id"], pilot["timestamp"]]).write_parquet(None)
         if False
-        else json.dumps(
-            [str(x) for x in pilot["sample_id"][:200]] + [str(pilot.height)]
-        ).encode()
+        else json.dumps([str(x) for x in pilot["sample_id"][:200]] + [str(pilot.height)]).encode()
     ).hexdigest()
     log.write(f"subset_hash : {subset_hash} (sample_id prefix + rowcount binding)\n")
 
