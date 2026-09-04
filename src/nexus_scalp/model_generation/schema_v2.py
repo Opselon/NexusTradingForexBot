@@ -679,6 +679,7 @@ def build_70d_dataset(
     dataset_id: str | None = None,
     incremental: bool = False,
     verify_parity: bool = False,
+    no_trade_stride_bars: int = 2,
 ) -> dict[str, Any]:
     """Builds + persists a scalp_v3 (70D) dataset artifact.
 
@@ -688,6 +689,13 @@ def build_70d_dataset(
     builder on the first 400 rows and asserts byte-identical features (an
     equivalence self-check embedded in the build; use on the first build of
     a new liquidity-engine revision).
+
+    ``no_trade_stride_bars`` (MLFix §8 F5 RETRAIN-ONLY mitigation): the
+    Triple-Barrier labeler stride on NO_TRADE rows. Default 2 (the
+    documented retrain override — barriers identical — yielding ~4.7x eval
+    coverage over the smoke-era 5,752 rows on the full 100k M1 history).
+    The production value is recorded in the manifest's
+    ``purge_parameters`` and contributes to ``label_config_hash``.
     """
     store = store or ArtifactStore()
     if not incremental:
@@ -719,9 +727,14 @@ def build_70d_dataset(
             logger.info("[SCHEMA_70D] event=PARITY_SELF_CHECK diffs=0 rows=%d", canon.height)
     if feat_frame.is_empty():
         raise ValueError("70D feature frame empty — check raw bars / min_bars")
+    from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
+
     factory = DatasetFactory(
         store=store,
-        sample_factory=SampleFactory(feature_schema_id=SEVENTY_D_SCHEMA_ID),
+        sample_factory=SampleFactory(
+            feature_schema_id=SEVENTY_D_SCHEMA_ID,
+            labeler=TripleBarrierLabeler(no_trade_stride_bars=int(no_trade_stride_bars)),
+        ),
     )
     handle = factory.build(
         feat_frame,
