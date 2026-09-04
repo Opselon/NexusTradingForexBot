@@ -41,39 +41,55 @@
   <sub>Pick your path — five doors, one engine</sub>
 </p>
 
-<div align="center">
+<table align="center">
+<tr>
+<td align="center" width="20%">
+<a href="#-quick-start">
 
-<a href="#-quick-start" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
-<div style="font-size:26px; line-height:1;">🚀</div>
-<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Quick Start</div>
-<div style="font-size:11px; line-height:1.3; color:#8b949e;">Run in under<br>5 minutes</div>
+#### 🚀 Quick Start
+<sub>Run in under 5 minutes</sub><br>
+<sub><code>→ Open</code></sub>
+
 </a>
+</td>
+<td align="center" width="20%">
+<a href="#-architecture-at-a-glance">
 
-<a href="#-architecture-at-a-glance" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
-<div style="font-size:26px; line-height:1;">🏗️</div>
-<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Architecture</div>
-<div style="font-size:11px; line-height:1.3; color:#8b949e;">System map &<br>data flow</div>
+#### 🏗️ Architecture
+<sub>System map & data flow</sub><br>
+<sub><code>→ Explore</code></sub>
+
 </a>
+</td>
+<td align="center" width="20%">
+<a href="#-research--validation">
 
-<a href="#-research--validation" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
-<div style="font-size:26px; line-height:1;">🔬</div>
-<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Research</div>
-<div style="font-size:11px; line-height:1.3; color:#8b949e;">Claims &<br>evidence</div>
+#### 🔬 Research
+<sub>Claims & evidence</sub><br>
+<sub><code>→ Validate</code></sub>
+
 </a>
+</td>
+<td align="center" width="20%">
+<a href="#-cli">
 
-<a href="#-cli" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
-<div style="font-size:26px; line-height:1;">📖</div>
-<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Reference</div>
-<div style="font-size:11px; line-height:1.3; color:#8b949e;">CLI · API</div>
+#### 📖 Reference
+<sub>CLI · API</sub><br>
+<sub><code>→ Lookup</code></sub>
+
 </a>
+</td>
+<td align="center" width="20%">
+<a href="#-contributing">
 
-<a href="#-contributing" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
-<div style="font-size:26px; line-height:1;">🤝</div>
-<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Contribute</div>
-<div style="font-size:11px; line-height:1.3; color:#8b949e;">Join the<br>research</div>
+#### 🤝 Contribute
+<sub>Join the research</sub><br>
+<sub><code>→ Join</code></sub>
+
 </a>
-
-</div>
+</td>
+</tr>
+</table>
 
 ---
 
