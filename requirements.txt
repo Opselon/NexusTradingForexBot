@@ -54,3 +54,4 @@ ruff==0.16.5                       # Ultra-fast Rust-based linter and formatter
 mypy>=1.8.0                        # Static type-checking analyzer
 types-pyyaml>=6.0.12               # Type hints for PyYAML library
 
+Pygments>=2.20.0  # CVE-2022-40896 + CVE-2026-4539: ReDoS in <2.20.0 (transitive via rich/pytest)

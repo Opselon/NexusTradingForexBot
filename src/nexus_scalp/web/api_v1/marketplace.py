@@ -404,7 +404,13 @@ def repair_seed(request: Request, seed_id: str, body: RepairBody) -> Any:
                 status_code=201,
             )
     except Exception as e:
-        return fail(request, "INTERNAL_ERROR", message=str(e)[:200])
+        from nexus_scalp.observability.logging import get_logger
+        from nexus_scalp.web.errors import log_web_error
+
+        log_web_error(
+            get_logger("nexus_scalp.web.api_v1.marketplace"), "/api/v1/marketplace/repair", None, e
+        )
+        return fail(request, "INTERNAL_ERROR")
     return fail(request, "INTERNAL_ERROR", message="repair path unreachable")
 
 
