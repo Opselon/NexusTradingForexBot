@@ -136,6 +136,8 @@ def _resolve_model_section() -> dict[str, object]:
 
 def _resolve_db_capability() -> dict[str, object]:
     database = _snapshot_section("database")
+    if database.get(STATE_UNAVAILABLE_KEY):
+        return {STATE_UNAVAILABLE_KEY: True}
     capability = database.get("capability")
     return dict(capability) if isinstance(capability, dict) else {}
 
