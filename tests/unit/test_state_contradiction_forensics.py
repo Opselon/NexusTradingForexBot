@@ -11,6 +11,7 @@ C-005  [MODE] line repeated ~2k/day with zero state change
        -> edge-triggered emission (assert via _last_logged_runtime_mode).
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,10 +27,27 @@ class _FakeAdapter:
         return self.connected
 
 
-def _make_engine() -> LiveEngine:
+def _make_engine(tmp_path: Path | None = None) -> LiveEngine:
+    """Build a LiveEngine for contradiction probes.
+
+    S3 ruling (NX-STP0): the engine fixture must be hermetic. The config's
+    model_artifact_path is redirected under artifacts/model_generation/models/
+    (tmp_path preferred when provided) so tests never touch the real serving
+    artifact at artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt and never
+    depend on process CWD for repo-relative config resolution.
+    """
     from nexus_scalp.configuration.config import AppConfig
 
-    cfg = AppConfig.load_from_yaml(__import__("pathlib").Path("configs/base.yaml"))
+    yaml_path = (
+        Path(__file__).resolve().parents[2] / "configs" / "base.yaml"
+        if tmp_path is not None
+        else Path("configs/base.yaml")
+    )
+    cfg = AppConfig.load_from_yaml(yaml_path)
+    if tmp_path is not None:
+        artifact_dir = tmp_path / "artifacts" / "model_generation" / "models"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        cfg.model.model_artifact_path = str(artifact_dir / "fixture_model.pt")
     return LiveEngine(config=cfg, adapter=_FakeAdapter(), audit_repo=MagicMock())
 
 
@@ -45,9 +63,9 @@ def test_c001_launcher_source_has_no_bare_mode_identity_claim():
     assert "configured_mode=" in boot, "launcher must log the effective configured mode"
 
 
-def test_c004_mode_log_is_edge_triggered():
+def test_c004_mode_log_is_edge_triggered(tmp_path):
     """_update_runtime_mode must not re-log an unchanged truth every 5s."""
-    engine = _make_engine()
+    engine = _make_engine(tmp_path)
     engine._account_snapshot = None
     with (
         patch.object(engine, "adapter") as ad,
