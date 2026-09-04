@@ -193,12 +193,23 @@ def test_missing_classification_stamp_is_treated_as_stale(monkeypatch):
 
 
 def test_regime_state_max_age_sec_default_and_yaml_keys():
-    """Config contract: AlgoConfig default 300s; base.yaml + live.yaml
-    carry the same key (config pattern followed)."""
+    """Config contract: AlgoConfig default 300s; base.yaml (TRACKED) carries the
+    same key; live.yaml (GIT-IGNORED, operator-owned) overrides consistently
+    WHEN it exists AND carries the key (TDF-F1: the operator's live.yaml may
+    legally omit the whole algo section — the loader chain then applies the
+    default; pinning its presence here made the test machine-dependent)."""
     from nexus_scalp.configuration.config import AlgoConfig
 
     assert AlgoConfig().regime_state_max_age_sec == 300.0
 
-    for name in ("base.yaml", "live.yaml"):
-        data = yaml.safe_load((_REPO_ROOT / "configs" / name).read_text(encoding="utf-8"))
-        assert float(data["algo"]["regime_state_max_age_sec"]) == 300.0, name
+    # tracked bootstrap layer always carries the key
+    base_data = yaml.safe_load((_REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8"))
+    assert float(base_data["algo"]["regime_state_max_age_sec"]) == 300.0
+
+    # operator layer (git-ignored): assert only what its existence implies
+    live_path = _REPO_ROOT / "configs" / "live.yaml"
+    if live_path.exists():
+        live_data = yaml.safe_load(live_path.read_text(encoding="utf-8")) or {}
+        algo = live_data.get("algo") or {}
+        if "regime_state_max_age_sec" in algo:
+            assert float(algo["regime_state_max_age_sec"]) == 300.0
