@@ -1303,8 +1303,16 @@ class LiveEngine:
         self.audit.current_account_source = self._boot_account_source
 
         # Online training toolchain
+        # P0-2026-09-04: the online trainer must NEVER own the champion
+        # serving path as its save target — fine_tune_online persists through
+        # the engine's _save_model_weights_atomic on the BUNDLE's artifact
+        # path (persist-decision gated, BUG-235/236). The trainer's own save
+        # path is therefore an isolated candidate location; the serving path
+        # stays untouched by trainer defaults.
         self.trainer = WalkForwardTrainer(
-            artifact_save_path=Path(self.config.model.model_artifact_path),
+            artifact_save_path=Path(
+                "artifacts/model_generation/models/online_buffer/online_model.pt"
+            ),
             random_seed=42,
             active_class_boost=2.5,  # can be increased to 3.5 after calibration
         )
