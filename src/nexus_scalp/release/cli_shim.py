@@ -12,6 +12,7 @@ into an exit code of 1 on --help.
 """
 
 from __future__ import annotations
+import contextlib
 
 import sys
 
@@ -22,8 +23,6 @@ if __name__ == "__main__":
     # Reconfigure stdio to UTF-8 with replacement so rich banner glyphs can
     # never hard-kill the launch (double-click + CLI parity).
     for stream in (sys.stdout, sys.stderr):
-        try:
+        with contextlib.suppress(Exception):
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr,attr-defined]
-        except Exception:
-            pass
     app()

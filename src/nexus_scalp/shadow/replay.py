@@ -59,14 +59,26 @@ VERDICT_REJECTED = "CHALLENGER_REJECTED"
 #: ΔR beyond this magnitude marks a material behavioral difference.
 MATERIAL_DELTA_R: float = 0.10
 
-from nexus_scalp.shadow._replay_evidence import (  # noqa: E402, F401  (re-export; constants above must exist first to break the import cycle)
-    build_replay_evidence,
-    promotion_verdict,
-)
-from nexus_scalp.shadow._replay_pair import (  # noqa: E402, F401  (re-export)
-    classify_pair,
-    session_of,
-)
+#: Backward-compat re-exports resolved lazily via module ``__getattr__``
+#: (PEP 562) — a module-level import here would re-create the
+#: replay <-> _replay_evidence import cycle (CodeQL py/unsafe-cyclic-import).
+_LAZY_REEXPORTS: dict[str, tuple[str, str]] = {
+    "build_replay_evidence": ("nexus_scalp.shadow._replay_evidence", "build_replay_evidence"),
+    "promotion_verdict": ("nexus_scalp.shadow._replay_evidence", "promotion_verdict"),
+    "classify_pair": ("nexus_scalp.shadow._replay_pair", "classify_pair"),
+    "session_of": ("nexus_scalp.shadow._replay_pair", "session_of"),
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_REEXPORTS:
+        import importlib
+
+        module_name, attr = _LAZY_REEXPORTS[name]
+        value = getattr(importlib.import_module(module_name), attr)
+        globals()[name] = value  # cache after first access
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def dataset_fingerprint(records: list[dict[str, Any]], dataset_id: str) -> str:

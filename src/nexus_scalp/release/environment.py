@@ -19,6 +19,7 @@ Architecture policy (from the ACTUAL dependency stack, 2026-08):
 """
 
 from __future__ import annotations
+import contextlib
 
 import ctypes
 import os
@@ -119,14 +120,12 @@ def _detect_ram_mb() -> int:
                 return int(stat.ullTotalPhys // (1024 * 1024))
         except Exception:
             pass
-    try:
+    with contextlib.suppress(Exception):
         out = _run(["wmic", "ComputerSystem", "get", "TotalPhysicalMemory"])
         if out and out.splitlines():
             for line in out.splitlines():
                 if line.strip().isdigit():
                     return int(line.strip()) // (1024 * 1024)
-    except Exception:
-        pass
     return 0
 
 
@@ -235,14 +234,12 @@ def _detect_mt5() -> tuple[bool, bool]:
         native_module = True
         if terminal is False:
             # Ask the module itself where its terminal is.
-            try:
+            with contextlib.suppress(Exception):
                 term_path = mt5.terminal_info()
                 if term_path is not None:
                     p = Path(getattr(term_path, "path", "") or "")
                     if p.exists():
                         terminal = True
-            except Exception:
-                pass
     except Exception:
         pass
     return terminal, native_module

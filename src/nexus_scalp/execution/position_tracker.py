@@ -29,6 +29,7 @@ peaks in USD. Time source: server-local tick timestamps (BUG-070 aware).
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 from typing import Any
 
@@ -269,7 +270,7 @@ class PositionTrackingLedger:
             entry_probs = self._entry_probs.get(ticket, {})
 
             if probs is not None and entry_probs:
-                try:
+                with contextlib.suppress(Exception):
                     pl = probs.squeeze().tolist()
                     if not isinstance(pl, list):
                         pl = [pl]
@@ -292,11 +293,9 @@ class PositionTrackingLedger:
                                 "entry_sell": entry_probs.get("sell"),
                             }
                         )
-                except Exception:
-                    pass
 
             if regime_state is not None and self._entry_regime_state.get(ticket):
-                try:
+                with contextlib.suppress(Exception):
                     cur_regime = str(getattr(regime_state, "regime_type", "") or "")
                     if cur_regime and cur_regime != self._entry_regime_state[ticket]:
                         events.append(
@@ -308,8 +307,6 @@ class PositionTrackingLedger:
                             }
                         )
                         self._entry_regime_state[ticket] = cur_regime
-                except Exception:
-                    pass
         except Exception as exc:
             logger.error(
                 "[TRADE_LINEAGE] reversal capture failed (isolated)",

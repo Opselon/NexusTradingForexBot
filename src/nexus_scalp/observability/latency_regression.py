@@ -28,6 +28,7 @@ DESIGN CONTRACTS
 
 from __future__ import annotations
 
+import contextlib
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -101,10 +102,8 @@ class LatencyRegressionDetector:
         p95 = self._p95("e2e_ms")
         if p95 is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self.worst_p95_e2e_ms = max(self.worst_p95_e2e_ms, p95)
-        except Exception:
-            pass
         budget = latency_warning_threshold_ms() * _REGRESSION_FRACTION
         is_bad = p95 > budget
         if is_bad == self.regressed:

@@ -19,6 +19,7 @@ blocked (INV-001).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import uuid
@@ -424,10 +425,8 @@ class GovernanceStore:
         # Governance transitions are rare operator actions (never the tick
         # hot path): flush the async queue so a just-recorded transition is
         # visible to the next transition read (consistency of the chain).
-        try:
+        with contextlib.suppress(Exception):
             self.audit_repo._queue.join()
-        except Exception:
-            pass
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
             conn.row_factory = sqlite3.Row
@@ -451,10 +450,8 @@ class GovernanceStore:
             return out
         # Flush queued writes so freshly recorded events are visible to
         # operators/auditors (read path is never the tick hot path).
-        try:
+        with contextlib.suppress(Exception):
             self.audit_repo._queue.join()
-        except Exception:
-            pass
         bounded = max(1, min(int(limit), MAX_EVENTS_READ))
         clauses: list[str] = []
         args: list[Any] = []
@@ -592,10 +589,8 @@ class GovernanceStore:
         out: list[dict[str, Any]] = []
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return out
-        try:
+        with contextlib.suppress(Exception):
             self.audit_repo._queue.join()
-        except Exception:
-            pass
         bounded = max(1, min(int(limit), MAX_EVENTS_READ))
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
@@ -616,10 +611,8 @@ class GovernanceStore:
         out: list[dict[str, Any]] = []
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return out
-        try:
+        with contextlib.suppress(Exception):
             self.audit_repo._queue.join()
-        except Exception:
-            pass
         bounded = max(1, min(int(limit), MAX_EVENTS_READ))
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)

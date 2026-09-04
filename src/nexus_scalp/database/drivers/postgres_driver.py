@@ -19,6 +19,7 @@ Driver responsibilities (portability contract):
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -174,12 +175,10 @@ class PostgreSQLDriver(DatabaseDriver):
 
     def configure_connection(self, conn: Any) -> None:
         if self.config.command_timeout_sec:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(
                     f"SET statement_timeout = {int(self.config.command_timeout_sec) * 1000}"
                 )
-            except Exception:
-                pass
 
     # -- DDL --------------------------------------------------------------
 
@@ -265,11 +264,9 @@ class PostgreSQLDriver(DatabaseDriver):
 
     def _maybe_commit_auto(self, conn: Any) -> None:
         """Auto-commit when the driver opened the connection itself."""
-        try:
+        with contextlib.suppress(Exception):
             if conn is not None:
                 conn.commit()
-        except Exception:
-            pass
 
     def execute(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> Any:
         active_tx = getattr(self, "_active_tx_conn", None)
@@ -366,13 +363,11 @@ class PostgreSQLDriver(DatabaseDriver):
         if table not in cached:
             pks: list[str] = []
             uniques: list[str] = []
-            try:
+            with contextlib.suppress(Exception):
                 for col in self.table_columns(table, conn=conn):
                     if col.get("pk"):
                         pks.append(str(col["name"]))
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 rows = conn.execute(
                     "SELECT kcu.column_name FROM information_schema.table_constraints tc "
                     "JOIN information_schema.key_column_usage kcu "
@@ -382,8 +377,6 @@ class PostgreSQLDriver(DatabaseDriver):
                     (table,),
                 ).fetchall()
                 uniques = [r[0] for r in rows]
-            except Exception:
-                pass
             cached[table] = (pks, uniques)
         pks, uniques = cached[table]
         if pks and all(p in cols for p in pks):

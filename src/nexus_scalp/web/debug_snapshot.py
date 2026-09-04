@@ -27,6 +27,7 @@ PRINCIPLES (from the Debug 70D forensic console brief):
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 import uuid
@@ -135,12 +136,10 @@ def _runtime_section(engine: Any) -> dict[str, Any]:
     timeframe = "M1"
     mode = None
     runtime_mode = None
-    try:
+    with contextlib.suppress(Exception):
         if cfg is not None and getattr(cfg, "execution", None) is not None:
             symbol = cfg.execution.symbol
             mode = getattr(cfg.execution.mode, "value", None) or str(cfg.execution.mode)
-    except Exception:
-        pass
     try:
         runtime_mode = getattr(engine, "_runtime_mode", None) or mode
     except Exception:
@@ -165,7 +164,7 @@ def _runtime_section(engine: Any) -> dict[str, Any]:
     bar_stream = "UNAVAILABLE"
     last_feature_update = None
     feature_latency_ms = None
-    try:
+    with contextlib.suppress(Exception):
         if engine is not None:
             is_conn = getattr(engine.adapter, "is_connected", None)
             broker_connected = bool(is_conn()) if callable(is_conn) else False
@@ -187,8 +186,6 @@ def _runtime_section(engine: Any) -> dict[str, Any]:
             if agg is not None:
                 completed = len(getattr(agg, "get_completed_bars", lambda: [])())
                 bar_stream = "LIVE" if completed > 0 else "WAITING_BARS"
-    except Exception:
-        pass
 
     fv = getattr(engine, "_last_fv", None) if engine else None
     if fv is not None:
@@ -203,13 +200,11 @@ def _runtime_section(engine: Any) -> dict[str, Any]:
     # Model identity from the champion manager (real registry provenance)
     model_id = None
     model_version = None
-    try:
+    with contextlib.suppress(Exception):
         champ = getattr(engine, "champion_manager", None) if engine else None
         if champ is not None:
             model_id = getattr(champ, "model_id", None)
             model_version = getattr(champ, "model_version", None)
-    except Exception:
-        pass
 
     # Subsystem flags (workers/news/liquidity/shadow/research/training/accounting)
     def _flag(name: str) -> bool:
@@ -744,10 +739,8 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     # 2. Confidence gate
     conf = float(getattr(proposal, "confidence", 0.0)) if proposal else None
     threshold = None
-    try:
+    with contextlib.suppress(Exception):
         threshold = float(engine.config.model.confidence_threshold)
-    except Exception:
-        pass
     if conf is not None and threshold is not None:
         gates.append(
             {
@@ -792,10 +785,8 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     # 4. R:R gate
     rr = float(getattr(proposal, "risk_reward_ratio", 0.0)) if proposal else None
     min_rr = None
-    try:
+    with contextlib.suppress(Exception):
         min_rr = float(engine.config.algo.min_risk_reward_ratio)
-    except Exception:
-        pass
     if rr is not None and min_rr is not None:
         gates.append(
             {
@@ -981,7 +972,7 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         "drawdown_pct": None,
         "available": False,
     }
-    try:
+    with contextlib.suppress(Exception):
         snap = getattr(engine, "_account_snapshot", None)
         if snap is None or not getattr(snap, "available", False):
             snap = engine.adapter.get_account_snapshot()
@@ -997,8 +988,6 @@ def _risk_section(engine: Any) -> dict[str, Any]:
             eq = account["equity"]
             if peak and eq is not None:
                 account["drawdown_pct"] = round((peak - eq) / max(peak, 1.0) * 100.0, 3)
-    except Exception:
-        pass
     out["account"] = account
 
     # RiskEngine decision on the last proposal.
@@ -1140,12 +1129,10 @@ def _positions_section(engine: Any) -> dict[str, Any]:
                 pos["hold_seconds"] = None
                 entry_ts = om._entry_timestamps.get(ticket)
                 if entry_ts is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         now = tick.timestamp if tick is not None else datetime.now(UTC)
                         pos["hold_seconds"] = max(0.0, (now - entry_ts).total_seconds())
-                    except Exception:
-                        pass
-                try:
+                with contextlib.suppress(Exception):
                     prot = om.get_protection_state(ticket)
                     pos["breakeven_armed"] = bool(getattr(prot, "breakeven_armed", False))
                     pos["trailing_armed"] = bool(getattr(prot, "trailing_armed", False))
@@ -1162,8 +1149,6 @@ def _positions_section(engine: Any) -> dict[str, Any]:
                     pos["exit_state"] = (
                         getattr(prot, "exit_state", None) if hasattr(prot, "exit_state") else None
                     )
-                except Exception:
-                    pass
                 pos["entry_confidences"] = (
                     om._entry_confidences.get(ticket) if hasattr(om, "_entry_confidences") else None
                 )
@@ -1190,12 +1175,10 @@ def _exit_section(engine: Any) -> dict[str, Any]:
             getattr(getattr(regime, "regime_type", None), "value", None) if regime else None
         )
         news_state = None
-        try:
+        with contextlib.suppress(Exception):
             if engine._news_enabled and engine.news_engine is not None:
                 ctx = engine.news_engine.current_context()
                 news_state = str(getattr(ctx.state, "value", "NORMAL"))
-        except Exception:
-            pass
         for p in all_positions:
             ticket = getattr(p, "ticket", None)
             entry: dict[str, Any] = {
@@ -1218,16 +1201,14 @@ def _exit_section(engine: Any) -> dict[str, Any]:
                 entry["hold_seconds"] = None
                 entry_ts = om._entry_timestamps.get(ticket)
                 if entry_ts is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         now = (
                             getattr(engine, "_last_tick", None).timestamp
                             if getattr(engine, "_last_tick", None)
                             else datetime.now(UTC)
                         )
                         entry["hold_seconds"] = max(0.0, (now - entry_ts).total_seconds())
-                    except Exception:
-                        pass
-                try:
+                with contextlib.suppress(Exception):
                     prot = om.get_protection_state(ticket)
                     entry["ai_state"] = (
                         getattr(prot, "exit_state", None) if hasattr(prot, "exit_state") else "IDLE"
@@ -1237,8 +1218,6 @@ def _exit_section(engine: Any) -> dict[str, Any]:
                         if hasattr(prot, "strategy_exit_state")
                         else None
                     )
-                except Exception:
-                    pass
                 # Exit candidates (LSF reasons / last reasons tracker)
                 reasons = om._last_reasons_tracker.get(ticket, [])
                 candidates = []
@@ -1439,10 +1418,8 @@ def _database_section(engine: Any) -> dict[str, Any]:
     out: dict[str, Any] = {"available": True, "databases": {}}
     base = Path.cwd()
     if engine is not None and getattr(engine, "config", None) is not None:
-        try:
+        with contextlib.suppress(Exception):
             base = Path(engine.config.base_dir)
-        except Exception:
-            pass
 
     def _probe(name: str, path: Path | None) -> dict[str, Any]:
         if path is None:
@@ -1571,14 +1548,12 @@ def _cache_section(engine: Any) -> dict[str, Any]:
     liq_ts = None
     liq_status = "EMPTY"
     if engine is not None:
-        try:
+        with contextlib.suppress(Exception):
             gov = getattr(engine, "liquidity_governor", None)
             if gov is not None:
                 liq_status = gov.status()
                 snap = gov.snapshot_payload()
                 liq_ts = snap.get("timestamp")
-        except Exception:
-            pass
     out["caches"]["liquidity"] = {
         "status": liq_status,
         "size": 10 if liq_ts else 0,
@@ -1623,15 +1598,13 @@ def _cache_section(engine: Any) -> dict[str, Any]:
     # Chart cache = server state visuals
     chart_age = None
     chart_bars = 0
-    try:
+    with contextlib.suppress(Exception):
         if hasattr(engine, "server_state") is False:
             ss = getattr(engine, "_server_state", None)
         ss = getattr(engine, "server_state", None)
         if ss is not None:
             chart_age = ss.visuals_age_sec()
             chart_bars = len(ss.bars)
-    except Exception:
-        pass
     out["caches"]["chart"] = {
         "status": "CACHED" if chart_bars else "EMPTY",
         "size": chart_bars,
@@ -1677,7 +1650,7 @@ def _chart_section(engine: Any, app_state: Any) -> dict[str, Any]:
             "smc": False,
         },
     }
-    try:
+    with contextlib.suppress(Exception):
         ss = getattr(app_state, "server_state", None)
         if ss is not None:
             bars, overlays = ss.get_live_visuals()
@@ -1689,10 +1662,8 @@ def _chart_section(engine: Any, app_state: Any) -> dict[str, Any]:
             out["overlays"]["smc"] = bool(overlays.get("rectangles") or overlays.get("bos_lines"))
             out["overlays"]["liquidity"] = bool(overlays.get("liq_markers"))
             out["overlays"]["news"] = False
-    except Exception:
-        pass
     if engine is not None:
-        try:
+        with contextlib.suppress(Exception):
             agg = engine.aggregator
             completed = agg.get_completed_bars()
             out["bars_received"] = max(out["bars_received"], len(completed))
@@ -1702,8 +1673,6 @@ def _chart_section(engine: Any, app_state: Any) -> dict[str, Any]:
             out["data_source"] = (
                 "AGGREGATOR" if out["data_source"] == "UNAVAILABLE" else out["data_source"]
             )
-        except Exception:
-            pass
     out["sse_state"] = _sse_state_section(app_state)
     return out
 

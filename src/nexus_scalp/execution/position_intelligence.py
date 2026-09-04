@@ -15,6 +15,7 @@ ownership of all execution decisions and state mutation).
 
 from __future__ import annotations
 
+import contextlib
 import math
 from dataclasses import dataclass
 from typing import Any
@@ -81,13 +82,11 @@ def _current_regime_str(
     crashes on a missing input.
     """
     if regime_state is not None:
-        try:
+        with contextlib.suppress(Exception):
             regime = getattr(regime_state, "regime_type", None)
             if regime is not None:
                 return str(getattr(regime, "value", regime))
             return str(regime_state)
-        except Exception:
-            pass
     return (entry_regimes or {}).get(ticket, "")
 
 

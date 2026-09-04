@@ -18,6 +18,7 @@ artifacts/forensics/deploy_gate_result.json.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 from dataclasses import dataclass, field
@@ -62,7 +63,7 @@ MANDATORY_CRITICAL_PREFIXES: tuple[str, ...] = (
 
 def current_git_commit() -> str:
     """Best-effort current commit SHA ('' when not a git repo / unavailable)."""
-    try:
+    with contextlib.suppress(Exception):
         out = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             capture_output=True,
@@ -72,8 +73,6 @@ def current_git_commit() -> str:
         )
         if out.returncode == 0:
             return out.stdout.strip()
-    except Exception:
-        pass
     return ""
 
 

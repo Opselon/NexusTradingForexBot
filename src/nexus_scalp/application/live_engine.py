@@ -238,7 +238,7 @@ class LiveEngine:
         width (num_features) > class bootstrap default. Never raises -- a
         probe failure falls back to the class default (50D-safe).
         """
-        try:
+        with contextlib.suppress(Exception):
             with self._bundle_lock:
                 b = self._bundle
             if b is not None:
@@ -248,8 +248,6 @@ class LiveEngine:
                 nf = int(getattr(b.model, "num_features", 0) or 0)
                 if nf > 0:
                     return nf
-        except Exception:
-            pass
         return int(self.__class__.FEATURE_DIM)
 
     @property
@@ -285,7 +283,7 @@ class LiveEngine:
         or matches it. Never raises; falls back to the class contract so
         pre-bundle construction phases keep their existing behavior.
         """
-        try:
+        with contextlib.suppress(Exception):
             with self._bundle_lock:
                 b = self._bundle
             if b is not None:
@@ -295,8 +293,6 @@ class LiveEngine:
                 nf = int(getattr(b.model, "num_features", 0) or 0)
                 if nf > 0:
                     return nf
-        except Exception:
-            pass
         return int(self.__class__.FEATURE_DIM)
 
     def _build_retrain_record(
@@ -453,10 +449,8 @@ class LiveEngine:
                 )
                 self._online_train_disabled = True
         # FIX #1+#8: also rebind live temporal sequence contract
-        try:
+        with contextlib.suppress(Exception):
             self._rebind_live_temporal_contract()
-        except Exception:
-            pass
 
     # ----------------------------
     # FIX #1+#8: live temporal contract helpers — delegate to LiveSequenceService
@@ -1211,14 +1205,12 @@ class LiveEngine:
         self._news_auto_analysis_enabled = bool(
             getattr(getattr(config, "news", None), "auto_analysis_enabled", False)
         )
-        try:
+        with contextlib.suppress(Exception):
             _news_snap = self.runtime_config.get_snapshot().news
             self._news_enabled = bool(_news_snap.enabled)
             self._news_auto_analysis_enabled = bool(
                 getattr(_news_snap, "auto_analysis_enabled", False)
             )
-        except Exception:
-            pass
         if self._news_enabled:
             try:
                 from nexus_scalp.news import NewsEngine, NewsGate, NewsWorker
@@ -1231,12 +1223,10 @@ class LiveEngine:
                     max_queue=int(getattr(news_config, "max_queue_size", 1000)),
                 )
                 # News Auto Analysis — seed worker gate from snapshot/bootstrap (no API key needed)
-                try:
+                with contextlib.suppress(Exception):
                     self.news_worker.auto_analysis_enabled = bool(
                         getattr(self, "_news_auto_analysis_enabled", False)
                     )
-                except Exception:
-                    pass
                 self.news_gate = NewsGate(config=news_config)
                 logger.info("[NEWS] event=CONSTRUCTED status=ENABLED")
             except Exception as news_err:
@@ -1355,12 +1345,10 @@ class LiveEngine:
         # Without this, a restart reverts to the 50D default bundle while the
         # persistent store expects 70D -> false MODEL_INPUT_DIMENSION_MISMATCH.
         model_path_str = self.config.model.model_artifact_path
-        try:
+        with contextlib.suppress(Exception):
             _md_snap = self.runtime_config.get_snapshot().model.model_artifact_path
             if _md_snap:
                 model_path_str = str(_md_snap)
-        except Exception:
-            pass
         model_path = Path(model_path_str)
         self._bundle = self._load_or_create_bundle(
             model_path=model_path, force_fresh=self.force_fresh_model
@@ -1393,10 +1381,8 @@ class LiveEngine:
         # already fully usable even when this artifact was just created fresh.
         self._register_active_model(model_path=model_path, replaced=False)
         # TASK-6: make the registry truthful about CURRENT_CHAMPION.
-        try:
+        with contextlib.suppress(Exception):
             self._sync_champion_registry_state()
-        except Exception:
-            pass
 
     def _build_factory_llm_provider(self) -> Any | None:
         """Builds the (optional) Strategy Factory LLM provider from settings.
@@ -1680,13 +1666,11 @@ class LiveEngine:
             self._preflight_or_raise()
         except Exception as e:
             logger.critical("Pre-flight validation failed", error=str(e), exc_info=True)
-            try:
+            with contextlib.suppress(Exception):
                 self.notifier.notify_error(
                     "Engine Startup Pre-Flight", f"Startup pre-flight failed: {e}"
                 )
                 self.notifier.shutdown(timeout=2.0)
-            except Exception:
-                pass
             raise
 
         loop: asyncio.AbstractEventLoop | None = None
@@ -1708,21 +1692,17 @@ class LiveEngine:
             self._running = False
         except Exception as e:
             logger.critical("Fatal exception in engine run loop", error=str(e), exc_info=True)
-            try:
+            with contextlib.suppress(Exception):
                 self.notifier.notify_error(
                     "Engine Run-Loop Fatal", f"Unhandled critical exception: {e}"
                 )
-            except Exception:
-                pass
             raise
 
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 if loop is not None and not loop.is_closed():
                     loop.run_until_complete(self._shutdown_async())
                     loop.close()
-            except Exception:
-                pass
 
     def _activate_promoted_model(self, *, model_id: str, model_version: str) -> None:
         """Operator-approved runtime activation for a promoted model.
@@ -1960,13 +1940,11 @@ class LiveEngine:
                 severity="HIGH",
                 correlation_id="startup",
             )
-            try:
+            with contextlib.suppress(Exception):
                 self.notifier.notify_error(
                     "MT5 Connectivity",
                     "MT5 connect() failed after retries. Engine shutting down.",
                 )
-            except Exception:
-                pass
             return
 
         self._running = True
@@ -2145,10 +2123,8 @@ class LiveEngine:
                                 self.adapter.subscribe_symbols([symbol])
                             # Probe a fresh tick so the aggregator/feature path
                             # sees movement on the very next iteration.
-                            try:
+                            with contextlib.suppress(Exception):
                                 self.adapter.get_tick(symbol)
-                            except Exception:
-                                pass
                             try:
                                 await self._resync_from_broker(symbol)
                             except Exception as resync_err:
@@ -2196,10 +2172,8 @@ class LiveEngine:
                 # PHASE 14: periodically refresh the typed broker-aware account
                 # snapshot + REAL runtime mode (throttled - never per tick).
                 if getattr(self, "_last_snapshot_refresh", 0.0) + 5.0 < time.time():
-                    try:
+                    with contextlib.suppress(Exception):
                         self._account_snapshot = self.adapter.get_account_snapshot()
-                    except Exception:
-                        pass
                     self._update_runtime_mode()
                     self._last_snapshot_refresh = time.time()
 
@@ -2430,10 +2404,8 @@ class LiveEngine:
 
             except Exception as e:
                 logger.error("Error in live loop", error=str(e), exc_info=True)
-                try:
+                with contextlib.suppress(Exception):
                     self.notifier.notify_error("Real-Time Execution Loop", str(e))
-                except Exception:
-                    pass
                 await asyncio.sleep(1.0)
 
         await self._shutdown_async()
@@ -2510,89 +2482,61 @@ class LiveEngine:
 
     async def _shutdown_async(self) -> None:
         # Stop the accounting worker first (derived refresh, not financial truth).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_accounting_worker()
-        except Exception:
-            pass
 
         # ACCOUNT HISTORY: stop the broker-history sync worker.
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_history_sync_worker()
-        except Exception:
-            pass
 
         # PHASE 09: stop the intelligence worker (derived intelligence, isolated).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_intelligence_worker()
-        except Exception:
-            pass
 
         # PHASE 09B: stop the strategy research worker (isolated).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_research_worker()
-        except Exception:
-            pass
 
         # STRATEGY FACTORY: stop the autonomous loop worker (kill switch).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_factory_worker()
-        except Exception:
-            pass
 
         # PHASE 10: stop the controlled training worker (isolated).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_training_worker()
-        except Exception:
-            pass
 
         # PHASE 11: stop the shadow-aggregation worker (isolated).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_shadow_worker()
-        except Exception:
-            pass
 
         # PHASE 12: stop the news intelligence worker (isolated, optional).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_news_worker()
-        except Exception:
-            pass
 
         # TASK-13: stop the incident response worker (isolated).
-        try:
+        with contextlib.suppress(Exception):
             await self._stop_incident_worker()
-        except Exception:
-            pass
 
         # Cancel retrain task safely
-        try:
+        with contextlib.suppress(Exception):
             if self._retrain_task and not self._retrain_task.done():
                 self._retrain_task.cancel()
                 with contextlib.suppress(Exception):
                     await self._retrain_task
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             self.adapter.disconnect()
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             self.audit.close()
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             ci = getattr(self, "candle_intel", None)
             if ci is not None:
                 ci.store.close()
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             self.notifier.notify_shutdown(reason="Engine Stopped")
-        except Exception:
-            pass
 
         logger.info("Engine shutdown complete.")
 
@@ -2716,14 +2660,12 @@ class LiveEngine:
         the source of truth (covers 50D + 70D). On cold-start (no file) the
         class ``FEATURE_DIM`` is kept so first-time users still bootstrap 50D.
         """
-        try:
+        with contextlib.suppress(Exception):
             if model_path.exists():
                 probe = torch.load(model_path, map_location="cpu")
                 w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
                 if w is not None and hasattr(w, "shape") and len(w.shape) == 2:
                     return int(w.shape[1])
-        except Exception:
-            pass
         # BUG-125 regression: tests call via LiveEngine._expected_num_features_for_artifact(None, path)
         # (unbound with self=None on macOS). Handle None gracefully.
         if self is None:
@@ -2740,7 +2682,7 @@ class LiveEngine:
         """
         import json as _json
 
-        try:
+        with contextlib.suppress(Exception):
             meta_path = model_path.with_suffix(".meta.json")
             if meta_path.exists():
                 with open(meta_path, encoding="utf-8") as fh:
@@ -2748,25 +2690,19 @@ class LiveEngine:
                 dim = meta.get("feature_schema_dimension") or meta.get("num_features")
                 if isinstance(dim, int) and dim > 0:
                     return dim
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             scaler_path = model_path.with_suffix(".scaler.npz")
             if scaler_path.exists():
                 data = np.load(scaler_path)
                 shape = tuple(np.asarray(data["mean"]).shape)
                 if shape and shape[0] > 0:
                     return int(shape[0])
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             if model_path.exists():
                 probe = torch.load(model_path, map_location="cpu")
                 w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
                 if w is not None and hasattr(w, "shape") and len(w.shape) == 2:
                     return int(w.shape[1])
-        except Exception:
-            pass
         return None
 
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
@@ -2801,10 +2737,8 @@ class LiveEngine:
                     loaded=str(loaded),
                     backup=str(backup_path),
                 )
-                try:
+                with contextlib.suppress(Exception):
                     model_path.rename(backup_path)
-                except Exception:
-                    pass
                 raise RuntimeError(
                     f"Checkpoint dimension mismatch: expected {expected}, got {loaded}"
                 )
@@ -3161,13 +3095,11 @@ class LiveEngine:
             max_queue=int(snap.news.max_queue_size),
         )
         # seed auto-analysis gate from snapshot
-        try:
+        with contextlib.suppress(Exception):
             self.news_worker.auto_analysis_enabled = bool(
                 getattr(snap.news, "auto_analysis_enabled", False)
             )
             self._news_auto_analysis_enabled = bool(self.news_worker.auto_analysis_enabled)
-        except Exception:
-            pass
         self.news_gate = NewsGate(config=cfg)
         self._news_enabled = True
         self._news_worker_started = False
@@ -3189,10 +3121,8 @@ class LiveEngine:
         try:
             if self.news_worker is not None and self._news_worker_started:
                 self._news_worker_started = False
-                try:
+                with contextlib.suppress(Exception):
                     self.news_worker.stop()
-                except Exception:
-                    pass
         finally:
             self._news_enabled = False
             self.news_engine = None
@@ -4454,7 +4384,7 @@ class LiveEngine:
                             risk_usd = account.equity * (
                                 self.config.risk.risk_per_trade_pct / 100.0
                             )
-                            try:
+                            with contextlib.suppress(Exception):
                                 mapped_order_type = self.risk_engine._map_action_to_order_type(
                                     policy_decision.action
                                 )
@@ -4480,8 +4410,6 @@ class LiveEngine:
                                         else None
                                     ),
                                 )
-                            except Exception:
-                                pass
                         else:
                             # Dispatch failed! Clear the price lock immediately so bot is not locked out of trading!
                             self.signal_policy.last_order_price = None
@@ -4786,7 +4714,7 @@ class LiveEngine:
                     success = self.order_manager.execute_order(hedge_order)
                     if success:
                         self._hedged_tickets.add(pos.ticket)
-                        try:
+                        with contextlib.suppress(Exception):
                             self.notifier.notify_generic_message(
                                 title="Intelligent Hedging Activated",
                                 message=(
@@ -4795,8 +4723,6 @@ class LiveEngine:
                                     f"{hedge_order.volume} lots at {hedge_order.price}."
                                 ),
                             )
-                        except Exception:
-                            pass
 
     def _on_new_bar(self, tick: TickData, fv, last_bar) -> None:
         # BUG-061: candle-close gate — feed the completed bar into the local
@@ -5411,14 +5337,12 @@ class LiveEngine:
                 "feature_schema_id": live_schema_id,
                 "feature_dimension": live_dim,
             }
-            try:
+            with contextlib.suppress(Exception):
                 champ = self.champion_manager.champion_or_none()
                 if champ is not None:
                     champ_ref_dict["model_id"] = champ.model_id
                     champ_ref_dict["model_version"] = champ.model_version
                     champ_ref_dict["artifact_hash"] = champ.artifact_hash
-            except Exception:
-                pass
             if self._governance_shadow is not None and engine.active_run_id:
                 # TASK-6: compute the 10 REAL scalp_v2 extras from the same
                 # causal bar window the Champion used (features/schema_augment,
@@ -6249,23 +6173,17 @@ class LiveEngine:
                 "_last_active_direction",
                 "_last_active_direction_time",
             ):
-                try:
+                with contextlib.suppress(Exception):
                     setattr(policy, attr, None)
-                except Exception:
-                    pass
-            try:
+            with contextlib.suppress(Exception):
                 policy._last_executed_price = 0.0
-            except Exception:
-                pass
 
         # 3) Drop any engine-staged pending proposals/ticks stamped before
         #    the swap (defensive: their tick provenance is the old adapter).
         for attr in ("_pending_proposals", "_latest_tick", "_last_tick"):
-            try:
+            with contextlib.suppress(Exception):
                 if hasattr(self, attr):
                     setattr(self, attr, None)
-            except Exception:
-                pass
 
         # 3b) BUG-231 continuation: the M1 bar aggregator still holds bars
         #     minted from the OLD adapter's synthetic ticks (paper random-walk
@@ -6292,7 +6210,7 @@ class LiveEngine:
                     "[MODE] aggregator purge failed (non-fatal, next reseed will realign): %s",
                     agg_err,
                 )
-            try:
+            with contextlib.suppress(Exception):
                 self.warmup_state = "WARMING_UP"
                 self._warmup_attempt = 0
                 logger.info(
@@ -6300,8 +6218,6 @@ class LiveEngine:
                     "chain will re-derive from the new adapter's bars via "
                     "the 15s periodic readiness re-evaluation"
                 )
-            except Exception:
-                pass
 
         # 4) Reset the tick-stagnation clock so the watchdog does not
         #    immediately "reconnect" while the new adapter warms up.
@@ -6323,15 +6239,13 @@ class LiveEngine:
     def _notify_startup(self, account: AccountInfo | None) -> None:
         if not account:
             return
-        try:
+        with contextlib.suppress(Exception):
             self.notifier.notify_startup(
                 symbol=self.config.execution.symbol,
                 mode=self.config.execution.mode.value,
                 balance=account.balance,
                 equity=account.equity,
             )
-        except Exception:
-            pass
 
     def _update_survival_state(self, account: AccountInfo, current_pos_count: int) -> None:
         # RUNTIME CONFIG (BUG-132): the survival guard must use the SAME
@@ -6369,31 +6283,25 @@ class LiveEngine:
             self._consecutive_losses = 0
             if self._survival_mode_active:
                 self._survival_mode_active = False
-                try:
+                with contextlib.suppress(Exception):
                     self.notifier.notify_survival_mode_changed(active=False, drawdown_pct=0.0)
-                except Exception:
-                    pass
 
         elif account.equity < self._peak_equity and self._peak_equity > 0:
             drawdown_pct = ((self._peak_equity - account.equity) / self._peak_equity) * 100.0
             if drawdown_pct > (dd_limit_pct * 0.5) and not self._survival_mode_active:
                 self._survival_mode_active = True
                 logger.warning("SURVIVAL MODE ON", drawdown_pct=round(drawdown_pct, 2))
-                try:
+                with contextlib.suppress(Exception):
                     self.notifier.notify_survival_mode_changed(
                         active=True, drawdown_pct=drawdown_pct
                     )
-                except Exception:
-                    pass
 
             if drawdown_pct > dd_limit_pct:
                 logger.critical("MAX DRAWDOWN EXCEEDED; HALTING", dd_pct=round(drawdown_pct, 2))
-                try:
+                with contextlib.suppress(Exception):
                     self.notifier.notify_kill_switch_activated(
                         f"Max Drawdown Exceeded ({drawdown_pct:.2f}%)"
                     )
-                except Exception:
-                    pass
                 self._running = False
 
     # -------------------------

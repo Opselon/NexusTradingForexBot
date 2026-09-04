@@ -93,17 +93,21 @@ import polars as pl
 # (SequenceBuilder defaults, SequenceContract, SequenceCandidateTrainer,
 # live rebind) follows. Kept under the historic names for backward compat.
 # ---------------------------------------------------------------------------
+# TASK ARCH-SEQ-UNIFY: canonical values are imported directly from
+# temporal_contract (single source of truth). The historic cycle is gone:
+# temporal_contract imports SequenceBuilder only under TYPE_CHECKING / inside
+# functions, never at module level (CodeQL py/unsafe-cyclic-import clean).
 from nexus_scalp.model_generation.temporal_contract import (
-    CANONICAL_MAX_GAP_US as MAX_GAP_US,  # canonical max inter-bar gap (us)
+    CANONICAL_MAX_GAP_US as MAX_GAP_US,
 )
 from nexus_scalp.model_generation.temporal_contract import (
-    CANONICAL_SCHEMA_ID as SCHEMA_ID,  # canonical 70D feature schema id
+    CANONICAL_SCHEMA_ID as SCHEMA_ID,
 )
 from nexus_scalp.model_generation.temporal_contract import (
-    CANONICAL_SEQ_LEN as SEQUENCE_LENGTH,  # canonical sequence length L
+    CANONICAL_SEQ_LEN as SEQUENCE_LENGTH,
 )
 from nexus_scalp.model_generation.temporal_contract import (
-    FEATURE_DIM,  # canonical 70D feature width (defined in temporal_contract)
+    FEATURE_DIM,
 )
 
 __all__ = [

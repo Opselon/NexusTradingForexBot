@@ -18,6 +18,7 @@ Follows the repository's worker contract (see research/worker.py):
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import time
 from datetime import UTC, datetime
@@ -261,14 +262,12 @@ class NewsWorker:
                 if len(self._queued_ids) >= self.max_queue:
                     break
                 ah = str(art.get("article_hash") or "")
-                try:
+                with contextlib.suppress(Exception):
                     if ah and self.engine.db.is_analyzed_hash(ah):
                         continue
-                except Exception:
-                    pass
                 if self.engine.db.get_analysis(art["article_id"]):
                     # Backfill tombstone so future re-ingest of same hash stays suppressed
-                    try:
+                    with contextlib.suppress(Exception):
                         if ah:
                             ex = self.engine.db.get_analysis(art["article_id"]) or {}
                             self.engine.db.remember_analyzed_hash(
@@ -276,8 +275,6 @@ class NewsWorker:
                                 title=str(art.get("title", "")),
                                 analysis_id=str(ex.get("analysis_id", "")),
                             )
-                    except Exception:
-                        pass
                     continue
                 priority = float(art.get("importance_score", 0.0) or 0.3)
                 self._enqueue(art["article_id"], priority=priority)
@@ -296,7 +293,7 @@ class NewsWorker:
         instead of re-queuing (prevents AI confusion on duplicate fetches).
         """
         # Idempotent: don't re-queue already-analyzed stories
-        try:
+        with contextlib.suppress(Exception):
             art = self.engine.db.get_article(article_id)
             ah = str((art or {}).get("article_hash") or "")
             if art and ah and self.engine.db.is_analyzed_hash(ah):
@@ -315,8 +312,6 @@ class NewsWorker:
                     "worker_running": self.running,
                     "reason": "article already analyzed",
                 }
-        except Exception:
-            pass
         added = self._enqueue(article_id, priority=priority)
         return {
             "ok": True,

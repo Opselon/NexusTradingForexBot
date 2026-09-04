@@ -7,6 +7,7 @@ Every route is bounded: _try() isolation, parameterized reads, no untrusted SQL.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -353,10 +354,8 @@ def repair_seed(request: Request, seed_id: str, body: RepairBody) -> Any:
                     )
                     svc.store.driver.commit(conn)
                 except Exception:
-                    try:
+                    with contextlib.suppress(Exception):
                         conn.rollback()
-                    except Exception:
-                        pass
                 finally:
                     conn.close()
                 return fail(
@@ -487,10 +486,8 @@ def score_history(
     decoded = []
     for r in rows:
         d = dict(r)
-        try:
+        with contextlib.suppress(Exception):
             d["factors"] = json.loads(d.get("factors") or "{}")
-        except Exception:
-            pass
         for k in ("created_at",):
             d[k] = iso_or_none(d.get(k))
         decoded.append(d)

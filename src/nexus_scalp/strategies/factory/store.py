@@ -30,6 +30,7 @@ updates append (mirrors strategy_registry contract).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from datetime import UTC, datetime
@@ -647,7 +648,7 @@ def resume_generation(repo: Any, generation_id: str) -> dict[str, Any]:
     if not updated:
         return {"status": "ERROR", "generation_id": generation_id}
     # Fresh heartbeat: an immediate post-resume sweep must not re-kill it.
-    try:
+    with contextlib.suppress(Exception):
         set_loop_state(
             repo,
             {
@@ -658,9 +659,7 @@ def resume_generation(repo: Any, generation_id: str) -> dict[str, Any]:
                 "last_error": "",
             },
         )
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         emit_event(
             repo,
             {
@@ -673,8 +672,6 @@ def resume_generation(repo: Any, generation_id: str) -> dict[str, Any]:
                 "created_at": now,
             },
         )
-    except Exception:
-        pass
     logger.info(
         "[STRATEGY_FACTORY] event=GENERATION_RESUMED generation_id=%s",
         generation_id,

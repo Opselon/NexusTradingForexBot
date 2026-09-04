@@ -23,6 +23,7 @@ runtime mutation.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -287,7 +288,7 @@ def verify_candidate(
         reason = f"inconclusive gates: {', '.join(unknown)}"
 
     if not eligible and store is not None:
-        try:
+        with contextlib.suppress(Exception):
             store.record_event(
                 GovernanceEvent(
                     event_id=f"ev_verify_{model_id}_{model_version}",
@@ -309,8 +310,6 @@ def verify_candidate(
                     },
                 )
             )
-        except Exception:
-            pass
 
     logger.info(
         "[GOVERNANCE] event=VERIFY_CANDIDATE",

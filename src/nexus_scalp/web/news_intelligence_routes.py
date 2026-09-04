@@ -17,6 +17,7 @@ Endpoints (§39):
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -34,12 +35,10 @@ def _resolve_settings_svc(engine: Any | None) -> Any | None:
     if engine is not None:
         cands.append(engine)
         for attr in ("live_engine", "engine", "app_engine"):
-            try:
+            with contextlib.suppress(Exception):
                 nxt = getattr(engine, attr, None)
                 if nxt is not None:
                     cands.append(nxt)
-            except Exception:
-                pass
     for obj in cands:
         try:
             svc = getattr(obj, "settings_service", None)

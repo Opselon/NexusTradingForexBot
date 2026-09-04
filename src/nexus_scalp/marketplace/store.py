@@ -23,6 +23,7 @@ No destructive deletes: RETIRED is a lifecycle event, not a row deletion.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -292,10 +293,8 @@ class MarketplaceStore:
             self.driver.commit(conn)
             return True
         except Exception as e:
-            try:
+            with contextlib.suppress(Exception):
                 conn.rollback()
-            except Exception:
-                pass
             err_msg = str(e).replace("\r", " ").replace("\n", " ")[:400]
             logger.error("[MARKETPLACE_STORE] write failed", error=err_msg)
             return False

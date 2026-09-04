@@ -24,6 +24,7 @@ for display, not a secret.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -371,10 +372,8 @@ def normalize_utc(value: Any) -> datetime | None:
 
     # numpy.datetime64 / Polars datetime scalars: go through ISO string
     if hasattr(value, "isoformat"):
-        try:
+        with contextlib.suppress(Exception):
             return normalize_utc(str(value.isoformat()))
-        except Exception:
-            pass
     # numpy.datetime64 (no isoformat): str() gives "2026-08-17T01:30:00"
     if type(value).__module__.startswith("numpy") and hasattr(value, "astype"):
         try:

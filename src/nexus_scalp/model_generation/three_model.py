@@ -27,6 +27,7 @@ Gate contract (same thresholds the production trainer enforces):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -334,10 +335,8 @@ def train_variant(
             logger.warning("[THREE_MODEL] lifecycle registration failed (non-fatal): %s", exc)
     # Flush the async audit writer so lifecycle rows are durable before the
     # CLI/UI reads them (set_status/register_candidate queue inserts).
-    try:
+    with contextlib.suppress(Exception):
         lifecycle.audit_repo._queue.join()  # type: ignore[attr-defined]
-    except Exception:
-        pass
 
     report = {
         "variant": variant,

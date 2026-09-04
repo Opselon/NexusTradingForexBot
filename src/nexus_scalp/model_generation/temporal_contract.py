@@ -60,6 +60,7 @@ Usage
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -169,8 +170,6 @@ def meta_declared_seq_len(meta: dict[str, Any] | None) -> int | None:
     tm = meta.get("trained_mode")
     if isinstance(tm, str) and tm.startswith("sequence"):
         # e.g. "sequence_L32" — parse suffix
-        try:
+        with contextlib.suppress(Exception):
             return int(tm.split("_")[-1].replace("L", ""))
-        except Exception:
-            pass
     return None

@@ -8,6 +8,7 @@ news/database.py. DO-NOT-PUT-HERE: article ingestion (db_articles).
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -122,7 +123,7 @@ class AnalysisMixin(_NewsDbCoreProto):
                 ),
             )
         # Tombstone this hash so future re-ingest of same story (even if DB row deleted) stays suppressed
-        try:
+        with contextlib.suppress(Exception):
             ah = None
             with self._connect() as _c2:
                 r = _c2.execute(
@@ -137,8 +138,6 @@ class AnalysisMixin(_NewsDbCoreProto):
                             "INSERT OR IGNORE INTO news_analyzed_hashes (article_hash, title, analysis_id, analyzed_at) VALUES (?, ?, ?, ?);",
                             (ah, ttl, row.get("analysis_id", ""), self._now()),
                         )
-        except Exception:
-            pass
 
     def get_analysis(self, article_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:

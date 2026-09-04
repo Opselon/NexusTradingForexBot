@@ -16,6 +16,7 @@ never fail because Telegram is degraded.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -226,12 +227,10 @@ class TelegramDocumentTransporter:
             if ra is not None:
                 result["retry_after"] = ra
         if result.get("ok"):
-            try:
+            with contextlib.suppress(Exception):
                 data = json.loads(body.decode("utf-8", errors="replace"))
                 msg = data.get("result") or {}
                 result["message_id"] = msg.get("message_id")
-            except Exception:
-                pass
         if not result.get("ok"):
             # Keep any error body OUT of the result (may embed secrets).
             result["safe_message"] = (

@@ -11,6 +11,7 @@ read/write methods on the same class (appended via a second module import).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -358,7 +359,7 @@ class CandleIntelStore:
         """Schema bootstrap on the reader connection (safe; worker uses same DB
         file, WAL allows concurrent access)."""
         # Self-heal corrupted DB (candle_intel.db with bare candles(id) table) — see commit fde756b fix
-        try:
+        with contextlib.suppress(Exception):
             probe_cur = (
                 self._conn.cursor() if hasattr(self, "_conn") and self._conn is not None else None
             )
@@ -388,8 +389,6 @@ class CandleIntelStore:
                         self._conn.commit()
                     except Exception:
                         pass
-        except Exception:
-            pass
         with self._reader_conn:
             if self._config.is_sqlite:
                 self._reader_conn.execute("PRAGMA journal_mode = WAL;")
@@ -441,11 +440,9 @@ class CandleIntelStore:
                 batch = []
         if batch:
             self._flush_batch(batch)
-        try:
+        with contextlib.suppress(Exception):
             if self._conn:
                 self._conn.close()
-        except Exception:
-            pass
 
     def _flush_batch(self, batch: list[tuple[str, list[str], list[Any]]]) -> None:
         if not self._conn:
@@ -474,13 +471,11 @@ class CandleIntelStore:
         except queue.Full:
             return False
         # Mirror into the ring for instant reads.
-        try:
+        with contextlib.suppress(Exception):
             rec = dict(zip(cols, values, strict=False))
             ring = self._rings.get(table)
             if ring is not None:
                 ring.append(rec)
-        except Exception:
-            pass
         return True
 
     def pending_count(self) -> int:
@@ -495,18 +490,14 @@ class CandleIntelStore:
         return self.pending_count()
 
     def close(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.flush(timeout=2.0)
-        except Exception:
-            pass
         self._stop.set()
         if self._worker and self._worker.is_alive():
             self._worker.join(timeout=2.0)
-        try:
+        with contextlib.suppress(Exception):
             if self._reader_conn:
                 self._reader_conn.close()
-        except Exception:
-            pass
         logger.info("Candle intelligence store closed")
 
     def __enter__(self) -> CandleIntelStore:
@@ -568,10 +559,8 @@ class CandleIntelStore:
             "detail",
         ):
             if k in d and isinstance(d[k], str):
-                try:
+                with contextlib.suppress(Exception):
                     d[k] = json.loads(d[k])
-                except Exception:
-                    pass
 
     def db_size_bytes(self) -> int:
         try:

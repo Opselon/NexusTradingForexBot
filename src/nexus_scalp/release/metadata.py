@@ -13,6 +13,7 @@ artifact tree) or regenerated at runtime from the environment.
 """
 
 from __future__ import annotations
+import contextlib
 
 import importlib.metadata
 import json
@@ -44,7 +45,7 @@ def _repo_root() -> Path | None:
     from *C:\\NexusTradingForexBot*. Returns ``None`` outside a git checkout
     (packaged / truly non-git environments).
     """
-    try:
+    with contextlib.suppress(Exception):
         # __file__ = <root>/src/nexus_scalp/release/metadata.py — so the
         # install root is 4 levels up. Installed venv engines live as
         # <NexusHome>/engine (a separate clone), not as parent of src/ in
@@ -68,8 +69,6 @@ def _repo_root() -> Path | None:
             if probe.parent == probe:
                 break
             probe = probe.parent
-    except Exception:
-        pass
     return None
 
 
@@ -259,10 +258,8 @@ def get_build_info_file() -> Path | None:
 def read_build_info() -> dict[str, Any]:
     f = get_build_info_file()
     if f:
-        try:
+        with contextlib.suppress(Exception):
             return json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            pass
     return {}
 
 

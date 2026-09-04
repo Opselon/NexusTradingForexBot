@@ -21,6 +21,7 @@ USED BY: live_engine, order_manager, web/server, ci_telegram_reporter, tests.
 
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import logging
@@ -213,6 +214,11 @@ def _category_for_code(code: int, description: str) -> str:
         return TELEGRAM_RATE_LIMIT
     return TELEGRAM_API_ERROR
 
+
+# --- extracted mixins are wired AFTER the names above (NotificationRecord /
+# classify_http_response/_category_for_code) because tg_transport imports them
+# from here; the transport constants are single-sourced in tg_transport and
+# re-exported below for backward compatibility (DNS regression tests).
 
 # --- extracted mixins are wired AFTER the names above (NotificationRecord /
 # classify_http_response/_category_for_code) because tg_transport imports them
@@ -468,10 +474,8 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
             self._last_failure = time.time()
             self._last_failure_category = TELEGRAM_CONFIG_ERROR
             if callback:
-                try:
+                with contextlib.suppress(Exception):
                     callback(None)
-                except Exception:
-                    pass
             return None
 
         msg_weight = self.SEVERITY_WEIGHTS.get(severity.upper(), 1)

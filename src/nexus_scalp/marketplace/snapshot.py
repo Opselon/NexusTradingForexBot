@@ -12,6 +12,7 @@ Replicates the RuntimeConfigStore snapshot pattern (configuration/runtime_config
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -65,10 +66,8 @@ class StrategyRuntimeSnapshotStore:
 
     def _notify(self, snap: StrategyRuntimeSnapshot) -> None:
         for fn in list(self._listeners):
-            try:
+            with contextlib.suppress(Exception):
                 fn(snap)
-            except Exception:
-                pass
 
     # -- mutations (atomic swap) --------------------------------------------
 

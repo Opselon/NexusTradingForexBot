@@ -40,6 +40,7 @@ sends orders; the shared engine is order-free by construction.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import shutil
@@ -125,14 +126,12 @@ def _resolve_model_version(model_path: Path) -> str:
     """
     meta_path = model_path.with_suffix(".meta.json")
     if meta_path.exists():
-        try:
+        with contextlib.suppress(Exception):
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             for key in ("model_version", "version", "artifact_version"):
                 v = str(meta.get(key, "") or "")
                 if v:
                     return v
-        except Exception:
-            pass
     return ""  # NOT_RECORDED — never invent
 
 
@@ -430,10 +429,8 @@ class ForwardTestExperiment:
         """The §60 JSON protocol envelope (values only from real records)."""
         result_path = self.storage_dir / "result.json"
         if result_path.exists():
-            try:
+            with contextlib.suppress(Exception):
                 return json.loads(result_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
         return {
             "run_id": self.run_id,
             "experiment_type": EXPERIMENT_TYPE,

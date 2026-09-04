@@ -23,6 +23,7 @@ SSE stream (server.py), diagnostics/dbmanage/settings (Step-3D module).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import time
@@ -625,11 +626,9 @@ def register_debug_research_routes(
 
         exposure = {"positions": 0, "pendings": 0}
         if engine is not None and hasattr(engine.order_manager, "count_total_exposure"):
-            try:
+            with contextlib.suppress(Exception):
                 pos, pend = engine.order_manager.count_total_exposure()
                 exposure = {"positions": pos, "pendings": pend}
-            except Exception:
-                pass
 
         return {
             "events": events,

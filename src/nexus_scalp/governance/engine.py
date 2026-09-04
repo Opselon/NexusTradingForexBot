@@ -20,6 +20,7 @@ Responsibilities
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import uuid
 from datetime import UTC, datetime
@@ -728,12 +729,10 @@ class ModelGovernanceEngine:
         prev: dict[str, Any] = {}
         if previous_model_id:
             prev = {"model_id": previous_model_id}
-            try:
+            with contextlib.suppress(Exception):
                 champ = self._current_champion_identity()
                 if champ and champ["model_id"] == previous_model_id:
                     prev = champ
-            except Exception:
-                pass
         artifact_ok = False
         artifact_hash = ""
         detail = "no artifact path"
@@ -833,7 +832,7 @@ class ModelGovernanceEngine:
         actor: str,
         reason: str,
     ) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.store.record_event(
                 GovernanceEvent(
                     event_id=f"ev_{uuid.uuid4().hex[:16]}",
@@ -846,5 +845,3 @@ class ModelGovernanceEngine:
                     reason=reason,
                 )
             )
-        except Exception:
-            pass

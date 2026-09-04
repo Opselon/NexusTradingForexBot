@@ -5,6 +5,7 @@ verify machine-readable release metadata, and by the CLI tests.
 """
 
 from __future__ import annotations
+import contextlib
 
 import hashlib
 import json
@@ -186,10 +187,8 @@ def generate_manifest(
     if not stamped.exists():
         stamped = base_dir / "build-info.json"
     if stamped.exists():
-        try:
+        with contextlib.suppress(Exception):
             info = {**info, **json.loads(stamped.read_text(encoding="utf-8"))}
-        except Exception:
-            pass
     manifest: dict[str, Any] = {
         "product": info["product"],
         "product_display": info["product_display"],
