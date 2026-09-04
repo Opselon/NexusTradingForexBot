@@ -739,10 +739,18 @@ def test_70d_model_14b_active_schema_still_50d() -> None:
 def test_70d_model_26_liquidity_distribution_audit_smoke() -> None:
     """Liquidity features on deterministic regimes: finite, in [-3,3], no
     fully-constant feature, no 100%-zero feature (brief 8)."""
-    import sys
+    import importlib.machinery
+    import importlib.util
 
-    sys.path.insert(0, str(REPO_ROOT))
-    from scratch.liq60d_distribution_audit import main as dist_audit
+    # Audit module lives in scratch/archive/historic-20260823/ (commit
+    # d49e4cf6 quarantined 215 historic probes). No parent __init__.py;
+    # load by file location so the smoke still exercises the REAL module.
+    _leaf = REPO_ROOT / "scratch/archive/historic-20260823/liq60d_distribution_audit.py"
+    _loader = importlib.machinery.SourceFileLoader("liq60d_distribution_audit", str(_leaf))
+    _spec = importlib.util.spec_from_loader(_loader.name, _loader, origin=str(_leaf))
+    dist_audit_mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(dist_audit_mod)  # type: ignore[union-attr]
+    dist_audit = dist_audit_mod.main
 
     rep = dist_audit()
     for name in rep["_meta"]["feature_names"]:
@@ -757,10 +765,15 @@ def test_70d_model_27_liquidity_redundancy_audit_smoke() -> None:
     """Liquidity-vs-base redundancy: the audit executes and flags stay below
     the near-duplicate threshold for most features; flags are REPORTED (never
     silently removed) (brief 9)."""
-    import sys
+    import importlib.machinery
+    import importlib.util
 
-    sys.path.insert(0, str(REPO_ROOT))
-    from scratch.liq60d_redundancy_audit import main as red_audit
+    _leaf2 = REPO_ROOT / "scratch/archive/historic-20260823/liq60d_redundancy_audit.py"
+    _loader2 = importlib.machinery.SourceFileLoader("liq60d_redundancy_audit", str(_leaf2))
+    _spec2 = importlib.util.spec_from_loader(_loader2.name, _loader2, origin=str(_leaf2))
+    red_audit_mod = importlib.util.module_from_spec(_spec2)
+    _spec2.loader.exec_module(red_audit_mod)  # type: ignore[union-attr]
+    red_audit = red_audit_mod.main
 
     rep = red_audit()
     assert rep["_meta"]["vectors"] > 0
@@ -880,10 +893,11 @@ def test_70d_model_30_regime_coverage_gate() -> None:
 
 
 def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
-    """The full purged walk-forward pipeline must train a 70D ScalpNet with a
-    4-head (WAIT policy bridge) without crashing. BUG-103 regression: the
-    class-weight tensor previously derived width from np.max(y)+1 (=3) while
-    the model emits 4 logits -> CrossEntropyLoss crash on every run."""
+    """The full purged walk-forward pipeline must train a 70D ScalpNet with
+    the canonical 3-class head without crashing. BUG-103 regression origin:
+    the class-weight tensor width was derived inconsistently with the model
+    head -> CrossEntropyLoss crash on every run; the trainer now derives both
+    from one SSOT (canonical 3-class, Nexus-CLS a9155c79)."""
     from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
     n = 1200
@@ -910,11 +924,14 @@ def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
     )
     model = tr.train_and_validate(df, feat_cols)
     assert model.num_features == 70
-    # the head/existing model must accept a 70D vector
+    # the head/existing model must accept a 70D vector. Canonical class head
+    # is 3 (NO_TRADE/BUY/SELL + WAIT-as-policy-state bridge, Nexus-CLS SSoT
+    # a9155c79) - the BUG-103 crash class stays covered by the class-weight
+    # path above (num_classes=3 >= max label 2).
     model.eval()
     with torch.inference_mode():
         out = model(torch.randn(2, 70))
-    assert out.shape == (2, 4)
+    assert out.shape == (2, 3)
 
 
 # ---------------------------------------------------------------------------

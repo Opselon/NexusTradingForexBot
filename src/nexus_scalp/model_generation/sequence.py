@@ -241,11 +241,22 @@ def _ts_us(value: Any) -> int:
     if value is None:
         return 0
     if hasattr(value, "timestamp"):  # datetime-like
-        return int(value.timestamp() * 1_000_000)
-    from datetime import datetime
+        dt = value
+        if dt.tzinfo is None:
+            # Windows raises OSError for naive datetimes before the LOCAL
+            # epoch (e.g. 1970-01-01T00:00 naive in UTC+3:30 == 1969 local).
+            # Synthetic/epoch-based fixtures are UTC by definition; anchor
+            # naive values to UTC so timestamp() never crosses the epoch.
+            from datetime import UTC
+
+            dt = dt.replace(tzinfo=UTC)
+        return int(dt.timestamp() * 1_000_000)
+    from datetime import UTC, datetime
 
     try:
         dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
         return int(dt.timestamp() * 1_000_000)
     except ValueError:
         return 0
