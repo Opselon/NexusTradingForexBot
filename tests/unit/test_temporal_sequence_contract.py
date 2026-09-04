@@ -67,10 +67,18 @@ def test_gap_invalidates_window_and_not_else() -> None:
     fixed = pl.DataFrame(rows)
     builder = SequenceBuilder(seq_len=16, max_gap_us=CANONICAL_MAX_GAP_US)
     seq = builder.build(fixed, news_enabled=False)
+
     # Gap is between rows 19 (17:34) and 20 (17:55) = 21m > 10m => every window that
     # includes both sides is invalid. Windows fully before (indices 0..19) or
     # fully after (20..39) remain valid.
-    assert 0 < int(seq["valid"].sum()) < int(seq["valid"].shape[0])
+    valid = seq["valid"]
+    assert int(valid[:20].sum()) > 0, "pre-gap windows must stay valid"
+    assert int(valid[20:].sum()) > 0, "post-gap windows must stay valid"
+    # windows ENDING at rows 5..19 (i.e. any window whose 16-bar history crosses the
+    # 19->20 gap) must be invalid; the tail (fully post-gap) stays valid
+    assert not valid[5:20].any(), "gap-straddling windows must be invalid"
+    assert valid[:5].all(), "early pre-gap windows stay valid"
+    assert valid[20:].all(), "post-gap windows stay valid"
 
 
 def test_l16_and_l32_both_supported() -> None:

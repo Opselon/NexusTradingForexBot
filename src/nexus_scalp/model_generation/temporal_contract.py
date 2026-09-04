@@ -60,17 +60,25 @@ Usage
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 
-from nexus_scalp.model_generation.sequence import SequenceBuilder
+if TYPE_CHECKING:  # runtime import is lazy (below) to avoid an import cycle:
+    # sequence.py aliases this module's CANONICAL_* constants at import time.
+    from nexus_scalp.model_generation.sequence import SequenceBuilder
 
 # ---------------------------------------------------------------------------
-# Canonical contract constants
+# Canonical contract constants — SINGLE SOURCE OF TRUTH (TASK ARCH-SEQ-UNIFY)
 # ---------------------------------------------------------------------------
-
+#
+# THIS module owns the canonical temporal contract values. sequence.py holds
+# NO duplicate definitions: its SEQUENCE_LENGTH / MAX_GAP_US / FEATURE_DIM /
+# SCHEMA_ID / SequenceContract defaults are frozen ALIASES re-exported from
+# here (backward-compatible names, one direction only). Do not add a second
+# literal for L / gap anywhere in the package; import from this module.
+#
 #: Canonical 70D feature dimension (scalp_v3).
 FEATURE_DIM: int = 70
 
@@ -95,6 +103,9 @@ CANONICAL_EMBARGO_BARS: int = 15
 #: Matches liquidity_engine.HTF_TIMEFRAMES_MIN.
 CANONICAL_HTF_TIMEFRAMES_MIN: tuple[int, ...] = (60, 240, 1440)
 
+#: Feature schema the 70D contract binds to (features/schema_contract.py).
+CANONICAL_SCHEMA_ID: str = "scalp_v3"
+
 
 # ---------------------------------------------------------------------------
 # Builder factory
@@ -110,6 +121,8 @@ def get_canonical_sequence_builder(
     Do NOT invent a second builder — this just parameterizes the existing one
     through ONE place so TRAIN | OFFLINE | LIVE cannot diverge.
     """
+    from nexus_scalp.model_generation.sequence import SequenceBuilder  # lazy: break import cycle
+
     return SequenceBuilder(seq_len=int(seq_len), max_gap_us=max_gap_us)
 
 
