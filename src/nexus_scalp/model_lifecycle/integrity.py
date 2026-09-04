@@ -325,8 +325,14 @@ def detect_untrained_fresh_init(
         # still be byte-comparable, or the canary silently stops flagging
         # them (test_bug225_untrained_champion_canary regression).
         head_w = state.get("classifier.weight")
-        artifact_head = int(head_w.shape[0]) if hasattr(head_w, "shape") and len(head_w.shape) == 2 else None
-        ref_classes = artifact_head if artifact_head in (EXPECTED_NUM_CLASSES, LEGACY_EXPECTED_NUM_CLASSES) else EXPECTED_NUM_CLASSES
+        artifact_head = (
+            int(head_w.shape[0]) if hasattr(head_w, "shape") and len(head_w.shape) == 2 else None
+        )
+        ref_classes = (
+            artifact_head
+            if artifact_head in (EXPECTED_NUM_CLASSES, LEGACY_EXPECTED_NUM_CLASSES)
+            else EXPECTED_NUM_CLASSES
+        )
         # Reproduce the canonical mint under the SAME seed the runtime uses.
         torch.manual_seed(seed)
         reference = ScalpNet(num_features=dim, num_classes=ref_classes).state_dict()
