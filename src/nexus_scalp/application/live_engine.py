@@ -2479,52 +2479,34 @@ class LiveEngine:
     )
 
     def _kick_worker(self, name: str, fn) -> None:
-        """Fire fn() in a background thread without blocking the tick loop.
+        from nexus_scalp.application.live_workers import WorkerSupervisor
 
-        Uses an in-flight set to avoid duplicate concurrent executions of the
-        same worker (idempotent kick). Workers run via asyncio.to_thread and
-        detach immediately; errors are logged but never propagated.
-        """
-        if name in self._inflight_workers:
-            return  # previous cycle still running, skip duplicate kick
-        self._inflight_workers.add(name)
-
-        async def _run():
-            try:
-                await asyncio.wait_for(asyncio.to_thread(fn), timeout=self.WORKER_KICK_TIMEOUT_SEC)
-            except TimeoutError:
-                logger.error(
-                    "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s — detaching hung call",
-                    name,
-                    self.WORKER_KICK_TIMEOUT_SEC,
-                )
-            except Exception as wkr_err:
-                logger.warning("[WORKER_KICK] event=FAILED worker=%s error=%s", name, wkr_err)
-            finally:
-                self._inflight_workers.discard(name)
-
-        task = asyncio.create_task(_run())
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        WorkerSupervisor.kick_worker(
+            name,
+            fn,
+            self._inflight_workers,
+            self._background_tasks,
+            timeout_sec=self.WORKER_KICK_TIMEOUT_SEC,
+        )
 
     def _start_history_sync_worker(self) -> None:
-        """Starts the broker-history sync worker (idempotent, isolated)."""
-        if self._history_sync_started:
-            return
-        self._history_sync_started = True
-        try:
-            self.history_sync_worker.start()
-        except Exception as err:
-            logger.error("[ACCOUNT_HISTORY] event=SYNC_START status=FAILED", error=str(err))
-            self._history_sync_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "account_history_sync",
+            getattr(self, "history_sync_worker", None),
+            self._history_sync_started,
+            lambda v: setattr(self, "_history_sync_started", v),
+        )
 
     async def _stop_history_sync_worker(self) -> None:
-        """Stops the broker-history sync worker (idempotent)."""
-        self._history_sync_started = False
-        try:
-            self.history_sync_worker.stop()
-        except Exception as err:
-            logger.error("[ACCOUNT_HISTORY] event=SYNC_STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "account_history_sync",
+            getattr(self, "history_sync_worker", None),
+            lambda v: setattr(self, "_history_sync_started", v),
+        )
 
     async def _shutdown_async(self) -> None:
         # Stop the accounting worker first (derived refresh, not financial truth).
@@ -3029,66 +3011,56 @@ class LiveEngine:
         return is_ready
 
     def _start_accounting_worker(self) -> None:
-        """
-        Starts the accounting worker (idempotent).
+        from nexus_scalp.application.live_workers import WorkerSupervisor
 
-        The worker itself is a throttled synchronous refresher; it is kicked
-        periodically via `asyncio.to_thread` from the run loop. This method
-        only flips its state so the kick is enabled.
-        """
-        if self._accounting_worker_started:
-            return
-        self._accounting_worker_started = True
-        try:
-            self.accounting_worker.start()
-        except Exception as err:
-            # Isolation: worker startup must never block the engine.
-            logger.error("[ACCOUNTING_WORKER] event=START status=FAILED", error=str(err))
-            self._accounting_worker_started = False
+        WorkerSupervisor.start_worker(
+            "accounting_worker",
+            getattr(self, "accounting_worker", None),
+            self._accounting_worker_started,
+            lambda v: setattr(self, "_accounting_worker_started", v),
+        )
 
     async def _stop_accounting_worker(self) -> None:
-        """Stops the accounting worker (idempotent, never raises)."""
-        self._accounting_worker_started = False
-        try:
-            self.accounting_worker.stop()
-        except Exception as err:
-            logger.error("[ACCOUNTING_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "accounting_worker",
+            getattr(self, "accounting_worker", None),
+            lambda v: setattr(self, "_accounting_worker_started", v),
+        )
 
     # ---------------------------------------------------------------------
     # PHASE 09: INTELLIGENCE WORKER lifecycle
     # ---------------------------------------------------------------------
 
     def _start_intelligence_worker(self) -> None:
-        """Starts the background intelligence worker (idempotent)."""
-        if self._intelligence_worker_started:
-            return
-        self._intelligence_worker_started = True
-        try:
-            self.intelligence_worker.start()
-        except Exception as err:
-            # Isolation: worker startup must never block the engine.
-            logger.error("[INTELLIGENCE_WORKER] event=START status=FAILED", error=str(err))
-            self._intelligence_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "intelligence_worker",
+            getattr(self, "intelligence_worker", None),
+            self._intelligence_worker_started,
+            lambda v: setattr(self, "_intelligence_worker_started", v),
+        )
 
     async def _stop_intelligence_worker(self) -> None:
-        """Stops the intelligence worker (idempotent, never raises)."""
-        self._intelligence_worker_started = False
-        try:
-            self.intelligence_worker.stop()
-        except Exception as err:
-            logger.error("[INTELLIGENCE_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "intelligence_worker",
+            getattr(self, "intelligence_worker", None),
+            lambda v: setattr(self, "_intelligence_worker_started", v),
+        )
 
     def _start_research_worker(self) -> None:
-        """Starts the background strategy research worker (idempotent)."""
-        if self._research_worker_started:
-            return
-        self._research_worker_started = True
-        try:
-            self.research_worker.start()
-        except Exception as err:
-            # Isolation: research startup must never block the engine.
-            logger.error("[RESEARCH_WORKER] event=START status=FAILED", error=str(err))
-            self._research_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "research_worker",
+            getattr(self, "research_worker", None),
+            self._research_worker_started,
+            lambda v: setattr(self, "_research_worker_started", v),
+        )
 
     def _start_factory_worker(self) -> None:
         """Starts the autonomous strategy-factory worker (idempotent).
@@ -3109,43 +3081,42 @@ class LiveEngine:
             self._factory_worker_started = False
 
     def _start_training_worker(self) -> None:
-        """Starts the controlled training worker (idempotent)."""
-        if self._training_worker_started:
-            return
-        self._training_worker_started = True
-        try:
-            self.training_worker.start()
-        except Exception as err:
-            # Isolation: training startup must never block the engine.
-            logger.error("[TRAINING_WORKER] event=START status=FAILED", error=str(err))
-            self._training_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "training_worker",
+            getattr(self, "training_worker", None),
+            self._training_worker_started,
+            lambda v: setattr(self, "_training_worker_started", v),
+        )
 
     async def _stop_training_worker(self) -> None:
-        """Stops the controlled training worker (idempotent, never raises)."""
-        self._training_worker_started = False
-        try:
-            self.training_worker.stop()
-        except Exception as err:
-            logger.error("[TRAINING_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "training_worker",
+            getattr(self, "training_worker", None),
+            lambda v: setattr(self, "_training_worker_started", v),
+        )
 
     def _start_shadow_worker(self) -> None:
-        """Starts the shadow-aggregation worker (idempotent)."""
-        if self._shadow_worker_started:
-            return
-        self._shadow_worker_started = True
-        try:
-            self.shadow_worker.start()
-        except Exception as err:
-            logger.error("[SHADOW_WORKER] event=START status=FAILED", error=str(err))
-            self._shadow_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "shadow_worker",
+            getattr(self, "shadow_worker", None),
+            self._shadow_worker_started,
+            lambda v: setattr(self, "_shadow_worker_started", v),
+        )
 
     async def _stop_shadow_worker(self) -> None:
-        """Stops the shadow-aggregation worker (idempotent, never raises)."""
-        self._shadow_worker_started = False
-        try:
-            self.shadow_worker.stop()
-        except Exception as err:
-            logger.error("[SHADOW_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "shadow_worker",
+            getattr(self, "shadow_worker", None),
+            lambda v: setattr(self, "_shadow_worker_started", v),
+        )
 
     def _start_news_worker(self) -> None:
         """Starts the news intelligence worker (idempotent, never raises).
