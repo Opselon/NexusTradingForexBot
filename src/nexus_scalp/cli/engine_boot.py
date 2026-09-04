@@ -91,46 +91,98 @@ def start_cmd(
         raise typer.Exit(xc.EXIT_USAGE) from None
     chosen = MODE_ALIASES[mode_key]
 
-    config_path = config or (
-        rpaths.get_user_config_path()
-        if rpaths.get_user_config_path().exists()
-        else Path("configs/live.yaml")
-    )
-    if not config_path.exists():
-        msg = f"Config missing: {config_path}"
-        if json_mode:
-            _emit(
-                {"error": msg, "hint": "Run nexus setup first", "exit_code": xc.EXIT_RUNTIME}, True
-            )
-        else:
-            console.print(
-                _error_panel(
-                    "Config missing", msg, hint="Run nexus setup first", exit_code=xc.EXIT_RUNTIME
+    # Download-ready: live.yaml is NEVER required. The operator can run a
+    # fresh download with just `nexus start` — if no config file exists we
+    # bootstrap from AppConfig defaults (PAPER, safe) and the persisted
+    # settings DB (if any) will layer over it at engine boot. This also
+    # means a deleted/corrupt live.yaml no longer blocks trading.
+    # Explicit --config that points nowhere must still error (contract for
+    # test_e2e_23); the bootstrap path is ONLY for the implicit case.
+    cfg: AppConfig | None = None
+    config_path: Path | None
+    if config is not None:
+        # Explicit path from CLI — must exist or we fail loudly.
+        config_path = Path(config)
+        if not config_path.exists():
+            msg = f"Config missing: {config_path}"
+            if json_mode:
+                _emit(
+                    {"error": msg, "hint": "Run nexus setup first", "exit_code": xc.EXIT_RUNTIME},
+                    True,
                 )
-            )
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
-    try:
-        cfg = AppConfig.load_from_yaml(config_path)
-    except Exception as e:
-        if json_mode:
-            _emit(
-                {
-                    "error": f"config invalid: {e}",
-                    "path": str(config_path),
-                    "exit_code": xc.EXIT_RUNTIME,
-                },
-                True,
-            )
-        else:
-            console.print(
-                _error_panel(
-                    "Config invalid",
-                    str(e),
-                    hint=f"Run nexus repair --recreate-config or fix {config_path}",
-                    exit_code=xc.EXIT_RUNTIME,
+            else:
+                console.print(
+                    _error_panel(
+                        "Config missing",
+                        msg,
+                        hint="Run nexus setup first",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
                 )
-            )
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        try:
+            cfg = AppConfig.load_from_yaml(config_path)
+        except Exception as e:
+            if json_mode:
+                _emit(
+                    {
+                        "error": f"config invalid: {e}",
+                        "path": str(config_path),
+                        "exit_code": xc.EXIT_RUNTIME,
+                    },
+                    True,
+                )
+            else:
+                console.print(
+                    _error_panel(
+                        "Config invalid",
+                        str(e),
+                        hint=f"Run nexus repair --recreate-config or fix {config_path}",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+    else:
+        # Implicit: try user config -> live.yaml -> base.yaml; else bootstrap.
+        for cand in (
+            rpaths.get_user_config_path(),
+            Path("configs/live.yaml"),
+            Path("configs/base.yaml"),
+        ):
+            if cand.exists():
+                config_path = cand
+                break
+        else:
+            config_path = None
+        if config_path is not None:
+            try:
+                cfg = AppConfig.load_from_yaml(config_path)
+            except Exception as e:
+                if json_mode:
+                    _emit(
+                        {
+                            "error": f"config invalid: {e}",
+                            "path": str(config_path),
+                            "exit_code": xc.EXIT_RUNTIME,
+                        },
+                        True,
+                    )
+                else:
+                    console.print(
+                        _error_panel(
+                            "Config invalid",
+                            str(e),
+                            hint=f"Run nexus repair --recreate-config or fix {config_path}",
+                            exit_code=xc.EXIT_RUNTIME,
+                        )
+                    )
+                raise typer.Exit(xc.EXIT_RUNTIME) from None
+        else:
+            # No file -> bootstrap from hard defaults (same values as base.yaml).
+            # This is the user story "downloaded release from GitHub, double-
+            # clicked the exe, it just works in PAPER".
+            cfg = AppConfig()
+            config_path = None  # type: ignore[assignment]
 
     if chosen == ExecutionMode.LIVE:
         panel = Panel(
@@ -175,15 +227,19 @@ def start_cmd(
             "start",
             "--mode",
             mode_key,
-            "--config",
-            str(config_path),
         ]
+        if config_path is not None:
+            cmd += ["--config", str(config_path)]
         if gateway:
             cmd.append("--gateway")
         # daemon is silent + no animate + no welcome
         if json_mode:
             _emit(
-                {"status": "starting_daemon", "mode": chosen.value, "config": str(config_path)},
+                {
+                    "status": "starting_daemon",
+                    "mode": chosen.value,
+                    "config": str(config_path) if config_path else "defaults",
+                },
                 True,
             )
         _resolve_facade_seam("_spawn_daemon", _spawn_daemon)(cmd)
