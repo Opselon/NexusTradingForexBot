@@ -25,6 +25,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
+from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
 from nexus_scalp.database.drivers.base import DatabaseDriver
 
 #: Case-insensitive map: SQLite type name -> portable logical type.
@@ -212,7 +213,7 @@ class SQLiteDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(sql, tuple(args))
+            cur = c.execute(assert_safe_sql(sql), tuple(args))
             return [dict(r) for r in cur.fetchall()]
         finally:
             if own:

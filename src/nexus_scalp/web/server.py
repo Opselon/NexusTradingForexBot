@@ -354,8 +354,6 @@ def _classify_feature(value: Any) -> tuple[float, str]:
 
 async def _run_training_async(orchestrator: Any, dataset: Any, num_epochs: int) -> dict[str, Any]:
     """Runs controlled training off the event loop via asyncio.to_thread."""
-    import asyncio
-
     return await asyncio.to_thread(
         orchestrator.run_controlled_training, dataset, num_epochs=num_epochs
     )

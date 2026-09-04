@@ -24,6 +24,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask_url_password
+from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
 from nexus_scalp.database.drivers.base import DatabaseDriver
 
 #: Case-insensitive map: SQLite/logical type -> PostgreSQL DDL type.
@@ -275,7 +276,7 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(self.translate_sql(sql), tuple(args) if args else None)
+            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
             if own:
                 c.commit()
             return cur

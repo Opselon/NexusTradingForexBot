@@ -88,7 +88,15 @@ def test_api_versioning_block_carries_commit_and_schema(
     api_payload: dict[str, Any],
 ) -> None:
     versioning = api_payload.get("versioning") or {}
-    assert versioning.get("application_version") == "9.0.6"
+    # R4 parity check, pyproject-derived: the API must advertise the SINGLE
+    # canonical version (pyproject.toml [project] version, surfaced through
+    # get_version_info / RuntimeVersionBlock). A literal pin here drifted
+    # from the repo version on every routine version bump (9.0.6 -> 9.0.10);
+    # deriving the expectation keeps the test a truth check, not a changelog.
+    from nexus_scalp.release.metadata import get_version_info
+
+    canonical_version = get_version_info()["version"]
+    assert versioning.get("application_version") == canonical_version
     schema = versioning.get("feature_schema") or {}
     assert schema.get("id") in ("scalp_v1", "scalp_v3", "scalp_v4")
 
