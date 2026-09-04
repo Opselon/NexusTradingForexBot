@@ -191,8 +191,9 @@ def test_current_70d_05_candidate_discovery_truth():
     if not wf.exists():
         pytest.skip("no wf_candidate artifact in this environment")
     m = json.loads(wf.read_text(encoding="utf-8"))
-    # The artifact declares 70D / 3-class head (canonical 3-class contract,
-    # Nexus-CLS SSoT a9155c79; regenerated wf_candidate 2026-09-04)
+    # CANONICAL-3 CONTRACT (model_class_contract v1): the artifact declares a
+    # 3-class neural head (NO_TRADE/BUY_MARKET/SELL_MARKET); WAIT is a policy
+    # state, never a label (SSoT: TRAINED_CLASS_COUNT=3).
     assert m.get("num_features") == 70
     assert m.get("model_head_classes") == 3
     # Truthful discovery: the manifest does NOT claim validation evidence it
@@ -203,7 +204,10 @@ def test_current_70d_05_candidate_discovery_truth():
 
 def test_current_70d_06_candidate_model_integrity():
     """TEST-CURRENT-70D-06 — the on-disk 70D artifact loads as input-70D,
-    output-3-class (structural integrity independent of its schema tag)."""
+    output-3-class (structural integrity independent of its schema tag).
+    Canonical-3 contract: fresh trainer builds write a 3-wide head
+    (SSoT: TRAINED_CLASS_COUNT=3); the legacy 4-wide WAIT-bridge head is
+    compat-only and never emitted by the current trainer."""
     import torch
 
     pt = REPO_ROOT / "artifacts/model_generation/models/wf_candidate/model.pt"
@@ -383,10 +387,11 @@ def test_current_70d_17_head3_weight_integrity_detection():
         model_version="1.0.0",
         feature_schema_id="scalp_v4",  # meta tag of the regenerated candidate
         feature_dimension=70,
-        num_classes=3,
+        num_classes=3,  # canonical-3 contract (TRAINED_CLASS_COUNT)
     )
-    # The artifact is structurally 70D/3-class (canonical contract) and must
-    # pass integrity against its own declared head count (TENSORS, not tags).
+    # The artifact is structurally 70D/3-class (canonical head) and integrity
+    # must reflect the TENSORS: actual_output_classes comes from the on-disk
+    # classifier width, which the canonical trainer writes as 3-wide.
     assert info.actual_output_classes is None or info.actual_output_classes == 3
     if info.actual_output_classes is not None:
         assert info.integrity_ok in (True, False)
