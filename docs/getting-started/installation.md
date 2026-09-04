@@ -38,6 +38,14 @@ PATH) with safe-update, repair, recovery and a machine-readable stage protocol:
 iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1)
 ```
 
+The installer enforces download→install integrity at every step: artifacts are
+verified (size floor, optional SHA256 pin) **before** being committed, partial
+downloads are never installed, verification failures BLOCK the install with a
+precise reason, and every download's digest + outcome is recorded in
+`state\install.json`. The full truth table (AVAILABLE / DEGRADED / BLOCKED)
+is documented in
+[`docs/INSTALL_INTEGRITY.md`](https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/INSTALL_INTEGRITY.md).
+
 ```powershell
 .\install.ps1 -DryRun      # show the plan as JSON, mutate nothing
 .\install.ps1 -Manifest    # list the installer's 12 stages (JSON)

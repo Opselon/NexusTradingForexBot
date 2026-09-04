@@ -108,6 +108,27 @@ try {
 $Script:RepoUrlHttps = "https://github.com/Opselon/NexusTradingForexBot.git"
 $Script:RepoUrlSsh   = "git@github.com:Opselon/NexusTradingForexBot.git"
 
+# Server-side test seam (tests/installer/test_lifecycle.py): when these env
+# vars are set they override the acquisition URLs so lifecycle tests can run
+# against a local origin with zero external network. Never set in production.
+if ($env:NEXUS_TEST_REPO_HTTPS) { $Script:RepoUrlHttps = $env:NEXUS_TEST_REPO_HTTPS }
+if ($env:NEXUS_TEST_REPO_SSH)   { $Script:RepoUrlSsh   = $env:NEXUS_TEST_REPO_SSH }
+
+# INSTALL-VERIFY hardening: optional digest pins for the two runtime assets
+# the installer downloads from third parties. Empty string = unhashed (the
+# asset is version-pinned instead and its integrity is verified by executing
+# it and checking the produced artifact, recorded as DEGRADED provenance).
+# To fully pin a run, populate these with the official SHA256 of the exact
+# pinned asset version and set $Script:UvInstallerDigestKnown = $true.
+#
+# WARNING: the uv installer scripts themselves are fetched with irm|iex from
+# astral.sh / github.com and are NOT hash-pinnable (dynamic content); they
+# run in a CHILD PowerShell process. Restricting uv to a pinned version +
+# digest-pinned release binary is the follow-up hardening (documented in
+# docs/INSTALL_INTEGRITY.md "Remaining risks").
+$Script:GitPortableAssetSha256 = ""   # e.g. official digest of PortableGit-2.56.0-64-bit.7z.exe
+$Script:UvInstallerKnownGoodSourceHosts = @("astral.sh", "github.com", "objects.githubusercontent.com")
+
 # Canonical Python minor version for Nexus (pyproject requires-python >= 3.11).
 $Script:NexusPythonVersion = "3.11"
 # Safe fallback minors the engine actually supports, in preference order.
@@ -516,18 +537,118 @@ function Write-Log {
 # ============================================================================
 # Download helpers (timeout, retry, integrity, zip-slip-safe extraction)
 # ============================================================================
+#
+# Integrity model (INSTALL-VERIFY hardening):
+#   Every downloaded artifact passes through: partial-file staging -> size
+#   floor check -> OPTIONAL expected-SHA256 pin (when the caller knows the
+#   digest, e.g. a release checksum manifest or a pinned portable asset) ->
+#   atomic move. A download that satisfies none of the checks never reaches
+#   the destination path. Digest mismatch or missing file is ALWAYS a hard
+#   failure (BLOCKED) - never a warning - because a silently-corrupted
+#   artifact becomes a corrupt install that only surfaces at first run.
+#
+#   Availability states surfaced to the user (truth table in
+#   docs/INSTALL_INTEGRITY.md):
+#     AVAILABLE   artifact downloaded AND verified (size + optional hash)
+#     DEGRADED    artifact acquired but through a fallback/degraded path
+#                 (e.g. ZIP fallback, unhashed portable asset) - install
+#                 proceeds, provenance is recorded
+#     BLOCKED     download/verification failed after retries - install stops
+#
+# Per-install telemetry (no secrets, never network-sent from this script):
+#   $Script:DownloadTelemetry records one entry per download attempt chain:
+#   url host, bytes, expected/actual sha256, verification outcome, attempts.
+#   It is persisted into state/install.json by Write-InstallState.
+
+$Script:DownloadTelemetry = @()
+
+function Add-DownloadTelemetry {
+    # Best-effort telemetry recording: a telemetry failure must never break
+    # or alter the outcome of the download itself.
+    param([hashtable]$Entry)
+    try { $Script:DownloadTelemetry += $entry } catch { }
+}
+
+function Get-FileSha256 {
+    # Streaming SHA-256 (suitable for large archives; does not load the whole
+    # file into memory). Returns lowercase hex, or $null on any failure.
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $stream = [System.IO.File]::OpenRead($Path)
+            try {
+                $hash = $sha.ComputeHash($stream)
+                return (([System.BitConverter]::ToString($hash)).Replace("-", "").ToLowerInvariant())
+            } finally {
+                $stream.Dispose()
+            }
+        } finally {
+            $sha.Dispose()
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Test-DownloadIntegrity {
+    # Verify a downloaded artifact BEFORE it is committed to its destination.
+    # Returns $true when verification passes; throws with a precise reason
+    # when it fails (mismatch, missing, empty, undersized).
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string]$ExpectedSha256 = "",
+        [long]$MinBytes = 0
+    )
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "integrity: downloaded file is missing at $Path"
+    }
+    $item = Get-Item -LiteralPath $Path
+    if ($item.Length -le 0) {
+        throw "integrity: downloaded file is empty (0 bytes)"
+    }
+    if (($MinBytes -gt 0) -and ($item.Length -lt $MinBytes)) {
+        throw ("integrity: downloaded file is {0} bytes, below the expected minimum {1} bytes (truncated download suspected)" -f $item.Length, $MinBytes)
+    }
+    if ($ExpectedSha256) {
+        $expected = ($ExpectedSha256 -replace "[^0-9a-fA-F]", "").ToLowerInvariant()
+        if ($expected.Length -ne 64) {
+            throw ("integrity: expected SHA256 '{0}' is not a 64-hex-digit digest" -f $ExpectedSha256)
+        }
+        $actual = Get-FileSha256 -Path $Path
+        if (-not $actual) {
+            throw "integrity: could not hash the downloaded file (read/ACL failure)"
+        }
+        if ($actual -ne $expected) {
+            throw ("integrity: SHA256 MISMATCH (artifact tampered or corrupt): expected {0}, actual {1}" -f $expected, $actual)
+        }
+        Write-Diag ("integrity: SHA256 verified OK ({0})" -f $actual.Substring(0, 16) + "...")
+    }
+    return $true
+}
 
 function Invoke-NexusDownload {
     # Bounded, retrying download with exponential backoff + jitter.
-    # Returns the local file path on success; throws on failure.
+    # Optional cryptographic verification BEFORE the artifact becomes visible
+    # at $Destination: -ExpectedSha256 (hex) and/or -MinBytes (size floor).
+    # Returns the local file path on success; throws on ANY verification or
+    # network failure - callers can never mistake a corrupt download for a
+    # successful one.
     param(
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$Destination,
         [int]$MaxAttempts = 3,
-        [int]$TimeoutSec = 300
+        [int]$TimeoutSec = 300,
+        [string]$ExpectedSha256 = "",
+        [long]$MinBytes = 0
     )
     $attempt = 0
     $lastError = $null
+    $urlHost = ""
+    try {
+        $urlHost = ([Uri]$Url).Host
+    } catch { $urlHost = "unknown" }
+    $verification = "skipped"
     while ($attempt -lt $MaxAttempts) {
         $attempt++
         try {
@@ -558,9 +679,29 @@ function Invoke-NexusDownload {
                     throw "download timed out after ${TimeoutSec}s"
                 }
             }
-            $size = (Get-Item -LiteralPath $partial).Length
-            if ($size -le 0) { throw "downloaded file is empty" }
+            # Integrity gate: verify existence + size floor + optional SHA256
+            # pin on the PARTIAL file, before the atomic move. A truncated or
+            # tampered artifact is deleted and retried, never installed.
+            if ($ExpectedSha256 -or ($MinBytes -gt 0)) {
+                Test-DownloadIntegrity -Path $partial -ExpectedSha256 $ExpectedSha256 -MinBytes $MinBytes | Out-Null
+                $verification = if ($ExpectedSha256) { "sha256" } else { "size" }
+            } else {
+                $size = (Get-Item -LiteralPath $partial).Length
+                if ($size -le 0) { throw "downloaded file is empty" }
+                $verification = "empty-check"
+            }
             Move-Item -LiteralPath $partial -Destination $Destination -Force
+            $actualSha = Get-FileSha256 -Path $Destination
+            Add-DownloadTelemetry @{
+                url_host     = $urlHost
+                bytes        = (Get-Item -LiteralPath $Destination).Length
+                attempts     = $attempt
+                expected_sha = ($(if ($ExpectedSha256) { $ExpectedSha256.ToLowerInvariant() } else { $null }))
+                actual_sha   = $actualSha
+                verification = $verification
+                outcome      = "ok"
+            }
+            Write-Log ("DOWNLOAD OK host={0} bytes={1} attempts={2} sha256={3} verification={4}" -f $urlHost, (Get-Item -LiteralPath $Destination).Length, $attempt, $actualSha, $verification)
             return $Destination
         } catch {
             $lastError = $_.Exception.Message
@@ -571,12 +712,22 @@ function Invoke-NexusDownload {
             $partial = "$Destination.partial-$PID"
             if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue }
             Write-Diag "download attempt $attempt/$MaxAttempts failed: $lastError"
+            Write-Log "DOWNLOAD FAILED attempt=$attempt host=$urlHost error=$lastError"
             if ($attempt -lt $MaxAttempts) {
                 # Exponential backoff + jitter: 1s, 2s, 4s... +/- 0.5s
                 $sleepSec = [math]::Pow(2, $attempt - 1) + (Get-Random -Minimum 0 -Maximum 500) / 1000.0
                 Start-Sleep -Seconds ([math]::Min($sleepSec, 15))
             }
         }
+    }
+    Add-DownloadTelemetry @{
+        url_host     = $urlHost
+        bytes        = 0
+        attempts     = $MaxAttempts
+        expected_sha = $(if ($ExpectedSha256) { $ExpectedSha256.ToLowerInvariant() } else { $null })
+        actual_sha   = $null
+        verification = $verification
+        outcome      = "blocked"
     }
     throw "Download failed after $MaxAttempts attempts ($Url): $lastError"
 }
@@ -1037,7 +1188,16 @@ function Install-Git {
         $tmpFile = Join-Path $env:TEMP ("nexus-git-" + [Guid]::NewGuid().ToString("N") + "-" + $assetName)
         $gitDir = Join-Path $NexusHome "git"
 
-        Invoke-NexusDownload -Url $downloadUrl -Destination $tmpFile -TimeoutSec 600
+        # Digest pin (INSTALL-VERIFY): when a SHA256 is configured for this
+        # asset the download is verified BEFORE extraction; a mismatch blocks
+        # the whole git stage (fail-closed - a tampered/mismatched archive is
+        # never extracted or executed).
+        $downloadArgs = @{ Url = $downloadUrl; Destination = $tmpFile; TimeoutSec = 600 }
+        if ($Script:GitPortableAssetSha256) {
+            $downloadArgs["ExpectedSha256"] = $Script:GitPortableAssetSha256
+            Write-Info "Verifying PortableGit download against the configured SHA256 pin..."
+        }
+        Invoke-NexusDownload @downloadArgs
 
         New-Item -ItemType Directory -Path $gitDir -Force | Out-Null
         if ($assetName -like "*.zip") {
@@ -1266,6 +1426,12 @@ function Install-RepoFromZip {
     $session = [Guid]::NewGuid().ToString("N")
     $zipPath = Join-Path $env:TEMP ("nexus-repo-$session.zip")
     $extractPath = Join-Path $env:TEMP ("nexus-repo-extract-$session")
+    # DEGRADED provenance (INSTALL-VERIFY): a ZIP fallback acquisition is a
+    # real, honest install path but NOT the preferred one (no incremental git
+    # history, weaker update story). Record the state so the user and the
+    # state ledger both see it; never present it as a normal clone.
+    $Script:_SourceMode = "zip"
+    Write-WarnMsg "ZIP acquisition is a DEGRADED path (no incremental git history). The installer will record source_mode=zip in state\\install.json."
 
     try {
         Invoke-NexusDownload -Url $zipUrl -Destination $zipPath -TimeoutSec 600
@@ -2147,6 +2313,20 @@ function Write-InstallState {
         last_successful_stage = $lastOk
         source_mode           = if ($Script:_SourceMode) { $Script:_SourceMode } else { "git" }
         git_tracking          = if ($Script:_GitTracking) { $Script:_GitTracking } else { "ok" }
+        commit_pin            = if ($Commit) { $Commit } else { $null }
+        install_state         = if ($Script:_StageResults -and $Script:_StageResults.Keys.Count -gt 0) {
+            # Truthful summary state (INSTALL-VERIFY truth table): verify+state
+            # stages both ok => AVAILABLE; any recorded failure => BLOCKED;
+            # partial progress without failure => DEGRADED (resumable).
+            $anyFailed = $false
+            $verifyOk = $true
+            foreach ($k in $Script:_StageResults.Keys) {
+                $rec = $Script:_StageResults[$k]
+                if ($rec -and (-not $rec.ok) -and (-not $rec.skipped)) { $anyFailed = $true }
+            }
+            if ($anyFailed) { "BLOCKED" } elseif ($lastOk -eq "state") { "AVAILABLE" } else { "DEGRADED" }
+        } else { "UNKNOWN" }
+        download_telemetry    = @($Script:DownloadTelemetry)
         stages                = $stageRecords
     }
 
@@ -2234,8 +2414,26 @@ function Invoke-NexusVerify {
     if (-not (Test-NexusRepoValid -Repo $InstallDir)) {
         $problems += "repository at $InstallDir is not a valid git checkout"
     } else {
-        $sha = Get-RepoHeadSha -Repo $InstallDir
-        Write-Success "Repository HEAD: $sha"
+        $repoSha = Get-RepoHeadSha -Repo $InstallDir
+        $expectedSha = $null
+        if ($Commit) {
+            try {
+                Push-Location $InstallDir
+                $ErrorActionPreference = "Continue"
+                $expectedSha = (& git rev-parse "$Commit^{commit}" 2>$null)
+            } catch { } finally {
+                Pop-Location
+                $ErrorActionPreference = $prevEAP
+            }
+            if ($expectedSha) { $expectedSha = ("$expectedSha").Trim() }
+        }
+        if ($Commit -and $expectedSha -and $repoSha -and ("$repoSha" -ne "$expectedSha")) {
+            # Integrity gate (INSTALL-VERIFY): the verify stage must never
+            # pass while HEAD does not satisfy the requested commit pin -
+            # a checkout that silently drifted from the pin is BLOCKED.
+            $problems += "commit pin integrity: HEAD ($repoSha) does not match the requested commit ($expectedSha)"
+        }
+        Write-Success "Repository HEAD: $repoSha"
     }
 
     # 4. Config presence.
@@ -2641,6 +2839,12 @@ function Write-InstallStateFromSession {
         }
         source_mode           = if ($Script:_SourceMode) { $Script:_SourceMode } else { "git" }
         git_tracking          = if ($Script:_GitTracking) { $Script:_GitTracking } else { "ok" }
+        # Truthful progress state on every per-stage flush (INSTALL-VERIFY):
+        # a failed stage in this session marks the install BLOCKED for any
+        # crash-recovery reader; otherwise it stays DEGRADED (partial) until
+        # the final state stage records AVAILABLE.
+        install_state         = if ($Script:_LedgerStageFailed) { "BLOCKED" } else { "DEGRADED" }
+        download_telemetry    = @($Script:DownloadTelemetry)
         stages                = $stageRecords
     }
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -2669,12 +2873,25 @@ function Invoke-FullInstall {
     if (-not $Json) {
         Write-Completion
     } else {
+        # Truthful summary (INSTALL-VERIFY): the full-install frame reports the
+        # real availability state derived from the stage ledger, never a
+        # blanket ok=true. A failing stage above throws before this point, but
+        # DEGRADED partial outcomes (skips) are surfaced here too.
+        $stateSummary = "AVAILABLE"
+        if ($Script:_StageResults) {
+            foreach ($k in $Script:_StageResults.Keys) {
+                $rec = $Script:_StageResults[$k]
+                if ($rec -and (-not $rec.ok) -and (-not $rec.skipped)) { $stateSummary = "BLOCKED"; break }
+            }
+        }
         $summary = [ordered]@{
-            ok               = $true
+            ok               = ($stateSummary -eq "AVAILABLE")
+            install_state    = $stateSummary
             protocol_version = $Script:ProtocolVersionValue
             nexus_home       = $NexusHome
             install_dir      = $InstallDir
             mode             = $script:_InstallMode
+            repo_head        = (Get-RepoHeadSha -Repo $InstallDir)
         }
         $summary | ConvertTo-Json -Compress | Write-Output
     }

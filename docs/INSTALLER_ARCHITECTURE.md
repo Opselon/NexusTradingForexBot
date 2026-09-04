@@ -226,7 +226,11 @@ from the lock.
   invariant) with `PROCESSOR_ARCHITEW6432` fallback - correct on Windows-on-ARM.
 - **Downloads**: `.partial-<pid>` staging + atomic rename (interrupted
   downloads never trusted), bounded retries with exponential backoff + jitter,
-  explicit timeouts, empty-file rejection.
+  explicit timeouts, empty-file rejection, and an optional SHA256 pin +
+  size-floor integrity gate verified BEFORE the atomic move
+  (`-ExpectedSha256` / `-MinBytes`; see docs/INSTALL_INTEGRITY.md). Every
+  download records telemetry (host, bytes, attempts, digests, verification
+  mode, outcome) into `state/install.json`.
 - **Extraction**: zip-slip validation (absolute/UNC/drive-qualified/`..` entry
   names rejected; resolved targets re-verified inside the destination root).
 - **Preflight** (stage `environment`): Windows-only guard, free-disk check,
@@ -251,6 +255,12 @@ functions against a real PowerShell on this machine (PS 5.1 or 7, whichever
 is present), using temp `-NexusHome` overrides so the developer machine is
 never mutated. Coverage: protocol outputs (manifest shape, protocol version,
 resolved-paths), stage frames, unknown-stage exit code, JSON-stdout purity,
-8.3 path normalizer, zip-slip extraction guard, User PATH dedup helper.
-A repository E2E (full acquisition into a temp home) is env-gated via
+8.3 path normalizer, zip-slip extraction guard, User PATH dedup helper,
+download integrity (SHA256 pin/mismatch/malformed, truncation floor, empty
+payload, retry-then-block, telemetry), and the state-ledger availability
+fields. A repository E2E (full acquisition into a temp home) is env-gated via
 `NEXUS_INSTALLER_E2E=1` since it performs network downloads.
+
+The download → install → activation → first-run integrity truth table
+(AVAILABLE / DEGRADED / BLOCKED states, per-stage gates, remaining risks)
+lives in [`docs/INSTALL_INTEGRITY.md`](INSTALL_INTEGRITY.md).

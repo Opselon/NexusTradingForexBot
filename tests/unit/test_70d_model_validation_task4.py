@@ -931,6 +931,9 @@ def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
     model.eval()
     with torch.inference_mode():
         out = model(torch.randn(2, 70))
+    # CANONICAL-3 CONTRACT (SSoT: architectures.CANONICAL_CLASS_COUNT=3 /
+    # TRAINED_CLASS_COUNT=3): the walk-forward trainer builds a 3-wide head
+    # (NO_TRADE/BUY/SELL); WAIT is a policy state, never a neural output.
     assert out.shape == (2, 3)
 
 
@@ -1023,4 +1026,9 @@ def test_70d_model_33_manifest_input_dimension_no_double_count() -> None:
 
     rt = validate_and_load(res["model_id"], root=str(REPO_ROOT / "artifacts/model_generation"))
     pred = rt.predict(np.random.default_rng(1).normal(0, 1, 72))
+    # LEGACY baseline geometry is INTENTIONALLY 4-wide (NO_TRADE/BUY/SELL +
+    # WAIT policy bridge): ModelFactory preserves the legacy ScalpNet head for
+    # LEGACY_SCALPNET_V1 even under the canonical-3 contract, and the runtime
+    # maps index 3 -> WAIT policy state (never a label). The manifest still
+    # declares class_count=3; the extra logit is compat-only.
     assert len(pred["probabilities"]) == 4
