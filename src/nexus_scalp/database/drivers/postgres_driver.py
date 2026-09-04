@@ -303,7 +303,7 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(self.translate_sql(sql), tuple(args) if args else None)
+            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
             rows = cur.fetchall()
             names = [d.name for d in cur.description] if cur.description else []
             return [dict(zip(names, r, strict=False)) for r in rows]
@@ -317,7 +317,7 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(self.translate_sql(sql), tuple(args) if args else None)
+            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
             row = cur.fetchone()
             if row is None:
                 return None
@@ -331,7 +331,9 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            row = c.execute(self.translate_sql(sql), tuple(args) if args else None).fetchone()
+            row = c.execute(
+                assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
+            ).fetchone()
             return row[0] if row is not None else None
         finally:
             if own:

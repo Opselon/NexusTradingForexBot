@@ -1512,8 +1512,6 @@ class AuditRepository:
           never create duplicate decision rows across restart/races — no
           synchronous SELECT in the hot path, no in-memory state to lose.
         """
-        import json
-
         if not self._is_sqlite:
             return
 

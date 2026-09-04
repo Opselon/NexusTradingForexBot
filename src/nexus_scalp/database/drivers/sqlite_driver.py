@@ -194,7 +194,7 @@ class SQLiteDriver(DatabaseDriver):
         own = conn is None
         c = conn or (self.connect_shared() if self.is_in_memory else self.connect())
         try:
-            return c.execute(sql, tuple(args))
+            return c.execute(assert_safe_sql(sql), tuple(args))
         finally:
             if own and not self.is_in_memory:
                 c.close()
@@ -225,7 +225,7 @@ class SQLiteDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(sql, tuple(args))
+            cur = c.execute(assert_safe_sql(sql), tuple(args))
             row = cur.fetchone()
             return dict(row) if row is not None else None
         finally:
@@ -236,7 +236,7 @@ class SQLiteDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(sql, tuple(args))
+            cur = c.execute(assert_safe_sql(sql), tuple(args))
             row = cur.fetchone()
             return row[0] if row is not None else None
         finally:

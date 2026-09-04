@@ -131,8 +131,6 @@ class DependencyIntelligenceEngine:
     # behavior identical for identical trees (verified by test_dependency_cache).
 
     def _load_cache(self, key) -> tuple[DependencyGraph, int, list[str]] | None:
-        import json
-
         path = self._cache_path()
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -149,8 +147,6 @@ class DependencyIntelligenceEngine:
     def _store_cache(
         self, key, graph: DependencyGraph, files_analyzed: int, parse_errors: list[Any]
     ) -> None:
-        import json
-
         path = self._cache_path()
         try:
             path.parent.mkdir(parents=True, exist_ok=True)

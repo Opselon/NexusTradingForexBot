@@ -61,14 +61,17 @@ Usage
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import torch
 
-if TYPE_CHECKING:  # runtime import is lazy (below) to avoid an import cycle:
-    # sequence.py aliases this module's CANONICAL_* constants at import time.
-    from nexus_scalp.model_generation.sequence import SequenceBuilder
+# NOTE: no import of model_generation.sequence here — not even under
+# TYPE_CHECKING. sequence.py re-exports this module's CANONICAL_* constants at
+# module level, so any form of reverse import regenerates the
+# sequence <-> temporal_contract cycle (CodeQL py/unsafe-cyclic-import).
+# Type references to SequenceBuilder below use the quoted name with `Any`
+# semantics (runtime lazy import inside the function bodies that need it).
 
 # ---------------------------------------------------------------------------
 # Canonical contract constants — SINGLE SOURCE OF TRUTH (TASK ARCH-SEQ-UNIFY)
@@ -116,7 +119,7 @@ CANONICAL_SCHEMA_ID: str = "scalp_v3"
 def get_canonical_sequence_builder(
     seq_len: int = CANONICAL_SEQ_LEN,
     max_gap_us: int | None = CANONICAL_MAX_GAP_US,
-) -> SequenceBuilder:
+) -> Any:
     """Returns a canonical SequenceBuilder reusing the existing implementation.
 
     Do NOT invent a second builder — this just parameterizes the existing one
