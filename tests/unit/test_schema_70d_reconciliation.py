@@ -359,7 +359,12 @@ def test_current_70d_15_liquidity_70d_contract():
 
 def test_current_70d_16_champion_write_protection():
     """TEST-CURRENT-70D-16 — the trainer default save path is NOT the live
-    Champion path (BUG-104 regression)."""
+    Champion path (BUG-104 regression).
+
+    P0-2026-09-04 UPDATE: the default is an ISOLATED candidate path under
+    artifacts/model_generation/models/ (wf_candidate was retired after the
+    producer chain fix; the champion serving tree is rejected outright by
+    the champion guard)."""
     import inspect
 
     from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
@@ -367,8 +372,10 @@ def test_current_70d_16_champion_write_protection():
     sig = inspect.signature(WalkForwardTrainer.__init__)
     default = sig.parameters["artifact_save_path"].default
     if default is not inspect.Parameter.empty:
-        assert "wf_candidate" in str(default)
-        assert "XAUUSD/v1.0.0" not in str(default)
+        default_norm = str(default).replace("\\", "/")
+        assert "artifacts/models/scalp" not in default_norm
+        assert "XAUUSD/v1.0.0" not in default_norm
+        assert "model_generation/models" in default_norm
 
 
 def test_current_70d_17_head3_weight_integrity_detection():
