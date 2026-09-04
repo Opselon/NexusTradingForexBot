@@ -1,0 +1,7 @@
+# CodeQL config — path filters so docs HTML generation is not flagged
+# as "clear-text storage of sensitive information" (public static output).
+name: "Nexus codeql config"
+queries:
+  - uses: security-and-quality
+paths-ignore:
+  - scripts/docs/build_site.py
