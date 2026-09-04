@@ -119,10 +119,36 @@ class TestCommitIdentity:
     def test_stale_dev_build_info_does_not_mask_repo(self, tmp_path, monkeypatch):
         # scenario: leftover release build-info.json in a dev checkout must
         # not mask the live repository identity (dev stale-build-info rule).
-        # The rule resolves HEAD via `git rev-parse` from the CURRENT
-        # process CWD, so simulate the dev checkout by chdir'ing into the
-        # actual repo CWD while pointing the build-info locator at the
-        # stale stamp file.
+        # MAIN RULING (metadata.py:305-324 / edd6694ad semantics): only the
+        # REPO-ROOT build-info.json stamp is stale in dev; a stamp found at
+        # any other location (tmp_path here) is that deployment's OWN
+        # intentional build-info and WINS over repo HEAD resolution.
+        from nexus_scalp.release import metadata as md
+
+        foreign_stamp = tmp_path / "build-info.json"
+        foreign_stamp.write_text(
+            json.dumps(
+                {
+                    "version": "1.0.0-old",
+                    "git_commit": "deadbeef",
+                    "feature_schema": "scalp_v1",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(md, "get_build_info_file", lambda: foreign_stamp)
+        info = md.get_version_info()
+        # foreign-location stamp WINS in a dev (non-frozen) checkout: it is
+        # the deployment's own stamp, not a repo-root leftover.
+        assert info["commit_source"] == "build-info"
+        assert info["commit_status"] == "RECORDED"
+        assert info["commit"] == "deadbeef"
+        assert info["version"] == "1.0.0-old"
+
+    def test_stale_repo_root_build_info_does_not_mask_repo(self, tmp_path, monkeypatch):
+        # MAIN RULING mirror case: a stamp AT THE REPO ROOT (the leftover
+        # release artifact) IS the stale case and must NOT mask the live
+        # repository identity in a dev (non-frozen) checkout.
         from nexus_scalp.release import metadata as md
 
         stale = tmp_path / "build-info.json"
@@ -137,11 +163,22 @@ class TestCommitIdentity:
             encoding="utf-8",
         )
         monkeypatch.setattr(md, "get_build_info_file", lambda: stale)
+
+        def _fake_repo_root() -> Path:
+            return tmp_path
+
+        monkeypatch.setattr(md, "_repo_root", _fake_repo_root)
+
+        def _fake_git_commit(rev: str = "HEAD") -> str | None:
+            return "0bed1da2" if rev == "HEAD" else None
+
+        monkeypatch.setattr(md, "_git_commit", _fake_git_commit)
         info = md.get_version_info()
-        # repo identity wins in a dev (non-frozen) checkout with resolvable HEAD
+        # repo identity wins over the repo-root leftover stamp
         assert info["commit_source"] == "repository"
         assert info["commit_status"] == "RECORDED"
         assert info["commit"] != "deadbeef"
+        assert info["version"] != "1.0.0-old"
 
     def test_stale_build_info_dirty_tree_never_masks_dirty_repo(self, tmp_path, monkeypatch):
         # BUG-221 fails-before: a stale stamped build-info.json carrying
@@ -167,6 +204,16 @@ class TestCommitIdentity:
         )
         monkeypatch.setattr(md, "get_build_info_file", lambda: stale)
         monkeypatch.setattr(md, "_git_dirty", lambda: True)
+
+        def _fake_repo_root() -> Path:
+            return tmp_path
+
+        monkeypatch.setattr(md, "_repo_root", _fake_repo_root)
+
+        def _fake_git_commit(rev: str = "HEAD") -> str | None:
+            return "0bed1da2" if rev == "HEAD" else None
+
+        monkeypatch.setattr(md, "_git_commit", _fake_git_commit)
         info = md.get_version_info()
         assert info["commit_source"] == "repository"
         assert info["dirty_tree"] is True
@@ -190,6 +237,16 @@ class TestCommitIdentity:
         )
         monkeypatch.setattr(md, "get_build_info_file", lambda: stale)
         monkeypatch.setattr(md, "_git_dirty", lambda: False)
+
+        def _fake_repo_root() -> Path:
+            return tmp_path
+
+        monkeypatch.setattr(md, "_repo_root", _fake_repo_root)
+
+        def _fake_git_commit(rev: str = "HEAD") -> str | None:
+            return "0bed1da2" if rev == "HEAD" else None
+
+        monkeypatch.setattr(md, "_git_commit", _fake_git_commit)
         info = md.get_version_info()
         assert info["dirty_tree"] is False
 
