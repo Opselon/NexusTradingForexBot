@@ -208,6 +208,11 @@ def train_variant(
         artifact_save_path=paths["model"],
         feature_schema_id=variant_schema_id(variant),
         smoke=smoke,
+        # MLFIX-T7 lineage: train_variant labels come from offline historical
+        # bars via TripleBarrierLabeler (CLEAN_HISTORICAL by construction —
+        # never paper/live fills). Declared explicitly so the production
+        # lineage hard-gate passes with evidence instead of UNKNOWN.
+        label_origin="CLEAN_HISTORICAL",
     )
     t0 = time.perf_counter()
     trainer.train_and_validate(df=df_labeled, feature_cols=cols)

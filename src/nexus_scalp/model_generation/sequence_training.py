@@ -31,7 +31,6 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
-from nexus_scalp.model_generation.lineage import assert_production_eligible
 from nexus_scalp.model_generation.model_factory import ModelFactory
 from nexus_scalp.model_generation.models import (
     ExperimentConfig,
@@ -59,7 +58,7 @@ class SequenceCandidateTrainer:
         self,
         store: ArtifactStore | None = None,
         seq_len: int | None = None,
-        max_gap_us: int | None | str = "contract",
+        max_gap_us: int | str | None = "contract",
     ) -> None:
         from nexus_scalp.model_generation.sequence import SEQUENCE_CONTRACT
 
@@ -72,6 +71,10 @@ class SequenceCandidateTrainer:
         self.label_schema = default_label_schema()
         self.seq_len = int(seq_len)
         self.max_gap_us = max_gap_us  # type: ignore[assignment]
+        # MLFIX-T7 lineage governance: tainted dataset manifests
+        # (PAPER/LIVE/UNKNOWN label_origin) block production-eligible
+        # training unless the operator passes governance_override=True.
+        self.governance_override = False
 
     def train_candidate(
         self,
@@ -85,8 +88,40 @@ class SequenceCandidateTrainer:
         """Trains a sequence candidate. Returns {status, model_id, ...}.
 
         MLFIX-T7: tainted dataset manifests are production-ineligible without
-        an explicit operator token (governance_override=True).
+        an explicit operator token (governance_override=True). The origin is
+        resolved from the persisted dataset manifest first, then from a
+        ``label_origin`` column on the frame; an undeclared origin is UNKNOWN
+        (tainted) — never fabricated as clean.
         """
+        # ---- MLFIX-T7 lineage hard guard (BEFORE any training work) ----
+        from nexus_scalp.model_generation.lineage import (
+            LabelOrigin,
+            LineageGovernanceError,
+            assert_production_eligible,
+            classify_source,
+        )
+
+        origin_raw: str | LabelOrigin | None = None
+        if getattr(experiment, "dataset_id", ""):
+            man = self.store.read_dataset_manifest(str(experiment.dataset_id)) or {}
+            origin_raw = (
+                man.get("label_origin")
+                or man.get("source_classification")
+                or man.get("provenance_extra", {}).get("label_origin")
+            )
+        if origin_raw is None and "label_origin" in dataset_frame.columns:
+            origin_raw = str(dataset_frame["label_origin"][0])
+        origin = classify_source(label_origin=origin_raw)
+        try:
+            assert_production_eligible(origin, governance_override=self.governance_override)
+        except LineageGovernanceError as exc:
+            logger.error(
+                "[LINEAGE GUARD] sequence-candidate training blocked",
+                label_origin=str(origin),
+                dataset_id=str(getattr(experiment, "dataset_id", "")),
+            )
+            return {"status": "FAILED", "error": str(exc)}
+        logger.info("Lineage guard passed", label_origin=str(origin))
         if dataset_frame is None or dataset_frame.is_empty():
             return {"status": "FAILED", "error": "empty dataset"}
         if "label" not in dataset_frame.columns:
