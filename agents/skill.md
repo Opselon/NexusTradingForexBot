@@ -2,7 +2,7 @@
 
 > **Audience:** AI coding agents. **Purpose:** High-signal source of truth for safe implementation.
 > **Rule:** Repository code wins over this document. If a claim cannot be verified, mark uncertain — never invent.
-> Historical bug forensics → `agents/bugs.md`. Multi-agent workflow → `agents/multi-agent-git-contract.md`.
+> Historical bug forensics → `agents/bugs.md`. Forensic recovery & provenance index → `docs/forensics/README.md`. Multi-agent workflow → `agents/multi-agent-git-contract.md`.
 > Registries: `contracts.md` · `runtime_invariants.md` · `change_control.md` · `taskboard.md` · `repository_state.md` · `locks.yaml`.
 
 ## 1. Project Identity

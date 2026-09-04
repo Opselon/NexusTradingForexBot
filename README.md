@@ -309,6 +309,7 @@ tests. Contributors: keep commits atomic (`<Name>: <summary>`); reuse > extend
 - [`agents/bugs.md`](agents/bugs.md) — public forensic bug ledger (BUG-001…)
 - [`agents/runtime_invariants.md`](agents/runtime_invariants.md) — INV registry
 - [`agents/contracts.md`](agents/contracts.md) · [`agents/taskboard.md`](agents/taskboard.md)
+- [`docs/forensics/README.md`](docs/forensics/README.md) — forensic recovery & provenance index (timeline, evidence, status)
 - [`docs/70D_DATA_CONTRACT.md`](docs/70D_DATA_CONTRACT.md) — 70D research contract
 - [`docs/RELEASE.md`](docs/RELEASE.md) — release process
 - [`docs/architecture/qa-assurance-contract.md`](docs/architecture/qa-assurance-contract.md) — QA contract
