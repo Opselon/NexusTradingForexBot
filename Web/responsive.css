@@ -1,0 +1,238 @@
+/* =========================================================================
+ * NSE Responsive Layer — v1.0
+ * Pure CSS. No JS logic touched. Loaded AFTER styles.css / tailwind.css.
+ * Goal: dashboard opens clean on phones, tablets, laptops, ultrawide.
+ * Strategy: mobile-first overrides + drawer sidebar + fluid grids/tables.
+ * ========================================================================= */
+
+/* ---- Global fluid fixes ---- */
+html { -webkit-text-size-adjust: 100%; }
+body { overscroll-behavior-y: contain; }
+img, canvas, svg, video { max-width: 100%; }
+* { min-width: 0; } /* prevent flex/grid blowout */
+
+/* ---- Header: stack gracefully on narrow ---- */
+@media (max-width: 640px) {
+  header { padding: 10px 12px !important; gap: 10px; }
+  header h1 { font-size: 14px !important; line-height: 1.2; }
+  header h1 #system-status-badge,
+  header h1 #state-version-indicator,
+  header h1 #header-health-badge { transform: scale(0.92); transform-origin: left center; }
+  #header-health-detail, #obs-strip { font-size: 8px !important; }
+  /* quick stats: show as horizontal scroll row on phone instead of hidden */
+  header .hidden.sm\:flex { display: flex !important; }
+  header .flex.items-center.space-x-6 { gap: 10px !important; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-wrap: nowrap; max-width: 100%; }
+  header .flex.items-center.space-x-6::-webkit-scrollbar { display: none; }
+  header .nx-mkt { flex: 0 0 auto; }
+  header .nx-mkt-value { font-size: 12px !important; }
+  #execution-mode-selector { font-size: 11px; max-width: 140px; }
+  #runtime-mode-badge { font-size: 8px !important; white-space: nowrap; }
+}
+
+/* Tablet header compaction */
+@media (min-width: 641px) and (max-width: 1024px) {
+  header { padding: 12px 16px !important; }
+  header .flex.items-center.space-x-6 { gap: 14px !important; }
+}
+
+/* ---- Sidebar -> Drawer on < 1024px ---- */
+#nse-sidebar { transition: transform .28s ease, opacity .2s ease; }
+#nse-sidebar-overlay { display: none; }
+
+@media (max-width: 1023px) {
+  /* workspace should not be overflow-hidden on mobile (allows natural scroll) */
+  .flex.flex-1.flex-col.lg\:flex-row.overflow-hidden { overflow: visible !important; }
+
+  #nse-sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: min(84vw, 320px) !important;
+    max-width: 320px;
+    z-index: 55;
+    border-right: 1px solid #1e293b;
+    border-bottom: none !important;
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 12px 0 32px rgba(0,0,0,.55);
+    padding-top: 12px !important;
+  }
+  #nse-sidebar.open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #nse-sidebar-overlay {
+    position: fixed; inset: 0;
+    background: rgba(2,6,12,.55);
+    backdrop-filter: blur(2px);
+    z-index: 54;
+    display: block;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  #nse-sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+
+  /* main takes full width when sidebar is drawer */
+  main.flex-1 { width: 100%; min-width: 0; }
+
+  /* hamburger visible only on drawer breakpoint */
+  #nse-hamburger { display: inline-flex !important; }
+}
+
+@media (min-width: 1024px) {
+  #nse-hamburger { display: none !important; }
+  #nse-sidebar-overlay { display: none !important; }
+}
+
+/* hamburger button styling (only visible on mobile/tablet) */
+#nse-hamburger {
+  display: none;
+  align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  border-radius: 9px;
+  background: rgba(15,23,42,.9);
+  border: 1px solid rgba(71,85,105,.7);
+  color: #67e8f9;
+  flex-shrink: 0;
+}
+#nse-hamburger:active { transform: scale(0.96); }
+
+/* ---- Main content padding fluid ---- */
+@media (max-width: 640px) {
+  main.flex-1 { padding: 12px !important; }
+  main.flex-1 .space-y-6 > * + * { margin-top: 14px !important; }
+}
+@media (min-width: 641px) and (max-width: 1023px) {
+  main.flex-1 { padding: 16px !important; }
+}
+
+/* ---- Grids: force single column earlier on narrow, reduce gap ---- */
+@media (max-width: 640px) {
+  .grid { gap: 12px !important; }
+  .xl\:col-span-2 { grid-column: span 1 / span 1 !important; }
+  .lg\:col-span-3, .col-span-2, .lg\:col-span-2 { grid-column: span 1 / span 1 !important; }
+  .cc-grid-2, .cc-grid-3, .cc-strip { grid-template-columns: 1fr !important; }
+}
+@media (min-width: 641px) and (max-width: 1023px) {
+  .xl\:grid-cols-3 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .xl\:col-span-2 { grid-column: span 2 / span 2 !important; }
+  .lg\:grid-cols-3 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+}
+
+/* ---- Cards / panels inner padding compact on phone ---- */
+@media (max-width: 640px) {
+  .bg-panelBg.border { padding: 12px !important; }
+  h2.text-md, h3.text-sm { font-size: 13px !important; }
+}
+
+/* ---- Chart containers: responsive height ---- */
+#chart-container { width: 100% !important; }
+@media (max-width: 640px) {
+  #chart-container { height: 280px !important; }
+  #chart-meta { top: 4px !important; right: 4px !important; gap: 4px !important; }
+  #chart-meta span { font-size: 8px !important; padding: 2px 4px !important; }
+}
+@media (min-width: 641px) and (max-width: 1023px) {
+  #chart-container { height: 340px !important; }
+}
+@media (min-width: 1920px) {
+  #chart-container { height: 460px !important; }
+}
+@media (min-width: 2560px) {
+  #chart-container { height: 520px !important; }
+}
+
+/* News impact chart wrapper */
+#newsImpactChart { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; display: block !important; }
+
+/* All canvas should be fluid */
+canvas { max-width: 100%; height: auto; }
+canvas#candleChart, canvas#newsImpactChart, canvas#acct-equity-chart, canvas#acct-drawdown-chart, canvas#acct-cumulative-chart, canvas#acct-period-chart {
+  width: 100% !important;
+}
+
+/* ---- Tables: always scroll, never blow layout ---- */
+.table-responsive, .ccb-tablewrap, #db-grid, table { max-width: 100%; }
+.ccb-tablewrap, div:has(> table) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; }
+@media (max-width: 640px) {
+  table { font-size: 11px !important; }
+  table th, table td { padding: 6px 8px !important; white-space: nowrap; }
+  /* allow wrapping for reason/memo columns on phone */
+  table td:nth-child(n+3) { white-space: normal; word-break: break-word; min-width: 90px; }
+  .ccb-table th { font-size: 8px !important; }
+  /* DB console table list chips wrap */
+  #db-console-tablelist { max-height: 160px !important; }
+}
+
+/* ---- Forms / inputs: full width on phone ---- */
+@media (max-width: 640px) {
+  input[type="text"], input[type="number"], input[type="datetime-local"], select, textarea {
+    font-size: 12px !important;
+    min-height: 34px;
+  }
+  #rp-start, #rp-end, #rp-seek, #rp-decision-seq, #db-console-filter {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .flex.space-x-2 { gap: 8px !important; }
+  .flex.space-x-2 > * { min-width: 0; }
+}
+
+/* ---- Conn banner responsive ---- */
+@media (max-width: 640px) {
+  #conn-lost-banner { padding: 8px 12px !important; }
+  #conn-lost-banner .max-w-7xl { gap: 8px !important; }
+  #conn-lost-title { font-size: 11px !important; }
+  #conn-retry-btn { padding: 6px 10px !important; font-size: 11px !important; }
+}
+
+/* ---- Ultrawide: use space, don't letterbox ---- */
+@media (min-width: 1920px) {
+  header, #conn-lost-banner .max-w-7xl { max-width: none !important; padding-left: 24px; padding-right: 24px; }
+  main.flex-1 { max-width: 1920px; margin-left: auto; margin-right: auto; width: 100%; }
+}
+@media (min-width: 2560px) {
+  main.flex-1 { max-width: 2200px; }
+}
+
+/* ---- Toast / modal / confirm: keep inside viewport on phone ---- */
+@media (max-width: 640px) {
+  .nx-toast-region { left: 10px !important; right: 10px !important; max-width: none !important; bottom: 12px !important; }
+  .ccb-confirm { width: calc(100vw - 20px) !important; padding: 16px !important; }
+  .ccb-confirm-row { grid-template-columns: 1fr !important; gap: 2px !important; }
+  .nx-dropdown-menu { min-width: min(88vw, 220px) !important; right: auto !important; left: 0; }
+  .ccb-toast { left: 10px !important; right: 10px !important; transform: translateY(20px) !important; max-width: none; }
+  .ccb-toast-show { transform: translateY(0) !important; }
+}
+
+/* ---- Replay panel: stack better on phone ---- */
+@media (max-width: 640px) {
+  #replay-panel .grid { grid-template-columns: 1fr !important; }
+  #replay-panel .flex.flex-wrap { gap: 6px !important; }
+}
+
+/* ---- Ensure no horizontal page scroll ---- */
+html, body { max-width: 100%; overflow-x: hidden; }
+main, aside, header, section, div { max-width: 100%; }
+
+/* ---- Touch target sizing (a11y) ---- */
+@media (max-width: 640px) {
+  button, .tab-btn, select, input[type="button"], input[type="submit"] { min-height: 36px; }
+  .tab-btn { padding-top: 10px !important; padding-bottom: 10px !important; }
+}
+
+/* ---- Reduced motion respect (append, don't override existing) ---- */
+@media (prefers-reduced-motion: reduce) {
+  #nse-sidebar, #nse-sidebar-overlay { transition: none !important; }
+}
+
+/* ---- Print safety (never print the drawer overlay) ---- */
+@media print {
+  #nse-sidebar { position: static !important; transform: none !important; opacity: 1 !important; width: 100% !important; }
+  #nse-sidebar-overlay, #nse-hamburger { display: none !important; }
+}

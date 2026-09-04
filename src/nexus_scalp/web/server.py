@@ -1755,6 +1755,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_cc_styles() -> FileResponse:
         return FileResponse(WEB_DIR / "cc_styles.css")
 
+    @app.get("/responsive.css")
+    def serve_responsive() -> FileResponse:
+        return FileResponse(WEB_DIR / "responsive.css")
+
     @app.get("/cc_components.js")
     def serve_cc_components() -> FileResponse:
         return FileResponse(WEB_DIR / "cc_components.js")
