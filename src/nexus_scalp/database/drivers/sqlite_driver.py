@@ -137,11 +137,19 @@ class SQLiteDriver(DatabaseDriver):
                 conn.close()
 
     def table_columns(self, table: str, conn: Any = None) -> list[dict[str, Any]]:
-        """Introspect column layout via PRAGMA table_info."""
+        """Introspect column layout via pragma_table_info (parameterized).
+
+        Uses ``SELECT * FROM pragma_table_info(?)`` with a bound parameter
+        instead of string-interpolating ``PRAGMA table_info(...)`` so the
+        table name never enters the SQL text (CodeQL py/sql-injection).
+        ``quote_ident`` is kept as a strict allow-list validator so callers
+        still get ``ValueError`` on malformed identifiers.
+        """
+        self.quote_ident(table)  # validate shape → ValueError on bad ident
         own = conn is None
         c = conn or self.connect()
         try:
-            rows = c.execute(f"PRAGMA table_info({self.quote_ident(table)})").fetchall()
+            rows = c.execute("SELECT * FROM pragma_table_info(?)", (table,)).fetchall()
             return [dict(r) for r in rows]
         finally:
             if own:
