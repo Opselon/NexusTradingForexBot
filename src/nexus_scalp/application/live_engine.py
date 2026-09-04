@@ -156,7 +156,22 @@ class ScalerBundle:
     std: np.ndarray | None
 
     def is_ready(self) -> bool:
-        return self.mean is not None and self.std is not None
+        """False when mean/std are missing OR any std is zero/negative/non-finite.
+
+        OBS-PERF-RESILIENCE: a scaler with a zero (or negative / non-finite)
+        std divides by zero — numpy silently emits ±inf/±5.0-clipped garbage
+        with only a RuntimeWarning, which past the tensor-stage
+        ``nan_to_num`` (neginf -> -1.0) quietly poisons the model input.
+        Such a scaler is NOT ready: transform() must pass features through
+        UNCHANGED and the caller must see the raw values, never fabricated
+        ones (no-silent-fallback contract).
+        """
+        if self.mean is None or self.std is None:
+            return False
+        try:
+            return bool(np.all(np.isfinite(self.std)) and np.all(self.std > 0.0))
+        except Exception:
+            return False
 
     def dimension(self) -> int | None:
         """Declared scaler width (mean/std length) or None when not ready."""
@@ -1323,6 +1338,10 @@ class LiveEngine:
         self._last_model_forward_ms: float | None = None
         self._last_feature_ms: float | None = None
         self._last_e2e_ms: float | None = None
+        # OBS-PERF-RESILIENCE: rolling latency regression detector — bounded
+        # in-memory p95 window over the staged latency breakdown with an
+        # edge-triggered regression alert (never blocks, never raises).
+        self._latency_regression: Any | None = None
         self._inference_count: int = 0
         #: Most recent Phase 08 pre-trade verdict, surfaced by the REST API.
         self._last_experience_decision: PreTradeExperienceDecision | None = None
@@ -2779,6 +2798,19 @@ class LiveEngine:
                 mean_shape=mean.shape,
                 std_shape=std.shape,
             )
+            # OBS-PERF-RESILIENCE: a degenerate std (zero/negative/non-finite)
+            # makes the bundle NOT-ready (transform passes features through
+            # unchanged instead of dividing by zero). Surface it loudly at
+            # load time — the degraded state must be visible, never silent.
+            degenerate = int(np.sum(~(np.isfinite(std) & (std > 0.0))))
+            if degenerate:
+                logger.warning(
+                    "[SCALER_DEGRADED] event=DEGENERATE_STD "
+                    "scaler_not_ready_features_passthrough",
+                    path=str(scaler_path),
+                    degenerate_columns=degenerate,
+                    total_columns=int(std.shape[0]),
+                )
             return ScalerBundle(mean=mean, std=std)
 
         except Exception as err:
@@ -5282,6 +5314,21 @@ class LiveEngine:
             self._last_70d_assembly_timings = asm_timings
         except RuntimeError as asm_err:
             if int(self.effective_feature_dim) == 70:
+                # OBS-PERF-RESILIENCE: a 70D assembly failure BLOCKS inference
+                # for this tick. That DEGRADED->BLOCKED transition must be
+                # visible in telemetry, not only in a log line: bump the
+                # failure gauge and emit an incident event (bounded by the
+                # incident pipeline's own rate limiting).
+                self._inference_failures_total = (
+                    getattr(self, "_inference_failures_total", 0) + 1
+                )
+                self.emit_incident_telemetry(
+                    event_type="INFERENCE_BLOCKED_70D_ASSEMBLY",
+                    component="inference",
+                    error_code="FEATURE_UNAVAILABLE",
+                    severity="HIGH",
+                    correlation_id="tick-pipeline",
+                )
                 logger.warning(
                     "[INFERENCE] 70D assembly failed - inference blocked for this tick",
                     error=str(asm_err),
@@ -5374,6 +5421,36 @@ class LiveEngine:
         self._last_inference_latency_ms = _trace.model_ms()
         # keep the honest staged breakdown for the API/UI
         self._last_latency_breakdown = _trace.to_dict()
+        # OBS-PERF-RESILIENCE: feed the bounded rolling window and alert once
+        # per regression epoch. Fully exception-isolated — observability
+        # failures can never disturb inference (INV-018).
+        try:
+            detector = self._latency_regression
+            if detector is None:
+                from nexus_scalp.observability.latency_regression import (
+                    LatencyRegressionDetector,
+                )
+
+                detector = self._latency_regression = LatencyRegressionDetector()
+            detector.observe_breakdown(self._last_latency_breakdown)
+            if detector.should_alert():
+                p95 = detector.summary().get("e2e_ms", {}).get("p95_ms")
+                logger.warning(
+                    "[LATENCY_REGRESSION] event=E2E_P95_REGRESSED "
+                    "p95_ms=%s budget_p95_ms=%s epochs=%s",
+                    p95,
+                    detector.summary().get("budget_p95_ms"),
+                    detector.regression_epochs_total,
+                )
+                self.emit_incident_telemetry(
+                    event_type="INFERENCE_LATENCY_REGRESSION",
+                    component="inference",
+                    error_code="SLOW_INFERENCE",
+                    severity="MEDIUM",
+                    correlation_id="latency-watch",
+                )
+        except Exception as _lat_err:  # never disturb the hot path
+            logger.debug("[LATENCY_REGRESSION] observe failed", error=str(_lat_err))
         self._last_model_forward_ms = _trace.model_ms()
         self._last_feature_ms = _trace.feature_ms()
         self._last_e2e_ms = _trace.e2e_ms()
