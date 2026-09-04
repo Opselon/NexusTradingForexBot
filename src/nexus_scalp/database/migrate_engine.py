@@ -33,6 +33,9 @@ from nexus_scalp.database.migrate_copier import (
     MigrationError,
     copy_table,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.database.migrate_engine")
 
 #: Tables never migrated (internal / derived state that rebuilds itself).
 SKIP_TABLES = frozenset({"_nse_migration_checkpoints"})
@@ -364,7 +367,8 @@ class SqliteToPostgresMigrator:
                     src_n = int(self._src_driver.row_count(t))
                     dst_n = int(self._pg_driver.row_count(t))
                 except Exception as exc:
-                    problems.append(f"{t}: row-count unavailable ({exc})")
+                    logger.debug("row-count check failed for %s", t, exc_info=exc)
+                    problems.append(f"{t}: row-count unavailable")
                     continue
                 if src_n != dst_n:
                     problems.append(f"{t}: row count {src_n} != {dst_n}")
@@ -399,7 +403,8 @@ class SqliteToPostgresMigrator:
                 return "FAILED"
             return "PASSED"
         except Exception as exc:  # pragma: no cover
-            return f"FAILED ({exc})"
+            logger.warning("migration validation failed", exc_info=exc)
+            return "FAILED"
 
 
 _DEFAULT_FINANCIAL: dict[str, list[str]] = {}
