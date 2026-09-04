@@ -75,7 +75,9 @@ class MockMT5Port(PaperMT5Adapter):
             volume=1.0,
         )
 
-    def get_positions(self, symbol: str) -> list[Position]:
+    def get_positions(self, symbol: str | None = None) -> list[Position]:
+        if symbol is None:
+            return list(self.positions)
         return [p for p in self.positions if p.symbol == symbol]
 
     def send_order(self, order: TradeOrder) -> bool:

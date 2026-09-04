@@ -228,8 +228,10 @@ def test_shadow08_09_10_no_order_authority(contract: Shadow70CandidateContract) 
     import nexus_scalp.shadow.shadow70.models as m_mod
     import nexus_scalp.shadow.shadow70.runtime as rt_mod
 
-    src = open(rt_mod.__file__, encoding="utf-8").read()
-    src_m = open(m_mod.__file__, encoding="utf-8").read()
+    with open(rt_mod.__file__, encoding="utf-8") as _f:
+        src = _f.read()
+    with open(m_mod.__file__, encoding="utf-8") as _f:
+        src_m = _f.read()
     for forbidden in (
         "order_manager",
         "OrderManager",
@@ -274,7 +276,8 @@ def test_shadow12_broker_path_unchanged(contract: Shadow70CandidateContract) -> 
     runtime modules (isolation proof)."""
     import nexus_scalp.shadow.shadow70.worker as w_mod
 
-    src = open(w_mod.__file__, encoding="utf-8").read()
+    with open(w_mod.__file__, encoding="utf-8") as _f:
+        src = _f.read()
     for forbidden in ("adapter", "IMT5Port", "broker", "order"):
         assert forbidden not in src.lower(), forbidden
 
@@ -744,8 +747,10 @@ def test_shadow33_no_sync_db_on_tick(tmp_artifacts: str) -> None:
     import nexus_scalp.shadow.shadow70.runtime as rt_mod
     import nexus_scalp.shadow.shadow70.worker as wk_mod
 
-    src = open(rt_mod.__file__, encoding="utf-8").read()
-    src_w = open(wk_mod.__file__, encoding="utf-8").read()
+    with open(rt_mod.__file__, encoding="utf-8") as _f:
+        src = _f.read()
+    with open(wk_mod.__file__, encoding="utf-8") as _f:
+        src_w = _f.read()
     # runtime module must not contain direct sqlite3.connect at runtime path
     assert "sqlite3.connect" not in src
     assert "_queue.put_nowait" in src_w  # queued writer pattern

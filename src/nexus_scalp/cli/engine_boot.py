@@ -293,6 +293,7 @@ def _spawn_daemon(cmd: list[str]) -> None:
     # O_CREAT|O_EXCL makes exactly ONE racer own the pidfile; losers then
     # re-read it and report the winner as the running engine.
     claimed = False
+    fd: int | None = None
     try:
         fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
         claimed = True
@@ -349,6 +350,7 @@ def _spawn_daemon(cmd: list[str]) -> None:
                 )
                 return
     if claimed:
+        assert fd is not None
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(str(os.getpid()))
     # Reparent via the same interpreter; the child runs foreground logic.

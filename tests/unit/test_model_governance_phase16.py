@@ -926,7 +926,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         res = verify_candidate(
             model_id="c1",
@@ -966,7 +966,7 @@ class TestGovernance70:
             sca, mean=np.zeros(60, dtype=np.float32), std=np.ones(60, dtype=np.float32)
         )  # wrong dim
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         res = verify_candidate(
             model_id="c1",
@@ -983,7 +983,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
             oos_status="FAIL",
         )
         res = verify_candidate(
@@ -1011,7 +1011,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
             robustness_status="FAIL",
         )
         res = verify_candidate(
@@ -1030,7 +1030,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         res = verify_candidate(
             model_id="c1",
@@ -1052,7 +1052,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         res = verify_candidate(
             model_id="c1",
@@ -1070,7 +1070,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         res = verify_candidate(
             model_id="c1",
@@ -1132,7 +1132,7 @@ class TestGovernance70:
         _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
             feature_schema_hash="abc123",
             liquidity_algorithm_version="liq_v1",
             training_commit="c0ffee",
@@ -1193,7 +1193,7 @@ class TestGovernance70:
         _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
             feature_schema_hash="abc123",
             liquidity_algorithm_version="liq_v1",
             training_commit="c0ffee",
@@ -1335,13 +1335,13 @@ class TestGovernance70:
         from nexus_scalp.governance.verify import verify_candidate
 
         art, sca = _make_artifact(tmp_path, dim=50)
-        h1 = __import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        h1 = __import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         mf1 = _full_manifest(artifact_hash=h1)
         # now tamper the artifact (simulate an overwrite attempt)
         import torch
 
         torch.save({"input_projection.weight": torch.zeros(4, 51), "bias": torch.zeros(4)}, art)
-        h2 = __import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        h2 = __import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         assert h1 != h2
         # the OLD manifest now fails hash verification → the candidate cannot
         # be promoted as the recorded version
@@ -1359,7 +1359,7 @@ class TestGovernance70:
         """A corrected research result is a NEW version; the original is preserved."""
 
         art, _sca = _make_artifact(tmp_path, dim=50)
-        h = __import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        h = __import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         mf_v1 = _full_manifest(artifact_hash=h, model_version="v1", oos_result="PASS")
         mf_v2 = _full_manifest(artifact_hash=h, model_version="v2", oos_result="REJECT")
         # both versions remain independently verifiable — the original was
@@ -1373,7 +1373,7 @@ class TestGovernance70:
         _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
             feature_schema_hash="abc123",
             liquidity_algorithm_version="liq_v1",
             training_commit="c0ffee",
@@ -1431,7 +1431,7 @@ class TestGovernance70:
         _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
             feature_schema_hash="abc123",
             liquidity_algorithm_version="liq_v1",
             training_commit="c0ffee",
@@ -1507,7 +1507,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         res = verify_candidate(
             model_id="c1",
@@ -1533,7 +1533,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         # critical drift → news/liquidity dependency gate fails → blocked
         res = verify_candidate(
@@ -1553,7 +1553,7 @@ class TestGovernance70:
 
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
-            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest()
         )
         # Liquidity contract unavailable → blocked
         res = verify_candidate(

@@ -219,7 +219,8 @@ class TestS4SmartMetricsGolden:
         """The intelligence module must not import broker/execution surfaces."""
         import nexus_scalp.execution.position_intelligence as mod
 
-        src = open(mod.__file__, encoding="utf-8").read()
+        with open(mod.__file__, encoding="utf-8") as _f:
+            src = _f.read()
         for forbidden in (
             "order_send",
             "close_position",

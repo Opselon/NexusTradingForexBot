@@ -349,7 +349,8 @@ class TestSSESanitization:
 
 class TestLegacyPatternEliminated:
     def test_08_no_raw_str_e_in_server_returns(self) -> None:
-        src = open("src/nexus_scalp/web/server.py", encoding="utf-8").read()
+        with open("src/nexus_scalp/web/server.py", encoding="utf-8") as _f:
+            src = _f.read()
         # The old leaking pattern: return {... "error": str(e)} or reason: str(e)
         bad = [
             r"\"error\"\s*:\s*str\(e\)",
@@ -363,7 +364,8 @@ class TestLegacyPatternEliminated:
             assert not matches, f"leaking pattern {pat} still present: {matches[:3]}"
 
     def test_09_no_exception_repr_in_web_responses(self) -> None:
-        src = open("src/nexus_scalp/web/server.py", encoding="utf-8").read()
+        with open("src/nexus_scalp/web/server.py", encoding="utf-8") as _f:
+            src = _f.read()
         assert (
             'raise HTTPException(status_code=500, detail=f"Inference failed: {infer_err}")'
             not in src

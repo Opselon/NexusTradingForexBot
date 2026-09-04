@@ -224,8 +224,21 @@ def model_contracts(request: Request) -> Any:
         contracts["feature_schema_ids_error"] = "DEPENDENCY_UNAVAILABLE"
     try:
         from nexus_scalp.features.inference_validator import compatible_model_schema
+        from nexus_scalp.features.schema_contract import DIMENSION, SCHEMA_ID
 
-        contracts["compatible_model_schemas"] = compatible_model_schema()  # type: ignore[call-arg]
+        _bundle = getattr(engine, "_bundle", None) if engine is not None else None
+        _manifest = getattr(_bundle, "manifest", None) if _bundle is not None else None
+        _model_schema_id = getattr(_manifest, "schema_id", None) if _manifest is not None else None
+        _model_dimension = getattr(_manifest, "dimension", None) if _manifest is not None else None
+        if _model_dimension is None and _manifest is not None:
+            _model_dimension = getattr(_manifest, "feature_count", None)
+        try:
+            _model_dimension = int(_model_dimension) if _model_dimension is not None else None
+        except Exception:
+            _model_dimension = None
+        contracts["compatible_model_schemas"] = compatible_model_schema(
+            _model_schema_id, _model_dimension, SCHEMA_ID, DIMENSION
+        )
     except TypeError:
         contracts["compatible_model_schemas"] = None
     except Exception:

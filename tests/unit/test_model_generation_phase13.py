@@ -1330,7 +1330,8 @@ class TestTask5ChampionSafety:
         # shadow machinery has no order/execution capability (Phase 11 contract)
         import nexus_scalp.shadow.engine as se
 
-        src = open(se.__file__, encoding="utf-8").read()
+        with open(se.__file__, encoding="utf-8") as _f:
+            src = _f.read()
         assert "order" not in src.lower().split("def ")[0] or True  # module docstring check
         # the engine records decisions; it cannot place orders by construction
         assert hasattr(se.ShadowEngine, "record_shadow_decision")
