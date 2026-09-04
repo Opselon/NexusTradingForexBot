@@ -402,6 +402,28 @@ pics/              Screenshots
 
 ---
 
+## ⭐ If this project is useful / profitable for you — please star us!
+
+> **Nexus helped you learn, research, or trade smarter?** A single ⭐ is the best thank-you — it keeps this research open, motivates the next release, and helps others discover it. Takes one click, means the world to us! 🙏
+
+<p align="center">
+  <b>⭐ Star us — fuel the next breakthrough — thank you! ⭐</b>
+</p>
+
+## Star History
+
+<a href="https://star-history.com/#opselon/nexustradingforexbot&Date&legend=top-left">
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=opselon/nexustradingforexbot&type=Date&theme=dark&legend=top-left" />
+<source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=opselon/nexustradingforexbot&type=Date&legend=top-left" />
+<img alt="Star History Chart" src="https://api.star-history.com/svg?repos=opselon/nexustradingforexbot&type=Date&legend=top-left" />
+</picture>
+</a>
+
+<p align="center"><sub>Every ⭐ counts — thank you for supporting open, evidence-driven trading research!</sub></p>
+
+---
+
 ## 📌 Status & Roadmap
 
 Versioning is single-sourced in [`pyproject.toml`](pyproject.toml) (semver, stamped into every artifact) — the release badge reads the latest tag dynamically.
