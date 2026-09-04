@@ -37,6 +37,7 @@ import polars as pl
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.model_generation.benchmark import BenchmarkRunner
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.training.champion_guard import ChampionPathError
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
 logger = get_logger("nexus_scalp.model_generation.three_model")
@@ -154,12 +155,42 @@ def train_variant(
     num_folds: int = 34,
     epochs: int = 10,
     smoke: bool = False,
+    output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Train one variant through the canonical purged walk-forward trainer.
 
     Returns the per-variant report: artifact paths, schema, walk-forward
     gate status and benchmark evidence path.
+
+    P0-2026-09-04 PRODUCER FIX: ``output_dir`` routes the bundle to an
+    ISOLATED candidate directory
+    (default: artifacts/model_generation/models/<variant>_<runid>/) instead
+    of the canonical serving path. Training must never write the champion
+    bundle directly; promotion to a serving path only happens through the
+    governed lifecycle. ``output_dir="champion:<variant>"`` is the explicit
+    operator opt-in that restores the legacy direct-to-variant behavior
+    (gated by ChampionPathError otherwise).
     """
+    run_id = time.strftime("%Y%m%d_%H%M%S")
+    if output_dir is None:
+        base_out = Path("artifacts/model_generation/models")
+        out_dir = base_out / f"{variant}_{run_id}"
+    elif isinstance(output_dir, (str, Path)) and str(output_dir).startswith("champion:"):
+        out_dir = variant_artifact_path(str(output_dir).split(":", 1)[1]).parent
+    else:
+        out_dir = Path(output_dir)
+    if not smoke and str(out_dir).replace("\\", "/") in (
+        "artifacts/models/scalp/XAUUSD/50d_main",
+        "artifacts/models/scalp/XAUUSD/70d_news",
+        "artifacts/models/scalp/XAUUSD/70d_liquidity",
+    ):
+        # Explicit operator opt-in required: allow_champion_save.
+        raise ChampionPathError(
+            "CHAMPION_GUARD_ABORT in train_variant: refusing direct-to-champion "
+            f"output {out_dir}. Pass output_dir='champion:{variant}' explicitly "
+            "to acknowledge the governed variant path, or use an isolated "
+            "candidate output_dir."
+        )
     min_rows = SMOKE_MIN_ROWS if smoke else DEFAULT_MIN_ROWS
     if bars_frame.height < min_rows:
         raise ValueError(
@@ -194,9 +225,9 @@ def train_variant(
         raise ValueError(f"variant {variant}: feature columns missing: {missing[:5]}")
 
     paths = {
-        "model": variant_artifact_path(variant),
-        "scaler": variant_artifact_path(variant).with_suffix(".scaler.npz"),
-        "meta": variant_artifact_path(variant).with_suffix(".meta.json"),
+        "model": out_dir / "model.pt",
+        "scaler": out_dir / "model.scaler.npz",
+        "meta": out_dir / "model.meta.json",
     }
     trainer = WalkForwardTrainer(
         num_folds=num_folds if not smoke else 2,
@@ -209,6 +240,9 @@ def train_variant(
         artifact_save_path=paths["model"],
         feature_schema_id=variant_schema_id(variant),
         smoke=smoke,
+        # P0-2026-09-04: canonical producer targets a canonical variant path
+        # ONLY via the explicit champion: opt-in (operator-governed).
+        allow_champion_save=str(output_dir or "").startswith("champion:"),
         # MLFIX-T7 lineage: train_variant labels come from offline historical
         # bars via TripleBarrierLabeler (CLEAN_HISTORICAL by construction —
         # never paper/live fills). Declared explicitly so the production
@@ -309,6 +343,7 @@ def train_variant(
         "variant": variant,
         "schema_id": trainer.feature_schema.schema_id,
         "dimension": trainer.feature_schema.dimension,
+        "output_dir": str(out_dir),
         "artifact": {
             "model": str(paths["model"]),
             "scaler": str(paths["scaler"]),
