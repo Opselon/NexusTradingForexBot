@@ -78,7 +78,7 @@ def _safe_assert_text(exc: BaseException) -> str:
     if _SAFE_TEXT_RE is None or _WS_RE is None:
         _SAFE_TEXT_RE, _WS_RE = _compile_safe_text_res()
     parts: list[str] = []
-    for arg in (exc.args or ()):
+    for arg in exc.args or ():
         if isinstance(arg, str):
             cleaned = _SAFE_TEXT_RE.sub(" ", arg)
             parts.append(_WS_RE.sub(" ", cleaned).strip()[:80])
