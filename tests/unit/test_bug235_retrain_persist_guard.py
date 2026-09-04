@@ -15,13 +15,10 @@ try:
 except Exception:  # pragma: no cover
     pytest.skip("torch missing", allow_module_level=True)
 
-import polars as pl
 
-
-def _toy_frame_with_two_classes(n: int = 120) -> tuple[pl.DataFrame, list[str]]:
-    import random
-
+def _toy_frame_with_two_classes(n: int = 120) -> tuple["pl.DataFrame", list[str]]:  # type: ignore[name-defined]
     import polars as pl
+    import random
 
     t0_rows: list[dict[str, object]] = []
     rng = random.Random(11)
@@ -55,7 +52,7 @@ def test_bug235_zero_improvement_tags_rejected() -> None:
     assert bool(getattr(model, "_finetune_zero_improvement", False)) is True
 
 
-def test_bug235_state_dict_equal() -> None:
+def test_bug235_state_dict_equal() -> None:  # noqa: D103
     from nexus_scalp.models.scalp_net import ScalpNet
     from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
