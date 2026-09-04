@@ -901,7 +901,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         proposal_timestamp: str | None = None
 
         # Read actual live engine state if connected
-        if engine:
+        adapter_class: str | None = None
+        data_source: str | None = None
+        mode_source_mismatch = False
+        if engine is not None:
+            symbol = None
             try:
                 symbol = engine.config.execution.symbol or "XAUUSD"
             except Exception:
