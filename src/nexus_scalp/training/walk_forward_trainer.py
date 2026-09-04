@@ -155,23 +155,28 @@ class WalkForwardTrainer:
 
     def __init__(
         self,
-        num_folds: int = 34,
+        num_folds: int = 4,
         train_ratio: float = 0.70,
         batch_size: int = 256,
         learning_rate: float = 5e-4,
-        epochs_per_fold: int = 15,
+        epochs_per_fold: int = 3,
         early_stopping_patience: int = 3,
         purge_gap_bars: int = 15,
         random_seed: int = 42,
         active_class_boost: float = 3.0,
-        # TASK-04-70D-MODEL-VALIDATION (BUG-104): the default save path was the
-        # LIVE Champion path (artifacts/models/scalp/XAUUSD/v1.0.0/model.pt).
-        # A bare WalkForwardTrainer() training run silently OVERWROTE the
-        # production Champion artifact (observed 2026-08-19, artifact hash
-        # f0f70efb... lost). The default is now a CANDIDATE path; only an
-        # explicit operator-supplied artifact_save_path may target the live
-        # path (LiveEngine passes it deliberately).
-        artifact_save_path: Path = Path("artifacts/model_generation/models/wf_candidate/model.pt"),
+        # P0-2026-09-04 PRODUCER FIX: the historical default save path was the
+        # LIVE CHAMPION BUNDLE (artifacts/models/scalp/XAUUSD/70d_liquidity/
+        # model.pt) via three_model.train_variant. The 34x10 production launch
+        # therefore trained directly into the serving path, and shorter jobs
+        # clobbered its sidecars while the long run held the weights (P0:
+        # 4-class tensor + 3-class meta + dataset_id=null). Bare/default
+        # training must NEVER resolve to a canonical serving path: the default
+        # is now an isolated candidate directory under model_generation/models.
+        # Canonical variant outputs are only produced via the explicit
+        # three_model.train_variant(..., output_dir=...) governed producer.
+        artifact_save_path: Path = Path(
+            "artifacts/model_generation/models/candidate_default/model.pt"
+        ),
         use_feature_scaling: bool = True,
         clip_features_min: float = -5.0,
         clip_features_max: float = 5.0,
@@ -212,7 +217,23 @@ class WalkForwardTrainer:
         self.purge_gap = int(purge_gap_bars)
         self.active_class_boost = float(active_class_boost)
         self.seed = int(random_seed)
-        self.artifact_path = Path(artifact_save_path)
+        # P0-2026-09-04 CHAMPION GUARD (belt-and-braces, defaults may drift):
+        # WalkForwardTrainer must never resolve its save path into a canonical
+        # serving bundle. Only an explicit operator opt-in via
+        # allow_champion_save=True may target the live path, and even then the
+        # path must be one of the documented variant bundles. Every other
+        # resolution to artifacts/models/scalp/**/model.pt fails LOUDLY before
+        # any training work begins.
+        from nexus_scalp.training.champion_guard import assert_not_champion_path
+
+        self.allow_champion_save = bool(allow_champion_save)
+        _p = Path(artifact_save_path)
+        assert_not_champion_path(
+            _p,
+            allow_champion_save=self.allow_champion_save,
+            context="WalkForwardTrainer.__init__",
+        )
+        self.artifact_path = _p
         self.use_feature_scaling = bool(use_feature_scaling)
         self.clip_features_min = float(clip_features_min)
         self.clip_features_max = float(clip_features_max)
