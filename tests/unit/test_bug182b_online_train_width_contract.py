@@ -90,7 +90,7 @@ def test_bug182b_retrain_paths_use_effective_cols() -> None:
     assert found == len(fn_names)
 
 
-def test_bug182b_trainer_fails_loud_on_width_mismatch() -> None:
+def test_bug182b_trainer_fails_loud_on_width_mismatch(tmp_path) -> None:
     """fine_tune_online must raise a contract error BEFORE any torch work."""
     sys_path = str(REPO / "src")
     import sys
@@ -102,7 +102,7 @@ def test_bug182b_trainer_fails_loud_on_width_mismatch() -> None:
 
     scalp_net = importlib.import_module("nexus_scalp.models.scalp_net")
     trainer = WalkForwardTrainer(
-        artifact_save_path=REPO / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+        artifact_save_path=tmp_path / "bug182b_width_probe" / "model.pt",
         random_seed=42,
         feature_schema_id="scalp_v1",
     )
@@ -121,7 +121,7 @@ def test_bug182b_trainer_fails_loud_on_width_mismatch() -> None:
         trainer.fine_tune_online(live_model=model70, recent_df=df, feature_cols=cols50, epochs=1)
 
 
-def test_bug182b_log_error_is_unreachable_for_contract_mismatch() -> None:
+def test_bug182b_log_error_is_unreachable_for_contract_mismatch(tmp_path) -> None:
     """The exact torch matmul text from the 2026-09-01 log must not be the
     first failure for a width mismatch: the ValueError fires first."""
     import sys
@@ -133,7 +133,7 @@ def test_bug182b_log_error_is_unreachable_for_contract_mismatch() -> None:
     from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
     trainer = WalkForwardTrainer(
-        artifact_save_path=REPO / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+        artifact_save_path=tmp_path / "bug182b_width_probe" / "model.pt",
         random_seed=42,
         feature_schema_id="scalp_v1",
     )
