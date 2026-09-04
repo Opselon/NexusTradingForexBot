@@ -169,7 +169,9 @@ class ScalpNet(nn.Module):
             torch.Tensor: Class probabilities or raw logits.
         """
         if self.num_classes < 2:
-            raise RuntimeError(f"MODEL_CLASS_CONTRACT VIOLATION: num_classes={self.num_classes} < 2")
+            raise RuntimeError(
+                f"MODEL_CLASS_CONTRACT VIOLATION: num_classes={self.num_classes} < 2"
+            )
         if self.classifier.out_features != self.num_classes:
             raise RuntimeError(
                 f"MODEL_CLASS_CONTRACT VIOLATION: head classes {self.classifier.out_features} != declared {self.num_classes}"
