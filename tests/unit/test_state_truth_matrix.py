@@ -362,6 +362,102 @@ def test_field_names_are_stable_and_ordered() -> None:
     assert len(field_names()) == len(set(field_names()))
 
 
+# ---------------------------------------------------------------------------
+# S2 failure-injection: section-unavailable => taxonomy UNKNOWN.
+# NOT_CONFIGURED is reserved for VERIFIED-ABSENT config; a snapshot that
+# cannot be observed must never masquerade as verified absence.
+# ---------------------------------------------------------------------------
+
+
+def test_snapshot_build_failure_resolvers_never_claim_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_snapshot() -> dict[str, Any]:
+        raise RuntimeError("snapshot unavailable")
+
+    monkeypatch.setattr(state_truth, "_build_snapshot", broken_snapshot, raising=True)
+
+    # Section-backed fields must resolve to the explicit UNKNOWN taxonomy
+    # state (or the resolver isolation sentinel) — NEVER to NOT_CONFIGURED,
+    # which would present an unobservable section as verified-absent config.
+    for field_name in (
+        "configured_mode",
+        "version",
+        "commit_sha",
+        "feature_schema_build_target",
+        "model_input_dimension",
+        "model_identity",
+        "db_state",
+    ):
+        status, value = resolve_field(field_name)
+        assert status in ("UNKNOWN", "RESOLVED"), f"{field_name}: status={status}"
+        assert value != "NOT_CONFIGURED", (
+            f"{field_name}: section-unavailable masqueraded as verified-absent "
+            "(NOT_CONFIGURED) — must be UNKNOWN per state taxonomy"
+        )
+
+
+def test_wrong_shape_section_is_unknown_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Snapshot builds fine but the model section is not a dict (drift):
+    # same honesty rule — unobservable shape => UNKNOWN, not NOT_CONFIGURED.
+    monkeypatch.setattr(
+        state_truth,
+        "_build_snapshot",
+        lambda: {"model": "not-a-dict", "identity": None, "database": 42, "runtime_mode": []},
+        raising=True,
+    )
+    for field_name in ("model_input_dimension", "model_identity", "db_state"):
+        _status, value = resolve_field(field_name)
+        assert value in ("UNKNOWN", "NOT_CONFIGURED") and value != "READY", field_name
+        assert value != "READY" and not isinstance(value, int), field_name
+
+    _status, mode = resolve_field("configured_mode")
+    assert mode == "UNKNOWN"
+    _status, version = resolve_field("version")
+    assert version == "UNKNOWN"
+
+
+def test_missing_section_key_is_unknown_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Snapshot builds but the section key is absent entirely: the resolver
+    # cannot verify absence of config => UNKNOWN (never NOT_CONFIGURED).
+    monkeypatch.setattr(
+        state_truth,
+        "_build_snapshot",
+        lambda: {"generated_at": "t"},
+        raising=True,
+    )
+    for field_name in ("model_input_dimension", "model_identity", "db_state"):
+        _status, value = resolve_field(field_name)
+        assert value in ("UNKNOWN",), field_name
+    _status, mode = resolve_field("configured_mode")
+    assert mode == "UNKNOWN"
+
+
+def test_verified_absent_registry_still_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The POSITIVE case must keep working: an observable section that
+    # VERIFIES there is no champion (available=False) is genuinely
+    # NOT_CONFIGURED — the distinction between the two must survive.
+    monkeypatch.setattr(
+        state_truth,
+        "_build_snapshot",
+        lambda: {
+            "model": {
+                "registry_champion": {"available": False},
+                "configured_artifact": {"artifact_present": False},
+            }
+        },
+        raising=True,
+    )
+    assert resolve_field("model_input_dimension") == ("RESOLVED", "NOT_CONFIGURED")
+    assert resolve_field("model_identity") == ("RESOLVED", "NOT_CONFIGURED")
+
+
 def test_all_valid_states_are_uppercase_taxonomy_style() -> None:
     for f in MATRIX:
         for state in f.valid_states:
