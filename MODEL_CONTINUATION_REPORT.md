@@ -85,3 +85,16 @@ Snapshot + producer fix is the immediate next commit; full validation chain is d
 * `MODEL_READINESS_REPORT.md` — 14-section gate rollup, WITHHELD probes.
 * `SECURITY_AUDIT_SEC_CAPITAL_DATA_BROKER.md` — 12 FAIL `torch.load`, 0/8 guarded path, head-gate missing.
 * Subagent summaries `deleg_e1e41a41` task 0-3 (read-only, real `powershell`/`torch.load` output).
+
+---
+
+# 2026-09-04 ~19:25 IRDT — P0 FIX EXECUTED + PILOT PASSED (update)
+> **HEAD:** d19195ec → fc36b2fb pushed (origin/main) · beforePush FULL PASS before push
+> Full pilot evidence: **PILOT_VALIDATION_RESULT.md** (created)
+
+## Execution summary
+* Old 34×10 worker (25032 chain) TERMINATED under explicit user authorization — identity verified exactly via Win32_Process CommandLine; all 4 PIDs gone; record in `artifacts/forensics/evidence_snapshots/old_worker_termination_record.json`. Output ABORTED/INVALID — never resumed or promoted.
+* Producer chain fixed in 10 commits: champion guard (realpath/symlink-safe denial of any write to `artifacts/models/scalp/**`), isolated candidate default outputs (trainer + `train_variant(output_dir=…)`), hard emission gate on serialized tensors, typed dataset-provenance binding (declare/bind from ArtifactStore manifest), atomic bundle publication (stage→gate→manifest→verify→commit), safe `weights_only` loader + hot-swap governance (path allow-list / manifest-hash binding / production_eligible gate).
+* 14 new regression/security tests: exact P0 failure modes (4-class tensor+3-class meta, inverted, null provenance, wrong scaler, incomplete bundle, stale sidecar hash binding, champion-path write, canonical head=3, traversal/external) + 5 hot-swap attack tests. beforePush: ruff/mypy/CRITICAL suite ALL PASS.
+* **PILOT PASSED**: 4×3 on contiguous 24k tail of `ds_70d_clean_m1_20260904` (subset hash bound), isolated bundle `pilot_70d_3class_20260904_130906`, model_sha `4ce21183d749…`, head=3/input=70/seq=32 verified from serialized bytes, deterministic (byte-identical rerun), behavioral non-degenerate (maxp 0.369 vs ~0.28 degenerate ref), offline/live parity Δ=0.0, champion c8c0b5b0 unchanged start→end.
+* **Decision: FULL 34×10 JUSTIFIED** — still isolated output, no promotion, no architecture change.
