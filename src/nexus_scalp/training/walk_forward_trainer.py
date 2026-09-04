@@ -1817,6 +1817,9 @@ class WalkForwardTrainer:
             if prov.get("source_dataset_id"):
                 meta["source_dataset_id"] = prov["source_dataset_id"]
                 meta["source_dataset_sha256"] = prov.get("source_dataset_sha256")
+            if prov.get("pilot_subset_definition"):
+                meta["pilot_subset_definition"] = prov["pilot_subset_definition"]
+                meta["pilot_subset_hash"] = prov.get("pilot_subset_hash")
             meta["provenance_stamped_at"] = datetime.now(UTC).isoformat()
         try:
             tmp = meta_path.with_name(meta_path.name + ".prov.tmp")
