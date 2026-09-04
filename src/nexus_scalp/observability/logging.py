@@ -639,7 +639,18 @@ def configure_logging(
     root_logger = logging.getLogger()
     root_logger.setLevel(numeric_level)
     with _WRITE_LOCK:
+        # Preserve pytest's ``caplog`` live-capture handler: ``pytest --logXXX``
+        # installs a ``LogCaptureHandler`` on the root logger before any test
+        # fixture runs. Unconditionally clearing ``rootLogger.handlers`` would
+        # evict it, so any later ``caplog.set_level`` appears to have no
+        # effect and hygiene assertions that read ``caplog.records`` fail with
+        # zero records (the hypothesis of BUG-140). Keep those handlers alive.
+        kept: list[logging.Handler] = [
+            h for h in list(root_logger.handlers) if type(h).__name__ in ("LogCaptureHandler", "_LiveLoggingNullHandler")
+        ]
         root_logger.handlers.clear()
+        for h in kept:
+            root_logger.addHandler(h)
 
     console_handler = logging.StreamHandler(_console_stream())
     console_handler.setFormatter(console_formatter)
