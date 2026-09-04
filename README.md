@@ -16,6 +16,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Opselon/NexusTradingForexBot/stargazers"><img src="https://img.shields.io/github/stars/Opselon/NexusTradingForexBot?style=for-the-badge&logo=github&label=%E2%AD%90%20Star&color=yellow" alt="GitHub stars" /></a>
+  <a href="https://github.com/Opselon/NexusTradingForexBot"><img src="https://img.shields.io/github/commit-activity/m/Opselon/NexusTradingForexBot?style=for-the-badge&logo=github&label=commits&color=2ea043" alt="commits this month" /></a>
+  <a href="https://github.com/Opselon/NexusTradingForexBot"><img src="https://img.shields.io/github/repo-size/Opselon/NexusTradingForexBot?style=for-the-badge&label=size&color=1f6feb" alt="repo size" /></a>
+  <a href="https://github.com/Opselon/NexusTradingForexBot/forks"><img src="https://img.shields.io/github/forks/Opselon/NexusTradingForexBot?style=for-the-badge&logo=github&color=8b949e" alt="forks" /></a>
+  <a href="https://github.com/Opselon/NexusTradingForexBot/issues"><img src="https://img.shields.io/github/issues/Opselon/NexusTradingForexBot?style=for-the-badge&logo=github&color=d29922" alt="open issues" /></a>
+  <a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Opselon/NexusTradingForexBot?style=for-the-badge&color=8957e5" alt="license" /></a>
+  <br>
   <a href="https://github.com/Opselon/NexusTradingForexBot/releases"><img src="https://img.shields.io/github/v/tag/Opselon/NexusTradingForexBot?label=release&sort=semver&style=for-the-badge" /></a>
   <a href="https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml"><img src="https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml/badge.svg?style=for-the-badge" /></a>
   <a href="https://github.com/Opselon/NexusTradingForexBot/actions/workflows/security.yml"><img src="https://github.com/Opselon/NexusTradingForexBot/actions/workflows/security.yml/badge.svg?style=for-the-badge" /></a>
