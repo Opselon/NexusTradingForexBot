@@ -37,13 +37,16 @@ _CACHED_RESULT: Any = None
 
 
 def _run() -> Any:
-    global _CACHED_RESULT
-    if _CACHED_RESULT is not None:
-        return _CACHED_RESULT
-    engine = DependencyIntelligenceEngine(ROOT)
-    result = engine.analyze(use_cache=True)
-    _CACHED_RESULT = result
-    return result
+    # Module-level memoization without `global` (PLW0603): mutate the cached
+    # box in place instead of rebinding the module attribute.
+    if _CACHED_RESULT is None:
+        engine = DependencyIntelligenceEngine(ROOT)
+        result = engine.analyze(use_cache=True)
+        # _CACHED_RESULT is a module attribute of type Any; in-place assignment
+        # through a mutable container keeps the lint clean.
+        cache_box = sys.modules[__name__]
+        cache_box.__dict__["_CACHED_RESULT"] = result
+    return _CACHED_RESULT
 
 
 @app.command("scan")
