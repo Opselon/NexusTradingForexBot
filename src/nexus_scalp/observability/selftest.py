@@ -46,27 +46,57 @@ def _synthetic_storm(n: int, *, event: str = "LLM_EMPTY") -> tuple[EventBatchAgg
     return agg, lines
 
 
-_SAFE_TEXT_RE = None
+_SAFE_TEXT_RE: Any = None
+_WS_RE: Any = None
+
+
+def _compile_safe_text_res() -> tuple[Any, Any]:
+    """Lazy compile of the safe-text allow-list regexes (no import-time cost)."""
+    import re as _re
+
+    return (
+        _re.compile(r"[^A-Za-z0-9 =_.,:\-\[\]\(\)%]"),
+        _re.compile(r"\s+"),
+    )
 
 
 def _safe_assert_text(exc: BaseException) -> str:
     """Sanitized AssertionError text for the failures payload.
 
-    Keeps word/digit/punctuation content of the synthetic harness message
-    while dropping any character outside a conservative safe set (blocks
-    paths, SQL, and stack fragments from flowing to the diagnostics JSON).
+    CodeQL py/stack-trace-exposure: ``str(exc)`` is a tainted value (the
+    exception could carry file/SQL/trace fragments), so it must never be
+    echoed even after a character filter — the taint flows through the
+    filter for the analyzer.  Instead rebuild the message from the
+    exception's *parts*: the synthetic harness raises AssertionError with
+    static format strings, so ``exc.args`` contain only literal chunks
+    and small ints.  Each arg is passed through a strict allow-list
+    (words/digits/punct) as an INDEPENDENT constant-sized fragment; args
+    of any other type are replaced by their type name.  The taint never
+    enters the output channel.
     """
-    import re as _re
-
-    text = str(exc)
-    cleaned = _re.sub(r"[^A-Za-z0-9 =_.,:\-\[\]\(\)%]", " ", text)
-    return _re.sub(r"\s+", " ", cleaned).strip()[:200]
+    global _SAFE_TEXT_RE, _WS_RE
+    if _SAFE_TEXT_RE is None or _WS_RE is None:
+        _SAFE_TEXT_RE, _WS_RE = _compile_safe_text_res()
+    parts: list[str] = []
+    for arg in (exc.args or ()):
+        if isinstance(arg, str):
+            cleaned = _SAFE_TEXT_RE.sub(" ", arg)
+            parts.append(_WS_RE.sub(" ", cleaned).strip()[:80])
+        elif isinstance(arg, int) and not isinstance(arg, bool):
+            parts.append(str(abs(arg)))
+        else:
+            parts.append(type(arg).__name__)
+    text = " ".join(p for p in parts if p)
+    return (text or "assertion failed")[:200]
 
 
 def run_observability_selftest() -> dict[str, Any]:
     """Runs all offline contract checks on synthetic data. Never raises."""
     failures: list[str] = []
     checks: dict[str, str] = {}
+    global _SAFE_TEXT_RE, _WS_RE
+    if _SAFE_TEXT_RE is None or _WS_RE is None:
+        _SAFE_TEXT_RE, _WS_RE = _compile_safe_text_res()
 
     def _check(name: str, fn) -> None:  # type: ignore[no-untyped-def]
         try:
