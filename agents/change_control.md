@@ -1765,3 +1765,11 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
 - SCOPE (expected): src/nexus_scalp/research/{backtest,streaming_replay,forward_test,mt5_tick_dataset,event_source,metrics,replay_session}.py; tests/unit/* (new regression suites); agents registries; docs/agent_handoffs/
 - CONSTRAINTS: no realism weakening; no order_send in any historical path; no future information; no fabricated fills/metrics; commit-per-step; beforePush quality gate; evidence-based findings only
 - STATUS: IMPLEMENTING
+
+## CHG-0060 - Data-flow/contract/hot-path deep forensic + fix mission (2026-09-05, Agent 7)
+
+- AGENT: Agent 7 (Nexus-Main orchestrated) | ROLE: Data-Flow / Contract / Hot-Path Forensics
+- TASK: user brief 2026-09-05 - trace the REAL canonical tick-to-decision pipeline (TickData -> ScalpFeatureEngine.to_tensor_input -> 50D -> assemble_70d/build_70d_vector -> 70D -> InferenceContractValidator -> ScalpNet -> 4 logits -> confidence gate -> regime_classifier -> signals/policy/rule_matrix -> RiskEngine -> OrderManager -> broker adapter -> accounting -> AuditRepository -> web/Telegram/experience/research/shadow), prove every arrow as a REAL contract boundary, reproduce/fix/verify every confirmed defect.
+- SCOPE (expected): src/nexus_scalp/features/{scalp_features,schema_contract,features70,inference_validator,runtime70}.py, src/nexus_scalp/application/live_engine.py (tick pipeline + inference), src/nexus_scalp/signals/{policy,rule_matrix}.py, src/nexus_scalp/features/regime_classifier.py, src/nexus_scalp/models/scalp_net.py, adapters/database/audit_repository.py (hot-path write contract), tests/unit/test_agent7_* (new), agents registries, docs/agent_handoffs/
+- CONSTRAINTS: INV-001 (zero sync DB on tick path), INV-002 (learning never places orders), INV-003/004 (risk + order authority), INV-008/009 (no lookahead, schema-controlled ordering), INV-010 (Telegram read-only), no safety weakening, commit-per-step, beforePush gate, evidence-based findings only (no invented bugs); execution/OrderManager deep dive owned by Agent 12 (CHG-0058), backtest/replay owned by Agent 15 (CHG-0059) - Agent 7 verifies boundaries only where they meet the data-flow.
+- STATUS: IMPLEMENTING
