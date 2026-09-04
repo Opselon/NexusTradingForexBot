@@ -354,10 +354,20 @@ def console_rows(
         try:
             if not driver.table_exists(table):
                 return {"success": False, "error": f"table '{table}' not found"}
-            sql = f'SELECT * FROM "{table}" ORDER BY rowid LIMIT {limit} OFFSET {offset}'
+            # CodeQL py/sql-injection: table is user-controlled; validate
+            # strictly via driver.quote_ident (allow-list) before
+            # interpolation.  LIMIT/OFFSET use qmark placeholders so they
+            # never enter the SQL text (driver.query translates ? -> %s
+            # for PostgreSQL).
+            try:
+                table_sql = driver.quote_ident(table)
+            except ValueError:
+                return {"success": False, "error": f"invalid table name '{table}'"}
             if cfg and cfg.is_postgresql:
-                sql = f'SELECT * FROM "{table}" ORDER BY 1 LIMIT {limit} OFFSET {offset}'
-            rows = driver.query(sql)
+                sql = f"SELECT * FROM {table_sql} ORDER BY 1 LIMIT ? OFFSET ?"
+            else:
+                sql = f"SELECT * FROM {table_sql} ORDER BY rowid LIMIT ? OFFSET ?"
+            rows = driver.query(sql, (limit, offset))
             columns: list[str] = []
             if rows:
                 columns = list(rows[0].keys())
@@ -461,10 +471,33 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
         try:
             if not driver.table_exists(table):
                 return {"success": False, "error": f"table '{table}' not found"}
+            try:
+                table_sql = driver.quote_ident(table)
+            except ValueError:
+                return {"success": False, "error": f"invalid table name '{table}'"}
         finally:
             driver.close()
 
-        sql = template.format(table=table)
+        # schema lookup uses a bound parameter (not string interpolation)
+        # so the table name never enters SQL text.
+        if kind == "schema":
+            try:
+                drv, _ = _driver_for(database)
+                if drv is None:
+                    return {"success": False, "error": f"unknown database '{database}'"}
+                try:
+                    if getattr(drv, "name", "") == "postgresql":
+                        cols = drv.table_columns(table)
+                        ddl = ", ".join(f"{c.get('name')} {c.get('type')}" for c in cols)
+                        return {"success": True, "database": database, "provider": "postgresql", "columns": ["ddl"], "rows": [{"ddl": f"TABLE {table} ({ddl})"}], "rows_returned": 1, "timestamp": _utc_now()}
+                    row = drv.query_one("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                    return {"success": True, "database": database, "provider": "sqlite", "columns": ["sql"], "rows": [row] if row else [], "rows_returned": 1 if row else 0, "timestamp": _utc_now()}
+                finally:
+                    drv.close()
+            except Exception as exc:
+                return {"success": False, "error": str(exc)[:300]}
+
+        sql = template.format(table=table_sql)
         return console_query({"database": database, "sql": sql})
     except Exception as exc:
         return {"success": False, "error": str(exc)[:300]}
