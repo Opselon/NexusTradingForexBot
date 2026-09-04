@@ -864,7 +864,9 @@ def load_releases() -> list[dict]:
         body = r.get("body")
         body_text = body if isinstance(body, str) else ""
         # strip control characters (defense in depth) — keep line breaks
-        body_text = "".join(ch for ch in body_text if ch == "\n" or (ord(ch) >= 32 and ord(ch) != 127))
+        body_text = "".join(
+            ch for ch in body_text if ch == "\n" or (ord(ch) >= 32 and ord(ch) != 127)
+        )
         clean.append(
             {
                 "tag_name": tag,
