@@ -28,6 +28,7 @@ promotion.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -83,7 +84,7 @@ def outcome_for_decision(
 
     # 1. Real trade outcome (canonical, authoritative when it exists).
     if audit_db and decision_id:
-        try:
+        with contextlib.suppress(Exception):
             conn = sqlite3.connect(f"file:{audit_db}?mode=ro", uri=True, timeout=5.0)
             try:
                 conn.row_factory = sqlite3.Row
@@ -104,8 +105,6 @@ def outcome_for_decision(
                     }
             finally:
                 conn.close()
-        except Exception:
-            pass
 
     # 2. Shadow path: entry + horizon close.
     if entry <= 0.0:

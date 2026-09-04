@@ -12,6 +12,7 @@ Enterprise Upgrades Incorporated:
     5. Context Manager & Graceful Shutdown (Flushes queue safely on exit).
 """
 
+import contextlib
 import json
 import os
 import queue
@@ -238,20 +239,16 @@ class AuditRepository:
             ("confidence_source", "TEXT"),
             ("spread_usd", "REAL"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE audit_signals ADD COLUMN {col_def[0]} {col_def[1]};")
-            except Exception:
-                pass
 
         # Persistent signal deduplication identity (BUG-054). A deterministic
         # key derived from the canonical decision fields, stable across restart.
         # Database-enforced: UNIQUE index + ON CONFLICT DO NOTHING means the
         # background worker can never double-insert the same decision even if
         # two processes/producers race.
-        try:
+        with contextlib.suppress(Exception):
             conn.execute("ALTER TABLE audit_signals ADD COLUMN signal_dedup_key TEXT;")
-        except Exception:
-            pass
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_signals_dedup "
             "ON audit_signals(signal_dedup_key);"
@@ -312,10 +309,8 @@ class AuditRepository:
         # column the batch fails with "table audit_orders has no column named
         # execution_id" and audit_orders silently stays empty (observed on
         # 2026-08-20 local engine). Idempotent ADD COLUMN upgrade.
-        try:
+        with contextlib.suppress(Exception):
             conn.execute("ALTER TABLE audit_orders ADD COLUMN execution_id TEXT;")
-        except Exception:
-            pass
 
         # =====================================================================
         # INSTITUTIONAL FINANCIAL ACCOUNTING LEDGER (One autopsy row per trade)
@@ -424,10 +419,8 @@ class AuditRepository:
             # retained (never rewritten — contract s47).
             ("account_source", "TEXT DEFAULT ''"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE audit_ledger ADD COLUMN {col_def[0]} {col_def[1]};")
-            except Exception:
-                pass
 
         conn.execute(
             """
@@ -461,12 +454,10 @@ class AuditRepository:
         # ('' legacy, 'LIVE', 'PAPER', 'SHADOW'); AccountingCore excludes the
         # PAPER seed plateau (balance==equity==margin_free==10000.0) and any
         # PAPER-tagged row from drawdown/equity metrics.
-        try:
+        with contextlib.suppress(Exception):
             conn.execute(
                 "ALTER TABLE audit_account_snapshots ADD COLUMN account_source TEXT DEFAULT '';"
             )
-        except Exception:
-            pass
 
         # Broker-history normalized copy: audit_broker_orders / _deals / _trades
         # + sync watermark (created idempotently; identity = broker tickets).
@@ -658,10 +649,8 @@ class AuditRepository:
             ("model_version", "TEXT DEFAULT ''"),
             ("config_version", "TEXT DEFAULT ''"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE audit_experiences ADD COLUMN {col_name} {col_type};")
-            except Exception:
-                pass
 
         conn.execute(
             """
@@ -738,12 +727,10 @@ class AuditRepository:
             ("replay_validated", "INTEGER DEFAULT 0"),
             ("probation_samples", "INTEGER DEFAULT 0"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(
                     f"ALTER TABLE strategy_intelligence_registry ADD COLUMN {col_name} {col_type};"
                 )
-            except Exception:
-                pass
 
         conn.execute(
             """
@@ -778,10 +765,8 @@ class AuditRepository:
             "CREATE INDEX IF NOT EXISTS idx_exp_corrections_key "
             "ON audit_experience_corrections(idempotency_key);",
         ):
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(index_sql)
-            except Exception:
-                pass
 
     def _create_intelligence_tables(self, conn: sqlite3.Connection) -> None:
         """
@@ -836,21 +821,17 @@ class AuditRepository:
             ("experience_id", "TEXT DEFAULT ''"),
             ("sequence", "INTEGER DEFAULT 0"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(
                     f"ALTER TABLE position_lifecycle_events ADD COLUMN {col_name} {col_type};"
                 )
-            except Exception:
-                pass
 
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_lifecycle_ticket ON position_lifecycle_events(ticket, sequence);",
             "CREATE INDEX IF NOT EXISTS idx_lifecycle_type ON position_lifecycle_events(event_type);",
         ):
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(index_sql)
-            except Exception:
-                pass
 
     def _create_table_trade_autopsies(self, conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -893,17 +874,13 @@ class AuditRepository:
             ("symbol", "TEXT NOT NULL DEFAULT ''"),
             ("timeframe", "TEXT DEFAULT ''"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE trade_autopsies ADD COLUMN {col_name} {col_type};")
-            except Exception:
-                pass
 
-        try:
+        with contextlib.suppress(Exception):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_autopsy_strategy ON trade_autopsies(strategy_id);"
             )
-        except Exception:
-            pass
 
     def _create_table_behavior_detections(self, conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -928,19 +905,15 @@ class AuditRepository:
             ("ticket_ctx", "TEXT DEFAULT ''"),
             ("behavior_key", "TEXT DEFAULT ''"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE behavior_detections ADD COLUMN {col_name} {col_type};")
-            except Exception:
-                pass
 
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_behavior_ticket ON behavior_detections(ticket);",
             "CREATE INDEX IF NOT EXISTS idx_behavior_pattern ON behavior_detections(pattern);",
         ):
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(index_sql)
-            except Exception:
-                pass
 
     def _create_table_behavior_analysis(self, conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -985,10 +958,8 @@ class AuditRepository:
             ("complete_context", "INTEGER DEFAULT 0"),
             ("partial_context", "INTEGER DEFAULT 0"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE behavior_analysis ADD COLUMN {col_name} {col_type};")
-            except Exception:
-                pass
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_ticket ON behavior_analysis(ticket);",
             "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_version "
@@ -996,10 +967,8 @@ class AuditRepository:
             "CREATE INDEX IF NOT EXISTS idx_anomaly_events_ticket ON anomaly_events(ticket);",
             "CREATE INDEX IF NOT EXISTS idx_anomaly_events_type ON anomaly_events(anomaly_type);",
         ):
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(index_sql)
-            except Exception:
-                pass
 
     def _create_table_strategy_evolution_candidates(self, conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -1021,12 +990,10 @@ class AuditRepository:
             );
             """
         )
-        try:
+        with contextlib.suppress(Exception):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_evolution_status ON strategy_evolution_candidates(status);"
             )
-        except Exception:
-            pass
 
     def _create_table_intelligence_worker_state(self, conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -1159,7 +1126,7 @@ class AuditRepository:
             );
             """
         )
-        try:
+        with contextlib.suppress(Exception):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_factory_cand_gen ON factory_candidates(generation_id, population_index);"
             )
@@ -1172,8 +1139,6 @@ class AuditRepository:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_factory_events_gen ON factory_events(generation_id, created_at);"
             )
-        except Exception:
-            pass
 
     def _create_research_tables(self, conn: sqlite3.Connection) -> None:
         """
@@ -1235,7 +1200,7 @@ class AuditRepository:
             );
             """
         )
-        try:
+        with contextlib.suppress(Exception):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_registry_id ON strategy_registry(strategy_id, updated_at);"
             )
@@ -1245,8 +1210,6 @@ class AuditRepository:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_research_runs_strategy ON research_runs(strategy_id);"
             )
-        except Exception:
-            pass
 
         # Restart-safe research worker bookkeeping.
         # TASK-21-RESEARCH-OBSERVABILITY: first-class gate / event / evidence
@@ -1386,11 +1349,9 @@ class AuditRepository:
             ("gates", "TEXT"),
             ("completed_at", "TEXT"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE research_runs ADD COLUMN {col_def[0]} {col_def[1]};")
-            except Exception:
-                pass
-        try:
+        with contextlib.suppress(Exception):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_gates_strategy ON research_gates(strategy_id, order_index);"
             )
@@ -1403,8 +1364,6 @@ class AuditRepository:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_evidence_strategy ON research_evidence(strategy_id, created_at);"
             )
-        except Exception:
-            pass
         # CHG-0035 provenance hardening (RESEARCH_RUN_SNAPSHOT v2): identity
         # columns beyond the v1 contract. ADD COLUMN guarded (idempotent —
         # expected control flow on already-migrated DBs). Existing rows stay
@@ -1415,12 +1374,10 @@ class AuditRepository:
             ("model_id", "TEXT"),
             ("git_commit", "TEXT"),
         ]:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(
                     f"ALTER TABLE research_run_snapshots ADD COLUMN {col_def[0]} {col_def[1]};"
                 )
-            except Exception:
-                pass
 
     def flush(self, timeout_sec: float = 5.0) -> bool:
         """Boundedly drains the background write queue.
@@ -2771,9 +2728,7 @@ class AuditRepository:
         else:
             self._worker_thread = None
         if self._shared_conn is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._shared_conn.close()
-            except Exception:
-                pass
             self._shared_conn = None
         logger.info("Audit Database safely closed.")

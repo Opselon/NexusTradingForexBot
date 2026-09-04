@@ -7,6 +7,7 @@ and risk engines.
 """
 
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -180,7 +181,7 @@ def _resolve_web_root() -> Path:
     if packaged.is_dir():
         return packaged
     # Portable layout: exe next to _internal/Web (onedir)
-    try:
+    with contextlib.suppress(Exception):
         exe_dir = Path(sys.executable).resolve().parent
         alt = exe_dir / "_internal" / "Web"
         if alt.is_dir():
@@ -188,8 +189,6 @@ def _resolve_web_root() -> Path:
         alt2 = exe_dir / "Web"
         if alt2.is_dir() and (alt2 / "index.html").exists():
             return alt2
-    except Exception:
-        pass
     repo_web = Path(__file__).resolve().parent.parent.parent.parent / "Web"
     if repo_web.is_dir():
         return repo_web
@@ -792,10 +791,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     def _runtime_version_block_cached(state: Any) -> dict[str, Any]:
         block = _runtime_version_block(state)
-        try:
+        with contextlib.suppress(Exception):
             state._version_block_cache = (time.monotonic(), block)
-        except Exception:
-            pass
         return block
 
     def _runtime_version_block_stateful(state: Any) -> dict[str, Any]:
@@ -917,7 +914,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 execution_mode = None
 
             # Fetch MT5 live ticks and prices (real broker tick - task 11).
-            try:
+            with contextlib.suppress(Exception):
                 # Use the typed broker tick first (has freshness/stale flags),
                 # falling back to the engine's synchronized last tick.
                 broker_tick = engine.adapter.get_broker_tick(symbol)
@@ -939,8 +936,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         spread = round((tick.ask - tick.bid) * 100, 2)
                         tick_timestamp = tick.timestamp.isoformat()
                         price_source = "ENGINE_STATE"
-            except Exception:
-                pass
 
             # Real runtime mode (never derived from config alone).
             try:
@@ -975,7 +970,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 mode_source_mismatch = False
 
             # Fetch regime state & ATR from the exact synchronized last state
-            try:
+            with contextlib.suppress(Exception):
                 reg_state = engine._last_regime_state
                 if reg_state:
                     regime = reg_state.regime_type.name
@@ -984,11 +979,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     hasattr(engine, "regime_classifier") and engine.regime_classifier._stable_regime
                 ):
                     regime = engine.regime_classifier._stable_regime.name
-            except Exception:
-                pass
 
             # Fetch account info (full typed broker snapshot when available)
-            try:
+            with contextlib.suppress(Exception):
                 snap = getattr(engine, "_account_snapshot", None)
                 if snap is None or not getattr(snap, "available", False):
                     snap = engine.adapter.get_account_snapshot()
@@ -1037,13 +1030,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             if engine._peak_equity > 0
                             else None
                         )
-            except Exception:
-                pass
 
             # Real win rate from the canonical AccountingCore (authoritative
             # ledger), not from the legacy duplicate calculator. Unavailable
             # stays None.
-            try:
+            with contextlib.suppress(Exception):
                 core = getattr(engine, "accounting_core", None)
                 if core is not None:
                     trades = core.load_trades(limit=1000)
@@ -1052,11 +1043,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     wins = sum(1 for t in closed if t.is_win)
                     if decided:
                         account_data["win_rate"] = round(wins / decided * 100.0, 2)
-            except Exception:
-                pass
 
             # Fetch positions (ALL account positions - never restricted to bot magic)
-            try:
+            with contextlib.suppress(Exception):
                 all_positions = engine.adapter.get_all_positions(symbol=symbol)
                 for p in all_positions:
                     positions_list.append(
@@ -1078,8 +1067,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     )
                 if positions_list:
                     account_data["open_positions"] = len(positions_list)
-            except Exception:
-                pass
 
             # Fetch bars (synchronized completed history) - Expand to 900 completed bars
             # for 900+ visible bars support (BUG-054 resync: after 5-6h downtime the
@@ -1148,7 +1135,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         ),
                     }
                     # Model metadata from the live bundle (real provenance)
-                    try:
+                    with contextlib.suppress(Exception):
                         with engine._bundle_lock:
                             bundle = engine._bundle
                         if bundle is not None:
@@ -1195,8 +1182,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             if champ is not None:
                                 model_meta["model_id"] = getattr(champ, "model_id", None)
                                 model_meta["model_version"] = getattr(champ, "model_version", None)
-                    except Exception:
-                        pass
 
                 # Sync actual policy proposals
                 proposal = engine._last_proposal
@@ -1254,7 +1239,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         }
 
         if engine:
-            try:
+            with contextlib.suppress(Exception):
                 algo_config_data = {
                     "atr_sl_buffer_multiplier": float(
                         getattr(engine.config.algo, "atr_sl_buffer_multiplier", 1.5)
@@ -1272,8 +1257,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         getattr(engine.config.algo, "order_block_lookback_bars", 30)
                     ),
                 }
-            except Exception:
-                pass
 
             # Scan completed bars for active/unmitigated zones (FVGs, OBs, sweeps)
             if real_smc_overlays and real_smc_overlays.get("rectangles"):
@@ -1504,7 +1487,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 except Exception:
                     order_lines = None
             else:
-                try:
+                with contextlib.suppress(Exception):
                     live_positions = engine.adapter.get_positions(symbol=symbol)
                     if live_positions and equity is not None:
                         p = live_positions[0]
@@ -1536,8 +1519,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             "profit_usd": float(round(profit_usd, 2)),
                             "zone_score": 85.0,
                         }
-                except Exception:
-                    pass
 
         if not rectangles and not real_smc_overlays:
             # NO SYNTHETIC OVERLAYS. When no engine-generated SMC data exists,

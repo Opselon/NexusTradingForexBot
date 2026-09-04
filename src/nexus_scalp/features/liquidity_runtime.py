@@ -41,6 +41,7 @@ The 70D contract (``scalp_v3``):
 
 from __future__ import annotations
 
+import contextlib
 import math
 import threading
 import time
@@ -854,7 +855,7 @@ class LiquidityGovernor:
         if engine is not None:
             bundle = getattr(engine, "_bundle", None)
             if bundle is not None:
-                try:
+                with contextlib.suppress(Exception):
                     dim_fn = getattr(engine, "effective_feature_dim", None)
                     model_dim = (
                         dim_fn()
@@ -867,8 +868,6 @@ class LiquidityGovernor:
                         if callable(schema_fn)
                         else getattr(engine, "effective_feature_schema_id", None)
                     )
-                except Exception:
-                    pass
                 art = getattr(bundle, "artifact_path", None)
                 if art is not None:
                     try:

@@ -22,6 +22,7 @@ rate-limited.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -267,14 +268,12 @@ class NewsAnalysisPipeline:
                 if aid and self.db.get_analysis(aid) is not None:
                     existing2 = self.db.get_analysis(aid) or {}
                     if ah:
-                        try:
+                        with contextlib.suppress(Exception):
                             self.db.remember_analyzed_hash(
                                 ah,
                                 title=str(getattr(article, "title", "")),
                                 analysis_id=str(existing2.get("analysis_id", "")),
                             )
-                        except Exception:
-                            pass
                     logger.info("[NEWS_ANALYSIS] event=SKIP_ALREADY_ANALYZED article_id=%s", aid)
                     return NewsAnalysisResult(
                         analysis_id=str(existing2.get("analysis_id", "")),
@@ -499,15 +498,13 @@ class NewsAnalysisPipeline:
                 continue
             existing = self.db.get_analysis(art["article_id"])
             if existing:
-                try:
+                with contextlib.suppress(Exception):
                     if ah_tmp:
                         self.db.remember_analyzed_hash(
                             ah_tmp,
                             title=str(art.get("title", "")),
                             analysis_id=str(existing.get("analysis_id", "")),
                         )
-                except Exception:
-                    pass
                 continue
             from nexus_scalp.news.models import NewsArticle
 

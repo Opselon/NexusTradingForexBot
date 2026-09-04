@@ -8,6 +8,7 @@ connection-lifetime semantics unchanged. USED BY: news/database.py.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -57,10 +58,8 @@ class QueriesMixin(_NewsDbCoreProto):
         article title in the bucket).
         """
         # Keep historical rows anchored to true publication time (one-shot, idempotent)
-        try:
+        with contextlib.suppress(Exception):
             self._backfill_impact_anchors()
-        except Exception:
-            pass
         bucket_sec = max(60, min(int(bucket_sec), 86400))
         hours_back = max(1, min(int(hours_back), 24 * 7))
         cutoff = datetime.now(UTC) - timedelta(hours=hours_back)

@@ -17,6 +17,7 @@ Key Enterprise Features & Hidden MT5 Mechanisms:
       into structured, actionable log events.
 """
 
+import contextlib
 import logging
 import sys
 from datetime import UTC, datetime, timedelta
@@ -252,7 +253,7 @@ class DirectMT5Adapter(IMT5Port):
             return False
 
         # Record terminal/package versions + terminal_info on every connect.
-        try:
+        with contextlib.suppress(Exception):
             pkg_ver = None
             term_ver = None
             try:
@@ -269,8 +270,6 @@ class DirectMT5Adapter(IMT5Port):
             except Exception:
                 pass
             self._conn_state.set_versions(pkg_ver, term_ver)
-        except Exception:
-            pass
 
         if self._account and self._password and self._server:
             login_ok = mt5.login(login=self._account, password=self._password, server=self._server)

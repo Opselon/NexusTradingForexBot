@@ -14,6 +14,7 @@ shadow decision. It guarantees:
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -340,7 +341,7 @@ def _git_revision() -> str:
     import subprocess
     from pathlib import Path
 
-    try:
+    with contextlib.suppress(Exception):
         head = Path(__file__).resolve()
         for parent in head.parents:
             git_head = parent / ".git" / "HEAD"
@@ -364,8 +365,6 @@ def _git_revision() -> str:
                     if ref_path.exists():
                         return ref_path.read_text(encoding="utf-8", errors="replace").strip()[:12]
                 return ref[:12]
-    except Exception:
-        pass
     return ""
 
 

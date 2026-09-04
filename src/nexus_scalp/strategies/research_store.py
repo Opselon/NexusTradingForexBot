@@ -35,6 +35,7 @@ boundary, not a prefix).
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -411,10 +412,8 @@ class StrategyResearchStore:
             self.driver.commit(conn)
             return True
         except Exception as e:
-            try:
+            with contextlib.suppress(Exception):
                 conn.rollback()
-            except Exception:
-                pass
             logger.error("[STRATEGY_STORE] write failed", error=str(e))
             return False
         finally:
@@ -734,10 +733,8 @@ class StrategyResearchStore:
 
     def close(self) -> None:
         """Release driver resources (shared connections)."""
-        try:
+        with contextlib.suppress(Exception):
             self.driver.close()
-        except Exception:
-            pass
 
 
 def _row_safe(row: dict[str, Any]) -> dict[str, Any]:

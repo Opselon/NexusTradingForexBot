@@ -19,6 +19,7 @@ Invariants:
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import math
@@ -1587,11 +1588,9 @@ class WalkForwardTrainer:
                 std_shape=tuple(std.shape),
             )
         except Exception as err:
-            try:
+            with contextlib.suppress(Exception):
                 if tmp_path.exists():
                     tmp_path.unlink()
-            except Exception:
-                pass
             logger.error("Failed to save scaler artifact", path=str(scaler_path), error=str(err))
             raise
 
@@ -1901,10 +1900,8 @@ class WalkForwardTrainer:
         if torch.backends.cudnn.is_available():
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
-        try:
+        with contextlib.suppress(Exception):
             torch.use_deterministic_algorithms(True, warn_only=True)
-        except Exception:
-            pass
 
 
 # =============================================================================

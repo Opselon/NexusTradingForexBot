@@ -20,6 +20,7 @@ legacy values are only blanked AFTER the secure write-back verifies).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -967,10 +968,8 @@ class SettingsService:
         }
 
     def close(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.db.close()
-        except Exception:
-            pass
 
 
 def load_settings_service(db_path: Path | None = None) -> SettingsService:

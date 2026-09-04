@@ -24,6 +24,7 @@ Invariants:
     - Full Traceability: Every modification, partial close, or cancellation is audited.
 """
 
+import contextlib
 import json
 import math
 import time
@@ -1243,7 +1244,7 @@ class OrderLifecycleManager:
                     execution_mode="AI_REVERSAL",
                 )
                 if self.notifier:
-                    try:
+                    with contextlib.suppress(Exception):
                         self.notifier.notify_canonical_close(
                             ticket=pos.ticket,
                             symbol=pos.symbol,
@@ -1259,8 +1260,6 @@ class OrderLifecycleManager:
                             evidence=f"AI_REVERSAL -> {getattr(new_action, 'value', new_action)}",
                             reply_to_message_id=self._order_message_ids.get(pos.ticket),
                         )
-                    except Exception:
-                        pass
                 # Drop the ticket from the cache immediately so the exposure gate frees up
                 # in the same tick and the reversal order is not blocked by its own predecessor.
                 with self._live_tickets_lock:
@@ -2636,13 +2635,11 @@ class OrderLifecycleManager:
         crashes on a missing input.
         """
         if regime_state is not None:
-            try:
+            with contextlib.suppress(Exception):
                 regime = getattr(regime_state, "regime_type", None)
                 if regime is not None:
                     return str(getattr(regime, "value", regime))
                 return str(regime_state)
-            except Exception:
-                pass
         return self._entry_regimes.get(ticket, "")
 
     def _estimate_liquidation_impact(
@@ -4653,15 +4650,13 @@ class OrderLifecycleManager:
         # TASK-7 exit-decision traceability: persist the arbitrated verdict so a
         # position that closes (or disappears) before the next pass still carries
         # the decision that governed it. Cleared at autopsy.
-        try:
+        with contextlib.suppress(Exception):
             self._exit_pending_final_reason[ticket] = {
                 "action": action,
                 "reason": scenario,
                 "state": debounced_state.value,
                 "at": now.isoformat() if hasattr(now, "isoformat") else str(now),
             }
-        except Exception:
-            pass
 
         # -----------------------------------------------------------------
         # Phase 15: structured exit-evaluation log (state-change driven).
@@ -5493,15 +5488,13 @@ class OrderLifecycleManager:
             # aggregated comment/reason so a partial-fill family is never
             # classified by a single deal's sign.
             if len(history_deals) > 1:
-                try:
+                with contextlib.suppress(Exception):
                     deal_gross = sum(
                         float(d.get("profit", 0.0) or 0.0)
                         for d in history_deals
                         if d.get("position_ticket") == dead_ticket
                     )
                     profit_usd = deal_gross
-                except Exception:
-                    pass
 
         # ---- Quant risk excursions converted to account currency ----
         mae_usd = self._price_delta_to_usd(min(mae_val, 0.0), vol, symbol_info)

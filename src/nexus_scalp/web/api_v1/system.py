@@ -3,6 +3,7 @@ workers/refresh/diagnostics). Sources verified in docs/api/API_PLATFORM_V1.md §
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from fastapi import APIRouter, Header, Request
@@ -285,10 +286,8 @@ def system_refresh(
         refreshed["account"] = {"available": False}
     versioner = get_versioner(request)
     if versioner is not None:
-        try:
+        with contextlib.suppress(Exception):
             versioner.next_version()
-        except Exception:
-            pass
     meta = {"idempotency_key": idempotency_key} if idempotency_key else None
     return ok(request, {"refreshed": refreshed, "at": utc_now_iso()}, meta_extra=meta)
 

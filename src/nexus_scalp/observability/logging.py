@@ -48,6 +48,7 @@ reach disk.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import logging.handlers
 import math
@@ -565,10 +566,8 @@ def _console_stream() -> TextIO:
 
 def _configure_stdout() -> None:
     """Reconfigure the console stream once (idempotent, BUG-122 discipline)."""
-    try:
+    with contextlib.suppress(Exception):
         _console_stream()
-    except Exception:
-        pass
 
 
 def configure_logging(

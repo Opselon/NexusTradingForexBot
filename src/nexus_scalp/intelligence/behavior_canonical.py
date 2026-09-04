@@ -15,6 +15,7 @@ USED BY: intelligence/worker.py, tests (via the behavior facade).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import statistics
@@ -195,10 +196,8 @@ def analyze_canonical_trades(
     # caller can observe persisted records immediately after this returns.
     # This is the OFFLINE path (never the tick hot path) — a bounded join is
     # safe and keeps idempotency checks truthful.
-    try:
+    with contextlib.suppress(Exception):
         audit_repo._queue.join()
-    except Exception:
-        pass
 
     return {
         "analyzed": analyzed,

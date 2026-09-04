@@ -53,6 +53,7 @@ import the live engine (no order authority — mirrors research/ safety).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import random
 import threading
@@ -791,10 +792,8 @@ def execute_http_post(
                 retry_after_sec=retry_after,
             )
         # 200: tolerant JSON parse (direct, then SSE-frame strip).
-        try:
+        with contextlib.suppress(Exception):
             return GateResult(ok=True, data=resp.json(), category=FailureCategory.AVAILABLE)
-        except Exception:
-            pass
         body = resp.text
         marker = body.rfind("data: [DONE]")
         if marker > 0:

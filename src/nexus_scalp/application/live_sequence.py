@@ -4,6 +4,7 @@ LiveSequenceService — extracted Cluster 4 (Temporal Sequence Contract & Bar Ga
 
 from __future__ import annotations
 
+import contextlib
 from collections import deque
 from dataclasses import dataclass
 
@@ -63,11 +64,9 @@ class LiveSequenceService:
                     max_gap = int(g2)
         if isinstance(seq_len, int) and seq_len >= 2:
             state.seq_len = int(seq_len)
-            try:
+            with contextlib.suppress(Exception):
                 old = list(state.buffer)
                 state.buffer = deque(old[-int(seq_len) :], maxlen=max(64, int(seq_len)))
-            except Exception:
-                pass
         else:
             state.seq_len = int(CANONICAL_SEQ_LEN)
         state.max_gap_us = int(max_gap) if isinstance(max_gap, int) else int(CANONICAL_MAX_GAP_US)
@@ -80,7 +79,7 @@ class LiveSequenceService:
             import torch as _torch
         except Exception:
             return None
-        try:
+        with contextlib.suppress(Exception):
             if bar_ts is not None:
                 ts_us = None
                 if hasattr(bar_ts, "timestamp"):
@@ -93,8 +92,6 @@ class LiveSequenceService:
                         state.gap_invalid = True
                         state.buffer.clear()
                     state.last_bar_ts_us = int(ts_us)
-        except Exception:
-            pass
         if state.gap_invalid:
             return None
         if state.buffer is None:  # type: ignore[unreachable]

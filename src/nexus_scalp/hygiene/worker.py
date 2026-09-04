@@ -18,6 +18,7 @@ after every batch (spec §46). Never reports success before verification.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -311,36 +312,26 @@ class VerificationEngine:
 def financial_aggregates(conn: sqlite3.Connection) -> dict[str, float]:
     """Accounting invariant aggregates (spec §24) — only for audit.db."""
     out: dict[str, float] = {}
-    try:
+    with contextlib.suppress(Exception):
         out["ledger_rows"] = float(conn.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0])
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         out["pnl_sum"] = float(
             conn.execute(
                 "SELECT COALESCE(SUM(pnl),0.0) FROM audit_ledger WHERE status != 'OPENED'"
             ).fetchone()[0]
         )
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         out["broker_trades"] = float(
             conn.execute("SELECT COUNT(*) FROM audit_broker_trades").fetchone()[0]
         )
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         out["experiences"] = float(
             conn.execute("SELECT COUNT(*) FROM audit_experiences").fetchone()[0]
         )
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         out["outcomes"] = float(
             conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes").fetchone()[0]
         )
-    except Exception:
-        pass
     return out
 
 

@@ -17,6 +17,7 @@ unique key, spec TEST-SHADOW-13/14).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from datetime import UTC, datetime
@@ -431,7 +432,7 @@ class Shadow70Store(Shadow70Persistence):
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return {}
         out: dict[str, int] = {}
-        try:
+        with contextlib.suppress(Exception):
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
             try:
                 sql = "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations "
@@ -442,8 +443,6 @@ class Shadow70Store(Shadow70Persistence):
                     out[str(r[0])] = int(r[1])
             finally:
                 conn.close()
-        except Exception:
-            pass
         return out
 
     def summary(self) -> dict[str, Any]:
@@ -481,7 +480,7 @@ class Shadow70Store(Shadow70Persistence):
 
     def _query(self, sql: str, args: tuple[Any, ...]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
-        try:
+        with contextlib.suppress(Exception):
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
             conn.row_factory = sqlite3.Row
             try:
@@ -489,6 +488,4 @@ class Shadow70Store(Shadow70Persistence):
                     out.append(dict(r))
             finally:
                 conn.close()
-        except Exception:
-            pass
         return out

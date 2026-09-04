@@ -12,6 +12,7 @@ approved mechanism on the supported deployment (Windows).
 from __future__ import annotations
 
 import base64
+import contextlib
 import ctypes
 import logging
 import os
@@ -48,7 +49,7 @@ def _local_free(ptr: Any) -> None:
     """Free a DPAPI output buffer (LocalFree with explicit argtypes)."""
     if sys.platform != "win32":
         return
-    try:
+    with contextlib.suppress(Exception):
         windll = getattr(ctypes, "windll", None)
         if windll is None:
             return
@@ -56,8 +57,6 @@ def _local_free(ptr: Any) -> None:
         local_free.argtypes = [ctypes.c_void_p]
         local_free.restype = ctypes.c_void_p
         local_free(ctypes.c_void_p(ptr))
-    except Exception:
-        pass
 
 
 class _Dpapi:

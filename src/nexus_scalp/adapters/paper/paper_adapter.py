@@ -16,6 +16,7 @@ FX-style 5-digit specs, which would corrupt every risk/lot calculation performed
 against this adapter.
 """
 
+import contextlib
 import os
 import random
 from datetime import UTC, datetime, timedelta
@@ -97,12 +98,10 @@ class PaperMT5Adapter(IMT5Port):
         """
         upper = (symbol or "").upper()
         env_key = f"NEXUS_PAPER_SEED_{upper}"
-        try:
+        with contextlib.suppress(Exception):
             raw = os.environ.get(env_key, "").strip()
             if raw:
                 return float(raw)
-        except Exception:
-            pass
         if upper in cls._SEED_BASELINES:
             return cls._SEED_BASELINES[upper]
         return cls._DEFAULT_SEED

@@ -17,6 +17,7 @@ new check families that belong to another domain module.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -325,7 +326,7 @@ def check_telegram_delivery() -> CheckResult:
             detail="TELEGRAM_DISABLED",
         )
     # worker-level evidence when a notifier instance is reachable via settings
-    try:
+    with contextlib.suppress(Exception):
         notifier = getattr(svc, "notifier", None) or getattr(svc, "_notifier", None)
         if notifier is not None and hasattr(notifier, "health_state"):
             hs = notifier.health_state()
@@ -339,8 +340,6 @@ def check_telegram_delivery() -> CheckResult:
                     expected="sent_count > 0 or no failures",
                     detail="TELEGRAM_SILENT_FAILURE",
                 )
-    except Exception:
-        pass
     return _ok(
         "CHECK-TEL-01",
         "telegram configured and enabled",

@@ -20,6 +20,7 @@ Safety contract:
 
 from __future__ import annotations
 
+import contextlib
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -300,11 +301,9 @@ class SqliteToPostgresMigrator:
             existing = [t for t in tables if self._pg_driver.table_exists(t)]
             populated = []
             for t in existing:
-                try:
+                with contextlib.suppress(Exception):
                     if int(self._pg_driver.row_count(t)) > 0:
                         populated.append(t)
-                except Exception:
-                    pass
             if populated and not self.options.force_restart:
                 report.warnings.append(
                     f"destination tables already have data: {populated[:5]} — "
@@ -375,7 +374,7 @@ class SqliteToPostgresMigrator:
                     problems.append(f"{t}: row count {src_n} != {dst_n}")
                     continue
                 # identity max (sequence carry-over proof)
-                try:
+                with contextlib.suppress(Exception):
                     cols = self._src_driver.table_columns(t)
                     pk = [c["name"] for c in cols if c.get("pk")]
                     id_col = "id" if "id" in [c["name"] for c in cols] else (pk[0] if pk else None)
@@ -384,12 +383,10 @@ class SqliteToPostgresMigrator:
                         m2 = self._pg_driver.scalar(f'SELECT MAX("{id_col}") FROM "{t}"')
                         if (m1 or 0) != (m2 or 0):
                             problems.append(f"{t}: identity max {m1} != {m2}")
-                except Exception:
-                    pass
                 # financial aggregates
                 cols_to_check = financial.get(t, [])
                 for c in cols_to_check[:8]:
-                    try:
+                    with contextlib.suppress(Exception):
                         s1 = float(
                             self._src_driver.scalar(f"SELECT COALESCE(SUM({c}),0) FROM {t}") or 0
                         )
@@ -398,8 +395,6 @@ class SqliteToPostgresMigrator:
                         )
                         if abs(s1 - s2) > max(0.01, abs(s1) * 1e-9):
                             problems.append(f"{t}.{c}: sum {s1} != {s2}")
-                    except Exception:
-                        pass
             if problems:
                 return "FAILED"
             return "PASSED"

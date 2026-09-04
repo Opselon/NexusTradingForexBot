@@ -10,6 +10,7 @@ but through the safe Typer path -- LIVE never starts without confirmation.
 """
 
 from __future__ import annotations
+import contextlib
 
 import sys
 
@@ -20,10 +21,8 @@ if __name__ == "__main__":
     # with UnicodeEncodeError on the rich banner glyphs. Reconfigure stdio to
     # UTF-8 with replacement so the UI can never hard-kill the launch.
     for stream in (sys.stdout, sys.stderr):
-        try:
+        with contextlib.suppress(Exception):
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr,attr-defined]
-        except Exception:
-            pass
     # Double-click / bare-EXE parity: `NexusScalpEngine.exe` with NO args
     # must start the engine (default PAPER), not print `Missing command`.
     # This matches NexusTradingForexBot.py legacy no-args-run and README

@@ -21,6 +21,7 @@ news AI analysis routes (news_intelligence_routes.py).
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -583,12 +584,10 @@ def register_news_liquidity_mslie_routes(
         if news is None:
             return {"available": False}
         force = False
-        try:
+        with contextlib.suppress(Exception):
             force = bool((request.query_params.get("force", "false")).lower() == "true")
-        except Exception:
-            pass
         # Idempotent short-circuit: don't re-queue already-analyzed stories
-        try:
+        with contextlib.suppress(Exception):
             if not force:
                 art = news.db.get_article(article_id)
                 ah = str((art or {}).get("article_hash") or "")
@@ -608,8 +607,6 @@ def register_news_liquidity_mslie_routes(
                         "article_id": article_id,
                         "reason": "article already analyzed",
                     }
-        except Exception:
-            pass
         engine = app.state.engine
         try:
             if engine and getattr(engine, "news_worker", None) is not None:

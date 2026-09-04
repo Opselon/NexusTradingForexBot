@@ -34,6 +34,7 @@ Safety invariants (TASK-9 section 47):
 """
 
 from __future__ import annotations
+import contextlib
 
 import hashlib
 import json
@@ -2232,10 +2233,8 @@ class UpdateOrchestrator:
             self.state.set_state(state, self._correlation_id)
             report["state"] = state
             if on_event is not None:
-                try:
+                with contextlib.suppress(Exception):
                     on_event(state, detail)
-                except Exception:
-                    pass
 
         # crash recovery first: a half-finished update must never be restarted
         crashed = self.state.recover_after_crash()

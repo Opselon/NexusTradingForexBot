@@ -24,6 +24,7 @@ adds the TASK-6 governance guarantees:
 
 from __future__ import annotations
 
+import contextlib
 import time
 import uuid
 from datetime import UTC, datetime
@@ -299,7 +300,7 @@ class GovernanceShadowRuntime:
             error_code=code,
         )
         if self.store is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.store.record_event(
                     GovernanceEvent(
                         event_id=f"ev_{uuid.uuid4().hex[:16]}",
@@ -315,5 +316,3 @@ class GovernanceShadowRuntime:
                         payload={"champion": champion_ref},
                     )
                 )
-            except Exception:
-                pass

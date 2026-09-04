@@ -12,6 +12,7 @@ Hardening requirements (mission PHASE 4 / PHASE 15):
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -36,7 +37,7 @@ def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
     try:
         if sys.platform.startswith("win"):
             # taskkill reliably kills the tree on Windows.
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                     stdout=subprocess.DEVNULL,
@@ -45,8 +46,6 @@ def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
                     check=False,
                 )
                 return
-            except Exception:
-                pass
         if proc.poll() is None:
             proc.terminate()
             try:
@@ -55,10 +54,8 @@ def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
                 proc.kill()
     except Exception:
         # Last-resort: attempt direct kill; never raise from cleanup.
-        try:
+        with contextlib.suppress(Exception):
             proc.kill()
-        except Exception:
-            pass
 
 
 def _decode(raw: bytes) -> str:

@@ -22,6 +22,7 @@ rolls back on exception WITHOUT closing the connection.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -70,10 +71,8 @@ class PortableCursor:
         return [self._to_dict(r) for r in self._cursor.fetchmany(size)]
 
     def close(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._cursor.close()
-        except Exception:
-            pass
 
 
 def _rewrite_insert_or(sql: str, pk_cache: dict[str, list[str]]) -> tuple[str, str]:
@@ -142,10 +141,8 @@ class PortableConnection:
         self._conn.commit()
 
     def rollback(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._conn.rollback()
-        except Exception:
-            pass
 
     def close(self) -> None:
         if not self._closed:

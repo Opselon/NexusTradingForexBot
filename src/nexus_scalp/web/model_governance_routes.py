@@ -26,6 +26,7 @@ research factory (factory_routes.py), command center (command_center_*).
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -382,7 +383,7 @@ def register_model_governance_routes(app: Any) -> None:
         if store is not None:
             out["store"] = store.summary()
             out["store"]["disagreement_counts"] = store.disagreement_counts()
-            try:
+            with contextlib.suppress(Exception):
                 out["store"]["recent_observations"] = [
                     {
                         "observation_id": r.get("observation_id", ""),
@@ -399,8 +400,6 @@ def register_model_governance_routes(app: Any) -> None:
                     }
                     for r in store.list_observations(limit=20)
                 ]
-            except Exception:
-                pass
         from nexus_scalp.shadow.shadow70.worker import format_shadow70_status
 
         out["worker"] = format_shadow70_status(getattr(engine, "_shadow70_worker", None))
@@ -525,15 +524,13 @@ def register_model_governance_routes(app: Any) -> None:
             meta_path = _ShadowPath(artifact_path).parent / "model.meta.json"
             for _mpath in (manifest_path, meta_path):
                 if _mpath.exists():
-                    try:
+                    with contextlib.suppress(Exception):
                         man = _json.loads(_mpath.read_text(encoding="utf-8"))
                         feature_schema_hash_value = str(
                             man.get("feature_schema_hash") or man.get("feature_schema_id", "") or ""
                         )
                         scaler_hash_value = str(man.get("scaler_hash", "") or "")
                         break
-                    except Exception:
-                        pass
             if not feature_schema_hash_value or feature_schema_hash_value in (
                 "scalp_v3",
                 "scalp_v4",

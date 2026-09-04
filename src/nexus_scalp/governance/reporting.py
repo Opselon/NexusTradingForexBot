@@ -9,6 +9,7 @@ unless the promotion gate actually says READY_FOR_REVIEW / APPROVED.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
@@ -71,7 +72,7 @@ def build_governance_report(engine: Any) -> dict[str, Any] | None:
             return None
         shadow_s = engine._governance_shadow.summary() if engine._governance_shadow else {}
         champ: dict[str, Any] = {"id": "?", "version": "?", "healthy": False}
-        try:
+        with contextlib.suppress(Exception):
             c = engine.champion_manager.champion_or_none()
             if c is not None:
                 champ = {
@@ -80,8 +81,6 @@ def build_governance_report(engine: Any) -> dict[str, Any] | None:
                     "schema": c.feature_schema_id,
                     "healthy": c.available,
                 }
-        except Exception:
-            pass
         chal = {
             "id": shadow_s.get("model_id", ""),
             "version": shadow_s.get("model_version", ""),

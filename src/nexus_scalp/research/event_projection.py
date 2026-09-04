@@ -15,6 +15,7 @@ state.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -209,7 +210,7 @@ class LifecycleEventProjection:
                 events.append(parsed)
         events.sort(key=lambda e: e.get("timestamp") or "")
         if since_iso:
-            try:
+            with contextlib.suppress(Exception):
                 cut = datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
                 events = [
                     e
@@ -217,8 +218,6 @@ class LifecycleEventProjection:
                     if _parse_or_none(e.get("timestamp")) is None
                     or (_parse_or_none(e.get("timestamp")) >= cut)
                 ]
-            except Exception:
-                pass
         return events[-bounded:]
 
     # ------------------------------------------------------------------

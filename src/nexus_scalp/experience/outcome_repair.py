@@ -18,6 +18,7 @@ Invariants:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from collections.abc import Callable
@@ -335,7 +336,5 @@ class OutcomeRepairJob:
 def flush_repair_queue(ledger: ExperienceLedger) -> None:
     """Joins the audit background queue so repaired outcomes are durable and
     immediately readable. Safe to call after a repair pass."""
-    try:
+    with contextlib.suppress(Exception):
         ledger.audit_repo._queue.join()
-    except Exception:
-        pass

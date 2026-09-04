@@ -17,6 +17,7 @@ Portability rules enforced by this boundary:
 
 from __future__ import annotations
 
+import contextlib
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
@@ -204,13 +205,9 @@ class _DriverTransaction:
             if exc_type is None:
                 self._driver.commit(self._conn)
             else:
-                try:
+                with contextlib.suppress(Exception):
                     self._conn.rollback()
-                except Exception:
-                    pass
         finally:
             if self._owns:
-                try:
+                with contextlib.suppress(Exception):
                     self._conn.close()
-                except Exception:
-                    pass

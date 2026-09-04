@@ -32,6 +32,7 @@ Separation from the basic worker:
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -137,17 +138,13 @@ def _resolve_settings_service(engine: Any | None, settings_service: Any | None) 
     if engine is not None:
         candidates.append(engine)
         for attr in ("live_engine", "engine", "app_engine"):
-            try:
+            with contextlib.suppress(Exception):
                 nxt = getattr(engine, attr, None)
                 if nxt is not None:
                     candidates.append(nxt)
-            except Exception:
-                pass
         # global fallback: if this is a NewsEngine attached to a LiveEngine, follow .live_engine
-        try:
+        with contextlib.suppress(Exception):
             from nexus_scalp.settings import load_settings_service as _lss  # noqa
-        except Exception:
-            pass
     for obj in candidates:
         try:
             svc = getattr(obj, "settings_service", None)
@@ -377,7 +374,7 @@ def run_pro_auto_analysis_for_article(
         return {"ok": False, "error": "ARTICLE_NOT_FOUND", "via": "error"}
 
     # Idempotent: tombstoned hash never re-analyzed unless force=True
-    try:
+    with contextlib.suppress(Exception):
         ah0 = str(row.get("article_hash") or "")
         if not force and ah0 and db.is_analyzed_hash(ah0):
             _console_push(
@@ -389,8 +386,6 @@ def run_pro_auto_analysis_for_article(
                 }
             )
             return {"ok": True, "via": "cached", "article_id": article_id, "status": "skipped"}
-    except Exception:
-        pass
     # Dedup: reuse valid prior AI analysis unless forced
     if not force:
         prior = db.get_ai_analysis(article_id)
@@ -576,7 +571,7 @@ def run_pro_auto_analysis_for_article(
     # the article immediately so the DB never accumulates Venmo/Costco noise.
     # This complements the gold-first queue and the tombstone blocklist.
     if llm_json is not None and bool(llm_json.get("is_junk")):
-        try:
+        with contextlib.suppress(Exception):
             _is_junk_llm = True
             _junk_reason = str(llm_json.get("junk_reason") or "LLM_JUNK")[:200] or "LLM_JUNK"
             # Conservative gate: require deterministic also-low so gold is never dropped on LLM false-positive
@@ -676,8 +671,6 @@ def run_pro_auto_analysis_for_article(
                     )
                 except Exception:
                     pass
-        except Exception:
-            pass
 
     # Deterministic analysis persistence — always accurate variables
     # Prefer the real pipeline (entities/topics/impacts/consensus)
@@ -748,17 +741,15 @@ def run_pro_cycle(
     # naturally drains last (then auto-prunes to IRRELEVANT).
     raw_pending: list[dict[str, Any]] = []
     for art in articles:
-        try:
+        with contextlib.suppress(Exception):
             ah_chk = str(art.get("article_hash") or "")
             if ah_chk and db.is_analyzed_hash(ah_chk):
                 continue
-        except Exception:
-            pass
         if db.get_analysis(art["article_id"]) is None:
             raw_pending.append(art)
         else:
             # Backfill tombstone so re-ingest stays suppressed even after retention
-            try:
+            with contextlib.suppress(Exception):
                 ah_b = str(art.get("article_hash") or "")
                 if ah_b:
                     ex0 = db.get_analysis(art["article_id"]) or {}
@@ -767,8 +758,6 @@ def run_pro_cycle(
                         title=str(art.get("title", "")),
                         analysis_id=str(ex0.get("analysis_id", "")),
                     )
-            except Exception:
-                pass
     pending = _ranked_pending(db, analyzer, raw_pending, limit)
     # Keep true total for the status card (ranked slice is bounded by limit)
     total_pending = len(raw_pending)
@@ -857,10 +846,8 @@ def run_pro_cycle(
     # without one WARNING line per article.
     flush_llm_empty_aggregate()
     _console_push({"kind": "cycle_done", **summary})
-    try:
+    with contextlib.suppress(Exception):
         db.load_worker_state()  # no-op, ensures db reachable
-    except Exception:
-        pass
     return summary
 
 
@@ -923,15 +910,13 @@ def purge_irrelevant(
         hashes: list[tuple[str, str]] = []
         if ids:
             for aid in ids:
-                try:
+                with contextlib.suppress(Exception):
                     row = conn.execute(
                         "SELECT article_hash, title FROM news_articles WHERE article_id = ?;",
                         (aid,),
                     ).fetchone()
                     if row:
                         hashes.append((str(row["article_hash"]), str(row["title"] or "")))
-                except Exception:
-                    pass
         deleted = 0
         for aid in ids:
             conn.execute("DELETE FROM news_articles WHERE article_id = ?;", (aid,))
@@ -944,7 +929,7 @@ def purge_irrelevant(
             deleted += 1
         # Tombstone purged hashes — future RSS polls with same article_hash are suppressed
         for ah, title in hashes:
-            try:
+            with contextlib.suppress(Exception):
                 conn.execute(
                     "INSERT OR IGNORE INTO news_junk_hashes (article_hash, title, reason, pruned_at) VALUES (?, ?, ?, ?);",
                     (
@@ -954,8 +939,6 @@ def purge_irrelevant(
                         __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat(),
                     ),
                 )
-            except Exception:
-                pass
         conn.commit()
 
     _console_push(

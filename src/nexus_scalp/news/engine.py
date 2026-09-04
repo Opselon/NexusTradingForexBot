@@ -7,6 +7,7 @@ no adapter, no order manager, no risk engine. It can never place a trade.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -209,7 +210,7 @@ class NewsEngine:
         if not art:
             return {"ok": False, "error": "ARTICLE_NOT_FOUND"}
         # Idempotent guard: already analyzed this story (hash tombstone OR existing row)
-        try:
+        with contextlib.suppress(Exception):
             ah = str(art.get("article_hash") or "")
             if not force and ah and self.db.is_analyzed_hash(ah):
                 return {
@@ -235,8 +236,6 @@ class NewsEngine:
                     "article_id": article_id,
                     "reason": "article already analyzed",
                 }
-        except Exception:
-            pass
         try:
             article = NewsArticle(
                 article_id=art["article_id"],

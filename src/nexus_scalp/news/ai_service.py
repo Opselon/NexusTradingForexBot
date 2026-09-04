@@ -34,6 +34,7 @@ POST /api/factory/llm-config).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -726,14 +727,12 @@ def auto_prune_irrelevant(
                 if changed:
                     result.marked_irrelevant += 1
                     # Tombstone: next RSS poll with same article_hash stays suppressed
-                    try:
+                    with contextlib.suppress(Exception):
                         ah = str(art.get("article_hash") or "")
                         if ah:
                             db.remember_junk_hash(
                                 ah, title=str(art.get("title", "")), reason=reason
                             )
-                    except Exception:
-                        pass
                 else:
                     result.preserved += 1
             else:
@@ -763,20 +762,16 @@ def _xauusd_relevance_for_row(
     relevance when the article was analyzed; fall back to recomputing from the
     local analyzer (never invents values).
     """
-    try:
+    with contextlib.suppress(Exception):
         analysis = db.get_analysis(art["article_id"])
         if analysis and analysis.get("relevance_to_xauusd") is not None:
             return float(analysis.get("relevance_to_xauusd") or 0.0)
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         if analyzer is not None:
             art_model = _parse_article_row(art)
             ents = analyzer.extract_entities(art_model)
             tops = analyzer.classify_topics(art_model, ents)
             return analyzer.xauusd_relevance(art_model, ents, tops)
-    except Exception:
-        pass
     return 0.0
 
 
@@ -808,14 +803,12 @@ def restore_article(
         operation="RESTORE",
     )
     if changed:
-        try:
+        with contextlib.suppress(Exception):
             ah = str(row.get("article_hash") or "")
             if ah:
                 with db._connect() as _c:
                     _c.execute("DELETE FROM news_junk_hashes WHERE article_hash = ?;", (ah,))
                     _c.commit()
-        except Exception:
-            pass
     return {"ok": True, "changed": changed, "article_id": article_id, "status": "ACTIVE"}
 
 

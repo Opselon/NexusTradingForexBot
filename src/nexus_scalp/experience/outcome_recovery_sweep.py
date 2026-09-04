@@ -38,6 +38,7 @@ Safety properties:
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -325,10 +326,8 @@ class HistoricalOutcomeRecoverySweep:
         finally:
             conn.close()
         if not dry_run:
-            try:
+            with contextlib.suppress(Exception):
                 self.repo._queue.join()
-            except Exception:
-                pass
         logger.info(
             "[OUTCOME_RECOVERY_SWEEP] event=DONE",
             scanned=result.scanned,

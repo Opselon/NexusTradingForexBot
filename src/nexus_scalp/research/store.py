@@ -11,6 +11,7 @@ background queue; this module owns no write path.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from typing import Any
 
@@ -378,7 +379,7 @@ def research_health_summary(
 
         # 4. Worker telemetry.
         if registry is not None and hasattr(registry, "audit_repo"):
-            try:
+            with contextlib.suppress(Exception):
                 conn = sqlite3.connect(repo._db_path, timeout=5.0)
                 try:
                     row = conn.execute(
@@ -390,8 +391,6 @@ def research_health_summary(
                 if row is not None:
                     out["last_cycle_at"] = row[0] if len(row) > 1 else ""
                     out["last_error_worker"] = row[2] if len(row) > 2 else ""
-            except Exception:
-                pass
         return out
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] health summary failed", error=str(e))

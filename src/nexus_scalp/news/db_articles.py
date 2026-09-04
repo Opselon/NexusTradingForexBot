@@ -8,6 +8,7 @@ DO-NOT-PUT-HERE: analysis payloads (db_analysis), read/ops (db_queries).
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -40,7 +41,7 @@ class ArticlesMixin(_NewsDbCoreProto):
         with self._connect() as conn:
             n = 0
             for h in hashes:
-                try:
+                with contextlib.suppress(Exception):
                     conn.execute(
                         "INSERT OR IGNORE INTO news_junk_hashes (article_hash, title, reason, pruned_at, analysis_id) VALUES (?, ?, ?, ?, ?);",
                         (
@@ -52,8 +53,6 @@ class ArticlesMixin(_NewsDbCoreProto):
                         ),
                     )
                     n += 1
-                except Exception:
-                    pass
             return n
 
     def count_junk_hashes(self) -> int:
