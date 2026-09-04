@@ -252,6 +252,12 @@ def test_matrix_model_fields_match_snapshot(
     status, dim = resolve_field("model_input_dimension")
     status2, ident = resolve_field("model_identity")
     assert status == "RESOLVED" and status2 == "RESOLVED"
+    # tests/conftest.py autouse fixtures (BUG-223 isolation) point the
+    # implicit audit DB at a per-run temp file — and BOTH the subprocess
+    # payload and the in-process resolver inherit that env, so both see the
+    # same (typically empty) registry. available=True can only surface when
+    # that temp DB carries a champion row; the invariant under test is that
+    # BOTH contexts read the SAME truth, whatever it is.
     if registry.get("available"):
         assert dim == registry.get("feature_dimension")
         assert ident == str(registry.get("feature_schema_id"))
