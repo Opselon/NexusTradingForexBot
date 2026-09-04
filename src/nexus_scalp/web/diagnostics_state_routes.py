@@ -1584,7 +1584,8 @@ def register_diagnostics_state_routes(
             last_apply = svc.db.get_meta("runtime_config.last_apply_status") or "NEVER"
             last_error = svc.db.get_meta("runtime_config.last_apply_error") or ""
         except Exception as exc:
-            last_error = f"persistent store unreadable: {exc}"
+            logger.warning("persistent store unreadable", exc_info=exc)
+            last_error = "persistent store unreadable"
         yaml_path = Path("configs/live.yaml")
         return {
             "success": True,
