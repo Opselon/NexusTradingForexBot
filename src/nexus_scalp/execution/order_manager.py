@@ -827,6 +827,23 @@ class OrderLifecycleManager:
         sl = decision.stop_loss
         tp = decision.take_profit
 
+        # --- ENGINE-LEVEL DUPLICATE DISPATCH GUARD (EXEC-QUALITY) ---
+        # `execute_order` (hedge path) has had an idempotency guard via
+        # `_processed_orders` since inception, but the PRIMARY market/pending
+        # dispatch path never recorded its request_ids. A policy re-fire, a
+        # duplicated decision object, or an AI-reversal double-intercept could
+        # reach the broker twice under one request_id (silent order
+        # duplication, INV-005/006 surface). Every request_id that has been
+        # SENT to the broker once (filled or refused) is now terminal here.
+        dispatch_request_id = str(getattr(decision, "request_id", "") or "")
+        if dispatch_request_id and dispatch_request_id in self._processed_orders:
+            logger.warning(
+                "Duplicate dispatch blocked by idempotency check",
+                request_id=dispatch_request_id,
+                prior_result=self._processed_orders[dispatch_request_id],
+            )
+            return False
+
         # --- MAX EXPOSURE ENFORCEMENT (1 position OR 1 pending, engine-wide) ---
         if not self._is_exposure_available(symbol=symbol):
             positions, pendings = self.count_total_exposure(symbol=symbol)
@@ -931,6 +948,11 @@ class OrderLifecycleManager:
                     state=DecisionLifecycle.REJECTED_UNFILLED,
                     detail="broker refused market order at dispatch (ticket=0)",
                 )
+            # EXEC-QUALITY: record the request_id AFTER the broker call so a
+            # repeat of the same request (re-fire/replay) is refused by the
+            # duplicate-dispatch guard above regardless of fill outcome.
+            if dispatch_request_id:
+                self._processed_orders[dispatch_request_id] = ticket > 0
             return ticket > 0
 
         elif action in (
@@ -986,6 +1008,10 @@ class OrderLifecycleManager:
                     state=DecisionLifecycle.REJECTED_UNFILLED,
                     detail="broker rejected pending order at dispatch (ticket=0)",
                 )
+            # EXEC-QUALITY: same duplicate-dispatch bookkeeping as the market
+            # path — every sent request_id is terminal (filled or refused).
+            if dispatch_request_id:
+                self._processed_orders[dispatch_request_id] = ticket > 0
             return ticket > 0
 
         return False
