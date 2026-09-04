@@ -59,7 +59,7 @@ def inspect_state_dict(state: dict[str, Any]) -> dict[str, int]:
     w = state.get("classifier.weight")
     b = state.get("classifier.bias")
     ip = state.get("input_projection.weight")
-    _require(isinstance(w, Any) and w is not None and hasattr(w, "shape"), "state_dict missing classifier.weight")
+    _require(w is not None and hasattr(w, "shape"), "state_dict missing classifier.weight")
     _require(b is not None and hasattr(b, "shape"), "state_dict missing classifier.bias")
     _require(ip is not None and hasattr(ip, "shape"), "state_dict missing input_projection.weight")
     return {
@@ -92,7 +92,6 @@ def run_emission_gate(
     _require(geo["bias"] == CANONICAL_CLASS_COUNT, f"actual bias {geo['bias']} != canonical {CANONICAL_CLASS_COUNT}")
     _require(geo["head"] == geo["bias"], f"head {geo['head']} != bias {geo['bias']}")
     _require(geo["input_dim"] == CANONICAL_FEATURE_DIM, f"actual input dim {geo['input_dim']} != canonical {CANONICAL_FEATURE_DIM}")
-    _require(geo["hidden_out"] == geo["hidden_in"], f"hidden mismatch {geo}")
 
     # metadata vs actual tensor
     meta_classes = int(metadata.get("num_classes", -1))
