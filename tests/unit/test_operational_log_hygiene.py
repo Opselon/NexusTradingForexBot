@@ -122,34 +122,47 @@ class TestDatasetBuilderAggregation:
         yield ledger, builder, repo
         repo.close()
 
-    def test_repeated_builds_do_not_reflood_orphan_lines(self, ledger_and_builder, capsys):
+    def test_repeated_builds_do_not_reflood_orphan_lines(self, ledger_and_builder, caplog):  # type: ignore[no-untyped-def]
         """100 identical orphan classifications -> 1 per-row line (first) +
         1 batch summary per build; the batch summary carries count + ids."""
+        from nexus_scalp.observability.logging import configure_logging
         from tests.helpers.event_flood_fixtures import seed_unknown_orphans
 
         ledger, builder, repo = ledger_and_builder
         seed_unknown_orphans(ledger, count=100)
         repo._queue.join()
-        capsys.readouterr()
+        # Configure AFTER caplog has installed its LogCaptureHandler on root:
+        # configure_logging() used to root.handlers.clear() which evicted the
+        # handler (BUG-140). The fix in logging.py now preserves LogCaptureHandler
+        # but the hygiene fixture must still (re)bind after any prior configure.
+        configure_logging(log_level="INFO", json_format=False, log_to_file=False)
+        # caplog intercepts stdlib records at the LOGGER, not stdout, so it is
+        # immune to cross-test stdout handler rebinding (the BUG-140 probe
+        # proved capsys capturing fails when a prior test reconfigured the
+        # handler stream). Per-doc (capseen) log capture via caplog is the
+        # robust, pytest-idiomatic mechanism per PY-TESTING-INSTR §4.2.
+        caplog.set_level("INFO", logger="nexus_scalp.research.dataset")
+        caplog.clear()
 
         # first build: 1 per-row classification line + 1 batch summary
         builder.build()
-        out1 = capsys.readouterr().out
-        per_row_1 = out1.count("event=ORPHAN_CLASSIFIED_UNKNOWN\n") + out1.count(
-            "event=ORPHAN_CLASSIFIED_UNKNOWN "
-        )
-        summary_1 = out1.count("ORPHAN_CLASSIFIED_UNKNOWN_BATCH_SUMMARY")
-        assert per_row_1 == 1
-        assert summary_1 == 1
+        per_row_1_records = [r for r in caplog.records if "BATCH_SUMMARY" not in r.getMessage() and "ORPHAN_CLASSIFIED_UNKNOWN" in r.getMessage()]
+        summary_1_records = [r for r in caplog.records if "ORPHAN_CLASSIFIED_UNKNOWN_BATCH_SUMMARY" in r.getMessage()]
+        assert len(per_row_1_records) == 1
+        assert len(summary_1_records) == 1
+        out1 = "\n".join(r.getMessage() for r in caplog.records)
         assert "count=100" in out1
 
         # second build (same process): classify-once cache suppresses the
         # per-row line; the batch summary still reports the full count.
+        caplog.clear()
         builder.build()
-        out2 = capsys.readouterr().out
+        out2 = "\n".join(r.getMessage() for r in caplog.records)
         assert out2.count("ORPHAN_CLASSIFIED_UNKNOWN_BATCH_SUMMARY") == 1
         assert "count=100" in out2
-        assert "event=ORPHAN_CLASSIFIED_UNKNOWN\n" not in out2
+        assert "event=ORPHAN_CLASSIFIED_UNKNOWN" not in out2.replace(
+            "ORPHAN_CLASSIFIED_UNKNOWN_BATCH_SUMMARY", ""
+        )
 
 
 # =============================================================================
