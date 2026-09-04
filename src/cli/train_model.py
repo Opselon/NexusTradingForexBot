@@ -116,7 +116,11 @@ def train(
         Path, typer.Option(help="Base directory of raw tick parquet files.")
     ] = Path("data/raw"),
     model_output: Annotated[Path, typer.Option(help="Path to save trained weights.")] = Path(
-        "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+        # P0-2026-09-04: CLI default moved OFF the champion serving tree —
+        # a bare `train-model` run must never write the live bundle. The
+        # champion serving path stays reachable ONLY via an explicit
+        # --model-output (still gated by the champion guard).
+        "artifacts/model_generation/models/cli_train_model/model.pt"
     ),
     folds: Annotated[int, typer.Option(help="Number of Purged Walk-Forward rolling windows.")] = 34,
     epochs: Annotated[int, typer.Option(help="Epochs per Walk-Forward fold.")] = 10,
