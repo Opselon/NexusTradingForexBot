@@ -34,14 +34,56 @@ DEFAULT_CHANNEL = "stable"
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)([-+]?.*)?$")
 
 
+def _repo_root() -> Path | None:
+    """Best-effort repo root for git-anchored probes.
+
+    Uses the install root derived from ``__file__`` when it still carries a
+    ``.git`` directory (repo checkout) or is a child of one (installed
+    venv engine at <NexusHome>/engine). That makes ``nexus version`` CWD-
+    independent so it reports the same commit from *C:\\Users\\Capsizer* or
+    from *C:\\NexusTradingForexBot*. Returns ``None`` outside a git checkout
+    (packaged / truly non-git environments).
+    """
+    try:
+        # __file__ = <root>/src/nexus_scalp/release/metadata.py — so the
+        # install root is 4 levels up. Installed venv engines live as
+        # <NexusHome>/engine (a separate clone), not as parent of src/ in
+        # the installed tree — check both the derived root and CWD walk.
+        probe = Path(__file__).resolve().parent.parent.parent.parent
+        # direct: <root>/.git
+        if (probe / ".git").is_dir():
+            return probe
+        # installed venv engine case: probe is <NexusHome> (no .git), engine
+        # clone is at <NexusHome>/engine/.git — the install's source of truth
+        engine_probe = probe / "engine"
+        if (engine_probe / ".git").is_dir():
+            return engine_probe
+        # Editable or repo-Python: also try CWD-anchored walk as fallback
+        # (get_build_info_file already prefers CWD for non-frozen runs; this
+        # keeps the git probe consistent with the version source).
+        probe = Path.cwd()
+        for _ in range(6):
+            if (probe / ".git").is_dir():
+                return probe
+            if probe.parent == probe:
+                break
+            probe = probe.parent
+    except Exception:
+        pass
+    return None
+
+
 def _git_commit(rev: str = "HEAD") -> str | None:
     try:
+        root = _repo_root()
+        cwd = str(root) if root is not None else None
         out = subprocess.run(
             ["git", "rev-parse", "--short", rev],
             capture_output=True,
             text=True,
             timeout=3,
             check=False,
+            cwd=cwd,
         )
         sha = out.stdout.strip()
         return sha or None
@@ -51,22 +93,71 @@ def _git_commit(rev: str = "HEAD") -> str | None:
 
 def _git_dirty() -> bool:
     try:
+        root = _repo_root()
+        cwd = str(root) if root is not None else None
         out = subprocess.run(
             ["git", "status", "--porcelain"],
             capture_output=True,
             text=True,
             timeout=3,
             check=False,
+            cwd=cwd,
         )
         return bool(out.stdout.strip())
     except Exception:
         return False
 
 
+def _git_commit_timestamp_iso() -> str | None:
+    """Author date (%cI) of HEAD in the anchored repo — used to populate
+    ``build_timestamp`` on dev/source runs that have no CI build stamp.
+    Returns the ISO 8601 string (e.g. ``2026-09-04T06:30:33+03:30``) or
+    ``None`` outside a git checkout / on git failure.
+    """
+    try:
+        root = _repo_root()
+        cwd = str(root) if root is not None else None
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%cI"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+            cwd=cwd,
+        )
+        ts = out.stdout.strip()
+        return ts or None
+    except Exception:
+        return None
+
+
 def _read_pyproject_version() -> str | None:
     """Read the version from pyproject.toml (source checkout)."""
-    # Walk up from cwd to find pyproject.toml — works for source installs and
-    # for the repo checkout; packaged installs fall back to dist metadata.
+    # Prefer the install/repo root derived from __file__ (CWD-independent);
+    # fall back to a CWD-anchored walk so `nexus version` reports the same
+    # version from C:\\Users\\Capsizer and from inside the repo (and keeps the
+    # get_build_info_file CWD precedence contract for dev runs).
+    probe_root = Path(__file__).resolve().parent.parent.parent.parent
+    # installed venv engine case: src/ lives under <NexusHome>/engine/src,
+    # so probe_root above is <NexusHome> (no pyproject); engine checkout
+    # is at <NexusHome>/engine/pyproject.toml — check it first.
+    engine_root = probe_root / "engine"
+    if (engine_root / "pyproject.toml").exists():
+        try:
+            text = (engine_root / "pyproject.toml").read_text(encoding="utf-8")
+            m = re.search(r"^version\s*=\s*[\"']([^\"']+)[\"']", text, re.MULTILINE)
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+    if (probe_root / "pyproject.toml").exists():
+        try:
+            text = (probe_root / "pyproject.toml").read_text(encoding="utf-8")
+            m = re.search(r"^version\s*=\s*[\"']([^\"']+)[\"']", text, re.MULTILINE)
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
     root = Path.cwd()
     for _ in range(6):
         candidate = root / "pyproject.toml"
@@ -142,14 +233,14 @@ def get_build_info_file() -> Path | None:
                 [Path(meipass) / "build-info.json"] if meipass else []
             ),
             Path.cwd() / "build-info.json",
-            Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
+            Path(__file__).resolve().parent.parent.parent.parent / "build-info.json",
         ]
     else:
         candidates = [
             Path.cwd() / "build-info.json",
             exe_base / "build-info.json",
             exe_base / "_internal" / "build-info.json",
-            Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
+            Path(__file__).resolve().parent.parent.parent.parent / "build-info.json",
         ]
     seen: set[Path] = set()
     for c in candidates:
@@ -211,17 +302,26 @@ def get_version_info() -> dict[str, Any]:
     # leftover build-info.json stamped by a PREVIOUS release build must
     # never mask the live repository identity (version truth, BUG-092
     # family). Frozen bundles always report their own stamp.
+    # Stale is ONLY when the stamped build-info was found via the package-
+    # relative / CWD repo-root path (a leftover file on disk). An
+    # intentional tmp_path/build-info.json written by a test or a CI
+    # artifact that does NOT live at the repo root is NOT stale — it is the
+    # deployment's own stamp and must win (test_get_version_info_never_
+    # invents_commit_when_stamped writes its stamp to tmp_path).
+    stamped_file = get_build_info_file()
     stale_build_info = False
-    if not getattr(sys, "frozen", False) and info:
+    if not getattr(sys, "frozen", False) and info and stamped_file is not None:
         stamped = str(info.get("git_commit") or "").strip()
-        # Dev/source precedence: when the checkout HEAD is resolvable, the
-        # repository identity ALWAYS wins over a stamped build-info.json
-        # (a leftover release stamp must never mask the live repo -
-        # BUG-092 family, CHG-0043). Only a non-git environment keeps a
-        # stamp as the sole identity source.
-        head = _git_commit("HEAD") if stamped else None
-        if head:
-            stale_build_info = True
+        if stamped:
+            head = _git_commit("HEAD")
+            if head:
+                try:
+                    repo_root = _repo_root()
+                    stale_build_info = (
+                        repo_root is not None and stamped_file.resolve() == (repo_root / "build-info.json").resolve()
+                    )
+                except Exception:
+                    stale_build_info = False
     arch = info.get("architecture") or platform.machine()
     channel = info.get("channel") or DEFAULT_CHANNEL
     mode = info.get("build_mode") or "Release"
@@ -245,6 +345,26 @@ def get_version_info() -> dict[str, Any]:
     # stamp carries the key, so a stale stamp's cleanliness claim masked a
     # dirty repo (and vice versa).
     dirty_tree = _git_dirty() if stale_build_info else bool(info.get("dirty_tree", _git_dirty()))
+    # Build timestamp: prefer a CI-stamped build-info.json on frozen bundles
+    # (source-root stamps are ignored there). On dev/source runs where the
+    # stamp is stale-ignored, surface the commit's author date instead of
+    # UNKNOWN. Frozen bundles always keep their own stamp.
+    if stale_build_info:
+        ts = _git_commit_timestamp_iso()
+        build_timestamp: str | None = ts if ts else None
+    elif getattr(sys, "frozen", False):
+        build_timestamp = info.get("build_timestamp")
+    else:
+        # Pure dev/source run with no build-info at all (e.g. installed venv
+        # engine at <NexusHome>/engine with no bundle build-info.json):
+        # report the commit's author date rather than UNKNOWN. Non-git
+        # environments stay None (UNKNOWN) — never synthesize datetime.now().
+        raw_ts = info.get("build_timestamp")
+        if raw_ts:
+            build_timestamp = raw_ts  # type: ignore[assignment]
+        else:
+            ts = _git_commit_timestamp_iso()
+            build_timestamp = ts if ts else None
     return {
         "product": PRODUCT_NAME,
         "product_display": PRODUCT_DISPLAY,
@@ -253,11 +373,7 @@ def get_version_info() -> dict[str, Any]:
         "commit_source": commit_source,
         "commit_status": "RECORDED" if commit_value else "NOT_RECORDED",
         "dirty_tree": dirty_tree,
-        # CHG-0043: build_timestamp is a RECORDED identity fact. When no
-        # stamp exists (dev/source run) it stays None (NOT_RECORDED) - a
-        # synthesized datetime.now() is fabrication AND it breaks manifest
-        # idempotency (two calls -> two different timestamps).
-        "build_timestamp": (None if stale_build_info else info.get("build_timestamp")),
+        "build_timestamp": build_timestamp,
         "platform": info.get("platform") or sys_platform(),
         "architecture": arch,
         "python": info.get("python") or platform.python_version(),

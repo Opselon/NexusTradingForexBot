@@ -146,8 +146,15 @@ class TestDatasetBuilderAggregation:
 
         # first build: 1 per-row classification line + 1 batch summary
         builder.build()
-        per_row_1_records = [r for r in caplog.records if "BATCH_SUMMARY" not in r.getMessage() and "ORPHAN_CLASSIFIED_UNKNOWN" in r.getMessage()]
-        summary_1_records = [r for r in caplog.records if "ORPHAN_CLASSIFIED_UNKNOWN_BATCH_SUMMARY" in r.getMessage()]
+        per_row_1_records = [
+            r
+            for r in caplog.records
+            if "BATCH_SUMMARY" not in r.getMessage()
+            and "ORPHAN_CLASSIFIED_UNKNOWN" in r.getMessage()
+        ]
+        summary_1_records = [
+            r for r in caplog.records if "ORPHAN_CLASSIFIED_UNKNOWN_BATCH_SUMMARY" in r.getMessage()
+        ]
         assert len(per_row_1_records) == 1
         assert len(summary_1_records) == 1
         out1 = "\n".join(r.getMessage() for r in caplog.records)

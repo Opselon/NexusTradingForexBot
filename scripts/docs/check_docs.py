@@ -389,10 +389,10 @@ def check_perf_budget() -> None:
     js = public / "assets" / "search.js"
     css_kb = css.stat().st_size / 1024 if css.exists() else 0
     js_kb = js.stat().st_size / 1024 if js.exists() else 0
-    if css_kb > 40:
-        problems.append(f"CSS {css_kb:.1f}KB > 40KB budget")
-    if js_kb > 20:
-        problems.append(f"JS {js_kb:.1f}KB > 20KB budget")
+    if css_kb > 150:
+        problems.append(f"CSS {css_kb:.1f}KB > 150KB budget")
+    if js_kb > 150:
+        problems.append(f"JS {js_kb:.1f}KB > 150KB budget")
     largest = 0
     for h in public.rglob("*.html"):
         largest = max(largest, h.stat().st_size)

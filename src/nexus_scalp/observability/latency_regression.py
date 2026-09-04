@@ -133,9 +133,7 @@ class LatencyRegressionDetector:
             "regressed": self.regressed,
             "regression_epochs_total": self.regression_epochs_total,
             "worst_p95_e2e_ms": round(self.worst_p95_e2e_ms, 3),
-            "budget_p95_ms": round(
-                latency_warning_threshold_ms() * _REGRESSION_FRACTION, 3
-            ),
+            "budget_p95_ms": round(latency_warning_threshold_ms() * _REGRESSION_FRACTION, 3),
             "min_samples_for_verdict": _MIN_SAMPLES,
             "verdict_ready": self.total_observed >= _MIN_SAMPLES,
         }
