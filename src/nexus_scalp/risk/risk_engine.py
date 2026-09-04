@@ -481,6 +481,11 @@ class RiskEngine:
         # ----------------------------------------------------------------------
         # 6. ALMGREN-CHRISS MARKET IMPACT & SLIPPAGE GUARD (Order-Type Aware)
         # ----------------------------------------------------------------------
+        # BUG-239: the slippage variable must exist even when the impact loop
+        # never runs (final_volume already below the broker minimum), otherwise
+        # the success log below raises UnboundLocalError instead of safely
+        # rejecting the proposal.
+        slippage_usd = 0.0
         step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
         tick_val = symbol_info.tick_value if symbol_info.tick_value > 0 else 1.0
         while final_volume >= symbol_info.volume_min:
@@ -498,11 +503,34 @@ class RiskEngine:
             final_volume = self._floor_to_step(final_volume - step, step)
 
         if final_volume < symbol_info.volume_min:
-            if account.equity < 50.0:
+            if account.equity < 50.0 and final_volume > 0.0:
+                # BUG-239: the micro exception may only RESCUE a volume that was
+                # reduced by the impact model. A volume zeroed by the margin /
+                # exposure checks above must stay zero: re-applying the broker
+                # minimum here would dispatch an order the free-margin guard
+                # already refused. Re-verify the margin rescue keeps it legal.
+                rescue_margin = (contract_size * proposal.proposed_entry * symbol_info.volume_min) / leverage
+                if rescue_margin > account.margin_free:
+                    logger.warning(
+                        "MICRO_ACCOUNT_MARGIN_REJECTED: Proposal aborted (broker minimum not affordable)",
+                        symbol=proposal.symbol,
+                        required_margin=round(rescue_margin, 2),
+                        free_margin=round(account.margin_free, 2),
+                    )
+                    return None
                 final_volume = symbol_info.volume_min
                 logger.info(
                     "Micro-account exception: bypassing market impact reduction to allow broker minimum lot."
                 )
+            elif account.equity < 50.0 and final_volume <= 0.0:
+                # Margin/exposure checks zeroed the volume: the micro exception
+                # must not resurrect it (BUG-239 fail-closed).
+                logger.warning(
+                    "MICRO_ACCOUNT_ZERO_VOLUME_REJECTED: Proposal aborted",
+                    symbol=proposal.symbol,
+                    reason="volume zeroed by margin/exposure guard before impact gate",
+                )
+                return None
             else:
                 logger.warning(
                     "EXCESSIVE_MARKET_IMPACT_REJECTED: Proposal aborted",
