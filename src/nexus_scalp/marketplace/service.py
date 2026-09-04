@@ -13,6 +13,7 @@ automatic and never reaches live execution in this pass (ARCH_SPEC §6).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -496,10 +497,8 @@ class MarketplaceService:
             "compatibility_contract",
             "dsl",
         ):
-            try:
+            with contextlib.suppress(Exception):
                 rec[key] = json.loads(rec.get(key) or "{}") if rec.get(key) else rec.get(key)  # type: ignore[operator]
-            except Exception:
-                pass
         rec["lifecycle_events"] = [dict(r) for r in events]
         rec["enablement"] = [dict(r) for r in enable]
         rec["recent_scores"] = [dict(r) for r in scores]
@@ -558,22 +557,18 @@ class MarketplaceService:
         # mark RESEARCH_PENDING -> RESEARCH_RUNNING transition when pending
         cur = self._current_lifecycle(seed_id)
         if cur is not None and cur == MarketplaceLifecycle.INSTALLED:
-            try:
+            with contextlib.suppress(Exception):
                 self.transition_lifecycle(
                     seed_id, MarketplaceLifecycle.RESEARCH_PENDING, reason="run_research queued"
                 )
-            except Exception:
-                pass
         if cur is not None and cur in (
             MarketplaceLifecycle.RESEARCH_PENDING,
             MarketplaceLifecycle.INSTALLED,
         ):
-            try:
+            with contextlib.suppress(Exception):
                 self.transition_lifecycle(
                     seed_id, MarketplaceLifecycle.RESEARCH_RUNNING, reason="run_research started"
                 )
-            except Exception:
-                pass
         # attempt a real evaluation when a dataset is available (factory mirror).
         # callers may supply a dataset; otherwise attempt ledger-derived dataset.
         # keeping this honest: without an OOS/robustness-evaluable dataset, the
@@ -603,8 +598,6 @@ class MarketplaceService:
             )
             return {"seed_id": seed_id, "error": "scoring unavailable"}
         # Honest stub evidence: no real ResearchDataset => INCONCLUSIVE factors
-        import contextlib
-
         # emit one 14-factor evaluation (snapshot appended)
         bt = None
         real_ds = dataset
@@ -647,10 +640,8 @@ class MarketplaceService:
                 )
                 self.store.driver.commit(conn)
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     conn.rollback()
-                except Exception:
-                    pass
             finally:
                 conn.close()
         # map scoring verdict into lifecycle
@@ -688,10 +679,8 @@ class MarketplaceService:
                     )
                     self.store.driver.commit(conn2)
                 except Exception:
-                    try:
+                    with contextlib.suppress(Exception):
                         conn2.rollback()
-                    except Exception:
-                        pass
                 finally:
                     conn2.close()
             else:
