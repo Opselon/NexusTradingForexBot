@@ -1177,6 +1177,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             model_meta["latency_breakdown"] = getattr(
                                 engine, "_last_latency_breakdown", None
                             )
+                            # OBS-PERF-RESILIENCE: rolling p95 + regression state.
+                            _lat_det = getattr(engine, "_latency_regression", None)
+                            if _lat_det is not None:
+                                try:
+                                    model_meta["latency_rolling"] = _lat_det.summary()
+                                except Exception:
+                                    model_meta["latency_rolling"] = None
                             model_meta["model_forward_ms"] = getattr(
                                 engine, "_last_model_forward_ms", None
                             )
