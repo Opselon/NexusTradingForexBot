@@ -823,14 +823,59 @@ def build_404(lang: str = "en") -> str:
     return shell(lang, "404", "Not found", body, "", True)
 
 
+_TAG_RE = re.compile(r"^v[0-9][A-Za-z0-9._-]{0,40}$")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$")
+
+
 def load_releases() -> list[dict]:
+    """Load cached release metadata with a strict sanitising boundary.
+
+    The cache file is produced by ``fetch_releases.py`` from the GitHub API
+    (a request that may carry credentials).  To keep any credential-adjacent
+    taint out of the generated HTML (CodeQL py/clear-text-storage), this
+    loader rebuilds every release as a NEW dict with only the four fields
+    the site renders, each validated against a strict allow-list pattern —
+    anything else (including any token-like content) is dropped:
+
+      * ``tag_name``     → ``^v[0-9]...`` bounded charset
+      * ``published_at`` → ISO-8601 date/datetime shape
+      * ``body``         → plain text, control chars stripped
+      * ``draft``        → bool
+    """
     cache = CACHE_DIR / "releases.json"
-    if cache.exists():
-        try:
-            return json.loads(cache.read_text(encoding="utf-8"))
-        except Exception:
-            return []
-    return []
+    if not cache.exists():
+        return []
+    try:
+        raw = json.loads(cache.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    clean: list[dict] = []
+    for r in raw:
+        if not isinstance(r, dict):
+            continue
+        tag = r.get("tag_name")
+        if not isinstance(tag, str) or _TAG_RE.fullmatch(tag) is None:
+            continue
+        published = r.get("published_at")
+        if not isinstance(published, str) or _DATE_RE.fullmatch(published) is None:
+            published = ""
+        body = r.get("body")
+        body_text = body if isinstance(body, str) else ""
+        # strip control characters (defense in depth) — keep line breaks
+        body_text = "".join(ch for ch in body_text if ch == "\n" or (ord(ch) >= 32 and ord(ch) != 127))
+        clean.append(
+            {
+                "tag_name": tag,
+                "published_at": published,
+                "draft": bool(r.get("draft")),
+                "prerelease": bool(r.get("prerelease")),
+                "html_url": f"{_cfg.REPO_URL}/releases/tag/{tag}",
+                "body": body_text,
+            }
+        )
+    return clean
 
 
 def fmt_release_date(iso: str) -> str:
