@@ -32,7 +32,7 @@ import torch
 from nexus_scalp.training import emission_gate as eg
 from nexus_scalp.training.champion_guard import ChampionPathError, assert_not_champion_path
 
-torch = pytest.importorskip("torch")
+pytest.importorskip("torch")
 
 
 def _state(head: int, dim: int = 70) -> dict[str, torch.Tensor]:

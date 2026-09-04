@@ -98,26 +98,13 @@ class _SwapProbe:
 def _prepare_engine(
     tmp_path: Path,
     serving: Path,
-    *,
-    approved_roots: tuple[str, ...] | None = None,
 ) -> object:
-    """Build the swap probe with a monkeypatched approved-root set.
+    """Build the swap probe (approved roots come from the autouse fixture).
 
     The real champion_guard resolves roots relative to the repository; tests
     run in tmp_path, so the guard's repo-root helper is redirected to
     tmp_path with an equivalent artifacts/ layout (same enforcement logic,
     isolated filesystem)."""
-    import nexus_scalp.training.champion_guard as cg
-
-    roots = approved_roots or ("artifacts/models", "artifacts/model_generation")
-
-    orig_repo_root = cg.repo_root
-
-    def _tmp_repo_root() -> Path:
-        return tmp_path
-
-    cg.repo_root = _tmp_repo_root
-    # restore after this engine's checks ran (hot_swap resolves eagerly)
     obj = _SwapProbe()
 
     class _Cfg:
@@ -127,32 +114,20 @@ def _prepare_engine(
     obj.config = _Cfg()
     obj._expected_num_features_for_artifact = lambda p: 70
 
-    def _restore(_m=None, _f=None):
-        cg.repo_root = orig_repo_root
-        return (_ for _ in ()).throw(AssertionError("governance must reject before bundle load"))
+    def _reject_before_bundle_load(_m=None, _f=None):
+        raise AssertionError("governance must reject before bundle load")
 
-    obj._load_or_create_bundle = _restore
+    obj._load_or_create_bundle = _reject_before_bundle_load
     return obj
 
 
-def _restore_roots() -> None:
-    import nexus_scalp.training.champion_guard as cg
-
-    cg.repo_root = _ORIG_REPO_ROOT
-
-
-_ORIG_REPO_ROOT = None
-
-
 @pytest.fixture(autouse=True)
-def _guard_roots(tmp_path: Path):
-    global _ORIG_REPO_ROOT
+def _guard_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import nexus_scalp.training.champion_guard as cg
 
-    _ORIG_REPO_ROOT = cg.repo_root
-    cg.repo_root = lambda: tmp_path
+    monkeypatch.setattr(cg, "repo_root", lambda: tmp_path)
     yield
-    cg.repo_root = _ORIG_REPO_ROOT
+    # monkeypatch restores automatically
 
 
 @pytest.mark.asyncio
@@ -167,7 +142,6 @@ async def test_hot_swap_rejects_path_outside_artifact_root(tmp_path: Path) -> No
     assert result["success"] is False
     assert result["reason"] == "PATH_REJECTED"
     assert result.get("runtime_applied") is False
-    _restore_roots()
 
 
 @pytest.mark.asyncio
@@ -180,7 +154,6 @@ async def test_hot_swap_rejects_traversal_path(tmp_path: Path) -> None:
     assert result["success"] is False
     assert result["reason"] in ("PATH_REJECTED", "ARTIFACT_MISSING")
     assert result.get("runtime_applied") is False
-    _restore_roots()
 
 
 @pytest.mark.asyncio
@@ -196,7 +169,6 @@ async def test_hot_swap_rejects_hash_mismatch_bundle(tmp_path: Path) -> None:
     result = await eng.hot_swap_model(str(artifact))
     assert result["success"] is False
     assert result["reason"] == "BUNDLE_HASH_MISMATCH"
-    _restore_roots()
 
 
 @pytest.mark.asyncio
@@ -210,7 +182,6 @@ async def test_hot_swap_rejects_non_eligible_candidate(tmp_path: Path) -> None:
     result = await eng.hot_swap_model(str(artifact))
     assert result["success"] is False
     assert result["reason"] == "CANDIDATE_NOT_PRODUCTION_ELIGIBLE"
-    _restore_roots()
 
 
 @pytest.mark.asyncio
@@ -239,8 +210,7 @@ async def test_hot_swap_accepts_valid_candidate(tmp_path: Path) -> None:
                 return x
 
     def _fake_load(model_path, force_fresh):
-        _restore_roots()
-        return _FakeBundle()
+            return _FakeBundle()
 
     eng._load_or_create_bundle = _fake_load
 
@@ -257,6 +227,5 @@ async def test_hot_swap_accepts_valid_candidate(tmp_path: Path) -> None:
     eng._rebind_trainer_to_bundle = lambda: None
     eng._register_active_model = lambda model_path, replaced: None
     result = await eng.hot_swap_model(str(artifact))
-    _restore_roots()
     assert result["success"] is True, result
     assert result["runtime_applied"] is True
