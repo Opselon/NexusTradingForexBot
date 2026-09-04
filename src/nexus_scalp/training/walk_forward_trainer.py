@@ -328,6 +328,95 @@ class WalkForwardTrainer:
             return classify_source(label_origin=str(df["source_classification"][0]))
         return classify_source()
 
+    def bind_dataset_provenance_for_frame(
+        self,
+        df: pl.DataFrame | None,
+        *,
+        dataset_id: str | None = None,
+        dataset_sha256: str | None = None,
+        feature_schema_hash: str | None = None,
+        label_schema_id: str | None = None,
+    ) -> None:
+        """AGENT-3 LEARNFIX-1: resolve + bind dataset provenance for an about-
+        to-be-trained frame when the caller did not bind one explicitly.
+
+        Precedence:
+          1. explicit dataset_id/sha arguments (caller-declared)
+          2. ``dataset_id``/``dataset_sha256`` columns on the frame
+          3. ``label_origin``/``source_classification`` == CLEAN_HISTORICAL
+             on the frame -> the canonical single-dataset manifest is bound
+             (P0-2026-09-04 residual: train_and_validate could never emit a
+             bundle because provenance was only reachable via the private
+             bind path; the documented canonical producer and the CLI both
+             trained through train_and_validate without any binding, so the
+             emission gate aborted AFTER all folds + final training finished
+             and every artifact (fold diagnostics included) was discarded).
+        When no identity can be resolved HONESTLY, nothing is bound and the
+        run stays unbound (smoke quarantine or emission-gate rejection —
+        provenance is never fabricated).
+        """
+        if getattr(self, "_dataset_provenance", None):
+            return  # already bound explicitly — never rebind
+
+        origin = self._resolve_label_origin(df)
+        resolved_id = dataset_id
+        resolved_sha = dataset_sha256
+        resolved_schema_hash = feature_schema_hash
+        resolved_label_schema = label_schema_id
+        if df is not None and not df.is_empty():
+            if resolved_id is None and "dataset_id" in df.columns:
+                resolved_id = str(df["dataset_id"][0]) or None
+            if resolved_sha is None and "dataset_sha256" in df.columns:
+                resolved_sha = str(df["dataset_sha256"][0]) or None
+        if (
+            resolved_id is None
+            and str(origin) == "CLEAN_HISTORICAL"
+            and df is not None
+            and not df.is_empty()
+        ):
+            try:
+                from nexus_scalp.model_generation.artifact_store import ArtifactStore
+
+                store = ArtifactStore()
+                manifests: list[tuple[str, dict[str, Any]]] = []
+                for d_dir in sorted(store.datasets_dir.glob("ds_*")):
+                    if not d_dir.is_dir():
+                        continue
+                    man = store.read_dataset_manifest(d_dir.name) or {}
+                    if not man.get("dataset_hash"):
+                        continue
+                    if str(man.get("label_origin")) == "CLEAN_HISTORICAL":
+                        manifests.append((d_dir.name, man))
+                if len(manifests) == 1:
+                    d_id, man = manifests[0]
+                    sha = man.get("dataset_hash")
+                    if d_id and sha:
+                        resolved_id = d_id
+                        resolved_sha = str(sha)
+                        resolved_schema_hash = resolved_schema_hash or (
+                            man.get("feature_schema_hash") or None
+                        )
+                        resolved_label_schema = resolved_label_schema or (
+                            man.get("label_schema_id") or None
+                        )
+                        logger.info(
+                            "LEARNFIX-1 dataset provenance auto-bound (CLEAN_HISTORICAL)",
+                            dataset_id=d_id,
+                            dataset_sha256=str(sha)[:12],
+                        )
+            except Exception as bind_err:  # isolated: binding is best-effort
+                logger.warning(
+                    "LEARNFIX-1 dataset provenance binding failed (isolated)",
+                    error=str(bind_err),
+                )
+        if resolved_id and resolved_sha:
+            self.declare_dataset_provenance(
+                resolved_id,
+                resolved_sha,
+                feature_schema_hash=resolved_schema_hash,
+                label_schema_id=resolved_label_schema,
+            )
+
     def _assert_lineage_eligible(self, df: pl.DataFrame | None, context: str) -> LabelOrigin:
         """Hard guard before any training work: tainted label lineage (PAPER/
         LIVE/UNKNOWN) raises LineageGovernanceError unless the operator
@@ -365,6 +454,14 @@ class WalkForwardTrainer:
         # provenance (PAPER/LIVE/UNKNOWN) without governance_override=True
         # raises LineageGovernanceError — never half-trains, never persists.
         lineage_origin = self._assert_lineage_eligible(df, "train_and_validate")
+        # AGENT-3 LEARNFIX-1: bind dataset provenance BEFORE any training
+        # work so the final bundle publication can actually pass the
+        # emission gate. Previously provenance was only reachable via the
+        # private declare/bind path that NO production caller used, so
+        # every train_and_validate run (incl. the documented canonical
+        # producer and the CLI) completed ALL folds + final training and
+        # then discarded everything at publish ("dataset_id missing").
+        self.bind_dataset_provenance_for_frame(df)
         self._validate_training_frame(df, feature_cols)
         df_trainable = self._filter_trainable_rows(df)
         self._validate_training_frame(df_trainable, feature_cols)
