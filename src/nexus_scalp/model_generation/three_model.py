@@ -36,7 +36,6 @@ import polars as pl
 
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.model_generation.benchmark import BenchmarkRunner
-from nexus_scalp.model_generation.schema_v2 import compute_70d_frame
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
@@ -132,7 +131,9 @@ def build_feature_frame(
             "liquidity_status",
         ] + [f"feat_{i}" for i in range(50)]
         return full.select(cols)
-    return compute_70d_frame(bars_frame, min_bars=min_bars, news_frame=news_frame)
+    from nexus_scalp.model_generation.schema_v2_incremental import compute_70d_frame_fast
+
+    return compute_70d_frame_fast(bars_frame, news_frame=news_frame)
 
 
 def _label_frame(df: pl.DataFrame, labeler: TripleBarrierLabeler) -> pl.DataFrame:
