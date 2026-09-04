@@ -2405,7 +2405,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         if not engine:
             raise HTTPException(status_code=400, detail="Trading Engine offline.")
 
-        success = engine.adapter.modify_position(
+        # BUG-242 (INV-004): operator mutations route through the
+        # OrderLifecycleManager (audit row + evidence trail), never straight
+        # to the broker adapter.
+        om = getattr(engine, "order_manager", None)
+        if om is None:
+            raise HTTPException(status_code=400, detail="OrderManager unavailable.")
+        success = om.modify_position_manual(
             ticket=req.ticket, stop_loss=req.stop_loss, take_profit=req.take_profit
         )
         return {"success": success}
@@ -2417,7 +2423,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         if not engine:
             raise HTTPException(status_code=400, detail="Trading Engine offline.")
 
-        success = engine.adapter.close_position(ticket=req.ticket)
+        # BUG-242 (INV-004): same authority rule as modify - the manager owns
+        # every path that reaches the broker (audit + exit mechanism + cache
+        # release). The adapter is never called directly from the web layer.
+        om = getattr(engine, "order_manager", None)
+        if om is None:
+            raise HTTPException(status_code=400, detail="OrderManager unavailable.")
+        success = om.close_position_manual(ticket=req.ticket)
         return {"success": success}
 
     # Simulation: Inject simulated tick (EXPLICIT PAPER MODE ONLY)
