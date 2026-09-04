@@ -459,27 +459,30 @@ class LiveEngine:
             pass
 
     # ----------------------------
-    # FIX #1+#8: live temporal contract helpers
+    # FIX #1+#8: live temporal contract helpers — delegate to LiveSequenceService
     # ----------------------------
-    # (attribute declarations live here so __init__'s early
-    #  _rebind_live_temporal_contract() call sees them initialized)
     def _live_sequence_defaults(self) -> None:
-        self._live_sequence_buffer: deque[list[float]] = deque(maxlen=64)
-        self._live_sequence_seq_len: int = 32
-        self._live_sequence_max_gap_us: int = 10 * 60 * 1_000_000
-        self._live_last_bar_ts_us: int | None = None
-        self._live_sequence_gap_invalid: bool = False
+        from nexus_scalp.application.live_sequence import LiveSequenceService
+
+        st = LiveSequenceService.defaults()
+        self._live_sequence_buffer = st.buffer
+        self._live_sequence_seq_len = st.seq_len
+        self._live_sequence_max_gap_us = st.max_gap_us
+        self._live_last_bar_ts_us = st.last_bar_ts_us
+        self._live_sequence_gap_invalid = st.gap_invalid
 
     def _rebind_live_temporal_contract(self) -> None:
         if not hasattr(self, "_live_sequence_buffer"):
             self._live_sequence_defaults()
-        try:
-            from nexus_scalp.model_generation.temporal_contract import (
-                CANONICAL_MAX_GAP_US,
-                CANONICAL_SEQ_LEN,
-            )
-        except Exception:
-            return
+        from nexus_scalp.application.live_sequence import LiveSequenceService, LiveSequenceState
+
+        state = LiveSequenceState(
+            buffer=self._live_sequence_buffer,
+            seq_len=self._live_sequence_seq_len,
+            max_gap_us=self._live_sequence_max_gap_us,
+            last_bar_ts_us=self._live_last_bar_ts_us,
+            gap_invalid=self._live_sequence_gap_invalid,
+        )
         meta = None
         try:
             import json as _json
@@ -493,87 +496,60 @@ class LiveEngine:
                     meta = _json.loads(meta_p.read_text(encoding="utf-8"))
         except Exception:
             meta = None
-        seq_len = None
-        max_gap = None
-        if isinstance(meta, dict):
-            tc = meta.get("temporal_contract")
-            if isinstance(tc, dict):
-                v = tc.get("seq_len")
-                if isinstance(v, int) and v > 0:
-                    seq_len = int(v)
-                g = tc.get("max_gap_us")
-                if isinstance(g, int) and g >= 0:
-                    max_gap = int(g)
-            if seq_len is None:
-                v2 = meta.get("seq_len")
-                if isinstance(v2, int) and v2 > 0:
-                    seq_len = int(v2)
-            if max_gap is None:
-                g2 = meta.get("max_gap_us")
-                if isinstance(g2, int) and g2 >= 0:
-                    max_gap = int(g2)
-        if isinstance(seq_len, int) and seq_len >= 2:
-            self._live_sequence_seq_len = int(seq_len)
-            try:
-                from collections import deque as _dq
-
-                old = list(self._live_sequence_buffer)
-                self._live_sequence_buffer = _dq(old[-int(seq_len) :], maxlen=max(64, int(seq_len)))
-            except Exception:
-                pass
-        else:
-            self._live_sequence_seq_len = int(CANONICAL_SEQ_LEN)
-        self._live_sequence_max_gap_us = (
-            int(max_gap) if isinstance(max_gap, int) else int(CANONICAL_MAX_GAP_US)
-        )
+        LiveSequenceService.rebind_from_meta(state, meta)
+        self._live_sequence_buffer = state.buffer
+        self._live_sequence_seq_len = state.seq_len
+        self._live_sequence_max_gap_us = state.max_gap_us
+        self._live_last_bar_ts_us = state.last_bar_ts_us
+        self._live_sequence_gap_invalid = state.gap_invalid
 
     def _maybe_build_live_sequence_tensor(self, x_scaled_now, bar_ts=None):
-        try:
-            import torch as _torch
-        except Exception:
-            return None
-        try:
-            if bar_ts is not None:
-                ts_us = None
-                if hasattr(bar_ts, "timestamp"):
-                    ts_us = int(bar_ts.timestamp() * 1_000_000)
-                elif isinstance(bar_ts, int):
-                    ts_us = int(bar_ts)
-                if ts_us is not None:
-                    last = getattr(self, "_live_last_bar_ts_us", None)
-                    if last is not None and ts_us - int(last) > int(self._live_sequence_max_gap_us):
-                        self._live_sequence_gap_invalid = True
-                        self._live_sequence_buffer.clear()
-                    self._live_last_bar_ts_us = int(ts_us)
-        except Exception:
-            pass
-        if getattr(self, "_live_sequence_gap_invalid", False):
-            return None
-        if self._live_sequence_buffer is None:
-            return None
-        self._live_sequence_buffer.append([float(v) for v in x_scaled_now])
-        need = int(self._live_sequence_seq_len)
-        if len(self._live_sequence_buffer) < need:
-            return None
-        if len(x_scaled_now) != 70:
-            return None
-        try:
-            arr = _torch.tensor(list(self._live_sequence_buffer)[-need:], dtype=_torch.float32)
-            return arr.unsqueeze(0)
-        except Exception:
-            return None
+        from nexus_scalp.application.live_sequence import LiveSequenceService, LiveSequenceState
+
+        state = LiveSequenceState(
+            buffer=self._live_sequence_buffer,
+            seq_len=self._live_sequence_seq_len,
+            max_gap_us=self._live_sequence_max_gap_us,
+            last_bar_ts_us=self._live_last_bar_ts_us,
+            gap_invalid=self._live_sequence_gap_invalid,
+        )
+        result = LiveSequenceService.maybe_build_sequence_tensor(state, x_scaled_now, bar_ts)
+        self._live_sequence_buffer = state.buffer
+        self._live_sequence_seq_len = state.seq_len
+        self._live_sequence_max_gap_us = state.max_gap_us
+        self._live_last_bar_ts_us = state.last_bar_ts_us
+        self._live_sequence_gap_invalid = state.gap_invalid
+        return result
 
     def note_bar_gap(self, gap_us: int) -> None:
-        if int(gap_us) > int(self._live_sequence_max_gap_us):
-            self._live_sequence_gap_invalid = True
-            self._live_sequence_buffer.clear()
-        else:
-            self._live_sequence_gap_invalid = False
+        from nexus_scalp.application.live_sequence import LiveSequenceService, LiveSequenceState
+
+        state = LiveSequenceState(
+            buffer=self._live_sequence_buffer,
+            seq_len=self._live_sequence_seq_len,
+            max_gap_us=self._live_sequence_max_gap_us,
+            last_bar_ts_us=self._live_last_bar_ts_us,
+            gap_invalid=self._live_sequence_gap_invalid,
+        )
+        LiveSequenceService.note_bar_gap(state, gap_us)
+        self._live_sequence_buffer = state.buffer
+        self._live_last_bar_ts_us = state.last_bar_ts_us
+        self._live_sequence_gap_invalid = state.gap_invalid
 
     def reset_live_sequence(self) -> None:
-        self._live_sequence_buffer.clear()
-        self._live_sequence_gap_invalid = False
-        self._live_last_bar_ts_us = None
+        from nexus_scalp.application.live_sequence import LiveSequenceService, LiveSequenceState
+
+        state = LiveSequenceState(
+            buffer=self._live_sequence_buffer,
+            seq_len=self._live_sequence_seq_len,
+            max_gap_us=self._live_sequence_max_gap_us,
+            last_bar_ts_us=self._live_last_bar_ts_us,
+            gap_invalid=self._live_sequence_gap_invalid,
+        )
+        LiveSequenceService.reset(state)
+        self._live_sequence_buffer = state.buffer
+        self._live_last_bar_ts_us = state.last_bar_ts_us
+        self._live_sequence_gap_invalid = state.gap_invalid
 
     def __init__(
         self,
@@ -2503,52 +2479,34 @@ class LiveEngine:
     )
 
     def _kick_worker(self, name: str, fn) -> None:
-        """Fire fn() in a background thread without blocking the tick loop.
+        from nexus_scalp.application.live_workers import WorkerSupervisor
 
-        Uses an in-flight set to avoid duplicate concurrent executions of the
-        same worker (idempotent kick). Workers run via asyncio.to_thread and
-        detach immediately; errors are logged but never propagated.
-        """
-        if name in self._inflight_workers:
-            return  # previous cycle still running, skip duplicate kick
-        self._inflight_workers.add(name)
-
-        async def _run():
-            try:
-                await asyncio.wait_for(asyncio.to_thread(fn), timeout=self.WORKER_KICK_TIMEOUT_SEC)
-            except TimeoutError:
-                logger.error(
-                    "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s — detaching hung call",
-                    name,
-                    self.WORKER_KICK_TIMEOUT_SEC,
-                )
-            except Exception as wkr_err:
-                logger.warning("[WORKER_KICK] event=FAILED worker=%s error=%s", name, wkr_err)
-            finally:
-                self._inflight_workers.discard(name)
-
-        task = asyncio.create_task(_run())
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        WorkerSupervisor.kick_worker(
+            name,
+            fn,
+            self._inflight_workers,
+            self._background_tasks,
+            timeout_sec=self.WORKER_KICK_TIMEOUT_SEC,
+        )
 
     def _start_history_sync_worker(self) -> None:
-        """Starts the broker-history sync worker (idempotent, isolated)."""
-        if self._history_sync_started:
-            return
-        self._history_sync_started = True
-        try:
-            self.history_sync_worker.start()
-        except Exception as err:
-            logger.error("[ACCOUNT_HISTORY] event=SYNC_START status=FAILED", error=str(err))
-            self._history_sync_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "account_history_sync",
+            getattr(self, "history_sync_worker", None),
+            self._history_sync_started,
+            lambda v: setattr(self, "_history_sync_started", v),
+        )
 
     async def _stop_history_sync_worker(self) -> None:
-        """Stops the broker-history sync worker (idempotent)."""
-        self._history_sync_started = False
-        try:
-            self.history_sync_worker.stop()
-        except Exception as err:
-            logger.error("[ACCOUNT_HISTORY] event=SYNC_STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "account_history_sync",
+            getattr(self, "history_sync_worker", None),
+            lambda v: setattr(self, "_history_sync_started", v),
+        )
 
     async def _shutdown_async(self) -> None:
         # Stop the accounting worker first (derived refresh, not financial truth).
@@ -3053,66 +3011,56 @@ class LiveEngine:
         return is_ready
 
     def _start_accounting_worker(self) -> None:
-        """
-        Starts the accounting worker (idempotent).
+        from nexus_scalp.application.live_workers import WorkerSupervisor
 
-        The worker itself is a throttled synchronous refresher; it is kicked
-        periodically via `asyncio.to_thread` from the run loop. This method
-        only flips its state so the kick is enabled.
-        """
-        if self._accounting_worker_started:
-            return
-        self._accounting_worker_started = True
-        try:
-            self.accounting_worker.start()
-        except Exception as err:
-            # Isolation: worker startup must never block the engine.
-            logger.error("[ACCOUNTING_WORKER] event=START status=FAILED", error=str(err))
-            self._accounting_worker_started = False
+        WorkerSupervisor.start_worker(
+            "accounting_worker",
+            getattr(self, "accounting_worker", None),
+            self._accounting_worker_started,
+            lambda v: setattr(self, "_accounting_worker_started", v),
+        )
 
     async def _stop_accounting_worker(self) -> None:
-        """Stops the accounting worker (idempotent, never raises)."""
-        self._accounting_worker_started = False
-        try:
-            self.accounting_worker.stop()
-        except Exception as err:
-            logger.error("[ACCOUNTING_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "accounting_worker",
+            getattr(self, "accounting_worker", None),
+            lambda v: setattr(self, "_accounting_worker_started", v),
+        )
 
     # ---------------------------------------------------------------------
     # PHASE 09: INTELLIGENCE WORKER lifecycle
     # ---------------------------------------------------------------------
 
     def _start_intelligence_worker(self) -> None:
-        """Starts the background intelligence worker (idempotent)."""
-        if self._intelligence_worker_started:
-            return
-        self._intelligence_worker_started = True
-        try:
-            self.intelligence_worker.start()
-        except Exception as err:
-            # Isolation: worker startup must never block the engine.
-            logger.error("[INTELLIGENCE_WORKER] event=START status=FAILED", error=str(err))
-            self._intelligence_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "intelligence_worker",
+            getattr(self, "intelligence_worker", None),
+            self._intelligence_worker_started,
+            lambda v: setattr(self, "_intelligence_worker_started", v),
+        )
 
     async def _stop_intelligence_worker(self) -> None:
-        """Stops the intelligence worker (idempotent, never raises)."""
-        self._intelligence_worker_started = False
-        try:
-            self.intelligence_worker.stop()
-        except Exception as err:
-            logger.error("[INTELLIGENCE_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "intelligence_worker",
+            getattr(self, "intelligence_worker", None),
+            lambda v: setattr(self, "_intelligence_worker_started", v),
+        )
 
     def _start_research_worker(self) -> None:
-        """Starts the background strategy research worker (idempotent)."""
-        if self._research_worker_started:
-            return
-        self._research_worker_started = True
-        try:
-            self.research_worker.start()
-        except Exception as err:
-            # Isolation: research startup must never block the engine.
-            logger.error("[RESEARCH_WORKER] event=START status=FAILED", error=str(err))
-            self._research_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "research_worker",
+            getattr(self, "research_worker", None),
+            self._research_worker_started,
+            lambda v: setattr(self, "_research_worker_started", v),
+        )
 
     def _start_factory_worker(self) -> None:
         """Starts the autonomous strategy-factory worker (idempotent).
@@ -3133,43 +3081,42 @@ class LiveEngine:
             self._factory_worker_started = False
 
     def _start_training_worker(self) -> None:
-        """Starts the controlled training worker (idempotent)."""
-        if self._training_worker_started:
-            return
-        self._training_worker_started = True
-        try:
-            self.training_worker.start()
-        except Exception as err:
-            # Isolation: training startup must never block the engine.
-            logger.error("[TRAINING_WORKER] event=START status=FAILED", error=str(err))
-            self._training_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "training_worker",
+            getattr(self, "training_worker", None),
+            self._training_worker_started,
+            lambda v: setattr(self, "_training_worker_started", v),
+        )
 
     async def _stop_training_worker(self) -> None:
-        """Stops the controlled training worker (idempotent, never raises)."""
-        self._training_worker_started = False
-        try:
-            self.training_worker.stop()
-        except Exception as err:
-            logger.error("[TRAINING_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "training_worker",
+            getattr(self, "training_worker", None),
+            lambda v: setattr(self, "_training_worker_started", v),
+        )
 
     def _start_shadow_worker(self) -> None:
-        """Starts the shadow-aggregation worker (idempotent)."""
-        if self._shadow_worker_started:
-            return
-        self._shadow_worker_started = True
-        try:
-            self.shadow_worker.start()
-        except Exception as err:
-            logger.error("[SHADOW_WORKER] event=START status=FAILED", error=str(err))
-            self._shadow_worker_started = False
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        WorkerSupervisor.start_worker(
+            "shadow_worker",
+            getattr(self, "shadow_worker", None),
+            self._shadow_worker_started,
+            lambda v: setattr(self, "_shadow_worker_started", v),
+        )
 
     async def _stop_shadow_worker(self) -> None:
-        """Stops the shadow-aggregation worker (idempotent, never raises)."""
-        self._shadow_worker_started = False
-        try:
-            self.shadow_worker.stop()
-        except Exception as err:
-            logger.error("[SHADOW_WORKER] event=STOP status=FAILED", error=str(err))
+        from nexus_scalp.application.live_workers import WorkerSupervisor
+
+        await WorkerSupervisor.stop_worker(
+            "shadow_worker",
+            getattr(self, "shadow_worker", None),
+            lambda v: setattr(self, "_shadow_worker_started", v),
+        )
 
     def _start_news_worker(self) -> None:
         """Starts the news intelligence worker (idempotent, never raises).
@@ -5169,207 +5116,76 @@ class LiveEngine:
 
     # ==================================================================
     # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE-FRESHNESS TRUTH MODEL
-    # ------------------------------------------------------------------
-    # These methods make "PROCESS ALIVE" != "INTELLIGENCE ALIVE" explicit.
-    # compute_live_freshness() is pure read (no side effects, no trading
-    # impact). live_freshness_gate() is the ONLY place a decision is allowed
-    # to be downgraded to BLOCKED_BY_STALE for safety; it never relaxes or
-    # bypasses any existing risk guard.
+    # Delegates to LiveFreshnessService (Cluster 3 extraction).
     # ==================================================================
+
+    def _build_freshness_snapshot(self):  # type: ignore[no-untyped-def]
+        from nexus_scalp.application.live_freshness import LiveFreshnessSnapshot
+
+        return LiveFreshnessSnapshot(
+            freshness_max_age_sec=float(self._freshness_max_age_sec),
+            last_tick_timestamp=self._last_tick_timestamp,
+            last_feature_update=self.last_feature_update,
+            last_inference_timestamp=self.last_inference_timestamp,
+            last_decision_timestamp=self.last_decision_timestamp,
+            tick_sequence=self._tick_sequence,
+            feature_sequence=self._feature_sequence,
+            inference_sequence=self._inference_sequence,
+            decision_sequence=self._decision_sequence,
+            monotonic_tick_ms=self._monotonic_tick_ms,
+            last_raw_market_hash=self._last_raw_market_hash,
+            last_feature_hash=self._last_feature_hash,
+            last_model_input_hash=self._last_model_input_hash,
+            last_model_output_hash=self._last_model_output_hash,
+            market_updates_total=self._market_updates_total,
+            feature_builds_total=self._feature_builds_total,
+            inference_runs_total=self._inference_runs_total,
+            inference_failures_total=self._inference_failures_total,
+            decision_updates_total=self._decision_updates_total,
+            stale_state_detected_total=self._stale_state_detected_total,
+        )
 
     def _stage_freshness(
         self, stamp: datetime | None, max_age_sec: float
     ) -> tuple[str, float | None]:
-        """Return (state, age_ms) for one stage given its last-update stamp."""
-        if stamp is None:
-            return "UNKNOWN", None
-        age = (datetime.now(UTC) - stamp).total_seconds()
-        if age < 0:
-            age = 0.0
-        if age > max_age_sec:
-            return "STALE", round(age * 1000.0, 1)
-        return "FRESH", round(age * 1000.0, 1)
+        from nexus_scalp.application.live_freshness import LiveFreshnessService
+
+        return LiveFreshnessService.stage_freshness(stamp, max_age_sec)
 
     def compute_live_freshness(self) -> dict[str, Any]:
-        """Authoritative freshness of every pipeline stage (observational).
+        from nexus_scalp.application.live_freshness import LiveFreshnessService
 
-        Stages: market / features / inference / decision. Each is FRESH,
-        STALE, or UNKNOWN, independent of process uptime, state_version, or
-        HTTP 200. Carries monotonic sequence ids + change-detection hashes
-        so the coordinator proves exactly where state froze.
-        """
-        max_age = float(self._freshness_max_age_sec)
-        mkt_state, mkt_age = self._stage_freshness(self._last_tick_timestamp, max_age)
-        feat_state, feat_age = self._stage_freshness(self.last_feature_update, max_age)
-        inf_state, inf_age = self._stage_freshness(self.last_inference_timestamp, max_age)
-        dec_state, dec_age = self._stage_freshness(self.last_decision_timestamp, max_age)
-        # Overall health is the WORST of market/features/inference/decision.
-        # BUGFIX-G29: the MARKET stage is now included. A dead tick feed
-        # (market=STALE while is_connected() stays True) MUST surface as
-        # overall=STALE so live_freshness_gate() halts execution — process
-        # liveness (warmup READY / inference ENABLED / HTTP 200) is NOT proof
-        # of live market data. A frozen inference chain must also surface even
-        # though the process is up.
-        stage_states = [mkt_state, feat_state, inf_state, dec_state]
-        if "STALE" in stage_states:
-            overall = "STALE"
-            # BUGFIX-G29 (DevOps follow-up #1): the telemetry gauge must count
-            # EVERY live STALE epoch, not only the proposal/gate path. compute_live_freshness()
-            # is the authoritative observational call that runs on every /api/status
-            # poll; incrementing here guarantees stale_state_detected_total is accurate
-            # even when the decision gate is not reached (e.g. ticks freeze before a
-            # proposal is built). The gate still independently bumps on its own STALE hit.
+        snap = self._build_freshness_snapshot()
+        fresh = LiveFreshnessService().compute_freshness(snap)
+        if fresh.get("overall") == "STALE":
             self._stale_state_detected_total += 1
-        elif "UNKNOWN" in stage_states:
-            overall = "UNKNOWN"
-        else:
-            overall = "FRESH"
-        return {
-            "market": {"state": mkt_state, "age_ms": mkt_age},
-            "features": {"state": feat_state, "age_ms": feat_age},
-            "inference": {"state": inf_state, "age_ms": inf_age},
-            "decision": {"state": dec_state, "age_ms": dec_age},
-            "overall": overall,
-            "max_age_sec": max_age,
-            "sequences": {
-                "tick": self._tick_sequence,
-                "feature": self._feature_sequence,
-                "inference": self._inference_sequence,
-                "decision": self._decision_sequence,
-            },
-            "monotonic_tick_ms": self._monotonic_tick_ms,
-            "hashes": {
-                "raw_market": self._last_raw_market_hash,
-                "feature": self._last_feature_hash,
-                "model_input": self._last_model_input_hash,
-                "model_output": self._last_model_output_hash,
-            },
-            "telemetry": {
-                "market_updates_total": self._market_updates_total,
-                "feature_builds_total": self._feature_builds_total,
-                "inference_runs_total": self._inference_runs_total,
-                "inference_failures_total": self._inference_failures_total,
-                "decision_updates_total": self._decision_updates_total,
-                "stale_state_detected_total": self._stale_state_detected_total,
-            },
-        }
+            fresh["telemetry"]["stale_state_detected_total"] = self._stale_state_detected_total
+        return fresh
 
     def live_freshness_gate(self, proposal: Any) -> tuple[Any, bool]:
-        """Safety gate: downgrade a live proposal when inference is STALE.
+        from nexus_scalp.application.live_freshness import LiveFreshnessService
 
-        Returns (proposal, blocked). When the inference/feature chain is STALE
-        (frozen) the engine MUST NOT present a live BUY/SELL as if it were
-        current. It converts the action to NO_TRADE with a distinct reason
-        code BLOCKED_BY_STALE so the UI can separate "model predicted X but
-        guard blocked" from "no live intelligence". This NEVER weakens an
-        existing guard and NEVER fabricates confidence - it only blocks on
-        confirmed staleness. The last-known model probability is preserved in
-        the proposal for diagnosis but confidence is reported 0.0 so the UI
-        does not show a stale 22.1% as live.
-        """
         fresh = self.compute_live_freshness()
-        overall = fresh.get("overall")
-        if overall != "STALE":
+        if fresh.get("overall") != "STALE":
             return proposal, False
         self._stale_state_detected_total += 1
-        try:
-            return (
-                proposal.model_copy(
-                    update={
-                        "action": ActionType.NO_TRADE,
-                        "confidence": 0.0,
-                        "reason_code": "BLOCKED_BY_STALE",
-                    }
-                ),
-                True,
-            )
-        except Exception:
-            # Defensive: if proposal is not copyable, still block decision.
-            return proposal, True
+        out, blocked = LiveFreshnessService.gate_proposal(fresh, proposal)
+        return out, blocked
 
     def diagnose_freshness(self) -> dict[str, Any]:
-        """No-cache live-freshness diagnostic (observational only).
+        from nexus_scalp.application.live_freshness import LiveFreshnessService
 
-        Fetches FRESH market state, builds FRESH features, assembles the FRESH
-        70D tensor, runs FRESH inference, and compares hashes at every stage
-        to localize the freeze. Does NOT mutate the live proposal/order path
-        and does NOT bypass any production safety control.
-        """
-        import hashlib
-
-        result: dict[str, Any] = {
-            "frozen_at": None,
-            "stages": {},
-            "error": None,
-        }
-        try:
-            # 1) MARKET: pull a fresh tick straight from the adapter.
-            tick = self.adapter.get_tick(self.config.execution.symbol)
-            if tick is None:
-                result["frozen_at"] = "MARKET"
-                result["error"] = "adapter.get_tick returned None"
-                return result
-            completed_bars = self.aggregator.get_completed_bars()
-            fv = self.feature_engine.compute_from_bars(
-                completed_bars=completed_bars, current_tick=tick
-            )
-            mkt_hash = hashlib.sha1(
-                f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}".encode()
-            ).hexdigest()[:16]
-            feat_vals = list(getattr(fv, "to_tensor_input", lambda: [])())
-            feat_hash = hashlib.sha1(
-                ("|".join(f"{v:.6g}" for v in feat_vals)).encode()
-            ).hexdigest()[:16]
-            changed_market = mkt_hash != self._last_raw_market_hash
-            changed_feat = feat_hash != self._last_feature_hash
-            result["stages"]["MARKET"] = {
-                "changed": changed_market,
-                "hash": mkt_hash,
-            }
-            result["stages"]["FEATURES"] = {
-                "changed": changed_feat,
-                "hash": feat_hash,
-            }
-            if not changed_market:
-                result["frozen_at"] = "MARKET"
-                return result
-            if not changed_feat:
-                result["frozen_at"] = "FEATURES"
-                return result
-            # 2) MODEL INPUT: re-run real assembly + scaler.
-            x_vec, _ = self._build_live_feature_vector(fv)
-            with self._bundle_lock:
-                _b = self._bundle
-            if _b is None:
-                result["frozen_at"] = "MODEL_INPUT"
-                result["error"] = "bundle not initialized"
-                return result
-            x_scaled = _b.scaler.transform(np.array(x_vec, dtype=np.float32).reshape(1, -1))
-            model_input_hash = hashlib.sha1(x_scaled.tobytes()).hexdigest()[:16]
-            result["stages"]["MODEL_INPUT"] = {
-                "changed": model_input_hash != self._last_model_input_hash,
-                "hash": model_input_hash,
-            }
-            # 3) MODEL OUTPUT: fresh inference.
-            probs = self._run_inference_tensor(x_scaled)
-            probs_list = probs.cpu().numpy().flatten().tolist()
-            model_output_hash = hashlib.sha1(
-                ("|".join(f"{v:.8g}" for v in probs_list)).encode()
-            ).hexdigest()[:16]
-            result["stages"]["MODEL_OUTPUT"] = {
-                "changed": model_output_hash != self._last_model_output_hash,
-                "hash": model_output_hash,
-                "probs": probs_list,
-            }
-            # Localize the freeze.
-            for stage in ("MARKET", "FEATURES", "MODEL_INPUT", "MODEL_OUTPUT"):
-                if not result["stages"][stage]["changed"]:
-                    result["frozen_at"] = stage
-                    break
-        except Exception as e:
-            result["error"] = f"{type(e).__name__}: {e}"
-            result["frozen_at"] = result["frozen_at"] or "UNKNOWN"
-        return result
+        snap = self._build_freshness_snapshot()
+        return LiveFreshnessService.diagnose(
+            snap,
+            adapter=self.adapter,
+            aggregator=self.aggregator,
+            feature_engine=self.feature_engine,
+            build_vector_fn=self._build_live_feature_vector,
+            get_bundle_fn=lambda: self._bundle,
+            run_inference_fn=self._run_inference_tensor,
+            symbol=self.config.execution.symbol,
+        )
 
     def _run_inference_tensor(self, x_scaled: Any) -> torch.Tensor:
         """Helper: run the model on an already-scaled tensor (diagnostic)."""
