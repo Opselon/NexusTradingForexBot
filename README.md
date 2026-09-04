@@ -402,25 +402,37 @@ pics/              Screenshots
 
 ---
 
-## ⭐ If this project is useful / profitable for you — please star us!
-
-> **Nexus helped you learn, research, or trade smarter?** A single ⭐ is the best thank-you — it keeps this research open, motivates the next release, and helps others discover it. Takes one click, means the world to us! 🙏
+## ⭐ If Nexus was useful — a star is the best thank you
 
 <p align="center">
-  <b>⭐ Star us — fuel the next breakthrough — thank you! ⭐</b>
+  <sub>Helped you learn, research, or trade smarter — even a little?</sub><br>
+  <strong>One click · 2 seconds · fuels months of open research. We'd be truly grateful. 🙏</strong>
 </p>
+
+<p align="center">
+  <a href="https://github.com/Opselon/NexusTradingForexBot">
+    <img src="https://img.shields.io/github/stars/Opselon/NexusTradingForexBot?style=for-the-badge&logo=github&label=%E2%AD%90%20Star%20this%20repo&color=yellow" alt="Star this repo" />
+  </a>
+  <br>
+  <sub>If this project is usable or profitable for you, please consider starring — it helps others discover Nexus and motivates the next release.</sub>
+</p>
+
+> [!TIP]
+> **No sign-up, no cost, no catch — just a ⭐.** That one star tells GitHub this research matters, pushes Nexus to more traders and researchers, and is the kindest way to say *thank you* if Nexus delivered any value to you.
 
 ## Star History
 
-<a href="https://star-history.com/#opselon/nexustradingforexbot&Date&legend=top-left">
-<picture>
-<source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=opselon/nexustradingforexbot&type=Date&theme=dark&legend=top-left" />
-<source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=opselon/nexustradingforexbot&type=Date&legend=top-left" />
-<img alt="Star History Chart" src="https://api.star-history.com/svg?repos=opselon/nexustradingforexbot&type=Date&legend=top-left" />
-</picture>
+<p align="center">
+<a href="https://www.star-history.com/?repos=opselon%2Fnexustradingforexbot&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=opselon/nexustradingforexbot&type=date&legend=top-left" />
+ </picture>
 </a>
+</p>
 
-<p align="center"><sub>Every ⭐ counts — thank you for supporting open, evidence-driven trading research!</sub></p>
+<p align="center"><sub>Every ⭐ you gave made this curve — thank you for being part of it.</sub></p>
 
 ---
 
