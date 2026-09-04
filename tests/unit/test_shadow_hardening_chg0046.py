@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -350,7 +349,7 @@ class TestAdditiveMigration:
                     champion_artifact_hash="h1",
                 )
             )
-            time.sleep(1.5)  # background audit writer drains
+            assert repo.flush(timeout_sec=5.0), "audit writer did not drain"
             conn = sqlite3.connect(db, timeout=10)
             try:
                 cols = {r[1] for r in conn.execute("PRAGMA table_info(shadow_decisions);")}
