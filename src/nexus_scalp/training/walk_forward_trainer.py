@@ -512,15 +512,132 @@ class WalkForwardTrainer:
         logger.info(f"Raw Logits: {raw_logits.cpu().numpy().tolist()}")
         logger.info(f"Softmax Probabilities: {probs.cpu().numpy().tolist()}")
         logger.info("==================================")
-        self._save_checkpoint(final_model)
-        self._save_scaler(full_scaler)
-        self._save_metadata(feature_cols, label_origin=lineage_origin)
+        # P0-2026-09-04 ATOMIC BUNDLE PUBLICATION: stage → gate → commit.
+        # The trainer serializes into a dot-staging directory, runs the hard
+        # emission gate on the EXACT serialized tensors + metadata + scaler,
+        # writes the binding manifest, then commits the bundle. Per-file
+        # publishes into the target directory are no longer the publication
+        # mechanism — consumers can never observe a partially-written bundle.
+        self._publish_candidate_bundle(final_model, full_scaler, feature_cols, lineage_origin)
         logger.info(
             "Production training complete",
             model_path=str(self.artifact_path),
             scaler_path=str(self._get_scaler_path()),
         )
         return final_model.to(torch.device("cpu"))
+
+    def _publish_candidate_bundle(
+        self,
+        model: ScalpNet,
+        scaler: ScalerBundle,
+        feature_cols: list[str],
+        label_origin: LabelOrigin | str | None,
+    ) -> None:
+        """Stage, gate, manifest and commit the artifact bundle atomically."""
+        from nexus_scalp.training import emission_gate as eg
+
+        target_dir = self.artifact_path.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        staging = eg.new_staging_dir(target_dir, "bundle")
+        try:
+            # 1) serialize into staging (exact tensors that will ship)
+            cpu_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+            model_path = staging / "model.pt"
+            torch.save(cpu_state, model_path)
+            # 2) scaler + metadata into staging (sidecars bound to the same run)
+            scaler_path = staging / "model.scaler.npz"
+            mean = np.asarray(scaler.mean, dtype=np.float32).reshape(-1)
+            std = np.asarray(scaler.std, dtype=np.float32).reshape(-1)
+            if mean.size != self.num_features or std.size != self.num_features:
+                raise eg.EmissionGateError(
+                    f"EMISSION_GATE_ABORT: scaler dims mean={mean.size} std={std.size} "
+                    f"!= schema {self.num_features}"
+                )
+            with open(scaler_path, "wb") as f:
+                np.savez(f, mean=mean, std=std)
+            meta_path = staging / "model.meta.json"
+            _meta_backup = self.artifact_path  # _save_metadata derives paths from artifact_path
+            self.artifact_path = staging / "model.pt"
+            try:
+                self._save_metadata(feature_cols, label_origin=label_origin)
+            finally:
+                self.artifact_path = _meta_backup
+            # 3) HARD EMISSION GATE on the staged bytes
+            import torch as _torch
+
+            state = _torch.load(model_path, map_location="cpu", weights_only=True)
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            prov = getattr(self, "_dataset_provenance", None) or {}
+            eg.run_emission_gate(
+                state,
+                meta,
+                dataset_id=prov.get("dataset_id"),
+                dataset_sha256=prov.get("dataset_sha256"),
+                feature_schema_hash=meta.get("feature_schema_hash") or prov.get("feature_schema_hash"),
+                feature_schema_id=str(self.feature_schema.schema_id),
+                seq_len=meta.get("seq_len"),
+                scaler_mean_dim=int(mean.size),
+                scaler_std_dim=int(std.size),
+                label_schema_class_count=(meta.get("label_contract") or {}).get("class_count"),
+            )
+            # 4) binding manifest
+            manifest = eg.build_bundle_manifest(
+                bundle_dir=staging,
+                dataset_id=str(prov.get("dataset_id") or "UNBOUND"),
+                dataset_sha256=str(prov.get("dataset_sha256") or "UNBOUND"),
+                feature_schema_id=str(self.feature_schema.schema_id),
+                feature_schema_hash=str(meta.get("feature_schema_hash") or ""),
+                label_schema_id=str((meta.get("label_contract") or {}).get("schema_id") or "triple_barrier_3class_v1"),
+                architecture="ScalpNet",
+                architecture_version=str(meta.get("model_class_contract_version") or "1.0.0"),
+                git_commit=eg.git_commit_head(),
+                training_command=str(getattr(self, "_training_command", "")),
+                seed=int(self.seed),
+                fold_count=int(self.num_folds),
+                epoch_count=int(self.epochs),
+                lineage=str(meta.get("label_origin") or "UNKNOWN"),
+                production_eligible=bool(meta.get("production_eligible")) and bool(prov.get("dataset_id")),
+                extra={
+                    "label_origin": meta.get("label_origin"),
+                    "smoke": bool(self.smoke),
+                    "num_folds": int(self.num_folds),
+                    "epochs_per_fold": int(self.epochs),
+                    "batch_size": int(self.batch_size),
+                    "learning_rate": float(self.learning_rate),
+                    "purge_gap_bars": int(self.purge_gap),
+                    "embargo_bars": int(self.embargo_bars),
+                },
+            )
+            (staging / "manifest.json").write_text(
+                json.dumps(manifest, indent=2), encoding="utf-8"
+            )
+            # 5) verify staged bundle from disk, then commit atomically
+            eg.verify_bundle_against_manifest(staging)
+            eg.publish_bundle_atomic(staging, target_dir)
+            logger.info(
+                "CANDIDATE_BUNDLE_PUBLISHED dir=%s model_sha=%s dataset=%s",
+                target_dir,
+                manifest["model_sha256"][:12],
+                prov.get("dataset_id"),
+            )
+        except eg.EmissionGateError:
+            # staging cleanup — nothing partial ever reaches the target
+            self._cleanup_staging(staging)
+            raise
+        except Exception as err:
+            self._cleanup_staging(staging)
+            logger.error("Bundle publication failed (staging discarded)", error=str(err))
+            raise
+
+    @staticmethod
+    def _cleanup_staging(staging: Path) -> None:
+        import shutil
+
+        try:
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+        except Exception:  # pragma: no cover
+            pass
 
     def fine_tune_online(
         self,
