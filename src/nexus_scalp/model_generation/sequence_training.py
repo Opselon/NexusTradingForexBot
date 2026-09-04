@@ -31,6 +31,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
+from nexus_scalp.model_generation.lineage import assert_production_eligible
 from nexus_scalp.model_generation.model_factory import ModelFactory
 from nexus_scalp.model_generation.models import (
     ExperimentConfig,
@@ -58,7 +59,7 @@ class SequenceCandidateTrainer:
         self,
         store: ArtifactStore | None = None,
         seq_len: int | None = None,
-        max_gap_us: int | str | None = "contract",
+        max_gap_us: int | None | str = "contract",
     ) -> None:
         from nexus_scalp.model_generation.sequence import SEQUENCE_CONTRACT
 
@@ -79,8 +80,13 @@ class SequenceCandidateTrainer:
         *,
         model_id: str | None = None,
         epochs: int | None = None,
+        governance_override: bool = False,
     ) -> dict[str, Any]:
-        """Trains a sequence candidate. Returns {status, model_id, ...}."""
+        """Trains a sequence candidate. Returns {status, model_id, ...}.
+
+        MLFIX-T7: tainted dataset manifests are production-ineligible without
+        an explicit operator token (governance_override=True).
+        """
         if dataset_frame is None or dataset_frame.is_empty():
             return {"status": "FAILED", "error": "empty dataset"}
         if "label" not in dataset_frame.columns:

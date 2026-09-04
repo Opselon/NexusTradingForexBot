@@ -21,6 +21,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
+from nexus_scalp.model_generation.lineage import assert_production_eligible
 from nexus_scalp.model_generation.model_factory import ModelFactory
 from nexus_scalp.model_generation.models import (
     ExperimentConfig,
@@ -113,8 +114,15 @@ class CandidateTrainer:
         feature_cols: list[str] | None = None,
         model_id: str | None = None,
         epochs: int | None = None,
+        governance_override: bool = False,
     ) -> dict[str, Any]:
         """Trains and persists a candidate artifact. Never touches Champion.
+
+        MLFIX-T7: when the associated dataset manifest carries a tainted
+        label_origin (PAPER/LIVE/UNKNOWN), training a production-eligible
+        candidate is blocked unless the caller passes governance_override=True.
+        Research-only runs that are not CHAMPION-eligible should NOT pass the
+        override — they are simply not production-training.
 
         Returns {status, model_id, artifact, error?}.
         """
@@ -122,6 +130,17 @@ class CandidateTrainer:
             return {"status": "FAILED", "error": "empty dataset"}
         if "label" not in dataset_frame.columns:
             return {"status": "FAILED", "error": "missing label column"}
+
+        # MLFIX-T7 hard guard: refuse to train a CHAMPION-eligible candidate
+        # from a tainted dataset manifest without an explicit operator token.
+        if experiment.dataset_id:
+            _man = self.store.read_dataset_manifest(experiment.dataset_id) or {}
+            _origin = str(_man.get("label_origin") or _man.get("source_classification") or "")
+            if _origin:
+                try:
+                    assert_production_eligible(_origin, governance_override=governance_override)
+                except Exception as exc:
+                    return {"status": "FAILED", "error": str(exc)}
 
         feat_cols, news_cols = _split_columns(dataset_frame, experiment.news_enabled)
         if feature_cols:
