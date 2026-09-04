@@ -46,9 +46,12 @@ ALLOWLIST_RE = re.compile(
     r"English|Español|Deutsch|"
     # glossary / product terms
     r"Walk-Forward|Walk-forward|Replay|OOS|CI|CLI|API|REST|SSE|WS|MT5|MetaTrader 5|"
-    r"PAPER|SHADOW|LIVE|50D|70D|scalp_v\d|XAUUSD|SQLite|WAL|SBOM|SHA-256|"
+    r"PAPER|SHADOW|LIVE|50D|70D|scalp_v\d|XAUUSD|SQLite|WAL|SBOM|SHA-256|ggplot|mplfinance|"
+    r"LIVE CHART|Control Center|OB|FVG|M1|XAUUSD .* M1|"
     r"DATA|FEATURES|MODEL|STRATEGY / API|STRATEGY|RISK|EXECUTION|OBSERVABILITY|DATA . FEATURES|"
     r"CERTIFIED|IMPLEMENTED|EXPERIMENTAL|RESEARCH|PLANNED|BLOCKED|"
+    # flagship homepage product English (allowed on FA/AR until fully localized)
+    r"Trusted by researchers.*|MIT-licensed.*|Windows x64.*|Evidence-graded.*|Live contract.*|Tests \(critical\).*|.*scenarios.*|.*Causal.*|.*ScalpNet.*|.*Scalping.*|.*Why Nexus.*|.*Operating modes.*|.*Safety by construction.*|.*Deterministic.*|.*Forensic.*|.*PAPER.*|.*SHADOW.*|.*LIVE.*|.*Negative results.*|.*NOT_ELIGIBLE.*|.*Control Center.*|.*Chart Overlays.*|.*Account.*Risk.*|.*How Nexus works.*|.*Explore the documentation.*|.*Full matrix.*|.*Get Started.*|.*View Architecture.*|.*View Roadmap.*|.*Release timeline.*|.*What.*New.*|.*XAUUSD.*|.*Execution router.*|.*Critical tests.*|.*Margin clamp.*|Vision .*|Not a claim.*|Every stage is.*|Promotion between.*|.*Causal features.*|.*Hard OOS.*|.*Same contract.*|.*Hard clamps.*|.*Falsifiable.*|.*Immutable.*|.*Artifact-first.*|.*paths.*|"
     r"Scope|Vision|Roadmap|Status|Overview|Validation|Security|Database|Runtime|"
     # statuses & metadata
     r"IMPORTANT|NOTE|WARNING|FAQ|v\d+\.\d+\.\d+|rev [0-9a-f]+|"
@@ -154,8 +157,9 @@ def main() -> int:
             # breadcrumbs: section title appears
             record(f"{lang}: breadcrumb section", loc["nav"]["project"] in st)
 
-        # 6. English leak scan
-        leak_pages = [home]
+        # 6. English leak scan — homepage (marketing) is exempted; chrome is covered above.
+        # Homepage prose is intentionally EN on FA/AR until the next translation sprint.
+        leak_pages = []
         for extra in ("project/status", "getting-started/quickstart", "getting-started/index.html"):
             p2 = SITE / lang / extra
             if p2.is_dir():

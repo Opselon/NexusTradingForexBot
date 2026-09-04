@@ -15,6 +15,9 @@
 <meta name='twitter:description' content='How the async runtime behaves at runtime — tick pipeline, workers, modes, and what may never block.'>
 <link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/runtime/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/runtime/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/runtime/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/runtime/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/runtime/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/runtime/'>
 <script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Runtime — the LiveEngine Loop", "description": "How the async runtime behaves at runtime — tick pipeline, workers, modes, and what may never block.", "inLanguage": "de", "url": "https://opselon.github.io/NexusTradingForexBot/de/architecture/runtime/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
 <link rel='stylesheet' href='../../../assets/styles.css'>
 <link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
 </head>
@@ -26,11 +29,12 @@
     <span></span><span></span><span></span>
   </button>
   <div class='brand'>
-    <a href='../../../de/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
-    <span class='brand-badge'>v9.0.6</span>
+    <a href='../../../de/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.7</span>
   </div>
   <div class='header-actions'>
     <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
     <details class='theme-picker'>
       <summary aria-label='Design' title='Design'>◐</summary>
       <div class='lang-menu theme-menu'>
@@ -43,9 +47,10 @@
       <summary aria-label='Sprache'>🌐 Deutsch</summary>
       <div class='lang-menu'><a href='../../../architecture/runtime/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
     </details>
-    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub</a>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
   </div>
 </header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
 <div class='layout'>
 <nav class='sidebar' id='sidebar' aria-label='primary'>
 <a class='nav-home' href='../../../de/'>Start</a>
@@ -117,7 +122,7 @@
 <li><a class='' href='../../../de/reference/faq/'>FAQ</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../de/releases/'>Releases</a></div>
-<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.6 &amp; Historie</a></li></ul>
+<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.7 &amp; Historie</a></li></ul>
 </nav>
 <main id='content' class='content' tabindex='-1'>
 <div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../architecture/runtime/'>Englisch</a></div>
@@ -178,11 +183,19 @@
 </ul>
 <nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../de/architecture/data-flow/'><span class='pn-label'>Zurück</span><span class='pn-name'>Datenfluss</span></a><a class='pn pn-next' href='../../../de/architecture/research-stack/'><span class='pn-label'>Weiter</span><span class='pn-name'>Forschungsstack</span></a></nav>
 <footer class='page-footer'>
-  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/architecture/runtime.md'>Diese Seite auf GitHub bearbeiten</a> ·
-  Version v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/5f42479'>5f42479</a> ·
-  <a href='../../../de/releases/'>Alle Releases</a>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/architecture/runtime.md'>Diese Seite auf GitHub bearbeiten</a> · Version v9.0.7 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/8ba9068'>8ba9068</a></span>
+    <span><a href='../../../de/project/status/'>Projektstatus</a> · <a href='../../../de/reference/faq/'>FAQ</a> · <a href='../../../de/releases/'>Alle Releases</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../de/project/status/'>Evidence-graded status</a>.</div>
 </footer>
 </main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Doku durchsuchen… — ⌘K' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Doku durchsuchen……</div></div>
+  </div>
 </div>
 <script>
 window.NEXUS_LOCALE = {"search": "Doku durchsuchen…", "home": "Start", "repo": "GitHub", "skip": "Zum Inhalt springen", "language": "Sprache", "partial": "Englische Quelle — Übersetzung ausstehend", "english": "Englisch", "version": "Version", "next": "Weiter", "prev": "Zurück", "on_github": "Diese Seite auf GitHub bearbeiten", "menu": "Menü", "whats_new": "Neuigkeiten", "all_releases": "Alle Releases", "get_started": "Erste Schritte", "view_architecture": "Architektur", "view_roadmap": "Roadmap", "close": "Schließen", "theme": "Design", "theme_light": "Hell", "theme_dark": "Dunkel", "theme_system": "System", "copy": "Kopieren", "copied": "Kopiert", "copy_error": "Kopieren fehlgeschlagen", "no_results": "Keine Ergebnisse", "loading": "Wird geladen…", "section": "Bereich", "search_results": "Suchergebnisse", "explore_docs": "Die Dokumentation erkunden", "full_matrix": "Vollständige Matrix", "release_timeline": "Release-Zeitleiste", "hero_kicker": "QUANTITATIVE HANDELSFORSCHUNGS- UND EXECUTION-PLATTFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Eine forschungsgetriebene, hexagonale, ereignisgesteuerte Scalping-Plattform für MetaTrader 5 — kausale Features, governete Deep-Learning-Modelle, ein invariantes Risikosystem, deterministische Forschungswerkzeuge und forensische Observability in einer prüfbaren Pipeline.", "chip_released": "veröffentlicht", "chip_rev": "Rev", "chip_research": "Forschung: 50D live · 70D Kandidat", "released_history": "Historie", "release_history_kicker": "RELEASE-HISTORIE", "releases_intro": "Jedes Release mit seinen echten Highlights, abgeleitet aus GitHub-Release-Metadaten zur Build-Zeit. Einzelquelle für Versionen:", "nf404_title": "404", "nf404_lead": "Diese Dokumentationsseite existiert nicht.", "nf404_home": "Start", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Release auf GitHub", "back_home": "Zurück zur Startseite", "quickstart_label": "Quickstart", "status_label": "Projektstatus", "faq_label": "FAQ", "cap_engine": "Kausale 50D-Feature-Engine", "cap_risk": "Risikomotor + Ausführungs-Klemmen", "cap_oos": "Walk-Forward + hartes OOS-Gate", "cap_factory": "Artefakt-zentrierte Modellfabrik", "cap_70d": "70D-Vertrag (Basis+News+Liquidität)", "cap_cf": "Kontrafaktische Engine (NO_TRADE-Wanderung)", "pillar_evidence_t": "🧭 Evidenz vor Behauptungen", "pillar_evidence_b": "Metriken ohne Evidenz zeigen n/a — nie falsche Nullen. Negative Ergebnisse werden veröffentlicht: Unser 70D-Forschungskandidat wurde vom eigenen OOS-Gate abgelehnt.", "pillar_safety_t": "🔒 Sicherheit durch Konstruktion", "pillar_safety_b": "PAPER als Standard · SHADOW ohne Order-Autorität · LIVE hinter expliziter Bestätigung · harte Risikoklemmen (HARD_MAX_LOTS, Marge ≤20%) im Ausführungspfad erzwungen.", "pillar_research_t": "🔬 Deterministische Forschung", "pillar_research_b": "Gepurgtes + Embargo-Walk-Forward, bit-exaktes Replay, fingerprintierte Datensätze/Modelle, Provenienz bei jedem Lauf — derselbe Feature-Vertrag für Live, Replay und Training.", "pillar_truth_t": "👁️ Laufzeit-Wahrheit", "pillar_truth_b": "Forensische Observability: schweregetrennte Logs, Incident-Korrelation, Deploy-Gate. Broker-Wahrheit schlägt veralteten Zustand; Gates sind Autoritäten, Settings sind Absicht.", "capability": "Fähigkeit", "status": "Status", "chip_certified": "ZERTIFIZIERT", "chip_implemented": "IMPLEMENTIERT", "chip_experimental": "EXPERIMENTELL", "chip_research_l": "FORSCHUNG", "cap_highlights": "Fähigkeiten im Fokus", "callout_important": "WICHTIG", "callout_note": "HINWEIS", "callout_warning": "WARNUNG", "how_it_works": "So funktioniert Nexus"};

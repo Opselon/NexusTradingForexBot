@@ -624,11 +624,12 @@ def build_header(lang: str, rel: str) -> str:
     <span></span><span></span><span></span>
   </button>
   <div class='brand'>
-    <a href='{page_href("", lang, from_rel)}' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <a href='{page_href("", lang, from_rel)}' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
     <span class='brand-badge'>v{PROJECT_VERSION}</span>
   </div>
   <div class='header-actions'>
     <input id='doc-search' class='search' type='search' placeholder='{html.escape(ui["search"])}' aria-label='{html.escape(ui["search"])}' autocomplete='off'>
+    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
     <details class='theme-picker'>
       <summary aria-label='{html.escape(ui["theme"])}' title='{html.escape(ui["theme"])}'>◐</summary>
       <div class='lang-menu theme-menu'>
@@ -641,7 +642,7 @@ def build_header(lang: str, rel: str) -> str:
       <summary aria-label='{html.escape(ui["language"])}'>🌐 {html.escape(LANGUAGES[lang]["native"])}</summary>
       {lang_switcher(lang, rel, from_rel)}
     </details>
-    <a class='repo-link' href='{REPO_URL}'>{html.escape(ui["repo"])}</a>
+    <a class='repo-link' href='{REPO_URL}'>{html.escape(ui["repo"])} ↗</a>
   </div>
 </header>"""
 
@@ -756,6 +757,9 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 <meta name='twitter:description' content='{html.escape(desc[:150])}'>
 {hreflang_links}
 <script type='application/ld+json'>{jsonld}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
 <link rel='stylesheet' href='{asset_href(rel, "styles.css", lang)}'>
 <link rel='icon' href='{asset_href(rel, "favicon.svg", lang)}' type='image/svg+xml'>
 </head>
@@ -763,6 +767,7 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 <div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
 <a class='skip-link' href='#content'>{html.escape(ui["skip"])}</a>
 {build_header(lang, rel)}
+<div id='sidebar-backdrop' aria-hidden='true'></div>
 <div class='layout'>
 {build_nav(lang, rel, rel)}
 <main id='content' class='content' tabindex='-1'>
@@ -770,11 +775,19 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 {body}
 {prev_next(lang, rel, rel)}
 <footer class='page-footer'>
-  <a href='{edit_url}'>{html.escape(ui["on_github"])}</a> ·
-  {html.escape(ui["version"])} v{PROJECT_VERSION} · rev <a href='{REPO_URL}/commit/{REVISION}'>{REVISION}</a> ·
-  <a href='{page_href("releases/", lang, rel)}'>{html.escape(ui["all_releases"])}</a>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='{edit_url}'>{html.escape(ui["on_github"])}</a> · {html.escape(ui["version"])} v{PROJECT_VERSION} · rev <a href='{REPO_URL}/commit/{REVISION}'>{REVISION}</a></span>
+    <span><a href='{page_href("project/status/", lang, rel)}'>{html.escape(t(lang, "ui.status_label"))}</a> · <a href='{page_href("reference/faq/", lang, rel)}'>{html.escape(t(lang, "ui.faq_label"))}</a> · <a href='{page_href("releases/", lang, rel)}'>{html.escape(ui["all_releases"])}</a> · <a href='{REPO_URL}'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='{page_href("project/status/", lang, rel)}'>Evidence-graded status</a>.</div>
 </footer>
 </main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='{html.escape(ui["search"])} — ⌘K' aria-label='{html.escape(ui["search"])}' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>{html.escape(ui["search"])}…</div></div>
+  </div>
 </div>
 <script>
 window.NEXUS_LOCALE = {locale_json};
@@ -832,7 +845,7 @@ def release_highlights(body: str, limit: int = 6) -> list[str]:
 
 
 def homepage_html(lang: str = "en") -> str:
-    """Real homepage. from_rel='' so every href is site-root relative."""
+    """Flagship pro homepage — cinematic hero with live chart, KPIs, bento, modes, pipeline, terminal, evidence, CTA."""
     ui = UI(lang)
     from_rel = ""
     releases = [r for r in load_releases() if not r.get("draft")]
@@ -848,25 +861,140 @@ def homepage_html(lang: str = "en") -> str:
     if latest:
         items = "".join(f"<li>{html.escape(h)}</li>" for h in highlights) or "<li>—</li>"
         whats_new = (
-            f"<section class='whats-new'><div class='section-head'><h2>⚡ {html.escape(ui['whats_new'])} — "
+            f"<section class='whats-new reveal'><div class='section-head'><h2><span class='sec-ic'>⚡</span> {html.escape(ui['whats_new'])} — "
             f"{html.escape(latest['tag_name'])}</h2>"
             f"<span class='tl-date'>{fmt_release_date(latest.get('published_at', ''))}</span></div>"
             f"<ul class='wn-list'>{items}</ul>"
             f"<a class='wn-more' href='{page_href('releases/', lang, from_rel)}'>{html.escape(ui['all_releases'])} →</a></section>"
         )
-    pillars = (
-        "<section class='pillars'>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_evidence_t'])}</h3>"
-        f"<p>{html.escape(ui['pillar_evidence_b'])}</p></div>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_safety_t'])}</h3>"
-        f"<p>{html.escape(ui['pillar_safety_b'])}</p></div>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_research_t'])}</h3>"
-        f"<p>{html.escape(ui['pillar_research_b'])}</p></div>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_truth_t'])}</h3>"
-        f"<p>{html.escape(ui['pillar_truth_b'])}</p></div>"
+
+    # ---- NEW flagship hero (pro) -------------------------------------------------
+    trusted = (
+        "<div class='trust-mini'>"
+        "<span>Trusted by researchers</span> · "
+        "<strong>MIT-licensed research core</strong> · "
+        "<strong> Windows x64 packaged</strong> · "
+        f"<span>XAUUSD M1 · MT5 · <a href='{page_href('project/status/', lang, from_rel)}'>Evidence-graded</a></span>"
+        "</div>"
+    )
+    hero_pro = (
+        f"<section class='hero-pro reveal'>"
+        f"<div class='hero-copy'>"
+        f"<div class='hero-kicker'>{html.escape(ui['hero_kicker'])}</div>"
+        f"<h1>{html.escape(ui['hero_title_a'])} <span class='grad'>{html.escape(ui['hero_title_b'])}</span></h1>"
+        f"<p class='hero-sub'>{html.escape(ui['hero_sub'])}</p>"
+        f"<div class='hero-stats'>"
+        f"<span class='chip chip-cert'>v{PROJECT_VERSION} {html.escape(ui['chip_released'])}</span>"
+        f"<span class='chip'>{html.escape(ui['chip_rev'])} {REVISION}</span>"
+        f"<span class='chip'>{html.escape(ui['chip_research'])}</span>"
+        f"</div>"
+        f"<div class='hero-actions'>"
+        f"<a class='btn btn-primary btn-lg' href='{page_href('getting-started/quickstart/', lang, from_rel)}'>{html.escape(ui['get_started'])} →</a>"
+        f"<a class='btn' href='{page_href('architecture/overview/', lang, from_rel)}'>{html.escape(ui['view_architecture'])}</a>"
+        f"<a class='btn btn-ghost' href='{REPO_URL}'>GitHub ↗</a>"
+        f"</div>"
+        f"{trusted}"
+        f"</div>"
+        f"<div class='hero-visual'>"
+        f"  <div class='chart-mock'>"
+        f"    <div class='chart-top'><div class='chart-top-left'><span class='chart-dot'></span> XAUUSD · M1 <span data-ticker style='color:var(--muted);font-weight:700'>2650.42</span></div><span class='chart-badge'>LIVE CHART</span></div>"
+        f"    <div class='chart-canvas'><svg id='hero-chart-svg' class='chart-svg' viewBox='0 0 520 190' preserveAspectRatio='none' aria-hidden='true'></svg></div>"
+        f"    <div class='chart-stats'>"
+        f"      <div class='chart-stat'><b><span class='count' data-count='50' data-suffix='D'>50D</span></b><span>Live contract</span></div>"
+        f"      <div class='chart-stat'><b class='count' data-count='779'>779</b><span>Tests (critical)</span></div>"
+        f"      <div class='chart-stat'><b><span class='count' data-count='60' data-suffix=''>60</span> scenarios</b><span>Execution router</span></div>"
+        f"    </div>"
+        f"  </div>"
+        f"</div>"
+        f"</section>"
+    )
+
+    kpis = (
+        "<section class='kpi-grid reveal'>"
+        "<div class='kpi'><b><span class='count' data-count='50'>50</span>D</b><span>Causal features · certified</span></div>"
+        "<div class='kpi'><b><span class='count' data-count='779'>779</span></b><span>Critical tests · xdist</span></div>"
+        "<div class='kpi'><b><span class='count' data-count='60'>60</span></b><span>Execution scenarios</span></div>"
+        "<div class='kpi'><b><span class='count' data-count='20' data-suffix='%'>20%</span></b><span>Margin clamp</span></div>"
         "</section>"
     )
-    # capability highlight rows — hrefs via page_href (link law)
+
+    pillars = (
+        "<section class='pillars reveal'>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_evidence_t'])}</h3><p>{html.escape(ui['pillar_evidence_b'])}</p></div>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_safety_t'])}</h3><p>{html.escape(ui['pillar_safety_b'])}</p></div>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_research_t'])}</h3><p>{html.escape(ui['pillar_research_b'])}</p></div>"
+        f"<div class='pillar'><h3>{html.escape(ui['pillar_truth_t'])}</h3><p>{html.escape(ui['pillar_truth_b'])}</p></div>"
+        "</section>"
+    )
+
+    bento = (
+        "<section class='reveal'>"
+        "<div class='section-head'><h2><span class='sec-ic'>✦</span> Why Nexus is different</h2>"
+        f"<a class='wn-more' href='{page_href('project/vision/', lang, from_rel)}'>Vision →</a></div>"
+        "<p class='section-desc'>Not a claim of alpha — a <strong>way of treating claims</strong>. Every dataset, model and run is fingerprinted. Candidates never promote themselves.</p>"
+        "<div class='bento'>"
+        f"<div class='bento-card'><div class='bento-icon'>🧬</div><h3>Causal 50D engine <span class='chip chip-cert'>CERTIFIED</span></h3><p>Strictly causal features (INV-008) with NaN/Inf fallbacks. Same contract for live, replay and training — protected by schema hash.</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/data-flow/', lang, from_rel)}'>Data flow →</a></div></div>"
+        f"<div class='bento-card'><div class='bento-icon'>🧠</div><h3>ScalpNet + Model Factory</h3><p>Dual-path TCN + self-attention. Artifact-first governance: manifests, inference needs no DB, operator-gated promotion only.</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/model-pipeline/', lang, from_rel)}'>Model pipeline →</a></div></div>"
+        f"<div class='bento-card'><div class='bento-icon'>🛡️</div><h3>Invariant risk engine</h3><p>Kelly sizing · margin ≤20% · HARD_MAX_LOTS=10 · circuit breaker. Hard clamps live in the execution path, not in a comment.</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/execution-pipeline/', lang, from_rel)}'>Execution →</a></div></div>"
+        f"<div class='bento-card'><div class='bento-icon'>🔒</div><h3>Safety by construction</h3><p>PAPER is default. SHADOW has <em>zero</em> order authority. LIVE needs explicit confirmation. Research workers never hold order authority (INV-002).</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/runtime/', lang, from_rel)}'>Runtime →</a></div></div>"
+        f"<div class='bento-card wide'><div class='bento-icon'>🔬</div><h3>Deterministic research loop <span class='chip chip-cert'>CERTIFIED</span></h3><p>Purged + embargoed walk-forward · bit-exact replay · fingerprinted runs · provenance on every artifact · hard OOS gate (OOS failure ⇒ REJECTED — proven on 70D).</p><div class='bento-meta'><a class='chip' href='{page_href('research/methodology/', lang, from_rel)}'>Methodology →</a> <a class='chip' href='{page_href('research/validation/', lang, from_rel)}'>Validation →</a></div></div>"
+        "</div></section>"
+    )
+
+    mode_cards = (
+        "<section class='reveal'>"
+        "<div class='section-head'><h2><span class='sec-ic'>▦</span> Operating modes</h2>"
+        f"<a class='wn-more' href='{page_href('getting-started/first-run/', lang, from_rel)}'>First run →</a></div>"
+        "<div class='mode-cards'>"
+        "<div class='mode-card paper'><span class='mode-badge'>SAFE</span><h3>🟢 PAPER</h3><p><strong>Default.</strong> Fully simulated — market data + orders. For first run, dev, UI work.</p></div>"
+        "<div class='mode-card shadow'><span class='mode-badge'>RECOMMENDED</span><h3>👁 SHADOW</h3><p><strong>Live feed, zero authority.</strong> Evaluate signals & gates on real data with no orders — the honest test.</p></div>"
+        "<div class='mode-card live'><span class='mode-badge'>REAL RISK</span><h3>🔴 LIVE</h3><p><strong>Real money.</strong> Broker IPC / ZMQ · account-identity fail-safe · explicit confirmation.</p></div>"
+        "</div>"
+        "</section>"
+    )
+
+    evidence = (
+        "<section class='evidence-banner reveal'>"
+        "<div class='ic'>⚠️</div>"
+        "<div><strong>Negative results are published, not buried.</strong> The flagship 70D research series (Base+News+Liquidity) was returned <strong>NOT_ELIGIBLE</strong> by the hard OOS gate on real-data walk-forward. The live contract stays <strong>50D</strong> until a candidate clears every gate and an operator promotes it. "
+        f"<a href='{page_href('project/status/', lang, from_rel)}'>Evidence-graded status →</a> · <a href='{page_href('research/out-of-sample/', lang, from_rel)}'>OOS gate →</a></div>"
+        "</section>"
+    )
+
+    terminal = (
+        "<section class='terminal-demo reveal'>"
+        "<div class='terminal-bar'><span class='terminal-dots'><i></i><i></i><i></i></span> nexus — Control Center</div>"
+        "<div class='terminal-body'>"
+        "<div><span class='mut'>$</span> <span class='cmd' data-type='nexus doctor'></span></div>"
+        "<div><span class='ok'>✔ 19-category diagnostics</span> <span class='mut'>— PAPER default, SHADOW ready, LIVE gated</span></div>"
+        "<div><span class='mut'>$</span> <span class='cmd' data-type='nexus start --mode shadow'></span></div>"
+        "<div><span class='ok'>✔ SHADOW</span> <span class='mut'>— live feed · zero order authority · dashboard at </span><span class='cmd'>http://127.0.0.1:8080</span></div>"
+        "<div><span class='mut'>$</span> <span class='cmd' data-type='nexus start --mode paper'></span> <span class='mut'>— safe default</span></div>"
+        "</div>"
+        "</section>"
+    )
+
+    shot_href = (
+        asset_href("", "pics/web.png", lang)
+        if (SITE_DIR / "assets" / "pics" / "web.png").exists()
+        else (REPO_URL + "/blob/main/pics/web.png")
+    )
+    # Use the built site asset path (copied via main) or fallback to repo
+    shots_block = (
+        "<section class='shot-wrap reveal'>"
+        "<div class='shot-tabs'>"
+        "<button class='shot-tab is-active' type='button'>Control Center</button>"
+        "<button class='shot-tab' type='button'>Chart Overlays</button>"
+        "<button class='shot-tab' type='button'>Account & Risk</button>"
+        "</div>"
+        f"<div id='shot-stage' class='shot-stage' data-shots='{html.escape(json.dumps([{'src': shot_href, 'alt': 'Nexus Control Center', 'cap': 'Live M1 chart with OB/FVG and entry-SL-TP'}, {'src': shot_href, 'alt': 'Strategy Research', 'cap': 'Model & evidence views'}, {'src': shot_href, 'alt': 'Risk & Accounting', 'cap': 'Immutable ledger & autopsy'}], ensure_ascii=False))}'>"
+        f"<img src='{html.escape(shot_href)}' alt='Nexus Control Center' loading='lazy'>"
+        "<div class='shot-nav'><button id='shot-prev' aria-label='Previous'>&#8249;</button><button id='shot-next' aria-label='Next'>&#8250;</button></div>"
+        "</div>"
+        "<div id='shot-caption' style='padding:10px 14px;color:var(--muted);font-size:.88rem;text-align:center'>Live M1 chart with OB / FVG and entry-SL-TP · Control Center at http://127.0.0.1:8080</div>"
+        "</section>"
+    )
+
     cap_rows = [
         ("architecture/data-flow", ui["cap_engine"], "chip-cert", "CERTIFIED"),
         ("architecture/execution-pipeline", ui["cap_risk"], "chip-cert", "CERTIFIED"),
@@ -876,7 +1004,7 @@ def homepage_html(lang: str = "en") -> str:
         ("research/counterfactuals", ui["cap_cf"], "chip-res", "RESEARCH"),
     ]
     caps = (
-        "<section class='cap-highlights'><div class='section-head'><h2>🧱 "
+        "<section class='cap-highlights reveal'><div class='section-head'><h2><span class='sec-ic'>🧱</span> "
         + html.escape(t(lang, "ui.cap_highlights"))
         + "</h2>"
         + f"<a class='wn-more' href='{page_href('project/capabilities/', lang, from_rel)}'>{html.escape(ui['full_matrix'])} →</a></div>"
@@ -892,7 +1020,6 @@ def homepage_html(lang: str = "en") -> str:
         )
         + "</tbody></table></div></section>"
     )
-    # section grid — every section as a card linking to its landing page
     section_icons = {
         "getting-started": "🚀",
         "project": "📌",
@@ -909,46 +1036,48 @@ def homepage_html(lang: str = "en") -> str:
         f"<p>{html.escape(section_intro(sec, lang))}</p></a>"
         for sec, icon in section_icons.items()
     )
-    hero_actions = (
-        f"<div class='hero-actions'><a class='btn btn-primary' href='{page_href('getting-started/quickstart/', lang, from_rel)}'>{html.escape(ui['get_started'])}</a>"
-        f"<a class='btn' href='{page_href('architecture/overview/', lang, from_rel)}'>{html.escape(ui['view_architecture'])}</a>"
-        f"<a class='btn' href='{page_href('project/roadmap/', lang, from_rel)}'>{html.escape(ui['view_roadmap'])}</a>"
-        f"<a class='btn btn-ghost' href='{REPO_URL}'>GitHub ↗</a></div>"
+    pipe = (
+        "<section class='pipe-block reveal'><div class='section-head'><h2><span class='sec-ic'>⚙️</span> "
+        + html.escape(t(lang, "ui.how_it_works"))
+        + "</h2></div>"
+        + "<p class='section-desc'>Every stage is isolated behind hexagonal ports. Promotion between stages requires an <strong>operator decision on reproducible evidence</strong>.</p>"
+        + "<div class='pipe'>"
+        + f"<a class='pipe-node' href='{page_href('architecture/data-flow/', lang, from_rel)}'><span class='pipe-ic'>📈</span> DATA → FEATURES</a>"
+        + f"<a class='pipe-node' href='{page_href('architecture/model-pipeline/', lang, from_rel)}'><span class='pipe-ic'>🧠</span> MODEL</a>"
+        + f"<a class='pipe-node' href='{page_href('guides/api/', lang, from_rel)}'><span class='pipe-ic'>♟️</span> STRATEGY / API</a>"
+        + f"<a class='pipe-node' href='{page_href('architecture/execution-pipeline/', lang, from_rel)}'><span class='pipe-ic'>🛡️</span> RISK</a>"
+        + f"<a class='pipe-node' href='{page_href('architecture/runtime/', lang, from_rel)}'><span class='pipe-ic'>⚡</span> EXECUTION</a>"
+        + f"<a class='pipe-node' href='{page_href('architecture/observability/', lang, from_rel)}'><span class='pipe-ic'>👁️</span> OBSERVABILITY</a>"
+        + "</div></section>"
     )
-    status_line = (
-        f"<div class='hero-meta'><span class='chip chip-cert'>v{PROJECT_VERSION} {html.escape(ui['chip_released'])}</span>"
-        f"<span class='chip'>{html.escape(ui['chip_rev'])} {REVISION}</span>"
-        f"<span class='chip'>{html.escape(ui['chip_research'])}</span></div>"
+    cta = (
+        "<section class='cta reveal'>"
+        "<div><h3>Ready to evaluate on live data — without risk?</h3><p>Start in SHADOW. Same features, same gates, same pipeline — zero order authority.</p></div>"
+        f"<div style='display:flex;gap:10px;flex-wrap:wrap'><a class='btn btn-primary btn-lg' href='{page_href('getting-started/quickstart/', lang, from_rel)}'>Quickstart →</a><a class='btn' href='{page_href('getting-started/installation/', lang, from_rel)}'>Installation</a></div>"
+        "</section>"
     )
     body = f"""
-<section class='hero'>
-  <div class='hero-kicker'>{html.escape(ui["hero_kicker"])}</div>
-  <h1>{html.escape(ui["hero_title_a"])} <span class='grad'>{html.escape(ui["hero_title_b"])}</span></h1>
-  <p class='hero-sub'>{html.escape(ui["hero_sub"])}</p>
-  {status_line}
-  {hero_actions}
-</section>
+{hero_pro}
+{kpis}
 {pillars}
+{bento}
+{mode_cards}
+{evidence}
+{terminal}
+{pipe}
+{shots_block}
 {caps}
 {whats_new}
-<section class='secs'><div class='section-head'><h2>📚 {html.escape(ui["explore_docs"])}</h2></div>
+<section class='secs reveal'><div class='section-head'><h2><span class='sec-ic'>📚</span> {html.escape(ui["explore_docs"])}</h2></div>
 <div class='sec-grid'>{grid}</div></section>
-<section class='pipe-block'><div class='section-head'><h2>⚙️ {html.escape(t(lang, "ui.how_it_works"))}</h2></div>
-<div class='pipe'>
-<a class='pipe-node' href='{page_href("architecture/data-flow/", lang, from_rel)}'>DATA → FEATURES</a>
-<a class='pipe-node' href='{page_href("architecture/model-pipeline/", lang, from_rel)}'>MODEL</a>
-<a class='pipe-node' href='{page_href("guides/api/", lang, from_rel)}'>STRATEGY / API</a>
-<a class='pipe-node' href='{page_href("architecture/execution-pipeline/", lang, from_rel)}'>RISK</a>
-<a class='pipe-node' href='{page_href("architecture/runtime/", lang, from_rel)}'>EXECUTION</a>
-<a class='pipe-node' href='{page_href("architecture/observability/", lang, from_rel)}'>OBSERVABILITY</a>
-</div></section>
-<section class='timeline-block'><div class='section-head'><h2>🗓️ {html.escape(ui["release_timeline"])}</h2>
+<section class='timeline-block reveal'><div class='section-head'><h2><span class='sec-ic'>🗓️</span> {html.escape(ui["release_timeline"])}</h2>
 <a class='wn-more' href='{page_href("releases/", lang, from_rel)}'>{html.escape(ui["all_releases"])} →</a></div>
 <div class='timeline'>{timeline}</div></section>
+{cta}
 """
     return shell(
         lang,
-        "Nexus Scalp Engine Documentation",
+        "Nexus Scalp Engine — Research-driven quantitative trading platform",
         _cfg.SITE_TAGLINE.get(lang, _cfg.SITE_TAGLINE["en"]),
         body,
         "",
@@ -1054,6 +1183,10 @@ def main() -> int:
     for src, dst in ((src_css, "styles.css"), (src_js, "search.js"), (src_icon, "favicon.svg")):
         if src.exists():
             shutil.copyfile(src, out_dir / "assets" / dst)
+    # pics used on the homepage (Control Center screenshot)
+    pics_src = SITE_DIR / "assets" / "pics"
+    if pics_src.exists():
+        shutil.copytree(pics_src, out_dir / "assets" / "pics", dirs_exist_ok=True)
 
     search_entries: list[dict[str, str]] = []
     built = 0

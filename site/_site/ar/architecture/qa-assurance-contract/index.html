@@ -15,6 +15,9 @@
 <meta name='twitter:description' content='QA ASSURANCE CONTRACT — Deep Assurance Layer (CHG-0045) — Nexus Scalp Engine documentation'>
 <link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/qa-assurance-contract/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/qa-assurance-contract/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/qa-assurance-contract/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/qa-assurance-contract/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/qa-assurance-contract/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/qa-assurance-contract/'>
 <script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "QA ASSURANCE CONTRACT — Deep Assurance Layer (CHG-0045)", "description": "QA ASSURANCE CONTRACT — Deep Assurance Layer (CHG-0045) — Nexus Scalp Engine documentation", "inLanguage": "ar", "url": "https://opselon.github.io/NexusTradingForexBot/ar/architecture/qa-assurance-contract/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
 <link rel='stylesheet' href='../../../assets/styles.css'>
 <link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
 </head>
@@ -26,11 +29,12 @@
     <span></span><span></span><span></span>
   </button>
   <div class='brand'>
-    <a href='../../../ar/' class='brand-link'>⚡ Nexus <span class='brand-dim'>Scalp Engine</span></a>
-    <span class='brand-badge'>v9.0.6</span>
+    <a href='../../../ar/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.7</span>
   </div>
   <div class='header-actions'>
     <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
     <details class='theme-picker'>
       <summary aria-label='المظهر' title='المظهر'>◐</summary>
       <div class='lang-menu theme-menu'>
@@ -43,9 +47,10 @@
       <summary aria-label='اللغة'>🌐 العربية</summary>
       <div class='lang-menu'><a href='../../../architecture/qa-assurance-contract/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
     </details>
-    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب</a>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب ↗</a>
   </div>
 </header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
 <div class='layout'>
 <nav class='sidebar' id='sidebar' aria-label='primary'>
 <a class='nav-home' href='../../../ar/'>الرئيسية</a>
@@ -117,7 +122,7 @@
 <li><a class='' href='../../../ar/reference/faq/'>الأسئلة الشائعة</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../ar/releases/'>الإصدارات</a></div>
-<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.6 &amp; التاريخ</a></li></ul>
+<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.7 &amp; التاريخ</a></li></ul>
 </nav>
 <main id='content' class='content' tabindex='-1'>
 <div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../architecture/qa-assurance-contract/'>الإنجليزية</a></div>
@@ -239,11 +244,19 @@
 <p>are consciously NOT adopted (no proven defect class beyond current layers).</p>
 
 <footer class='page-footer'>
-  <a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/architecture/qa-assurance-contract.md'>تعديل هذه الصفحة على جيت هب</a> ·
-  الإصدار v9.0.6 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/5f42479'>5f42479</a> ·
-  <a href='../../../ar/releases/'>كل الإصدارات</a>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/architecture/qa-assurance-contract.md'>تعديل هذه الصفحة على جيت هب</a> · الإصدار v9.0.7 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/8ba9068'>8ba9068</a></span>
+    <span><a href='../../../ar/project/status/'>حالة المشروع</a> · <a href='../../../ar/reference/faq/'>الأسئلة الشائعة</a> · <a href='../../../ar/releases/'>كل الإصدارات</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../ar/project/status/'>Evidence-graded status</a>.</div>
 </footer>
 </main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='ابحث في التوثيق… — ⌘K' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>ابحث في التوثيق……</div></div>
+  </div>
 </div>
 <script>
 window.NEXUS_LOCALE = {"search": "ابحث في التوثيق…", "home": "الرئيسية", "repo": "جيت هب", "skip": "الانتقال إلى المحتوى", "language": "اللغة", "partial": "المصدر الإنجليزي — الترجمة قيد الانتظار", "english": "الإنجليزية", "version": "الإصدار", "next": "التالي", "prev": "السابق", "on_github": "تعديل هذه الصفحة على جيت هب", "menu": "القائمة", "whats_new": "الجديد", "all_releases": "كل الإصدارات", "get_started": "ابدأ", "view_architecture": "البنية", "view_roadmap": "خارطة الطريق", "close": "إغلاق", "theme": "المظهر", "theme_light": "فاتح", "theme_dark": "داكن", "theme_system": "النظام", "copy": "نسخ", "copied": "تم النسخ", "copy_error": "فشل النسخ", "no_results": "لا نتائج", "loading": "جارٍ التحميل…", "section": "القسم", "search_results": "نتائج البحث", "explore_docs": "استكشف التوثيق", "full_matrix": "المصفوفة الكاملة", "release_timeline": "الجدول الزمني للإصدارات", "hero_kicker": "منصة بحث وتنفيذ للتداول الكمي", "hero_title_a": "نكسوس", "hero_title_b": "سكالب إنجين", "hero_sub": "منصة سكالب قائمة على البحث، سداسية البنية ومدفوعة بالأحداث لميتاتريدر 5 — خصائص سببية، نماذج عميقة محوكم، محرك مخاطر ثابت، أدوات بحث حتمية وقابلية مراقبة جنائية في خط أنابيب واحد قابل للتدقيق.", "chip_released": "منشور", "chip_rev": "مراجعة", "chip_research": "بحث: 50D حي · 70D مرشح", "released_history": "التاريخ", "release_history_kicker": "سجل الإصدارات", "releases_intro": "كل إصدار مع أبرز ملامحه الحقيقية، مستمدة من بيانات إصدارات جيت هب وقت البناء. المصدر الوحيد للإصدار:", "nf404_title": "٤٠٤", "nf404_lead": "صفحة التوثيق هذه غير موجودة.", "nf404_home": "الرئيسية", "footer_prefix": "", "brand": "نكسوس", "brand_dim": "سكالب إنجين", "github_release": "الإصدار على جيت هب", "back_home": "العودة للرئيسية", "quickstart_label": "البداية السريعة", "status_label": "حالة المشروع", "faq_label": "الأسئلة الشائعة", "cap_engine": "محرك الخصائص السببية 50D", "cap_risk": "محرك المخاطر + قيود التنفيذ", "cap_oos": "Walk-Forward + بوابة OOS الصارمة", "cap_factory": "مصنع النماذج المبني على المصنوعات", "cap_70d": "عقد 70D (القاعدة+الأخبار+السيولة)", "cap_cf": "محرك المضاد للواقع (مشي NO_TRADE)", "pillar_evidence_t": "🧭 الأدلة قبل الادعاءات", "pillar_evidence_b": "المقاييس بلا أدلة تظهر n/a — وليس أصفارًا مزيفة أبدًا. النتائج السلبية تُنشر: مرشحنا البحثي 70D رفضه بوابة OOS لدينا.", "pillar_safety_t": "🔒 السلامة بالتصميم", "pillar_safety_b": "PAPER افتراضيًا · SHADOW بلا صلاحية أوامر · LIVE خلف تأكيد صريح · قيود مخاطر صارمة (HARD_MAX_LOTS، هامش ≤20%) مفروضة في مسار التنفيذ.", "pillar_research_t": "🔬 بحث حتمي", "pillar_research_b": "Walk-Forward مع التطهير والحجر، إعادة تشغيل مطابقة بت-بت، بيانات/نماذج ببصمة، مصدر لكل تشغيل — عقد خصائص واحد للحياة وإعادة التشغيل والتدريب.", "pillar_truth_t": "👁️ حقيقة وقت التشغيل", "pillar_truth_b": "قابلية مراقبة جنائية: سجلات مفصولة بالخطورة، ارتباط الحوادث، بوابة النشر. حقيقة الوسيط تتفوق على الحالة القديمة؛ البوابات مرجع، والإعدادات نية.", "capability": "القدرة", "status": "الحالة", "chip_certified": "مُصادق", "chip_implemented": "مُنفَّذ", "chip_experimental": "تجريبي", "chip_research_l": "بحثي", "cap_highlights": "أبرز القدرات", "callout_important": "مهم", "callout_note": "ملاحظة", "callout_warning": "تحذير", "how_it_works": "كيف يعمل نكسوس"};
