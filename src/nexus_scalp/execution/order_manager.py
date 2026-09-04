@@ -1464,6 +1464,65 @@ class OrderLifecycleManager:
         return False
 
     # =========================================================================
+    # MANUAL POSITION ACTIONS (BUG-242, INV-004 single execution authority)
+    # -------------------------------------------------------------------------
+    # Operator-initiated close/modify requests (web UI) previously called the
+    # broker adapter DIRECTLY, bypassing the OrderLifecycleManager: no audit
+    # order row, no forced exit mechanism (autopsy mis-attribution), no cache
+    # release, no SAFE_MODE/SHADOW boundary. These wrappers keep the operator
+    # surface but route it through the manager so every manual mutation
+    # carries the same evidence trail as an engine-initiated one.
+    # =========================================================================
+    def close_position_manual(self, ticket: int) -> bool:
+        """Operator manual close routed through the manager (INV-004)."""
+        # Evidence state BEFORE the broker call so a successful close is
+        # attributed as an operator action, not reconstructed UNKNOWN.
+        self._forced_exit_mechanisms[ticket] = ExitMechanism.MANUAL_CLOSE
+        success = bool(self.mt5_adapter.close_position(ticket=ticket))
+        if success:
+            self.audit.log_order(
+                ticket=ticket,
+                order_id=f"manual_close_{ticket}",
+                symbol="",
+                action="Executed order",
+                price=0.0,
+                stop_loss=0.0,
+                take_profit=0.0,
+                volume=0.0,
+                reason="MANUAL_CLOSE via operator surface",
+                latency=0.0,
+                execution_mode="MANUAL",
+            )
+            with self._live_tickets_lock:
+                self._tickets_cache.pop_ticket(ticket)
+        else:
+            self._forced_exit_mechanisms.pop(ticket, None)
+        return success
+
+    def modify_position_manual(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+        """Operator manual SL/TP modify routed through the manager (INV-004)."""
+        success = bool(
+            self.mt5_adapter.modify_position(
+                ticket=ticket, stop_loss=stop_loss, take_profit=take_profit
+            )
+        )
+        if success:
+            self.audit.log_order(
+                ticket=ticket,
+                order_id=f"manual_modify_{ticket}",
+                symbol="",
+                action="Modified order",
+                price=0.0,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                volume=0.0,
+                reason="MANUAL_MODIFY via operator surface",
+                latency=0.0,
+                execution_mode="MANUAL",
+            )
+        return success
+
+    # =========================================================================
     # BROKER-VERIFIED PENDING CANCELLATION (BUG-072/073)
     # -------------------------------------------------------------------------
     # A pending order is considered CANCELED only when broker state confirms

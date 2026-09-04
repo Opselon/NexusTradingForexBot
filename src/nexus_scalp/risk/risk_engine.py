@@ -509,7 +509,9 @@ class RiskEngine:
                 # exposure checks above must stay zero: re-applying the broker
                 # minimum here would dispatch an order the free-margin guard
                 # already refused. Re-verify the margin rescue keeps it legal.
-                rescue_margin = (contract_size * proposal.proposed_entry * symbol_info.volume_min) / leverage
+                rescue_margin = (
+                    contract_size * proposal.proposed_entry * symbol_info.volume_min
+                ) / leverage
                 if rescue_margin > account.margin_free:
                     logger.warning(
                         "MICRO_ACCOUNT_MARGIN_REJECTED: Proposal aborted (broker minimum not affordable)",
