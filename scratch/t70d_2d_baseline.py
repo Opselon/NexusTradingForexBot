@@ -80,7 +80,7 @@ class TempScaler(nn.Module):
 ts_mod=TempScaler()
 yv_t=torch.from_numpy(yva); val_t=torch.from_numpy(val_logits)
 def _cl():
-    ts_mod.zero_grad = None; pass
+    ts_mod.zero_grad = None
 import copy
 ts_opt=torch.optim.LBFGS(ts_mod.parameters(), lr=0.1, max_iter=60)
 def cl():

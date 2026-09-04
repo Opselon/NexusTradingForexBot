@@ -51,11 +51,19 @@ _MECHANISM_MAP: dict[str, ExitClassification] = {
 def _f(row: dict[str, Any], *names: str, default: float = 0.0) -> float:
     """Reads the first present numeric column, tolerating schema drift."""
     for name in names:
-        if name in row and row[name] is not None:
-            try:
-                return float(row[name])
-            except (TypeError, ValueError):
-                continue
+        if not isinstance(name, str):
+            continue
+        try:
+            present = name in row
+        except TypeError:
+            # hash-unhashable-value: name is unhashable (e.g. dict)
+            continue
+        if not present or row[name] is None:
+            continue
+        try:
+            return float(row[name])
+        except (TypeError, ValueError):
+            continue
     return default
 
 

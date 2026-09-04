@@ -37,7 +37,8 @@ def test_c001_launcher_source_has_no_bare_mode_identity_claim():
     """The launcher 'Bootstrapping' log must never present a bare mode= field:
     the launch-time mode is pre-settings and routinely contradicts the
     settings-DB effective mode bound at engine construction."""
-    src = open("NexusTradingForexBot.py", encoding="utf-8").read()
+    with open("NexusTradingForexBot.py", encoding="utf-8") as _f:
+        src = _f.read()
     boot = src[src.index('"Bootstrapping Engine Subsystems"') :]
     boot = boot[: boot.index("max_drawdown=") + 40] if "max_drawdown=" in boot else boot
     assert "launch_mode=" in boot, "launcher must log launch_mode separately"

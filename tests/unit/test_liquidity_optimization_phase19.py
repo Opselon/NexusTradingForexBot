@@ -162,7 +162,8 @@ def test_liq_opt_08_golden_baseline_file_exists() -> None:
     import os
 
     assert os.path.exists("docs/LIQUIDITY_70D_GOLDEN_BASELINE.json")
-    d = json.load(open("docs/LIQUIDITY_70D_GOLDEN_BASELINE.json", encoding="utf-8"))
+    with open("docs/LIQUIDITY_70D_GOLDEN_BASELINE.json", encoding="utf-8") as _f:
+        d = json.load(_f)
     assert d["rows_computed"] > 10000
     assert len(d["per_feature"]) == 10
 
@@ -307,7 +308,8 @@ def test_liq_opt_17_displacement_after_confirmation_only() -> None:
 def test_liq_opt_19_golden_reference_stable() -> None:
     import json
 
-    d = json.load(open("docs/LIQUIDITY_70D_GOLDEN_BASELINE.json", encoding="utf-8"))
+    with open("docs/LIQUIDITY_70D_GOLDEN_BASELINE.json", encoding="utf-8") as _f:
+        d = json.load(_f)
     assert d["per_feature"]["eqh_strength"]["median"] < 0.95  # v1's near-step is captured
     assert all(d["per_feature"][k]["missing_rate"] == 0.0 for k in d["per_feature"])
 

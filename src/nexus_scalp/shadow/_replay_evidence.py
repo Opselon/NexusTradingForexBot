@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import statistics
 from collections import Counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus_scalp.shadow._replay_pair import classify_pair
-from nexus_scalp.shadow.replay import (
-    BAR_MODE_SYNTHETIC_SPREAD_USD,
-    MATERIAL_DELTA_R,
-    MIN_RESOLVED_PAIRS,
-    VERDICT_INSUFFICIENT,
-    VERDICT_REJECTED,
-    VERDICT_SUPPORTED,
-)
+
+# Lazy import of replay constants to break cycle: replay -> _replay_evidence -> replay
+if TYPE_CHECKING:
+    from nexus_scalp.shadow.replay import (  # noqa: F401
+        BAR_MODE_SYNTHETIC_SPREAD_USD,
+        MATERIAL_DELTA_R,
+        MIN_RESOLVED_PAIRS,
+        VERDICT_INSUFFICIENT,
+        VERDICT_REJECTED,
+        VERDICT_SUPPORTED,
+    )
 
 
 def walk_pair_outcomes(
@@ -79,7 +82,7 @@ def build_replay_evidence(
     bar_records: list[dict[str, Any]],
     dataset_id: str,
     horizon_minutes: int = 120,
-    min_resolved_pairs: int = MIN_RESOLVED_PAIRS,
+    min_resolved_pairs: int | None = None,
     extra_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Joins two replay traces into the promotion-readiness evidence dict.
@@ -88,7 +91,10 @@ def build_replay_evidence(
     ReplayRunResult objects (used read-only). `bar_records` are the SAME
     raw bar records both engines consumed (fingerprinted here).
     """
-    from nexus_scalp.shadow.replay import dataset_fingerprint
+    from nexus_scalp.shadow.replay import (
+        BAR_MODE_SYNTHETIC_SPREAD_USD,
+        dataset_fingerprint,
+    )
 
     champ_trace = list(run_champion.decision_trace)
     chal_trace = list(run_challenger.decision_trace)
@@ -216,10 +222,23 @@ def build_replay_evidence(
 def promotion_verdict(evidence: dict[str, Any], min_resolved_pairs: int) -> dict[str, Any]:
     """Grades the evidence — NEVER promotes (steer §9: no superiority from
     insufficient samples; OOS/walk-forward gates remain the promotion path)."""
+    from nexus_scalp.shadow.replay import (
+        MATERIAL_DELTA_R as _MDR,
+    )
+    from nexus_scalp.shadow.replay import (
+        VERDICT_INSUFFICIENT as _VI,
+    )
+    from nexus_scalp.shadow.replay import (
+        VERDICT_REJECTED as _VR,
+    )
+    from nexus_scalp.shadow.replay import (
+        VERDICT_SUPPORTED as _VS,
+    )
+
     resolved = int(evidence["pairs_resolved"])
     if resolved < min_resolved_pairs:
         return {
-            "verdict": VERDICT_INSUFFICIENT,
+            "verdict": _VI,
             "resolved_pairs": resolved,
             "required_pairs": min_resolved_pairs,
             "reasons": [f"resolved pairs {resolved} < required {min_resolved_pairs}"],
@@ -232,15 +251,15 @@ def promotion_verdict(evidence: dict[str, Any], min_resolved_pairs: int) -> dict
             f"positive paired delta (mean {mean_d:.4f}R, median {med_d:.4f}R) over {resolved} pairs"
         )
         return {
-            "verdict": VERDICT_SUPPORTED,
+            "verdict": _VS,
             "resolved_pairs": resolved,
             "required_pairs": min_resolved_pairs,
             "reasons": reasons,
         }
-    if mean_d < -MATERIAL_DELTA_R:
+    if mean_d < -_MDR:
         reasons.append(f"material negative paired delta mean {mean_d:.4f}R")
         return {
-            "verdict": VERDICT_REJECTED,
+            "verdict": _VR,
             "resolved_pairs": resolved,
             "required_pairs": min_resolved_pairs,
             "reasons": reasons,

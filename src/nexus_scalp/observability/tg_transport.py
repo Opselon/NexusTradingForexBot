@@ -33,28 +33,42 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from nexus_scalp.observability._tg_core_protocol import _TelegramCoreProto
-from nexus_scalp.observability.telegram_notifier import (
-    TELEGRAM_CONFIG_ERROR,
-    TELEGRAM_DNS_BLOCKED,
-    TELEGRAM_NETWORK_ERROR,
-    TELEGRAM_QUEUE_ERROR,
-    TELEGRAM_RATE_LIMIT,
-    TELEGRAM_SERIALIZATION_ERROR,
-    TELEGRAM_TIMEOUT,
-    TELEGRAM_UNKNOWN_ERROR,
-    NotificationRecord,
-    classify_http_response,
-    new_correlation_id,
-)
+
+if TYPE_CHECKING:
+    from nexus_scalp.observability.telegram_notifier import NotificationRecord  # noqa: F401
+
+# Category constants — defined locally to break the facade cycle; facade
+# re-imports the same values from here (single source is this module's
+# duplicated literals, kept identical to telegram_notifier.py).
+TELEGRAM_CONFIG_ERROR = "TELEGRAM_CONFIG_ERROR"
+TELEGRAM_DNS_BLOCKED = "TELEGRAM_DNS_BLOCKED"
+TELEGRAM_NETWORK_ERROR = "TELEGRAM_NETWORK_ERROR"
+TELEGRAM_QUEUE_ERROR = "TELEGRAM_QUEUE_ERROR"
+TELEGRAM_RATE_LIMIT = "TELEGRAM_RATE_LIMIT"
+TELEGRAM_SERIALIZATION_ERROR = "TELEGRAM_SERIALIZATION_ERROR"
+TELEGRAM_TIMEOUT = "TELEGRAM_TIMEOUT"
+TELEGRAM_UNKNOWN_ERROR = "TELEGRAM_UNKNOWN_ERROR"
 
 
 def _record_placeholder_late() -> str:
     _facade = _sys_mod.modules.get("nexus_scalp.observability.telegram_notifier")
     fn = getattr(_facade, "record_placeholder", None)
     return fn() if fn else "(queued)"
+
+
+def _get_classify():
+    from nexus_scalp.observability.telegram_notifier import classify_http_response as _c
+
+    return _c
+
+
+def _get_new_cid():
+    from nexus_scalp.settings import new_correlation_id as _n
+
+    return _n
 
 
 # NOTE on imports: tg_transport is imported by the facade AFTER NotificationRecord/
@@ -85,7 +99,7 @@ _TELEGRAM_FALLBACK_IPS: tuple[str, ...] = (
 class TransportMixin(_TelegramCoreProto):
     """Stateless carrier for transport-level methods (verbatim)."""
 
-    def _invoke_callback(self, record: NotificationRecord) -> None:
+    def _invoke_callback(self, record: Any) -> None:
         cb = record.callback
         if cb is None:
             return
@@ -207,7 +221,7 @@ class TransportMixin(_TelegramCoreProto):
             timeout=timeout,
         )
 
-    def _send_msg_sync(self, record: NotificationRecord) -> dict[str, Any]:
+    def _send_msg_sync(self, record: Any) -> dict[str, Any]:
         """One HTTP POST. Returns an outcome dict (never raises except network)."""
         header = f"<b>[{record.priority}]</b>"
         if self.environment:
@@ -295,7 +309,7 @@ class TransportMixin(_TelegramCoreProto):
                     "safe_message": "delivered",
                 }
             # HTTP 200 + ok=false -> FAILURE
-            classified = classify_http_response(200, body)
+            classified = _get_classify()(200, body)
             return {
                 "ok": False,
                 "http_status": 200,
@@ -304,7 +318,7 @@ class TransportMixin(_TelegramCoreProto):
                 "retryable": classified["retryable"],
                 "safe_message": classified["safe_message"],
             }
-        classified = classify_http_response(http_status, body)
+        classified = _get_classify()(http_status, body)
         return {
             "ok": False,
             "http_status": http_status,
@@ -317,7 +331,7 @@ class TransportMixin(_TelegramCoreProto):
     @staticmethod
     def classify_http_error(http_status: int, body: bytes) -> dict[str, Any]:
         """Public classification entry (used by tests + diagnostics)."""
-        return classify_http_response(http_status, body)
+        return _get_classify()(http_status, body)
 
     def _classify_exception(self, exc: Exception) -> tuple[str, bool]:
         if isinstance(exc, _TIMEOUT_ERRORS):
@@ -328,9 +342,9 @@ class TransportMixin(_TelegramCoreProto):
         if isinstance(exc, ConnectionError):
             return TELEGRAM_NETWORK_ERROR, True
         if isinstance(exc, urllib.error.HTTPError):
-            return classify_http_response(exc.code, exc.read() if hasattr(exc, "read") else None)[
+            return _get_classify()(exc.code, exc.read() if hasattr(exc, "read") else None)[
                 "category"
-            ], classify_http_response(exc.code, None)["retryable"]
+            ], _get_classify()(exc.code, None)["retryable"]
         return TELEGRAM_UNKNOWN_ERROR, False
 
     # =====================================================================
@@ -364,7 +378,7 @@ class TransportMixin(_TelegramCoreProto):
             return {
                 "ok": False,
                 "http_status": http_status,
-                "category": classify_http_response(http_status, body)["category"],
+                "category": _get_classify()(http_status, body)["category"],
                 "safe_message": str(parsed.get("description") or "getMe failed")[:160],
             }
         except Exception as exc:
@@ -377,9 +391,13 @@ class TransportMixin(_TelegramCoreProto):
 
     def send_diagnostic(self, label: str = "NEXUS TELEGRAM DIAGNOSTIC TEST") -> dict[str, Any]:
         """Send ONE clearly-labeled diagnostic message; return the real result."""
-        record = NotificationRecord(
-            notification_id=new_correlation_id("diag"),
-            correlation_id=new_correlation_id("corr"),
+        from nexus_scalp.observability.telegram_notifier import (
+            NotificationRecord as _nr,
+        )
+
+        record = _nr(
+            notification_id=_get_new_cid()("diag"),
+            correlation_id=_get_new_cid()("corr"),
             event_type="DIAGNOSTIC",
             priority="INFO",
             target_class="TELEGRAM",

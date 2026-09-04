@@ -83,9 +83,12 @@ def _extract_context_contract(candidate) -> dict | None:
     Returns None when no explicit session/regime/volatility claim exists,
     so generic candidates keep the legacy global evaluation path.
     """
+    from nexus_scalp.research.context_contract import (
+        ContextContractError as _cce,  # defined before try so except is bound
+    )
+
     try:
         from nexus_scalp.research.context_contract import (
-            ContextContractError,
             extract_context_contract,
             has_active_contract,
         )
@@ -96,13 +99,13 @@ def _extract_context_contract(candidate) -> dict | None:
         if not has_active_contract(contract):
             return None
         return contract
-    except ContextContractError:
+    except _cce:
         raise
     except Exception as exc:
         # PHASE 27 fail-loud: extraction errors must NEVER silently degrade a
         # declared-context strategy to global evaluation.
         sid = getattr(candidate, "strategy_id", "?")
-        raise ContextContractError(
+        raise _cce(
             f"CONTEXT_CONTRACT_MISMATCH: contract extraction failed for {sid}: {exc}"
         ) from exc
 
