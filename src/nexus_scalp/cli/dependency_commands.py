@@ -33,9 +33,16 @@ console = Console()
 ROOT = Path("src/nexus_scalp")
 
 
+_CACHED_RESULT: Any = None
+
+
 def _run() -> Any:
+    global _CACHED_RESULT
+    if _CACHED_RESULT is not None:
+        return _CACHED_RESULT
     engine = DependencyIntelligenceEngine(ROOT)
     result = engine.analyze(use_cache=True)
+    _CACHED_RESULT = result
     return result
 
 

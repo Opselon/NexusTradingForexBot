@@ -137,6 +137,9 @@ ignore_missing_imports = true
 minversion = "8.0"
 addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
+markers = [
+    "slow: mark test as slow (nightly/pre-release; skipped by default in fast gate)",
+]
 asyncio_mode = "auto"
 # Ensure the repo root is importable so `from tests.helpers.mt5_fixtures
 # import ...` resolves identically on CI (GitHub Actions) and locally,
