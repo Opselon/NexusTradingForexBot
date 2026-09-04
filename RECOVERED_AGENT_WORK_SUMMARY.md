@@ -63,7 +63,7 @@
 * `pytest tests/unit/test_70d_bug106_incremental_phase19.py` → `2 passed`
 * Isolated slow-vs-fast on 200 synthetic bars: byte-identical (`maxdiff 0.0`)
 * `git stash list` unchanged — **6/6 stashes intact**
-* `git status --short --branch` → `main` clean, synced to `3179df9c` (ahead of `origin/main@706269f1`)
+* `git status --short --branch` → `main` clean, synced to `3179df9c` (ahead of `origin/main@4261c3d2`)
 
 ---
 
