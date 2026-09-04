@@ -583,7 +583,12 @@ class MarketplaceService:
         try:
             dsl = StrategyDsl(**dsl_raw)  # type: ignore[arg-type]
         except Exception as e:
-            return {"seed_id": seed_id, "error": f"DSL parse failed: {e}"}
+            from nexus_scalp.observability.logging import get_logger
+
+            get_logger("nexus_scalp.marketplace.service").warning(
+                "marketplace DSL parse failed", exc_info=e
+            )
+            return {"seed_id": seed_id, "error": "DSL parse failed"}
         # Build a minimal synthetic BACKTEST when no real ResearchDataset exists
         # (so scoring always has something to evaluate and snapshots are emitted).
         # Real pipeline path is exercised whenever the store has evidence.
@@ -591,7 +596,12 @@ class MarketplaceService:
         try:
             from nexus_scalp.marketplace.scoring import evaluate as score_eval
         except Exception as e:
-            return {"seed_id": seed_id, "error": f"scoring unavailable: {e}"}
+            from nexus_scalp.observability.logging import get_logger
+
+            get_logger("nexus_scalp.marketplace.service").warning(
+                "marketplace scoring unavailable", exc_info=e
+            )
+            return {"seed_id": seed_id, "error": "scoring unavailable"}
         # Honest stub evidence: no real ResearchDataset => INCONCLUSIVE factors
         import contextlib
 

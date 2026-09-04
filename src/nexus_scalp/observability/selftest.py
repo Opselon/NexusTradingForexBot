@@ -57,10 +57,10 @@ def run_observability_selftest() -> dict[str, Any]:
             checks[name] = "PASS"
         except AssertionError as exc:
             checks[name] = "FAIL"
-            failures.append(f"{name}: {exc}")
+            failures.append(f"{name}: {type(exc).__name__}")
         except Exception as exc:  # absolute isolation
             checks[name] = "FAIL"
-            failures.append(f"{name}: unexpected {type(exc).__name__}: {exc}")
+            failures.append(f"{name}: unexpected {type(exc).__name__}")
 
     # 1) contract: storm bound + first occurrence + summary content (45 = the
     #    live-flood scale)
