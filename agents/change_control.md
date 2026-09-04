@@ -1774,3 +1774,10 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
 - CONSTRAINTS: every confirmed defect FIXED + regression test (FAIL BEFORE / PASS AFTER); no gate weakened; no fingerprinted dataset mutated; no fabricated provenance; commit-per-step; beforePush quality gate; evidence-based findings only (no invented bugs); read-only MT5 (no order authority anywhere).
 - BOUNDARIES: backtest/replay determinism owned by Agent 15 (CHG-0059); data-flow/hot-path owned by Agent 7 (CHG-0060); execution owned by Agent 12 (CHG-0058). Agent 14 owns the dataset identity/provenance/immutability/acquisition layer.
 - STATUS: IMPLEMENTING
+## CHG-0062 - Replay-engine deep forensic + order-safety certification (2026-09-05, Agent 18)
+
+- AGENT: Agent 18 (Nexus-Main orchestrated) | ROLE: Replay Engine / Execution-Fidelity Forensics
+- TASK: user brief 2026-09-05 (AGENT 18 REPLAY ENGINE) - analyze/trace/research/freeze/reproduce/fix/develop/test/run-real-replay/verify-parity/verify-no-order-authority/commit/handoff for the COMPLETE replay subsystem: (A) dataset replay replay_70d_vector bit-exactness, (B) streaming replay StreamingReplayEngine causal pipeline, order_send runtime-reachability certification (poisoned MetaTrader5 + exploding adapter + monkeypatch interception on REAL MT5-acquired ticks), lookahead attacks, feature/model/decision parity, determinism, state isolation, failure injection, SL/TP first-touch, bid/ask direction semantics, logical clock.
+- SCOPE: src/nexus_scalp/research/{streaming_replay,event_source,mt5_tick_dataset}.py (read/fix), src/nexus_scalp/model_generation/replay.py (read/fix), tests/unit/test_agent18_*.py (new), scratch/ns_agent18_*.py (probes+evidence), agents registries, docs/agent_handoffs/
+- CONSTRAINTS: INV-002/INV-008 preserved; no realism weakening; no fabricated results; commit-per-step; foreign WIP untouched (Agent-11 risk/order_manager/live_engine, Agent-14 mt5_tick_dataset WIP)
+- STATUS: IMPLEMENTING
