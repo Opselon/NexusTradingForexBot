@@ -44,49 +44,29 @@
 <table align="center">
 <tr>
 <td align="center" width="20%">
-<a href="#-quick-start">
-
-#### 🚀 Quick Start
+<a href="#-quick-start">🚀 <strong>Quick Start</strong></a><br>
 <sub>Run in under 5 minutes</sub><br>
-<sub><code>→ Open</code></sub>
-
-</a>
+<a href="#-quick-start"><code>→ Open</code></a>
 </td>
 <td align="center" width="20%">
-<a href="#-architecture-at-a-glance">
-
-#### 🏗️ Architecture
-<sub>System map & data flow</sub><br>
-<sub><code>→ Explore</code></sub>
-
-</a>
+<a href="#-architecture-at-a-glance">🏗️ <strong>Architecture</strong></a><br>
+<sub>System map &amp; data flow</sub><br>
+<a href="#-architecture-at-a-glance"><code>→ Explore</code></a>
 </td>
 <td align="center" width="20%">
-<a href="#-research--validation">
-
-#### 🔬 Research
-<sub>Claims & evidence</sub><br>
-<sub><code>→ Validate</code></sub>
-
-</a>
+<a href="#-research--validation">🔬 <strong>Research</strong></a><br>
+<sub>Claims &amp; evidence</sub><br>
+<a href="#-research--validation"><code>→ Validate</code></a>
 </td>
 <td align="center" width="20%">
-<a href="#-cli">
-
-#### 📖 Reference
+<a href="#-cli">📖 <strong>Reference</strong></a><br>
 <sub>CLI · API</sub><br>
-<sub><code>→ Lookup</code></sub>
-
-</a>
+<a href="#-cli"><code>→ Lookup</code></a>
 </td>
 <td align="center" width="20%">
-<a href="#-contributing">
-
-#### 🤝 Contribute
+<a href="#-contributing">🤝 <strong>Contribute</strong></a><br>
 <sub>Join the research</sub><br>
-<sub><code>→ Join</code></sub>
-
-</a>
+<a href="#-contributing"><code>→ Join</code></a>
 </td>
 </tr>
 </table>
