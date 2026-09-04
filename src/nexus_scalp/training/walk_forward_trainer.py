@@ -1026,7 +1026,14 @@ class WalkForwardTrainer:
         if "label" not in df.columns:
             raise ValueError("Training DataFrame must contain a 'label' column.")
         raw_labels = df["label"].to_list()
-        unknown_labels = sorted(set(raw_labels) - set(self.label_map.keys()))
+        # MLFIX: parquet integer labels (0/1/2) → accept both representations
+        # label_map keys are string ActionType values; parquet uses ints.
+        allowed = (
+            set(self.label_map.keys())
+            | set(self.label_map.values())
+            | set(self.inverse_label_map.keys())
+        )
+        unknown_labels = sorted(set(raw_labels) - allowed)
         if unknown_labels:
             raise ValueError(f"Unknown labels detected in dataset: {unknown_labels}")
 
@@ -1047,7 +1054,14 @@ class WalkForwardTrainer:
         X_raw = df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
         X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=1.0, neginf=-1.0)
         raw_labels = df["label"].to_list()
-        y = np.array([self.label_map[label] for label in raw_labels], dtype=np.int64)
+        # MLFIX: parquet uses int labels 0/1/2; allow both int and string.
+        mapped: list[int] = []
+        for lab in raw_labels:
+            if isinstance(lab, int):
+                mapped.append(int(lab))
+            else:
+                mapped.append(int(self.label_map[lab]))
+        y = np.array(mapped, dtype=np.int64)
         return X_raw, y
 
     def _fit_scaler(self, X_raw: np.ndarray) -> ScalerBundle:
