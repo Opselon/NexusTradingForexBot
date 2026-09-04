@@ -246,9 +246,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$Out\portable\licenses" | Out-Null
           if (Test-Path LICENSE) { Copy-Item LICENSE "$Out\portable\licenses" -Force }
           # BUG-239: updater requires build-info.json at payload root — PyInstaller _internal layout means it is not at the portable root unless we stage it explicitly (build_release.ps1 already does; CI stage must mirror it).
-          if (-not (Test-Path "$PWDuild-info.json")) { throw "build-info.json missing at repo root after Write build-info.json step — cannot stage payload" }
-          Copy-Item "$PWDuild-info.json" "$Out\portableuild-info.json" -Force
-          if (Test-Path "$Out\portable\_internal") { Copy-Item "$PWDuild-info.json" "$Out\portable\_internaluild-info.json" -Force -ErrorAction SilentlyContinue }
+          if (-not (Test-Path "$PWD\build-info.json")) { throw "build-info.json missing at repo root after Write build-info.json step — cannot stage payload" }
+          Copy-Item "$PWD\build-info.json" "$Out\portable\build-info.json" -Force
+          if (Test-Path "$Out\portable\_internal") { Copy-Item "$PWD\build-info.json" "$Out\portable\_internal\build-info.json" -Force -ErrorAction SilentlyContinue }
           Set-Content "$Out\portable\README.txt" "Nexus Scalp Engine portable - v$V"
           New-Item -ItemType Directory -Force -Path "$Out\cli" | Out-Null
           Copy-Item "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe" "$Out\cli" -Force
