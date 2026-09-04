@@ -43,10 +43,12 @@ from nexus_scalp.database.config import (
     load_database_config,
 )
 from nexus_scalp.database.drivers import get_driver
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.settings.secret_store import SecureSecretStore
 from nexus_scalp.settings.service import SettingsDatabase
 
 router = APIRouter(prefix="/api/db/console", tags=["database-console"])
+logger = get_logger("nexus_scalp.web.db_console")
 
 #: Domains surfaced in the explorer (mirrors DatabaseHealthService.domains).
 CONSOLE_DOMAINS: tuple[str, ...] = ("audit", "news", "candle_intel")
@@ -137,7 +139,8 @@ def _list_databases() -> list[dict[str, Any]]:
             finally:
                 driver.close()
         except Exception as exc:  # pragma: no cover - env edges
-            entry["status"] = f"DRIVER_UNAVAILABLE: {str(exc)[:120]}"
+            logger.warning("db_console driver unavailable", exc_info=exc)
+            entry["status"] = f"DRIVER_UNAVAILABLE: {type(exc).__name__}"
         out.append(entry)
     # settings DB (the database of record for UI/runtime config)
     sdb = _settings_db_path()
@@ -252,7 +255,8 @@ def console_databases() -> dict[str, Any]:
         dbs = _list_databases()
         return {"success": True, "databases": dbs, "timestamp": _utc_now()}
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.post("/refresh")
@@ -262,7 +266,8 @@ def console_refresh() -> dict[str, Any]:
         dbs = _list_databases()
         return {"success": True, "databases": dbs, "resynced": True, "timestamp": _utc_now()}
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.get("/tables")
@@ -292,7 +297,8 @@ def console_tables(database: str = "audit") -> dict[str, Any]:
         finally:
             driver.close()
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.get("/columns")
@@ -332,7 +338,8 @@ def console_columns(database: str = "audit", table: str = "") -> dict[str, Any]:
         finally:
             driver.close()
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.get("/rows")
@@ -388,7 +395,8 @@ def console_rows(
         finally:
             driver.close()
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.post("/query")
@@ -447,11 +455,13 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
                 "timestamp": _utc_now(),
             }
         except Exception as exc:
-            return {"success": False, "error": f"query failed: {str(exc)[:300]}"}
+            logger.warning("db_console query failed", exc_info=exc)
+            return {"success": False, "error": f"query failed: {type(exc).__name__}"}
         finally:
             driver.close()
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.get("/quick")
@@ -489,18 +499,38 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
                     if getattr(drv, "name", "") == "postgresql":
                         cols = drv.table_columns(table)
                         ddl = ", ".join(f"{c.get('name')} {c.get('type')}" for c in cols)
-                        return {"success": True, "database": database, "provider": "postgresql", "columns": ["ddl"], "rows": [{"ddl": f"TABLE {table} ({ddl})"}], "rows_returned": 1, "timestamp": _utc_now()}
-                    row = drv.query_one("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
-                    return {"success": True, "database": database, "provider": "sqlite", "columns": ["sql"], "rows": [row] if row else [], "rows_returned": 1 if row else 0, "timestamp": _utc_now()}
+                        return {
+                            "success": True,
+                            "database": database,
+                            "provider": "postgresql",
+                            "columns": ["ddl"],
+                            "rows": [{"ddl": f"TABLE {table} ({ddl})"}],
+                            "rows_returned": 1,
+                            "timestamp": _utc_now(),
+                        }
+                    row = drv.query_one(
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                    )
+                    return {
+                        "success": True,
+                        "database": database,
+                        "provider": "sqlite",
+                        "columns": ["sql"],
+                        "rows": [row] if row else [],
+                        "rows_returned": 1 if row else 0,
+                        "timestamp": _utc_now(),
+                    }
                 finally:
                     drv.close()
             except Exception as exc:
-                return {"success": False, "error": str(exc)[:300]}
+                logger.warning("db_console error", exc_info=exc)
+                return {"success": False, "error": type(exc).__name__}
 
         sql = template.format(table=table_sql)
         return console_query({"database": database, "sql": sql})
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +544,8 @@ def console_apikeys() -> dict[str, Any]:
     try:
         return {"success": True, "apikeys": _load_apikey_names(), "timestamp": _utc_now()}
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.post("/apikey")
@@ -547,7 +578,8 @@ def console_apikey_set(payload: dict[str, Any]) -> dict[str, Any]:
             "apikey": {"name": name, "masked": _mask_secret_name(name), "set": bool(value.strip())},
         }
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
 
 
 @router.delete("/apikey/{name}")
@@ -559,4 +591,5 @@ def console_apikey_delete(name: str) -> dict[str, Any]:
             store.delete_secret(name)
         return {"success": True, "deleted": name}
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        logger.warning("db_console error", exc_info=exc)
+        return {"success": False, "error": type(exc).__name__}
