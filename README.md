@@ -41,50 +41,39 @@
   <sub>Pick your path — five doors, one engine</sub>
 </p>
 
-<table align="center">
-<tr>
-<td align="center" width="20%">
-<a href="#-quick-start">
+<div align="center">
 
-#### 🚀 Quick Start
-<sub>Run in under 5 minutes</sub>
-
+<a href="#-quick-start" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
+<div style="font-size:26px; line-height:1;">🚀</div>
+<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Quick Start</div>
+<div style="font-size:11px; line-height:1.3; color:#8b949e;">Run in under<br>5 minutes</div>
 </a>
-</td>
-<td align="center" width="20%">
-<a href="#-architecture-at-a-glance">
 
-#### 🏗️ Architecture
-<sub>System map & data flow</sub>
-
+<a href="#-architecture-at-a-glance" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
+<div style="font-size:26px; line-height:1;">🏗️</div>
+<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Architecture</div>
+<div style="font-size:11px; line-height:1.3; color:#8b949e;">System map &<br>data flow</div>
 </a>
-</td>
-<td align="center" width="20%">
-<a href="#-research--validation">
 
-#### 🔬 Research
-<sub>Claims & evidence</sub>
-
+<a href="#-research--validation" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
+<div style="font-size:26px; line-height:1;">🔬</div>
+<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Research</div>
+<div style="font-size:11px; line-height:1.3; color:#8b949e;">Claims &<br>evidence</div>
 </a>
-</td>
-<td align="center" width="20%">
-<a href="#-cli">
 
-#### 📖 Reference
-<sub>CLI · API</sub>
-
+<a href="#-cli" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
+<div style="font-size:26px; line-height:1;">📖</div>
+<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Reference</div>
+<div style="font-size:11px; line-height:1.3; color:#8b949e;">CLI · API</div>
 </a>
-</td>
-<td align="center" width="20%">
-<a href="#-contributing">
 
-#### 🤝 Contribute
-<sub>Join the research</sub>
-
+<a href="#-contributing" style="display:inline-block; width:148px; vertical-align:top; margin:6px; padding:18px 10px; border:1px solid #30363d; border-radius:14px; text-decoration:none;">
+<div style="font-size:26px; line-height:1;">🤝</div>
+<div style="font-weight:800; font-size:14px; margin:10px 0 2px 0; color:#e6edf3;">Contribute</div>
+<div style="font-size:11px; line-height:1.3; color:#8b949e;">Join the<br>research</div>
 </a>
-</td>
-</tr>
-</table>
+
+</div>
 
 ---
 
@@ -123,35 +112,72 @@ What makes Nexus different is not a claim of alpha — it's **how claims are tre
 
 ## 📦 Installation
 
-<table>
-<tr>
-<td width="50%" valign="top">
+<p align="center">
+  <sub>Three paths — same safety guarantee · First run always <b>PAPER</b>, never LIVE silently</sub>
+</p>
 
-**🎁 End users — packaged release**
-No Python needed. Download from [Releases](https://github.com/Opselon/NexusTradingForexBot/releases):
-<br><code>NexusScalpEngine-&lt;version&gt;-win-x64-setup.exe</code> or portable <code>.zip</code>
-<br><sub>First-run wizard defaults to <b>PAPER</b> — never LIVE silently.</sub>
+<!-- Card 1: End users -->
+<div style="border:1px solid #30363d; border-radius:14px; padding:18px 20px; margin:14px 0; border-left:4px solid #238636;">
 
-</td>
-<td width="50%" valign="top">
+#### 🎁 End users — packaged release
+<sup style="color:#8b949e;">No Python needed · Windows x64 · double-click install</sup>
 
-**⚡ PowerShell bootstrap**
-No Python, no Git, no admin:
+Download from **[Releases →](https://github.com/Opselon/NexusTradingForexBot/releases)** and run:
+
+```
+NexusScalpEngine-<version>-win-x64-setup.exe   →  installer (recommended)
+NexusScalpEngine-<version>-win-x64-portable.zip →  unzip & run
+```
+
+<sub>First-run wizard defaults to <b>PAPER</b> mode. Upgrades preserve your config.</sub>
+
+</div>
+
+<!-- Card 2: PowerShell bootstrap -->
+<div style="border:1px solid #30363d; border-radius:14px; padding:18px 20px; margin:14px 0; border-left:4px solid #1f6feb;">
+
+#### ⚡ PowerShell bootstrap — zero prerequisites
+<sup style="color:#8b949e;">No Python · No Git · No admin · installs to <code>%LOCALAPPDATA%\Nexus</code></sup>
+
+**Paste in PowerShell** — click top-right copy button:
+
 ```powershell
 iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1)
 ```
-<sub>
-<code>-DryRun</code> preview · <code>-Repair</code> heal · <code>-Commit &lt;sha&gt;</code> pin · installs to <code>%LOCALAPPDATA%\Nexus</code>
-</sub>
-
-</td>
-</tr>
-</table>
-
-**👩‍💻 Developers — from source:** see [Quick Start](#-quick-start) above.
 
 <details>
-<summary><b>Advanced installer details — rollback, manifests, SHA-256</b></summary>
+<summary><code>options</code> — preview, repair, pin</summary>
+
+```powershell
+# Preview what it will do (no changes)
+iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1) -DryRun
+
+# Heal a broken install
+.\install.ps1 -Repair
+
+# Pin to an exact commit
+.\install.ps1 -Commit <sha>
+```
+
+<sub>Idempotent & repeatable · <code>-DryRun</code> · <code>-Repair</code> · <code>-Commit &lt;sha&gt;</code> · portable Git fallback if needed</sub>
+
+</details>
+
+</div>
+
+<!-- Card 3: Developers -->
+<div style="border:1px solid #30363d; border-radius:14px; padding:18px 20px; margin:14px 0; border-left:4px solid #8957e5;">
+
+#### 👩‍💻 Developers — from source
+
+See **[🚀 Quick Start](#-quick-start)** above — clone, venv, `pip install -e ".[dev]"`, `nexus start`.
+
+<sub>Requires Python 3.11 + Git. Full dev setup → <a href="docs/getting-started/installation.md">installation guide</a></sub>
+
+</div>
+
+<details>
+<summary><b>Advanced — rollback, manifests, SHA-256</b></summary>
 
 Full reference: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) · [docs/INSTALLER_ARCHITECTURE.md](docs/INSTALLER_ARCHITECTURE.md)
 
