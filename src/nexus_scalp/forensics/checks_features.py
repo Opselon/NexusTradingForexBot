@@ -17,6 +17,7 @@ new check families that belong to another domain module.
 
 from __future__ import annotations
 
+import json
 import math
 import numbers
 from datetime import UTC, datetime
@@ -372,18 +373,46 @@ def check_model_dimension_contract() -> CheckResult:
 
     A 60D artifact must never receive 70D vectors and vice versa. Until a
     champion is REGISTERED we can only verify artifact-vs-config dimension.
+
+    50D/70D era note: `ACTIVE_SCHEMA_ID` (scalp_v1, 50D) is a known LAG vs the
+    configured champion artifact (70d_liquidity, scalp_v3, 70D — the current
+    canonical era). Comparing the artifact against the lagging constant flags
+    every canonical 70D deployment as CRITICAL (false positive). The serving
+    truth is the artifact's OWN declared `feature_schema_id` in model.meta.json
+    next to the checkpoint: resolve THAT schema's dimension as the reference,
+    falling back to active_dimension() when the meta is missing/unreadable.
     """
     info = _champion_artifact_info()
     if not info.get("found"):
         return _unknown("CHECK-MDL-03", "no champion artifact to dimension-check", info, "artifact")
+    # Reference dimension: the artifact's own declared schema (serving truth).
+    ref_dim: int | None = None
+    ref_schema_id = ""
     try:
-        from nexus_scalp.features.schema import active_dimension  # type: ignore[import-not-found]
-
-        dim = active_dimension()
-    except Exception:
-        return _unknown(
-            "CHECK-MDL-03", "cannot resolve active schema dimension", info, "active dimension"
+        from nexus_scalp.features.schema import (  # type: ignore[import-not-found]
+            FEATURE_SCHEMAS,
+            active_dimension,
         )
+
+        meta_path = Path(info["path"]).with_name("model.meta.json")
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            ref_schema_id = str(meta.get("feature_schema_id", ""))
+            if ref_schema_id and FEATURE_SCHEMAS.is_registered(ref_schema_id):
+                ref_dim = int(FEATURE_SCHEMAS.resolve(ref_schema_id).dimension)
+        if ref_dim is None:
+            ref_dim = active_dimension()
+    except Exception:
+        try:
+            from nexus_scalp.features.schema import (
+                active_dimension,  # type: ignore[import-not-found]
+            )
+
+            ref_dim = active_dimension()
+        except Exception:
+            return _unknown(
+                "CHECK-MDL-03", "cannot resolve active schema dimension", info, "active dimension"
+            )
     # Read neural input width from state dict when torch is available.
     state_dim: int | None = None
     try:
@@ -396,21 +425,26 @@ def check_model_dimension_contract() -> CheckResult:
                 state_dim = int(w.shape[1])
     except Exception:
         state_dim = None
-    observed = {**info, "active_schema_dimension": dim, "artifact_input_dimension": state_dim}
-    if state_dim is not None and state_dim != dim:
+    observed = {
+        **info,
+        "active_schema_dimension": ref_dim,
+        "artifact_input_dimension": state_dim,
+        "artifact_declared_schema": ref_schema_id,
+    }
+    if state_dim is not None and ref_dim is not None and state_dim != ref_dim:
         return CheckResult(
             "CHECK-MDL-03",
             HealthStatus.CRITICAL,
-            evidence=f"artifact input dim {state_dim} != active schema dim {dim}",
+            evidence=f"artifact input dim {state_dim} != schema dim {ref_dim} (declared: {ref_schema_id or 'active'})",
             observed=observed,
-            expected="artifact input dim == active schema dim",
+            expected="artifact input dim == serving schema dim",
             detail="MODEL_SCHEMA_MISMATCH",
         )
     return _ok(
         "CHECK-MDL-03",
-        f"artifact input dim {state_dim or 'unknown'} matches active schema dim {dim}",
+        f"artifact input dim {state_dim or 'unknown'} matches serving schema dim {ref_dim}",
         observed,
-        "artifact input dim == active schema dim",
+        "artifact input dim == serving schema dim",
     )
 
 
