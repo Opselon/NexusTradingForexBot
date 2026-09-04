@@ -12,6 +12,17 @@ Temporal data contract (spec 5):
 Sequences are built from an already-labeled, chronologically-sorted
 dataset frame using ONLY the artifacts' stored sample ordering — no future
 information and no cross-boundary contamination.
+
+TASK ARCH-SEQ-UNIFY — SINGLE SOURCE OF TRUTH
+--------------------------------------------
+The canonical temporal contract VALUES (sequence length, feature dim,
+max inter-bar gap, schema id) live ONLY in
+``nexus_scalp.model_generation.temporal_contract``. The module-level names
+below (SEQUENCE_LENGTH / FEATURE_DIM / MAX_GAP_US / SCHEMA_ID and the
+``SequenceContract`` dataclass defaults) are frozen ALIASES re-exported
+from temporal_contract — kept for backward compatibility with existing
+imports (sequence_training, benchmark, tests). One direction only:
+temporal_contract is authoritative; nothing here redefines a value.
 """
 
 from __future__ import annotations
@@ -69,23 +80,41 @@ from __future__ import annotations
 # fallback is visible, never silent.
 # =============================================================================
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 
 import numpy as np
 import polars as pl
 
-#: Canonical sequence length (see module docstring for the L=32 evidence).
-SEQUENCE_LENGTH: int = 32
-#: Canonical feature width: the scalp_v3 70D family (schema_contract.DIMENSION).
-FEATURE_DIM: int = 70
-#: Max allowed inter-bar gap inside one window (microseconds). M1 bars are
-#: 60s; XAUUSD trades ~23h/day so the worst ROUTINE maintenance gap is a few
-#: minutes. 15 minutes tolerates the normal break noise while still
-#: rejecting session/weekend-class holes (53h max observed gap). None would
-#: disable the check - never the default.
-MAX_GAP_US: int = 15 * 60 * 1_000_000  # 15 minutes in microseconds
-#: Feature schema the 70D contract binds to (features/schema_contract.py).
-SCHEMA_ID: str = "scalp_v3"
+# ---------------------------------------------------------------------------
+# TASK ARCH-SEQ-UNIFY: these are ALIASES of the canonical contract defined in
+# temporal_contract.py (the single source of truth). No local literals —
+# change the value there, and every consumer of the sequence contract
+# (SequenceBuilder defaults, SequenceContract, SequenceCandidateTrainer,
+# live rebind) follows. Kept under the historic names for backward compat.
+# ---------------------------------------------------------------------------
+from nexus_scalp.model_generation.temporal_contract import (
+    CANONICAL_MAX_GAP_US as MAX_GAP_US,  # canonical max inter-bar gap (us)
+)
+from nexus_scalp.model_generation.temporal_contract import (
+    CANONICAL_SCHEMA_ID as SCHEMA_ID,  # canonical 70D feature schema id
+)
+from nexus_scalp.model_generation.temporal_contract import (
+    CANONICAL_SEQ_LEN as SEQUENCE_LENGTH,  # canonical sequence length L
+)
+from nexus_scalp.model_generation.temporal_contract import (
+    FEATURE_DIM,  # canonical 70D feature width (defined in temporal_contract)
+)
+
+__all__ = [
+    "FEATURE_DIM",
+    "MAX_GAP_US",
+    "SCHEMA_ID",
+    "SEQUENCE_CONTRACT",
+    "SEQUENCE_LENGTH",
+    "SequenceBuilder",
+    "SequenceContract",
+]
 
 
 @dataclass(frozen=True)
@@ -97,6 +126,9 @@ class SequenceContract:
     (via build_metadata / meta.json). The live loader asserts the serving
     tensor it builds matches these EXACTLY; any mismatch is a loud
     fallback to the 2D path, never a silent reinterpretation.
+
+    Field defaults are ALIASES of temporal_contract.CANONICAL_* — do not
+    add local literals here.
     """
 
     sequence_length: int = SEQUENCE_LENGTH
@@ -136,7 +168,7 @@ class SequenceBuilder:
         max_gap_us: int | str | None = "contract",
     ) -> None:
         # ``seq_len=None`` / ``max_gap_us="contract"`` (sentinel) = take the
-        # CANONICAL contract values (L=32, gap=15min). An explicit int wins
+        # CANONICAL contract values (L=32, gap=10min). An explicit int wins
         # (benchmark matrix builds L=8/16 ablations); an explicit None for
         # max_gap_us means "no gap check" (legacy ablation semantics).
         if seq_len is None:
@@ -236,27 +268,44 @@ class SequenceBuilder:
         }
 
 
+_EPOCH = None  # module-level epoch anchor, built lazily below
+
+
 def _ts_us(value: Any) -> int:
-    """Parses a timestamp cell to epoch microseconds."""
+    """Parses a timestamp cell to epoch microseconds.
+
+    Windows-safe: ``datetime(1970,1,1).timestamp()`` raises OSError [Errno 22]
+    on Windows for naive datetimes at/before the epoch (OS localtime
+    dependence), so epoch math is done against an explicit anchor instead —
+    correct for naive AND aware datetimes on every platform. A naive datetime
+    is interpreted as UTC (deterministic; gap checking only ever subtracts
+    two timestamps from the same frame, so the shared convention cancels).
+    """
+    global _EPOCH  # noqa: PLW0603
+    if _EPOCH is None:
+        from datetime import datetime
+
+        _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
     if value is None:
         return 0
     if hasattr(value, "timestamp"):  # datetime-like
-        dt = value
-        if dt.tzinfo is None:
-            # Windows raises OSError for naive datetimes before the LOCAL
-            # epoch (e.g. 1970-01-01T00:00 naive in UTC+3:30 == 1969 local).
-            # Synthetic/epoch-based fixtures are UTC by definition; anchor
-            # naive values to UTC so timestamp() never crosses the epoch.
-            from datetime import UTC
+        try:
+            # Windows-safe: works for naive AND aware datetimes, any year.
+            return int((value - _EPOCH).total_seconds() * 1_000_000)
+        except TypeError:
+            # naive datetime vs aware anchor — re-anchor in the same (naive) frame
+            from datetime import datetime as _dt
 
-            dt = dt.replace(tzinfo=UTC)
-        return int(dt.timestamp() * 1_000_000)
-    from datetime import UTC, datetime
+            return int((value - _dt(1970, 1, 1)).total_seconds() * 1_000_000)
+        except (OverflowError, OSError, ValueError):
+            return 0
+    from datetime import datetime
 
     try:
         dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return int(dt.timestamp() * 1_000_000)
-    except ValueError:
+        try:
+            return int((dt - _EPOCH).total_seconds() * 1_000_000)
+        except TypeError:
+            return int((dt - datetime(1970, 1, 1)).total_seconds() * 1_000_000)
+    except (OverflowError, OSError, ValueError):
         return 0
