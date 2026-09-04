@@ -67,3 +67,5 @@ tests/critical_suite.txt text eol=lf
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
 installer/*.iss -text
+tests/fast_suite.txt text eol=lf
+tests/slow_suite.txt text eol=lf
