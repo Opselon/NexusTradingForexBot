@@ -8,7 +8,12 @@ Regressions:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
+
+if TYPE_CHECKING:  # pragma: no cover
+    import polars as pl
 
 try:
     import torch  # type: ignore[import-not-found]
@@ -16,9 +21,10 @@ except Exception:  # pragma: no cover
     pytest.skip("torch missing", allow_module_level=True)
 
 
-def _toy_frame_with_two_classes(n: int = 120) -> tuple["pl.DataFrame", list[str]]:  # type: ignore[name-defined]
-    import polars as pl
+def _toy_frame_with_two_classes(n: int = 120) -> tuple[pl.DataFrame, list[str]]:
     import random
+
+    import polars as pl
 
     t0_rows: list[dict[str, object]] = []
     rng = random.Random(11)
@@ -52,7 +58,7 @@ def test_bug235_zero_improvement_tags_rejected() -> None:
     assert bool(getattr(model, "_finetune_zero_improvement", False)) is True
 
 
-def test_bug235_state_dict_equal() -> None:  # noqa: D103
+def test_bug235_state_dict_equal() -> None:
     from nexus_scalp.models.scalp_net import ScalpNet
     from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
