@@ -362,10 +362,17 @@ def console_rows(
             if not driver.table_exists(table):
                 return {"success": False, "error": f"table '{table}' not found"}
             # CodeQL py/sql-injection: table is user-controlled; validate
-            # strictly via driver.quote_ident (allow-list) before
-            # interpolation.  LIMIT/OFFSET use qmark placeholders so they
-            # never enter the SQL text (driver.query translates ? -> %s
-            # for PostgreSQL).
+            # against the LIVE schema allow-list (driver.list_tables()) so
+            # only real application tables are readable, then re-derive the
+            # SQL text from the validated entry. LIMIT/OFFSET use qmark
+            # placeholders so they never enter the SQL text (driver.query
+            # translates ? -> %s for PostgreSQL).
+            try:
+                live_tables = set(driver.list_tables())
+            except Exception:
+                live_tables = set()
+            if live_tables and table not in live_tables:
+                return {"success": False, "error": "table not in schema allow-list"}
             try:
                 table_sql = driver.quote_ident(table)
             except ValueError:
@@ -481,6 +488,12 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
         try:
             if not driver.table_exists(table):
                 return {"success": False, "error": f"table '{table}' not found"}
+            try:
+                live_tables = set(driver.list_tables())
+            except Exception:
+                live_tables = set()
+            if live_tables and table not in live_tables:
+                return {"success": False, "error": "table not in schema allow-list"}
             try:
                 table_sql = driver.quote_ident(table)
             except ValueError:

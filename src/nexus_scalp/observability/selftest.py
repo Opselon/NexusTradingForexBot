@@ -46,6 +46,23 @@ def _synthetic_storm(n: int, *, event: str = "LLM_EMPTY") -> tuple[EventBatchAgg
     return agg, lines
 
 
+_SAFE_TEXT_RE = None
+
+
+def _safe_assert_text(exc: BaseException) -> str:
+    """Sanitized AssertionError text for the failures payload.
+
+    Keeps word/digit/punctuation content of the synthetic harness message
+    while dropping any character outside a conservative safe set (blocks
+    paths, SQL, and stack fragments from flowing to the diagnostics JSON).
+    """
+    import re as _re
+
+    text = str(exc)
+    cleaned = _re.sub(r"[^A-Za-z0-9 =_.,:\-\[\]\(\)%]", " ", text)
+    return _re.sub(r"\s+", " ", cleaned).strip()[:200]
+
+
 def run_observability_selftest() -> dict[str, Any]:
     """Runs all offline contract checks on synthetic data. Never raises."""
     failures: list[str] = []
@@ -59,8 +76,9 @@ def run_observability_selftest() -> dict[str, Any]:
             checks[name] = "FAIL"
             # AssertionError text is synthetic harness diagnostics ("storm
             # produced 45 lines") — safe to surface, needed by the guardrail
-            # tests; not a file/SQL path leak.
-            failures.append(f"{name}: {exc}")
+            # tests; not a file/SQL path leak. Sanitized through a
+            # conservative character filter so no tainted value flows raw.
+            failures.append(f"{name}: {_safe_assert_text(exc)}")
         except Exception as exc:  # absolute isolation
             checks[name] = "FAIL"
             failures.append(f"{name}: unexpected {type(exc).__name__}")

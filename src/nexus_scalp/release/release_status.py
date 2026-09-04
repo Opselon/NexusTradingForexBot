@@ -33,11 +33,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
 STATUS_VERSION_UPDATE = "VERSION_UPDATE"
 STATUS_REVISION_AHEAD = "REVISION_AHEAD"
 STATUS_NO_UPDATE = "NO_UPDATE"
 STATUS_UNKNOWN = "UNKNOWN"
 STATUS_OFFLINE = "OFFLINE"
+
+
+logger = get_logger("nexus_scalp.release.release_status")
 
 
 def _safe_json(path: Path) -> dict[str, Any]:
@@ -97,6 +102,30 @@ def _git_counts(remote: str = "origin/main") -> tuple[int | None, int | None]:
         return None, None
 
 
+#: Keys that may carry raw updater exception text (str(exc)) from persisted
+#: state/history files; they are stripped at the API boundary so a failed
+#: update's internal error detail never reaches the client (CodeQL
+#: py/stack-trace-exposure: response bodies must not echo exception text).
+_UNSAFE_ERROR_KEYS = frozenset(
+    {"error_message", "error", "reason", "detail", "message", "exception", "traceback"}
+)
+
+
+def _sanitize_release_record(rec: Any, depth: int = 0) -> Any:
+    """Drops error-text keys from parsed persisted release records."""
+    if depth > 4:
+        return rec
+    if isinstance(rec, dict):
+        return {
+            k: _sanitize_release_record(v, depth + 1)
+            for k, v in rec.items()
+            if not (isinstance(k, str) and k.lower() in _UNSAFE_ERROR_KEYS)
+        }
+    if isinstance(rec, list):
+        return [_sanitize_release_record(v, depth + 1) for v in rec]
+    return rec
+
+
 def _history_rows(limit: int = 10) -> list[dict[str, Any]]:
     hist = _update_home() / "update-history.jsonl"
     if not hist.exists():
@@ -106,7 +135,7 @@ def _history_rows(limit: int = 10) -> list[dict[str, Any]]:
         for line in hist.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]:
             if line.strip():
                 try:
-                    rows.append(json.loads(line))
+                    rows.append(_sanitize_release_record(json.loads(line)))
                 except Exception:
                     continue
     except OSError:
@@ -147,8 +176,8 @@ def _recent_commit_titles(limit: int = 5, remote: str = "origin/main") -> list[s
 def build_release_status(include_git_counts: bool = True) -> dict[str, Any]:
     """Offline-safe, last-known release/update status (never fabricates)."""
     home = _update_home()
-    installed = _safe_json(home / "installed-release.json")
-    state = _safe_json(home / "update-state.json")
+    installed = _sanitize_release_record(_safe_json(home / "installed-release.json"))
+    state = _sanitize_release_record(_safe_json(home / "update-state.json"))
     version_info_commit = _git_commit()
 
     # last-known available release (from the persisted update state when an
@@ -228,7 +257,7 @@ def refresh_from_github(timeout: int = 20) -> dict[str, Any]:
     try:
         from nexus_scalp.release.updater import UpdateOrchestrator
 
-        plan = UpdateOrchestrator().check(timeout=timeout)
+        plan = _sanitize_release_record(UpdateOrchestrator().check(timeout=timeout))
         status = STATUS_OFFLINE
         if plan.get("status") == "UPDATE_AVAILABLE":
             status = STATUS_VERSION_UPDATE
@@ -248,7 +277,8 @@ def refresh_from_github(timeout: int = 20) -> dict[str, Any]:
             out["available_commit"] = plan.get("commit_sha")
         return out
     except Exception as exc:  # network failure is a truth, not a crash
+        logger.warning("release refresh failed", exc_info=exc)
         out = build_release_status()
-        out["refresh"] = {"attempted": True, "network": "FAILED", "error": str(exc)[:200]}
+        out["refresh"] = {"attempted": True, "network": "FAILED", "error": type(exc).__name__}
         out["update_status"] = STATUS_OFFLINE
         return out

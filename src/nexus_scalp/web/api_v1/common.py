@@ -326,17 +326,30 @@ def iso_or_none(value: Any) -> str | None:
     return str(value)
 
 
+#: Strings that indicate raw traceback / exception text leaked into a payload
+#: value. They are replaced with a fixed placeholder at the envelope boundary
+#: (CodeQL py/stack-trace-exposure: JSONResponse content must never carry
+#: server-side exception text).
+_TRACEBACK_MARKERS = ("Traceback (most recent call last):", 'File "', "  File ")
+
+
+def _sanitize_traceback_text(v: Any) -> Any:
+    if isinstance(v, str) and any(m in v for m in _TRACEBACK_MARKERS):
+        return "REDACTED_TRACEBACK"
+    return v
+
+
 def jsonable(obj: Any) -> Any:
     """Recursively converts datetime/enum leaves to transport-safe values."""
     if isinstance(obj, dict):
-        return {k: jsonable(v) for k, v in obj.items()}
+        return {k: _sanitize_traceback_text(jsonable(v)) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return [jsonable(v) for v in obj]
+        return [_sanitize_traceback_text(jsonable(v)) for v in obj]
     if isinstance(obj, datetime):
         return iso_or_none(obj)
     if isinstance(obj, Enum):
         return obj.value
-    return obj
+    return _sanitize_traceback_text(obj)
 
 
 def make_data_transform(fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
