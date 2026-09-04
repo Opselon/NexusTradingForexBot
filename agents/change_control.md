@@ -1781,3 +1781,13 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
 - SCOPE: src/nexus_scalp/research/{streaming_replay,event_source,mt5_tick_dataset}.py (read/fix), src/nexus_scalp/model_generation/replay.py (read/fix), tests/unit/test_agent18_*.py (new), scratch/ns_agent18_*.py (probes+evidence), agents registries, docs/agent_handoffs/
 - CONSTRAINTS: INV-002/INV-008 preserved; no realism weakening; no fabricated results; commit-per-step; foreign WIP untouched (Agent-11 risk/order_manager/live_engine, Agent-14 mt5_tick_dataset WIP)
 - STATUS: IMPLEMENTING
+
+
+## CHG-0063 - OOS gate / temporal holdout / forward-test deep forensic + hard-gate hardening (2026-09-05, Agent 17)
+
+- AGENT: Agent 17 (Nexus-Main orchestrated) | ROLE: Research Validation / OOS Gate / Temporal Holdout / Forward-Test Forensics
+- TASK: user brief 2026-09-05 — prove OOS = genuinely unseen future data with NO override path; adversarial-audit the hard gate end-to-end (oos.py, splitting.py, pipeline.py, scoring.py, registry.py, lifecycle.py, model_generation/validation.py, model_lab/{evaluation,promotion}.py, forward_test.py); verify MT5 official UTC/range semantics (copy_rates_range/copy_ticks_range/history_orders_get/history_deals_get/order_calc_profit); verify cutoff/freeze immutability; preprocessing/feature/label isolation; sample sufficiency; metric/ECE integrity; real bounded OOS + forward run + repeatability; FIX every confirmed defect with regression tests.
+- SCOPE (expected): src/nexus_scalp/research/{oos,splitting,forward_test,pipeline,scoring,registry,leakage,metrics}.py, src/nexus_scalp/model_generation/validation.py, src/nexus_scalp/model_lab/*, tests/unit/test_agent17_* (new), agents registries, docs/agent_handoffs/
+- BOUNDARIES: dataset acquisition layer owned by Agent 14 (CHG-0061) — mt5_tick_dataset.py is foreign; replay/streaming engine owned by Agent 15 (CHG-0059) / Agent 18 (CHG-0062); execution owned by Agent 12 (CHG-0058). Defects outside this scope are routed via bugs.md/handoff, not edited.
+- CONSTRAINTS: no threshold weakening; no OOS reuse for tuning; NaN never converts to PASS; every confirmed defect fixed + regression test; commit-per-step; beforePush quality gate; evidence-based findings only
+- STATUS: IMPLEMENTING
