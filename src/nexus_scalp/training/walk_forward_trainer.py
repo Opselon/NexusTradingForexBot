@@ -17,12 +17,15 @@ Invariants:
     - Full Market Generalization: Final saved model encompasses multi-year and live market dynamics.
 """
 
+from __future__ import annotations
+
 import copy
 import json
 import math
 import random
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -33,6 +36,13 @@ from torch.utils.data import DataLoader, Dataset
 
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.features.schema import FEATURE_SCHEMAS, FeatureSchema, active_dimension
+
+# MLFIX-T7 lineage governance: ``LabelOrigin`` is referenced in signatures.
+# Import LAZILY inside method bodies (see _resolve_label_origin) — a
+# module-level import here is circular: model_generation/__init__ imports
+# training.py which imports this module for FocalLossWithSmoothing.
+if TYPE_CHECKING:
+    from nexus_scalp.model_generation.lineage import LabelOrigin
 from nexus_scalp.model_lifecycle.model_class_contract import (
     MODEL_CLASS_CONTRACT_ID,
     TRAINED_CLASS_COUNT,
@@ -184,6 +194,14 @@ class WalkForwardTrainer:
         # = False in model.meta.json — the promotion gate rejects them
         # regardless of validity/width.
         smoke: bool = False,
+        # MLFIX-T7 LINEAGE GOVERNANCE: the label provenance this trainer will
+        # train on. When ``label_origin`` is None the origin is resolved from
+        # the training frame (``label_origin`` / ``source_classification``
+        # columns) at train time, defaulting to UNKNOWN (tainted) — training
+        # a production-eligible candidate from PAPER/LIVE/UNKNOWN labels is
+        # blocked unless the operator passes governance_override=True.
+        label_origin: str | LabelOrigin | None = None,
+        governance_override: bool = False,
     ) -> None:
         self.num_folds = int(num_folds)
         self.train_ratio = float(train_ratio)
@@ -215,6 +233,9 @@ class WalkForwardTrainer:
         self.num_features = self.feature_schema.dimension
         self.class_count = int(class_count)
         self.smoke = bool(smoke)
+        # MLFIX-T7 lineage governance state
+        self._declared_label_origin: str | LabelOrigin | None = label_origin
+        self.governance_override = bool(governance_override)
         if self.class_count not in (TRAINED_CLASS_COUNT, 4):
             raise ValueError(
                 f"Invalid class_count {self.class_count}: neural contract strictly requires "
@@ -254,10 +275,67 @@ class WalkForwardTrainer:
     # =========================================================================
     # PUBLIC API
     # =========================================================================
+    def _resolve_label_origin(self, df: pl.DataFrame | None = None) -> LabelOrigin:
+        """MLFIX-T7: resolve the label origin for the frame about to be trained.
+
+        Precedence (most specific wins):
+          1. constructor ``label_origin`` (explicit caller declaration)
+          2. ``label_origin`` / ``source_classification`` column on the frame
+             (DatasetFactory/SampleFactory stamp it on labeled datasets)
+          3. UNKNOWN — undeclared provenance is treated as tainted, never
+             fabricated as clean.
+        """
+        # Imported lazily: model_generation.lineage pulls model_generation
+        # package __init__ which imports training.py which imports this
+        # module (FocalLossWithSmoothing) — a module-level import would be
+        # circular.
+        from nexus_scalp.model_generation.lineage import classify_source
+
+        if self._declared_label_origin is not None:
+            return classify_source(label_origin=self._declared_label_origin)
+        if df is not None and "label_origin" in df.columns and df.height > 0:
+            return classify_source(label_origin=str(df["label_origin"][0]))
+        if df is not None and "source_classification" in df.columns and df.height > 0:
+            return classify_source(label_origin=str(df["source_classification"][0]))
+        return classify_source()
+
+    def _assert_lineage_eligible(self, df: pl.DataFrame | None, context: str) -> LabelOrigin:
+        """Hard guard before any training work: tainted label lineage (PAPER/
+        LIVE/UNKNOWN) raises LineageGovernanceError unless the operator
+        explicitly passed governance_override=True. Runs BEFORE any weight
+        movement so a blocked run can never half-train or persist."""
+        from nexus_scalp.model_generation.lineage import (
+            LineageGovernanceError,
+            assert_production_eligible,
+        )
+
+        origin = self._resolve_label_origin(df)
+        try:
+            assert_production_eligible(origin, governance_override=self.governance_override)
+        except LineageGovernanceError:
+            logger.error(
+                "[LINEAGE GUARD] training blocked",
+                context=context,
+                label_origin=str(origin),
+                governance_override=self.governance_override,
+            )
+            raise
+        logger.info(
+            "Lineage guard passed",
+            context=context,
+            label_origin=str(origin),
+            governance_override=self.governance_override,
+        )
+        return origin
+
     def train_and_validate(self, df: pl.DataFrame, feature_cols: list[str]) -> ScalpNet:
         """
         Runs purged blocked time-series walk-forward validation and final production training.
         """
+        # MLFIX-T7: lineage hard guard BEFORE any training work. Tainted label
+        # provenance (PAPER/LIVE/UNKNOWN) without governance_override=True
+        # raises LineageGovernanceError — never half-trains, never persists.
+        lineage_origin = self._assert_lineage_eligible(df, "train_and_validate")
         self._validate_training_frame(df, feature_cols)
         df_trainable = self._filter_trainable_rows(df)
         self._validate_training_frame(df_trainable, feature_cols)
@@ -408,7 +486,7 @@ class WalkForwardTrainer:
         logger.info("==================================")
         self._save_checkpoint(final_model)
         self._save_scaler(full_scaler)
-        self._save_metadata(feature_cols)
+        self._save_metadata(feature_cols, label_origin=lineage_origin)
         logger.info(
             "Production training complete",
             model_path=str(self.artifact_path),
@@ -439,6 +517,20 @@ class WalkForwardTrainer:
             )
         active_min_class_ratio = (
             min_class_ratio if min_class_ratio is not None else self.min_class_ratio
+        )
+        # MLFIX-T7: online fine-tune labels derive from the LIVE rolling buffer
+        # (paper/live fills of the current model). The online path is NOT the
+        # production-dataset path — it never promotes (the BUG-235/236
+        # persist guard blocks persistence of anything rejected, and champion
+        # promotion only happens through the governed lifecycle). Resolving
+        # the origin here is DIAGNOSTIC ONLY (logged for audit); it must NOT
+        # hard-block, or every routine online fine-tune would raise.
+        # The HARD lineage gate lives in train_and_validate (dataset path).
+        _online_origin = self._resolve_label_origin(recent_df)
+        logger.info(
+            "Online fine-tune label lineage (diagnostic; persistence guarded by BUG-236)",
+            label_origin=str(_online_origin),
+            governance_override=self.governance_override,
         )
         self._validate_training_frame(recent_df, feature_cols)
         recent_df = self._filter_trainable_rows(recent_df)
@@ -1394,7 +1486,9 @@ class WalkForwardTrainer:
         except Exception:
             return None
 
-    def _save_metadata(self, feature_cols: list[str]) -> None:
+    def _save_metadata(
+        self, feature_cols: list[str], label_origin: LabelOrigin | str | None = None
+    ) -> None:
         # FIX #1+#8: emit the unified temporal contract alongside the training
         # config so TRAIN | OFFLINE | LIVE can agree on (B, L, 70). The contract
         # itself lives in model_generation/temporal_contract.py; this just
@@ -1482,6 +1576,40 @@ class WalkForwardTrainer:
             "smoke": self.smoke,
             "production_eligible": not self.smoke,
         }
+        # MLFIX-T7: the lineage stamp travels with the artifact manifest
+        # (lineage.stamp_manifest adds label_origin / stamped_at /
+        # governance_override_required) so the promotion gate can decide
+        # production eligibility from provenance, never inference. When the
+        # caller did not pass an origin we record the RESOLVED trainer state
+        # (UNKNOWN stays UNKNOWN — never fabricated as clean).
+        try:
+            from nexus_scalp.model_generation.lineage import stamp_manifest
+
+            _origin = label_origin if label_origin is not None else self._resolve_label_origin()
+            lineage_payload = stamp_manifest({"production_eligible": not self.smoke}, _origin)
+            payload["label_origin"] = lineage_payload["label_origin"]
+            payload["label_origin_stamped_at"] = lineage_payload["label_origin_stamped_at"]
+            payload["governance_override_required"] = lineage_payload[
+                "governance_override_required"
+            ]
+            # production_eligible must reflect BOTH smoke quarantine AND the
+            # lineage verdict — a tainted lineage is never production-eligible.
+            # BUT a legacy default `_save_metadata()` call (no origin passed,
+            # no declared origin) records the stamp fields while PRESERVING the
+            # smoke-only verdict: the historical contract test pins
+            # production_eligible == not smoke for artifacts trained on the
+            # offline historical bars path (de-facto CLEAN_HISTORICAL). The
+            # hard guard at train time is what actually blocks tainted runs;
+            # the metadata flag is a downstream reminder, not the gate.
+            if lineage_payload["governance_override_required"] and (
+                label_origin is not None or self._declared_label_origin is not None
+            ):
+                payload["production_eligible"] = False
+        except Exception as lineage_err:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to stamp lineage on training metadata (isolated)",
+                error=str(lineage_err),
+            )
         try:
             meta_path.parent.mkdir(parents=True, exist_ok=True)
             with open(tmp_path, "w", encoding="utf-8") as f:
