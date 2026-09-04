@@ -755,8 +755,15 @@ class OrderLifecycleManager:
         Enforces MAX_TOTAL_EXPOSURE: at most one active position OR one pending order
         across the entire engine. This is the last line of defence before an order is
         sent to the broker, independent of the policy-level gate.
+
+        BUG-240: the gate is ENGINE-WIDE by contract (this docstring and the
+        signals/policy.py gate both say engine-wide), but the implementation
+        counted only `symbol`-scoped tickets, so a position held on any other
+        instrument left the gate open. The count is now unscoped; the per-symbol
+        breakdown stays available for block-reason logging.
         """
-        positions, pendings = self.count_total_exposure(symbol=symbol)
+        _sym_positions, _sym_pendings = self.count_total_exposure(symbol=symbol)
+        positions, pendings = self.count_total_exposure(symbol=None)
         return (positions + pendings) < MAX_TOTAL_EXPOSURE
 
     def _clamp_dispatch_volume(self, volume: float, symbol: str | None = None) -> float:
@@ -822,6 +829,24 @@ class OrderLifecycleManager:
         caller, attached to the entry context and persisted in the closed-trade
         autopsy row for post-hoc strategy/setup attribution.
         """
+        # BUG-241: the primary dispatch path now honors the engine safety
+        # state machine. Previously only execute_order (hedge path) checked
+        # SAFE_MODE, so the main entry path kept dispatching through a
+        # 3-rejection circuit breaker it never fed and never read.
+        if self.global_state == "SAFE_MODE":
+            logger.warning(
+                "[ENTRY_BLOCKED] layer=SAFE_MODE reason=CIRCUIT_OPEN action=%s symbol=%s",
+                getattr(decision.action, "value", str(decision.action)),
+                getattr(decision, "symbol", ""),
+            )
+            emit_terminal_pending_outcome(
+                experience_engine=self.experience_engine,
+                request_id=str(getattr(decision, "request_id", "") or ""),
+                state=DecisionLifecycle.NOT_DISPATCHED,
+                detail="SAFE_MODE circuit open at dispatch",
+            )
+            return False
+
         action = decision.action
         symbol = decision.symbol
         price = decision.proposed_entry
@@ -949,6 +974,19 @@ class OrderLifecycleManager:
                     state=DecisionLifecycle.REJECTED_UNFILLED,
                     detail="broker refused market order at dispatch (ticket=0)",
                 )
+            # BUG-241: consecutive broker refusals feed the SAFE_MODE breaker
+            # (same 3-rejection rule the hedge path has always enforced); a
+            # success resets the counter.
+            if ticket > 0:
+                self._consecutive_failures = 0
+            else:
+                self._consecutive_failures += 1
+                if self._consecutive_failures >= 3:
+                    self.global_state = "SAFE_MODE"
+                    logger.critical(
+                        "TRANSITIONED TO SAFE_MODE: 3 consecutive dispatch refusals detected!"
+                    )
+
             # EXEC-QUALITY: record the request_id AFTER the broker call so a
             # repeat of the same request (re-fire/replay) is refused by the
             # duplicate-dispatch guard above regardless of fill outcome.
@@ -1009,6 +1047,17 @@ class OrderLifecycleManager:
                     state=DecisionLifecycle.REJECTED_UNFILLED,
                     detail="broker rejected pending order at dispatch (ticket=0)",
                 )
+            # BUG-241: pending dispatch refusals feed the same breaker.
+            if ticket > 0:
+                self._consecutive_failures = 0
+            else:
+                self._consecutive_failures += 1
+                if self._consecutive_failures >= 3:
+                    self.global_state = "SAFE_MODE"
+                    logger.critical(
+                        "TRANSITIONED TO SAFE_MODE: 3 consecutive pending refusals detected!"
+                    )
+
             # EXEC-QUALITY: same duplicate-dispatch bookkeeping as the market
             # path — every sent request_id is terminal (filled or refused).
             if dispatch_request_id:
