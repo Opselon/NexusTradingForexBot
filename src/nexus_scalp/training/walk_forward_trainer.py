@@ -26,7 +26,7 @@ import random
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import polars as pl
@@ -261,6 +261,9 @@ class WalkForwardTrainer:
         # MLFIX-T7 lineage governance state
         self._declared_label_origin: str | LabelOrigin | None = label_origin
         self.governance_override = bool(governance_override)
+        # P0-2026-09-04: explicit dataset provenance binding (None = unbound;
+        # non-smoke publications require a bound dataset via bind_dataset()).
+        self._dataset_provenance: dict[str, Any] | None = None
         if self.class_count not in (TRAINED_CLASS_COUNT, 4):
             raise ValueError(
                 f"Invalid class_count {self.class_count}: neural contract strictly requires "
@@ -1663,6 +1666,12 @@ class WalkForwardTrainer:
         # schema hash are required for every non-smoke run — a production
         # candidate with dataset_id=null is exactly the historical P0.
         self._stamp_dataset_provenance(meta_path)
+        if not getattr(self, "_dataset_provenance", None) and not self.smoke:
+            logger.warning(
+                "NON-SMOKE training run without bound dataset provenance — the "
+                "emission gate will REJECT the artifact (declare via "
+                "bind_dataset()/declare_dataset_provenance() before training)."
+            )
 
     def _stamp_dataset_provenance(self, meta_path: Path) -> None:
         """Merge bound dataset provenance into the metadata (required non-smoke).
@@ -1699,6 +1708,63 @@ class WalkForwardTrainer:
             tmp.replace(meta_path)
         except Exception as err:  # pragma: no cover - defensive
             logger.warning("Provenance stamp rewrite failed", error=str(err))
+
+    # =========================================================================
+    # INTERNAL: PROVENANCE BINDING (P0-2026-09-04)
+    # =========================================================================
+    def declare_dataset_provenance(
+        self,
+        dataset_id: str,
+        dataset_sha256: str,
+        *,
+        feature_schema_hash: str | None = None,
+        label_schema_id: str | None = None,
+        source_dataset_id: str | None = None,
+        source_dataset_sha256: str | None = None,
+        pilot_subset_definition: str | None = None,
+        pilot_subset_hash: str | None = None,
+    ) -> None:
+        """Bind EXPLICIT dataset provenance to this training run (typed, not
+        inferred from a filename). Every non-smoke publication requires it;
+        the emission gate rejects candidates where metadata provenance is
+        missing or disagrees with the bound values."""
+        self._dataset_provenance = {
+            "dataset_id": dataset_id,
+            "dataset_sha256": dataset_sha256,
+            "feature_schema_hash": feature_schema_hash,
+            "label_schema_id": label_schema_id,
+            "source_dataset_id": source_dataset_id,
+            "source_dataset_sha256": source_dataset_sha256,
+            "pilot_subset_definition": pilot_subset_definition,
+            "pilot_subset_hash": pilot_subset_hash,
+        }
+
+    def bind_dataset(self, dataset_id: str, store: Any = None) -> dict[str, Any]:
+        """Resolve provenance from the ArtifactStore manifest for dataset_id.
+
+        Reads dataset_manifest.json (the canonical dataset identity — never a
+        filename) and declares it. Raises when the manifest or dataset_hash is
+        missing so a producer cannot silently train on an unbound dataset."""
+        from nexus_scalp.model_generation.artifact_store import ArtifactStore
+
+        st = store if store is not None else ArtifactStore()
+        manifest = st.read_dataset_manifest(dataset_id)
+        if not manifest:
+            raise RuntimeError(
+                f"PROVENANCE_BIND_ABORT: dataset manifest missing for {dataset_id!r}"
+            )
+        ds_hash = manifest.get("dataset_hash")
+        if not ds_hash:
+            raise RuntimeError(
+                f"PROVENANCE_BIND_ABORT: dataset_hash missing in manifest for {dataset_id!r}"
+            )
+        self.declare_dataset_provenance(
+            dataset_id,
+            str(ds_hash),
+            feature_schema_hash=manifest.get("feature_schema_hash"),
+            label_schema_id=manifest.get("label_schema_id"),
+        )
+        return dict(manifest)
 
     # =========================================================================
     # INTERNAL: SEEDING
