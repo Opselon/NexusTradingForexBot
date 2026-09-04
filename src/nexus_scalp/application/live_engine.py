@@ -1515,7 +1515,7 @@ class LiveEngine:
             or production_eligible=False when the field exists) cannot be
             activated through the swap path.
         """
-        from nexus_scalp.training.safe_loader import SafeLoadError, load_state_dict_safe
+        from nexus_scalp.training.safe_loader import load_state_dict_safe
 
         new_path = Path(new_artifact_path)
         old_path = Path(self.config.model.model_artifact_path)

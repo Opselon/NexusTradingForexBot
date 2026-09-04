@@ -72,9 +72,7 @@ def _real(path: Path | str) -> Path:
 
 def canonical_champion_realpaths() -> frozenset[Path]:
     root = repo_root()
-    return frozenset(
-        _real(root / rel) for rel in CANONICAL_CHAMPION_PATHS
-    )
+    return frozenset(_real(root / rel) for rel in CANONICAL_CHAMPION_PATHS)
 
 
 def is_champion_path(path: Path | str) -> bool:

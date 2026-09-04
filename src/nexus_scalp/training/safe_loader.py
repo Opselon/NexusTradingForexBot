@@ -16,9 +16,7 @@ CANONICAL class count.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
 
 import torch
 
@@ -56,7 +54,9 @@ def load_state_dict_safe(
     try:
         state = torch.load(p, map_location="cpu", weights_only=True)
     except Exception as err:
-        raise SafeLoadError(f"SAFE_LOAD_ABORT: weights_only load failed for {p.name}: {err}") from err
+        raise SafeLoadError(
+            f"SAFE_LOAD_ABORT: weights_only load failed for {p.name}: {err}"
+        ) from err
     if not isinstance(state, dict) or not state:
         raise SafeLoadError(f"SAFE_LOAD_ABORT: {p.name} is not a state_dict (unexpected object)")
     for k, v in state.items():

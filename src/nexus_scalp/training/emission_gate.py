@@ -88,57 +88,114 @@ def run_emission_gate(
     verified geometry for the manifest."""
     geo = inspect_state_dict(state_dict)
 
-    _require(geo["head"] == CANONICAL_CLASS_COUNT, f"actual head {geo['head']} != canonical {CANONICAL_CLASS_COUNT}")
-    _require(geo["bias"] == CANONICAL_CLASS_COUNT, f"actual bias {geo['bias']} != canonical {CANONICAL_CLASS_COUNT}")
+    _require(
+        geo["head"] == CANONICAL_CLASS_COUNT,
+        f"actual head {geo['head']} != canonical {CANONICAL_CLASS_COUNT}",
+    )
+    _require(
+        geo["bias"] == CANONICAL_CLASS_COUNT,
+        f"actual bias {geo['bias']} != canonical {CANONICAL_CLASS_COUNT}",
+    )
     _require(geo["head"] == geo["bias"], f"head {geo['head']} != bias {geo['bias']}")
-    _require(geo["input_dim"] == CANONICAL_FEATURE_DIM, f"actual input dim {geo['input_dim']} != canonical {CANONICAL_FEATURE_DIM}")
+    _require(
+        geo["input_dim"] == CANONICAL_FEATURE_DIM,
+        f"actual input dim {geo['input_dim']} != canonical {CANONICAL_FEATURE_DIM}",
+    )
 
     # metadata vs actual tensor
     meta_classes = int(metadata.get("num_classes", -1))
     head_meta = int(metadata.get("model_head_classes", -1))
-    _require(meta_classes == CANONICAL_CLASS_COUNT, f"metadata num_classes {meta_classes} != {CANONICAL_CLASS_COUNT}")
-    _require(head_meta == CANONICAL_CLASS_COUNT, f"metadata model_head_classes {head_meta} != {CANONICAL_CLASS_COUNT}")
-    _require(int(metadata.get("num_features", -1)) == geo["input_dim"], "metadata num_features != actual input dim")
-    _require(int(metadata.get("feature_schema_dimension", -1)) == geo["input_dim"], "metadata feature_schema_dimension != actual input dim")
+    _require(
+        meta_classes == CANONICAL_CLASS_COUNT,
+        f"metadata num_classes {meta_classes} != {CANONICAL_CLASS_COUNT}",
+    )
+    _require(
+        head_meta == CANONICAL_CLASS_COUNT,
+        f"metadata model_head_classes {head_meta} != {CANONICAL_CLASS_COUNT}",
+    )
+    _require(
+        int(metadata.get("num_features", -1)) == geo["input_dim"],
+        "metadata num_features != actual input dim",
+    )
+    _require(
+        int(metadata.get("feature_schema_dimension", -1)) == geo["input_dim"],
+        "metadata feature_schema_dimension != actual input dim",
+    )
 
     # label contract
     lc = metadata.get("label_contract") or {}
     if lc:
-        _require(int(lc.get("class_count", -1)) == CANONICAL_CLASS_COUNT, "label_contract.class_count != canonical")
+        _require(
+            int(lc.get("class_count", -1)) == CANONICAL_CLASS_COUNT,
+            "label_contract.class_count != canonical",
+        )
     if label_schema_class_count is not None:
-        _require(label_schema_class_count == CANONICAL_CLASS_COUNT, "label schema class count != canonical")
+        _require(
+            label_schema_class_count == CANONICAL_CLASS_COUNT,
+            "label schema class count != canonical",
+        )
 
     # provenance — never silently null
     _require(bool(dataset_id), "dataset_id missing (provenance)")
     _require(bool(dataset_sha256), "dataset_sha256 missing (provenance)")
     _require(bool(feature_schema_hash), "feature_schema_hash missing (provenance)")
     _require(metadata.get("dataset_id") == dataset_id, "metadata.dataset_id != bound dataset_id")
-    _require(metadata.get("dataset_sha256") == dataset_sha256, "metadata.dataset_sha256 != bound dataset_sha256")
-    _require(metadata.get("feature_schema_hash") == feature_schema_hash, "metadata.feature_schema_hash != bound hash")
+    _require(
+        metadata.get("dataset_sha256") == dataset_sha256,
+        "metadata.dataset_sha256 != bound dataset_sha256",
+    )
+    _require(
+        metadata.get("feature_schema_hash") == feature_schema_hash,
+        "metadata.feature_schema_hash != bound hash",
+    )
     if feature_schema_id:
-        _require(str(metadata.get("feature_schema_id")) == str(feature_schema_id), "metadata.feature_schema_id mismatch")
-        _require(str(metadata.get("feature_schema_id")) == CANONICAL_ARCHITECTURE, f"schema {metadata.get('feature_schema_id')} != canonical {CANONICAL_ARCHITECTURE}")
+        _require(
+            str(metadata.get("feature_schema_id")) == str(feature_schema_id),
+            "metadata.feature_schema_id mismatch",
+        )
+        _require(
+            str(metadata.get("feature_schema_id")) == CANONICAL_ARCHITECTURE,
+            f"schema {metadata.get('feature_schema_id')} != canonical {CANONICAL_ARCHITECTURE}",
+        )
 
     # sequence length
     effective_seq = int(seq_len if seq_len is not None else metadata.get("seq_len", -1))
-    _require(effective_seq == CANONICAL_SEQ_LEN, f"seq_len {effective_seq} != canonical {CANONICAL_SEQ_LEN}")
+    _require(
+        effective_seq == CANONICAL_SEQ_LEN,
+        f"seq_len {effective_seq} != canonical {CANONICAL_SEQ_LEN}",
+    )
     tc = metadata.get("temporal_contract") or {}
     if tc:
-        _require(int(tc.get("seq_len", -1)) == CANONICAL_SEQ_LEN, "temporal_contract.seq_len != canonical")
+        _require(
+            int(tc.get("seq_len", -1)) == CANONICAL_SEQ_LEN,
+            "temporal_contract.seq_len != canonical",
+        )
 
     # smoke quarantine can never look production eligible
     if metadata.get("smoke") is True:
-        _require(metadata.get("production_eligible") is False, "smoke artifact flagged production_eligible")
+        _require(
+            metadata.get("production_eligible") is False,
+            "smoke artifact flagged production_eligible",
+        )
 
     # scaler geometry
     if scaler_mean_dim is not None:
-        _require(scaler_mean_dim == CANONICAL_FEATURE_DIM, f"scaler mean dim {scaler_mean_dim} != {CANONICAL_FEATURE_DIM}")
+        _require(
+            scaler_mean_dim == CANONICAL_FEATURE_DIM,
+            f"scaler mean dim {scaler_mean_dim} != {CANONICAL_FEATURE_DIM}",
+        )
     if scaler_std_dim is not None:
-        _require(scaler_std_dim == CANONICAL_FEATURE_DIM, f"scaler std dim {scaler_std_dim} != {CANONICAL_FEATURE_DIM}")
+        _require(
+            scaler_std_dim == CANONICAL_FEATURE_DIM,
+            f"scaler std dim {scaler_std_dim} != {CANONICAL_FEATURE_DIM}",
+        )
 
     logger.info(
         "EMISSION_GATE_PASS head=%d input=%d seq=%d dataset=%s",
-        geo["head"], geo["input_dim"], effective_seq, dataset_id,
+        geo["head"],
+        geo["input_dim"],
+        effective_seq,
+        dataset_id,
     )
     return {
         "head": geo["head"],
@@ -219,9 +276,18 @@ def verify_bundle_against_manifest(bundle_dir: Path) -> dict[str, Any]:
         _require(p.exists(), f"bundle incomplete: missing {p.name} in {bundle_dir}")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    _require(manifest.get("model_sha256") == sha256_file(model_path), "manifest.model_sha256 != model.pt bytes (stale sidecar / swapped weights)")
-    _require(manifest.get("metadata_sha256") == sha256_file(meta_path), "manifest.metadata_sha256 != model.meta.json bytes")
-    _require(manifest.get("scaler_sha256") == sha256_file(scaler_path), "manifest.scaler_sha256 != model.scaler.npz bytes")
+    _require(
+        manifest.get("model_sha256") == sha256_file(model_path),
+        "manifest.model_sha256 != model.pt bytes (stale sidecar / swapped weights)",
+    )
+    _require(
+        manifest.get("metadata_sha256") == sha256_file(meta_path),
+        "manifest.metadata_sha256 != model.meta.json bytes",
+    )
+    _require(
+        manifest.get("scaler_sha256") == sha256_file(scaler_path),
+        "manifest.scaler_sha256 != model.scaler.npz bytes",
+    )
 
     import torch
 
@@ -267,14 +333,23 @@ def publish_bundle_atomic(staging_dir: Path, final_dir: Path) -> None:
     """
     staging_dir = Path(staging_dir)
     final_dir = Path(final_dir)
-    _require((staging_dir / "manifest.json").exists(), "staging bundle has no manifest.json — refusing to publish")
+    _require(
+        (staging_dir / "manifest.json").exists(),
+        "staging bundle has no manifest.json — refusing to publish",
+    )
     verify_bundle_against_manifest(staging_dir)
     final_dir.parent.mkdir(parents=True, exist_ok=True)
     if final_dir.exists():
         # Existing bundle: move components atomically file-by-file; the
         # manifest is written LAST (commit marker semantics — a bundle is
         # only valid when manifest.json is present AND its hashes verify).
-        for name in ("model.pt", "model.scaler.npz", "model.meta.json", "metrics.json", "training_log.json"):
+        for name in (
+            "model.pt",
+            "model.scaler.npz",
+            "model.meta.json",
+            "metrics.json",
+            "training_log.json",
+        ):
             src = staging_dir / name
             if src.exists():
                 os.replace(src, final_dir / name)
