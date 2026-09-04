@@ -2814,8 +2814,7 @@ class LiveEngine:
             degenerate = int(np.sum(~(np.isfinite(std) & (std > 0.0))))
             if degenerate:
                 logger.warning(
-                    "[SCALER_DEGRADED] event=DEGENERATE_STD "
-                    "scaler_not_ready_features_passthrough",
+                    "[SCALER_DEGRADED] event=DEGENERATE_STD scaler_not_ready_features_passthrough",
                     path=str(scaler_path),
                     degenerate_columns=degenerate,
                     total_columns=int(std.shape[0]),
@@ -5328,9 +5327,7 @@ class LiveEngine:
                 # visible in telemetry, not only in a log line: bump the
                 # failure gauge and emit an incident event (bounded by the
                 # incident pipeline's own rate limiting).
-                self._inference_failures_total = (
-                    getattr(self, "_inference_failures_total", 0) + 1
-                )
+                self._inference_failures_total = getattr(self, "_inference_failures_total", 0) + 1
                 self.emit_incident_telemetry(
                     event_type="INFERENCE_BLOCKED_70D_ASSEMBLY",
                     component="inference",

@@ -107,7 +107,6 @@ def test_f1_duplicate_tick_keeps_pipeline_state_consistent(tmp_path) -> None:
     t0 = datetime(2026, 9, 1, 10, 0, 0, tzinfo=UTC)
     tk = _tick(4628.0, 4628.5, t0)
     engine._process_tick_pipeline(tick=tk, account=_Acct())
-    inference_after_first = engine._inference_runs_total
     # Feed the IDENTICAL tick again — the loop-level dedup predicate mirrors
     # BUG-169: state must not advance (no new market-update counting).
     engine._pipeline_last_ts = tk.timestamp
@@ -208,9 +207,9 @@ def test_f3_corrupted_scaler_artifact_is_loud_not_silent(tmp_path, monkeypatch) 
     finally:
         monkeypatch.setattr(le_mod, "logger", orig_logger)
     assert sb.is_ready() is False
-    assert any(
-        "SCALER_DEGRADED" in str(r.get("event", "")) for r in records
-    ), "corrupted scaler must log [SCALER_DEGRADED], never load silently"
+    assert any("SCALER_DEGRADED" in str(r.get("event", "")) for r in records), (
+        "corrupted scaler must log [SCALER_DEGRADED], never load silently"
+    )
 
 
 def test_f3_degraded_scaler_transform_is_identity() -> None:
@@ -227,8 +226,8 @@ def test_f3_degraded_scaler_transform_is_identity() -> None:
 def test_f5_70d_block_bumps_failures_and_emits_telemetry(tmp_path) -> None:
     engine, _ = _make_engine(tmp_path)
     # Force the effective contract to 70D so the liquidity path is armed.
-    engine.effective_feature_dim  # touch property
-    type(engine).FEATURE_DIM  # bootstrap exists
+    _ = engine.effective_feature_dim  # touch property
+    _ = type(engine).FEATURE_DIM  # bootstrap exists
     engine._inference_enabled = True
     engine.warmup_state = "READY"
 
@@ -266,16 +265,16 @@ def test_f5_70d_block_bumps_failures_and_emits_telemetry(tmp_path) -> None:
     engine._incident_telemetry = _Telemetry()
 
     fv = object.__new__(type("FV", (), {}))  # feature vector double
-    fv.to_tensor_input = lambda: ([0.1] * 50)
+    fv.to_tensor_input = lambda: [0.1] * 50
 
     with pytest.raises(RuntimeError):
         engine._infer_probabilities(fv=fv)
     assert engine._inference_failures_total == failures_before + 1, (
         "70D block must bump the inference-failure gauge (visible, not silent)"
     )
-    assert any(
-        e.get("event_type") == "INFERENCE_BLOCKED_70D_ASSEMBLY" for e in emitted
-    ), "70D block must emit incident telemetry"
+    assert any(e.get("event_type") == "INFERENCE_BLOCKED_70D_ASSEMBLY" for e in emitted), (
+        "70D block must emit incident telemetry"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -325,9 +324,7 @@ def test_r1_repeated_feeds_keep_counters_monotonic(tmp_path) -> None:
     assert engine._market_updates_total == 5
     assert engine._inference_runs_total == 5
     # duplicates of the same minute must not increment market updates
-    engine._process_tick_pipeline(
-        tick=_tick(4628.0, 4628.5, base), account=_Acct()
-    )
+    engine._process_tick_pipeline(tick=_tick(4628.0, 4628.5, base), account=_Acct())
     assert engine._market_updates_total == 5, "identical quote must not advance counters"
 
 
@@ -335,6 +332,4 @@ def test_r2_latency_detector_isolated_from_pipeline_faults(tmp_path) -> None:
     engine, _ = _make_engine(tmp_path)
     # No detector yet (lazy) — a pipeline run must construct it lazily and
     # never raise even when the breakdown is missing fields.
-    assert engine._latency_regression is None or hasattr(
-        engine._latency_regression, "summary"
-    )
+    assert engine._latency_regression is None or hasattr(engine._latency_regression, "summary")

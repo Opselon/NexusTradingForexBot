@@ -1180,6 +1180,8 @@ def main() -> int:
     src_css = SITE_DIR / "assets" / "styles.css"
     src_js = SITE_DIR / "assets" / "search.js"
     src_icon = SITE_DIR / "assets" / "favicon.svg"
+    src_enhance_css = SITE_DIR / "assets" / "docs-enhance.css"
+    src_enhance_js = SITE_DIR / "assets" / "docs-enhance.js"
     for src, dst in ((src_css, "styles.css"), (src_js, "search.js"), (src_icon, "favicon.svg")):
         if src.exists():
             shutil.copyfile(src, out_dir / "assets" / dst)

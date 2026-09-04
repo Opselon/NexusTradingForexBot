@@ -646,7 +646,9 @@ def configure_logging(
         # effect and hygiene assertions that read ``caplog.records`` fail with
         # zero records (the hypothesis of BUG-140). Keep those handlers alive.
         kept: list[logging.Handler] = [
-            h for h in list(root_logger.handlers) if type(h).__name__ in ("LogCaptureHandler", "_LiveLoggingNullHandler")
+            h
+            for h in list(root_logger.handlers)
+            if type(h).__name__ in ("LogCaptureHandler", "_LiveLoggingNullHandler")
         ]
         root_logger.handlers.clear()
         for h in kept:
