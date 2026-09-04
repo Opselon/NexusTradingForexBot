@@ -110,16 +110,37 @@ def _update_json_exit(report: dict[str, Any], json_mode: bool, code: int | None 
 
 
 def _update_human_check(report: dict[str, Any]) -> None:
-    """Human-readable update-check output (spec 2/34)."""
+    """Human-readable update-check output (spec 2/34) — client-friendly copy."""
     info = _resolve_facade_seam("get_version_info", get_version_info)()
     ch_disp = f"[cyan]{info.get('channel') or 'stable'}[/cyan]"
     status = str(report.get("status") or "UNKNOWN")
+    # Friendly labels so a non-technical client instantly knows what it means.
+    friendly = {
+        "UPDATE_AVAILABLE": "Update available",
+        "NO_UPDATE": "Up to date",
+        "IDLE": "No action needed",
+        "GITHUB_UNAVAILABLE": "GitHub temporarily unavailable",
+        "NETWORK_ERROR": "Network error",
+        "SECURITY_BLOCKED": "Security check blocked the update",
+    }.get(status, status.replace("_", " ").title())
     status_style = (
         "green"
         if status == "UPDATE_AVAILABLE"
         else ("yellow" if status in ("NO_UPDATE", "IDLE") else "red")
     )
-    console.print(_banner(subtitle=f"update check · {ch_disp}"))
+    console.print(_banner(subtitle=f"update check  ·  {ch_disp}"))
+    # One-line plain-English headline — the client never has to decode codes.
+    console.print(f"[bold]Result:[/bold] [{status_style}]{friendly}[/{status_style}]")
+    cur = report.get("current_version") or "?"
+    tgt = report.get("target_version") or cur
+    if status == "UPDATE_AVAILABLE":
+        console.print(
+            f"[dim]Installed: {cur}  →  Available: [bold]{tgt}[/bold] — run [cyan]nexus update[/cyan] to install[/dim]"
+        )
+    elif status in ("NO_UPDATE", "IDLE"):
+        console.print(f"[dim]Installed: {cur}  ·  Latest: {tgt} — nothing to do[/dim]")
+    else:
+        console.print(f"[dim]Installed: {cur}[/dim]")
     table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
     table.add_column("Field", style="bold white", no_wrap=True)
     table.add_column("Value", style="dim")
@@ -177,17 +198,28 @@ def _update_human_check(report: dict[str, Any]) -> None:
     if status == STATUS_NO_UPDATE and awareness_status == STATUS_REVISION_AHEAD:
         console.print(
             f"[yellow]◎ Local revision is {ahead} commit(s) ahead of origin "
-            "(development build - nothing to update to).[/yellow]"
+            "(development build — nothing to update to).[/yellow]"
         )
     elif status == STATUS_NO_UPDATE:
-        console.print("[green]✓ Nexus is up to date.[/green]")
+        console.print(
+            "[green]✓ Up to date — nothing to do. Your install matches the latest release.[/green]"
+        )
     if rs.get("generated_at"):
-        console.print(f"[dim]Last checked: {rs['generated_at']}[/dim]")
+        console.print(f"[dim]Checked: {rs['generated_at']}[/dim]")
     if report.get("decisions"):
-        console.print("[dim]Decisions:[/dim]")
+        console.print("[dim]What was checked:[/dim]")
         for d in report.get("decisions", []):
-            console.print(f"  [dim]> {d}[/dim]")
-    console.print(Panel(f"[{status_style}]{status}[/{status_style}]", border_style="cyan"))
+            console.print(f"  [dim]· {d}[/dim]")
+    # Friendly next-step footer so the client knows what to do without reading decisions.
+    if status == "UPDATE_AVAILABLE":
+        console.print(
+            "[bold cyan]Next:[/bold cyan] run [cyan]nexus update[/cyan] to install, or [cyan]nexus update --dry-run[/cyan] to preview"
+        )
+    elif status in ("NO_UPDATE", "IDLE"):
+        console.print("[dim]No action needed — you're current.[/dim]")
+    console.print(
+        Panel(f"[{status_style}]{friendly}  ·  {status}[/{status_style}]", border_style="cyan")
+    )
 
 
 @app.command("update")
@@ -201,36 +233,42 @@ def update_cmd(
     channel: str = typer.Option(
         "stable", "--channel", help="stable | beta | nightly (never silently switches)."
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; never download/install."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview what would happen — never downloads or changes anything."
+    ),
     force: bool = typer.Option(
-        False, "--force", help="Authorize the documented LIVE-quiesce maintenance flow."
+        False,
+        "--force",
+        help="Authorize the safety-checked LIVE maintenance flow (only needed for live trading).",
     ),
     yes: bool = typer.Option(
-        False, "--yes", help="Skip interactive prompts (never bypasses security checks)."
+        False, "--yes", help="Skip interactive prompts (security checks still run)."
     ),
-    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    json_mode: bool = typer.Option(
+        False, "--json", help="Machine-readable output (for scripts and tools)."
+    ),
     include_prerelease: bool = typer.Option(
         False,
         "--include-prerelease",
-        help="Allow pre-releases on the stable channel (explicit opt-in).",
+        help="Also consider pre-release versions (beta builds) — off by default.",
     ),
     allow_downgrade: bool = typer.Option(
         False,
         "--allow-downgrade",
-        help="Permit an explicitly-requested downgrade (compatibility still verified).",
+        help="Allow installing an older version (use with care).",
     ),
     force_refresh: bool = typer.Option(
         False,
         "--force-refresh",
-        help="Bypass cached release metadata; query GitHub fresh (spec 18/40).",
+        help="Skip the local cache and ask GitHub again for the latest version.",
     ),
     fetch: bool = typer.Option(
         False,
         "--fetch",
-        help="Also fetch origin before computing commit distance (bounded network op).",
+        help="Update the local Git history before checking how far you are from the latest.",
     ),
     fresh: bool = typer.Option(
-        False, "--force-refresh", help="Bypass cached release metadata; query GitHub fresh."
+        False, "--force-refresh", help="Same as --force-refresh (kept for compatibility)."
     ),
 ) -> None:
     """Check, download, verify, install and health-check the newest release.
@@ -670,25 +708,56 @@ def update_cmd(
                 )
             )
         else:
+            # Client-friendly finished states: plain English, what happened,
+            # and where to look next — never just "FAILED" + raw message.
+            raw_status = str(report.get("status") or "UNKNOWN")
+            friendly = {
+                "FAILED": "Something went wrong",
+                "FAILED_SAFE": "Stopped safely — nothing was changed",
+                "NO_UPDATE": "Already up to date",
+                "SECURITY_BLOCKED": "Security check blocked the update",
+                "NETWORK_ERROR": "Network error",
+                "GITHUB_UNAVAILABLE": "GitHub is temporarily unavailable",
+            }.get(raw_status, raw_status.replace("_", " ").title())
+            detail = str(report.get("error_message") or "").strip()
+            # For zip/artifact errors the raw detail is terse — add context.
+            if "not a valid zip" in detail.lower():
+                detail = (
+                    f"{detail} — the downloaded file didn't look like the "
+                    "expected update package. Check your network/proxy and try "
+                    "again, or run: nexus update check --json"
+                )
+            hint = None
+            if raw_status in ("FAILED", "FAILED_SAFE"):
+                hint = (
+                    "Run: nexus update doctor  ·  nexus logs --errors  ·  nexus update check --json"
+                )
+            elif raw_status in ("NETWORK_ERROR", "GITHUB_UNAVAILABLE"):
+                hint = "Check your internet connection, then: nexus update check"
+            rollback_note = (
+                "Your previous version was restored — safe to keep working"
+                if report.get("rollback_completed")
+                else ""
+            )
+            body = f"[bold]{friendly}[/bold]  [dim]({raw_status})[/dim]"
+            if detail:
+                body += f"\n{detail}"
+            if rollback_note:
+                body += f"\n\n[green]{rollback_note}[/green]"
             console.print(
                 Panel(
-                    f"Status: [bold]{report.get('status')}[/bold]\n"
-                    + (
-                        f"Error: {report.get('error_message')}\n"
-                        if report.get("error_message")
-                        else ""
-                    )
-                    + (
-                        "Rollback: COMPLETED — previous version restored"
-                        if report.get("rollback_completed")
-                        else ""
-                    ),
+                    body,
                     border_style="red"
-                    if report.get("status") not in ("COMPLETED", "NO_UPDATE")
+                    if raw_status not in ("COMPLETED", "NO_UPDATE", "IDLE")
                     else "yellow",
                     title="Update finished",
+                    subtitle="[dim]Tip: nexus update --help for all options[/dim]"
+                    if hint
+                    else None,
                 )
             )
+            if hint:
+                console.print(f"[dim]→ {hint}[/dim]")
     _update_json_exit(report, json_mode)
 
 

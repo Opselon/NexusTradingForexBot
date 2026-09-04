@@ -32,7 +32,14 @@ from nexus_scalp.release.metadata import PRODUCT_DISPLAY
 
 app = typer.Typer(
     name="nexus",
-    help=f"{PRODUCT_DISPLAY} - operational & release console",
+    help=(
+        f"{PRODUCT_DISPLAY} — your trading desk in one command.\n\n"
+        "Start safe:  nexus start                          (PAPER, no broker)\n"
+        "Check health: nexus doctor / nexus status\n"
+        "Stay current: nexus update check  →  nexus update --dry-run  →  nexus update\n"
+        "Need help:   nexus help  ·  nexus help <command>\n"
+        "Tip: every command supports --help and --json."
+    ),
     add_completion=False,
     rich_markup_mode="rich",
 )

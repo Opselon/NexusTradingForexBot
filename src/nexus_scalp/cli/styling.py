@@ -95,11 +95,15 @@ def _banner(*, subtitle: str | None = None) -> Panel:
     ch = info.get("channel") or "stable"
     commit = (info.get("commit") or "n/a")[:7]
     arch = info.get("architecture") or ""
+    # UX polish: short one-liner under the banner so first-time users
+    # instantly see what the app does (was: raw commit/arch line only).
+    hint = "XAUUSD scalping engine  ·  safe by default (PAPER)"
     title = Text("NEXUS SCALP ENGINE", style="bold cyan")
     title.append(f"  v{ver}", style="dim cyan")
     body = Text()
     body.append(PRODUCT_DISPLAY, style="bold white")
     body.append(f"  ·  {ch}  ·  {arch}  ·  {commit}", style="dim")
+    body.append(f"\n{hint}", style="dim italic")
     if subtitle:
         body.append(f"\n{subtitle}", style="dim white")
     return Panel(
@@ -262,15 +266,22 @@ def _error_panel(
     hint: str | None = None,
     exit_code: int | None = None,
 ) -> Panel:
+    # UX polish: hint reads as a plain next-step line (was "Fix:" which
+    # sounded like a blamer); keep red detail but add a calmer hint row.
     body = f"[bold red]{detail}[/bold red]"
     if hint:
-        body += f"\n\n[dim]Fix: {hint}[/dim]"
+        body += f"\n\n[dim]→ {hint}[/dim]"
     if exit_code is not None:
         body += f"\n[dim]Exit code: {exit_code} ({xc.EXIT_NAMES.get(exit_code, '?')})[/dim]"
     return Panel(body, title=f"[bold red]{title}[/bold red]", border_style="red", box=box.ROUNDED)
 
 
 def _success_panel(title: str, body: str, *, border: str = "green") -> Panel:
+    # UX polish: success panels now carry a subtle check prefix so "green
+    # border" isn't the only success signal for light terminals.
     return Panel(
-        body, title=f"[bold {border}]{title}[/bold {border}]", border_style=border, box=box.ROUNDED
+        f"[green]✓[/green] {body}",
+        title=f"[bold {border}]{title}[/bold {border}]",
+        border_style=border,
+        box=box.ROUNDED,
     )
