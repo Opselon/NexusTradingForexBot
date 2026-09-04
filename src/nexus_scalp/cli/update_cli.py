@@ -202,10 +202,10 @@ def _update_human_check(report: dict[str, Any]) -> None:
         )
     elif status == STATUS_NO_UPDATE:
         console.print(
-            "[green]✓ Up to date — nothing to do. Your install matches the latest release.[/green]"
+            "[green]✓ Up to date — nothing to do. Your install is up to date with the latest release.[/green]"
         )
     if rs.get("generated_at"):
-        console.print(f"[dim]Checked: {rs['generated_at']}[/dim]")
+        console.print(f"[dim]Last checked: {rs['generated_at']}[/dim]")
     if report.get("decisions"):
         console.print("[dim]What was checked:[/dim]")
         for d in report.get("decisions", []):
