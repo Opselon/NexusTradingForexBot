@@ -39,7 +39,9 @@ Index diff (`stash@{2}^1..stash@{2}^2 --stat`) is identical — all three were s
 Top-level import left untouched in the stash literal:
 
 ```python
-from nexus_scalp.model_generation.schema_v2 import compute_70d_frame  # line 39 — survives in stash, becomes dead code
+from nexus_scalp.model_generation.schema_v2 import (
+    compute_70d_frame,
+)  # line 39 — survives in stash, becomes dead code
 ```
 
 ### Semantics: `compute_70d_frame` -> `compute_70d_frame_fast` for 70d variants
