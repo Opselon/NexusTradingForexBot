@@ -286,7 +286,7 @@ class _PendingLimit:
     stop_loss: float
     take_profit: float
     volume: float
-    created_at: object
+    created_at: datetime  # ISO-serialized into pending_orders provenance (mypy attr-defined fix)
     run_id: str
 
 
