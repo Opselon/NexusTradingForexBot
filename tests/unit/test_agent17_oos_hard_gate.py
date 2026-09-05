@@ -103,7 +103,10 @@ def test_split_temporal_deterministic_disjoint_chronological() -> None:
     va = {x.sample_id for x in s1.validation}
     oo = {x.sample_id for x in s1.oos}
     assert not (tr & va) and not (tr & oo) and not (va & oo)
-    assert all(a.decision_timestamp <= b.decision_timestamp for a, b in zip(s1.oos, s1.oos[1:]))
+    assert all(
+        a.decision_timestamp <= b.decision_timestamp
+        for a, b in zip(s1.oos, s1.oos[1:], strict=False)
+    )
 
 
 def test_split_temporal_purges_boundary_crossing_horizon() -> None:
@@ -141,9 +144,7 @@ def test_split_temporal_train_strictly_before_oos() -> None:
 
 
 def test_oos_zero_samples_fails() -> None:
-    res = OOSGate().evaluate(
-        _ds([_mk(i, 0.4) for i in range(4)]), "strat_t", "1.0.0", oos_frac=0.0
-    )
+    res = OOSGate().evaluate(_ds([_mk(i, 0.4) for i in range(4)]), "strat_t", "1.0.0", oos_frac=0.0)
     assert res.status == "FAIL" and res.oos_samples == 0
 
 
