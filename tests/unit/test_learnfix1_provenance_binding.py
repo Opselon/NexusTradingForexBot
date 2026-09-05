@@ -107,7 +107,7 @@ def test_publication_metadata_carries_bound_provenance(tmp_path: Path) -> None:
         pl.lit("CLEAN_HISTORICAL").alias("label_origin"),
     )
     tr.bind_dataset_provenance_for_frame(df)
-    with pytest.raises(Exception, match="EMISSION_GATE_ABORT|input dim"):
+    with pytest.raises(Exception, match=r"EMISSION_GATE_ABORT|input dim"):
         tr.train_and_validate(df=df, feature_cols=[f"feat_{i}" for i in range(50)])
     # The stage-then-gate sequence wrote metadata into the staging dir before
     # the gate aborted; the trainer's metadata writer must have received the
@@ -134,5 +134,5 @@ def test_geometry_gate_still_enforced_for_wrong_width(tmp_path: Path) -> None:
         pl.lit("b" * 64).alias("dataset_sha256"),
     )
     tr.bind_dataset_provenance_for_frame(df)
-    with pytest.raises(Exception, match="EMISSION_GATE_ABORT|input dim"):
+    with pytest.raises(Exception, match=r"EMISSION_GATE_ABORT|input dim"):
         tr.train_and_validate(df=df, feature_cols=[f"feat_{i}" for i in range(50)])

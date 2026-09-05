@@ -2902,6 +2902,7 @@ class LiveEngine:
     def _declared_head_classes_for_path(meta_path: Path) -> int:
         """Declared neural head width for a bundle path (BUG-243)."""
         import json as _json
+
         from nexus_scalp.model_lifecycle.model_class_contract import (
             LEGACY_HEAD_CLASSES,
             TRAINED_CLASS_COUNT,

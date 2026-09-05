@@ -397,9 +397,7 @@ class SignalPolicy:
             # OWN-side probability (never manufactures confidence, never
             # crashes, never emits a negative value into the frozen
             # TradeProposal model).
-            cand_ai_prob = (
-                max(0.0, prob_buy) if "BUY" in cand_action else max(0.0, prob_sell)
-            )
+            cand_ai_prob = max(0.0, prob_buy) if "BUY" in cand_action else max(0.0, prob_sell)
             cand_trained_mass = prob_buy + prob_sell + prob_no_trade
             if cand_trained_mass > 0.0 and math.isfinite(cand_trained_mass):
                 _cand_ratio = cand_ai_prob / cand_trained_mass

@@ -704,7 +704,11 @@ class OrderLifecycleManager:
             try:
                 order = order.model_copy(update={"volume": float(clamped_vol)})
             except Exception:
-                logger.error("Hedge volume clamp copy failed (isolated)", requested=order.volume, clamped=clamped_vol)
+                logger.error(
+                    "Hedge volume clamp copy failed (isolated)",
+                    requested=order.volume,
+                    clamped=clamped_vol,
+                )
                 return False
 
         logger.info(
