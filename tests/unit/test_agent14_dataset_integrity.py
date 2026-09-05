@@ -23,6 +23,7 @@ Contracts (MT5_TICK_DATASET v3 / DatasetArtifactImmutability v1):
       consistent artifact (no duplicates, no torn writes, one winner,
       losers either reuse cache or fail loudly without partial state).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -121,9 +122,7 @@ def test_dead_adapter_does_not_publish_complete_dataset(tmp_path) -> None:
 
     ds = MT5TickDataset(cache_root=tmp_path)
     with pytest.raises(Exception) as excinfo:
-        ds.acquire_ticks(
-            _make_adapter(dead), symbol="XAUUSD", start=T0, end=END, chunk_minutes=5
-        )
+        ds.acquire_ticks(_make_adapter(dead), symbol="XAUUSD", start=T0, end=END, chunk_minutes=5)
     assert "acquisition" in str(excinfo.value).lower()
     assert not (tmp_path / f"XAUUSD_ticks_{''}".replace("XAUUSD_ticks_", "")).exists() or not any(
         tmp_path.glob("*.parquet")
@@ -190,9 +189,7 @@ def test_out_of_window_ticks_dropped_and_counted(tmp_path) -> None:
 def test_hostile_symbol_rejected(symbol: str, tmp_path) -> None:
     ds = MT5TickDataset(cache_root=tmp_path)
     with pytest.raises(ValueError):
-        ds.acquire_ticks(
-            _healthy_adapter(), symbol=symbol, start=T0, end=END, chunk_minutes=60
-        )
+        ds.acquire_ticks(_healthy_adapter(), symbol=symbol, start=T0, end=END, chunk_minutes=60)
 
 
 # ---------------------------------------------------------------------------
@@ -228,9 +225,7 @@ def test_corrupt_meta_blocks_reacquire_same_id(tmp_path) -> None:
     )
     (tmp_path / f"{ds_id}.meta.json").write_text("{CORRUPT", encoding="utf-8")
     with pytest.raises(Exception):
-        ds.acquire_ticks(
-            _healthy_adapter(), symbol="XAUUSD", start=T0, end=END, chunk_minutes=60
-        )
+        ds.acquire_ticks(_healthy_adapter(), symbol="XAUUSD", start=T0, end=END, chunk_minutes=60)
 
 
 # ---------------------------------------------------------------------------
