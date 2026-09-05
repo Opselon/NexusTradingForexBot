@@ -4913,6 +4913,9 @@ class LiveEngine:
                     current_tick=tick,
                     regime_state=regime_state,
                     atr=atr,
+                    # BUG-252: forward the engine's authoritative peak so the
+                    # drawdown risk cut engages (AccountInfo has no field).
+                    peak_equity=getattr(self, "_peak_equity", None),
                 )
 
                 if hedge_order:
