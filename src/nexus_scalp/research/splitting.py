@@ -175,8 +175,8 @@ def walk_forward_folds(
     n_splits: int = 3,
     val_frac: float = 0.2,
     validate_frac_per_fold: float = 0.2,
-    embargo_seconds: float = 0.0,
-    purge_seconds: float = 0.0,
+    embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
+    purge_seconds: float = DEFAULT_PURGE_SECONDS,
 ) -> list[WalkForwardFoldSplit]:
     """
     Expanding-window walk-forward with purging + embargo (spec 14).
