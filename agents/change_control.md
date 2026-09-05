@@ -1791,3 +1791,12 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
 - BOUNDARIES: dataset acquisition layer owned by Agent 14 (CHG-0061) — mt5_tick_dataset.py is foreign; replay/streaming engine owned by Agent 15 (CHG-0059) / Agent 18 (CHG-0062); execution owned by Agent 12 (CHG-0058). Defects outside this scope are routed via bugs.md/handoff, not edited.
 - CONSTRAINTS: no threshold weakening; no OOS reuse for tuning; NaN never converts to PASS; every confirmed defect fixed + regression test; commit-per-step; beforePush quality gate; evidence-based findings only
 - STATUS: IMPLEMENTING
+## CHG-0062 — Replay-engine: LIMIT pending-queue fix (Agent 18 forensic lane)
+
+- FIX: StreamingReplayEngine now honors LIMIT/STOP proposals as PENDING orders. A LIMIT
+  resting at its level fills on the FIRST tick where ask <= level (BUY_LIMIT) or
+  bid >= level (SELL_LIMIT) — live OrderManager parity — rather than being
+  immediately consumed at the spawning tick's market price. Filled-pending entries
+  enter the same _OpenPosition ledger path as market fills; remaining pendings are
+  reported honestly in ReplayRunResult.pending_orders / pending_order_count.
+
