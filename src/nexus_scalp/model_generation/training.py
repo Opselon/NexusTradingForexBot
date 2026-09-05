@@ -175,7 +175,11 @@ class CandidateTrainer:
         if not np.isfinite(X_arr).all():
             return {"status": "FAILED", "error": "non-finite feature values in dataset"}
 
-        # split: train on non-test rows, validate on test rows
+        # split: train on non-test rows, validate on test rows.
+        # BUG-244: a "_split" value of "purged" (DatasetFactory boundary
+        # purge - label horizon crosses a block boundary) is EXCLUDED from
+        # both train and validation pools. The bare "_split != test" rule
+        # silently promoted boundary-purged rows into the train pool.
         split = dataset_frame.get_column("_split") if "_split" in dataset_frame.columns else None
         if split is None:
             # fall back: last 20% as validation
@@ -183,8 +187,9 @@ class CandidateTrainer:
             train_idx = np.arange(int(n * 0.8))
             val_idx = np.arange(int(n * 0.8), n)
         else:
-            train_idx = np.where(split.to_numpy() != "test")[0]
-            val_idx = np.where(split.to_numpy() == "test")[0]
+            split_arr = split.to_numpy()
+            train_idx = np.where((split_arr != "test") & (split_arr != "purged"))[0]
+            val_idx = np.where(split_arr == "test")[0]
 
         if len(train_idx) == 0 or len(val_idx) == 0:
             return {"status": "FAILED", "error": "empty train/val split"}

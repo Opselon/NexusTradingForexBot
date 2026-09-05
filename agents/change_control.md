@@ -1805,3 +1805,21 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
 - SCOPE: `src/nexus_scalp/execution/order_manager.py` (execute_order + _run_protection_chain AI-flip leg) + `tests/unit/test_agent12_bug247_hardening.py` (3 regression tests) + `agents/bugs.md` (BUG-247 row)
 - WHY: the CHG-0058 forensic census proved single-authority (no second execution path outside the manager) but flagged two remaining entry-path gates inside the manager: (P1) the AI-flip direct `place_pending_order` bypassed `SAFE_MODE`, (P2) `execute_order` (hedge) bypassed `HARD_MAX_LOTS`. Both fixed fail-closed; primary-path semantics unchanged. See `agents/bugs.md:BUG-247` + `docs/agent_handoffs/2026-09-05_agent12_execution_forensic.md` (Addendum).
 
+CHANGE-ID: CHG-0060
+Agent: Agent 6 / Nexus-Main (Architecture / Integration / Runtime Forensics)
+Role: Architecture forensics + mandatory fix
+Task: Hexagonal boundary audit + event-loop integrity + web control-surface correctness + import-cycle adjudication; BUG-239 (async toggle route) + BUG-240 (dead audit_db import + PRAGMA d[1] name bug) fixes
+Scope:
+- src/nexus_scalp/web/diagnostics_state_routes.py (toggle_engine: BUG-239 fix - async route; task lifecycle preserved)
+- src/nexus_scalp/web/debug_research_routes.py (/api/debug/trace: BUG-240 fix - real audit db path resolution + PRAGMA d[1] name bug; closes OBS-001)
+- tests/unit/test_web_engine_toggle_bug239.py (NEW 6-test regression net)
+- agents/bugs.md (BUG-239, BUG-240), agents/taskboard.md, this registry
+Affected functions/classes: toggle_engine; get_debug_trace
+Contracts touched: NONE (no trading/risk/execution/model/DB schema contract). INV-001/002/004 preserved and re-proven.
+Runtime paths touched: web control surface (engine START/STOP; debug trace read); tick path untouched.
+Owners affected: Hermes-UI (web surface); Hermes-Runtime informed (run_loop scheduling semantics unchanged)
+Risk: MEDIUM-LOW (START is an operator control; fix RESTORES designed behavior; regression-guarded)
+Dependencies: independent; foreign WIP never staged
+Required tests: test_web_engine_toggle_bug239.py + test_qa_deep_security_surfaces + test_web_ux_safety + ruff/format/mypy
+ID COLLISION NOTE: an earlier Agent 6 registration used CHG-0058 while uncommitted; Agent 12 (commit 2d030668) later claimed CHG-0058 for the execution-pipeline mission; Agent-11's taskboard row claims CHG-0064 for BUG-239..242 (execution/risk). Agent 6's web-surface work re-registered under the next free declared id per the registry-id-race rule.
+Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regression green)

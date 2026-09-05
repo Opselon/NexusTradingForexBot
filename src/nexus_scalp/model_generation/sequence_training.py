@@ -167,10 +167,30 @@ class SequenceCandidateTrainer:
         X_all = X_all[valid]
         y_all = y_all[valid]
 
+        # BUG-244 boundary purge: a sequence anchored at position i has its
+        # LAST timestep at i; its triple-barrier horizon (15 bars) extends
+        # FORWARD past i. Sequences whose horizon reaches into the validation
+        # block (last PURGE positions of the train pool) would score
+        # validation information - drop them, mirroring
+        # WalkForwardTrainer._split_fold_with_embargo and
+        # DatasetFactory.DEFAULT_SPLIT_PURGE_BARS (= temporal_contract
+        # .CANONICAL_PURGE_BARS = 15).
+        purge = int(getattr(self, "split_purge_bars", 0) or 0)
+        if purge <= 0:
+            try:
+                from nexus_scalp.model_generation.temporal_contract import (
+                    CANONICAL_PURGE_BARS,
+                )
+
+                purge = int(CANONICAL_PURGE_BARS)
+            except Exception:  # pragma: no cover - contract always importable in repo
+                purge = 15
+
         n = X_all.shape[0]
         # temporal split: last 20% = validation (same policy as 2D trainer)
         val_n = max(1, int(n * 0.2))
-        train_idx = np.arange(n - val_n)
+        train_end = max(0, (n - val_n) - purge)
+        train_idx = np.arange(train_end)
         val_idx = np.arange(n - val_n, n)
 
         # ---- feature scaling per-dimension (train-only fit) ----
