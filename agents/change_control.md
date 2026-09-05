@@ -1823,3 +1823,21 @@ Dependencies: independent; foreign WIP never staged
 Required tests: test_web_engine_toggle_bug239.py + test_qa_deep_security_surfaces + test_web_ux_safety + ruff/format/mypy
 ID COLLISION NOTE: an earlier Agent 6 registration used CHG-0058 while uncommitted; Agent 12 (commit 2d030668) later claimed CHG-0058 for the execution-pipeline mission; Agent-11's taskboard row claims CHG-0064 for BUG-239..242 (execution/risk). Agent 6's web-surface work re-registered under the next free declared id per the registry-id-race rule.
 Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regression green)
+
+## CHG-0064 - Execution/Risk/OrderManager deep forensic + confirmed-defect repair (2026-09-05, Agent 11)
+
+- AGENT: Agent-11 (user brief 2026-09-05: EXECUTION / RISK / ORDERMANAGER DEEP FORENSIC + FIX)
+- SCOPE: src/nexus_scalp/risk/risk_engine.py (evaluate_proposal sizing tail),
+  src/nexus_scalp/execution/order_manager.py (_is_exposure_available, dispatch_order,
+  new close_position_manual/modify_position_manual), src/nexus_scalp/web/server.py
+  (/api/positions/close + /api/positions/modify reroute),
+  tests/unit/test_agent11_execution_risk_forensic.py (new, 14 tests).
+- DEFECTS FIXED (all FAIL-BEFORE proven): BUG-239 evaluate_proposal UnboundLocalError
+  + micro-account margin resurrection hole (152e8ebe); BUG-240 engine-wide exposure
+  gate counted only symbol-scoped tickets (ad06738f); BUG-241 SAFE_MODE dead on
+  primary dispatch path (ad06738f); BUG-242 web operator close/modify bypassed
+  OrderLifecycleManager / INV-004 (d0a9b6d4). Regression suite 14 tests.
+- COORDINATION: alongside Agent-12 CHG-0058 (execution forensics); additive/fail-closed.
+- INVARIANTS: INV-003/INV-004 strengthened; no clamp/breaker weakened.
+- STATUS: VERIFIED (paper fixtures, no live trading)
+
