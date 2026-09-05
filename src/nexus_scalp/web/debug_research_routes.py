@@ -755,9 +755,9 @@ def register_debug_research_routes(
         try:
             import sqlite3 as _sqlite3
 
-            from nexus_scalp.database.engine import db_path_for_domain
+            from nexus_scalp.adapters.audit_db import get_default_audit_db_path
 
-            db_path = str(db_path_for_domain("audit"))
+            db_path = get_default_audit_db_path()
             con = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
             con.row_factory = _sqlite3.Row
             try:

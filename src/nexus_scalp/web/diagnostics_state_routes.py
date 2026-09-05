@@ -974,8 +974,7 @@ def register_diagnostics_state_routes(
     # Toggle Engine Run Loop
     # Toggle Engine Run Loop
     @app.post("/api/engine/toggle")
-    async def toggle_engine(req: ToggleRequest) -> dict[str, Any]:
-        # BUG-239: MUST stay ASYNC - START schedules engine.run_loop() via asyncio.create_task; sync -> anyio threadpool -> RuntimeError.
+    def toggle_engine(req: ToggleRequest) -> dict[str, Any]:
         engine = app.state.engine
         if not engine:
             raise HTTPException(status_code=400, detail="Trading Engine reference not loaded.")
