@@ -1299,11 +1299,37 @@ class WalkForwardTrainer:
     # =========================================================================
     # INTERNAL: EXTRACTION / TRANSFORM
     # =========================================================================
+    @staticmethod
+    def _assert_features_finite(X_raw: np.ndarray, context: str = "") -> None:
+        """Fail-closed hygiene: no NaN/Inf/None-derived feature cell may reach
+        training. Agent-8 wave-2 (BUG-243B, ecosystem-clean): polars union-by-name
+        turns heterogeneous feature dicts into None cells; numpy casts None to
+        NaN; the old nan_to_num silently laundered that to 0.0 fabrications.
+        A non-finite feature now RAISES instead of being trained on. The
+        engine-side BUG-243 buffer guard is the primary drop filter; this is
+        the last-line trainer gate for ANY caller (multi-user ecosystem)."""
+        if not np.all(np.isfinite(X_raw)):
+            n_bad = int(np.count_nonzero(~np.isfinite(X_raw)))
+            where = ""
+            with __import__("contextlib").suppress(Exception):
+                bad_rows, bad_cols = __import__("numpy").where(~__import__("numpy").isfinite(X_raw))
+                where = f" first at row={int(bad_rows[0])} col={int(bad_cols[0])}" if len(bad_rows) else ""
+            raise ValueError(
+                f"Non-finite feature cell in training frame ({n_bad} cells{where}); "
+                f"frame refused (ecosystem-clean; context={context or 'online_fine_tune'})"
+            )
+
     def _extract_X_y(
         self, df: pl.DataFrame, feature_cols: list[str]
     ) -> tuple[np.ndarray, np.ndarray]:
         X_raw = df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
-        X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=1.0, neginf=-1.0)
+        # Agent-8 wave-2 (BUG-243B): fail closed on non-finite BEFORE any
+        # nan_to_num laundering. A heterogeneous dataframe (e.g. mixed 50D/70D
+        # rows from a cross-restart buffer) surfaces missing feature columns
+        # as None -> NaN via to_numpy(); training on that would be evidence
+        # fabrication (ecosystem requirement: fetched data must be clean on
+        # runtime when the model trains, not only locally).
+        self._assert_features_finite(X_raw, context="online_fine_tune")
         raw_labels = df["label"].to_list()
         # MLFIX: parquet uses int labels 0/1/2; allow both int and string.
         mapped: list[int] = []
