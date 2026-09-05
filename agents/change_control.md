@@ -1800,3 +1800,8 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
   enter the same _OpenPosition ledger path as market fills; remaining pendings are
   reported honestly in ReplayRunResult.pending_orders / pending_order_count.
 
+## CHG-0058-FOLLOWUP - BUG-247 residual hedge/reversal gates (2026-09-05, Agent-12, CHG-0058 follow-up)
+
+- SCOPE: `src/nexus_scalp/execution/order_manager.py` (execute_order + _run_protection_chain AI-flip leg) + `tests/unit/test_agent12_bug247_hardening.py` (3 regression tests) + `agents/bugs.md` (BUG-247 row)
+- WHY: the CHG-0058 forensic census proved single-authority (no second execution path outside the manager) but flagged two remaining entry-path gates inside the manager: (P1) the AI-flip direct `place_pending_order` bypassed `SAFE_MODE`, (P2) `execute_order` (hedge) bypassed `HARD_MAX_LOTS`. Both fixed fail-closed; primary-path semantics unchanged. See `agents/bugs.md:BUG-247` + `docs/agent_handoffs/2026-09-05_agent12_execution_forensic.md` (Addendum).
+
