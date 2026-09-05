@@ -157,9 +157,7 @@ class DatasetFactory:
                 "DatasetFactory: no samples generated (check bars, labels, news frame)"
             )
 
-        purge_bars = (
-            DEFAULT_SPLIT_PURGE_BARS if split_purge_bars is None else int(split_purge_bars)
-        )
+        purge_bars = DEFAULT_SPLIT_PURGE_BARS if split_purge_bars is None else int(split_purge_bars)
         frame = samples_to_frame(samples)
         frame = self._apply_split(
             frame,

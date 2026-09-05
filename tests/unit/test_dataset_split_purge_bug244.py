@@ -9,6 +9,7 @@ Red-before evidence: without the purge, 15 train-tail rows horizon into val
 and 15 val-tail rows horizon into test (proven by a 300-row deterministic
 fixture on the fix branch).
 """
+
 from __future__ import annotations
 
 import sys
@@ -61,11 +62,7 @@ def _split(purge_bars: int | None) -> pl.DataFrame:
 
 
 def _positions(frame: pl.DataFrame, block: str) -> list[int]:
-    return (
-        frame.with_row_index("__pos__")
-        .filter(pl.col("_split") == block)["__pos__"]
-        .to_list()
-    )
+    return frame.with_row_index("__pos__").filter(pl.col("_split") == block)["__pos__"].to_list()
 
 
 class TestSplitBoundaryPurge:
@@ -107,7 +104,10 @@ class TestSplitBoundaryPurge:
         # Layout: [ train ][ purged | val ][ purged | test ] — the integer
         # ordering of labels has a discontinuity at each boundary, so the
         # positional sequence is: train run, purged, val, purged, test.
-        seen = [dict.fromkeys([k for k in g]) for _, g in __import__("itertools").groupby(frame["_split"].to_list())]
+        seen = [
+            dict.fromkeys([k for k in g])
+            for _, g in __import__("itertools").groupby(frame["_split"].to_list())
+        ]
         # at least verify each block type appears in the correct phase
         flat = frame["_split"].to_list()
         assert flat[0] == "train" and flat[-1] == "test" and "purged" in flat
@@ -126,9 +126,7 @@ class TestSplitBoundaryPurge:
             "purged_boundary": int(split.filter(pl.col("_purged_split")).height),
         }
         assert counts["purged_boundary"] == 2 * HORIZON
-        assert (
-            counts["train"] + counts["val"] + counts["test"] + counts["purged_boundary"] == N
-        )
+        assert counts["train"] + counts["val"] + counts["test"] + counts["purged_boundary"] == N
         assert counts["train"] == 210 - HORIZON
         assert counts["val"] == 45 - HORIZON
         assert counts["test"] == 45
