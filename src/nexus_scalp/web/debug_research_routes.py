@@ -255,8 +255,11 @@ def register_debug_research_routes(
                 # Engine offline: instantiate a fresh net so the endpoint still validates
                 # the model graph and tensor contract.
                 from nexus_scalp.models.scalp_net import ScalpNet
+                from nexus_scalp.model_lifecycle.model_class_contract import (
+                    TRAINED_CLASS_COUNT as TRAINED_CLASS_COUNT_243,
+                )
 
-                model = ScalpNet(num_features=expected_dim, num_classes=4)
+                model = ScalpNet(num_features=expected_dim, num_classes=TRAINED_CLASS_COUNT_243)
                 model.eval()
                 x = torch.tensor([sanitized], dtype=torch.float32)
                 x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)

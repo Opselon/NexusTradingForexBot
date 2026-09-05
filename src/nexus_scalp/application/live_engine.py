@@ -1049,7 +1049,10 @@ class LiveEngine:
             ),
             feature_schema_id=declared_schema,
             feature_dimension=declared_dim,
-            num_classes=4,
+            # BUG-243: declared head; live 70D now serves 3 (canonical).
+            num_classes=self._declared_head_classes_for_path(
+                initial_art_path.with_suffix(".meta.json")
+            ),
         )
         self.training_run_store = TrainingRunStore(audit_repo=self.audit)
         self.model_lifecycle_orchestrator = ModelLifecycleOrchestrator(
@@ -2887,6 +2890,33 @@ class LiveEngine:
                     return int(w.shape[1])
         return None
 
+    # ------------------------------------------------------------------
+    # BUG-243 (Agent-4 serving-integrity lane): bundle-coherent class-head
+    # mint. MODEL_ARTIFACT_FORENSICS proved the deployed champion carries
+    # meta "model_head_classes: 3" over a 4-logit tensor. The mint sites
+    # hardcoded ScalpNet(num_classes=4); the contract SSoT is 3. Mint now
+    # reads the bundle's DECLARED head (meta; legacy-4 only when the
+    # artifact itself declares 4) and otherwise falls back to SSoT.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _declared_head_classes_for_path(meta_path: Path) -> int:
+        """Declared neural head width for a bundle path (BUG-243)."""
+        import json as _json
+        from nexus_scalp.model_lifecycle.model_class_contract import (
+            LEGACY_HEAD_CLASSES,
+            TRAINED_CLASS_COUNT,
+        )
+
+        with contextlib.suppress(Exception):
+            if Path(meta_path).exists():
+                with open(meta_path, encoding="utf-8") as fh:
+                    meta = _json.load(fh)
+                for key in ("model_head_classes", "num_classes"):
+                    val = meta.get(key)
+                    if isinstance(val, int) and val in (TRAINED_CLASS_COUNT, LEGACY_HEAD_CLASSES):
+                        return int(val)
+        return TRAINED_CLASS_COUNT
+
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
         """Loads model.pt if present, validating against the artifact's own declared width.
 
@@ -2903,7 +2933,9 @@ class LiveEngine:
             )
         else:
             expected_dim = self._expected_num_features_for_artifact(model_path)
-        model = ScalpNet(num_features=expected_dim, num_classes=4)
+        # BUG-243: mint at the bundle's DECLARED head width, not hardcoded 4.
+        declared_head = self._declared_head_classes_for_path(model_path.with_suffix(".meta.json"))
+        model = ScalpNet(num_features=expected_dim, num_classes=declared_head)
         model.eval()
 
         if model_path.exists() and not force_fresh:
@@ -6093,7 +6125,10 @@ class LiveEngine:
             model_path = Path(self.config.model.model_artifact_path)
             fresh = ScalpNet(
                 num_features=self._declared_contract_dim_for_path(model_path) or self.FEATURE_DIM,
-                num_classes=4,
+                # BUG-243: declared head, not hardcoded 4.
+                num_classes=self._declared_head_classes_for_path(
+                    model_path.with_suffix(".meta.json")
+                ),
             )
             fresh.eval()
             with self._bundle_lock:
