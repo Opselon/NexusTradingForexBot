@@ -8131,3 +8131,97 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
 - ROOT CAUSE: commit 37ae4d31 (CodeQL py/unsafe-cyclic-import batch) converted the module-level `from nexus_scalp.shadow.replay import VERDICT_*` to lazy aliased imports (_VI/_VR/_VS) and aliased 3 of the 4 return branches; the final noise-band fallback return kept the bare module-level name, which no longer exists at runtime (TYPE_CHECKING-only). Path-unexercised defect: the three aliased branches mask the fourth in casual runs; only the noise-band branch (small resolved-pair counts) hits it.
 - FIX: line 269 `"verdict": _VI,` — same aliased constant as the other branches; byte-safe single-anchor edit, py_compile clean, probe-verified before (NameError reproduced with pairs_resolved=50, mean=-0.005, median=0.001) and after (verdict INSUFFICIENT_EVIDENCE returned).
 - Tests: tests/unit/test_shadow_replay_evidence_chg0047.py full file re-run GREEN after fix (was 2 FAILED before). Class lesson (extends BUG-182A): a lazy-import refactor that aliases constants must grep EVERY use site of each moved name in the same file; mypy catches undefined names only if the branch is type-reachable, not if it is rarely executed.
+
+## BUG-245 - OOSGate empty context-contract match silently widened the gate to the global population (false-PASS class) (2026-09-05, Agent 17 OOS lane)
+
+- SEVERITY: HIGH (validation integrity — OOS hard gate could PASS on a population the strategy never declared) | STATUS: FIXED
+- SURFACE: src/nexus_scalp/research/oos.py OOSGate.evaluate (empty-match branch) | CHG-0063.
+- SYMPTOM: a candidate whose declared context contract matched ZERO samples got an OOS verdict computed on the FULL dataset. Reproduced: 100 London-negative samples (session=LONDON, expectancy -0.4R) + 20 Asian-positive OOS tail (session=ASIAN, +0.9R) + typo contract sessions=['LONDONN'] -> OOSGate PASS +0.73R on the WRONG population (the pipeline-level CONTEXT_CONTRACT_EMPTY_POPULATION raise never fired because the gate was called directly, e.g. orchestrator._evaluate_oos / operator tools / tests).
+- ROOT CAUSE: the pre-PHASE-27 defensive branch `if filtered: ... else: context_diag['sufficient_evidence']=False` left dataset_for_eval as the FULL dataset and continued into split/evaluate — a silent population widening. The pipeline path was hardened earlier (fail-loud at pipeline.py:239) but the GATE itself kept the fallback, so any direct caller bypassed the fail-loud.
+- FIX: empty-match branch now logs [OOS] event=CONTEXT_CONTRACT_EMPTY_POPULATION and returns an explicit OOSResult FAIL (oos_samples=0, reason CONTEXT_CONTRACT_EMPTY_POPULATION, matched_samples=0, sufficient_evidence=False). Matching-contract and no-contract paths are byte-identical (no threshold change, INV-008 untouched).
+- TESTS: tests/unit/test_agent17_oos_hard_gate.py (9 tests, xdist-safe) — empty-contract FAIL red-before/green-after, matching-contract PASS preserved, temporal split determinism/disjoint/chronology, purge of boundary-crossing horizon, strict train<oos ordering, zero-OOS FAIL, negative-OOS FAIL, degradation ceiling, NaN-R exclusion. Combined suite with phase09b + purge_defaults_bug183 + forward_test_freeze + bug233 short-circuit: 68 passed.
+- COMMIT: 390e153d (fix + tests, pushed origin/main) + d8ed39ad (ruff format follow-up).
+
+## BUG-239 - RiskEngine.evaluate_proposal crashed with UnboundLocalError on the micro-account + insufficient-margin path AND the trailing micro-account exception could resurrect a margin-refused volume (2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: equity<50 proposal with margin_free ~0 raised
+  `UnboundLocalError: cannot access local variable 'slippage_usd'` at the
+  success log (risk_engine.py ~line 522) instead of returning None; the
+  same tail re-applied `symbol_info.volume_min` AFTER the free-margin
+  guard had zeroed the volume, i.e. the micro exception bypassed the
+  margin check entirely (crash masked the resurrection in most paths).
+- ROOT CAUSE: slippage_usd only bound inside the Almgren-Chriss impact
+  while-loop; when the loop never runs (volume below broker minimum)
+  the success log still references it. The micro-exception reapply had
+  no margin re-verification.
+- FIX: slippage_usd initialized to 0.0 before the loop; micro exception
+  only rescues an impact-reduced positive volume and re-verifies the
+  rescue keeps required margin <= margin_free; a volume zeroed by the
+  margin/exposure guards stays zeroed (fail-closed, structured
+  MICRO_ACCOUNT_*_REJECTED reasons).
+- EVIDENCE: FAIL-BEFORE probe reproduced the crash exactly
+  (equity=40, margin_free=0.001); PASS-AFTER returns None;
+  micro+margin-ok still returns 0.01. Commit 152e8ebe.
+- REGRESSION: tests/unit/test_agent11_execution_risk_forensic.py
+  TestBug239MicroAccountMarginHole (4 tests).
+- INVARIANTS: INV-003 preserved/strengthened (risk authoritative,
+  fail-closed).
+
+## BUG-240 - MAX_TOTAL_EXPOSURE gate was symbol-scoped, not engine-wide (2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: with one engine position open on EURUSD, a dispatch for
+  XAUUSD succeeded -> two concurrent engine positions with an
+  engine-wide cap of 1 (executable paper-fixture repro).
+- ROOT CAUSE: OrderLifecycleManager._is_exposure_available counted
+  `count_total_exposure(symbol=symbol)` although its own docstring and
+  the signals/policy.py gate declare the limit engine-wide.
+- FIX: gate counts count_total_exposure(symbol=None); per-symbol
+  breakdown retained for block-reason logging. Commit ad06738f.
+- REGRESSION: TestBug240EngineWideExposure (3 tests).
+- INVARIANTS: INV-004 last-line-of-defence semantics restored.
+
+## BUG-241 - SAFE_MODE circuit breaker dead on the primary dispatch path (2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: the 3-consecutive-rejection breaker existed only in
+  execute_order (hedge path). dispatch_order (the ONLY primary entry
+  path) never checked global_state and never fed the counter: broker
+  refusals could not open the circuit and SAFE_MODE could not block
+  primary dispatches. No active kill-switch callers exist either.
+- FIX: dispatch_order blocks with [ENTRY_BLOCKED] layer=SAFE_MODE +
+  terminal NOT_DISPATCHED experience outcome when the circuit is open;
+  feeds _consecutive_failures on market AND pending refusals;
+  transitions to SAFE_MODE at 3; resets on success (parity with
+  execute_order). Commit ad06738f.
+- REGRESSION: TestBug241SafeModePrimaryPath (3 tests).
+- INVARIANTS: INV-003/INV-004 strengthened; no threshold changed.
+
+## BUG-242 - Web operator close/modify endpoints bypassed OrderLifecycleManager (INV-004 violation; 2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: POST /api/positions/close and /api/positions/modify called
+  engine.adapter.* directly - the only broker-mutation surface outside
+  the manager (repo-wide call-site census). No audit order row, no exit
+  mechanism (autopsy attribution gap), no cache release, no SAFE_MODE /
+  SHADOW boundary checks on the mutation.
+- FIX: OrderLifecycleManager.close_position_manual(ticket) tags
+  ExitMechanism.MANUAL_CLOSE BEFORE the broker call, writes an audit
+  log_order row (execution_mode=MANUAL) on success, releases the ticket
+  from the live tickets cache, rolls the mechanism tag back on refusal;
+  modify_position_manual mirrors this with a MANUAL audit row. Web
+  routes now resolve engine.order_manager and call the wrappers
+  (manager unavailable -> HTTP 400 fail-closed). Commit d0a9b6d4.
+- REGRESSION: TestBug242ManualActionAuthority (4 tests, incl. black-box
+  TestClient probe asserting the adapter is never called directly).
+- INVARIANTS: INV-004 now holds for 100% of reachable broker-mutation
+  call sites; INV-012 preserved (MANUAL_CLOSE is evidence-backed).
+
+## CHG-0064 registry cross-reference - Agent-11 execution/risk deep forensic wave (2026-09-05)
+
+- Change entry CHG-0064 (agents/change_control.md) and taskboard row
+  TASK-AGENT11-EXEC-RISK document the full Agent-11 wave: BUG-239/240/241/242
+  fixes + regression suite tests/unit/test_agent11_execution_risk_forensic.py
+  (14 tests) + clean verdicts for the remaining audit surface (dispatch
+  idempotency, ambiguous-fill recovery, pending cause-aware recovery,
+  broker-truth reconciliation, SHADOW boundary, 60-scenario router actions).
+- Commits: 152e8ebe (BUG-239), ad06738f (BUG-240+241), d0a9b6d4 (BUG-242),
+  plus this registry commit.
+
