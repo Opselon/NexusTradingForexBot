@@ -254,10 +254,10 @@ def register_debug_research_routes(
             else:
                 # Engine offline: instantiate a fresh net so the endpoint still validates
                 # the model graph and tensor contract.
-                from nexus_scalp.models.scalp_net import ScalpNet
                 from nexus_scalp.model_lifecycle.model_class_contract import (
                     TRAINED_CLASS_COUNT as TRAINED_CLASS_COUNT_243,
                 )
+                from nexus_scalp.models.scalp_net import ScalpNet
 
                 model = ScalpNet(num_features=expected_dim, num_classes=TRAINED_CLASS_COUNT_243)
                 model.eval()

@@ -13,6 +13,7 @@ Contracts (DatasetArtifactImmutability v1 extension, CHG-0061 wave 2):
       inputs differing in one close price mint different ids (id is
       content-aware, not only config-addressed).
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
