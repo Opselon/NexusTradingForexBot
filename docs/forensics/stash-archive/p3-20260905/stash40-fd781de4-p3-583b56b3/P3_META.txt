@@ -1,0 +1,5 @@
+stash_idx=40
+stash_msg=stash@{40}: WIP on hermes-subagent/subagent-sa-3-4165fb32: 69033c54 Agent 2 (Nexus-Main): dataset split-boundary horizon purge — BUG-244 (train/val/test boundary no longer split-adjacent)
+stash_obj=fd781de4
+p3=583b56b393958a52ac72ca9617daa188c86980fd
+parents=69033c54c3cc643d889662649305928e2e5efe33 444ef1357e9a023a1b51f498721024eca6558567 583b56b393958a52ac72ca9617daa188c86980fd
