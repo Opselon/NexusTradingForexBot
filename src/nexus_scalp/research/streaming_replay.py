@@ -897,7 +897,7 @@ class StreamingReplayEngine:
                 hit_tp = (
                     ev.high >= state.open_pos.take_profit >= ev.low
                     if state.open_pos.direction == "BUY"
-                    else ev.low <= state.open_pos.take_profit >= ev.low
+                    else ev.low <= state.open_pos.take_profit <= ev.high
                 )
                 if hit_sl or hit_tp:
                     exit_reason = "SL" if (hit_sl or not hit_tp) else "TP"
