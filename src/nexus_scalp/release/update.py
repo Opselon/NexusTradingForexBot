@@ -173,7 +173,7 @@ def format_update_report(plan: UpdatePlan) -> str:
         for d in plan.decisions:
             print(f"- {d}")
         _sys.stdout.flush()
-    return plan.to_dict() if False else ""
+    return ""
 
 
 def _machine_arch() -> str:

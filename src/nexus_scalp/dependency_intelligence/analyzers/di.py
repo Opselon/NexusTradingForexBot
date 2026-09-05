@@ -219,8 +219,9 @@ class DIAnalyzer:
                 # module.Class() form
                 if "." in func and func in name_index:
                     return name_index[func]
-                # fallback: record the called factory as the target (own module)
-                return f"cls:{self.pkg_root}.{func}" if False else None
+                # fallback: the called factory's module can't be resolved here;
+                # returning None keeps the caller on the attribute path above.
+                return None
         if isinstance(expr, ast.Name):
             return name_index.get(expr.id)
         if isinstance(expr, ast.Attribute):

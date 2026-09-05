@@ -112,11 +112,7 @@ def fingerprint_frame(frame: pl.DataFrame, feature_cols: list[str]) -> str:
     cols = ["timestamp", "label", *feature_cols]
     sub = frame.select(cols)
     for batch in sub.iter_slices(n_rows=4096):
-        h.update(
-            batch.write_ipc(None)
-            if False
-            else str(batch.to_numpy().tobytes()).encode("utf-8", "ignore")
-        )
+        h.update(str(batch.to_numpy().tobytes()).encode("utf-8", "ignore"))
         h.update(np.ascontiguousarray(batch.select(cols[2:]).to_numpy()).tobytes())
         h.update(str(batch["timestamp"].to_list()[:1]).encode())
     # Deterministic content hash: columns are fixed order, float32 bytes.

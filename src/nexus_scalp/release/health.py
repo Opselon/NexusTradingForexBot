@@ -773,7 +773,7 @@ class HealthEngine:
                 "News feeds and updates need internet; local features work.",
             )
         return HealthEntry(
-            "NETWORK", "UNKNOWN" if False else "WARNING", "connectivity undetermined"
+            "NETWORK", "WARNING", "connectivity undetermined"
         )
 
     def check_disk(self) -> HealthEntry:
