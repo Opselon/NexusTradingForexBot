@@ -83,6 +83,11 @@ app.add_typer(
     name="smoke",
     help="Production E2E smoke (layered runtime verification).",
 )
+# GATEWAY — Windows MT5 bridge server for the existing Linux gateway client
+try:
+    import nexus_scalp.cli.gateway_commands as _gateway_commands  # noqa: F401,E402 (side effect: registers nexus gateway)
+except Exception:
+    pass
 
 
 def _resolve_facade_seam(name: str, default: Any) -> Any:
