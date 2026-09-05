@@ -790,7 +790,10 @@ class OrderLifecycleManager:
         except (TypeError, ValueError):
             return 0.0
 
-        if vol <= 0.0:
+        # BUG-248: NaN/inf must not propagate past the clamp
+        # (nan <= 0.0 is False; min(nan, 10) is nan). A NaN volume reaching the
+        # broker request would be an unexplainable order divergence.
+        if not math.isfinite(vol) or vol <= 0.0:
             return 0.0
 
         if self.risk_engine is not None and hasattr(self.risk_engine, "get_clamped_position_size"):
@@ -818,6 +821,11 @@ class OrderLifecycleManager:
                 logger.error(
                     "Risk engine clamp failed; falling back to hard cap", error=str(clamp_err)
                 )
+
+        # Defense-in-depth: a misbehaving clamp implementation must not leak
+        # NaN/inf into the broker request (nan survives min() and round()).
+        if not math.isfinite(vol) or vol <= 0.0:
+            return 0.0
 
         clamped = min(vol, HARD_MAX_LOTS)
         if clamped < vol:
