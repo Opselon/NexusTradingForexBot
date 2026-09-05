@@ -135,16 +135,17 @@ class TestSplitBoundaryPurge:
         """CandidateTrainer must never place purged rows into the train pool."""
         frame = _split(purge_bars=None)
         split_arr = frame["_split"].to_numpy()
-        # NEW rule (mirrors training.py post-fix)
+        # NEW rule (mirrors training.py post-fix) - the train pool is the
+        # non-test, non-purged rows (train+val blocks); purged excluded from
+        # BOTH pools.
         train_idx = np.where((split_arr != "test") & (split_arr != "purged"))[0]
         val_idx = np.where(split_arr == "test")[0]
-        # post-fix train pool contains ONLY 'train' rows (purged+val excluded)
-        assert set(split_arr[train_idx].tolist()) == {"train"}
-        assert len(train_idx) == 210 - HORIZON  # 195
+        assert set(split_arr[train_idx].tolist()) == {"train", "val"}
+        assert len(train_idx) == (210 - HORIZON) + (45 - HORIZON)  # 195 + 30
         assert len(val_idx) == 45
-        # the pre-fix rule would have included val+purged (210) rows
+        # the pre-fix rule would have included the 2x15 purged rows too
         old_idx = np.where(split_arr != "test")[0]
-        assert len(old_idx) == 210 and len(old_idx) - len(train_idx) == HORIZON + 30
+        assert len(old_idx) == 210 + 45 and len(old_idx) - len(train_idx) == 2 * HORIZON
 
     def test_sequence_trainer_boundary_purge(self) -> None:
         """Sequence trainer positional split: train_end = (n-val)-purge."""
