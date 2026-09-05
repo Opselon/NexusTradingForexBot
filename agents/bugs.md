@@ -8259,3 +8259,53 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
 - REGRESSION: `tests/unit/test_a2_data_lineage_bounded.py` (wired into `tests/critical_suite.txt`): deterministic 5k-bar M1 tail build via the canonical `build_70d_dataset` path validating the full lineage RAW -> CLEAN -> FEATURES -> LABELS -> DATASET -> MODEL INPUT (~15 s): OHLCV integrity, timestamp monotonicity, 70D hash/ordering (`235b8fccc96b7e0e`), clipping |x|<=3.0, BUG-234 feat_41/42 non-zero pin, UTC-aware timestamps, 3-class label hygiene, eval/purge overlap 0, lineage CLEAN_HISTORICAL, scaler-family std census, and `SequenceBuilder` gap-safe windows built with the SSoT constant.
 - VERIFICATION: py_compile clean; ruff check+format clean; `test_a2_data_lineage_bounded` 1/1 PASS (`-p no:cacheprovider`).
 - NOTE: Agent-3's BUG-243 registry row and Agent-11's BUG-239..242 execution rows are different classes; this is the dataset lane's only ledger claim. Evidence probes: `scratch/ns_a2_perturbation_probe{,_out.json}`, `scratch/ns_a2_lineage_probe.py`.
+
+## BUG-239 (dataset-identity class) - replay-cache dataset could be silently rebuilt under the SAME id with DIFFERENT bytes; read path served corrupted/swapped/appended data without any integrity check (2026-09-05, Agent 14, CHG-0061)
+
+- NOTE: parallel agents independently claimed BUG-239/BUG-240 for other surfaces
+  (Agent-11 risk_engine BUG-239 @152e8ebe; Agent-6 web toggle BUG-239/BUG-240
+  @CHG-0060/0064). This is a THIRD distinct defect in the same ID window —
+  dataset-layer row per the bugs.md duplicate-ID disambiguation rule
+  (document here as BUG-239-DATASET; do not rewrite the other rows).
+- SEVERITY: P0 (dataset trust chain: "what exact bytes produced this result"
+  was unanswerable for every replay-cache dataset) | STATUS: FIXED (this wave)
+- SURFACE: src/nexus_scalp/research/mt5_tick_dataset.py (acquire_ticks cache
+  check + acquire_bars identity + load()/event_source() read path)
+- PROBES (Temp/agent14_probes/, venv python, synthetic adapters on the probed
+  get_tick_history/get_rate_history surface; results captured in-session):
+  1) acquire_bars dataset_id embedded datetime.now(UTC): the same historical
+     start re-acquired later minted a NEW id (probe: d403ce4a... vs
+     bb6dabbe...), so cache never hit and the manifest carried no end.
+  2) parquet-without-meta (interrupted/lost manifest) + re-acquire: parquet
+     OVERWRITTEN with the new content under the SAME dataset_id and the
+     fingerprint silently changed => one identity, two different byte sets
+     over time (corrections did NOT create a new dataset).
+  3) read path had zero integrity verification: in-place byte mutation loaded
+     silently; appended fake row loaded silently; a swapped foreign dataset
+     (EURUSD parquet under the XAUUSD id) was served; a manifest
+     record-count mismatch was ignored.
+  4) a dead adapter (0 rows for EVERY chunk) published + permanently cached a
+     records=0 dataset with a VALID fingerprint and no failure marker;
+     a partial outage (data then empty chunk) cached with no marker —
+     incomplete acquisition could masquerade as complete.
+  5) adapter rows outside [start,end) were stored silently (BUG-188-class
+     timebase recurrence had no defense-in-depth gate).
+  6) hostile symbols (../, a/b, C:, XAU/USD, empty) reached the id/file path
+     ('..' produced a cache_root-parent write); racing identical acquisitions
+     crashed on tmp.replace (WinError 2/32) and produced duplicated rows.
+  7) provenance: git_commit="" serialized as "" instead of NOT_RECORDED.
+- FIX (mt5_tick_dataset.py v3, CHG-0061): explicit `end` for acquire_bars
+  (id = symbol|kind|start|end; wall-clock identity preserved for legacy
+  no-end callers via meta_version=1); orphan-parquet re-acquire RAISES
+  ArtifactConflict (IMMUTABLE ARTIFACT CONFLICT) — corrections must mint a
+  new id; load()/event_source() recompute the content fingerprint and check
+  manifest coherence, raising DatasetCorruptionError on any tamper/swap/
+  append/count mismatch; zero-rows-for-whole-window raises
+  AcquisitionIncomplete unless adapter.available is True (genuinely empty
+  healthy window cached with complete=True; partial outage cached with
+  complete=False + per-chunk accounting); out-of-window rows dropped and
+  counted (meta.out_of_window); symbols validated [A-Za-z0-9_.-]{1,64} no
+  '..'; per-id O_CREAT|O_EXCL advisory lock serializes racing acquires
+  (stale-lock expiry, bounded wait); unknown provenance = NOT_RECORDED.
+- REGRESSION: tests/unit/test_agent14_dataset_integrity.py (19 tests, RED on
+  the pre-fix tree @7715e4a8, GREEN on the hardened module).
