@@ -63,7 +63,7 @@ def _bars(n, lo, hi, gap=None, gap_at=None):
     """n flat bars [lo,hi]; optionally switch to the gap range from gap_at."""
     out = []
     for k in range(n):
-        L, H = (gap if gap and gap_at is not None and k >= gap_at else (lo, hi))
+        L, H = gap if gap and gap_at is not None and k >= gap_at else (lo, hi)
         c = (L + H) / 2
         out.append(
             {
@@ -86,9 +86,7 @@ def _run(bars, fn, rid):
     cfg = ReplaySessionConfig(
         model_artifact_path=MODEL, decide_on="bar_close", git_commit="a15-244"
     )
-    return StreamingReplayEngine(cfg, policy=_Runner(fn)).run(
-        BarEventSource(bars), run_id=rid
-    )
+    return StreamingReplayEngine(cfg, policy=_Runner(fn)).run(BarEventSource(bars), run_id=rid)
 
 
 def _no_trade(t):
@@ -103,9 +101,7 @@ def test_bug244_no_phantom_sell_tp_above_gap():
             return _mk(ActionType.SELL_MARKET, tick.bid, 2665.0, 2640.0, tick.timestamp)
         return _no_trade(tick)
 
-    res = _run(
-        _bars(70, 2645.0, 2660.0, gap=(2600.0, 2610.0), gap_at=66), fn, "A15-PHANTOM"
-    )
+    res = _run(_bars(70, 2645.0, 2660.0, gap=(2600.0, 2610.0), gap_at=66), fn, "A15-PHANTOM")
     tp = [x for x in res.trades if x["exit_reason"] == "TP"]
     assert not tp, f"phantom TP exit recorded: {tp}"
 

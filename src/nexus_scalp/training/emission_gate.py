@@ -146,7 +146,9 @@ def run_emission_gate(
         _require(bool(dataset_id), "dataset_id missing (provenance)")
         _require(bool(dataset_sha256), "dataset_sha256 missing (provenance)")
         _require(bool(feature_schema_hash), "feature_schema_hash missing (provenance)")
-        _require(metadata.get("dataset_id") == dataset_id, "metadata.dataset_id != bound dataset_id")
+        _require(
+            metadata.get("dataset_id") == dataset_id, "metadata.dataset_id != bound dataset_id"
+        )
         _require(
             metadata.get("dataset_sha256") == dataset_sha256,
             "metadata.dataset_sha256 != bound dataset_sha256",

@@ -5,6 +5,7 @@ authority: the hedge entry (execute_order) had no last-defense HARD_MAX_LOTS
 clamp, and the AI-flip fast-reversal direct pending bypassed the SAFE_MODE
 circuit. Both fixed here — fail-closed, thresholds unchanged.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -28,8 +29,14 @@ class TestBug247HedgeHardCap:
         om, adapter = paper_om
         om.global_state = "NORMAL"
         order = TradeOrder(
-            order_id="bug247-h1", symbol="XAUUSD", order_type=OrderType.BUY,
-            volume=100.0, price=4400.0, stop_loss=4390.0, take_profit=4420.0, magic_number=888101,
+            order_id="bug247-h1",
+            symbol="XAUUSD",
+            order_type=OrderType.BUY,
+            volume=100.0,
+            price=4400.0,
+            stop_loss=4390.0,
+            take_profit=4420.0,
+            magic_number=888101,
         )
         assert om.execute_order(order) is True
         assert adapter.get_positions()[0].volume <= 10.0
@@ -39,8 +46,14 @@ class TestBug247HedgeHardCap:
         om.global_state = "NORMAL"
         om._clamp_dispatch_volume = lambda v, symbol=None: 0.0  # type: ignore[method-assign]
         order = TradeOrder(
-            order_id="bug247-h2", symbol="XAUUSD", order_type=OrderType.BUY,
-            volume=0.10, price=4400.0, stop_loss=4390.0, take_profit=4420.0, magic_number=888101,
+            order_id="bug247-h2",
+            symbol="XAUUSD",
+            order_type=OrderType.BUY,
+            volume=0.10,
+            price=4400.0,
+            stop_loss=4390.0,
+            take_profit=4420.0,
+            magic_number=888101,
         )
         assert om.execute_order(order) is False
         assert not adapter.get_positions()

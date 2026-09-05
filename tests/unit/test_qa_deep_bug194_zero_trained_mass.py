@@ -76,13 +76,12 @@ def test_wait_all_mass_buy_candidate_zero_division() -> None:
     proposal.
     """
     policy = _fresh_policy()
-    proposal = _evaluate(
-        policy, [0.00, 0.00, 0.00, 1.00], fv_updates={"liquidity_sweep_signal": 1}
-    )
+    proposal = _evaluate(policy, [0.00, 0.00, 0.00, 1.00], fv_updates={"liquidity_sweep_signal": 1})
     assert proposal is not None
     assert proposal.action.value == "NO_TRADE"
     assert math.isfinite(float(proposal.confidence))
     assert float(proposal.confidence) >= 0.0
+
 
 def test_negative_directional_mass_buy_candidate_poisons_proposal() -> None:
     """FIXED (BUG-245B, bfeb08dd): BUY -0.20 / SELL +0.20 / NO_TRADE 0.00
@@ -99,6 +98,7 @@ def test_negative_directional_mass_buy_candidate_poisons_proposal() -> None:
     conf = float(proposal.confidence)
     assert math.isfinite(conf), f"non-finite confidence {conf}"
     assert conf >= 0.0, f"negative confidence {conf}"
+
 
 def test_duplicate_tick_masking_evidence() -> None:
     """The SECOND identical evaluation with the SAME tick signature returns
@@ -142,11 +142,10 @@ def test_regression_wait_all_mass_returns_no_trade_not_crash() -> None:
     pytest.raises while the defect was open).
     """
     policy = _fresh_policy()
-    proposal = _evaluate(
-        policy, [0.00, 0.00, 0.00, 1.00], fv_updates={"liquidity_sweep_signal": 1}
-    )
+    proposal = _evaluate(policy, [0.00, 0.00, 0.00, 1.00], fv_updates={"liquidity_sweep_signal": 1})
     assert proposal.action.value == "NO_TRADE"
     assert float(proposal.confidence) >= 0.0
+
 
 def test_regression_negative_mass_reaches_no_trade_not_crash() -> None:
     """FIXED (BUG-245B, bfeb08dd): negative-sum trained mass no longer
