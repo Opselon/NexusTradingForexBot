@@ -298,9 +298,7 @@ class MT5TickDataset:
             step = timedelta(minutes=max(1, chunk_minutes))
             while cur < end:
                 c_end = min(cur + step, end)
-                snaps = adapter.get_tick_history(
-                    symbol, count=100_000, from_utc=cur, to_utc=c_end
-                )
+                snaps = adapter.get_tick_history(symbol, count=100_000, from_utc=cur, to_utc=c_end)
                 if snaps is None:
                     # Adapter contract violation: None is not "empty", it is
                     # an unavailable response (BUG-188 probe semantics: the
@@ -462,8 +460,7 @@ class MT5TickDataset:
             )
             if snaps is None:
                 raise AcquisitionIncompleteError(
-                    "acquire_bars: adapter returned None — acquisition incomplete, "
-                    "nothing cached"
+                    "acquire_bars: adapter returned None — acquisition incomplete, nothing cached"
                 )
             records: list[dict[str, Any]] = []
             out_of_window = 0
