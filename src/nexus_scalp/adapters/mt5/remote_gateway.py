@@ -238,6 +238,121 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         res = self._send_request("CLOSE_POSITION", payload)
         return bool(res.get("status") == "SUCCESS")
 
+    def execute_market_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> int:
+        """Executes a market order via remote gateway RPC (dispatch parity with DirectMT5Adapter)."""
+        payload: dict[str, Any] = {
+            "symbol": symbol,
+            "order_type": order_type.value,
+            "volume": float(volume),
+            "price": float(price),
+            "stop_loss": float(stop_loss),
+            "take_profit": float(take_profit),
+        }
+        try:
+            res = self._send_request("EXECUTE_MARKET_ORDER", payload)
+        except Exception as e:
+            logger.error("Remote gateway EXECUTE_MARKET_ORDER failed", error=str(e), symbol=symbol)
+            return 0
+        if res.get("status") == "SUCCESS":
+            try:
+                return int(res.get("ticket") or res.get("order") or 0)
+            except Exception:
+                return 0
+        logger.error(
+            "Remote gateway EXECUTE_MARKET_ORDER rejected",
+            symbol=symbol,
+            reason=res.get("message"),
+            retcode=res.get("retcode"),
+        )
+        return 0
+
+    def place_pending_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> int:
+        """Places a pending order via remote gateway RPC (dispatch parity with DirectMT5Adapter)."""
+        payload: dict[str, Any] = {
+            "symbol": symbol,
+            "order_type": order_type.value,
+            "volume": float(volume),
+            "price": float(price),
+            "stop_loss": float(stop_loss),
+            "take_profit": float(take_profit),
+        }
+        try:
+            res = self._send_request("PLACE_PENDING_ORDER", payload)
+        except Exception as e:
+            logger.error("Remote gateway PLACE_PENDING_ORDER failed", error=str(e), symbol=symbol)
+            return 0
+        if res.get("status") == "SUCCESS":
+            try:
+                return int(res.get("ticket") or res.get("order") or 0)
+            except Exception:
+                return 0
+        logger.error(
+            "Remote gateway PLACE_PENDING_ORDER rejected",
+            symbol=symbol,
+            reason=res.get("message"),
+            retcode=res.get("retcode"),
+        )
+        return 0
+
+    def get_pending_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Queries active pending orders via remote gateway RPC."""
+        try:
+            res = self._send_request("GET_PENDING_ORDERS", {"symbol": symbol})
+        except Exception as e:
+            logger.error("Remote gateway GET_PENDING_ORDERS failed", error=str(e))
+            return []
+        data = res.get("data")
+        if isinstance(data, list):
+            return data
+        if isinstance(res.get("pending_orders"), list):
+            return res["pending_orders"]
+        return []
+
+    def cancel_pending_order(self, ticket: int) -> bool:
+        """Cancels a pending order via remote gateway RPC."""
+        try:
+            res = self._send_request("CANCEL_PENDING_ORDER", {"ticket": int(ticket)})
+        except Exception as e:
+            logger.error("Remote gateway CANCEL_PENDING_ORDER failed", ticket=ticket, error=str(e))
+            return False
+        return bool(res.get("status") == "SUCCESS")
+
+    def modify_order(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+        """Modifies a pending order's SL/TP via remote gateway RPC (delegates to MODIFY_POSITION)."""
+        return self.modify_position(ticket=ticket, stop_loss=stop_loss, take_profit=take_profit)
+
+    def get_closed_deals_history(self, symbol: str, hours_back: int = 24) -> list[dict[str, Any]]:
+        """Retrieves closed deals history via remote gateway RPC."""
+        try:
+            res = self._send_request(
+                "GET_CLOSED_DEALS_HISTORY", {"symbol": symbol, "hours_back": int(hours_back)}
+            )
+        except Exception as e:
+            logger.error("Remote gateway GET_CLOSED_DEALS_HISTORY failed", error=str(e))
+            return []
+        data = res.get("data")
+        if isinstance(data, list):
+            return data
+        if isinstance(res.get("deals"), list):
+            return res["deals"]
+        return []
+
     def _sync_ping(self) -> float:
         """Calculates synchronous HTTP ping latency."""
         t0 = time.perf_counter()
