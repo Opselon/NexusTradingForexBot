@@ -126,7 +126,9 @@ def classify_exit_with_evidence(
         # DEAL_REASON_CLIENT is also 0, but a bare 0 with NO comment/geometry/
         # PnL evidence is ambiguous — stay UNKNOWN rather than assume manual
         # (INV-012: UNKNOWN evidence must never be silently promoted).
-        if comment_l or near_sl or near_tp or profit != 0.0:
+        # BUG-250 (Agent-12): profit alone must not promote bare reason==0 to MANUAL_CLOSE
+        # - comment or price-geometry corroboration required (INV-012).
+        if comment_l or near_sl or near_tp:
             return ExitReason.MANUAL_CLOSE, "BROKER_DEAL_REASON", "reason=0 DEAL_REASON_CLIENT", 0.8
         return (
             ExitReason.UNKNOWN,
