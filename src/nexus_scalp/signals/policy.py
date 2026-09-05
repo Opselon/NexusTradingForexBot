@@ -228,6 +228,7 @@ class SignalPolicy:
                 held_position_dirs=held_position_dirs,
                 prob_buy=prob_buy,
                 prob_sell=prob_sell,
+                no_trade_prob=prob_no_trade,
                 atr=atr,
                 regime_str=regime_str,
                 regime_conf=regime_conf,
@@ -601,6 +602,14 @@ class SignalPolicy:
         if is_range_market:
             active_threshold += self.range_confidence_penalty
 
+        # BUG-249 (Agent-5 decision forensics, 2026-09-05): `max_spread_atr_ratio`
+        # was plumbed into the constructor but NEVER enforced - a dead guard.
+        # Wire it fail-closed: when spread/ATR exceeds the ratio the broker
+        # take already dominates the M1 scalp window, so candidates must not
+        # enter (risk_info is still stamped for counterfactual stratification).
+        spread_atr_ratio = (current_spread / atr) if atr > 0 else 0.0
+        spread_atr_exceeded = current_spread > 0.0 and spread_atr_ratio > self.max_spread_atr_ratio
+
         # Multi-timeframe trend & S/R variables
         h4_trend = self._sanitize_float(getattr(feature_vector, "htf_h4_trend", 0.0), 0.0)
         h1_mom = self._sanitize_float(getattr(feature_vector, "htf_h1_momentum", 0.0), 0.0)
@@ -717,6 +726,9 @@ class SignalPolicy:
                 # input (INV-018); the audit row persists it for the
                 # counterfactual engine's spread stratification.
                 "spread_usd": float(current_spread),
+                # BUG-249 gate evidence (INV-018): ATR-normalized spread.
+                "spread_atr_ratio": float(round(spread_atr_ratio, 4)),
+                "max_spread_atr_ratio": float(self.max_spread_atr_ratio),
             }
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
@@ -1114,6 +1126,13 @@ class SignalPolicy:
                     "ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD",
                     blocked_by_filter="ASYMMETRIC_RR_LIMIT",
                 )
+            elif spread_atr_exceeded and proposed_action != ActionType.NO_TRADE:
+                # BUG-249: ATR-normalized spread gate (fail-closed).
+                decision_stage = "SPREAD_ATR_GATE"
+                final_proposal = build_nt(
+                    f"SPREAD_ATR_RATIO_EXCEEDED ({spread_atr_ratio:.2f} > {self.max_spread_atr_ratio:.2f})",
+                    blocked_by_filter="SPREAD_ATR_RATIO",
+                )
             else:
                 reason_code = (
                     f"{reason_code} | HTF:[H4={h4_trend:+.1f}, H1_Mom={h1_mom:+.1f}, "
@@ -1135,6 +1154,9 @@ class SignalPolicy:
                     "confidence_source": confidence_source,
                     # CHG-0043 decision-evidence spread stamp (see build_nt).
                     "spread_usd": float(current_spread),
+                    # BUG-249 gate evidence (INV-018): ATR-normalized spread.
+                    "spread_atr_ratio": float(round(spread_atr_ratio, 4)),
+                    "max_spread_atr_ratio": float(self.max_spread_atr_ratio),
                 }
 
                 final_proposal = TradeProposal(
@@ -1780,9 +1802,10 @@ class SignalPolicy:
         held_position_dirs: dict[int, str],
         prob_buy: float,
         prob_sell: float,
-        atr: float,
-        regime_str: str,
-        regime_conf: float,
+        no_trade_prob: float = 0.0,
+        atr: float = 1.5,
+        regime_str: str = "UNKNOWN",
+        regime_conf: float = 0.0,
     ) -> TradeProposal | None:
         """
         AI Position Reversal veto.
@@ -1799,9 +1822,24 @@ class SignalPolicy:
 
         Returns None when no reversal is warranted, leaving the standard flow untouched.
         """
-        total_active = prob_buy + prob_sell + 1e-8
-        rel_buy_bias = prob_buy / total_active
-        rel_sell_bias = prob_sell / total_active
+        # BUG-251 (Agent-5 decision forensics, 2026-09-05): normalize the
+        # reversal bias to the SAME trained-class semantics the entry gate
+        # uses (CHG-0042 / _directional_confidence). The old raw-only bias
+        # `buy/(buy+sell)` diverged from the entry confidence
+        # `max(buy,sell)/(buy+sell+no_trade)`: with large NO_TRADE mass a
+        # conviction that PASSES the entry gate could FAIL this bias (or
+        # vice versa). Degenerate mass falls back to the raw directional
+        # share (never manufactures conviction).
+        trained_mass = (
+            max(0.0, prob_buy) + max(0.0, prob_sell) + max(0.0, float(no_trade_prob))
+        )
+        if trained_mass > 0.0 and math.isfinite(trained_mass):
+            rel_buy_bias = max(0.0, prob_buy) / trained_mass
+            rel_sell_bias = max(0.0, prob_sell) / trained_mass
+        else:
+            total_active = max(0.0, prob_buy) + max(0.0, prob_sell) + 1e-8
+            rel_buy_bias = max(0.0, prob_buy) / total_active
+            rel_sell_bias = max(0.0, prob_sell) / total_active
 
         rel_threshold = getattr(self.algo_config, "ai_flip_relative_bias_threshold", 0.60)
         min_delta = getattr(self.algo_config, "ai_flip_min_delta", 0.10)
@@ -1841,6 +1879,16 @@ class SignalPolicy:
                 round(entry + atr * 3.0, 2) if is_buy_reversal else round(entry - atr * 3.0, 2)
             )
             confidence = float(prob_buy if is_buy_reversal else prob_sell)
+            # BUG-251: report reversal confidence in the SAME trained-class
+            # scale as the entry gate (clamp >= 0, no manufacturing when the
+            # mass is degenerate) so the audit row compares like with like.
+            _mass = (
+                max(0.0, prob_buy) + max(0.0, prob_sell) + max(0.0, float(no_trade_prob))
+            )
+            if _mass > 0.0 and math.isfinite(_mass):
+                _norm = confidence / _mass
+                if math.isfinite(_norm) and _norm >= 0.0:
+                    confidence = float(_norm)
 
             logger.info(
                 ">>> AI REVERSAL SIGNAL: opposing conviction detected, requesting CLOSE_POSITION before flip <<<",
