@@ -100,12 +100,12 @@ def test_walk_forward_trainer_smc_fine_tune_online():
 
 
 def test_wf_fine_tune_rolls_back_on_all_nan_buffer(tmp_path):
-    """BUG-169 (directive #42 learning-loop battery): a buffer whose features
-    are entirely NaN must not poison the checkpoint. The trainer's extraction
-    layer sanitises NaN/Inf via nan_to_num, so the run either completes with
-    finite losses or is rejected - in BOTH outcomes the on-disk artifact
-    (when written) must contain finite tensors and the returned model must
-    never carry non-finite weights."""
+    """BUG-169 (updated by BUG-243B): the all-NaN buffer must now be REFUSED
+    fail-closed by _assert_features_finite before any training work. The old
+    contract (nan_to_num sanitise + finiteness check) is superseded by the
+    ecosystem requirement that fetched data be clean at runtime training time
+    (every user, not only the local machine). Failure mode is ValueError."""
+
     trainer = WalkForwardTrainer(
         num_folds=3,
         epochs_per_fold=1,
@@ -124,26 +124,23 @@ def test_wf_fine_tune_rolls_back_on_all_nan_buffer(tmp_path):
     data["label_evaluated"] = [True] * num_rows
     data["is_purged"] = [False] * num_rows
     df = pl.DataFrame(data)
-    returned = trainer.fine_tune_online(
-        live_model=base_model,
-        recent_df=df,
-        feature_cols=FEATURE_NAMES,
-        epochs=1,
-        learning_rate=1e-3,
-        max_holding_bars=5,
-        verify_health=False,
+    with pytest.raises(ValueError, match="Non-finite feature cell"):
+        trainer.fine_tune_online(
+            live_model=base_model,
+            recent_df=df,
+            feature_cols=FEATURE_NAMES,
+            epochs=1,
+            learning_rate=1e-3,
+            max_holding_bars=5,
+            verify_health=False,
+        )
+    # Fail-closed guarantees: nothing poisoned, nothing persisted, nothing changed.
+    for k, v in base_model.state_dict().items():
+        assert torch.isfinite(v).all(), f"non-finite weight on live model after refusal: {k}"
+        assert torch.equal(v, initial_state[k]), f"live model mutated on refused buffer: {k}"
+    assert not (tmp_path / "wf_nan" / "model.pt").exists(), (
+        "refused buffer must not persist a checkpoint"
     )
-    for k, v in returned.state_dict().items():
-        assert torch.isfinite(v).all(), f"non-finite weight survived fine-tune: {k}"
-    # A rollback (identical weights) is an acceptable fail-safe outcome;
-    # the contract under test is finiteness, not improvement.
-    rolled_back = all(
-        torch.equal(returned.state_dict()[k], initial_state[k]) for k in initial_state
-    )
-    if not rolled_back and (tmp_path / "wf_nan" / "model.pt").exists():
-        saved = torch.load(tmp_path / "wf_nan" / "model.pt")
-        for k, v in saved.items():
-            assert torch.isfinite(v).all(), f"non-finite tensor persisted to checkpoint: {k}"
 
 
 def test_wf_zero_improvement_early_stop_skips_quality_gate_rejection(tmp_path, monkeypatch):
