@@ -324,7 +324,7 @@ def test_concurrent_identical_acquisition_converges(tmp_path) -> None:
             )
             with lock:
                 results.append(r)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             with lock:
                 errors.append(f"{type(e).__name__}: {e}")
 
