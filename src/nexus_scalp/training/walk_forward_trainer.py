@@ -1313,7 +1313,11 @@ class WalkForwardTrainer:
             where = ""
             with __import__("contextlib").suppress(Exception):
                 bad_rows, bad_cols = __import__("numpy").where(~__import__("numpy").isfinite(X_raw))
-                where = f" first at row={int(bad_rows[0])} col={int(bad_cols[0])}" if len(bad_rows) else ""
+                where = (
+                    f" first at row={int(bad_rows[0])} col={int(bad_cols[0])}"
+                    if len(bad_rows)
+                    else ""
+                )
             raise ValueError(
                 f"Non-finite feature cell in training frame ({n_bad} cells{where}); "
                 f"frame refused (ecosystem-clean; context={context or 'online_fine_tune'})"
