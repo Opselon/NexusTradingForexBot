@@ -573,8 +573,8 @@ def compute_70d_frame_fast(
         clamp_neutral_family,
         news_10d_from_context,
     )
-    from nexus_scalp.model_generation.news_bridge import news_context_at
     from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+    from nexus_scalp.model_generation.news_bridge import news_context_at
 
     df, _norm_stats = normalize_bars_frame(df)
     raw = df.sort("time")

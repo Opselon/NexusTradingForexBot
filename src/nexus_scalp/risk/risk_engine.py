@@ -277,6 +277,7 @@ class RiskEngine:
         regime_state: MarketRegimeState | None = None,
         atr: float = 1.50,
         pending_orders: list[Any] | None = None,
+        peak_equity: float | None = None,
     ) -> TradeOrder | None:
         """
         Evaluates a TradeProposal against hard capital constraints, broker rules, and LOB friction.
@@ -428,7 +429,29 @@ class RiskEngine:
             logger.info("Volatility Scaling Active: Halved trade risk % due to market expansion.")
 
         # Additional Drawdown-aware penalty scaling
-        peak_equity = getattr(account, "peak_equity", account.equity)
+        # BUG-252 (Agent-5 decision forensics, 2026-09-05): AccountInfo has
+        # NO peak_equity field, so `getattr(account, "peak_equity",
+        # account.equity)` ALWAYS resolved to account.equity ->
+        # drawdown_pct == 0 -> the drawdown penalty (up to 80% risk cut)
+        # was unreachable dead code on every live path. The engine tracks
+        # the authoritative peak in LiveEngine._peak_equity (restored from
+        # the audit DB, withdrawal-adjusted) and forwards it via the
+        # `peak_equity` kwarg. Absent/invalid keeps the honest fallback
+        # (peak == equity -> no penalty), never a fabricated one.
+        # NOTE: numbered BUG-252 to avoid the BUG-250 ID collision with the
+        # Agent-12 exit-classification row already in the ledger.
+        _account_peak = getattr(account, "peak_equity", None)
+        if peak_equity is None:
+            peak_equity = _account_peak
+        if (
+            peak_equity is None
+            or not isinstance(peak_equity, (int, float))
+            or isinstance(peak_equity, bool)
+            or not math.isfinite(float(peak_equity))
+            or float(peak_equity) <= 0.0
+        ):
+            peak_equity = float(account.equity)
+        peak_equity = float(peak_equity)
         if peak_equity > account.equity:
             drawdown_pct = ((peak_equity - account.equity) / peak_equity) * 100.0
             if drawdown_pct > 1.0:

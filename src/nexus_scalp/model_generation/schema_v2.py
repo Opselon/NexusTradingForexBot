@@ -54,6 +54,7 @@ def bars_frame_to_bardata(df: pl.DataFrame) -> tuple[list[BarData], list[datetim
     Runtime hygiene: accepts any user fetch shape (CSV strings, epoch
     ints, naive datetimes, unsorted, dup) via normalize_bars_frame."""
     from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+
     df, _norm_stats = normalize_bars_frame(df)
     df = df.sort("time")
     bars: list[BarData] = []
@@ -99,6 +100,7 @@ def compute_60d_frame(
         feat_0..feat_59
     """
     from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+
     df, _norm_stats = normalize_bars_frame(df)
     raw = df.sort("time")
     closes = raw["close"].cast(pl.Float64).to_numpy()
@@ -382,6 +384,13 @@ def compute_liquidity_frame(
         timestamp, open, high, low, close, spread, atr_m1, tick_volume,
         feat_0..feat_59 (feat_50..59 = liquidity features)
     """
+    from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+
+    # AGENT-16 WAVE-2 runtime hygiene: normalize ANY user's fetch shape
+    # (CSV strings / epochs / naive tz / unsorted / dup / NaN prices) into a
+    # clean chronological UTC frame BEFORE feature computation.
+    df, _norm_stats = normalize_bars_frame(df)
+
     raw = df.sort("time")
     times: list[datetime] = []
     for row in raw.iter_rows(named=True):
@@ -572,6 +581,7 @@ def compute_70d_frame(
         news_status, liquidity_status, feat_0..feat_69
     """
     from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+
     df, _norm_stats = normalize_bars_frame(df)
     from nexus_scalp.features.features70 import (
         FeatureSourceState,
