@@ -104,7 +104,13 @@ class TestReplay18APendingQueue:
         """BUY_LIMIT well below the market -> no order/trade on the spawn tick."""
 
         def _fn(probs, tick, fv, regime_state=None):  # type: ignore[no-untyped-def]
-            return _mk(ActionType.BUY_LIMIT, tick.bid - 0.80, tick.bid - 1.80, tick.bid + 0.20, tick.timestamp)
+            return _mk(
+                ActionType.BUY_LIMIT,
+                tick.bid - 0.80,
+                tick.bid - 1.80,
+                tick.bid + 0.20,
+                tick.timestamp,
+            )
 
         # 60 warmup bars, then two proposal ticks (2 min apart => past throttle is
         # irrelevant because the pending-queue fix is independent of throttle).
@@ -126,7 +132,10 @@ class TestReplay18APendingQueue:
         # Current engine: LIMIT is rejected by RiskEngine (-> 0 orders, 0 trades),
         # so the test will STAY RED until the queue + bridging path lands.
         assert hasattr(res, "pending_orders") or hasattr(res, "pending_order_count")
-        assert list(getattr(res, "pending_orders", []) or []) != [] or int(getattr(res, "pending_order_count", 0) or 0) > 0
+        assert (
+            list(getattr(res, "pending_orders", []) or []) != []
+            or int(getattr(res, "pending_order_count", 0) or 0) > 0
+        )
 
 
 # ==============================================================================
@@ -159,7 +168,6 @@ class TestReplay18BDeterminism:
 
 
 class TestReplay18CSLTP:
-
     def test_sl_beats_tp_in_shadow_on_the_new_limit_path(self) -> None:
         """A triggered LIMIT with a reachable SL before TP -> SL wins.
 
@@ -171,7 +179,9 @@ class TestReplay18CSLTP:
 
         def _fn(probs, tick, fv, regime_state=None):  # type: ignore[no-untyped-def]
             if calls["n"]:
-                return _mk(ActionType.NO_TRADE, tick.bid, tick.bid * 0.99, tick.bid * 1.01, tick.timestamp)
+                return _mk(
+                    ActionType.NO_TRADE, tick.bid, tick.bid * 0.99, tick.bid * 1.01, tick.timestamp
+                )
             calls["n"] += 1
             # SELL_LIMIT slightly above market: will be triggered, then SL
             # (above entry) before TP (far below). Bars after trigger pull
@@ -184,17 +194,46 @@ class TestReplay18CSLTP:
         price = 3300.0
         for k in range(60):
             bars.append(
-                {"kind": "BAR", "timestamp": T0 + timedelta(minutes=k),
-                 "open": price, "high": price + 0.2, "low": price - 0.2, "close": price,
-                 "tick_volume": 100, "spread": 0.2, "symbol": "XAUUSD", "timeframe": "M1"}
+                {
+                    "kind": "BAR",
+                    "timestamp": T0 + timedelta(minutes=k),
+                    "open": price,
+                    "high": price + 0.2,
+                    "low": price - 0.2,
+                    "close": price,
+                    "tick_volume": 100,
+                    "spread": 0.2,
+                    "symbol": "XAUUSD",
+                    "timeframe": "M1",
+                }
             )
         # the trigger bar level + pull-through that first touches SL
         trigger = T0 + timedelta(minutes=60)
         bars += [
-            {"kind": "BAR", "timestamp": trigger, "open": 3300.0, "high": 3301.0, "low": 3299.0, "close": 3300.0,
-             "tick_volume": 100, "spread": 0.2, "symbol": "XAUUSD", "timeframe": "M1"},
-            {"kind": "BAR", "timestamp": trigger + timedelta(minutes=1), "open": 3300.0, "high": 3302.5, "low": 3298.0, "close": 3300.0,
-             "tick_volume": 100, "spread": 0.2, "symbol": "XAUUSD", "timeframe": "M1"},
+            {
+                "kind": "BAR",
+                "timestamp": trigger,
+                "open": 3300.0,
+                "high": 3301.0,
+                "low": 3299.0,
+                "close": 3300.0,
+                "tick_volume": 100,
+                "spread": 0.2,
+                "symbol": "XAUUSD",
+                "timeframe": "M1",
+            },
+            {
+                "kind": "BAR",
+                "timestamp": trigger + timedelta(minutes=1),
+                "open": 3300.0,
+                "high": 3302.5,
+                "low": 3298.0,
+                "close": 3300.0,
+                "tick_volume": 100,
+                "spread": 0.2,
+                "symbol": "XAUUSD",
+                "timeframe": "M1",
+            },
         ]
 
         cfg = ReplaySessionConfig(

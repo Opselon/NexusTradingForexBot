@@ -86,12 +86,8 @@ def test_walk_forward_folds_default_purge_removes_boundary_crossing_horizon() ->
     assert folds, "dataset must produce folds"
     f1 = folds[0]
     boundary = f1.val_start
-    crossing = [
-        s for s in f1.train if s.decision_timestamp <= boundary <= s.outcome_timestamp
-    ]
-    assert crossing == [], (
-        "boundary-crossing horizons must be purged from train by default"
-    )
+    crossing = [s for s in f1.train if s.decision_timestamp <= boundary <= s.outcome_timestamp]
+    assert crossing == [], "boundary-crossing horizons must be purged from train by default"
 
 
 # ---------------------------------------------------------------------------
@@ -135,9 +131,7 @@ def test_walkforward_result_cannot_pass_when_majority_of_oos_windows_negative() 
     res = WalkForwardEngine().validate(ds, "neg_oos", "1")
     neg_oos_folds = [f for f in res.folds if f.oos_expectancy_r < 0]
     if len(neg_oos_folds) * 2 > len(res.folds):
-        assert not res.passed, (
-            "a majority-negative OOS fold set must fail the walk-forward gate"
-        )
+        assert not res.passed, "a majority-negative OOS fold set must fail the walk-forward gate"
 
 
 def test_positive_folds_still_pass_normally() -> None:

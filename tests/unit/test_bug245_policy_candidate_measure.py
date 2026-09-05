@@ -106,9 +106,7 @@ def test_bug245_negative_trained_mass_no_crash_no_negative_confidence() -> None:
 
 def test_bug245_sweep_candidate_zero_trained_mass_no_crash() -> None:
     """BUG-194's original sweep-channel shape stays non-crashing too."""
-    proposal = _evaluate(
-        _fresh_policy(), [0.00, 0.00, 0.00, 1.00], liquidity_sweep_signal=1
-    )
+    proposal = _evaluate(_fresh_policy(), [0.00, 0.00, 0.00, 1.00], liquidity_sweep_signal=1)
     assert proposal is not None
     assert float(proposal.confidence) >= 0.0
 
