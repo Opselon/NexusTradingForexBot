@@ -693,6 +693,21 @@ class OrderLifecycleManager:
             )
             return False
 
+        # BUG-247 (RESIDUAL P2, Agent-12 follow-up): hedge entries via
+        # execute_order are inside OrderManager but bypass the primary-path
+        # HARD_MAX_LOTS clamp; the caller (RiskEngine) clamps, but any direct
+        # TradeOrder(volume=100) would bypass the 10-lot ceiling.
+        clamped_vol = self._clamp_dispatch_volume(order.volume, symbol=order.symbol)
+        if clamped_vol <= 0.0:
+            logger.warning("Hedge entry blocked: clamped volume is zero", requested=order.volume)
+            return False
+        if abs(clamped_vol - float(order.volume)) > 1e-9:
+            try:
+                order = order.model_copy(update={"volume": float(clamped_vol)})
+            except Exception:
+                logger.error("Hedge volume clamp copy failed (isolated)", requested=order.volume, clamped=clamped_vol)
+                return False
+
         logger.info(
             "Dispatching trade order to broker adapter",
             order_id=order.order_id,
@@ -5254,6 +5269,17 @@ class OrderLifecycleManager:
                     if ai_flip_action == ActionType.BUY_STOP
                     else round(rev_entry - (atr * 3.0), 2)
                 )
+                # BUG-247 (RESIDUAL P1): fast-reversal follow-up is an ENTRY and
+                # must honor the SAFE_MODE circuit (the close leg above is protective
+                # and already ran). Previously this direct place_pending_order bypassed
+                # it with only a HARD_MAX_LOTS clamp.
+                if self.global_state == "SAFE_MODE":
+                    logger.warning(
+                        "AI REVERSAL follow-up blocked: SAFE_MODE circuit open",
+                        ticket=ticket,
+                        suppressed_action=ai_flip_action.value,
+                    )
+                    return True
                 self.adapter.place_pending_order(
                     symbol=pos.symbol,
                     order_type=OrderType.BUY_STOP
