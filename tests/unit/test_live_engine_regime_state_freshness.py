@@ -192,12 +192,14 @@ def test_missing_classification_stamp_is_treated_as_stale(monkeypatch):
     assert "state_age=unknown" in rendered
 
 
-def test_regime_state_max_age_sec_default_and_yaml_keys():
+def test_regime_state_max_age_sec_default_and_yaml_keys(tmp_path):
     """Config contract: AlgoConfig default 300s; base.yaml (TRACKED) carries the
-    same key; live.yaml (GIT-IGNORED, operator-owned) overrides consistently
-    WHEN it exists AND carries the key (TDF-F1: the operator's live.yaml may
-    legally omit the whole algo section — the loader chain then applies the
-    default; pinning its presence here made the test machine-dependent)."""
+    same key; the operator live.yaml override contract (GIT-IGNORED file) is
+    pinned HERMETICALLY on tmp_path synthetics (NX-TDFQ2-HERMETIC: this test
+    must never read the real operator live.yaml — its existence and payload
+    vary per machine, which made the original assertion machine-dependent).
+    TDF-F1 preserved: an operator live.yaml that omits the key or the whole
+    algo section is legal — the loader chain then applies the default."""
     from nexus_scalp.configuration.config import AlgoConfig
 
     assert AlgoConfig().regime_state_max_age_sec == 300.0
@@ -206,10 +208,28 @@ def test_regime_state_max_age_sec_default_and_yaml_keys():
     base_data = yaml.safe_load((_REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8"))
     assert float(base_data["algo"]["regime_state_max_age_sec"]) == 300.0
 
-    # operator layer (git-ignored): assert only what its existence implies
-    live_path = _REPO_ROOT / "configs" / "live.yaml"
-    if live_path.exists():
-        live_data = yaml.safe_load(live_path.read_text(encoding="utf-8")) or {}
-        algo = live_data.get("algo") or {}
-        if "regime_state_max_age_sec" in algo:
-            assert float(algo["regime_state_max_age_sec"]) == 300.0
+    # operator layer (git-ignored, HERMETIC per NX-TDFQ2-HERMETIC): the real
+    # operator live.yaml is NEVER read here — its existence and payload vary
+    # per machine (CI has none; a workstation's may carry risk-only keys with
+    # no algo section). The override contract is pinned on a tmp_path
+    # synthetic live.yaml instead: same shape, same float() contract.
+    live_cfg = tmp_path / "live.yaml"
+    live_cfg.write_text(
+        yaml.safe_dump({"algo": {"regime_state_max_age_sec": 300.0}}),
+        encoding="utf-8",
+    )
+    live_data = yaml.safe_load(live_cfg.read_text(encoding="utf-8")) or {}
+    algo = live_data.get("algo") or {}
+    assert float(algo["regime_state_max_age_sec"]) == 300.0
+
+    # TDF-F1: an operator live.yaml that omits the key (or the whole algo
+    # section — risk-only shape) must NOT fail the contract; the loader chain
+    # then applies the 300.0 default.
+    sparse_cfg = tmp_path / "sparse_live.yaml"
+    sparse_cfg.write_text(
+        yaml.safe_dump({"risk": {"max_account_drawdown_pct": 5.0}}),
+        encoding="utf-8",
+    )
+    sparse_data = yaml.safe_load(sparse_cfg.read_text(encoding="utf-8")) or {}
+    sparse_algo = sparse_data.get("algo") or {}
+    assert "regime_state_max_age_sec" not in sparse_algo
