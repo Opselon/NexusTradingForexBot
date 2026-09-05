@@ -137,7 +137,9 @@ def test_empty_healthy_window_cached_with_complete_marker(tmp_path) -> None:
             return []
 
     ds = MT5TickDataset(cache_root=tmp_path)
-    ds_id = ds.acquire_ticks(HealthyEmptyAdapter(), symbol="XAUUSD", start=T0, end=END, chunk_minutes=5)
+    ds_id = ds.acquire_ticks(
+        HealthyEmptyAdapter(), symbol="XAUUSD", start=T0, end=END, chunk_minutes=5
+    )
     meta = ds.meta(ds_id)
     assert meta["complete"] is True
     assert meta["records"] == 0
