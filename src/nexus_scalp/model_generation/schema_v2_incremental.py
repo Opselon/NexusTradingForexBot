@@ -574,7 +574,9 @@ def compute_70d_frame_fast(
         news_10d_from_context,
     )
     from nexus_scalp.model_generation.news_bridge import news_context_at
+    from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
 
+    df, _norm_stats = normalize_bars_frame(df)
     raw = df.sort("time")
     times: list[datetime] = []
     for row in raw.iter_rows(named=True):
