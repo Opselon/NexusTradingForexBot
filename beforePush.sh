@@ -89,7 +89,7 @@ else
     if [ ${#CRIT_FILES[@]} -eq 0 ]; then
         CRIT_FILES=("tests/unit/")
     fi
-    if "${PYTEST[@]}" "${CRIT_FILES[@]}" -n auto --dist worksteal -q --tb=short; then
+    if "${PYTEST[@]}" "${CRIT_FILES[@]}" -n auto --dist loadgroup -q --tb=short; then
         write_success "All critical-suite tests passed successfully!"
     else
         write_failure "One or more critical-suite test cases failed."
