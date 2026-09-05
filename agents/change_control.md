@@ -1856,3 +1856,11 @@ Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regr
 - WHY: the CHG-0058 / Wave-2 forensic sweep (router coverage map + exit classification v3 + accounting) found the `reason==0` promotion conflated PnL magnitude with broker evidence (any non-zero profit promoted to `MANUAL_CLOSE`; INV-012 violated). The predicate now requires comment or price-geometry corroboration (fail-closed; profit alone -> `UNKNOWN`). No live-broker-path, clamp, or gate semantics changed.
 - VERIFICATION: situ probe before/after on `reason==0`; full exit/accounting suites `test_trade_lifecycle_task3` + `test_performance_metric_truth` + `test_agent11_scenario_coverage_contract` stay green (102 passed); ruff/mypy/py_compile clean.
 
+
+
+## CHG-0065 (cont.) — registry + handoff rows landed (2026-09-05, Nexus-Main)
+- Registry rows (CHG-0065 main entry + TASK-SMOKE-E2E taskboard row) plus the
+  full agent handoff doc landed on a re-attached main working tree at HEAD
+  75ce90e9..(registry commit); landing path may differ from the earlier
+  branch-swap window — content byte-verified against this registry text.
+- Handoff: docs/agent_handoffs/2026-09-05_nexus-main_smoke-e2e-chain.md
