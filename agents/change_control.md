@@ -1804,7 +1804,8 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
 
 - SCOPE: `src/nexus_scalp/execution/order_manager.py` (execute_order + _run_protection_chain AI-flip leg) + `tests/unit/test_agent12_bug247_hardening.py` (3 regression tests) + `agents/bugs.md` (BUG-247 row)
 - WHY: the CHG-0058 forensic census proved single-authority (no second execution path outside the manager) but flagged two remaining entry-path gates inside the manager: (P1) the AI-flip direct `place_pending_order` bypassed `SAFE_MODE`, (P2) `execute_order` (hedge) bypassed `HARD_MAX_LOTS`. Both fixed fail-closed; primary-path semantics unchanged. See `agents/bugs.md:BUG-247` + `docs/agent_handoffs/2026-09-05_agent12_execution_forensic.md` (Addendum).
-
+
+
 CHANGE-ID: CHG-0060
 Agent: Agent 6 / Nexus-Main (Architecture / Integration / Runtime Forensics)
 Role: Architecture forensics + mandatory fix
@@ -1848,3 +1849,10 @@ Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regr
 - SCOPE: src/nexus_scalp/research/{streaming_replay,event_source,mt5_tick_dataset,backtest,forward_test}.py (verify/fix), tests/unit/* (new harness), agents registries, docs/agent_handoffs/ (composer handoff).
 - BOUNDARIES: no realism weakening; no order_send in research; no fabricated metrics; INV-002/INV-008 preserved; parallel-agent WIP never staged.
 - STATUS: IMPLEMENTING
+
+## CHG-0058-W2 - Wave-2 forensic residual hardening (2026-09-05, Agent 12 W2)
+
+- SCOPE: `src/nexus_scalp/experience/outcome_recovery.py:classify_exit_with_evidence` - the `reason==0` branch (MT5 DEAL_REASON_CLIENT ambiguous) + `tests/unit/test_agent12_bug250_exit_classification.py` (3, offline) + `agents/bugs.md:BUG-250`.
+- WHY: the CHG-0058 / Wave-2 forensic sweep (router coverage map + exit classification v3 + accounting) found the `reason==0` promotion conflated PnL magnitude with broker evidence (any non-zero profit promoted to `MANUAL_CLOSE`; INV-012 violated). The predicate now requires comment or price-geometry corroboration (fail-closed; profit alone -> `UNKNOWN`). No live-broker-path, clamp, or gate semantics changed.
+- VERIFICATION: situ probe before/after on `reason==0`; full exit/accounting suites `test_trade_lifecycle_task3` + `test_performance_metric_truth` + `test_agent11_scenario_coverage_contract` stay green (102 passed); ruff/mypy/py_compile clean.
+
