@@ -1841,3 +1841,10 @@ Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regr
 - INVARIANTS: INV-003/INV-004 strengthened; no clamp/breaker weakened.
 - STATUS: VERIFIED (paper fixtures, no live trading)
 
+
+## CHG-0059-W2 - Agent-15 wave-2 strong QA on backtest/replay (2026-09-05T05:30, Agent 15)
+- AGENT: Agent 15 (Nexus-Main orchestrated) | ROLE: Research / Backtesting / Replay / MT5-data Forensics (QA composer)
+- TASK: User follow-up brief (wave 2): strong adversarial QA on CURRENT main using GitHub Master/Commander discipline. Independent verification of wave-1 fixes (BUG-244 bar-mode replay, BUG-245/246/247/248 dataset/governance/execution) without assuming they work; composer verification of Agent-18 handoff (pending LIMIT queue + BUG-244 containment interplay); bounded 100k determinism where feasible; full research/replay family suite green; every confirmed defect fixed + regression tested.
+- SCOPE: src/nexus_scalp/research/{streaming_replay,event_source,mt5_tick_dataset,backtest,forward_test}.py (verify/fix), tests/unit/* (new harness), agents registries, docs/agent_handoffs/ (composer handoff).
+- BOUNDARIES: no realism weakening; no order_send in research; no fabricated metrics; INV-002/INV-008 preserved; parallel-agent WIP never staged.
+- STATUS: IMPLEMENTING
