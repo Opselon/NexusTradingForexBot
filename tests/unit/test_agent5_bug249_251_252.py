@@ -1,4 +1,5 @@
 """Agent-5 regression suite: BUG-249 (spread/ATR gate), BUG-251 (reversal confidence semantics), BUG-252 (peak_equity drawdown)."""
+
 from __future__ import annotations
 
 import math

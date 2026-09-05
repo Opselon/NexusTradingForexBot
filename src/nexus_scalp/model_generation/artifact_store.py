@@ -47,6 +47,7 @@ class DatasetCorruptionError(RuntimeError):
     """A stored dataset artifact failed integrity verification on read
     (manifest dataset_hash != actual parquet bytes)."""
 
+
 #: Allowed characters for artifact identifiers (model_id / dataset_id /
 #: experiment_id). Prevents path traversal and accidental writes outside
 #: the artifact root (forensic audit T03/T58).

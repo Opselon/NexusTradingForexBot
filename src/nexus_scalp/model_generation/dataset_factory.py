@@ -83,7 +83,11 @@ def deterministic_dataset_id(
 def frame_content_digest_raw(df: pl.DataFrame, max_rows: int = 200_000) -> str:
     """Deterministic content hash over the RAW bar input (AGENT-14 wave 2)."""
     cols = [c for c in ("timestamp", "open", "high", "low", "close", "atr") if c in df.columns]
-    proj = df.sort("timestamp")[:max_rows].select(cols) if "timestamp" in df.columns else df[:max_rows].select(cols)
+    proj = (
+        df.sort("timestamp")[:max_rows].select(cols)
+        if "timestamp" in df.columns
+        else df[:max_rows].select(cols)
+    )
     canonical = __import__("json").dumps(proj.to_dict(as_series=False), sort_keys=True, default=str)
     return __import__("hashlib").sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
