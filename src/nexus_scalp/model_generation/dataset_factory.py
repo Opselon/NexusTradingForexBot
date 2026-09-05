@@ -100,7 +100,9 @@ def frame_content_digest(frame: pl.DataFrame, max_rows: int = 200_000) -> str:
     irrelevant serialization differences do not. Bounded to ``max_rows`` for
     memory safety (first N rows in sorted-timestamp order).
     """
-    cols = [c for c in ("sample_id", "timestamp", "feature_vector") if c in frame.columns]
+    cols: list[str] = [
+        c for c in ("sample_id", "timestamp", "feature_vector") if c in frame.columns
+    ]
     if not cols:
         cols = frame.columns[:8]
     proj = (

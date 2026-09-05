@@ -13,9 +13,11 @@ same scratch dataset id):
 from __future__ import annotations
 
 import hashlib
+import pathlib
 
 import numpy as np
 import polars as pl
+import pytest
 
 from nexus_scalp.features.schema_contract import canonical_feature_names, feature_schema_hash
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
@@ -27,6 +29,8 @@ from nexus_scalp.model_generation.temporal_contract import (
 )
 from nexus_scalp.model_lifecycle.model_class_contract import MODEL_CLASS_CONTRACT_ID
 
+DECLARED_CSV = pathlib.Path("data/raw/XAUUSD_M1.csv")
+
 
 def _load_slice(n: int = 5000) -> pl.DataFrame:
     raw = (
@@ -37,6 +41,10 @@ def _load_slice(n: int = 5000) -> pl.DataFrame:
     return raw.tail(n)
 
 
+@pytest.mark.skipif(
+    not DECLARED_CSV.exists(),
+    reason="raw XAUUSD_M1.csv absent (gitignored machine data; runs fully on dev machines)",
+)
 def test_a2_bounded_dataset_build_and_lineage() -> None:
     """RAW -> CLEAN -> FEATURES -> LABELS -> DATASET -> MODEL INPUT on 5k M1 tail."""
 
