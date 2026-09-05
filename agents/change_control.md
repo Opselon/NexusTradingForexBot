@@ -1864,3 +1864,22 @@ Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regr
   75ce90e9..(registry commit); landing path may differ from the earlier
   branch-swap window — content byte-verified against this registry text.
 - Handoff: docs/agent_handoffs/2026-09-05_nexus-main_smoke-e2e-chain.md
+
+## CHG-0061-W2-GATE - dataset hardening suites gated in default CI (2026-09-05, Nexus-Main, Wave-2 close-out)
+
+- AGENT: Nexus-Main (orchestrator) | ROLE: ecosystem QA closure
+- TASK: close the QA-verdict P0 from docs/agent_handoffs/WAVE2_QA_VERDICT_ECOSYSTEM_SCALE.md —
+  CHG-0061's landed hardening (test_agent14_dataset_integrity R1-R8, 19 tests) plus
+  test_dataset_split_purge_bug244, test_70d_dataset_parity_task3 and the Wave-2 runtime
+  bars hygiene suite (test_runtime_bars_normalize) were tracked on main but present in
+  NO CI gate; a regression would ship green.
+- CHANGE: tests/critical_suite.txt += the four suites (commit b7dd77af). beforePush and
+  the CI quality job read the same manifest (gate_parity enforced), so the fetch->clean->train
+  and dataset identity/immutability contracts now gate EVERY push to main.
+- SCOPE: tests/critical_suite.txt only (manifest). No src semantics touched; no gate weakened;
+  coverage ADDED only.
+- STATUS: VERIFIED (offline) — four suites green locally (78-test combo 111s incl. a2 lineage
+  + agent11 forensic suites). Remaining QA items 4-7 (bypass-cleaning property test,
+  offline-enforcement contract, CSV-absent skip contract, 16-way cache isolation,
+  suite-manifest completeness CI check) are registered on the taskboard row
+  TASK-W2-ECO-GATING for the next wave.
