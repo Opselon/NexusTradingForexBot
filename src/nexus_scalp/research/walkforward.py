@@ -132,8 +132,14 @@ class WalkForwardEngine:
                 dataset_id=dataset.dataset_id,
                 assumptions=self.assumptions,
             )
-            status = "PASS" if val_bt.expectancy_r > MIN_FOLD_EXPECTANCY_R else "FAIL"
-            if val_bt.expectancy_r > MIN_FOLD_EXPECTANCY_R:
+            # BUG-244 (Agent-5): a fold's own OOS window is evidence — a
+            # negative-OOS fold must never be stamped PASS (scoring honors
+            # walkforward.passed, so val-only gating let VALIDATED verdicts
+            # rest on folds whose out-of-sample window lost money).
+            val_pass = val_bt.expectancy_r > MIN_FOLD_EXPECTANCY_R
+            oos_pass = oos_bt.expectancy_r >= MIN_FOLD_EXPECTANCY_R
+            status = "PASS" if (val_pass and oos_pass) else "FAIL"
+            if val_pass and oos_pass:
                 pass_count += 1
             val_expects.append(val_bt.expectancy_r)
             oos_expects.append(oos_bt.expectancy_r)

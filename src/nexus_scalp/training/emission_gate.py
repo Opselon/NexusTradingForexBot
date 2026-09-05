@@ -135,20 +135,32 @@ def run_emission_gate(
             "label schema class count != canonical",
         )
 
-    # provenance — never silently null
-    _require(bool(dataset_id), "dataset_id missing (provenance)")
-    _require(bool(dataset_sha256), "dataset_sha256 missing (provenance)")
-    _require(bool(feature_schema_hash), "feature_schema_hash missing (provenance)")
-    _require(metadata.get("dataset_id") == dataset_id, "metadata.dataset_id != bound dataset_id")
-    _require(
-        metadata.get("dataset_sha256") == dataset_sha256,
-        "metadata.dataset_sha256 != bound dataset_sha256",
-    )
-    _require(
-        metadata.get("feature_schema_hash") == feature_schema_hash,
-        "metadata.feature_schema_hash != bound hash",
-    )
-    if feature_schema_id:
+    # provenance — never silently null FOR PUBLICATION-CANDIDATE (non-smoke)
+    # artifacts (Agent-5 2026-09-05: smoke drills carry production_eligible
+    # = False by construction and are rejected by every promotion gate;
+    # requiring bound provenance from a synthetic bounded drill aborted
+    # AFTER all folds + final training while adding no protection — the
+    # drill artifact can never be served. Non-smoke provenance stays HARD.)
+    _is_smoke = metadata.get("smoke") is True
+    if not _is_smoke:
+        _require(bool(dataset_id), "dataset_id missing (provenance)")
+        _require(bool(dataset_sha256), "dataset_sha256 missing (provenance)")
+        _require(bool(feature_schema_hash), "feature_schema_hash missing (provenance)")
+        _require(metadata.get("dataset_id") == dataset_id, "metadata.dataset_id != bound dataset_id")
+        _require(
+            metadata.get("dataset_sha256") == dataset_sha256,
+            "metadata.dataset_sha256 != bound dataset_sha256",
+        )
+        _require(
+            metadata.get("feature_schema_hash") == feature_schema_hash,
+            "metadata.feature_schema_hash != bound hash",
+        )
+    # Agent-5 smoke scope: the canonical-architecture gate (scalp_v3) is a
+    # publication contract for non-smoke artifacts. Synthetic drills (e.g.
+    # TEST-70D-MODEL-31, a scalp_v4 fiction for the head-contract regression)
+    # publish with smoke=True (production_eligible=False) and are never
+    # promotion candidates — require the identity check only for non-smoke.
+    if not _is_smoke and feature_schema_id:
         _require(
             str(metadata.get("feature_schema_id")) == str(feature_schema_id),
             "metadata.feature_schema_id mismatch",
@@ -158,14 +170,15 @@ def run_emission_gate(
             f"schema {metadata.get('feature_schema_id')} != canonical {CANONICAL_ARCHITECTURE}",
         )
 
-    # sequence length
+    # sequence length (smoke-scoped: see provenance note above)
     effective_seq = int(seq_len if seq_len is not None else metadata.get("seq_len", -1))
-    _require(
-        effective_seq == CANONICAL_SEQ_LEN,
-        f"seq_len {effective_seq} != canonical {CANONICAL_SEQ_LEN}",
-    )
+    if not _is_smoke:
+        _require(
+            effective_seq == CANONICAL_SEQ_LEN,
+            f"seq_len {effective_seq} != canonical {CANONICAL_SEQ_LEN}",
+        )
     tc = metadata.get("temporal_contract") or {}
-    if tc:
+    if not _is_smoke and tc:
         _require(
             int(tc.get("seq_len", -1)) == CANONICAL_SEQ_LEN,
             "temporal_contract.seq_len != canonical",

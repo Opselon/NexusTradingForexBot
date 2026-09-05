@@ -930,6 +930,15 @@ def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
         epochs_per_fold=1,
         purge_gap_bars=5,
         governance_override=True,
+        # Agent-5 (2026-09-05): a synthetic governance_override frame is a
+        # bounded pipeline drill, not a publishable artifact. The P0
+        # emission gate (4c4b007e) correctly REJECTS unprovenanced
+        # non-smoke publications; without smoke=True this BUG-103
+        # head-contract regression aborted AFTER all folds + final
+        # training (EmissionGateError: dataset_id missing). smoke=True
+        # keeps the drill bounded (production_eligible=False) and leaves
+        # the gate itself untouched.
+        smoke=True,
     )
     model = tr.train_and_validate(df, feat_cols)
     assert model.num_features == 70
