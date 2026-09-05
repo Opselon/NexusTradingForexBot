@@ -530,6 +530,12 @@ def register_model_governance_routes(app: Any) -> None:
                             man.get("feature_schema_hash") or man.get("feature_schema_id", "") or ""
                         )
                         scaler_hash_value = str(man.get("scaler_hash", "") or "")
+                        # BUG-243: candidate contract head width lives in the meta
+                        for _hk in ("model_head_classes", "num_classes"):
+                            _hv = man.get(_hk)
+                            if isinstance(_hv, int) and _hv in (3, 4):
+                                contract = contract.model_copy(update={"num_classes": _hv})
+                                break
                         break
             if not feature_schema_hash_value or feature_schema_hash_value in (
                 "scalp_v3",
@@ -577,7 +583,27 @@ def register_model_governance_routes(app: Any) -> None:
                 from nexus_scalp.shadow.compat import scale_like_champion
 
                 state = torch.load(path, map_location="cpu", weights_only=False)
-                model = ScalpNet(num_features=dim, num_classes=4)
+                # BUG-243: head width inferred from the checkpoint tensor itself
+                # (legacy 4 vs canonical 3) - never a hardcoded 4.
+                _bug243_cw = state.get("classifier.weight")
+                _bug243_head = (
+                    int(_bug243_cw.shape[0])
+                    if hasattr(_bug243_cw, "shape") and len(_bug243_cw.shape) == 2
+                    else 4
+                )
+                from nexus_scalp.model_lifecycle.model_class_contract import (
+                    LEGACY_HEAD_CLASSES as LEGACY_HEAD_CLASSES_243,
+                    TRAINED_CLASS_COUNT as TRAINED_CLASS_COUNT_243,
+                )
+
+                model = ScalpNet(
+                    num_features=dim,
+                    num_classes=(
+                        _bug243_head
+                        if _bug243_head in (TRAINED_CLASS_COUNT_243, LEGACY_HEAD_CLASSES_243)
+                        else TRAINED_CLASS_COUNT_243
+                    ),
+                )
                 model.load_state_dict(state)
                 model.eval()
                 data = np.load(scaler)
