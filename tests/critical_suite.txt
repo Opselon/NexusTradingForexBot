@@ -79,3 +79,8 @@ tests/unit/test_quality_tier_pins_bug227.py
 # A2 dataset/feature/label lineage bounded probe (Agent-2 dataset forensics, 2026-09-05):
 # RAW->CLEAN->FEATURES->LABELS->DATASET->MODEL INPUT chain on a 5k-bar M1 tail via the canonical builder (BUG-246 gap-constant SSoT pin).
 tests/unit/test_a2_data_lineage_bounded.py
+
+# SMOKE-E2E (NexusMain, 2026-09-05): whole-application chain in ONE hermetic file
+# Tick->50D->70D->ScalpNet->Policy->Risk->Paper dispatch->Audit DB->API v1
+# Every push proves the system still wires together (user brief: one file, full chain).
+tests/e2e/test_smoke_chain.py
