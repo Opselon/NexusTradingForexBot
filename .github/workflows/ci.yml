@@ -328,6 +328,23 @@ jobs:
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_gate "$rc" "see runtime_gate.json + runtime_gate.log" || true
           exit 0
 
+      # -------- Layered E2E smoke — fast tier (CHG-SMOKE-E2E-V2) --------
+      # Production-grade layered smoke: L0 static + L1 contracts + L2
+      # integration + L4 safety injections + dataflow/hot-path/authority.
+      # Fast tier (no runtime boot) keeps CI fast: ~2s vs ~17s full tier.
+      # Full tier runs in heavy-ci (ci-tests branch / dispatch) below.
+      - name: Layered smoke (fast)
+        id: layered-smoke
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/layered-smoke"
+          python -m nexus_scalp.cli.main smoke --fast --json > "$CI_RESULTS_DIR/layered-smoke/smoke.json" 2> "$CI_RESULTS_DIR/layered-smoke/smoke.log"
+          rc=$?
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" layered_smoke "$rc" "layered E2E smoke fast tier (nse smoke --fast)" || true
+          exit 0
+
       - name: Secret presence check
         continue-on-error: true
         run: |
@@ -383,6 +400,7 @@ jobs:
               "Mypy": load("mypy.json").get("status", "skipped"),
               "Pytest": load("pytest.json").get("status", "skipped"),
               "Coverage": load("coverage.json").get("status", "skipped"),
+              "Layered Smoke": load("layered_smoke.json").get("status", "skipped"),
           }
           # CHG-0052: root-cause block — was the committed tree clean, did the
           # safe repair succeed, and what is blocked behind the root failure?
@@ -469,7 +487,7 @@ jobs:
                       return json.load(fh)
               except Exception:
                   return {}
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage"]
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "layered_smoke"]
           details = []
           status = "passed"
           for c in checks:
@@ -513,7 +531,7 @@ jobs:
           python - <<'PY'
           import json, os
           root = os.environ["CI_RESULTS_DIR"]
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "runtime_gate"]
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "runtime_gate", "layered_smoke"]
           statuses = {}
           for name in checks:
               p = os.path.join(root, "run-info", f"{name}.json")
