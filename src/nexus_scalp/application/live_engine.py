@@ -1548,6 +1548,25 @@ class LiveEngine:
                         "reason": "CANDIDATE_NOT_PRODUCTION_ELIGIBLE",
                         "runtime_applied": False,
                     }
+            # AGENT-10 (TASK-AGENT10-MODEL-PIPELINE): metadata/tensor
+            # coherence + schema-identity gate BEFORE any attach. The P0
+            # docstring always claimed head==meta class coherence; the check
+            # is now real: artifact head vs meta num_classes, artifact width
+            # vs meta declared dimension, and the meta schema id must be
+            # REGISTERED (dimension equality alone is not identity).
+            coherence = self._artifact_meta_coherence(new_path)
+            if not coherence["ok"]:
+                logger.error(
+                    "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED reason=%s detail=%s",
+                    coherence["reason"],
+                    coherence,
+                )
+                return {
+                    "success": False,
+                    "reason": coherence["reason"],
+                    "detail": coherence,
+                    "runtime_applied": False,
+                }
             # Safe deserialization + declared-width verification (dimension
             # gate: the artifact's own declared contract, as before).
             expected_dim = self._expected_num_features_for_artifact(new_path)
@@ -1836,6 +1855,73 @@ class LiveEngine:
         except Exception as e:
             logger.debug("[MODEL_GOVERNANCE] health snapshot skipped (isolated)", error=str(e))
 
+    # ------------------------------------------------------------------
+    # AGENT-3 (TASK-AGENT3-MODEL-GOV): pure decision core of the champion
+    # registry truthfulness sync, extracted so the sync contract is
+    # unit-testable without a running engine. The legacy check compared
+    # ONLY the artifact path, so a foreign CHAMPION row registered over
+    # the serving path with a contradictory schema/dimension (the stale
+    # t70d_v1_full row: scalp_v3/70D vs the runtime's declared contract)
+    # was silently left claiming production authority. The sync now
+    # verifies the FULL contract triple (path + schema + dimension) and
+    # DEMOTES mismatched champion rows to ARCHIVED (never deletes: BUG
+    # ledger rule 45 — history preserved) before re-stamping the
+    # truthful live row. This is a registry-truth repair, NOT a model
+    # promotion: no artifact is written, no gate is bypassed (INV-015).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _evaluate_champion_registry_sync(
+        _self: LiveEngine | None,
+        *,
+        current_row: dict[str, Any] | None,
+        serving_artifact_path: str,
+        serving_schema_id: str,
+        serving_dimension: int,
+        serving_fingerprint: str | None = None,
+    ) -> dict[str, Any]:
+        """Pure decision for _sync_champion_registry_state (no I/O).
+
+        Returns {"action": NOOP|REPAIR|BOOTSTRAP, ...} describing exactly
+        what the caller must do to make the registry truthful.
+        """
+        norm = lambda p: str(p or "").replace("\\\\", "/")  # noqa: E731
+        serving_path = norm(serving_artifact_path)
+        model_id = f"primary_scalp_{serving_schema_id}_{serving_dimension}d"
+        base: dict[str, Any] = {
+            "serving_path": serving_path,
+            "serving_schema_id": serving_schema_id,
+            "serving_dimension": int(serving_dimension),
+            "new_champion_model_id": model_id,
+        }
+        if current_row is None:
+            return {**base, "action": "BOOTSTRAP", "reason": "no champion row"}
+
+        row_path = norm(current_row.get("artifact_path", ""))
+        row_schema = str(current_row.get("feature_schema_id", "") or "")
+        row_dim = int(current_row.get("feature_dimension", 0) or 0)
+        contract_match = (
+            row_path == serving_path
+            and row_schema == serving_schema_id
+            and row_dim == int(serving_dimension)
+        )
+        if contract_match:
+            return {**base, "action": "NOOP", "reason": "already_truthful"}
+
+        # Path matches but the CONTRACT is contradictory: the row claims
+        # the serving artifact under the wrong schema/dimension. Repair =
+        # demote the stale row to ARCHIVED and re-register truthfully.
+        stale_model_id = str(current_row.get("model_id", "") or "")
+        return {
+            **base,
+            "action": "REPAIR",
+            "reason": "champion_row_contract_mismatch",
+            "stale_row_model_id": stale_model_id,
+            "stale_row_schema": row_schema,
+            "stale_row_dimension": row_dim,
+            "demote_stale_to": ModelStatus.ARCHIVED.value,
+        }
+
     def _sync_champion_registry_state(self) -> None:
         """Makes the registry truthful about the CURRENT Champion (spec 3)."""
         try:
@@ -1851,12 +1937,37 @@ class LiveEngine:
             )
             rows = lifecycle.list_models(status=ModelStatus.CHAMPION, limit=5)
             current = rows[0] if rows else None
-            path_match = str(Path(self.config.model.model_artifact_path)).replace("\\", "/")
-            if (
-                current is not None
-                and str(current.get("artifact_path", "")).replace("\\", "/") == path_match
-            ):
-                return  # already truthful
+            decision = self._evaluate_champion_registry_sync(
+                None,
+                current_row=current,
+                serving_artifact_path=self.config.model.model_artifact_path,
+                serving_schema_id=self.FEATURE_SCHEMA_ID,
+                serving_dimension=self.FEATURE_DIM,
+                serving_fingerprint=champ.artifact_hash,
+            )
+            action = decision.get("action")
+            if action == "NOOP":
+                return
+            if action == "REPAIR":
+                # Demote the contradictory CHAMPION row first (append-only:
+                # ARCHIVED preserves history, never deletes evidence).
+                stale_model_id = str(decision.get("stale_row_model_id", "") or "")
+                stale_version = str(current.get("model_version", "") or "") if current else ""
+                if stale_model_id and stale_version:
+                    with contextlib.suppress(Exception):
+                        lifecycle.set_status(
+                            model_id=stale_model_id,
+                            model_version=stale_version,
+                            status=ModelStatus.ARCHIVED,
+                            reason=(
+                                "AGENT-3 registry truth repair: champion row "
+                                "contract mismatch (declared "
+                                f"{decision.get('stale_row_schema')}"
+                                f"@{decision.get('stale_row_dimension')}D vs "
+                                f"serving {self.FEATURE_SCHEMA_ID}"
+                                f"@{self.FEATURE_DIM}D)"
+                            ),
+                        )
             self.model_registry.register_model(
                 artifact_path=self.config.model.model_artifact_path,
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
@@ -2653,6 +2764,77 @@ class LiveEngine:
         scaler = self._load_scaler_artifacts(model_path=model_path)
         return ModelBundle(model=model, scaler=scaler, artifact_path=model_path)
 
+    @staticmethod
+    def _artifact_meta_coherence(model_path: Path) -> dict[str, Any]:
+        """AGENT-10: metadata/tensor coherence + schema-identity verdict.
+
+        Reads model.meta.json (when present) and the serialized tensors and
+        verifies:
+          * artifact head width == meta num_classes/model_head_classes
+            (the 4-head + 3-meta P0 incoherence class is rejected here);
+          * artifact input width == meta feature dimension (BUG-141 class);
+          * meta feature_schema_id is a REGISTERED schema id — dimension
+            equality alone is not identity (family semantics, 50/60/70D).
+        Returns {"ok": bool, "reason": str, ...diagnostic fields}. Missing
+        meta is NOT an error here (cold-start bundles carry no meta; the
+        width gate downstream still applies) — coherence is enforced only
+        on the fields that EXIST.
+        """
+        import json as _json
+
+        verdict: dict[str, Any] = {
+            "ok": True,
+            "reason": "",
+            "path": str(model_path),
+        }
+        try:
+            meta_path = Path(model_path).with_suffix(".meta.json")
+            if not meta_path.exists():
+                verdict["reason"] = "NO_META"
+                return verdict
+            meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+            state = torch.load(model_path, map_location="cpu", weights_only=True)
+            if not isinstance(state, dict):
+                verdict.update(ok=False, reason="STATE_DICT_UNREADABLE")
+                return verdict
+            ip = state.get("input_projection.weight")
+            cls = state.get("classifier.weight")
+            if ip is None or cls is None or not hasattr(ip, "shape") or not hasattr(cls, "shape"):
+                verdict.update(ok=False, reason="MISSING_CORE_TENSORS")
+                return verdict
+            artifact_head = int(cls.shape[0])
+            artifact_dim = int(ip.shape[1])
+            meta_head = meta.get("model_head_classes", meta.get("num_classes"))
+            meta_dim = meta.get("feature_schema_dimension", meta.get("num_features"))
+            verdict.update(
+                artifact_head=artifact_head,
+                artifact_dim=artifact_dim,
+                meta_head=meta_head,
+                meta_dim=meta_dim,
+            )
+            if meta_head is not None and int(meta_head) != artifact_head:
+                verdict.update(ok=False, reason="HEAD_META_CLASS_MISMATCH")
+                return verdict
+            if meta_dim is not None and int(meta_dim) != artifact_dim:
+                verdict.update(ok=False, reason="DIMENSION_META_MISMATCH")
+                return verdict
+            schema_id = str(meta.get("feature_schema_id", "") or "")
+            if schema_id:
+                from nexus_scalp.features.schema import FEATURE_SCHEMAS
+
+                if not FEATURE_SCHEMAS.is_registered(schema_id):
+                    verdict.update(ok=False, reason="UNREGISTERED_SCHEMA_ID")
+                    return verdict
+                resolved = FEATURE_SCHEMAS.resolve(schema_id)
+                if resolved.dimension != artifact_dim:
+                    verdict.update(ok=False, reason="SCHEMA_DIMENSION_MISMATCH")
+                    return verdict
+            verdict["reason"] = "COHERENT"
+            return verdict
+        except Exception as exc:  # unreadable artifact => refuse loudly
+            verdict.update(ok=False, reason="COHERENCE_PROBE_FAILED", detail=str(exc))
+            return verdict
+
     def _expected_num_features_for_artifact(self, model_path: Path) -> int:
         """Infer expected input width from the on-disk artifact, falling back to class default.
 
@@ -2800,7 +2982,7 @@ class LiveEngine:
             )
             return ScalerBundle(mean=None, std=None)
 
-    def _save_model_weights_atomic(self, model: ScalpNet, model_path: Path) -> None:
+    def _save_model_weights_atomic(self, model: ScalpNet, model_path: Path) -> bool:
         """Saves current PyTorch model weights state_dict atomically to disk with thread lock and logging.
 
         BUG-141 guard: refuses to persist weights whose input width contradicts
@@ -2808,6 +2990,11 @@ class LiveEngine:
         desynced runtime state must never silently overwrite a bundle with a
         mismatched-dimension artifact (the 2026-08-27 70d_liquidity clobber
         class). Mismatch -> CRITICAL log + no write (artifact preserved).
+
+        Returns True on successful persist, False on BUG-141 refusal or I/O
+        failure so callers can refuse the END-TO-END persist (no bundle swap,
+        no provenance, explicit ASYNC_RETRAIN_REFUSED) instead of diverging
+        memory==disk identity.
         """
         try:
             model_width = int(model.input_projection.weight.shape[1])
@@ -2819,7 +3006,7 @@ class LiveEngine:
                     model_width=model_width,
                     declared_dim=declared,
                 )
-                return
+                return False
         except Exception as guard_err:  # never block the save on guard failure
             logger.warning(
                 "[BUG141_GUARD] contract probe failed (save proceeds)",
@@ -2847,6 +3034,8 @@ class LiveEngine:
                     error=str(err),
                     path=str(model_path),
                 )
+                return False
+        return True
 
     # -------------------------
     # Warmup + bootstrap training
@@ -5586,12 +5775,51 @@ class LiveEngine:
     # Async retraining worker
     # -------------------------
 
+    @staticmethod
+    def _retrain_swap_decision(
+        _self: LiveEngine | None,
+        *,
+        dispatched_for_path: str | Path | None,
+        candidate: Any | None = None,
+        current_bundle: Any | None = None,
+    ) -> dict[str, Any]:
+        """STALENESS DECISION for an async retrain completion (agent 10).
+
+        An async fine tune is dispatched against the BUNDLE that served the
+        buffer (bundle.artifact_path at dispatch). While it trains, a
+        concurrent hot_swap / promotion / rollback / collapse recovery can
+        publish a NEWER bundle. A late retrain completion must then be
+        DISCARDED — otherwise stale weights overwrite a newer valid model
+        (verified by RED tests). Missing bundle => stale.
+        """
+
+        def _norm(x: Any) -> str:
+            return str(x or "").replace("\\", "/")
+
+        norm = _norm
+        dispatched = norm(dispatched_for_path)
+        cur = norm(getattr(current_bundle, "artifact_path", None))
+        if dispatched and cur and dispatched != cur:
+            return {"swap": False, "reason": "STALE_RETRAIN_RESULT"}
+        # Also stale when the serving bundle vanished mid-flight
+        if dispatched and not cur:
+            return {"swap": False, "reason": "STALE_RETRAIN_RESULT"}
+        return {"swap": True, "reason": ""}
+
     async def _trigger_async_online_fine_tune(self) -> None:
         if self._retrain_inflight:
             return
         self._retrain_inflight = True
+        dispatched_for: Path | None = None
         try:
             logger.info("ASYNC RETRAIN START", buffer_size=len(self._rolling_feature_records))
+            # AGENT-10: capture the serving artifact identity at DISPATCH so
+            # a stale completion (hot swap / promotion raced ahead) can be
+            # discarded end-to-end instead of overwriting the newer model.
+            with self._bundle_lock:
+                dispatched_for = (
+                    Path(self._bundle.artifact_path) if self._bundle is not None else None
+                )
 
             df = pl.DataFrame(list(self._rolling_feature_records))
             df_labeled = self.online_labeler.label_dataframe(df)
@@ -5636,6 +5864,24 @@ class LiveEngine:
                 self._bars_since_last_retrain = 0
                 return
 
+            # AGENT-10 (STALE RETRACE): the buffer was trained against
+            # the DISPATCH-time bundle. Discard a completion that is now stale
+            # (a concurrent hot_swap/promotion published a newer model).
+            staleness = self._retrain_swap_decision(
+                None,
+                dispatched_for_path=dispatched_for,
+                candidate=updated_model,
+                current_bundle=self._bundle,
+            )
+            if not staleness["swap"]:
+                logger.warning(
+                    "[ASYNC_RETRAIN_REFUSED] event=STALE_RETRAIN_RESULT "
+                    "dispatched_for=%s current_bundle=%s (newer model wins)",
+                    dispatched_for,
+                    getattr(self._bundle, "artifact_path", None),
+                )
+                self._bars_since_last_retrain = 0
+                return
             # Legacy fallback (pre-PersistDecision trainers): the model
             # carries only the old boolean tag.
             if decision is None and getattr(updated_model, "_finetune_accepted", True) is False:
@@ -5655,7 +5901,22 @@ class LiveEngine:
             # Refresh scaler + persist weights (reached ONLY for accepted
             # candidates — no wasted IO on a rejected one).
             scaler = self._load_scaler_artifacts(bundle.artifact_path)
-            self._save_model_weights_atomic(updated_model, bundle.artifact_path)
+
+            # BUG-141 residual (BUG-243): the persist is END-TO-END atomic.
+            # A BUG-141 width-contract refusal (or I/O failure) must refuse
+            # EVERYTHING: no bundle swap, no provenance re-registration, no
+            # "SUCCESS" claim — otherwise the in-memory serving identity
+            # diverges from the artifact bytes on disk (the disk keeps the
+            # old checkpoint while memory serves retrained weights).
+            saved = self._save_model_weights_atomic(updated_model, bundle.artifact_path)
+            if not saved:
+                logger.error(
+                    "[ASYNC_RETRAIN_REFUSED] event=PERSIST_REFUSED "
+                    "reason=BUG141_WIDTH_CONTRACT_OR_IO (baseline kept, disk==memory)",
+                    path=str(bundle.artifact_path),
+                )
+                self._bars_since_last_retrain = 0
+                return
 
             with self._bundle_lock:
                 self._bundle = ModelBundle(

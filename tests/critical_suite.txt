@@ -48,6 +48,7 @@ tests/unit/test_user_hunt_bug170_171.py
 tests/release/test_release_hardening.py
 # BUG-183: purge/embargo leakage-guard defaults wired into the production research path (Hermes-DevOps, 2026-09-01)
 tests/unit/test_research_purge_defaults_bug183.py
+tests/unit/test_research_walkforward_gate_agent5.py
 tests/unit/test_evidence_semantics_bug140.py
 # AGENT4-SPRINT (2026-09-01): winner-protection geometry repair - BE trigger R-floor, lock offset 0.6p, tier floors 0.60/0.70/0.80 (regression suite)
 tests/unit/test_winner_protection_geometry_sprint.py
@@ -74,3 +75,7 @@ tests/unit/test_policy_throttle_pins_bug227.py
 tests/unit/test_policy_warmup_range_seam_bug230.py
 tests/unit/test_hunter_min_quality_pins_bug227.py
 tests/unit/test_quality_tier_pins_bug227.py
+
+# A2 dataset/feature/label lineage bounded probe (Agent-2 dataset forensics, 2026-09-05):
+# RAW->CLEAN->FEATURES->LABELS->DATASET->MODEL INPUT chain on a 5k-bar M1 tail via the canonical builder (BUG-246 gap-constant SSoT pin).
+tests/unit/test_a2_data_lineage_bounded.py

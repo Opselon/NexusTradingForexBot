@@ -272,6 +272,22 @@ class SimulatedOrder:
     stop_loss: float
     take_profit: float
     run_id: str = ""
+    #: AGENT-18 (CHG-0062): pending-fill lifecycle.
+    status: str = "FILLED"  # PENDING | FILLED | CANCELLED
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingLimit:
+    """AGENT-18 (CHG-0062): one resting simulated LIMIT order."""
+
+    order_id: str
+    direction: str  # BUY | SELL
+    level: float
+    stop_loss: float
+    take_profit: float
+    volume: float
+    created_at: object
+    run_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,6 +445,12 @@ class ReplayRunResult:
     #: transition records. Empty unless the caller enables tracing/regime.
     decision_trace: list[dict[str, Any]] = field(default_factory=list)
     regime_transitions: list[dict[str, Any]] = field(default_factory=list)
+    #: AGENT-18 (CHG-0062): resting LIMIT orders at end-of-data (observable).
+    pending_orders: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def pending_order_count(self) -> int:
+        return len(self.pending_orders)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -493,6 +515,9 @@ class _RunState:
     prev_regime_type: str = ""
     decision_trace: list[dict[str, Any]] = field(default_factory=list)
     regime_transitions: list[dict[str, Any]] = field(default_factory=list)
+    #: AGENT-18 (CHG-0062): resting LIMIT orders (live pending-order parity).
+    #: MARKET-only runs keep this empty => byte-identical legacy behavior.
+    pending: list[_PendingLimit] = field(default_factory=list)
 
 
 class StreamingReplayEngine:
@@ -728,6 +753,7 @@ class StreamingReplayEngine:
             last_tick=None,
             feature_engine=_FeatureEngineHolder(self.config.symbol),
             regime_classifier=regime_classifier,
+            pending=[],
         )
 
     def _close_position(
@@ -886,6 +912,11 @@ class StreamingReplayEngine:
                     is_complete=True,
                 )
             )
+            # AGENT-18 (CHG-0062): resting LIMITs fill on the FIRST bar
+            # that touches the level (BUY low <= level, SELL high >= level)
+            # BEFORE SL/TP surveillance so fill->stop sequencing holds.
+            if state.pending:
+                state.pending = self._match_pending_limits(state, ev)
             # Bar-level SL/TP surveillance (conservative SL-first
             # tie-break; documented difference vs tick replay).
             if state.open_pos is not None and self.config.execution.evaluate_sl_tp_every_event:
@@ -930,6 +961,10 @@ class StreamingReplayEngine:
 
         # --- TickEvent ---
         state.last_tick = ev
+        # AGENT-18 (CHG-0062): FIRST-TOUCH fill for resting LIMITs.
+        if state.pending:
+            state.pending = self._match_pending_limits(state, ev)
+
         if state.open_pos is not None:
             # tick-chronological SL/TP (§20) + MFE/MAE path tracking (§80)
             if state.open_pos.direction == "BUY":
@@ -980,6 +1015,21 @@ class StreamingReplayEngine:
 
         event_hash = state.event_hasher.hexdigest()[:32]
         total_pnl = float(sum(t.pnl_usd for t in state.trades))
+        # AGENT-18 (CHG-0062): remaining resting LIMITs reported honestly
+        # (observable provenance, never silently dropped or force-filled).
+        _pending_dicts: list[dict[str, Any]] = [
+            {
+                "order_id": pl.order_id,
+                "direction": pl.direction,
+                "level": pl.level,
+                "volume": pl.volume,
+                "created_at": pl.created_at.isoformat(),
+                "stop_loss": pl.stop_loss,
+                "take_profit": pl.take_profit,
+                "run_id": pl.run_id,
+            }
+            for pl in state.pending
+        ]
         return ReplayRunResult(
             run_id=state.rid,
             experiment_type=self.config.experiment_type,
@@ -1002,11 +1052,57 @@ class StreamingReplayEngine:
             decision_mode=self.config.decide_on,
             decision_trace=state.decision_trace,
             regime_transitions=state.regime_transitions,
+            pending_orders=_pending_dicts,
         )
 
     # ------------------------------------------------------------------
     # Decision path
     # ------------------------------------------------------------------
+
+    def _match_pending_limits(self, state: _RunState, ev: Any) -> list[_PendingLimit]:
+        """AGENT-18: fills resting LIMITs on the FIRST event that touches the level."""
+        remaining: list[_PendingLimit] = []
+        for pend in state.pending:
+            if hasattr(ev, "high") and hasattr(ev, "low"):
+                hit = (ev.low <= pend.level) if pend.direction == "BUY" else (ev.high >= pend.level)
+            else:
+                hit = ev.ask <= pend.level if pend.direction == "BUY" else ev.bid >= pend.level
+            if not hit:
+                remaining.append(pend)
+                continue
+            state.orders = [
+                (
+                    o
+                    if o.order_id != pend.order_id
+                    else SimulatedOrder(
+                        order_id=o.order_id,
+                        signal_time=o.signal_time,
+                        decision_time=o.decision_time,
+                        order_time=o.order_time,
+                        fill_time=ev.timestamp,
+                        action=o.action,
+                        order_type=o.order_type,
+                        volume=o.volume,
+                        requested_price=o.requested_price,
+                        fill_price=pend.level,
+                        stop_loss=o.stop_loss,
+                        take_profit=o.take_profit,
+                        run_id=o.run_id,
+                        status="FILLED",
+                    )
+                )
+                for o in state.orders
+            ]
+            state.open_pos = _OpenPosition(
+                direction=pend.direction,
+                volume=pend.volume,
+                entry_order_id=pend.order_id,
+                entry_time=ev.timestamp,
+                entry_price=pend.level,
+                stop_loss=pend.stop_loss,
+                take_profit=pend.take_profit,
+            )
+        return remaining
 
     def _decide(self, state: _RunState, tick: TickEvent) -> _OpenPosition | None:
         """One decision: features -> model -> policy -> risk -> simulated fill.
@@ -1070,6 +1166,41 @@ class StreamingReplayEngine:
             last = state.decision_trace[-1]
             last["risk_accepted"] = True
             last["order_id"] = f"{state.rid}-O{len(state.orders) + 1:05d}"
+
+        # AGENT-18 (CHG-0062): LIMIT/STOP proposals PEND at their level;
+        # they fill on the FIRST later event that touches the level
+        # (live pending-order parity) instead of consuming a market fill.
+        if "LIMIT" in action or "STOP" in action:
+            _pend = _PendingLimit(
+                order_id=f"{state.rid}-O{len(state.orders) + 1:05d}",
+                direction="BUY" if "BUY" in action else "SELL",
+                level=float(order.price),
+                stop_loss=float(order.stop_loss),
+                take_profit=float(order.take_profit),
+                volume=self._clamp_volume(float(order.volume)),
+                created_at=tick.timestamp,
+                run_id=state.rid,
+            )
+            state.orders.append(
+                SimulatedOrder(
+                    order_id=_pend.order_id,
+                    signal_time=tick.timestamp,
+                    decision_time=tick.timestamp,
+                    order_time=tick.timestamp,
+                    fill_time=tick.timestamp,
+                    action=action,
+                    order_type="LIMIT",
+                    volume=_pend.volume,
+                    requested_price=_pend.level,
+                    fill_price=_pend.level,
+                    stop_loss=_pend.stop_loss,
+                    take_profit=_pend.take_profit,
+                    run_id=state.rid,
+                    status="PENDING",
+                )
+            )
+            state.pending.append(_pend)
+            return state.open_pos
 
         fill = self._fill_price(action, tick)
         sim_order = SimulatedOrder(
