@@ -73,7 +73,12 @@ The gate never downloads anything, never touches MT5, providers, or the
 trading engine. A missing tool reports `configuration_error` — it does not
 pip-install.
 
-## CI parity
+## CI parity — forensic deploy gate is local-only
+
+> Forensic deploy gate (`nexus forensic --deploy-gate --json`, BUG-162) is
+> local-only via `beforePush` (`beforePush.sh:107-127` / `beforePush.ps1:671-723`)
+> — not enforced in CI; CI health via pytest/coverage + probe, not barrier.
+> Health engine: `src/nexus_scalp/release/health.py` (canonical).
 
 CI (`.github/workflows/ci.yml`) runs the same tools against the same
 pyproject config plus the full pytest+coverage matrix. The local gate is an
