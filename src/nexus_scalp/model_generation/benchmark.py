@@ -219,8 +219,21 @@ class BenchmarkRunner:
             if probs is not None:
                 preds = np.argmax(probs, axis=1)
                 if preds.shape[0] != len(labels):
-                    preds = labels  # alignment fallback (sequence windows)
-                cm = confusion_and_class_metrics(labels, preds)
+                    # AGENT-16 (CHG-0064): previous fallback replaced the
+                    # model predictions with the ground-truth labels, so the
+                    # benchmark macro-F1/confusion table could silently
+                    # report a perfect classifier when sequence windows
+                    # misaligned with dataset rows. That is fabricated
+                    # evidence; metrics are now honestly NOT_COMPUTABLE.
+                    cm = {
+                        "macro_f1": None,
+                        "per_class": {},
+                        "error": "PREDICTION_ROW_MISMATCH",
+                        "n_preds": int(preds.shape[0]),
+                        "n_labels": len(labels),
+                    }
+                else:
+                    cm = confusion_and_class_metrics(labels, preds)
             else:
                 cm = {"macro_f1": None, "per_class": {}}
             uniq, counts = np.unique(labels, return_counts=True)
