@@ -1,0 +1,20 @@
+{
+  "CHAMPION_4head": {
+    "trades": 57,
+    "orders": 73,
+    "pnl": -301.57,
+    "wins": 13,
+    "losses": 44,
+    "head": 4,
+    "dim": 70
+  },
+  "PILOT_3head": {
+    "trades": 57,
+    "orders": 73,
+    "pnl": -301.57,
+    "wins": 13,
+    "losses": 44,
+    "head": 3,
+    "dim": 70
+  }
+}
