@@ -43,7 +43,7 @@ def _archive_head(tmp: Path) -> Path:
     )
     assert r.returncode == 0, r.stderr
     with tarfile.open(tar_path) as tf:
-        tf.extractall(out)
+        tf.extractall(out, filter="data")  # tarslip: safe extraction filter
     # Copy the gate into the temp tree so its REPO_ROOT (parents[2] of
     # __file__) resolves to the temp tree — otherwise the gate would lint
     # the REAL repository regardless of cwd.

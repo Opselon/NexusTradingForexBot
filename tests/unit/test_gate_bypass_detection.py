@@ -49,7 +49,7 @@ def _materialize_head(tmp: Path) -> Path:
         ["git", "archive", "HEAD", "-o", str(tar)], cwd=REPO, capture_output=True, check=True
     )
     with tarfile.open(tar) as tf:
-        tf.extractall(out)
+        tf.extractall(out, filter="data")  # tarslip: safe extraction filter
     gd = out / "scripts" / "ci"
     gd.mkdir(parents=True, exist_ok=True)
     for f in ("check_local.py", "verify_critical_suite_manifest.py", "gate_parity.py"):
