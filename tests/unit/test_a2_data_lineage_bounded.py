@@ -9,6 +9,7 @@ Reuse (from repo root, never concurrent with other pytest that writes to the
 same scratch dataset id):
     .venv/Scripts/python.exe -m pytest tests/unit/test_a2_data_lineage_bounded.py -q -p no:cacheprovider
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -4,6 +4,7 @@ Pins the hard invariants the brief asked to be proven. All tests are
 offline/deterministic (PaperMT5Adapter) and mirror the manual forensic
 probe that already passed on this checkout. No broker calls.
 """
+
 from __future__ import annotations
 
 import time
@@ -25,7 +26,12 @@ from nexus_scalp.execution.recovery_budget import RecoveryBudgetLedger
 
 
 def _proposal(action: ActionType, rid: str, now: datetime) -> TradeProposal:
-    is_buy = action in (ActionType.BUY, ActionType.BUY_MARKET, ActionType.BUY_LIMIT, ActionType.BUY_STOP)
+    is_buy = action in (
+        ActionType.BUY,
+        ActionType.BUY_MARKET,
+        ActionType.BUY_LIMIT,
+        ActionType.BUY_STOP,
+    )
     return TradeProposal(
         request_id=rid,
         execution_id=f"EXEC-TEST-{rid}",
@@ -135,9 +141,13 @@ class TestAgent12StateMachine:
         t0 = datetime.now(UTC)
         om.transition_state_with_hysteresis(777003, PositionState.PROFIT_TRAILING, t0)
         om.transition_state_with_hysteresis(777003, PositionState.PROFIT_PROTECTED, t0)
-        s_fast = om.transition_state_with_hysteresis(777003, PositionState.PROFIT_PROTECTED, t0 + timedelta(seconds=0.5))
+        s_fast = om.transition_state_with_hysteresis(
+            777003, PositionState.PROFIT_PROTECTED, t0 + timedelta(seconds=0.5)
+        )
         assert s_fast == PositionState.PROFIT_UNPROTECTED
-        s_ok = om.transition_state_with_hysteresis(777003, PositionState.PROFIT_PROTECTED, t0 + timedelta(seconds=3.0))
+        s_ok = om.transition_state_with_hysteresis(
+            777003, PositionState.PROFIT_PROTECTED, t0 + timedelta(seconds=3.0)
+        )
         # needs min_observation_count too (default 10) - only 3 sightings, still NOT confirmed
         assert s_ok == PositionState.PROFIT_UNPROTECTED
 
@@ -168,15 +178,45 @@ class TestAgent12RecoveryBudget:
         cfg = AlgoConfig()
         rb = RecoveryBudgetLedger()
         t0 = datetime.now(UTC)
-        b = rb.allocate(888001, initial_risk_usd=100.0, current_pnl_usd=-10.0, confidence_factor=1.0, atr=1.5, trend_strength=0.0, now=t0, algo_config=cfg)
+        b = rb.allocate(
+            888001,
+            initial_risk_usd=100.0,
+            current_pnl_usd=-10.0,
+            confidence_factor=1.0,
+            atr=1.5,
+            trend_strength=0.0,
+            now=t0,
+            algo_config=cfg,
+        )
         assert abs(b - 50.0) < 1e-9
-        assert rb.allocate(888001, initial_risk_usd=999.0, current_pnl_usd=-90.0, confidence_factor=0.0, atr=99.0, trend_strength=-1.0, now=t0, algo_config=cfg) == b
+        assert (
+            rb.allocate(
+                888001,
+                initial_risk_usd=999.0,
+                current_pnl_usd=-90.0,
+                confidence_factor=0.0,
+                atr=99.0,
+                trend_strength=-1.0,
+                now=t0,
+                algo_config=cfg,
+            )
+            == b
+        )
 
     def test_exhaustion_and_horizon_clamp(self):
         cfg = AlgoConfig()
         rb = RecoveryBudgetLedger()
         t0 = datetime.now(UTC)
-        rb.allocate(888002, initial_risk_usd=100.0, current_pnl_usd=-10.0, confidence_factor=1.0, atr=1.5, trend_strength=0.0, now=t0, algo_config=cfg)
+        rb.allocate(
+            888002,
+            initial_risk_usd=100.0,
+            current_pnl_usd=-10.0,
+            confidence_factor=1.0,
+            atr=1.5,
+            trend_strength=0.0,
+            now=t0,
+            algo_config=cfg,
+        )
         ex, _ = rb.evaluate_exhaustion(888002, -70.0, t0 + timedelta(seconds=10))
         assert ex is True
         h = rb.recovery_horizons[888002]
@@ -186,7 +226,16 @@ class TestAgent12RecoveryBudget:
         cfg = AlgoConfig()
         rb = RecoveryBudgetLedger()
         t0 = datetime.now(UTC)
-        rb.allocate(888003, initial_risk_usd=100.0, current_pnl_usd=-1.0, confidence_factor=1.0, atr=1.5, trend_strength=0.0, now=t0, algo_config=cfg)
+        rb.allocate(
+            888003,
+            initial_risk_usd=100.0,
+            current_pnl_usd=-1.0,
+            confidence_factor=1.0,
+            atr=1.5,
+            trend_strength=0.0,
+            now=t0,
+            algo_config=cfg,
+        )
         assert 888004 not in rb.recovery_budget_initial
         rb.drop_ticket(888003)
         assert not rb.is_allocated(888003)
@@ -219,7 +268,9 @@ class TestAgent12SingleAuthority:
         import re
 
         repo = pathlib.Path("src/nexus_scalp")
-        pat = re.compile(r"(self\.mt5_adapter|self\.adapter)\.(execute_market_order|place_pending_order|close_position|modify_position|send_order|modify_order|cancel_pending_order)\(")
+        pat = re.compile(
+            r"(self\.mt5_adapter|self\.adapter)\.(execute_market_order|place_pending_order|close_position|modify_position|send_order|modify_order|cancel_pending_order)\("
+        )
         outside: list[str] = []
         for f in repo.rglob("*.py"):
             if f.as_posix().endswith("execution/order_manager.py"):

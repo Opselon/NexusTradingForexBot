@@ -26,7 +26,9 @@ def _flush(repo: AuditRepository) -> None:
     assert repo.flush(timeout_sec=10.0)
 
 
-def _register_champion_row(registry, lifecycle, *, artifact_path: str, schema_id: str, dimension: int) -> str:
+def _register_champion_row(
+    registry, lifecycle, *, artifact_path: str, schema_id: str, dimension: int
+) -> str:
     prov = registry.register_model(
         artifact_path=artifact_path,
         model_version="v1.0",
