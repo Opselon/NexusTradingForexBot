@@ -50,7 +50,11 @@ SPREAD_USD = 0.20  # live-engine synthetic spread convention (bid/ask gap)
 
 def bars_frame_to_bardata(df: pl.DataFrame) -> tuple[list[BarData], list[datetime]]:
     """Converts a raw bars parquet frame (time/open/high/low/close/
-    tick_volume) into a chronological BarData list + decision timestamps."""
+    tick_volume) into a chronological BarData list + decision timestamps.
+    Runtime hygiene: accepts any user fetch shape (CSV strings, epoch
+    ints, naive datetimes, unsorted, dup) via normalize_bars_frame."""
+    from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+    df, _norm_stats = normalize_bars_frame(df)
     df = df.sort("time")
     bars: list[BarData] = []
     times: list[datetime] = []
@@ -94,6 +98,8 @@ def compute_60d_frame(
         timestamp, open, high, low, close, spread, atr_m1, tick_volume,
         feat_0..feat_59
     """
+    from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+    df, _norm_stats = normalize_bars_frame(df)
     raw = df.sort("time")
     closes = raw["close"].cast(pl.Float64).to_numpy()
     highs = raw["high"].cast(pl.Float64).to_numpy()
@@ -565,6 +571,8 @@ def compute_70d_frame(
         timestamp, open, high, low, close, spread, atr_m1, tick_volume,
         news_status, liquidity_status, feat_0..feat_69
     """
+    from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+    df, _norm_stats = normalize_bars_frame(df)
     from nexus_scalp.features.features70 import (
         FeatureSourceState,
         clamp_neutral_family,

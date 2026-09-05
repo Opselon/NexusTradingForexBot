@@ -31,6 +31,22 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.model_generation.artifact_store")
 
+# AGENT-14 QA wave 2 (CHG-0061): dataset-artifact immutability + integrity
+# exception taxonomy (mirrors research.mt5_tick_dataset v3).
+
+
+class ArtifactConflictError(RuntimeError):
+    """An existing immutable artifact blocks the requested rebuild.
+
+    Corrections must mint a NEW dataset id (new fingerprint), never
+    overwrite the bytes under an existing identity.
+    """
+
+
+class DatasetCorruptionError(RuntimeError):
+    """A stored dataset artifact failed integrity verification on read
+    (manifest dataset_hash != actual parquet bytes)."""
+
 #: Allowed characters for artifact identifiers (model_id / dataset_id /
 #: experiment_id). Prevents path traversal and accidental writes outside
 #: the artifact root (forensic audit T03/T58).
@@ -116,14 +132,41 @@ class ArtifactStore:
     def dataset_manifest_path(self, dataset_id: str) -> Path:
         return self.dataset_dir(dataset_id) / "dataset_manifest.json"
 
-    def save_dataset(self, dataset_id: str, data: Any, manifest: dict[str, Any]) -> dict[str, Any]:
+    def save_dataset(
+        self,
+        dataset_id: str,
+        data: Any,
+        manifest: dict[str, Any],
+        *,
+        allow_overwrite: bool = False,
+    ) -> dict[str, Any]:
         """Writes a dataset artifact (parquet + manifest). Returns the
-        {path, hash} handle."""
+        {path, hash} handle.
+
+        AGENT-14 QA wave 2 (CHG-0061): a persisted dataset is immutable.
+        Re-saving under an EXISTING id raises ArtifactConflictError unless
+        ``allow_overwrite=True``; a deliberate overwrite records the
+        previous bytes (superseded_dataset_hash) in the new manifest so the
+        provenance trail is preserved. Corrections must normally mint a NEW
+        dataset id.
+        """
         d = self.dataset_dir(dataset_id)
-        d.mkdir(parents=True, exist_ok=True)
         parquet_path = self.dataset_path(dataset_id)
+        previous_hash = ""
+        if parquet_path.exists():
+            if not allow_overwrite:
+                raise ArtifactConflictError(
+                    f"dataset {dataset_id!r}: artifact already exists "
+                    f"({sha256_file(parquet_path)[:12]}). Refusing to overwrite "
+                    "an immutable artifact - corrections must mint a NEW "
+                    "dataset id, or pass allow_overwrite=True explicitly."
+                )
+            previous_hash = sha256_file(parquet_path)
+        d.mkdir(parents=True, exist_ok=True)
         data.write_parquet(parquet_path)
         manifest["dataset_hash"] = sha256_file(parquet_path)
+        if previous_hash:
+            manifest["superseded_dataset_hash"] = previous_hash
         self.write_json(self.dataset_manifest_path(dataset_id), manifest)
         return {"path": str(parquet_path), "hash": manifest["dataset_hash"]}
 
@@ -137,7 +180,22 @@ class ArtifactStore:
             # `if frame is None or frame.is_empty()`; raising here turned
             # absent (not-yet-built) artifacts into hard test failures.
             return None
-        return pl.read_parquet(p)
+        frame = pl.read_parquet(p)
+        # AGENT-14 QA wave 2 (CHG-0061): DETECT/REJECT — the stored manifest
+        # dataset_hash must describe the ACTUAL parquet bytes. A tampered,
+        # swapped, or partially-written artifact is never served silently.
+        manifest = self.read_dataset_manifest(dataset_id) or {}
+        expected = str(manifest.get("dataset_hash") or "")
+        if expected:
+            actual = sha256_file(p)
+            if actual != expected:
+                raise DatasetCorruptionError(
+                    f"dataset {dataset_id!r}: manifest dataset_hash "
+                    f"({expected[:12]}) != actual parquet sha256 "
+                    f"({actual[:12]}) — the artifact was modified, corrupted, "
+                    "or swapped; REJECTING. Rebuild under a NEW dataset id."
+                )
+        return frame
 
     def read_dataset_manifest(self, dataset_id: str) -> dict[str, Any] | None:
         return self.read_json(self.dataset_manifest_path(dataset_id))

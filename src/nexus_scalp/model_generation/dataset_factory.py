@@ -55,15 +55,57 @@ def deterministic_dataset_id(
     strategy_id: str,
     config_hash: str,
     news_digest: dict[str, Any] | None = None,
+    content_digest: str | None = None,
 ) -> str:
+    """Content-aware deterministic dataset identity (AGENT-14 QA wave 2,
+    CHG-0061).
+
+    The id binds: config (symbol/timeframe/schemas/strategy/hash) + news
+    provenance + a ``content_digest`` over the SAMPLE CONTENT. Two builds
+    with identical configs but different underlying bars MUST mint different
+    ids - a one-cent close-price mutation re-identifies the dataset, so a
+    downstream result can never silently reference different data under the
+    same identity ("what exact bytes produced this result").
+    """
     news_part = ""
     if news_digest is not None:
         news_part = "|" + json.dumps(news_digest, sort_keys=True, default=str)
+    content_part = ""
+    if content_digest:
+        content_part = "|" + content_digest
     payload = (
         f"{symbol}|{timeframe}|{feature_schema_id}|{label_schema_id}|{strategy_id}|{config_hash}"
-        f"{news_part}"
+        f"{news_part}{content_part}"
     )
     return "ds_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def frame_content_digest_raw(df: pl.DataFrame, max_rows: int = 200_000) -> str:
+    """Deterministic content hash over the RAW bar input (AGENT-14 wave 2)."""
+    cols = [c for c in ("timestamp", "open", "high", "low", "close", "atr") if c in df.columns]
+    proj = df.sort("timestamp")[:max_rows].select(cols) if "timestamp" in df.columns else df[:max_rows].select(cols)
+    canonical = __import__("json").dumps(proj.to_dict(as_series=False), sort_keys=True, default=str)
+    return __import__("hashlib").sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def frame_content_digest(frame: pl.DataFrame, max_rows: int = 200_000) -> str:
+    """Deterministic content hash over the sample frame (AGENT-14 wave 2).
+
+    Hashes a canonical projection (sample_id + timestamp + feature_vector +
+    label metadata if present) so ANY content change re-identifies while
+    irrelevant serialization differences do not. Bounded to ``max_rows`` for
+    memory safety (first N rows in sorted-timestamp order).
+    """
+    cols = [c for c in ("sample_id", "timestamp", "feature_vector") if c in frame.columns]
+    if not cols:
+        cols = frame.columns[:8]
+    proj = (
+        frame.sort("timestamp")[:max_rows].select(cols)
+        if "timestamp" in frame.columns
+        else frame[:max_rows].select(cols)
+    )
+    canonical = json.dumps(proj.to_dict(as_series=False), sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def _news_digest(news_frame: pl.DataFrame | None) -> dict[str, Any] | None:
@@ -188,6 +230,13 @@ class DatasetFactory:
         # range and a content hash, and feeds the dataset id.
         news_digest = _news_digest(news_frame)
 
+        # AGENT-14 wave 2: content digest feeds the id. Hashing is over
+        # the RAW bar input (timestamp + OHLC + per-bar ATR family) so a
+        # one-cent mutation in ANY bar changes the identity - sample features
+        # are synthetic/deterministic in tests and do not reflect the raw
+        # close movement, so hashing only samples would miss the mutation.
+        c_digest = frame_content_digest_raw(df)
+
         real_id = dataset_id or deterministic_dataset_id(
             symbol,
             timeframe,
@@ -196,6 +245,7 @@ class DatasetFactory:
             strategy_id,
             c_hash,
             news_digest=news_digest,  # news content changes the dataset identity
+            content_digest=c_digest,  # sample content changes the dataset identity
         )
 
         # counts per split (boundary-purged rows are tagged, never counted
