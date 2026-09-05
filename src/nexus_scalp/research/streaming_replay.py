@@ -138,8 +138,19 @@ def load_model_artifacts(model_path: str | Path) -> ModelArtifacts:
         raise ValueError(f"model artifact has no input_projection.weight: {p}")
     num_features = int(w.shape[1])
     head_dim = int(w.shape[0])
+    # 3-class vs 4-class is a CONTRACT property carried by the checkpoint's own
+    # classifier head — infer from the on-disk tensor, never hard-code (P0 #3:
+    # pilot_70d_3class_3-head was unloadable in replay; AGENT-1 INTEGRATION FIX).
+    _cls_w = probe.get("classifier.weight") if isinstance(probe, dict) else None
+    _inferred_classes = (
+        int(_cls_w.shape[0])
+        if _cls_w is not None and hasattr(_cls_w, "shape") and len(_cls_w.shape) == 2
+        else 4
+    )
     try:
-        model = ScalpNet(num_features=num_features, num_classes=4, hidden_dim=head_dim)
+        model = ScalpNet(
+            num_features=num_features, num_classes=_inferred_classes, hidden_dim=head_dim
+        )
         model.load_state_dict(probe)  # strict: any mismatch = hard failure
     except (RuntimeError, ValueError) as e:
         raise ValueError(
