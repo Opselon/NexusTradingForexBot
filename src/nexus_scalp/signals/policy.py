@@ -386,14 +386,25 @@ class SignalPolicy:
         # Calculate candidate confidence
         cand_confidence = 0.0
         if cand_action != "NO_TRADE":
-            # Directional measure (not raw prob): the candidate's OWN side
-            # normalized over the trained classes (BUY+SELL+NO_TRADE). The
-            # DIRECTION still comes from the candidate channel that fired.
+            # BUG-245 (2026-09-05, Agent-4): the CHG-0042 directional
+            # semantics already guard every degenerate denominator
+            # (trained_mass <= 0 / non-finite / negative -> RAW_FALLBACK)
+            # in _directional_confidence. This site re-implemented the
+            # same division without any guard, so a zero/negative trained
+            # mass with any structural candidate channel fires a live
+            # ZeroDivisionError. Align the per-candidate measure with
+            # the centralized degenerate handler: degenerate -> raw
+            # OWN-side probability (never manufactures confidence, never
+            # crashes, never emits a negative value into the frozen
+            # TradeProposal model).
             cand_ai_prob = (
-                prob_buy / (prob_buy + prob_sell + prob_no_trade)
-                if "BUY" in cand_action
-                else prob_sell / (prob_buy + prob_sell + prob_no_trade)
+                max(0.0, prob_buy) if "BUY" in cand_action else max(0.0, prob_sell)
             )
+            cand_trained_mass = prob_buy + prob_sell + prob_no_trade
+            if cand_trained_mass > 0.0 and math.isfinite(cand_trained_mass):
+                _cand_ratio = cand_ai_prob / cand_trained_mass
+                if math.isfinite(_cand_ratio) and _cand_ratio >= 0.0:
+                    cand_ai_prob = _cand_ratio
             is_stat_arb = "STAT_ARB" in cand_action or (
                 stat_arb_bullish if "BUY" in cand_action else stat_arb_bearish
             )
