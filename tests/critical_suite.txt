@@ -84,3 +84,11 @@ tests/unit/test_a2_data_lineage_bounded.py
 # Tick->50D->70D->ScalpNet->Policy->Risk->Paper dispatch->Audit DB->API v1
 # Every push proves the system still wires together (user brief: one file, full chain).
 tests/e2e/test_smoke_chain.py
+
+# WAVE-2 ECOSYSTEM GATING (2026-09-05 forensic GAP-closure, QA verdict P0)
+# Every push now gates the fetch->clean->train + dataset hardening contracts
+# that were landed but not executed in any CI gate until this wave.
+tests/unit/test_runtime_bars_normalize.py
+tests/unit/test_agent14_dataset_integrity.py
+tests/unit/test_dataset_split_purge_bug244.py
+tests/unit/test_70d_dataset_parity_task3.py
