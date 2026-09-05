@@ -1800,3 +1800,14 @@ Verification: 24 unit tests in 3 files (2+12+8+8 ca) passing RC=0; ruff check+fo
   enter the same _OpenPosition ledger path as market fills; remaining pendings are
   reported honestly in ReplayRunResult.pending_orders / pending_order_count.
 
+
+## CHG-0064 - Walk-forward / purge / embargo / leakage deep forensic + hardening (2026-09-05, Agent 16)
+
+- AGENT: Agent 16 (Nexus-Main orchestrated) | ROLE: Walk-Forward / OOS / Purge / Embargo / Leakage Forensics
+- TASK: user brief 2026-09-05 (AGENT 16 WALK-FORWARD / OOS / PURGE / EMBARGO / LEAKAGE) - deep forensic + development + root-cause fix of the COMPLETE walk-forward + OOS validation system
+- SCOPE: src/nexus_scalp/research/{pipeline,walkforward,oos,splitting,backtest,leakage,metrics,registry,scoring}.py, src/nexus_scalp/training/walk_forward_trainer.py (read/verify), src/nexus_scalp/model_generation/{validation,benchmark,sequence,sequence_training}.py, src/nexus_scalp/model_lab/{evaluation,lab_runner,trainer,windowing,dataset_lab}.py (read/verify), src/nexus_scalp/adapters/mt5/mt5_adapter.py (tick/bar acquisition semantics cross-check, read-only), tests/unit/test_agent16_walkforward_purge_embargo_leakage.py (NEW), agents registries, docs/agent_handoffs/
+- BOUNDARIES: dataset acquisition fingerprinting (Agent 14 / CHG-0061) — mt5_tick_dataset.py is foreign; replay/streaming determinism (Agent 15 / CHG-0059 + Agent 18 / CHG-0062) — foreign; holdout/forward hard-gate mission (Agent 17 / CHG-0063) — foreign. This change owns ONLY the walk-forward/purge/embargo/benchmark-provenance seam; foreign WIP is never staged.
+- OBJECTIVES: (1) prove INFORMATION AVAILABLE AT T ONLY drives TRAIN/FEATURE/DECISION AT T; (2) FREEZE-BEFORE-MEASURE (fingerprint/dataset/boundaries/purge/embargo/seed); (3) BUG-183 re-verification (purge 300s/embargo 60s active on every consumer); (4) purge semantics (label-horizon overlap purge); (5) embargo exact boundaries (inclusive, no off-by-one/unit); (6) purge+embargo interaction = correct fold boundary; (7) MT5 official UTC semantics (bar/tick windowing); (8) bar/tick window boundary inclusivity; (9) temporal fold construction (gaps/duplicates/boundaries); (10) preprocessing leakage (per-fold scaler, never global); (11) feature/label/sequence leakage; (12) model-selection leakage (force=True audit); (13) metric integrity (no fabricated macro-F1); (14) OOS hard gate and evidence; (15) determinism
+- DEFECTS FIXED: D1 pipeline provenance forwarding (backtest.run + 3 _record_run sites -> purge/embargo now forwarded explicitly, not hardcoded 0.0); D2 benchmark fabricated metric (preds=labels fallback -> PREDICTION_ROW_MISMATCH error node, no fake perfect macro-F1)
+- CONSTRAINTS: every confirmed defect FIXED + regression test (FAIL-BEFORE/PASS-AFTER); no purge/embargo weakening; no threshold change; no OOS tuning; commit-per-step; beforePush quality gate; evidence-based findings only
+- STATUS: IMPLEMENTING
