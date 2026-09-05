@@ -354,13 +354,22 @@ def _spawn_daemon(cmd: list[str]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(str(os.getpid()))
     # Reparent via the same interpreter; the child runs foreground logic.
-    subprocess.Popen(
-        cmd,
-        shell=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=0x00000008,
-    )
+    if sys.platform == "win32":
+        subprocess.Popen(
+            cmd,
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=0x00000008,
+        )
+    else:
+        subprocess.Popen(
+            cmd,
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
     console.print(
         _success_panel(
             "Engine starting in background",
