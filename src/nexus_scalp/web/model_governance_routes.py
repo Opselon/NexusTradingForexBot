@@ -593,6 +593,8 @@ def register_model_governance_routes(app: Any) -> None:
                 )
                 from nexus_scalp.model_lifecycle.model_class_contract import (
                     LEGACY_HEAD_CLASSES as LEGACY_HEAD_CLASSES_243,
+                )
+                from nexus_scalp.model_lifecycle.model_class_contract import (
                     TRAINED_CLASS_COUNT as TRAINED_CLASS_COUNT_243,
                 )
 

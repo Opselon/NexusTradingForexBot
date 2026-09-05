@@ -21,11 +21,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nexus_scalp.model_generation.dataset_factory import (  # noqa: E402
-    DatasetFactory,
+from nexus_scalp.model_generation.dataset_factory import (
     DEFAULT_SPLIT_PURGE_BARS,
+    DatasetFactory,
 )
-from nexus_scalp.model_generation.sample_factory import (  # noqa: E402
+from nexus_scalp.model_generation.sample_factory import (
     SampleFactory,
     samples_to_frame,
 )
@@ -104,10 +104,6 @@ class TestSplitBoundaryPurge:
         # Layout: [ train ][ purged | val ][ purged | test ] — the integer
         # ordering of labels has a discontinuity at each boundary, so the
         # positional sequence is: train run, purged, val, purged, test.
-        seen = [
-            dict.fromkeys([k for k in g])
-            for _, g in __import__("itertools").groupby(frame["_split"].to_list())
-        ]
         # at least verify each block type appears in the correct phase
         flat = frame["_split"].to_list()
         assert flat[0] == "train" and flat[-1] == "test" and "purged" in flat

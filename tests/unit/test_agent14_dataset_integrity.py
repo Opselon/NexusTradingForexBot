@@ -34,7 +34,11 @@ from typing import Any
 
 import pytest
 
-from nexus_scalp.research.mt5_tick_dataset import MT5TickDataset
+from nexus_scalp.research.mt5_tick_dataset import (
+    DatasetCorruptionError,
+    DatasetIdentityError,
+    MT5TickDataset,
+)
 
 T0 = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
 END = T0 + timedelta(minutes=10)
@@ -229,7 +233,7 @@ def test_corrupt_meta_blocks_reacquire_same_id(tmp_path) -> None:
         _healthy_adapter(), symbol="XAUUSD", start=T0, end=END, chunk_minutes=60
     )
     (tmp_path / f"{ds_id}.meta.json").write_text("{CORRUPT", encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises((ValueError, RuntimeError)):
         ds.acquire_ticks(_healthy_adapter(), symbol="XAUUSD", start=T0, end=END, chunk_minutes=60)
 
 
@@ -270,7 +274,7 @@ def test_load_rejects_swapped_foreign_dataset(tmp_path) -> None:
     this_p = tmp_path / f"{ds_id}.parquet"
     backup = this_p.read_bytes()
     other_p.replace(this_p)
-    with pytest.raises(Exception):
+    with pytest.raises((ValueError, RuntimeError, DatasetIdentityError, DatasetCorruptionError)):
         ds.load(ds_id)
     this_p.write_bytes(backup)
 
@@ -287,7 +291,7 @@ def test_load_rejects_appended_row(tmp_path) -> None:
     extra = dict(frame.to_dicts()[0])
     extra["bid"] = 42.0
     pl.concat([frame, pl.DataFrame([extra])]).write_parquet(p)
-    with pytest.raises(Exception):
+    with pytest.raises((ValueError, RuntimeError, DatasetIdentityError, DatasetCorruptionError)):
         ds.load(ds_id)
 
 
@@ -302,7 +306,7 @@ def test_load_detects_manifest_record_count_mismatch(tmp_path) -> None:
     meta2 = dict(meta)
     meta2["records"] = meta["records"] + 7
     (tmp_path / f"{ds_id}.meta.json").write_text(json.dumps(meta2), encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises((ValueError, RuntimeError, DatasetIdentityError, DatasetCorruptionError)):
         ds.load(ds_id)
 
 
