@@ -364,6 +364,8 @@ class ResearchPipeline:
                 },
                 status="COMPLETED",
                 run_outcome="REJECTED",
+            purge_seconds=purge_seconds,
+            embargo_seconds=embargo_seconds,
             )
             return result
         if obs is not None:
@@ -411,6 +413,8 @@ class ResearchPipeline:
             strategy_id=sid,
             strategy_version=version,
             use_split=True,
+        purge_seconds=purge_seconds,
+        embargo_seconds=embargo_seconds,
         )
         bt_data = bt.model_dump(mode="json")
         bt_data["context_contract_hash"] = _ctx_hash
@@ -465,6 +469,8 @@ class ResearchPipeline:
                 },
                 status="COMPLETED",
                 run_outcome="REJECTED",
+            purge_seconds=purge_seconds,
+            embargo_seconds=embargo_seconds,
             )
             return result
         if obs is not None:
@@ -844,6 +850,8 @@ class ResearchPipeline:
             run_outcome=run_outcome,
             snapshot_id=fingerprint,
             gates=gate_ids,
+        purge_seconds=purge_seconds,
+        embargo_seconds=embargo_seconds,
         )
         if obs is not None:
             obs.record_event(
