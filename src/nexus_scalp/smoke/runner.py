@@ -1178,8 +1178,10 @@ class SmokeRunner:
     # ------------------------------------------------------------------
     def _layer_l3_runtime(self) -> None:
         try:
-            from scripts.ci.runtime_gate import Gate as _Gate
-            from scripts.ci.runtime_gate import run_stage as _run_stage
+            from scripts.ci.runtime_gate import Gate as _Gate  # type: ignore[import-untyped]
+            from scripts.ci.runtime_gate import (
+                run_stage as _run_stage,  # type: ignore[import-untyped]
+            )
         except Exception as _exc:
             _check(
                 self.report,
@@ -1249,7 +1251,7 @@ class SmokeRunner:
         # L6 decision cycle
         t0 = time.perf_counter()
         try:
-            from scripts.ci.runtime_gate import l6_decision_cycle
+            from scripts.ci.runtime_gate import l6_decision_cycle  # type: ignore[import-untyped]
 
             _run_stage(gate, "L6 DECISION CYCLE", l6_decision_cycle)
             last = gate.stages[-1]
@@ -1459,7 +1461,7 @@ class SmokeRunner:
             return
 
         def _restart():
-            from scripts.ci.runtime_gate import build_gate_engine
+            from scripts.ci.runtime_gate import build_gate_engine  # type: ignore[import-untyped]
 
             eng2, _, repo2 = build_gate_engine(
                 type(
