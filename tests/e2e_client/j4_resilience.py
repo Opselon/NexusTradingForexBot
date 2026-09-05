@@ -112,7 +112,7 @@ def run():
         # spam any visible refresh buttons on monitoring
         page.evaluate(
             """(() => { const btns = [...document.querySelectorAll('#tab-monitoring button')]
-                .filter(b => /refresh|reload/i.test(b.innerText)); 
+                .filter(b => /refresh|reload/i.test(b.innerText));
                 btns.slice(0,2).forEach(b => { for (let i=0;i<4;i++) b.click(); }); })()"""
         )
         page.wait_for_timeout(2500)

@@ -175,7 +175,7 @@ class TestLocalAssetsServed:
         "malicious",
         [
             "..%2f..%2f..%2fetc%2fpasswd",
-            "..\..\..\Windows\win.ini",
+            r"..\..\..\Windows\win.ini",
             "../../../../etc/passwd",
             "....//....//etc/passwd",
             "%2e%2e%2f%2e%2e%2fsecret.txt",

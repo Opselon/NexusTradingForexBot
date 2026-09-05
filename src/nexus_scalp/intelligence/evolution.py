@@ -167,33 +167,43 @@ class StrategyEvolutionEngine:
         """Returns (hypothesis text, parameter_delta) for the weakest dimension."""
         if dimension == "management":
             return (
-                "Strong thesis but weak position management. Hypothesis: tighter "
-                "profit protection (earlier partial close / trailing) should retain "
-                "more favourable excursion.",
+                (
+                    "Strong thesis but weak position management. Hypothesis: tighter "
+                    "profit protection (earlier partial close / trailing) should retain "
+                    "more favourable excursion."
+                ),
                 {"management": "tighter_trailing", "protection_trigger_r": 0.6},
             )
         if dimension == "exit":
             return (
-                "Weak exit capture. Hypothesis: a target-zone exit (rather than a "
-                "single TP) should capture a larger share of the favourable move.",
+                (
+                    "Weak exit capture. Hypothesis: a target-zone exit (rather than a "
+                    "single TP) should capture a larger share of the favourable move."
+                ),
                 {"exit_mode": "zone_exit", "capture_floor": 0.35},
             )
         if dimension == "entry":
             return (
-                "Weak entry timing. Hypothesis: requiring a slower confirmation "
-                "(extra confluence token) should reduce premature/whiplash entries.",
+                (
+                    "Weak entry timing. Hypothesis: requiring a slower confirmation "
+                    "(extra confluence token) should reduce premature/whiplash entries."
+                ),
                 {"entry_confluence_extra": 1},
             )
         if dimension == "execution":
             return (
-                "Execution degradation. Hypothesis: tightening the slippage guard "
-                "and avoiding adverse-fill regimes should improve realised fills.",
+                (
+                    "Execution degradation. Hypothesis: tightening the slippage guard "
+                    "and avoiding adverse-fill regimes should improve realised fills."
+                ),
                 {"execution": "tighter_slippage", "max_slippage_r": 0.15},
             )
         return (
-            "Strategy thesis not producing edge in this family. Hypothesis: "
-            "narrowing the accepted context (regime/session gating) may isolate "
-            "the profitable subset.",
+            (
+                "Strategy thesis not producing edge in this family. Hypothesis: "
+                "narrowing the accepted context (regime/session gating) may isolate "
+                "the profitable subset."
+            ),
             {"context_gate": "narrower"},
         )
 

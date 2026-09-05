@@ -154,8 +154,10 @@ def _snapshot_row(
     stamp = (ts or datetime.now(UTC)).strftime("%Y-%m-%d %H:%M:%S")
     audit._queue.put_nowait(
         (
-            "INSERT INTO audit_account_snapshots (timestamp, balance, equity, margin_free, peak_equity) "
-            "VALUES (?, ?, ?, ?, ?)",
+            (
+                "INSERT INTO audit_account_snapshots (timestamp, balance, equity, margin_free, peak_equity) "
+                "VALUES (?, ?, ?, ?, ?)"
+            ),
             (
                 stamp,
                 balance,

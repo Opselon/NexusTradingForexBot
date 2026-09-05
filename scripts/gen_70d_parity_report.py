@@ -238,8 +238,10 @@ def main() -> None:
         "",
         "## Detail",
         "",
-        "Full per-timestamp, per-dimension deltas: "
-        "`artifacts/validation/70d_liquidity_parity.json`.",
+        (
+            "Full per-timestamp, per-dimension deltas: "
+            "`artifacts/validation/70d_liquidity_parity.json`."
+        ),
         "",
     ]
     md_path.write_text("\n".join(lines), encoding="utf-8")

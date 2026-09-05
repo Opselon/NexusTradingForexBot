@@ -753,17 +753,27 @@ class AuditRepository:
         )
 
         for index_sql in (
-            "CREATE INDEX IF NOT EXISTS idx_exp_strategy_time "
-            "ON audit_experiences(strategy_id, decision_timestamp DESC);",
-            "CREATE INDEX IF NOT EXISTS idx_exp_symbol_time "
-            "ON audit_experiences(symbol, decision_timestamp DESC);",
+            (
+                "CREATE INDEX IF NOT EXISTS idx_exp_strategy_time "
+                "ON audit_experiences(strategy_id, decision_timestamp DESC);"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS idx_exp_symbol_time "
+                "ON audit_experiences(symbol, decision_timestamp DESC);"
+            ),
             "CREATE INDEX IF NOT EXISTS idx_exp_request ON audit_experiences(request_id);",
-            "CREATE INDEX IF NOT EXISTS idx_exp_schema "
-            "ON audit_experiences(feature_schema_id, feature_dimension);",
-            "CREATE INDEX IF NOT EXISTS idx_exp_outcome_key "
-            "ON audit_experience_outcomes(idempotency_key);",
-            "CREATE INDEX IF NOT EXISTS idx_exp_corrections_key "
-            "ON audit_experience_corrections(idempotency_key);",
+            (
+                "CREATE INDEX IF NOT EXISTS idx_exp_schema "
+                "ON audit_experiences(feature_schema_id, feature_dimension);"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS idx_exp_outcome_key "
+                "ON audit_experience_outcomes(idempotency_key);"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS idx_exp_corrections_key "
+                "ON audit_experience_corrections(idempotency_key);"
+            ),
         ):
             with contextlib.suppress(Exception):
                 conn.execute(index_sql)
@@ -962,8 +972,10 @@ class AuditRepository:
                 conn.execute(f"ALTER TABLE behavior_analysis ADD COLUMN {col_name} {col_type};")
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_ticket ON behavior_analysis(ticket);",
-            "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_version "
-            "ON behavior_analysis(behavior_version, anomaly_version);",
+            (
+                "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_version "
+                "ON behavior_analysis(behavior_version, anomaly_version);"
+            ),
             "CREATE INDEX IF NOT EXISTS idx_anomaly_events_ticket ON anomaly_events(ticket);",
             "CREATE INDEX IF NOT EXISTS idx_anomaly_events_type ON anomaly_events(anomaly_type);",
         ):

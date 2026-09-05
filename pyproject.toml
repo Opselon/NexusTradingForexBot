@@ -96,7 +96,13 @@ ignore = [
     "PLC0415", # Top-level imports (allow dynamic / conditional imports)
 ]
 
+
 [tool.ruff.lint.per-file-ignores]
+# Intentional long-lived handles (handler-owned stream, tee lifetime) — opt-in SIM115 only.
+"src/nexus_scalp/observability/logging.py" = ["SIM115"]
+"scripts/dev/pilot_70d_3class.py" = ["SIM115"]
+# Implicit concat in multi-line lists — opt-in ISC004; intentional list entries (see --select ISC).
+
 "NexusTradingForexBot.py" = ["E402"]
 "main.py" = ["E402"]
 "src/nexus_scalp/web/server.py" = ["RUF006", "E402"]

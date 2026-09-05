@@ -140,8 +140,10 @@ def _seed_closed_trade(
 def _snapshot(repo: AuditRepository, ts: datetime, balance: float, equity: float) -> None:
     repo._queue.put_nowait(
         (
-            "INSERT INTO audit_account_snapshots (timestamp, balance, equity, margin_free, peak_equity) "
-            "VALUES (?, ?, ?, ?, ?)",
+            (
+                "INSERT INTO audit_account_snapshots (timestamp, balance, equity, margin_free, peak_equity) "
+                "VALUES (?, ?, ?, ?, ?)"
+            ),
             (ts.strftime("%Y-%m-%d %H:%M:%S"), balance, equity, balance, max(balance, equity)),
         )
     )

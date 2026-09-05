@@ -129,9 +129,11 @@ class TestEquityCurveAndClosedHistory:
         ):
             audit._queue.put_nowait(  # type: ignore[attr-defined]
                 (
-                    "INSERT INTO audit_account_snapshots "
-                    "(timestamp, balance, equity, margin_free, peak_equity) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        "INSERT INTO audit_account_snapshots "
+                        "(timestamp, balance, equity, margin_free, peak_equity) "
+                        "VALUES (?, ?, ?, ?, ?)"
+                    ),
                     (stamp, bal, eq, bal, max(bal, eq)),
                 )
             )

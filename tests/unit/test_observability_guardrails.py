@@ -298,12 +298,14 @@ class TestAggregatorMetrics:
             [
                 sys.executable,
                 "-c",
-                "import pathlib;"
-                "hits = [str(p) for p in pathlib.Path('src').rglob('*.py')"
-                " if p.name not in ('contract_validator.py','selftest.py')"
-                " and 'metrics()' in p.read_text(errors='replace')"
-                " and 'event_aggregator' in p.read_text(errors='replace')];"
-                "print(hits)",
+                (
+                    "import pathlib;"
+                    "hits = [str(p) for p in pathlib.Path('src').rglob('*.py')"
+                    " if p.name not in ('contract_validator.py','selftest.py')"
+                    " and 'metrics()' in p.read_text(errors='replace')"
+                    " and 'event_aggregator' in p.read_text(errors='replace')];"
+                    "print(hits)"
+                ),
             ],
             capture_output=True,
             text=True,

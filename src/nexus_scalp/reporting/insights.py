@@ -372,12 +372,16 @@ def compute_health_score(report: ReportContainer) -> HealthScoreSection:
     total = max(0, min(100, total))
 
     rationale = [
-        f"profitability={profitability} (PF={_fmt(perf.profit_factor)}, "
-        f"expectancy={_fmt(perf.expectancy)})",
+        (
+            f"profitability={profitability} (PF={_fmt(perf.profit_factor)}, "
+            f"expectancy={_fmt(perf.expectancy)})"
+        ),
         f"risk={risk_component} (avg_loss={_fmt(abs(avg_loss))}, stop_share={_fmt(perf.stop_loss_share)})",
         f"consistency={consistency} (avgR={_fmt(report.r.average_r)}, Rstd={_fmt(report.r.r_std)})",
-        f"execution={execution} (fill={_fmt(exec_section.fill_ratio)}, "
-        f"latency={_fmt(exec_section.avg_latency_sec)}s)",
+        (
+            f"execution={execution} (fill={_fmt(exec_section.fill_ratio)}, "
+            f"latency={_fmt(exec_section.avg_latency_sec)}s)"
+        ),
         f"strategy_stability={stability} (strategies={len(strategies)})",
     ]
 

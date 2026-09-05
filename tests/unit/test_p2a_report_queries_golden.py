@@ -55,12 +55,14 @@ def _seed_signals(audit, now: datetime, n: int = 6) -> None:
         ts = now - timedelta(minutes=i)
         audit._queue.put_nowait(
             (
-                "INSERT INTO audit_signals "
-                "(request_id, symbol, action, confidence, proposed_entry, stop_loss, "
-                "take_profit, regime, generated_at, payload, execution_mode, "
-                "reason_code, decision_stage, blocked_by) "
-                "VALUES (?, 'XAUUSD', ?, ?, 0.0, 0.0, 0.0, 'TRENDING', ?, ?, "
-                "'STANDARD', '', 'FINAL_DECISION', ?)",
+                (
+                    "INSERT INTO audit_signals "
+                    "(request_id, symbol, action, confidence, proposed_entry, stop_loss, "
+                    "take_profit, regime, generated_at, payload, execution_mode, "
+                    "reason_code, decision_stage, blocked_by) "
+                    "VALUES (?, 'XAUUSD', ?, ?, 0.0, 0.0, 0.0, 'TRENDING', ?, ?, "
+                    "'STANDARD', '', 'FINAL_DECISION', ?)"
+                ),
                 (
                     f"req_{i}_{ts.timestamp()}",
                     "SELL" if i % 2 else "BUY",
@@ -79,11 +81,13 @@ def _seed_orders(audit, now: datetime, n: int = 4) -> None:
         ts = now - timedelta(minutes=i)
         audit._queue.put_nowait(
             (
-                "INSERT INTO audit_orders "
-                "(ticket, order_id, symbol, action, price, stop_loss, take_profit, "
-                "volume, reason, latency, execution_mode, timestamp) "
-                "VALUES (?, ?, 'XAUUSD', 'BUY_MARKET', 2000.0, 1990.0, 2020.0, 1.0, "
-                "?, ?, 'STANDARD', ?)",
+                (
+                    "INSERT INTO audit_orders "
+                    "(ticket, order_id, symbol, action, price, stop_loss, take_profit, "
+                    "volume, reason, latency, execution_mode, timestamp) "
+                    "VALUES (?, ?, 'XAUUSD', 'BUY_MARKET', 2000.0, 1990.0, 2020.0, 1.0, "
+                    "?, ?, 'STANDARD', ?)"
+                ),
                 (
                     100 + i,
                     f"ord_{i}_{ts.timestamp()}",

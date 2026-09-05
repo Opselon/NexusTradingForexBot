@@ -131,10 +131,12 @@ class TestExitCodeContract:
             [
                 sys.executable,
                 "-c",
-                "import sys; sys.argv=['runtime_gate'];"
-                f"sys.path.insert(0, r'{GATE.parent}');"
-                "import runtime_gate as rg;"
-                "raise SystemExit(rg.EXIT_INTERNAL_GATE_ERROR)",
+                (
+                    "import sys; sys.argv=['runtime_gate'];"
+                    f"sys.path.insert(0, r'{GATE.parent}');"
+                    "import runtime_gate as rg;"
+                    "raise SystemExit(rg.EXIT_INTERNAL_GATE_ERROR)"
+                ),
             ],
             capture_output=True,
             text=True,

@@ -249,10 +249,12 @@ def _seed_signal(
     )
     audit._queue.put_nowait(
         (
-            "INSERT INTO audit_signals "
-            "(request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, "
-            "regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by) "
-            "VALUES (?, 'XAUUSD', ?, ?, 0.0, 0.0, 0.0, 'TRENDING_MOMENTUM', ?, ?, 'STANDARD', '', 'FINAL_DECISION', ?)",
+            (
+                "INSERT INTO audit_signals "
+                "(request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, "
+                "regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by) "
+                "VALUES (?, 'XAUUSD', ?, ?, 0.0, 0.0, 0.0, 'TRENDING_MOMENTUM', ?, ?, 'STANDARD', '', 'FINAL_DECISION', ?)"
+            ),
             (
                 f"req_{action}_{ts.timestamp()}",
                 action,
@@ -271,9 +273,11 @@ def _seed_order(
 ) -> None:
     audit._queue.put_nowait(
         (
-            "INSERT INTO audit_orders "
-            "(ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, timestamp) "
-            "VALUES (1, ?, 'XAUUSD', 'BUY_MARKET', 2000.0, 1990.0, 2020.0, 1.0, ?, ?, 'STANDARD', ?)",
+            (
+                "INSERT INTO audit_orders "
+                "(ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, timestamp) "
+                "VALUES (1, ?, 'XAUUSD', 'BUY_MARKET', 2000.0, 1990.0, 2020.0, 1.0, ?, ?, 'STANDARD', ?)"
+            ),
             (f"ord_{ts.timestamp()}", reason, latency, ts.isoformat()),
         )
     )

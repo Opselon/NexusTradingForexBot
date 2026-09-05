@@ -142,8 +142,10 @@ class IncidentTelegramNotifier:
             f"🧩 <b>Component:</b> <code>{d['component']}</code>",
             f"📌 <b>Symptom:</b> <code>{d['operation']}</code>",
             f"🔬 <b>Root cause:</b> {d['root_cause_status']}",
-            f"📊 <b>Impact:</b> {d['impact']['affected_trades']} trades / "
-            f"{d['impact']['affected_records']} records",
+            (
+                f"📊 <b>Impact:</b> {d['impact']['affected_trades']} trades / "
+                f"{d['impact']['affected_records']} records"
+            ),
         ]
         if d["correlation_id"]:
             lines.append(f"🔗 <b>Correlation ID:</b> <code>{d['correlation_id']}</code>")

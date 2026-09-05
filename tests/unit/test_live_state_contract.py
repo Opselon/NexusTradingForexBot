@@ -300,8 +300,13 @@ class _NumpyArray:
         return list(self._v)
 
 
-class _EmptyEngine(_FakeEngine):
-    """Engine with NO live state (offline / no tick yet)."""
+class _EmptyEngine(_FakeEngine):  # pylint: disable=too-few-public-methods
+    """Engine with NO live state (offline / no tick yet).
+
+    Deliberately re-assigns the parent fixture attrs to their "empty"
+    variants (overwritten-inherited-attribute is intentional here: the
+    subclass simulates an offline engine on top of the live-state fake).
+    """
 
     def __init__(self):
         super().__init__()

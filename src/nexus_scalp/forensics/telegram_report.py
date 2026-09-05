@@ -88,8 +88,10 @@ def build_report_text(rec: Any, *, mode: str = "", symbol: str = "") -> str:
     lines = [
         "NSE FORENSIC HEALTH",
         f"Overall: {rec.overall}",
-        f"Critical: {rec.critical_count} | Warning: {rec.warning_count} | "
-        f"Degraded: {rec.degraded_count} | Unknown: {rec.unknown_count}",
+        (
+            f"Critical: {rec.critical_count} | Warning: {rec.warning_count} | "
+            f"Degraded: {rec.degraded_count} | Unknown: {rec.unknown_count}"
+        ),
     ]
     if mode:
         lines.append(f"Mode: {mode}")
