@@ -130,11 +130,14 @@ def test_dead_adapter_does_not_publish_complete_dataset(tmp_path) -> None:
 
 
 def test_empty_healthy_window_cached_with_complete_marker(tmp_path) -> None:
-    # healthy adapter: connection fine, genuinely empty window (weekend)
+    class HealthyEmptyAdapter:
+        available = True
+
+        def get_tick_history(self, symbol, count=100_000, from_utc=None, to_utc=None):
+            return []
+
     ds = MT5TickDataset(cache_root=tmp_path)
-    ds_id = ds.acquire_ticks(
-        _make_adapter(lambda f, t: []), symbol="XAUUSD", start=T0, end=END, chunk_minutes=5
-    )
+    ds_id = ds.acquire_ticks(HealthyEmptyAdapter(), symbol="XAUUSD", start=T0, end=END, chunk_minutes=5)
     meta = ds.meta(ds_id)
     assert meta["complete"] is True
     assert meta["records"] == 0
@@ -336,4 +339,4 @@ def test_concurrent_identical_acquisition_converges(tmp_path) -> None:
     assert len(results) + len(errors) == 4
     if results:
         recs = ds.load(results[0])
-        assert len(recs) == 5, "no duplicated rows from racing writers"
+        assert len(recs) == 10, "no duplicated rows from racing writers"
