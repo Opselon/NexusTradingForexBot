@@ -241,6 +241,27 @@ jobs:
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" pytest "$rc" "see pytest/junit.xml + pytest.txt" || true
           exit 0
 
+      # -------- Whole-application SMOKE CHAIN (one-file E2E heartbeat) --------
+      # SMOKE-E2E: the full engine chain (tick -> 50D -> 70D -> ScalpNet ->
+      # policy -> risk -> paper dispatch -> audit DB -> FastAPI v1) in a single
+      # hermetic file. Runs SEQUENTIALLY (no xdist) so its pretty stage banners
+      # stay readable in the log; every push gets this whole-system signal
+      # even though the critical suite itself is already green.
+      - name: End-to-end smoke chain
+        id: smoke
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/smoke"
+          pytest tests/e2e/test_smoke_chain.py \
+                 -q --tb=short \
+                 --junitxml="$CI_RESULTS_DIR/smoke/junit.xml" \
+                 > "$CI_RESULTS_DIR/smoke/pytest.txt" 2>&1
+          rc=$?
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" smoke "$rc" "whole-app smoke chain (tests/e2e/test_smoke_chain.py)" || true
+          exit 0
+
       # -------- Coverage status (derived from the same pytest run above) --------
       - name: Coverage report
         id: coverage
@@ -448,7 +469,7 @@ jobs:
                       return json.load(fh)
               except Exception:
                   return {}
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "coverage"]
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage"]
           details = []
           status = "passed"
           for c in checks:
@@ -492,7 +513,7 @@ jobs:
           python - <<'PY'
           import json, os
           root = os.environ["CI_RESULTS_DIR"]
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "coverage", "runtime_gate"]
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "runtime_gate"]
           statuses = {}
           for name in checks:
               p = os.path.join(root, "run-info", f"{name}.json")
