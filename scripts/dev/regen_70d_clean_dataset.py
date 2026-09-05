@@ -62,6 +62,7 @@ from nexus_scalp.model_generation.schema_v2 import (
     verify_70d_artifact,
 )
 from nexus_scalp.model_generation.sequence import SequenceBuilder
+from nexus_scalp.model_generation.temporal_contract import CANONICAL_MAX_GAP_US
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.scripts.regen_70d_clean_dataset")
@@ -70,7 +71,15 @@ logger = get_logger("nexus_scalp.scripts.regen_70d_clean_dataset")
 NO_TRADE_STRIDE_BARS = 2
 #: Canonical temporal contract (temporal_contract / sequence.py SEQUENCE_CONTRACT).
 SEQ_LEN = 32
-MAX_GAP_US = 15 * 60 * 1_000_000  # SequenceContract.MAX_GAP_US (15 minutes)
+#: BUG-246 (Agent-2 dataset forensics 2026-09-05): bind the window gap
+#: constant to the canonical SSoT instead of a local 15-minute literal. The
+#: original build tree shipped MAX_GAP_US=900_000_000 here while
+#: temporal_contract declares CANONICAL_MAX_GAP_US=600_000_000, so the
+#: manifest recorded 900000000 while artifact metadata stamps 600000000 - a
+#: silent two-value contract. No delta on the 100k M1 history falls in
+#: (600s, 900s], so the authoritative artifact is unaffected; the SSoT import
+#: prevents divergence on future rebuilds.
+MAX_GAP_US = CANONICAL_MAX_GAP_US
 PURGE_BARS = 15
 EMBARGO_BARS = 15
 SEED = 42
