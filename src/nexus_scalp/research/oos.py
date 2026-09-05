@@ -74,7 +74,39 @@ class OOSGate:
                 if filtered:
                     dataset_for_eval = dataset.model_copy(update={"samples": filtered})
                 else:
+                    # AGENT 17 (CHG-0063) hard-gate: a declared context
+                    # contract that matches ZERO samples must FAIL the
+                    # gate — never silently fall back to the global
+                    # population. The pipeline path already raises
+                    # CONTEXT_CONTRACT_EMPTY_POPULATION before reaching
+                    # this gate; this closes the same hole for DIRECT
+                    # OOSGate.evaluate callers, where the old fallback
+                    # evaluated (and could PASS) on a population the
+                    # strategy never declared (false-PASS repro: 100
+                    # London-negative + 20 Asian-positive tail + typo
+                    # session contract -> PASS 0.73R wrong population).
                     context_diag["sufficient_evidence"] = False
+                    logger.error(
+                        "[OOS] event=CONTEXT_CONTRACT_EMPTY_POPULATION",
+                        strategy_id=strategy_id,
+                        total_samples=len(dataset.samples),
+                    )
+                    return OOSResult(
+                        strategy_id=strategy_id,
+                        strategy_version=strategy_version,
+                        dataset_id=dataset.dataset_id,
+                        in_sample_expectancy_r=0.0,
+                        oos_expectancy_r=0.0,
+                        oos_samples=0,
+                        oos_win_rate=0.0,
+                        status="FAIL",
+                        reason=(
+                            "CONTEXT_CONTRACT_EMPTY_POPULATION: declared "
+                            "context matched 0 samples; global population "
+                            "refused (no silent widening)"
+                        ),
+                        context_diagnostics=context_diag,
+                    )
 
         split = split_temporal(
             dataset_for_eval,
