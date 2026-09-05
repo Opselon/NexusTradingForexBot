@@ -8131,3 +8131,98 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
 - ROOT CAUSE: commit 37ae4d31 (CodeQL py/unsafe-cyclic-import batch) converted the module-level `from nexus_scalp.shadow.replay import VERDICT_*` to lazy aliased imports (_VI/_VR/_VS) and aliased 3 of the 4 return branches; the final noise-band fallback return kept the bare module-level name, which no longer exists at runtime (TYPE_CHECKING-only). Path-unexercised defect: the three aliased branches mask the fourth in casual runs; only the noise-band branch (small resolved-pair counts) hits it.
 - FIX: line 269 `"verdict": _VI,` — same aliased constant as the other branches; byte-safe single-anchor edit, py_compile clean, probe-verified before (NameError reproduced with pairs_resolved=50, mean=-0.005, median=0.001) and after (verdict INSUFFICIENT_EVIDENCE returned).
 - Tests: tests/unit/test_shadow_replay_evidence_chg0047.py full file re-run GREEN after fix (was 2 FAILED before). Class lesson (extends BUG-182A): a lazy-import refactor that aliases constants must grep EVERY use site of each moved name in the same file; mypy catches undefined names only if the branch is type-reachable, not if it is rarely executed.
+
+## BUG-243 - Champion registry: stale direct-CHAMPION row `t70d_v1_full` (2026-09-05, AGENT-3, INV-015)
+
+- SYMPTOM: `t70d_v1_full` (scalp_v3/70D on the live bundle, fingerprint `c8c0b5b06d4c094d`) was created via direct `set_status(CHAMPION)` outside the governed `VERIFY -> APPROVED -> CHAMPION` promotion transaction. Live `ModelLifecycleRegistry.champion()` returned the foreign id `t70d_v1_full` as production champion, masking the governed identity `primary_scalp_scalp_v1_50d` and sidestepping OOS/robustness gates.
+- ROOT CAUSE: `_sync_champion_registry_state` compared ONLY `artifact_path`; a foreign row on the same path with a contradictory `(schema_id, dimension)` contract was treated as `already_truthful` (NOOP).
+- FIX: Added `LiveEngine._evaluate_champion_registry_sync()` as the pure contract-aware decision (verifies full `(path, schema_id, dimension)` triple; returns `REPAIR`/`NOOP`/`BOOTSTRAP`). `_sync_champion_registry_state` ROUTES that decision: `REPAIR -> CHAMPION->ARCHIVED` demotion of the stale row (append-only demotion, never a delete per §45) by `ModelLifecycleRegistry.set_status(ARCHIVED)` before `ModelRegistry.register_model()` + synchronous flush of the truthful serving row. Immediate DB remediation: row `id=4015` `t70d_v1_full` moved `CHAMPION->ARCHIVED` with `REGISTRY_REPAIRED` governance event `ev_agent3_*` (previous_state=CHAMPION, new_state=ARCHIVED, actor=agent-3). No promotion bypassed, no artifact written.
+- TESTS: `tests/unit/test_agent3_champion_registry_sync.py` (3) — NOOP on truthful row, REPAIR on mismatched-contract foreign row, BOOTSTRAP with no rows (`tests/critical_suite.txt` `agent3-champion-registry-sync`); regression suite co-run: forensics/governance checks `Model/Governance` MUST stay `PASS` at PR.
+- FORENSICS: before `SELECT lifecycle_status FROM experience_model_registry WHERE id=4015 -> CHAMPION`, after -> `ARCHIVED`; governance `REGISTRY_REPAIRED` row + `ModelLifecycleRegistry.champion() == primary_scalp_scalp_v1_50d` verified.
+- RISK/HANDOFF: The pivot bytes mirror t70d_v1_full (same underlying hash); future hardening: `set_status(CHAMPION)` should itself enforce `verify_candidate eligible + approval_token` upstream, or a DB trigger disallowing CHAMPION outside `execute_promotion_transaction`.
+
+
+
+## BUG-239 - RiskEngine.evaluate_proposal crashed with UnboundLocalError on the micro-account + insufficient-margin path AND the trailing micro-account exception could resurrect a margin-refused volume (2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: equity<50 proposal with margin_free ~0 raised
+  `UnboundLocalError: cannot access local variable 'slippage_usd'` at the
+  success log (risk_engine.py ~line 522) instead of returning None; the
+  same tail re-applied `symbol_info.volume_min` AFTER the free-margin
+  guard had zeroed the volume, i.e. the micro exception bypassed the
+  margin check entirely (crash masked the resurrection in most paths).
+- ROOT CAUSE: slippage_usd only bound inside the Almgren-Chriss impact
+  while-loop; when the loop never runs (volume below broker minimum)
+  the success log still references it. The micro-exception reapply had
+  no margin re-verification.
+- FIX: slippage_usd initialized to 0.0 before the loop; micro exception
+  only rescues an impact-reduced positive volume and re-verifies the
+  rescue keeps required margin <= margin_free; a volume zeroed by the
+  margin/exposure guards stays zeroed (fail-closed, structured
+  MICRO_ACCOUNT_*_REJECTED reasons).
+- EVIDENCE: FAIL-BEFORE probe reproduced the crash exactly
+  (equity=40, margin_free=0.001); PASS-AFTER returns None;
+  micro+margin-ok still returns 0.01. Commit 152e8ebe.
+- REGRESSION: tests/unit/test_agent11_execution_risk_forensic.py
+  TestBug239MicroAccountMarginHole (4 tests).
+- INVARIANTS: INV-003 preserved/strengthened (risk authoritative,
+  fail-closed).
+
+## BUG-240 - MAX_TOTAL_EXPOSURE gate was symbol-scoped, not engine-wide (2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: with one engine position open on EURUSD, a dispatch for
+  XAUUSD succeeded -> two concurrent engine positions with an
+  engine-wide cap of 1 (executable paper-fixture repro).
+- ROOT CAUSE: OrderLifecycleManager._is_exposure_available counted
+  `count_total_exposure(symbol=symbol)` although its own docstring and
+  the signals/policy.py gate declare the limit engine-wide.
+- FIX: gate counts count_total_exposure(symbol=None); per-symbol
+  breakdown retained for block-reason logging. Commit ad06738f.
+- REGRESSION: TestBug240EngineWideExposure (3 tests).
+- INVARIANTS: INV-004 last-line-of-defence semantics restored.
+
+## BUG-241 - SAFE_MODE circuit breaker dead on the primary dispatch path (2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: the 3-consecutive-rejection breaker existed only in
+  execute_order (hedge path). dispatch_order (the ONLY primary entry
+  path) never checked global_state and never fed the counter: broker
+  refusals could not open the circuit and SAFE_MODE could not block
+  primary dispatches. No active kill-switch callers exist either.
+- FIX: dispatch_order blocks with [ENTRY_BLOCKED] layer=SAFE_MODE +
+  terminal NOT_DISPATCHED experience outcome when the circuit is open;
+  feeds _consecutive_failures on market AND pending refusals;
+  transitions to SAFE_MODE at 3; resets on success (parity with
+  execute_order). Commit ad06738f.
+- REGRESSION: TestBug241SafeModePrimaryPath (3 tests).
+- INVARIANTS: INV-003/INV-004 strengthened; no threshold changed.
+
+## BUG-242 - Web operator close/modify endpoints bypassed OrderLifecycleManager (INV-004 violation; 2026-09-05, Agent-11 execution/risk forensic)
+
+- SYMPTOM: POST /api/positions/close and /api/positions/modify called
+  engine.adapter.* directly - the only broker-mutation surface outside
+  the manager (repo-wide call-site census). No audit order row, no exit
+  mechanism (autopsy attribution gap), no cache release, no SAFE_MODE /
+  SHADOW boundary checks on the mutation.
+- FIX: OrderLifecycleManager.close_position_manual(ticket) tags
+  ExitMechanism.MANUAL_CLOSE BEFORE the broker call, writes an audit
+  log_order row (execution_mode=MANUAL) on success, releases the ticket
+  from the live tickets cache, rolls the mechanism tag back on refusal;
+  modify_position_manual mirrors this with a MANUAL audit row. Web
+  routes now resolve engine.order_manager and call the wrappers
+  (manager unavailable -> HTTP 400 fail-closed). Commit d0a9b6d4.
+- REGRESSION: TestBug242ManualActionAuthority (4 tests, incl. black-box
+  TestClient probe asserting the adapter is never called directly).
+- INVARIANTS: INV-004 now holds for 100% of reachable broker-mutation
+  call sites; INV-012 preserved (MANUAL_CLOSE is evidence-backed).
+
+## CHG-0064 registry cross-reference - Agent-11 execution/risk deep forensic wave (2026-09-05)
+
+- Change entry CHG-0064 (agents/change_control.md) and taskboard row
+  TASK-AGENT11-EXEC-RISK document the full Agent-11 wave: BUG-239/240/241/242
+  fixes + regression suite tests/unit/test_agent11_execution_risk_forensic.py
+  (14 tests) + clean verdicts for the remaining audit surface (dispatch
+  idempotency, ambiguous-fill recovery, pending cause-aware recovery,
+  broker-truth reconciliation, SHADOW boundary, 60-scenario router actions).
+- Commits: 152e8ebe (BUG-239), ad06738f (BUG-240+241), d0a9b6d4 (BUG-242),
+  plus this registry commit.
+
