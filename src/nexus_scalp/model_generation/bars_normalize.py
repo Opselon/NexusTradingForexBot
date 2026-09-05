@@ -73,8 +73,15 @@ def _parse_time_value(v: Any) -> datetime | None:
         s = v.strip()
         if not s:
             return None
+        # AGENT-16 W2: handle BOTH trailing-Z shapes — "…Z" (true UTC
+        # marker) and "…+00:00Z" (double-tz artifact from
+        # isoformat()+"Z" concatenation, which some exporters emit).
         if s.endswith("Z"):
-            s = s[:-1] + "+00:00"
+            base = s[:-1]
+            if base.endswith("+00:00") or base.endswith("-00:00") or base.endswith("Z"):
+                s = base  # strip the redundant Z; keep the numeric offset
+            else:
+                s = s[:-1] + "+00:00"
         try:
             dt = datetime.fromisoformat(s)
         except ValueError:
@@ -99,13 +106,16 @@ def _resolve_time_expr(lf: pl.LazyFrame) -> pl.Expr | None:
         dtype = schema[cand]
         col = pl.col(cand)
         if dtype in (pl.String, pl.Categorical):
-            s = pl.col(cand).str.strip_chars()
-            s = (
-                pl.when(s.str.ends_with("Z"))
-                .then(s.str.slice(0, s.str.len_chars() - 1))
-                .otherwise(s)
+            # AGENT-16 W2 FINAL: user string formats are unknowable (ISO with
+            # or without Z / tz, locale variants, garbage). Polars format
+            # inference RAISES ComputeError on mixed/garbage input even with
+            # strict=False, so parse ROW-WISE via _parse_time_value (ISO
+            # first, then common fallbacks; garbage -> None -> dropped):
+            # honest cleaning, never a crash.
+            return pl.col(cand).map_elements(
+                _parse_time_value,
+                return_dtype=pl.Datetime("us", "UTC"),
             )
-            return s.str.to_datetime(time_zone="UTC", strict=False, format="%Y-%m-%dT%H:%M:%S%z")
         if dtype == pl.Date:
             return col.cast(pl.Datetime("us")).dt.replace_time_zone("UTC")
         if dtype == pl.Int64 and cand == "time" and schema.get("time_utc") is None:
