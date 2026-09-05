@@ -80,14 +80,18 @@ def _get_adapter() -> Any:
 
     a = DirectMT5Adapter()
     if not a.connect():
-        raise RuntimeError("MT5 DirectMT5Adapter.connect() failed — is the terminal running and logged into Demo?")
+        raise RuntimeError(
+            "MT5 DirectMT5Adapter.connect() failed — is the terminal running and logged into Demo?"
+        )
     # Demo guard: refuse live accounts at startup unless explicitly allowed.
     try:
         snap = a.get_account_snapshot()
         trade_mode = getattr(snap, "trade_mode", None)
         if trade_mode == 2 and not _allow_live:  # 2 == Real
             a.disconnect()
-            raise RuntimeError("Refusing to serve a REAL account. Use --allow-live to override (not recommended for tests).")
+            raise RuntimeError(
+                "Refusing to serve a REAL account. Use --allow-live to override (not recommended for tests)."
+            )
     except RuntimeError:
         raise
     except Exception:
@@ -310,7 +314,9 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
                             "ticket": int(getattr(s, "ticket", 0) or 0),
                             "symbol": str(getattr(s, "symbol", "") or symbol or ""),
                             "type": str(getattr(s, "type", "") or ""),
-                            "volume": float(getattr(s, "volume", 0) or getattr(s, "volume_current", 0) or 0.0),
+                            "volume": float(
+                                getattr(s, "volume", 0) or getattr(s, "volume_current", 0) or 0.0
+                            ),
                             "price_open": float(getattr(s, "price_open", 0) or 0.0),
                         }
                     )
@@ -364,7 +370,9 @@ async def execute(
     # HMAC verification — mirrors remote_gateway._send_request / verify_request_signature
     exp_key, secret = _expected_keys()
     if not x_nse_timestamp or not x_nse_signature:
-        return JSONResponse({"status": "FAILED", "message": "missing auth headers"}, status_code=401)
+        return JSONResponse(
+            {"status": "FAILED", "message": "missing auth headers"}, status_code=401
+        )
     # Timestamp skew check (accept both seconds and ms forms; client uses seconds)
     try:
         ts_raw = x_nse_timestamp.strip()
@@ -393,13 +401,17 @@ async def execute(
     action = str(parsed.get("action") or "").strip()
     payload = parsed.get("payload") or {}
     if not isinstance(payload, dict):
-        return JSONResponse({"status": "FAILED", "message": "payload must be object"}, status_code=400)
+        return JSONResponse(
+            {"status": "FAILED", "message": "payload must be object"}, status_code=400
+        )
     if not action:
         return JSONResponse({"status": "FAILED", "message": "action required"}, status_code=400)
 
     # Windows-only execution path; Linux returns a clear 503 so CLI/tests stay green.
     if sys.platform != "win32":
-        return JSONResponse({"status": "FAILED", "message": "gateway server runs only on Windows"}, status_code=503)
+        return JSONResponse(
+            {"status": "FAILED", "message": "gateway server runs only on Windows"}, status_code=503
+        )
 
     try:
         adapter = _get_adapter()
@@ -412,13 +424,19 @@ async def execute(
         # except PING which is always OK.
         return JSONResponse(result, status_code=200)
     except Exception as exc:  # pragma: no cover - broker edge
-        return JSONResponse({"status": "FAILED", "message": f"handler error: {exc}"}, status_code=500)
+        return JSONResponse(
+            {"status": "FAILED", "message": f"handler error: {exc}"}, status_code=500
+        )
 
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
     if sys.platform != "win32":
-        return {"status": "DEGRADED", "reason": "gateway runs only on Windows", "platform": sys.platform}
+        return {
+            "status": "DEGRADED",
+            "reason": "gateway runs only on Windows",
+            "platform": sys.platform,
+        }
     try:
         a = _get_adapter()
         snap = a.get_account_snapshot()

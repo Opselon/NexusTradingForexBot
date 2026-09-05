@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -38,7 +37,9 @@ def gateway_serve(
     port: int = typer.Option(8080, "--port", help="Listen port."),
     api_key: str | None = typer.Option(None, "--api-key", help="Override NSE_GATEWAY_API_KEY."),
     secret: str | None = typer.Option(None, "--secret", help="Override NSE_GATEWAY_SECRET."),
-    allow_live: bool = typer.Option(False, "--allow-live", help="Allow serving a REAL account (not Demo)."),
+    allow_live: bool = typer.Option(
+        False, "--allow-live", help="Allow serving a REAL account (not Demo)."
+    ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
 ) -> None:
     """Start the Windows Gateway Server (requires MT5 terminal on Demo).
@@ -51,7 +52,14 @@ def gateway_serve(
         if json_mode:
             _emit({"error": msg, "platform": sys.platform, "exit_code": xc.EXIT_RUNTIME}, True)
         else:
-            console.print(_error_panel("Windows only", msg, hint="Run this on your Windows PC with MT5.", exit_code=xc.EXIT_RUNTIME))
+            console.print(
+                _error_panel(
+                    "Windows only",
+                    msg,
+                    hint="Run this on your Windows PC with MT5.",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
         raise typer.Exit(xc.EXIT_RUNTIME)
 
     # Env overrides for this process only (do not mutate caller's env beyond serve lifetime)
@@ -62,13 +70,21 @@ def gateway_serve(
 
     # Demo guard is enforced inside gateway.server._get_adapter, but surface early.
     try:
-        from nexus_scalp.gateway.server import app as gateway_asgi, set_allow_live  # noqa: WPS433 (lazy import)
+        from nexus_scalp.gateway.server import app as gateway_asgi
+        from nexus_scalp.gateway.server import set_allow_live
     except Exception as exc:
         msg = f"Gateway import failed: {exc}"
         if json_mode:
             _emit({"error": msg, "exit_code": xc.EXIT_RUNTIME}, True)
         else:
-            console.print(_error_panel("Gateway import failed", msg, hint="Check Python 3.11 + dependencies.", exit_code=xc.EXIT_RUNTIME))
+            console.print(
+                _error_panel(
+                    "Gateway import failed",
+                    msg,
+                    hint="Check Python 3.11 + dependencies.",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
         raise typer.Exit(xc.EXIT_RUNTIME) from exc
 
     set_allow_live(bool(allow_live))
@@ -83,7 +99,14 @@ def gateway_serve(
         if json_mode:
             _emit({"error": msg, "exit_code": xc.EXIT_RUNTIME}, True)
         else:
-            console.print(_error_panel("MT5 not ready", msg, hint="Start MT5 and log into your Demo account, then retry.", exit_code=xc.EXIT_RUNTIME))
+            console.print(
+                _error_panel(
+                    "MT5 not ready",
+                    msg,
+                    hint="Start MT5 and log into your Demo account, then retry.",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
         raise typer.Exit(xc.EXIT_RUNTIME) from exc
 
     if json_mode:
@@ -113,15 +136,17 @@ def gateway_serve(
 
 @gateway_app.command("status")
 def gateway_status(
-    url: str = typer.Option("http://127.0.0.1:8080", "--url", help="Gateway URL (e.g. http://WINDOWS_IP:8080)."),
+    url: str = typer.Option(
+        "http://127.0.0.1:8080", "--url", help="Gateway URL (e.g. http://WINDOWS_IP:8080)."
+    ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
 ) -> None:
     """Check whether a Gateway Server is reachable (works from Linux)."""
     import hashlib
     import hmac
     import time as _time
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     api_key = os.environ.get("NSE_GATEWAY_API_KEY", "default_local_key")
     secret = os.environ.get("NSE_GATEWAY_SECRET", "default_local_secret")
@@ -130,13 +155,20 @@ def gateway_status(
 
     def _hmac_headers(body: bytes) -> dict[str, str]:
         ts = str(int(_time.time()))
-        sig = hmac.new(secret.encode(), msg=f"{ts}.".encode() + body, digestmod=hashlib.sha256).hexdigest()
-        return {"Content-Type": "application/json", "X-NSE-API-KEY": api_key, "X-NSE-TIMESTAMP": ts, "X-NSE-SIGNATURE": sig}
+        sig = hmac.new(
+            secret.encode(), msg=f"{ts}.".encode() + body, digestmod=hashlib.sha256
+        ).hexdigest()
+        return {
+            "Content-Type": "application/json",
+            "X-NSE-API-KEY": api_key,
+            "X-NSE-TIMESTAMP": ts,
+            "X-NSE-SIGNATURE": sig,
+        }
 
     # 1) Try /health (unauthenticated, server health)
     health: dict[str, Any] | None = None
     try:
-        with urllib.request.urlopen(f"{base}/health", timeout=5) as resp:  # noqa: S310 (controlled URL)
+        with urllib.request.urlopen(f"{base}/health", timeout=5) as resp:
             health = json.loads(resp.read().decode("utf-8") or "{}")
     except Exception:
         health = None
@@ -146,8 +178,13 @@ def gateway_status(
     ping_body = json.dumps({"action": "PING", "payload": {}}).encode()
     ping_err: str | None = None
     try:
-        req = urllib.request.Request(f"{base}/api/v1/execute", data=ping_body, headers=_hmac_headers(ping_body), method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
+        req = urllib.request.Request(
+            f"{base}/api/v1/execute",
+            data=ping_body,
+            headers=_hmac_headers(ping_body),
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")
             ping_ok = data.get("status") == "OK"
             if not ping_ok:
@@ -162,14 +199,25 @@ def gateway_status(
         ping_err = str(exc)[:300]
 
     ok = bool(ping_ok)
-    result: dict[str, Any] = {"url": base, "health": health, "ping_ok": ping_ok, "ping_error": ping_err}
+    result: dict[str, Any] = {
+        "url": base,
+        "health": health,
+        "ping_ok": ping_ok,
+        "ping_error": ping_err,
+    }
 
     if json_mode:
         _emit(result, True)
 
     if ok:
         if not json_mode:
-            console.print(_success_panel("Gateway reachable", f"{base} — PING OK\n{json.dumps(health or {}, indent=2)}", border="green"))
+            console.print(
+                _success_panel(
+                    "Gateway reachable",
+                    f"{base} — PING OK\n{json.dumps(health or {}, indent=2)}",
+                    border="green",
+                )
+            )
         return
     # Degraded but health reachable = still useful
     if health is not None:
@@ -184,9 +232,20 @@ def gateway_status(
         return
 
     if not json_mode:
-        console.print(_error_panel("Gateway unreachable", f"{base} — no /health and no PING.\nerror: {ping_err}", hint="Is the Windows Gateway running? Check host/port/firewall.", exit_code=xc.EXIT_RUNTIME))
+        console.print(
+            _error_panel(
+                "Gateway unreachable",
+                f"{base} — no /health and no PING.\nerror: {ping_err}",
+                hint="Is the Windows Gateway running? Check host/port/firewall.",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
     raise typer.Exit(xc.EXIT_RUNTIME)
 
 
 # Register on the canonical app at import time (same pattern as other sub-apps).
-app.add_typer(gateway_app, name="gateway", help="Windows MT5 bridge server for the existing Linux gateway client (Demo by default).")
+app.add_typer(
+    gateway_app,
+    name="gateway",
+    help="Windows MT5 bridge server for the existing Linux gateway client (Demo by default).",
+)
