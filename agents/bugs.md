@@ -8225,3 +8225,26 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
 - Commits: 152e8ebe (BUG-239), ad06738f (BUG-240+241), d0a9b6d4 (BUG-242),
   plus this registry commit.
 
+
+## BUG-243 - Champion registry: stale direct-CHAMPION row `t70d_v1_full` (2026-09-05, AGENT-3, INV-015)
+
+- SYMPTOM: `t70d_v1_full` (scalp_v3/70D on the live bundle, fingerprint `c8c0b5b06d4c094d`) was created via direct `set_status(CHAMPION)` outside the governed `VERIFY -> APPROVED -> CHAMPION` promotion transaction. `ModelLifecycleRegistry.champion()` returned the foreign id `t70d_v1_full` as production champion, masking the governed identity `primary_scalp_scalp_v1_50d`.
+- ROOT CAUSE: `_sync_champion_registry_state` compared ONLY `artifact_path`; a foreign row on the same path with a contradictory `(schema_id, dimension)` contract was treated as `already_truthful` (NOOP).
+- FIX: Added `LiveEngine._evaluate_champion_registry_sync()` as the pure contract-aware decision (verifies full `(path, schema_id, dimension)` triple). `_sync_champion_registry_state` ROUTES that decision: `REPAIR -> CHAMPION->ARCHIVED` demotion (append-only, never deleted) BEFORE re-stamping the truthful serving row. Immediate DB remediation: row `id=4015` `t70d_v1_full` moved `CHAMPION->ARCHIVED` with appended `REGISTRY_REPAIRED` event.
+- TESTS: `tests/unit/test_agent3_champion_registry_sync.py` (3, red-before/green-after); ruff/mypy/py_compile clean.
+
+
+## BUG-244 - bar-mode replay phantom TP for SELL: `ev.low <= TP >= ev.low` degenerates to `TP >= low` (CRITICAL, Agent 15)
+
+- SEVERITY: CRITICAL (bar-mode backtest/replay phantom exits) | STATUS: FIXED
+- SURFACE: src/nexus_scalp/research/streaming_replay.py:900 (StreamingReplayEngine._process_event bar branch, SELL TP containment)
+- ROOT CAUSE: the SELL TP check used the Python chained comparison `ev.low <= state.open_pos.take_profit >= ev.low`, which operator-precedence collapses to `take_profit >= ev.low`. For a SELL with TP above a bar's high, the check still returned True (TP >= low), firing a phantom TP exit at a level the bar never reached. Mirror case BUY never diverged (it correctly used `ev.high >= TP >= ev.low`).
+- IMPACT: every SELL with TP above any subsequent bar's high before TP was reached exited prematurely at TP with fabricated PnL (e.g. gap-down bar [2600,2610] AFTER entry @2652.5 with TP=2640: bar never reached 2640, but phantom TP exit recorded +50 USD; profit_factor / expectancy / win_rate / drawdown all fabricated).
+- FIX: `ev.low <= take_profit <= ev.high` — the exact mirror of the BUY branch (symmetric containment). Single comparison operator, zero other behavior.
+- REGRESSION: tests/unit/test_agent15_bug244_bar_sell_tp_containment.py (4 tests):
+  1. gap-down phantom SELL TP above bar high — NO phantom exit post-fix (RED->GREEN: phantom present pre-fix),
+  2. SL-first tie-break intact for SELL (both levels inside range -> SL wins at SL level),
+  3. BUY branch regression guard (BUY SL containment unchanged),
+  4. deterministic ledger_hash guard (same bars + same run_id -> identical ledger_hash).
+- COMMIT: 3f5bef2d (single-line operator correction) +Regression landed by Agent 15; parallel Agent-18 LIMIT pending-queue work (CHG-0062) developed concurrently on the same file but fixes a disjoint invariant.
+- RISK/HANDOFF: none for execution — bar-mode replay is a research-only path. Live dispatch untouched. Agent-18's LIMIT pending-queue hardening (CHG-0062) and any other 3f5bef2d+ research changes should keep this containment fix; ensure `take_profit <= ev.high` is not regressed by the absorption carrier (this fix survived 2 overwrites; committed atomically).
