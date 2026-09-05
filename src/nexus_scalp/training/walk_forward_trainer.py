@@ -245,7 +245,12 @@ class WalkForwardTrainer:
         self.min_rows_per_train_split = int(min_rows_per_train_split)
         self.min_rows_per_test_split = int(min_rows_per_test_split)
         self.min_class_ratio = float(min_class_ratio)
-        self.focal_gamma = 1.0  # Reduced gamma from 2.0 to 1.0 for small-buffer stability
+        # AGENT-3 LEARNFIX-2: the constructor declares focal_gamma as a
+        # tuning parameter (docs/model_lab mirror 2.0), but this line used
+        # to hard-code 1.0, silently discarding the caller value. Honor
+        # the constructor argument; the declared default (2.0) now applies
+        # and the historical 1.0 remains available by passing it explicitly.
+        self.focal_gamma = float(focal_gamma)
         self.label_smoothing = float(label_smoothing)
         self.use_oversampling = bool(use_oversampling)
         # ---------------------------------------------------------------------
