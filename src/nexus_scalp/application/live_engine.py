@@ -5136,8 +5136,47 @@ class LiveEngine:
                 )
             return
 
+        # AGENT-8 BUG-243 (runtime forensics 2026-09-05): defensive row-width
+        # filter immediately before the DataFrame materialization boundary.
+        # The width guard above is check-then-use: the buffer is APPEND-ONLY
+        # and a restart with a DIFFERENT champion width (50D <-> 70D hot-swap)
+        # leaves mixed-width rows in the deque. polars unions heterogeneous
+        # dicts BY NAME, materializing the missing columns as None (proven:
+        # probe -> feat_50..feat_69 nulls), and neither _validate_training_frame
+        # (labels only) nor _filter_trainable_rows (label_evaluated/is_purged
+        # only) inspects feature nulls. The trainer's nan_to_num then silently
+        # trains on zero-fabricated rows - the exact "invalid record becomes
+        # zero-fill" class the record-builder invariant forbids, entering via
+        # the DATAFRAME boundary instead of the builder. Guard = keep only
+        # rows whose feat_* width matches the bound trainer contract.
+        if self._rolling_feature_records:
+            _widths = {
+                sum(1 for k in r if str(k).startswith("feat_"))
+                for r in self._rolling_feature_records
+            }
+            if len(_widths) > 1:
+                _expected = int(self.trainer.num_features)
+                _before = len(self._rolling_feature_records)
+                self._rolling_feature_records = deque(
+                    (
+                        r
+                        for r in self._rolling_feature_records
+                        if sum(1 for k in r if str(k).startswith("feat_")) == _expected
+                    ),
+                    maxlen=_before,
+                )
+                logger.warning(
+                    "[ONLINE_TRAIN] event=BUFFER_WIDTH_FILTER dropped=%s kept=%s "
+                    "expected_width=%s widths_seen=%s (mixed-width rows would "
+                    "have become None->0.0 fabrications in the training frame)",
+                    _before - len(self._rolling_feature_records),
+                    len(self._rolling_feature_records),
+                    _expected,
+                    sorted(_widths),
+                )
+
         if (
-            self._bars_since_last_retrain >= self._retrain_interval_bars
+            self._bars_since_last_retrain
             and len(self._rolling_feature_records) >= 300
             and not self._retrain_inflight
         ):
