@@ -166,7 +166,9 @@ Notes:
 - **A3 — `research/mt5_tick_dataset.py:acquire_bars:465` must validate+dedup before caching.**
   Insert between `records` build and `fp = dataset_fingerprint(...)` (≈ `mt5_tick_dataset.py:495`):
   ```python
-  records, dedupe_report, invalid_report = clean_bar_records(records)  # dedupe by timestamp (keep last), drop high<low, non-finite, volume<0; outlier spike check
+  records, dedupe_report, invalid_report = clean_bar_records(
+      records
+  )  # dedupe by timestamp (keep last), drop high<low, non-finite, volume<0; outlier spike check
   meta["dropped_invalid_ohlc"] = invalid_report
   meta["deduped_timestamps"] = dedupe_report
   ```
