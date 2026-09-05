@@ -136,8 +136,18 @@ class OOSGate:
         degradation = compute_relative_degradation(in_exp, oos_exp)
 
         oos_samples = len(split.oos)
+        # BUG-244 (Agent 13): an OOS window with rows but ZERO finite real
+        # evidence previously PASSED on fabricated 0.0 expectancy.
+        oos_had_finite = oos_bt.total_trades > 0
         reasons: list[str] = []
         passed = oos_exp >= self.min_oos_expectancy_r
+        if oos_had_finite:
+            pass
+        elif oos_samples > 0:
+            passed = False
+            reasons.append(
+                "No OOS evidence: OOS holds samples but zero finite R rows (non-finite evidence)"
+            )
         if not passed:
             reasons.append(
                 f"OOS expectancy {oos_exp:.4f}R below minimum {self.min_oos_expectancy_r}R"
