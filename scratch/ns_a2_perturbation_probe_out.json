@@ -1,0 +1,75 @@
+{
+ "probe": "ns_a2_perturbation_probe",
+ "schema_hash_runtime": "235b8fccc96b7e0e",
+ "schema_hash_manifest": "235b8fccc96b7e0e",
+ "schema_hash_match": true,
+ "dataset_sha256": "3ae687eaaa1f32a64c6d8acc1ab92d4ab9bceb0949d11cfe9e83ea852e3260fe",
+ "dataset_sha256_match": true,
+ "dup_sample_ids": 0,
+ "dup_timestamps": 0,
+ "eval_rows": 26947,
+ "eval_purged_overlap": 0,
+ "eval_label_counts": [
+  {
+   "label": 0,
+   "count": 14898
+  },
+  {
+   "label": 1,
+   "count": 6261
+  },
+  {
+   "label": 2,
+   "count": 5788
+  }
+ ],
+ "trainable_rows": 26947,
+ "trainable_label_share": {
+  "2": 0.21479199910936284,
+  "1": 0.23234497346643412,
+  "0": 0.552863027424203
+ },
+ "schema_ids": [
+  "scalp_v3"
+ ],
+ "symbols": [
+  "XAUUSD"
+ ],
+ "timeframes": [
+  "M1"
+ ],
+ "news_all_zero_share": 1.0,
+ "news_absmax": 0.0,
+ "liq_absmax": 3.0,
+ "liq_saturation_share_at3": 0.45302563384227484,
+ "base_absmax": 3.0,
+ "base_saturation_share_at3": 0.033821863806455486,
+ "nonfinite_total": 0,
+ "gap_census": {
+  "deltas_gt_600s": 76,
+  "deltas_gt_900s": 76,
+  "deltas_in_600_900_band": 0,
+  "largest_gap_min": 3180.0
+ },
+ "scaler_vs_eval_mean_maxabs": 1.5306263811964982e-07,
+ "bundle_head_shape": [
+  4,
+  32
+ ],
+ "bundle_input_shape": [
+  128,
+  70
+ ],
+ "meta_num_classes": 3,
+ "meta_head_classes": 3,
+ "meta_declares_dataset_id": false,
+ "meta_declares_git_commit": false,
+ "meta_smoke": false,
+ "meta_production_eligible": true,
+ "meta_label_origin": "CLEAN_HISTORICAL",
+ "bundle_sha16": "c8c0b5b06d4c094d",
+ "scaler_std_min": 0.0010000000474974513,
+ "scaler_std_max": 2.6994152069091797,
+ "contract_production_eligible": true,
+ "mask_wait_logit_zeroes_slot3": true
+}
