@@ -80,7 +80,21 @@ def split_temporal(
     removed from train (they leak future label info). Embargo: samples whose
     DECISION falls within `embargo_seconds` after the boundary are dropped from
     validation too.
+
+    BUG-244 (Agent 13): negative purge/embargo raise ValueError. The
+    comparison chains (`> 0`) treated a negative value exactly like 0.0,
+    silently DISABLED the leakage guards. Explicit 0.0 stays legal.
     """
+    if purge_seconds < 0:
+        raise ValueError(
+            f"split_temporal: negative purge_seconds={purge_seconds} would "
+            "silently disable the leakage guard; pass 0.0 explicitly to opt out"
+        )
+    if embargo_seconds < 0:
+        raise ValueError(
+            f"split_temporal: negative embargo_seconds={embargo_seconds} would "
+            "silently disable the leakage guard; pass 0.0 explicitly to opt out"
+        )
     ordered = _sorted(list(dataset.samples))
     n = len(ordered)
     if n == 0:
@@ -191,7 +205,20 @@ def walk_forward_folds(
 
     The dataset is sliced into fixed-size blocks; every fold has at least one
     full training block BEFORE its validation window (never an empty train).
+
+    BUG-244 (Agent 13): negative purge/embargo raise ValueError (same
+    class as split_temporal). Explicit 0.0 stays legal; only negatives fail.
     """
+    if purge_seconds < 0:
+        raise ValueError(
+            f"walk_forward_folds: negative purge_seconds={purge_seconds} would "
+            "silently disable the leakage guard; pass 0.0 explicitly to opt out"
+        )
+    if embargo_seconds < 0:
+        raise ValueError(
+            f"walk_forward_folds: negative embargo_seconds={embargo_seconds} would "
+            "silently disable the leakage guard; pass 0.0 explicitly to opt out"
+        )
     ordered = _sorted(list(dataset.samples))
     n = len(ordered)
     # Block size: divide into (n_splits + 2) segments so every fold gets
