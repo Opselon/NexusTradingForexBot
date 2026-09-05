@@ -50,7 +50,11 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 
-from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
+from nexus_scalp.adapters.mt5 import mt5_adapter as _mt5_adapter
+from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
+
+# Copy immutable flag at import time — avoids py/import-of-mutable-attribute
+HAS_NATIVE_MT5: bool = bool(_mt5_adapter.HAS_NATIVE_MT5)
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.observability.logging import configure_logging, get_logger
