@@ -75,6 +75,14 @@ app.add_typer(
     name="api",
     help="Query the versioned /api/v1 platform of a running engine.",
 )
+# SMOKE — production E2E layered verification (brief sections 17/26)
+from nexus_scalp.cli.smoke_commands import smoke_app as _smoke_app  # noqa: E402
+
+app.add_typer(
+    _smoke_app,
+    name="smoke",
+    help="Production E2E smoke (layered runtime verification).",
+)
 
 
 def _resolve_facade_seam(name: str, default: Any) -> Any:

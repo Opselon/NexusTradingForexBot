@@ -1883,3 +1883,12 @@ Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regr
   offline-enforcement contract, CSV-absent skip contract, 16-way cache isolation,
   suite-manifest completeness CI check) are registered on the taskboard row
   TASK-W2-ECO-GATING for the next wave.
+
+## CHG-SMOKE-E2E-V2 - Production-Grade E2E Smoke Test (2026-09-05, Nexus-Main)
+
+- AGENT: Nexus-Main (orchestrator) | TASK: User TRUTH-GATED mission - Production hardening of E2E Runtime verification - from basic health set to high-signal operational gate. Single prod-grade layered certification answering "Can repo be safely started, exercised, observed, stopped, preserving contracts?"
+- SCOPE: src/nexus_scalp/smoke/ (new package: coverage_matrix 237 entries + 12 neg + result_contract redaction/budgets/human summary + runner 1180 lines, 13 layers) + src/nexus_scalp/cli/smoke_commands.py [Typer subapp: smoke --fast/--full/--runtime/--safety/--report --json --evidence] + src/nexus_scalp/cli/app_factory.py [addTyper smoke_app] + .github/workflows/ci.yml [fast tier lane in quality] + agents/E2E_SMOKE_TEST.md [canonical operator guide] + tests/unit/test_smoke_self.py [13 regressions]
+- FEATURES: L0 static/L1 contracts/L2 integration (real Tick->50D->70D->ScalpNet->Policy->Risk->Accounting)/L3 runtime (REAL LiveEngine isolated, PAPER, disposable DBs)/L4 safety (12 neg injections)/lifecycle/dataflow/hotpath/authority/identity/determinism/budgets/taxonomy. No mocks, deterministic synthetics, no live trading, seam-tripwire, secret redaction.
+- SAFETY: PAPER adapter only, disposable DBs, isolated settings, offline, no order_send (proved), secrets never emitted.
+- MEASURED: fast ~2s, full ~17s, self-suite 13 tests. Layers: 40 fast, 42 full; 12 safety PASS.
+- STATUS: IMPLEMENTING -> VERIFIED (offline) -> READY_FOR_REVIEW
