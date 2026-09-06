@@ -30,6 +30,7 @@ import json
 import math
 import time
 from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -220,8 +221,11 @@ class _TicketStateDictView:
     # --- presence helper ---------------------------------------------------
     def _present(self, st: Any) -> bool:
         try:
-            return getattr(st, self._field) != self._default
+            return bool(getattr(st, self._field) != self._default)
         except Exception:
+            # Explicit fallback: a record that cannot be probed counts as
+            # ABSENT (mirrors the original dict-miss semantics). Returning
+            # the caller default is the documented read contract above.
             return False
 
     # --- read surface ------------------------------------------------------
@@ -253,10 +257,10 @@ class _TicketStateDictView:
     def values(self) -> list[Any]:
         return [self[t] for t in self.keys()]
 
-    def items(self):
+    def items(self) -> list[tuple[int, Any]]:
         return [(t, self[t]) for t in self.keys()]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[int]:
         return iter(self.keys())
 
     def __len__(self) -> int:
@@ -626,142 +630,142 @@ class OrderLifecycleManager:
 
 # --- P0 seam S5: dict views over TicketStateStore (generated) ---
     @property
-    def _entry_prices(self) -> dict:
+    def _entry_prices(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_price (S5)."""
         return _TicketStateDictView(self._states, "entry_price")
 
 
     @property
-    def _entry_sls(self) -> dict:
+    def _entry_sls(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_sl (S5)."""
         return _TicketStateDictView(self._states, "entry_sl")
 
 
     @property
-    def _entry_tps(self) -> dict:
+    def _entry_tps(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_tp (S5)."""
         return _TicketStateDictView(self._states, "entry_tp")
 
 
     @property
-    def _last_known_volume(self) -> dict:
+    def _last_known_volume(self) -> _TicketStateDictView:
         """Live dict view over TicketState.last_known_volume (S5)."""
         return _TicketStateDictView(self._states, "last_known_volume")
 
 
     @property
-    def _initial_risks(self) -> dict:
+    def _initial_risks(self) -> _TicketStateDictView:
         """Live dict view over TicketState.initial_risk (S5)."""
         return _TicketStateDictView(self._states, "initial_risk")
 
 
     @property
-    def _entry_expected_price(self) -> dict:
+    def _entry_expected_price(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_expected_price (S5)."""
         return _TicketStateDictView(self._states, "entry_expected_price")
 
 
     @property
-    def _entry_atr(self) -> dict:
+    def _entry_atr(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_atr (S5)."""
         return _TicketStateDictView(self._states, "entry_atr")
 
 
     @property
-    def _entry_spread(self) -> dict:
+    def _entry_spread(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_spread (S5)."""
         return _TicketStateDictView(self._states, "entry_spread")
 
 
     @property
-    def _entry_fill_latency_ms(self) -> dict:
+    def _entry_fill_latency_ms(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_fill_latency_ms (S5)."""
         return _TicketStateDictView(self._states, "entry_fill_latency_ms")
 
 
     @property
-    def _last_modify_sl(self) -> dict:
+    def _last_modify_sl(self) -> _TicketStateDictView:
         """Live dict view over TicketState.last_modify_sl (S5)."""
         return _TicketStateDictView(self._states, "last_modify_sl")
 
 
     @property
-    def _entry_reasons(self) -> dict:
+    def _entry_reasons(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_reason (S5)."""
         return _TicketStateDictView(self._states, "entry_reason")
 
 
     @property
-    def _entry_confidences(self) -> dict:
+    def _entry_confidences(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_confidence (S5)."""
         return _TicketStateDictView(self._states, "entry_confidence")
 
 
     @property
-    def _entry_regimes(self) -> dict:
+    def _entry_regimes(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_regime (S5)."""
         return _TicketStateDictView(self._states, "entry_regime")
 
 
     @property
-    def _entry_directions(self) -> dict:
+    def _entry_directions(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_direction (S5)."""
         return _TicketStateDictView(self._states, "entry_direction")
 
 
     @property
-    def _entry_order_ids(self) -> dict:
+    def _entry_order_ids(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_order_id (S5)."""
         return _TicketStateDictView(self._states, "entry_order_id")
 
 
     @property
-    def _sl_modified_flags(self) -> dict:
+    def _sl_modified_flags(self) -> _TicketStateDictView:
         """Live dict view over TicketState.sl_modified (S5)."""
         return _TicketStateDictView(self._states, "sl_modified")
 
 
     @property
-    def _partial_closed_tickets(self) -> dict:
+    def _partial_closed_tickets(self) -> _TicketStateDictView:
         """Live dict view over TicketState.partial_closed (S5)."""
         return _TicketStateDictView(self._states, "partial_closed")
 
 
     @property
-    def _rescue_registered_tickets(self) -> dict:
+    def _rescue_registered_tickets(self) -> _TicketStateDictView:
         """Live dict view over TicketState.rescue_registered (S5)."""
         return _TicketStateDictView(self._states, "rescue_registered")
 
 
     @property
-    def _closed_tickets(self) -> dict:
+    def _closed_tickets(self) -> _TicketStateDictView:
         """Live dict view over TicketState.is_closed (S5)."""
         return _TicketStateDictView(self._states, "is_closed")
 
 
     @property
-    def _entry_timestamps(self) -> dict:
+    def _entry_timestamps(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_timestamp (S5)."""
         return _TicketStateDictView(self._states, "entry_timestamp")
 
 
     @property
-    def _forced_exit_mechanisms(self) -> dict:
+    def _forced_exit_mechanisms(self) -> _TicketStateDictView:
         """Live dict view over TicketState.forced_exit_mechanism (S5)."""
         return _TicketStateDictView(self._states, "forced_exit_mechanism")
 
     @property
-    def _net_pnl_by_ticket(self) -> dict:
+    def _net_pnl_by_ticket(self) -> _TicketStateDictView:
         """Live dict view over TicketState.net_pnl (S5)."""
         return _TicketStateDictView(self._states, "net_pnl")
 
     @property
-    def _exit_mechanism_by_ticket(self) -> dict:
+    def _exit_mechanism_by_ticket(self) -> _TicketStateDictView:
         """Live dict view over TicketState.exit_mechanism (S5)."""
         return _TicketStateDictView(self._states, "exit_mechanism")
 
     @property
-    def _exit_pending_final_reason(self) -> dict:
+    def _exit_pending_final_reason(self) -> _TicketStateDictView:
         """Live dict view over TicketState.exit_pending_final (S5)."""
         return _TicketStateDictView(self._states, "exit_pending_final")
 
@@ -3026,7 +3030,8 @@ class OrderLifecycleManager:
                 if regime is not None:
                     return str(getattr(regime, "value", regime))
                 return str(regime_state)
-        return self._entry_regimes.get(ticket, "")
+        fallback = self._entry_regimes.get(ticket, "")
+        return str(fallback)
 
     def _estimate_liquidation_impact(
         self,
@@ -3043,127 +3048,127 @@ class OrderLifecycleManager:
         return _estimate_liquidation_impact(volume, symbol_info, atr, self.eta_coefficient)
 
     @property
-    def _last_tick_for_ticket(self) -> dict:
+    def _last_tick_for_ticket(self) -> dict[int, Any]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._last_tick_for_ticket
 
     @property
-    def _last_tick_timestamps(self) -> dict:
+    def _last_tick_timestamps(self) -> dict[int, datetime]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._last_tick_timestamps
 
     @property
-    def _time_in_profit_sec(self) -> dict:
+    def _time_in_profit_sec(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._time_in_profit_sec
 
     @property
-    def _time_in_drawdown_sec(self) -> dict:
+    def _time_in_drawdown_sec(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._time_in_drawdown_sec
 
     @property
-    def _peak_profit_usd(self) -> dict:
+    def _peak_profit_usd(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._peak_profit_usd
 
     @property
-    def _peak_drawdown_usd(self) -> dict:
+    def _peak_drawdown_usd(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._peak_drawdown_usd
 
     @property
-    def _lsf_state(self) -> dict:
+    def _lsf_state(self) -> dict[int, dict[str, float]]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._lsf_state
 
     @property
-    def _last_seen_ts(self) -> dict:
+    def _last_seen_ts(self) -> dict[int, datetime]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._last_seen_ts
 
     @property
-    def _stagnation_ticks(self) -> dict:
+    def _stagnation_ticks(self) -> dict[int, int]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._stagnation_ticks
 
     @property
-    def _adverse_ticks(self) -> dict:
+    def _adverse_ticks(self) -> dict[int, int]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._adverse_ticks
 
     @property
-    def _favorable_ticks(self) -> dict:
+    def _favorable_ticks(self) -> dict[int, int]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._favorable_ticks
 
     @property
-    def _last_price_tracker(self) -> dict:
+    def _last_price_tracker(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._last_price_tracker
 
     @property
-    def _mfe_tracker(self) -> dict:
+    def _mfe_tracker(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._mfe_tracker
 
     @property
-    def _mae_tracker(self) -> dict:
+    def _mae_tracker(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._mae_tracker
 
     @property
-    def _time_to_mfe_sec(self) -> dict:
+    def _time_to_mfe_sec(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._time_to_mfe_sec
 
     @property
-    def _time_to_mae_sec(self) -> dict:
+    def _time_to_mae_sec(self) -> dict[int, float]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._time_to_mae_sec
 
     @property
-    def _reversal_events(self) -> dict:
+    def _reversal_events(self) -> dict[int, list[dict[str, Any]]]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._reversal_events
 
     @property
-    def _entry_probs(self) -> dict:
+    def _entry_probs(self) -> dict[int, dict[str, float]]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._entry_probs
 
     @property
-    def _entry_regime_state(self) -> dict:
+    def _entry_regime_state(self) -> dict[int, str]:
         """Compatibility accessor — live tracking dict owned by the ledger."""
         return self._tracking._entry_regime_state
 
     @property
-    def _hold_score_tracker(self) -> dict:
+    def _hold_score_tracker(self) -> dict[int, int]:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._hold_score_tracker
 
     @property
-    def _base_hold_score_tracker(self) -> dict:
+    def _base_hold_score_tracker(self) -> dict[int, int]:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._base_hold_score_tracker
 
     @property
-    def _last_reasons_tracker(self) -> dict:
+    def _last_reasons_tracker(self) -> dict[int, list[str]]:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._last_reasons_tracker
 
     @property
-    def _last_hold_eval_time(self) -> dict:
+    def _last_hold_eval_time(self) -> dict[int, float]:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._last_hold_eval_time
 
     @property
-    def _last_telemetry_time(self) -> dict:
+    def _last_telemetry_time(self) -> dict[int, float]:
         """Compatibility accessor — live throttle dict owned by TelemetryThrottle."""
         return self._telemetry._last_telemetry_time
 
     @property
-    def _live_tickets_cache(self) -> dict:
+    def _live_tickets_cache(self) -> dict[int, dict[str, Any]]:
         """Compatibility accessor — live cache dict owned by TicketsCache.
         Writers must use _tickets_cache.swap()/pop_ticket() under
         _live_tickets_lock; readers get the live dict (web/debug parity)."""
@@ -4963,8 +4968,8 @@ class OrderLifecycleManager:
         min_stop_gap: float,
         symbol_info: SymbolInfo | None,
         hold_score: int,
-        smart_metrics: dict,
-        evidence: dict,
+        smart_metrics: dict[str, Any],
+        evidence: dict[str, Any],
         debounced_state: "PositionState",
         invalidate_reasons: list[str],
         regime_state: Any | None = None,
@@ -5117,7 +5122,7 @@ class OrderLifecycleManager:
         spread: float,
         probs: Any | None,
         feature_vector: FeatureVector | None,
-    ) -> tuple[dict, dict, float, "PositionState", bool]:
+    ) -> tuple[dict[str, Any], dict[str, Any], float, "PositionState", bool]:
         """TRACKING/EVIDENCE/STATE STAGE (S6-escalation): trajectory step,
         pnl-features, adaptive evidence scores, recovery-budget evaluation on
         drawdown, candidate-state derivation, and hysteresis debounce. Moved
@@ -5169,7 +5174,7 @@ class OrderLifecycleManager:
         feature_vector: FeatureVector | None,
         impact_price_delta: float,
         atr: float,
-        smart_metrics: dict,
+        smart_metrics: dict[str, Any],
     ) -> tuple[int, list[str], int]:
         """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
         evaluation + position-state recalculation + giveback override +
@@ -5420,9 +5425,9 @@ class OrderLifecycleManager:
         spread: float,
         min_stop_gap: float,
         symbol_info: SymbolInfo | None,
-        smart_metrics: dict,
-        evidence: dict,
-        pnl_features: dict,
+        smart_metrics: dict[str, Any],
+        evidence: dict[str, Any],
+        pnl_features: dict[str, Any],
         probs: Any | None,
         feature_vector: FeatureVector | None,
         regime_state: Any | None,
@@ -5681,7 +5686,7 @@ class OrderLifecycleManager:
     def _autopsy_vanished_ticket(
         self,
         dead_ticket: int,
-        history_deals: list,
+        history_deals: list[dict[str, Any]],
         symbol: str,
         now: datetime,
         current_tick: TickData,
@@ -6227,7 +6232,7 @@ class OrderLifecycleManager:
                 return 0
 
             # Ticket -> aggregated deal evidence (partial closes merge into one).
-            ticket_deals: dict[int, list[dict]] = {}
+            ticket_deals: dict[int, list[dict[str, Any]]] = {}
             for d in history_deals:
                 pt = d.get("position_ticket")
                 if pt is not None:
