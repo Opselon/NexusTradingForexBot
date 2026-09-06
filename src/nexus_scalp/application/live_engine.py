@@ -3546,9 +3546,11 @@ class LiveEngine:
             or []
         )
 
-        # Fetch 3500 M1 bars (3500 M1 bars = 14.5 H4 bars) to populate full M1/H1/H4 aggregations
+        # Fetch 20000 M1 bars (~14 days) to populate full M1..MN1 aggregations.
+        # 20000 covers SMA200 on M1 and gives H1/H4/D1/W1 real resampled history
+        # so the technicals card shows values (not Neutral-gaps) on every TF.
         hist_m1_bars = (
-            await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", 3500) or []
+            await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", 20000) or []
         )
 
         # RESYNC (BUG-054): reseed the aggregator with the broker-authoritative
@@ -3629,7 +3631,7 @@ class LiveEngine:
     async def _resync_from_broker(self, symbol: str) -> None:
         """Broker-authoritative reseed after downtime / reconnect (BUG-054).
 
-        * Re-fetches 3500 M1 bars (or the engine's configured chart window).
+        * Re-fetches 20000 M1 bars (~14 days, or the engine's configured chart window).
         * Reseeds the aggregator (duplicate/stale minutes are dropped and the
           forming bar continues the broker's latest minute).
         * Recomputes the feature window so models/regime see a continuous
@@ -3637,7 +3639,7 @@ class LiveEngine:
         * Pushes a fresh 900-bar snapshot + SMC overlays to ServerState so the
           UI immediately paints real broker candles.
         """
-        chart_count = 3500
+        chart_count = 20000
         hist_m1 = (
             await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", chart_count)
             or []

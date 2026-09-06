@@ -73,19 +73,29 @@ def awesome_signal_from_bars(bars) -> str:
 
 
 def macd_signal_pair(prices, signal_period: int = 9):
-    """Returns (macd_t, signal_t): EMA12-EMA26 and EMA(MACD,9), Spec A7."""
-    from nexus_scalp.indicators.calculators import _ema as _e
+    """Returns (macd_t, signal_t): EMA12-EMA26 and EMA(MACD,9), Spec A7.
 
+    Single-pass streaming EMA (O(n)): seeds EMA12/EMA26 with SMA over the
+    first 12/26 closes, then updates per bar. MACD series starts at bar 26;
+    signal seeds with SMA over the first `signal_period` MACD points.
+    """
     if len(prices) < 26 + signal_period - 1:
         return None, None
-    macds = []
-    for i in range(26, len(prices) + 1):
-        prefix = prices[:i]
-        e12 = _e(prefix, 12)
-        e26 = _e(prefix, 26)
-        if e12 is None or e26 is None:
-            continue
-        macds.append(e12 - e26)
+    k12 = 2.0 / 13.0
+    k26 = 2.0 / 27.0
+    # stream e12 from bar 12 -> end, e26 from bar 26 -> end
+    e12_by_bar: dict[int, float] = {}
+    cur12 = sum(prices[:12]) / 12
+    e12_by_bar[11] = cur12
+    for i in range(12, len(prices)):
+        cur12 = prices[i] * k12 + cur12 * (1 - k12)
+        e12_by_bar[i] = cur12
+    macds: list[float] = []
+    cur26 = sum(prices[:26]) / 26
+    for i in range(25, len(prices)):
+        if i > 25:
+            cur26 = prices[i] * k26 + cur26 * (1 - k26)
+        macds.append(e12_by_bar[i] - cur26)
     if not macds:
         return None, None
     if len(macds) < signal_period:
