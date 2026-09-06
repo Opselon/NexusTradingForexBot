@@ -234,7 +234,7 @@
         : code === 'RESOURCE_UNAVAILABLE' ? 'No bar history yet\u2026'
         : 'Indicator feed unavailable';
       if (lastGood && lastGood.data){
-        // keep showing the last real data; never fake liveness
+        // keep showing the last real data; never pretend the feed is alive
         state = 'stale';
         skeleton(false);
         setBanner('stale', 'Live feed interrupted \u2014 showing values from ' + fmtTime(lastGood.at) + ' (' + msg + ')');
