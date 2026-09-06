@@ -86,6 +86,13 @@ def _run(cmd: list[str], timeout: int = 5) -> str | None:
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return (out.stdout or out.stderr).strip() or None
+    except FileNotFoundError:
+        # Missing binary (e.g. wmic removed on Win11 24H2+ builds): the caller
+        # treats None as "unknown", never fatal. Without this clause the
+        # FileNotFoundError escapes _run and kills startup (observed:
+        # [WinError 2] from _detect_gpu -> detect_environment -> health.env
+        # -> run_infrastructure_doctor -> main, engine never boots).
+        return None
     except Exception:
         return None
 
