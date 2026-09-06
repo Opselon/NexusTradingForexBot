@@ -1,0 +1,60 @@
+<!-- TradingView-exact indicator white card (loaded into tab-monitoring) -->
+<div id="tv-indicator-widget" class="bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+  <div class="border-l-[3px] border-[#84CC16]">
+    <div class="px-5 pt-4 pb-3">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-[#C9A227] flex items-center justify-center shrink-0 shadow-sm" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 3.5L10.5 7L5 10.5V3.5Z" fill="white" stroke="white" stroke-linejoin="round"/></svg></div>
+        <h2 class="text-[18px] font-extrabold tracking-tight text-black" style="font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">Gold Spot / U.S. Dollar</h2>
+        <span id="tv-live-badge" class="ml-auto hidden text-[10px] font-bold px-2 py-0.5 rounded-full border">—</span>
+      </div>
+      <div id="tv-timeframes" class="flex flex-wrap items-center gap-1.5 mt-3 text-[12px] leading-none select-none" style="font-family:ui-sans-serif,system-ui,sans-serif;">
+        <button data-tf="M1" class="tv-tf active px-3 py-1.5 rounded-full bg-[#F3F4F6] text-black font-semibold">1 minute</button>
+        <button data-tf="M5" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">5 minutes</button>
+        <button data-tf="M15" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">15 minutes</button>
+        <button data-tf="M30" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">30 minutes</button>
+        <button data-tf="H1" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">1 hour</button>
+        <button data-tf="H2" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">2 hours</button>
+        <button data-tf="H4" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">4 hours</button>
+        <button data-tf="D1" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">1 day</button>
+        <button data-tf="W1" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">1 week</button>
+        <button data-tf="MN1" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">1 month</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 px-5 py-6 border-t border-gray-100">
+      <div class="flex flex-col items-center">
+        <div class="text-[12px] font-bold text-black mb-2 tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Oscillators</div>
+        <div class="relative w-[220px] h-[132px]"><svg id="tv-gauge-osc" viewBox="0 0 200 115" class="w-full h-full" aria-hidden="true"></svg></div>
+        <div id="tv-osc-label" class="text-[15px] font-extrabold text-black -mt-1" style="font-family:ui-sans-serif,system-ui,sans-serif;">—</div>
+        <div class="flex gap-6 mt-1.5 text-center" style="font-family:ui-sans-serif,system-ui,sans-serif;"><div><div class="text-[11px] text-black font-medium">Sell</div><div id="tv-osc-sell" class="text-[11px] text-black">—</div></div><div><div class="text-[11px] text-black font-medium">Neutral</div><div id="tv-osc-neu" class="text-[11px] text-black">—</div></div><div><div class="text-[11px] text-black font-medium">Buy</div><div id="tv-osc-buy" class="text-[11px] text-black">—</div></div></div>
+      </div>
+      <div class="flex flex-col items-center">
+        <div class="text-[12px] font-bold text-black mb-2 tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Summary</div>
+        <div class="relative w-[220px] h-[132px]"><svg id="tv-gauge-sum" viewBox="0 0 200 115" class="w-full h-full" aria-hidden="true"></svg></div>
+        <div id="tv-sum-label" class="text-[15px] font-extrabold -mt-1" style="font-family:ui-sans-serif,system-ui,sans-serif;">—</div>
+        <div class="flex gap-6 mt-1.5 text-center" style="font-family:ui-sans-serif,system-ui,sans-serif;"><div><div class="text-[11px] text-black font-medium">Sell</div><div id="tv-sum-sell" class="text-[11px] text-black">—</div></div><div><div class="text-[11px] text-black font-medium">Neutral</div><div id="tv-sum-neu" class="text-[11px] text-black">—</div></div><div><div class="text-[11px] text-black font-medium">Buy</div><div id="tv-sum-buy" class="text-[11px] text-black">—</div></div></div>
+      </div>
+      <div class="flex flex-col items-center">
+        <div class="text-[12px] font-bold text-black mb-2 tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Moving Averages</div>
+        <div class="relative w-[220px] h-[132px]"><svg id="tv-gauge-ma" viewBox="0 0 200 115" class="w-full h-full" aria-hidden="true"></svg></div>
+        <div id="tv-ma-label" class="text-[15px] font-extrabold -mt-1" style="font-family:ui-sans-serif,system-ui,sans-serif;">—</div>
+        <div class="flex gap-6 mt-1.5 text-center" style="font-family:ui-sans-serif,system-ui,sans-serif;"><div><div class="text-[11px] text-black font-medium">Sell</div><div id="tv-ma-sell" class="text-[11px] text-black">—</div></div><div><div class="text-[11px] text-black font-medium">Neutral</div><div id="tv-ma-neu" class="text-[11px] text-black">—</div></div><div><div class="text-[11px] text-black font-medium">Buy</div><div id="tv-ma-buy" class="text-[11px] text-black">—</div></div></div>
+      </div>
+    </div>
+    <div class="px-5 pb-5 space-y-6">
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="border border-gray-200 rounded-lg overflow-hidden">
+          <div class="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between"><span class="text-[12px] font-extrabold text-black tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Oscillators</span><span id="tv-osc-head" class="text-[11px] font-bold text-black">—</span></div>
+          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-500 border-b border-gray-200 bg-white"><th class="px-3 py-1.5 font-semibold">Name</th><th class="px-3 py-1.5 font-semibold text-right">Value</th><th class="px-3 py-1.5 font-semibold text-right">Action</th></tr></thead><tbody id="tv-osc-body" class="text-[11px] text-black divide-y divide-gray-100"></tbody></table></div>
+        </div>
+        <div class="border border-gray-200 rounded-lg overflow-hidden">
+          <div class="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between"><span class="text-[12px] font-extrabold text-black tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Moving Averages</span><span id="tv-ma-head" class="text-[11px] font-bold" style="color:#EF4444;">—</span></div>
+          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-500 border-b border-gray-200 bg-white"><th class="px-3 py-1.5 font-semibold">Name</th><th class="px-3 py-1.5 font-semibold text-right">Value</th><th class="px-3 py-1.5 font-semibold text-right">Action</th></tr></thead><tbody id="tv-ma-body" class="text-[11px] text-black divide-y divide-gray-100"></tbody></table></div>
+        </div>
+      </div>
+      <div class="border border-gray-200 rounded-lg overflow-hidden">
+        <div class="bg-gray-50 px-3 py-2 border-b border-gray-200"><span class="text-[12px] font-extrabold text-black tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Pivots</span></div>
+        <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-500 border-b border-gray-200 bg-white"><th class="px-3 py-1.5 font-semibold">Pivot</th><th class="px-3 py-1.5 font-semibold text-right">Classic</th><th class="px-3 py-1.5 font-semibold text-right">Fibonacci</th><th class="px-3 py-1.5 font-semibold text-right">Camarilla</th><th class="px-3 py-1.5 font-semibold text-right">Woodie</th><th class="px-3 py-1.5 font-semibold text-right">DM</th></tr></thead><tbody id="tv-pivot-body" class="text-[11px] text-black divide-y divide-gray-100 font-mono"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</div>
