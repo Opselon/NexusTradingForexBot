@@ -67,6 +67,12 @@
 }
 .tv-currency { font-size: 14.5px; font-weight: 800; letter-spacing: 0.02em; color: #fff; white-space: nowrap; }
 .tv-curfullname { font-size: 11.5px; color: var(--tv-muted); white-space: nowrap; }
+.tv-tfchip {
+  font-family: var(--tv-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--tv-accent); background: rgba(127, 179, 255, 0.10);
+  border: 1px solid rgba(127, 179, 255, 0.30); border-radius: 5px;
+  padding: 1px 6px; white-space: nowrap;
+}
 
 .tv-pricewrap { display: flex; flex-direction: column; align-items: flex-end; gap: 0; margin-left: auto; }
 .tv-plabel { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--tv-dim); }
