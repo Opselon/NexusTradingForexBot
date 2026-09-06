@@ -39,6 +39,7 @@ from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
+from nexus_scalp.execution.lifecycle import TicketStateStore
 from nexus_scalp.execution.position_intelligence import (
     SmartMetricsInputs,
     _estimate_liquidation_impact,
@@ -170,6 +171,136 @@ ATR_TRAILING_MULTIPLIER: float = 1.15
 #: Console/stdout telemetry cadence, per ticket. SQLite/audit writes are NEVER
 #: throttled by this value.
 TELEMETRY_CONSOLE_INTERVAL_SEC: float = 10.0
+
+
+# -----------------------------------------------------------------------------
+# P0 seam S5: dict-shaped views over TicketStateStore.
+#
+# Every former per-ticket dict on the manager (_entry_prices, _last_modify_sl,
+# _sl_modified_flags, ...) is now a property returning a live view backed by
+# the canonical TicketState record. Reads fall back to the field default when
+# no record exists yet (mirrors dict.get(ticket, default) semantics); writes
+# route into the record, creating it lazily. This removes the drift class:
+# related per-ticket fields now advance together on ONE object.
+# -----------------------------------------------------------------------------
+
+#: Field defaults for views that must NOT create a record on read-only probing
+#: (mirrors the original empty-dict .get() default contract).
+_DEFAULTS: dict[str, Any] = {
+    "entry_price": 0.0,
+    "entry_sl": 0.0,
+    "entry_tp": 0.0,
+    "last_known_volume": 0.0,
+    "initial_risk": 0.0,
+    "entry_expected_price": 0.0,
+    "entry_atr": 0.0,
+    "entry_spread": 0.0,
+    "entry_fill_latency_ms": 0.0,
+    "last_modify_sl": 0.0,
+    "entry_reason": "",
+    "entry_confidence": 0.0,
+    "entry_regime": "",
+    "entry_direction": "",
+    "entry_order_id": "",
+    "entry_timestamp": None,
+}
+
+
+class _TicketStateDictView:
+    """Mutable dict-shaped view over one TicketState field, keyed by ticket.
+
+    Implements the dict surface the manager and its tests use:
+    __getitem__, __setitem__, get(), __contains__, pop(), setdefault(),
+    keys()/values()/items(), __iter__/__len__/__bool__.
+
+    PRESENCE SEMANTICS (critical): a field is considered ABSENT when it still
+    holds its dataclass default (0.0 / "" / None / False / {}). This mirrors
+    the original fragmented dicts, where a key existed only after an explicit
+    write — so ``.get(ticket, caller_default)`` returns the caller default for
+    never-written fields (e.g. ``_last_modify_sl.get(t, initial_sl)`` must
+    yield the entry SL when no modification was confirmed, per BUG-085),
+    never the field's zero default. Writes create the record lazily;
+    pop() resets the field to its default (the record itself is owned by the
+    store and dropped atomically in the cleanup bundle).
+    """
+
+    __slots__ = ("_default", "_field", "_store")
+
+    def __init__(self, store: TicketStateStore, field_name: str, default: Any) -> None:
+        self._store = store
+        self._field = field_name
+        self._default = default
+
+    # --- presence helper ---------------------------------------------------
+    def _present(self, st: Any) -> bool:
+        try:
+            return getattr(st, self._field) != self._default
+        except Exception:
+            return False
+
+    # --- read surface ------------------------------------------------------
+    def get(self, ticket: int, default: Any = None) -> Any:
+        st = self._store.peek(ticket)
+        if st is None or not self._present(st):
+            return self._default if default is None else default
+        return getattr(st, self._field)
+
+    def __getitem__(self, ticket: int) -> Any:
+        st = self._store.peek(ticket)
+        if st is None or not self._present(st):
+            raise KeyError(ticket)
+        return getattr(st, self._field)
+
+    def __contains__(self, ticket: object) -> bool:
+        st = self._store.peek(ticket)  # type: ignore[arg-type]
+        return st is not None and self._present(st)
+
+    def keys(self) -> list[int]:
+        """Tracked-ticket universe: records whose field was explicitly set."""
+        out: list[int] = []
+        for t in self._store.keys():
+            st = self._store.peek(t)
+            if st is not None and self._present(st):
+                out.append(t)
+        return out
+
+    def values(self) -> list[Any]:
+        return [self[t] for t in self.keys()]
+
+    def items(self):
+        return [(t, self[t]) for t in self.keys()]
+
+    def __iter__(self):
+        return iter(self.keys())
+
+    def __len__(self) -> int:
+        return len(self.keys())
+
+    def __bool__(self) -> bool:
+        return len(self) > 0
+
+    # --- write surface -----------------------------------------------------
+    def __setitem__(self, ticket: int, value: Any) -> None:
+        setattr(self._store.get(ticket), self._field, value)
+
+    def setdefault(self, ticket: int, value: Any) -> Any:
+        st = self._store.peek(ticket)
+        if st is not None and self._present(st):
+            return getattr(st, self._field)
+        self[ticket] = value
+        return value
+
+    # --- removal -----------------------------------------------------------
+    def pop(self, ticket: int, default: Any = None) -> Any:
+        st = self._store.peek(ticket)
+        if st is None or not self._present(st):
+            return default
+        cur = getattr(st, self._field)
+        setattr(st, self._field, self._default)
+        return cur
+
+    def __delitem__(self, ticket: int) -> None:
+        self.pop(ticket, None)
 
 
 class ExitMechanism:
@@ -369,7 +500,6 @@ class OrderLifecycleManager:
         self._consecutive_failures = 0
 
         # State Tracking for Metrics (Ticket -> Primitive)
-        self._partial_closed_tickets: dict[int, bool] = {}
 
         # [EXPANDED] Maps position ticket -> Telegram message_id for Thread Replying
         self._order_message_ids: dict[int, int] = {}
@@ -377,26 +507,13 @@ class OrderLifecycleManager:
         self._order_id_to_message_id: dict[str, int] = {}
 
         # [EXPANDED] State tracking for extended notifications
-        self._entry_prices: dict[int, float] = {}
-        self._entry_sls: dict[int, float] = {}
-        self._entry_tps: dict[int, float] = {}
-        self._last_known_volume: dict[int, float] = {}
-        self._initial_risks: dict[int, float] = {}
 
         #: PHASE 08: seconds from open to each observed excursion extreme.
         #: PHASE 08: execution-quality evidence captured at fill time.
-        self._entry_expected_price: dict[int, float] = {}
-        self._entry_atr: dict[int, float] = {}
-        self._entry_spread: dict[int, float] = {}
-        self._entry_fill_latency_ms: dict[int, float] = {}
-        self._entry_timestamps: dict[int, datetime] = {}
 
         # Advanced Telemetry Trackers
 
         # Local State Features (LSF) Engine & Desync State Trackers
-        self._rescue_registered_tickets: dict[int, bool] = {}
-        self._last_modify_sl: dict[int, float] = {}
-        self._entry_directions: dict[int, str] = {}
 
         # S6-followup: explicit per-ticket tracking-state owner (dicts moved
         # to position_tracker.PositionTrackingLedger; compat properties below).
@@ -416,6 +533,10 @@ class OrderLifecycleManager:
 
         # Part 4: Pending Order Lifecycle Management tracking
         self._pending_orders_setup_time: dict[int, datetime] = {}
+
+        # P0 seam S5: canonical per-ticket position state store (dict views
+        # over TicketState records, defined as properties after __init__).
+        self._states = TicketStateStore()
 
         # Bounded trajectory history (ticket -> deque[PositionEvaluationStep])
         self._trajectory_history: dict[int, deque[PositionEvaluationStep]] = {}
@@ -439,16 +560,11 @@ class OrderLifecycleManager:
         # MODULE A/B STATE: LEDGER AUTOPSY CONTEXT & REVERSAL BOOKKEEPING
         # =====================================================================
         # Entry context captured at open so the closing autopsy row is complete.
-        self._entry_reasons: dict[int, str] = {}
-        self._entry_confidences: dict[int, float] = {}
-        self._entry_regimes: dict[int, str] = {}
-        self._entry_order_ids: dict[int, str] = {}
         # SETUP SNAPSHOT (2026-08-18): ticket -> full chart-state fingerprint at
         # dispatch (HTF/SMC/ICT structure, displacement, sessions, guardian).
         # Carried to the closed-trade autopsy for setup/strategy attribution.
         self._entry_setup_snapshots: dict[int, dict[str, Any]] = {}
         #: Ticket -> True once trailing/breakeven actually moved the broker-side SL.
-        self._sl_modified_flags: dict[int, bool] = {}
         #: TASK-3: ticket -> bounded list of reversal/regime/liquidity observations
         #: captured WHILE the position was open (MODEL_REVERSAL, REGIME_REVERSAL,
         #: LIQUIDITY_REVERSAL, CONFIDENCE_COLLAPSE). Persisted on the closing
@@ -456,8 +572,6 @@ class OrderLifecycleManager:
         #: the position was held — never recomputed from price geometry alone.
         #: Ticket -> net realized PnL / exit mechanism captured during the
         #: closing sweep, used by the lifecycle finalize hook (BUG-086).
-        self._net_pnl_by_ticket: dict[int, float] = {}
-        self._exit_mechanism_by_ticket: dict[int, str] = {}
         #: Ticket -> model probabilities snapshotted at entry (immutable baseline).
         #: Ticket -> regime at entry (immutable baseline).
         #: Ticket -> deterministic profit-protection state machine (monotonic peak
@@ -469,7 +583,6 @@ class OrderLifecycleManager:
         self._protection_ledger = PositionProtectionLedger()
         #: Ticket -> exit mechanism forced by the engine (AI reversal, hold decay, ...)
         #: which overrides the broker-history heuristic during the autopsy write.
-        self._forced_exit_mechanisms: dict[int, str] = {}
         #: Ticket -> most recent TickData observed for that ticket (used by the
         #: breakeven-aware VOLATILITY_EXPANSION exit logic to decide whether price has
         #: actually breached the locked protective stop before a market close is allowed).
@@ -505,14 +618,167 @@ class OrderLifecycleManager:
         #: longer reports. Once closed, NO protective modification may be issued for
         #: the ticket (invariant: a CLOSED position cannot receive further protective
         #: modifications).
-        self._closed_tickets: dict[int, bool] = {}
         #: TASK-7: last arbitrated exit decision per ticket (action + scenario +
         #: timestamp). Set at arbitration time, cleared at autopsy, used for exit
         #: traceability when the position closes before the next management pass.
-        self._exit_pending_final_reason: dict[int, dict[str, Any]] = {}
         #: TASK-7: monotonic gate for the reconciliation close-loop broker fetch.
         #: Prevents a per-tick history_deals_get (BUG-090).
         self._last_reconcile_attempt: float = 0.0
+
+    # -------------------------------------------------------------------------
+    # P0 seam S5: canonical per-ticket state. TicketStateStore (one record per
+    # ticket) now owns the former fragmented ticket-scoped dicts; the same-named
+    # properties below expose live dict-shaped views so every read/write site
+    # (and direct test access) keeps working unchanged. Field defaults match the
+    # originals; _MISSING sentinel preserves .get(ticket, default) semantics.
+    # -------------------------------------------------------------------------
+
+    @property
+    def _ticket_state_store(self) -> TicketStateStore:
+        """Composition seam for tests and extracted lifecycle modules."""
+        return self._states
+
+# --- P0 seam S5: dict views over TicketStateStore (generated) ---
+    @property
+    def _entry_prices(self) -> dict:
+        """Live dict view over TicketState.entry_price (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_price", _DEFAULTS.get("entry_price", 0.0))
+
+
+    @property
+    def _entry_sls(self) -> dict:
+        """Live dict view over TicketState.entry_sl (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_sl", _DEFAULTS.get("entry_sl", 0.0))
+
+
+    @property
+    def _entry_tps(self) -> dict:
+        """Live dict view over TicketState.entry_tp (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_tp", _DEFAULTS.get("entry_tp", 0.0))
+
+
+    @property
+    def _last_known_volume(self) -> dict:
+        """Live dict view over TicketState.last_known_volume (S5 compat)."""
+        return _TicketStateDictView(self._states, "last_known_volume", _DEFAULTS.get("last_known_volume", 0.0))
+
+
+    @property
+    def _initial_risks(self) -> dict:
+        """Live dict view over TicketState.initial_risk (S5 compat)."""
+        return _TicketStateDictView(self._states, "initial_risk", _DEFAULTS.get("initial_risk", 0.0))
+
+
+    @property
+    def _entry_expected_price(self) -> dict:
+        """Live dict view over TicketState.entry_expected_price (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_expected_price", _DEFAULTS.get("entry_expected_price", 0.0))
+
+
+    @property
+    def _entry_atr(self) -> dict:
+        """Live dict view over TicketState.entry_atr (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_atr", _DEFAULTS.get("entry_atr", 0.0))
+
+
+    @property
+    def _entry_spread(self) -> dict:
+        """Live dict view over TicketState.entry_spread (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_spread", _DEFAULTS.get("entry_spread", 0.0))
+
+
+    @property
+    def _entry_fill_latency_ms(self) -> dict:
+        """Live dict view over TicketState.entry_fill_latency_ms (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_fill_latency_ms", _DEFAULTS.get("entry_fill_latency_ms", 0.0))
+
+
+    @property
+    def _last_modify_sl(self) -> dict:
+        """Live dict view over TicketState.last_modify_sl (S5 compat)."""
+        return _TicketStateDictView(self._states, "last_modify_sl", _DEFAULTS.get("last_modify_sl", 0.0))
+
+
+    @property
+    def _entry_reasons(self) -> dict:
+        """Live dict view over TicketState.entry_reason (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_reason", _DEFAULTS.get("entry_reason", ''))
+
+
+    @property
+    def _entry_confidences(self) -> dict:
+        """Live dict view over TicketState.entry_confidence (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_confidence", _DEFAULTS.get("entry_confidence", 0.0))
+
+
+    @property
+    def _entry_regimes(self) -> dict:
+        """Live dict view over TicketState.entry_regime (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_regime", _DEFAULTS.get("entry_regime", ''))
+
+
+    @property
+    def _entry_directions(self) -> dict:
+        """Live dict view over TicketState.entry_direction (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_direction", _DEFAULTS.get("entry_direction", ''))
+
+
+    @property
+    def _entry_order_ids(self) -> dict:
+        """Live dict view over TicketState.entry_order_id (S5 compat)."""
+        return _TicketStateDictView(self._states, "entry_order_id", _DEFAULTS.get("entry_order_id", ''))
+
+
+    @property
+    def _sl_modified_flags(self) -> dict:
+        """Live dict view over TicketState.sl_modified (S5 compat)."""
+        return _TicketStateDictView(self._states, "sl_modified", False)
+
+
+    @property
+    def _partial_closed_tickets(self) -> dict:
+        """Live dict view over TicketState.partial_closed (S5 compat)."""
+        return _TicketStateDictView(self._states, "partial_closed", False)
+
+
+    @property
+    def _rescue_registered_tickets(self) -> dict:
+        """Live dict view over TicketState.rescue_registered (S5 compat)."""
+        return _TicketStateDictView(self._states, "rescue_registered", False)
+
+
+    @property
+    def _closed_tickets(self) -> dict:
+        """Live dict view over TicketState.is_closed (S5 compat)."""
+        return _TicketStateDictView(self._states, "is_closed", False)
+
+
+    @property
+    def _entry_timestamps(self) -> dict:
+        """Live dict view over TicketState.entry_timestamp (S5 compat; None default)."""
+        return _TicketStateDictView(self._states, "entry_timestamp", None)
+
+
+    @property
+    def _forced_exit_mechanisms(self) -> dict:
+        """Live dict view over TicketState.forced_exit_mechanism (S5 compat)."""
+        return _TicketStateDictView(self._states, "forced_exit_mechanism", None)
+
+    @property
+    def _net_pnl_by_ticket(self) -> dict:
+        """Live dict view over TicketState.net_pnl (S5 compat)."""
+        return _TicketStateDictView(self._states, "net_pnl", None)
+
+    @property
+    def _exit_mechanism_by_ticket(self) -> dict:
+        """Live dict view over TicketState.exit_mechanism (S5 compat)."""
+        return _TicketStateDictView(self._states, "exit_mechanism", None)
+
+    @property
+    def _exit_pending_final_reason(self) -> dict:
+        """Live dict view over TicketState.exit_pending_final (S5 compat)."""
+        return _TicketStateDictView(self._states, "exit_pending_final", None)
+
 
     # =========================================================================
     # MODULE A: LEDGER AUTOPSY CONTEXT INGESTION
@@ -6387,6 +6653,9 @@ class OrderLifecycleManager:
             self._exit_pending_final_reason,
         ):
             tracker.pop(ticket, None)
+        # P0 seam S5: one atomic teardown for the whole canonical record —
+        # replaces the per-field pops above and eliminates partial-cleanup drift.
+        self._states.remove(ticket)
         self._recovery_ledger.drop_ticket(ticket)
         self._state_machine.drop_ticket(ticket)
         with self._live_tickets_lock:
