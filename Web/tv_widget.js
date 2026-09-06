@@ -62,10 +62,10 @@
     for (var i=0;i<labels.length;i++){
       var L=labels[i];
       var col = '#9CA3AF';
-      if (label === 'Sell' && L[0]==='Sell') col='#FB7185';
-      else if (label === 'Strong sell' && L[0]==='Strong sell') col='#FB7185';
-      else if (label === 'Buy' && L[0]==='Buy') col='#34D399';
-      else if (label === 'Strong buy' && L[0]==='Strong buy') col='#34D399';
+      if (label === 'Sell' && L[0]==='Sell') col='#EF4444';
+      else if (label === 'Strong sell' && L[0]==='Strong sell') col='#EF4444';
+      else if (label === 'Buy' && L[0]==='Buy') col='#16A34A';
+      else if (label === 'Strong buy' && L[0]==='Strong buy') col='#16A34A';
       html += '<text x="'+L[1]+'" y="'+L[2]+'" font-size="7" fill="'+col+'" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif"'+(col!=='#9CA3AF'?' font-weight="700"':'')+'>'+L[0]+'</text>';
     }
     // needle: angleDeg 0=Strong sell (left, ~0deg horizontal), 90=Neutral (up), 180=Strong buy (right)
@@ -95,9 +95,9 @@
     drawGauge('tv-gauge-sum', gs.angle_deg, gs.label);
     drawGauge('tv-gauge-ma',  gm.angle_deg, gm.label);
 
-    if (el('tv-osc-label')) { el('tv-osc-label').textContent = go.label; el('tv-osc-label').style.color = (go.label==='Sell'||go.label==='Strong sell') ? '#FB7185' : (go.label==='Buy'||go.label==='Strong buy' ? '#34D399' : '#111827'); }
-    if (el('tv-sum-label')) { el('tv-sum-label').textContent = gs.label; el('tv-sum-label').style.color = (gs.label==='Sell'||gs.label==='Strong sell') ? '#FB7185' : (gs.label==='Buy'||gs.label==='Strong buy' ? '#34D399' : '#111827'); }
-    if (el('tv-ma-label'))  { el('tv-ma-label').textContent  = gm.label; el('tv-ma-label').style.color  = (gm.label==='Sell'||gm.label==='Strong sell') ? '#FB7185' : (gm.label==='Buy'||gm.label==='Strong buy' ? '#34D399' : '#111827'); }
+    if (el('tv-osc-label')) { el('tv-osc-label').textContent = go.label; el('tv-osc-label').style.color = (go.label==='Sell'||go.label==='Strong sell') ? '#EF4444' : (go.label==='Buy'||go.label==='Strong buy' ? '#16A34A' : '#111827'); }
+    if (el('tv-sum-label')) { el('tv-sum-label').textContent = gs.label; el('tv-sum-label').style.color = (gs.label==='Sell'||gs.label==='Strong sell') ? '#EF4444' : (gs.label==='Buy'||gs.label==='Strong buy' ? '#16A34A' : '#111827'); }
+    if (el('tv-ma-label'))  { el('tv-ma-label').textContent  = gm.label; el('tv-ma-label').style.color  = (gm.label==='Sell'||gm.label==='Strong sell') ? '#EF4444' : (gm.label==='Buy'||gm.label==='Strong buy' ? '#16A34A' : '#111827'); }
 
     if (el('tv-osc-sell')) el('tv-osc-sell').textContent = String(go.sell);
     if (el('tv-osc-neu'))  el('tv-osc-neu').textContent  = String(go.neutral);
@@ -170,8 +170,8 @@
     nodes.forEach(function(btn){
       btn.addEventListener('click', function(){
         TF = btn.getAttribute('data-tf') || 'M1';
-        nodes.forEach(function(b){ b.classList.remove('active','bg-[#F3F4F6]','font-semibold'); b.classList.add('hover:bg-gray-50'); });
-        btn.classList.add('active','bg-[#F3F4F6]','font-semibold');
+        nodes.forEach(function(b){ b.classList.remove('active','bg-gray-900','text-white','font-semibold'); b.classList.add('text-black'); b.classList.add('hover:bg-gray-50'); });
+        btn.classList.add('active','bg-gray-900','text-white','font-semibold'); btn.classList.remove('text-black');
         btn.classList.remove('hover:bg-gray-50');
         fetchAndRender();
       });

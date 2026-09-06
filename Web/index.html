@@ -14,7 +14,7 @@
     <!-- Responsive layer: phones/tablets/monitors/ultrawide (CSS only, no logic) -->
     <link rel="stylesheet" href="responsive.css">
 </head>
-<body class="bg-darkBg text-gray-100 font-sans min-h-screen flex flex-col overflow-x-hidden">
+<body class="bg-darkBg text-gray-100 font-sans h-screen flex flex-col overflow-hidden">
 
     <!-- CHG-0048: Connection-lost banner. Injected FIRST in body so it sits
          above the header. Hidden by default; shown only when the SSE feed or
@@ -101,7 +101,7 @@
                     </header>
 
     <!-- Main Workspace -->
-    <div class="flex flex-1 flex-col lg:flex-row overflow-x-hidden overflow-y-visible">
+    <div class="flex flex-1 flex-col lg:flex-row overflow-hidden min-h-0">
 
         <!-- Sidebar Controls -->
         <aside id="nse-sidebar" class="w-full lg:w-64 bg-panelBg lg:border-r border-borderClr p-4 flex flex-col space-y-2 shrink-0 overflow-y-auto" aria-label="Primary navigation">
@@ -232,13 +232,13 @@
         </aside>
         <div id="nse-sidebar-overlay" onclick="closeNseSidebar()" aria-hidden="true"></div>
         <!-- Main Views Container -->
-        <main class="flex-1 p-6 overflow-y-auto space-y-6">
+        <main class="flex-1 p-6 overflow-y-auto overscroll-contain min-h-0 space-y-6">
 
             <!-- TAB 1: LIVE MONITORING -->
             <section id="tab-monitoring" class="tab-content active space-y-6">
                             <!-- Gold Spot / U.S. Dollar — Indicator Widget (live, white card) -->
             <!-- TradingView-exact indicator white card (loaded into tab-monitoring) -->
-<div id="tv-indicator-widget" class="bg-white rounded-xl border border-gray-200 shadow-xl overflow-visible">
+<div id="tv-indicator-widget" class="bg-white rounded-xl border border-gray-200 shadow-2xl overflow-hidden">
   <div class="border-l-[3px] border-[#84CC16]">
     <div class="px-5 pt-4 pb-3">
       <div class="flex items-center gap-3">
@@ -247,7 +247,7 @@
         <span id="tv-live-badge" class="ml-auto hidden text-[10px] font-bold px-2 py-0.5 rounded-full border">—</span>
       </div>
       <div id="tv-timeframes" class="flex flex-wrap items-center gap-1.5 mt-3 text-[12px] leading-none select-none" style="font-family:ui-sans-serif,system-ui,sans-serif;">
-        <button data-tf="M1" class="tv-tf active px-3 py-1.5 rounded-full bg-[#F3F4F6] text-black font-semibold">1 minute</button>
+        <button data-tf="M1" class="tv-tf active px-3 py-1.5 rounded-full bg-gray-900 text-white font-semibold">1 minute</button>
         <button data-tf="M5" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">5 minutes</button>
         <button data-tf="M15" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">15 minutes</button>
         <button data-tf="M30" class="tv-tf px-3 py-1.5 rounded-full text-black hover:bg-gray-50">30 minutes</button>
