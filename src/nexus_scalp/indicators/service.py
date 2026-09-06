@@ -171,7 +171,7 @@ class IndicatorService:
 
     def _oscillators(self, prices: Sequence[float]) -> list[IndicatorResult]:
         v_rsi = calc.rsi(prices, 14)
-        v_k = calc.stochastic_k(prices, 14)
+        v_k = calc.stochastic_slow_k(prices, 14, 3)
         v_cci = calc.cci(prices, 20)
         v_adx = calc.adx(prices, 14)
         v_ao = calc.awesome_oscillator(prices)
@@ -225,7 +225,7 @@ class IndicatorService:
             IndicatorResult("Momentum (10)", v_mom, _osc_action("Momentum", v_mom)),
             IndicatorResult("MACD Level (12, 26)", v_macd, _osc_action("MACD", v_macd)),
             IndicatorResult("Stochastic RSI Fast (3, 3, 14, 14)", v_stochrsi, _osc_action("StochRSI", v_stochrsi)),
-            IndicatorResult("Williams Percent Range (14)", abs(v_willr) if v_willr is not None else None, _osc_action("WilliamsR", v_willr)),
+            IndicatorResult("Williams Percent Range (14)", abs(v_willr) if v_willr is not None else None, _osc_action("WilliamsR", v_willr)),  # TV displays |%R|
             IndicatorResult("Bull Bear Power", v_bbp, _osc_action("BullBear", v_bbp)),
             IndicatorResult("Ultimate Oscillator (7, 14, 28)", v_uo, _osc_action("UO", v_uo)),
         ]

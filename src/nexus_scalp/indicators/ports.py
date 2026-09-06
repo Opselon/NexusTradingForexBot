@@ -22,8 +22,9 @@ service layer (#3) is the only place that touches I/O (bars → prices).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Protocol
 
 
 class IndicatorCalculator(Protocol):

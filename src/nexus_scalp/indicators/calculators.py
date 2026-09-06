@@ -68,6 +68,20 @@ def stochastic_k(prices: Sequence[float], k_period: int = 14) -> float | None:
     return 100 * (prices[-1] - lo) / (hi - lo)
 
 
+def stochastic_slow_k(prices: Sequence[float], k_period: int = 14, smooth: int = 3) -> float | None:
+    """Stochastic %K (14, 3, 3): raw %K smoothed by a 3-period SMA (TV %K)."""
+    if len(prices) < k_period + smooth - 1:
+        return None
+    raws: list[float] = []
+    for i in range(k_period - 1, len(prices)):
+        window = prices[i - k_period + 1 : i + 1]
+        lo, hi = min(window), max(window)
+        raws.append(50.0 if hi == lo else 100 * (prices[i] - lo) / (hi - lo))
+    if len(raws) < smooth:
+        return None
+    return sum(raws[-smooth:]) / smooth
+
+
 def cci(prices: Sequence[float], period: int = 20) -> float | None:
     if len(prices) < period:
         return None
@@ -363,10 +377,11 @@ def adx_action(v: float | None) -> str:
 
 
 def ma_action(price: float | None, ma: float | None) -> str:
+    """TradingView rule: close > MA -> Buy, close < MA -> Sell (no deadband)."""
     if price is None or ma is None:
         return "Neutral"
-    if price > ma * 1.002:
+    if price > ma:
         return "Buy"
-    if price < ma * 0.998:
+    if price < ma:
         return "Sell"
     return "Neutral"
