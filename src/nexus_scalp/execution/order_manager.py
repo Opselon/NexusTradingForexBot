@@ -25,6 +25,7 @@ Invariants:
 """
 
 import contextlib
+import dataclasses
 import json
 import math
 import time
@@ -39,7 +40,7 @@ from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
-from nexus_scalp.execution.lifecycle import TicketStateStore
+from nexus_scalp.execution.lifecycle import TicketState, TicketStateStore
 from nexus_scalp.execution.position_intelligence import (
     SmartMetricsInputs,
     _estimate_liquidation_impact,
@@ -184,27 +185,6 @@ TELEMETRY_CONSOLE_INTERVAL_SEC: float = 10.0
 # related per-ticket fields now advance together on ONE object.
 # -----------------------------------------------------------------------------
 
-#: Field defaults for views that must NOT create a record on read-only probing
-#: (mirrors the original empty-dict .get() default contract).
-_DEFAULTS: dict[str, Any] = {
-    "entry_price": 0.0,
-    "entry_sl": 0.0,
-    "entry_tp": 0.0,
-    "last_known_volume": 0.0,
-    "initial_risk": 0.0,
-    "entry_expected_price": 0.0,
-    "entry_atr": 0.0,
-    "entry_spread": 0.0,
-    "entry_fill_latency_ms": 0.0,
-    "last_modify_sl": 0.0,
-    "entry_reason": "",
-    "entry_confidence": 0.0,
-    "entry_regime": "",
-    "entry_direction": "",
-    "entry_order_id": "",
-    "entry_timestamp": None,
-}
-
 
 class _TicketStateDictView:
     """Mutable dict-shaped view over one TicketState field, keyed by ticket.
@@ -226,10 +206,16 @@ class _TicketStateDictView:
 
     __slots__ = ("_default", "_field", "_store")
 
-    def __init__(self, store: TicketStateStore, field_name: str, default: Any) -> None:
+    def __init__(self, store: TicketStateStore, field_name: str) -> None:
         self._store = store
         self._field = field_name
-        self._default = default
+        # Presence semantics come from the dataclass field default itself
+        # (supports default_factory for dict-valued fields).
+        f = TicketState.__dataclass_fields__[field_name]
+        if f.default_factory is not dataclasses.MISSING:
+            self._default = f.default_factory()
+        else:
+            self._default = f.default
 
     # --- presence helper ---------------------------------------------------
     def _present(self, st: Any) -> bool:
@@ -641,143 +627,143 @@ class OrderLifecycleManager:
 # --- P0 seam S5: dict views over TicketStateStore (generated) ---
     @property
     def _entry_prices(self) -> dict:
-        """Live dict view over TicketState.entry_price (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_price", _DEFAULTS.get("entry_price", 0.0))
+        """Live dict view over TicketState.entry_price (S5)."""
+        return _TicketStateDictView(self._states, "entry_price")
 
 
     @property
     def _entry_sls(self) -> dict:
-        """Live dict view over TicketState.entry_sl (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_sl", _DEFAULTS.get("entry_sl", 0.0))
+        """Live dict view over TicketState.entry_sl (S5)."""
+        return _TicketStateDictView(self._states, "entry_sl")
 
 
     @property
     def _entry_tps(self) -> dict:
-        """Live dict view over TicketState.entry_tp (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_tp", _DEFAULTS.get("entry_tp", 0.0))
+        """Live dict view over TicketState.entry_tp (S5)."""
+        return _TicketStateDictView(self._states, "entry_tp")
 
 
     @property
     def _last_known_volume(self) -> dict:
-        """Live dict view over TicketState.last_known_volume (S5 compat)."""
-        return _TicketStateDictView(self._states, "last_known_volume", _DEFAULTS.get("last_known_volume", 0.0))
+        """Live dict view over TicketState.last_known_volume (S5)."""
+        return _TicketStateDictView(self._states, "last_known_volume")
 
 
     @property
     def _initial_risks(self) -> dict:
-        """Live dict view over TicketState.initial_risk (S5 compat)."""
-        return _TicketStateDictView(self._states, "initial_risk", _DEFAULTS.get("initial_risk", 0.0))
+        """Live dict view over TicketState.initial_risk (S5)."""
+        return _TicketStateDictView(self._states, "initial_risk")
 
 
     @property
     def _entry_expected_price(self) -> dict:
-        """Live dict view over TicketState.entry_expected_price (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_expected_price", _DEFAULTS.get("entry_expected_price", 0.0))
+        """Live dict view over TicketState.entry_expected_price (S5)."""
+        return _TicketStateDictView(self._states, "entry_expected_price")
 
 
     @property
     def _entry_atr(self) -> dict:
-        """Live dict view over TicketState.entry_atr (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_atr", _DEFAULTS.get("entry_atr", 0.0))
+        """Live dict view over TicketState.entry_atr (S5)."""
+        return _TicketStateDictView(self._states, "entry_atr")
 
 
     @property
     def _entry_spread(self) -> dict:
-        """Live dict view over TicketState.entry_spread (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_spread", _DEFAULTS.get("entry_spread", 0.0))
+        """Live dict view over TicketState.entry_spread (S5)."""
+        return _TicketStateDictView(self._states, "entry_spread")
 
 
     @property
     def _entry_fill_latency_ms(self) -> dict:
-        """Live dict view over TicketState.entry_fill_latency_ms (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_fill_latency_ms", _DEFAULTS.get("entry_fill_latency_ms", 0.0))
+        """Live dict view over TicketState.entry_fill_latency_ms (S5)."""
+        return _TicketStateDictView(self._states, "entry_fill_latency_ms")
 
 
     @property
     def _last_modify_sl(self) -> dict:
-        """Live dict view over TicketState.last_modify_sl (S5 compat)."""
-        return _TicketStateDictView(self._states, "last_modify_sl", _DEFAULTS.get("last_modify_sl", 0.0))
+        """Live dict view over TicketState.last_modify_sl (S5)."""
+        return _TicketStateDictView(self._states, "last_modify_sl")
 
 
     @property
     def _entry_reasons(self) -> dict:
-        """Live dict view over TicketState.entry_reason (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_reason", _DEFAULTS.get("entry_reason", ''))
+        """Live dict view over TicketState.entry_reason (S5)."""
+        return _TicketStateDictView(self._states, "entry_reason")
 
 
     @property
     def _entry_confidences(self) -> dict:
-        """Live dict view over TicketState.entry_confidence (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_confidence", _DEFAULTS.get("entry_confidence", 0.0))
+        """Live dict view over TicketState.entry_confidence (S5)."""
+        return _TicketStateDictView(self._states, "entry_confidence")
 
 
     @property
     def _entry_regimes(self) -> dict:
-        """Live dict view over TicketState.entry_regime (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_regime", _DEFAULTS.get("entry_regime", ''))
+        """Live dict view over TicketState.entry_regime (S5)."""
+        return _TicketStateDictView(self._states, "entry_regime")
 
 
     @property
     def _entry_directions(self) -> dict:
-        """Live dict view over TicketState.entry_direction (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_direction", _DEFAULTS.get("entry_direction", ''))
+        """Live dict view over TicketState.entry_direction (S5)."""
+        return _TicketStateDictView(self._states, "entry_direction")
 
 
     @property
     def _entry_order_ids(self) -> dict:
-        """Live dict view over TicketState.entry_order_id (S5 compat)."""
-        return _TicketStateDictView(self._states, "entry_order_id", _DEFAULTS.get("entry_order_id", ''))
+        """Live dict view over TicketState.entry_order_id (S5)."""
+        return _TicketStateDictView(self._states, "entry_order_id")
 
 
     @property
     def _sl_modified_flags(self) -> dict:
-        """Live dict view over TicketState.sl_modified (S5 compat)."""
-        return _TicketStateDictView(self._states, "sl_modified", False)
+        """Live dict view over TicketState.sl_modified (S5)."""
+        return _TicketStateDictView(self._states, "sl_modified")
 
 
     @property
     def _partial_closed_tickets(self) -> dict:
-        """Live dict view over TicketState.partial_closed (S5 compat)."""
-        return _TicketStateDictView(self._states, "partial_closed", False)
+        """Live dict view over TicketState.partial_closed (S5)."""
+        return _TicketStateDictView(self._states, "partial_closed")
 
 
     @property
     def _rescue_registered_tickets(self) -> dict:
-        """Live dict view over TicketState.rescue_registered (S5 compat)."""
-        return _TicketStateDictView(self._states, "rescue_registered", False)
+        """Live dict view over TicketState.rescue_registered (S5)."""
+        return _TicketStateDictView(self._states, "rescue_registered")
 
 
     @property
     def _closed_tickets(self) -> dict:
-        """Live dict view over TicketState.is_closed (S5 compat)."""
-        return _TicketStateDictView(self._states, "is_closed", False)
+        """Live dict view over TicketState.is_closed (S5)."""
+        return _TicketStateDictView(self._states, "is_closed")
 
 
     @property
     def _entry_timestamps(self) -> dict:
-        """Live dict view over TicketState.entry_timestamp (S5 compat; None default)."""
-        return _TicketStateDictView(self._states, "entry_timestamp", None)
+        """Live dict view over TicketState.entry_timestamp (S5)."""
+        return _TicketStateDictView(self._states, "entry_timestamp")
 
 
     @property
     def _forced_exit_mechanisms(self) -> dict:
-        """Live dict view over TicketState.forced_exit_mechanism (S5 compat)."""
-        return _TicketStateDictView(self._states, "forced_exit_mechanism", None)
+        """Live dict view over TicketState.forced_exit_mechanism (S5)."""
+        return _TicketStateDictView(self._states, "forced_exit_mechanism")
 
     @property
     def _net_pnl_by_ticket(self) -> dict:
-        """Live dict view over TicketState.net_pnl (S5 compat)."""
-        return _TicketStateDictView(self._states, "net_pnl", None)
+        """Live dict view over TicketState.net_pnl (S5)."""
+        return _TicketStateDictView(self._states, "net_pnl")
 
     @property
     def _exit_mechanism_by_ticket(self) -> dict:
-        """Live dict view over TicketState.exit_mechanism (S5 compat)."""
-        return _TicketStateDictView(self._states, "exit_mechanism", None)
+        """Live dict view over TicketState.exit_mechanism (S5)."""
+        return _TicketStateDictView(self._states, "exit_mechanism")
 
     @property
     def _exit_pending_final_reason(self) -> dict:
-        """Live dict view over TicketState.exit_pending_final (S5 compat)."""
-        return _TicketStateDictView(self._states, "exit_pending_final", None)
+        """Live dict view over TicketState.exit_pending_final (S5)."""
+        return _TicketStateDictView(self._states, "exit_pending_final")
 
 
     # =========================================================================
