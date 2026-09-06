@@ -639,6 +639,18 @@ class AuditRepository:
             """
         )
         # Forward migration for databases created by the first Phase 08 revision.
+        # GUARD (2026-09-06 duplicate-column wall): the CREATE TABLE above
+        # already contains every one of these columns, so on a current-schema
+        # DB each ALTER raises duplicate-column (correctly swallowed). But a
+        # bare `suppress` still lets an attached debugger print a first-chance
+        # wall per column (the user's 08:45 log). Pre-check via PRAGMA so the
+        # failing ALTER is never even attempted — zero exception, zero wall.
+        try:
+            have_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(audit_experiences);").fetchall()
+            }
+        except Exception:
+            have_cols = set()
         for col_name, col_type in [
             ("correction_of", "TEXT DEFAULT ''"),
             ("record_version", "INTEGER DEFAULT 1"),
@@ -649,6 +661,8 @@ class AuditRepository:
             ("model_version", "TEXT DEFAULT ''"),
             ("config_version", "TEXT DEFAULT ''"),
         ]:
+            if col_name in have_cols:
+                continue
             with contextlib.suppress(Exception):
                 conn.execute(f"ALTER TABLE audit_experiences ADD COLUMN {col_name} {col_type};")
 
