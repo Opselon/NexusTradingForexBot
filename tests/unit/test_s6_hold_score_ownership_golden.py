@@ -19,19 +19,28 @@ A, B = 201, 202
 
 class TestHoldScoreOwnership:
     def test_manager_properties_return_live_ledger_dicts(self):
-        """Compat properties expose the ledger's dicts (not copies)."""
+        """Compat properties expose the ledger's dicts (not copies).
+
+        Strengthened (no longer asserts the literal `-> dict:` annotation,
+        which pins an implementation detail): each accessor must be a live
+        IDENTITY view of the ledger's dict — mutating the returned object
+        must mutate ledger state, and drops must be visible through it.
+        """
         import nexus_scalp.execution.order_manager as om_mod
 
-        src = Path(om_mod.__file__).read_text(encoding="utf-8")
+        om = om_mod.OrderLifecycleManager.__new__(om_mod.OrderLifecycleManager)
+        om._hold_scores = om_mod.HoldScoreLedger()
         for f in (
             "_hold_score_tracker",
             "_base_hold_score_tracker",
             "_last_reasons_tracker",
             "_last_hold_eval_time",
         ):
-            assert f"self._hold_scores.{f}" in src
-            # property accessor exists
-            assert f"def {f}(self) -> dict:" in src
+            prop = getattr(type(om), f)
+            assert isinstance(prop, property), f"{f} must remain a property"
+            assert getattr(om, f) is getattr(om._hold_scores, f), (
+                f"{f} accessor must return the ledger's LIVE dict (same object)"
+            )
 
     def test_ledger_state_roundtrip_and_drop(self):
         led = HoldScoreLedger()

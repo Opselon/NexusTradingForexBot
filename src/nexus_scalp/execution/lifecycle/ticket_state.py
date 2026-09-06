@@ -127,6 +127,9 @@ class TicketStateStore:
 
     def __contains__(self, ticket: object) -> bool:
         try:
-            return int(ticket) in self._states  # type: ignore[arg-type]
+            key = int(ticket)  # type: ignore[call-overload]
         except (TypeError, ValueError):
+            # Explicit fallback: non-numeric keys are simply not tracked
+            # (mirrors dict membership semantics; nothing to observe).
             return False
+        return key in self._states

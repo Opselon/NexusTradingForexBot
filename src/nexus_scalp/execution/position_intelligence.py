@@ -55,7 +55,7 @@ class SmartMetricsInputs:
 
 
 def _safe_feature_float(
-    self, features: FeatureVector | None, attr_name: str, default: float
+    self: Any, features: FeatureVector | None, attr_name: str, default: float
 ) -> float:
     """Safely extracts a floating point attribute from FeatureVector with fallback."""
     if features is None:
