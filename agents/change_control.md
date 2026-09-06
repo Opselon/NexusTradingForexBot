@@ -1892,3 +1892,9 @@ Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regr
 - SAFETY: PAPER adapter only, disposable DBs, isolated settings, offline, no order_send (proved), secrets never emitted.
 - MEASURED: fast ~2s, full ~17s, self-suite 13 tests. Layers: 40 fast, 42 full; 12 safety PASS.
 - STATUS: IMPLEMENTING -> VERIFIED (offline) -> READY_FOR_REVIEW
+Agent: Hermes-Main (Hermes-UI-01), Role: Dashboard / UX / Runtime UI
+Task: TV-REDESIGN-1 — Technicals card professional redesign (UI layer only)
+Registered: 2026-09-06. Plan: audit probes PASSED (scratch/tv_audit_1.py 15/15).
+In scope: Web/tv_widget.html, Web/tv_widget.js, Web/tv_widget_styles.css (new, served additively), Web/index.html (embedded copy sync), tailwind.config.js (safelist additions), Web/tailwind.css (build script rebuild), tests/js/tv_widget_redesign.test.js (new).
+Out of scope: src/** (zero backend changes), API contracts (API_V1_INDICATORS envelope untouched), trading logic, other cards/pages.
+Design decisions (user-approved 2026-09-06): gauges -> distribution bars; last_close + meta.generated_at surfaced as real data.
