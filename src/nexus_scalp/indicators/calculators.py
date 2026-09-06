@@ -42,20 +42,40 @@ def _wma(values: Sequence[float], period: int) -> float | None:
 # ── oscillators ──────────────────────────────────────────────────────────
 
 
+def rsi_series(prices: Sequence[float], period: int = 14) -> list[float | None]:
+    """Streaming Wilder RSI per bar (O(n)): seeds with SMA over first `period`
+    gains/losses, then Wilder recursion. Entry i holds RSI ending at bar i
+    (None for i < period). Final entry equals rsi(prices, period)."""
+    out: list[float | None] = [None] * len(prices)
+    if len(prices) < period + 1:
+        return out
+    gains = [max(0.0, prices[i] - prices[i - 1]) for i in range(1, len(prices))]
+    losses = [max(0.0, prices[i - 1] - prices[i]) for i in range(1, len(prices))]
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    # RSI ending at bar `period` (first defined value)
+    if avg_loss == 0:
+        out[period] = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        out[period] = 100 - (100 / (1 + rs))
+    for i in range(period + 1, len(prices)):
+        g = gains[i - 1]
+        loss = losses[i - 1]
+        avg_gain = (avg_gain * (period - 1) + g) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+        if avg_loss == 0:
+            out[i] = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            out[i] = 100 - (100 / (1 + rs))
+    return out
+
+
 def rsi(prices: Sequence[float], period: int = 14) -> float | None:
     if len(prices) < period + 1:
         return None
-    gains = [max(0, prices[i] - prices[i - 1]) for i in range(1, len(prices))]
-    losses = [max(0, prices[i - 1] - prices[i]) for i in range(1, len(prices))]
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    for g, loss in zip(gains[period:], losses[period:], strict=False):
-        avg_gain = (avg_gain * (period - 1) + g) / period
-        avg_loss = (avg_loss * (period - 1) + loss) / period
-    if avg_loss == 0:
-        return 100.0
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    return rsi_series(prices, period)[-1]
 
 
 def stochastic_k(prices: Sequence[float], k_period: int = 14) -> float | None:

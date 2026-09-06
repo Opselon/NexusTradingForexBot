@@ -7,8 +7,8 @@
 // bars; last_close + meta.generated_at surfaced from the real response.
 (function(){
   var TF = 'M1';
-  var POLL_MS = 10000;        // healthy cadence (unchanged contract)
-  var POLL_ERR_MS = 5000;     // faster retry while degradped/stale
+  var POLL_MS = 10000;        // legacy healthy cadence (superseded by POLL_OK_MS below)
+  var POLL_ERR_MS = 10000;    // retry cadence while degraded/stale (was 5s: too hot)
   var timer = null;
   var bound = false;
   var state = 'idle';         // idle | ok | stale | error
@@ -280,26 +280,46 @@
   }
 
   // ── fetch + state transitions ───────────────────────────────────────────
+  // Overlap guard: never fire while one request is in flight; a slow 20k
+  // compute must not pile up parallel requests (that was the app-wide lag:
+  // each late response re-rendered + re-armed its own retry, compounding).
+  var slowTimer = null;   // watchdog: only FIRES if fetch truly hangs
   function fetchAndRender(){
     if (inflight) return;
     inflight = true;
     var firstLoad = !lastGood;
     if (firstLoad) skeleton(true);
+    // Hard timeout: a 20k compute that exceeds this is treated as failed,
+    // NOT retried in a tight loop — the poll cadence below is the retry.
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timedOut = false;
+    if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
+    if (ctrl) {
+      slowTimer = setTimeout(function(){
+        timedOut = true;
+        try { ctrl.abort(); } catch (e) {}
+      }, 15000);
+    }
     var url = '/api/v1/indicators?timeframe=' + encodeURIComponent(TF) + '&limit=20000';
-    fetch(url).then(function(r){
+    var opts = ctrl ? { signal: ctrl.signal } : undefined;
+    fetch(url, opts).then(function(r){
       if (!r.ok) return r.json().then(function(j){ throw j; });
       return r.json();
     }).then(function(j){
       inflight = false;
+      if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
       state = 'ok';
       lastGood = { data: j.data || j, meta: j.meta || null, at: new Date() };
       skeleton(false);
       setBanner('', '');
       render(lastGood.data, lastGood.meta);
+      restartPolling();
     }).catch(function(e){
       inflight = false;
+      if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
       var code = (e && e.error && e.error.code) || '';
-      var msg = code === 'ENGINE_UNAVAILABLE' ? 'Waiting for engine\u2026'
+      var msg = timedOut ? 'Indicator compute timed out (retrying on schedule)…'
+        : code === 'ENGINE_UNAVAILABLE' ? 'Waiting for engine\u2026'
         : code === 'RESOURCE_UNAVAILABLE' ? 'No bar history yet\u2026'
         : 'Indicator feed unavailable';
       if (lastGood && lastGood.data){
@@ -311,6 +331,7 @@
         state = 'error';
         setBanner('error', msg);
       }
+      restartPolling();
     });
   }
 
@@ -337,9 +358,12 @@
   }
 
   // ── polling lifecycle (pauses when the tab is hidden) ───────────────────
+  // Adaptive: the interval is re-armed AFTER each fetch completes, so a slow
+  // 20k compute can never overlap the next tick. OK cadence 30s / error 10s.
+  var POLL_OK_MS = 30000;
   function startPolling(){
     if (timer) return;
-    timer = setInterval(fetchAndRender, state === 'ok' ? POLL_MS : POLL_ERR_MS);
+    timer = setInterval(fetchAndRender, state === 'ok' ? POLL_OK_MS : POLL_ERR_MS);
   }
   function stopPolling(){
     if (timer){ clearInterval(timer); timer = null; }

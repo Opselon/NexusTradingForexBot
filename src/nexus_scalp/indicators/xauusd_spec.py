@@ -131,14 +131,18 @@ def stoch_k_action_spec(v) -> str:
 
 
 def stoch_rsi_k_spec(prices, rsi_period: int = 14, k_smooth: int = 3):
-    """Stochastic RSI Fast %K: SMA(StochRSI,3), Spec A8 with 80/20 bands."""
-    from nexus_scalp.indicators.calculators import rsi as _rsi
+    """Stochastic RSI Fast %K: SMA(StochRSI,3), Spec A8 with 80/20 bands.
 
-    cells = []
-    for i in range(rsi_period, len(prices) + 1):
-        v = _rsi(prices[max(0, i - rsi_period * 2) : i], rsi_period)
-        if v is not None:
-            cells.append(v)
+    Streaming O(n): one rsi_series pass, then one sweep over the RSI series
+    (no per-bar rsi() recomputation).
+    """
+    from nexus_scalp.indicators.calculators import rsi_series as _rsi_series
+
+    if len(prices) < rsi_period * 2:
+        return None
+    rsis_full = _rsi_series(prices, rsi_period)
+    # cells: RSI values defined from bar rsi_period onward (drop leading None)
+    cells = [v for v in rsis_full if v is not None]
     if len(cells) < rsi_period + k_smooth - 1:
         return None
     stoch_vals = []
@@ -459,18 +463,31 @@ def stoch_k_vote_tv(closes, k_period: int = 14, smooth: int = 3, eps: float = 0.
 
 
 def stoch_rsi_kd_pair(closes, rsi_period: int = 14, k_smooth: int = 3, d_smooth: int = 3):
-    """(StochRSI %K, %D): D = SMA(K_series, 3)."""
+    """(StochRSI %K, %D): D = SMA(K_series, 3). Streaming O(n): one RSI pass,
+    one StochRSI sweep, then K smoothing — no per-bar recomputation."""
+    from nexus_scalp.indicators.calculators import rsi_series as _rsi_series2
+
     if len(closes) < rsi_period * 2 + k_smooth + d_smooth:
         return None, None
-    ks = []
-    for end in range(len(closes) - d_smooth + 1, len(closes) + 1):
-        v = stoch_rsi_k_spec(closes[:end], rsi_period, k_smooth)
-        if v is None:
-            return None, None
-        ks.append(v)
-    if len(ks) < d_smooth:
+    rsis_full = _rsi_series2(closes, rsi_period)
+    cells = [v for v in rsis_full if v is not None]
+    if len(cells) < rsi_period + k_smooth + d_smooth - 1:
         return None, None
-    return ks[-1], sum(ks[-d_smooth:]) / d_smooth
+    # full StochRSI series, then trailing K smoothing
+    stoch_all = []
+    for j in range(rsi_period - 1, len(cells)):
+        win = cells[j - rsi_period + 1 : j + 1]
+        lo, hi = min(win), max(win)
+        stoch_all.append(50.0 if hi == lo else 100 * (win[-1] - lo) / (hi - lo))
+    if len(stoch_all) < k_smooth + d_smooth - 1:
+        return None, None
+    # K series: trailing SMA(k_smooth) over stoch_all
+    k_all = []
+    for j in range(k_smooth - 1, len(stoch_all)):
+        k_all.append(sum(stoch_all[j - k_smooth + 1 : j + 1]) / k_smooth)
+    if len(k_all) < d_smooth:
+        return None, None
+    return k_all[-1], sum(k_all[-d_smooth:]) / d_smooth
 
 
 def stoch_rsi_vote_tv(closes, eps: float = 0.5) -> str:
