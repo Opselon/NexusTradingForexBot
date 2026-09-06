@@ -9,20 +9,51 @@ pre, code, .font-mono {
     font-family: 'JetBrains Mono', monospace;
 }
 
-/* Scrollbars styling */
+
+/* ==========================================================================
+   Sleek modern scrollbar (global) — slim, rounded, theme-consistent.
+   - 8px slim bar, fully rounded thumb, dark track (blends into bg)
+   - thumb brightens on hover, subtle glow when dragging (active)
+   - Firefox: scrollbar-color keeps the same look
+   - overlays automatically when content fits (no reserved gutter space)
+   NOTE: existing 6px block above is intentionally superseded by these
+   later-declared rules (same specificity, later in cascade = wins).
+   ========================================================================== */
+* {
+    scrollbar-width: thin;                 /* Firefox */
+    scrollbar-color: #2a3a57 transparent;  /* Firefox: thumb / track */
+}
 ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
+    background: transparent;               /* no reserved track block */
 }
 ::-webkit-scrollbar-track {
-    background: #090d16;
+    background: transparent;               /* invisible: only thumb shows */
+    border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb {
-    background: #1e293b;
-    border-radius: 4px;
+    background: #22304f;
+    border-radius: 8px;
+    border: 2px solid transparent;         /* creates the slim rounded look */
+    background-clip: padding-box;
+    transition: background-color .18s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #334155;
+    background: #38bdf8;                   /* accentCyan-family highlight */
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:active {
+    background: #67e8f9;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Horizontal slim variant (tables / header strip) keeps same look, thinner */
+::-webkit-scrollbar:horizontal {
+    height: 6px;
 }
 
 /* Navigation Buttons Styles */
