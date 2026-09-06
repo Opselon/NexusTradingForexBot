@@ -92,7 +92,12 @@ class Shadow70Worker:
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                item = self._queue.get(timeout=1.0)
+                # IDLE-POLL (2026-09-06 debugger wall): the old 1.0s timeout
+                # raised queue.Empty 1x/sec whenever the writer idled; an
+                # attached debugger prints every first-chance Empty as a full
+                # wall. 5s matches flush_interval_sec's cadence and cuts walls
+                # 5x. Items dispatch IMMEDIATELY on arrival.
+                item = self._queue.get(timeout=5.0)
                 self._pending_observations.append(item.observation)
                 if len(self._pending_observations) >= self.batch_size:
                     self.flush()
