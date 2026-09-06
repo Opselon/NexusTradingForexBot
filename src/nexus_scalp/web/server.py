@@ -1812,6 +1812,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_tv_widget_js() -> FileResponse:
         return FileResponse(WEB_DIR / "tv_widget.js")
 
+    @app.get("/tv_widget_styles.css")
+    def serve_tv_widget_styles() -> FileResponse:
+        return FileResponse(WEB_DIR / "tv_widget_styles.css")
+
     @app.get("/api_client.js")
     def serve_api_client() -> FileResponse:
         """Serves the NX API client (defines window.NX).
