@@ -39,6 +39,35 @@ logger = get_logger("nexus_scalp.adapters.audit_db")
 _DEFAULT_AUDIT_DB_URL = "sqlite:///artifacts/audit.db"
 
 
+def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    """PRAGMA pre-check: column names already present on `table`.
+
+    Every ADD COLUMN site consults this BEFORE attempting the ALTER, so on a
+    current-schema DB no duplicate-column exception is ever raised — not even
+    a first-chance one for an attached debugger to print (the user's 08:45 +
+    08:50 duplicate-column walls: correction_of, recent_expectancy_r, ...).
+    The suppress() around the ALTER stays as the second net for races.
+    """
+    try:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table});").fetchall()}
+    except Exception:
+        return set()
+
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, col_name: str, col_type: str
+) -> None:
+    """Idempotent ADD COLUMN: PRAGMA-gated, suppress() as second net."""
+    try:
+        have = _existing_columns(conn, table)
+    except Exception:
+        have = set()
+    if col_name in have:
+        return
+    with contextlib.suppress(Exception):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type};")
+
+
 def normalize_history_dt(value: Any) -> Any:
     """Best-effort UTC datetime from arbitrary timestamp inputs."""
 
@@ -239,16 +268,14 @@ class AuditRepository:
             ("confidence_source", "TEXT"),
             ("spread_usd", "REAL"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(f"ALTER TABLE audit_signals ADD COLUMN {col_def[0]} {col_def[1]};")
+            _add_column_if_missing(conn, "audit_signals", col_def[0], col_def[1])
 
         # Persistent signal deduplication identity (BUG-054). A deterministic
         # key derived from the canonical decision fields, stable across restart.
         # Database-enforced: UNIQUE index + ON CONFLICT DO NOTHING means the
         # background worker can never double-insert the same decision even if
         # two processes/producers race.
-        with contextlib.suppress(Exception):
-            conn.execute("ALTER TABLE audit_signals ADD COLUMN signal_dedup_key TEXT;")
+        _add_column_if_missing(conn, "audit_signals", "signal_dedup_key", "TEXT")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_signals_dedup "
             "ON audit_signals(signal_dedup_key);"
@@ -309,8 +336,7 @@ class AuditRepository:
         # column the batch fails with "table audit_orders has no column named
         # execution_id" and audit_orders silently stays empty (observed on
         # 2026-08-20 local engine). Idempotent ADD COLUMN upgrade.
-        with contextlib.suppress(Exception):
-            conn.execute("ALTER TABLE audit_orders ADD COLUMN execution_id TEXT;")
+        _add_column_if_missing(conn, "audit_orders", "execution_id", "TEXT")
 
         # =====================================================================
         # INSTITUTIONAL FINANCIAL ACCOUNTING LEDGER (One autopsy row per trade)
@@ -419,8 +445,7 @@ class AuditRepository:
             # retained (never rewritten — contract s47).
             ("account_source", "TEXT DEFAULT ''"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(f"ALTER TABLE audit_ledger ADD COLUMN {col_def[0]} {col_def[1]};")
+            _add_column_if_missing(conn, "audit_ledger", col_def[0], col_def[1])
 
         conn.execute(
             """
@@ -454,10 +479,7 @@ class AuditRepository:
         # ('' legacy, 'LIVE', 'PAPER', 'SHADOW'); AccountingCore excludes the
         # PAPER seed plateau (balance==equity==margin_free==10000.0) and any
         # PAPER-tagged row from drawdown/equity metrics.
-        with contextlib.suppress(Exception):
-            conn.execute(
-                "ALTER TABLE audit_account_snapshots ADD COLUMN account_source TEXT DEFAULT '';"
-            )
+        _add_column_if_missing(conn, "audit_account_snapshots", "account_source", "TEXT DEFAULT ''")
 
         # Broker-history normalized copy: audit_broker_orders / _deals / _trades
         # + sync watermark (created idempotently; identity = broker tickets).
@@ -639,18 +661,7 @@ class AuditRepository:
             """
         )
         # Forward migration for databases created by the first Phase 08 revision.
-        # GUARD (2026-09-06 duplicate-column wall): the CREATE TABLE above
-        # already contains every one of these columns, so on a current-schema
-        # DB each ALTER raises duplicate-column (correctly swallowed). But a
-        # bare `suppress` still lets an attached debugger print a first-chance
-        # wall per column (the user's 08:45 log). Pre-check via PRAGMA so the
-        # failing ALTER is never even attempted — zero exception, zero wall.
-        try:
-            have_cols = {
-                row[1] for row in conn.execute("PRAGMA table_info(audit_experiences);").fetchall()
-            }
-        except Exception:
-            have_cols = set()
+        # Uses the shared _add_column_if_missing helper (PRAGMA-gated).
         for col_name, col_type in [
             ("correction_of", "TEXT DEFAULT ''"),
             ("record_version", "INTEGER DEFAULT 1"),
@@ -661,10 +672,7 @@ class AuditRepository:
             ("model_version", "TEXT DEFAULT ''"),
             ("config_version", "TEXT DEFAULT ''"),
         ]:
-            if col_name in have_cols:
-                continue
-            with contextlib.suppress(Exception):
-                conn.execute(f"ALTER TABLE audit_experiences ADD COLUMN {col_name} {col_type};")
+            _add_column_if_missing(conn, "audit_experiences", col_name, col_type)
 
         conn.execute(
             """
@@ -741,10 +749,7 @@ class AuditRepository:
             ("replay_validated", "INTEGER DEFAULT 0"),
             ("probation_samples", "INTEGER DEFAULT 0"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(
-                    f"ALTER TABLE strategy_intelligence_registry ADD COLUMN {col_name} {col_type};"
-                )
+            _add_column_if_missing(conn, "strategy_intelligence_registry", col_name, col_type)
 
         conn.execute(
             """
@@ -835,10 +840,7 @@ class AuditRepository:
             ("experience_id", "TEXT DEFAULT ''"),
             ("sequence", "INTEGER DEFAULT 0"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(
-                    f"ALTER TABLE position_lifecycle_events ADD COLUMN {col_name} {col_type};"
-                )
+            _add_column_if_missing(conn, "position_lifecycle_events", col_name, col_type)
 
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_lifecycle_ticket ON position_lifecycle_events(ticket, sequence);",
@@ -888,8 +890,7 @@ class AuditRepository:
             ("symbol", "TEXT NOT NULL DEFAULT ''"),
             ("timeframe", "TEXT DEFAULT ''"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(f"ALTER TABLE trade_autopsies ADD COLUMN {col_name} {col_type};")
+            _add_column_if_missing(conn, "trade_autopsies", col_name, col_type)
 
         with contextlib.suppress(Exception):
             conn.execute(
@@ -919,8 +920,7 @@ class AuditRepository:
             ("ticket_ctx", "TEXT DEFAULT ''"),
             ("behavior_key", "TEXT DEFAULT ''"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(f"ALTER TABLE behavior_detections ADD COLUMN {col_name} {col_type};")
+            _add_column_if_missing(conn, "behavior_detections", col_name, col_type)
 
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_behavior_ticket ON behavior_detections(ticket);",
@@ -972,8 +972,7 @@ class AuditRepository:
             ("complete_context", "INTEGER DEFAULT 0"),
             ("partial_context", "INTEGER DEFAULT 0"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(f"ALTER TABLE behavior_analysis ADD COLUMN {col_name} {col_type};")
+            _add_column_if_missing(conn, "behavior_analysis", col_name, col_type)
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_ticket ON behavior_analysis(ticket);",
             "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_version "
@@ -1363,8 +1362,7 @@ class AuditRepository:
             ("gates", "TEXT"),
             ("completed_at", "TEXT"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(f"ALTER TABLE research_runs ADD COLUMN {col_def[0]} {col_def[1]};")
+            _add_column_if_missing(conn, "research_runs", col_def[0], col_def[1])
         with contextlib.suppress(Exception):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_gates_strategy ON research_gates(strategy_id, order_index);"
@@ -1388,10 +1386,7 @@ class AuditRepository:
             ("model_id", "TEXT"),
             ("git_commit", "TEXT"),
         ]:
-            with contextlib.suppress(Exception):
-                conn.execute(
-                    f"ALTER TABLE research_run_snapshots ADD COLUMN {col_def[0]} {col_def[1]};"
-                )
+            _add_column_if_missing(conn, "research_run_snapshots", col_def[0], col_def[1])
 
     def flush(self, timeout_sec: float = 5.0) -> bool:
         """Boundedly drains the background write queue.
