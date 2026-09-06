@@ -1946,6 +1946,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     # engine aggregator + ServerState so every UI surface
                     # (snapshot, SSE, overlays) converges instantly instead of
                     # waiting for the next live tick.
+                    # GUARD (2026-09-06 lag storm): NEVER shrink the aggregator
+                    # from a chart fetch. The user's 08:11 log proves the kill
+                    # chain: cold-start seeded 20000 bars, then the dashboard's
+                    # /api/chart/history?count=900 reseeded the SAME aggregator
+                    # down to 900 bars — wiping 19100 indicator bars, forcing
+                    # every downstream compute (indicators, liquidity, 70D) to
+                    # rebuild on a different window mid-session. Reseed here
+                    # only when the fetch is BIGGER than memory (genuine gap
+                    # fill after downtime), never smaller.
                     try:
                         rate_bars_dt = [
                             r
@@ -1957,25 +1966,39 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             and r.close is not None
                         ]
                         if rate_bars_dt and hasattr(engine, "aggregator"):
-                            from nexus_scalp.market_data.bar_aggregator import BarData
+                            try:
+                                have = len(engine.aggregator.get_completed_bars())
+                            except Exception:
+                                have = 0
+                            if len(rate_bars_dt) > have:
+                                from nexus_scalp.market_data.bar_aggregator import BarData
 
-                            seeded = [
-                                BarData(
-                                    symbol=symbol,
-                                    timeframe=str(timeframe).upper(),
-                                    timestamp=r.time_utc,
-                                    open=float(r.open),
-                                    high=float(r.high),
-                                    low=float(r.low),
-                                    close=float(r.close),
-                                    tick_volume=int(r.tick_volume or 0),
-                                    is_complete=True,
+                                seeded = [
+                                    BarData(
+                                        symbol=symbol,
+                                        timeframe=str(timeframe).upper(),
+                                        timestamp=r.time_utc,
+                                        open=float(r.open),
+                                        high=float(r.high),
+                                        low=float(r.low),
+                                        close=float(r.close),
+                                        tick_volume=int(r.tick_volume or 0),
+                                        is_complete=True,
+                                    )
+                                    for r in rate_bars_dt
+                                ]
+                                engine.aggregator.reseed(seeded)
+                                if hasattr(engine, "sync_chart_state"):
+                                    engine.sync_chart_state()
+                            else:
+                                logger.info(
+                                    "[MT5_CHART] event=RESEED_SKIPPED reason=FETCH_SMALLER_THAN_MEMORY "
+                                    "fetched=%d have=%d (chart serves its own 900-bar window; "
+                                    "aggregator keeps its %d-bar history)",
+                                    len(rate_bars_dt),
+                                    have,
+                                    have,
                                 )
-                                for r in rate_bars_dt
-                            ]
-                            engine.aggregator.reseed(seeded)
-                            if hasattr(engine, "sync_chart_state"):
-                                engine.sync_chart_state()
                     except Exception as reseed_err:
                         _log_err(
                             reseed_err,

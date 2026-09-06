@@ -386,6 +386,15 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         if now - self._last_heartbeat < 5.0:
             return
         self._last_heartbeat = now
+        # AUTH failure repeats the identical line every 5s forever (log spam:
+        # the user's 08:10 log shows 15 identical HEARTBEAT lines in 60s).
+        # Emit at most once per category until a send succeeds or the queue
+        # becomes non-empty (real state change worth logging).
+        last_cat = self._last_failure_category or "-"
+        sig = (last_cat, self._failed_count, self._sent_count)
+        if sig == getattr(self, "_last_heartbeat_sig", None) and self._queue.qsize() == 0:
+            return
+        self._last_heartbeat_sig = sig
         try:
             logger.info(
                 "[TELEGRAM_WORKER] event=HEARTBEAT queue_size=%d sent=%d failed=%d "

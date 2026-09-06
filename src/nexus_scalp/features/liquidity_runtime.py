@@ -534,6 +534,12 @@ class LiquidityGovernor:
         try:
             if not bars:
                 raise ValueError("liquidity compute: no completed bars")
+            # FULL-WINDOW (2026-09-06 correction): the 3000-bar cap was WRONG —
+            # probe proved capped output DIFFERS (bsl/htf/internal/external/sweep)
+            # because old daily pools fall outside the window. Instead the
+            # O(pools*bars) lifecycle loop is now VECTORIZED in liquidity_engine
+            # (0.63s->0.08s on 5k, 9.47s->1.12s on 20k, parity 0/594) so the
+            # full 20k window runs in ~1.4s end-to-end. No fidelity loss.
             features_obj: LiquidityFeatures = compute_liquidity_features(
                 bars,
                 decision_at=decision_at,
