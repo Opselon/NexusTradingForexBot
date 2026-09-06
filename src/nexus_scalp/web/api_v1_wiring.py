@@ -42,6 +42,7 @@ def _include_routers(app: FastAPI) -> None:
     from nexus_scalp.web.api_v1 import (
         decisions,
         incidents,
+        indicators,
         market,
         marketplace,
         positions,
@@ -65,6 +66,7 @@ def _include_routers(app: FastAPI) -> None:
         shadow,
         incidents,
         marketplace,
+        indicators,
     ):
         app.include_router(module.router)
 

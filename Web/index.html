@@ -236,7 +236,10 @@
 
             <!-- TAB 1: LIVE MONITORING -->
             <section id="tab-monitoring" class="tab-content active space-y-6">
-                <!-- Top Row: Interactive Live Charts and Market Tick Data -->
+                            <!-- Gold Spot / U.S. Dollar — Indicator Widget (live, white card) -->
+            <div id="tv-indicator-widget-host"></div>
+
+            <!-- Top Row: Interactive Live Charts and Market Tick Data -->
                 <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     <!-- Chart Panel -->
                     <div class="xl:col-span-2 bg-panelBg border border-borderClr rounded-xl p-4 flex flex-col shadow-xl">
@@ -3620,5 +3623,5 @@
         });
     })();
     </script>
-</body>
+<script>fetch("tv_widget.html").then(function(r){return r.text();}).then(function(t){var h=document.getElementById("tv-indicator-widget-host");if(h){h.innerHTML=t;var s=document.createElement("script");s.src="tv_widget.js";document.body.appendChild(s);}}).catch(function(){});</script></body>
 </html>
