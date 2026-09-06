@@ -1,6 +1,21 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./Web/index.html", "./Web/*.js"],
+  // tv_widget.html is now inlined into index.html, but keep the standalone file
+  // for direct /tv_widget.html serving and for safety when rebuilding.
+  content: ["./Web/index.html", "./Web/tv_widget.html", "./Web/*.js"],
+  safelist: [
+    // White-card TradingView widget (light-on-light) — these were absent before,
+    // so the purge build stripped bg-white / text-black / gray borders and left
+    // invisible text on white. Keep them alive.
+    "bg-white",
+    "bg-gray-50",
+    "bg-gray-50/60",
+    "border-gray-100",
+    "border-gray-200",
+    "divide-gray-100",
+    "text-black",
+    "text-gray-500",
+  ],
   theme: {
     extend: {
       colors: {
