@@ -10,7 +10,11 @@
   function fmt(v){
     if (v === null || v === undefined) return '—';
     if (typeof v !== 'number') return String(v);
-    return (Math.abs(v) >= 1000 ? v.toLocaleString(undefined,{maximumFractionDigits:3}) : String(v.toFixed(3))).replace(/\.?0+$/,'') || '0';
+    if (Math.abs(v) >= 1000) {
+      return v.toLocaleString('en-US',{minimumFractionDigits:3, maximumFractionDigits:3});
+    }
+    var s = Math.abs(v) >= 100 ? v.toFixed(2) : v.toFixed(3);
+    return s.replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'');
   }
   function actionColor(a){
     if (a === 'Buy') return '#16A34A';
@@ -37,7 +41,7 @@
     var gradId = 'g-'+svgId;
     var html = '<defs><linearGradient id="'+gradId+'" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#EF4444"/><stop offset="100%" stop-color="#EC4899"/></linearGradient><linearGradient id="'+gradId+'-buy" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#10B981"/><stop offset="100%" stop-color="#22C55E"/></linearGradient></defs>';
     // background
-    html += '<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#E5E7EB" stroke-width="10" stroke-linecap="round"/>';
+    html += '<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#E5E7EB" stroke-width="11" stroke-linecap="round"/>';
     if (activeFrac > 0) {
       var aLen = 180*activeFrac;
       if (isSell) {
@@ -47,15 +51,14 @@
         var x = cx + r*Math.cos(rad);
         var y = cy - r*Math.sin(rad);
         // large-arc? no, aLen <90 so small arc
-        html += '<path d="M 20 100 A 80 80 0 0 1 '+x.toFixed(1)+' '+y.toFixed(1)+'" fill="none" stroke="url(#'+gradId+')" stroke-width="10" stroke-linecap="round"/>';
+        html += '<path d="M 20 100 A 80 80 0 0 1 '+x.toFixed(1)+' '+y.toFixed(1)+'" fill="none" stroke="url(#'+gradId+')" stroke-width="11" stroke-linecap="round"/>';
       } else if (isBuy) {
         var rad2 = aLen*Math.PI/180;
         var xb = cx + r*Math.cos(rad2);
         var yb = cy - r*Math.sin(rad2);
-        html += '<path d="M 180 100 A 80 80 0 0 1 '+xb.toFixed(1)+' '+yb.toFixed(1)+'" fill="none" stroke="url(#'+gradId+'-buy)" stroke-width="10" stroke-linecap="round"/>';
+        html += '<path d="M 180 100 A 80 80 0 0 1 '+xb.toFixed(1)+' '+yb.toFixed(1)+'" fill="none" stroke="url(#'+gradId+'-buy)" stroke-width="11" stroke-linecap="round"/>';
       } else {
-        // Neutral: centered band, approximate with pink segment left-of-center as in screenshot
-        html += '<path d="M 20 100 A 80 80 0 0 1 93 20.4" fill="none" stroke="url(#'+gradId+')" stroke-width="10" stroke-linecap="round"/>';
+        // Neutral: no colored arc (truthful) — label + needle carry the state.
       }
     }
     var labels = [['Strong sell',5,105],['Sell',33,38],['Neutral',100,12],['Buy',167,38],['Strong buy',195,105]];
@@ -66,14 +69,14 @@
       else if (label === 'Strong sell' && L[0]==='Strong sell') col='#EF4444';
       else if (label === 'Buy' && L[0]==='Buy') col='#16A34A';
       else if (label === 'Strong buy' && L[0]==='Strong buy') col='#16A34A';
-      html += '<text x="'+L[1]+'" y="'+L[2]+'" font-size="7" fill="'+col+'" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif"'+(col!=='#9CA3AF'?' font-weight="700"':'')+'>'+L[0]+'</text>';
+      html += '<text x="'+L[1]+'" y="'+L[2]+'" font-size="8" fill="'+col+'" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif"'+(col!=='#9CA3AF'?' font-weight="700"':'')+'>'+L[0]+'</text>';
     }
     // needle: angleDeg 0=Strong sell (left, ~0deg horizontal), 90=Neutral (up), 180=Strong buy (right)
     // map: 0->180deg, 90->90deg, 180->0deg in math coords
     var theta = (180 - angleDeg)*Math.PI/180;
     var nx = cx + 72*Math.cos(theta);
     var ny = cy - 72*Math.sin(theta);
-    html += '<line x1="'+cx+'" y1="'+cy+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+'" stroke="#111827" stroke-width="1.8" stroke-linecap="round"/>';
+    html += '<line x1="'+cx+'" y1="'+cy+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+'" stroke="#111827" stroke-width="2.2" stroke-linecap="round"/>';
     html += '<circle cx="'+cx+'" cy="'+cy+'" r="4.5" fill="#111827" stroke="white" stroke-width="1"/>';
     svg.innerHTML = html;
   }
@@ -115,14 +118,16 @@
     if (ob) {
       ob.innerHTML = osc.map(function(r){
         var c = actionColor(r.action);
-        return '<tr><td class="px-3 py-1.5">'+r.name+'</td><td class="px-3 py-1.5 text-right font-mono">'+fmt(r.value)+'</td><td class="px-3 py-1.5 text-right" style="color:'+c+';font-weight:'+(c==='#6B7280'?400:600)+'">'+r.action+'</td></tr>';
+        var w = c==='#6B7280' ? 500 : 700;
+        return '<tr><td class="px-3 py-1.5 text-gray-800">'+r.name+'</td><td class="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900">'+fmt(r.value)+'</td><td class="px-3 py-1.5 text-right" style="color:'+c+';font-weight:'+w+'">'+r.action+'</td></tr>';
       }).join('');
     }
     var mb = el('tv-ma-body');
     if (mb) {
       mb.innerHTML = ma.map(function(r){
         var c = actionColor(r.action);
-        return '<tr><td class="px-3 py-1.5">'+r.name+'</td><td class="px-3 py-1.5 text-right font-mono">'+fmt(r.value)+'</td><td class="px-3 py-1.5 text-right" style="color:'+c+';font-weight:'+(c==='#6B7280'?400:600)+'">'+r.action+'</td></tr>';
+        var w = c==='#6B7280' ? 500 : 700;
+        return '<tr><td class="px-3 py-1.5 text-gray-800">'+r.name+'</td><td class="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900">'+fmt(r.value)+'</td><td class="px-3 py-1.5 text-right" style="color:'+c+';font-weight:'+w+'">'+r.action+'</td></tr>';
       }).join('');
     }
     var pb = el('tv-pivot-body');

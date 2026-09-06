@@ -14,7 +14,7 @@
     <!-- Responsive layer: phones/tablets/monitors/ultrawide (CSS only, no logic) -->
     <link rel="stylesheet" href="responsive.css">
 </head>
-<body class="bg-darkBg text-gray-100 font-sans h-screen flex flex-col overflow-hidden">
+<body class="bg-darkBg text-gray-100 font-sans min-h-screen">
 
     <!-- CHG-0048: Connection-lost banner. Injected FIRST in body so it sits
          above the header. Hidden by default; shown only when the SSE feed or
@@ -101,7 +101,7 @@
                     </header>
 
     <!-- Main Workspace -->
-    <div class="flex flex-1 flex-col lg:flex-row overflow-hidden min-h-0">
+    <div class="flex flex-col lg:flex-row">
 
         <!-- Sidebar Controls -->
         <aside id="nse-sidebar" class="w-full lg:w-64 bg-panelBg lg:border-r border-borderClr p-4 flex flex-col space-y-2 shrink-0 overflow-y-auto" aria-label="Primary navigation">
@@ -232,7 +232,7 @@
         </aside>
         <div id="nse-sidebar-overlay" onclick="closeNseSidebar()" aria-hidden="true"></div>
         <!-- Main Views Container -->
-        <main class="flex-1 p-6 overflow-y-auto overscroll-contain min-h-0 space-y-6">
+        <main class="flex-1 min-w-0 p-6 space-y-6">
 
             <!-- TAB 1: LIVE MONITORING -->
             <section id="tab-monitoring" class="tab-content active space-y-6">
@@ -283,16 +283,16 @@
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div class="border border-gray-200 rounded-lg overflow-hidden">
           <div class="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between"><span class="text-[12px] font-extrabold text-black tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Oscillators</span><span id="tv-osc-head" class="text-[11px] font-bold text-black">—</span></div>
-          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-500 border-b border-gray-200 bg-white"><th class="px-3 py-1.5 font-semibold">Name</th><th class="px-3 py-1.5 font-semibold text-right">Value</th><th class="px-3 py-1.5 font-semibold text-right">Action</th></tr></thead><tbody id="tv-osc-body" class="text-[11px] text-black divide-y divide-gray-100"></tbody></table></div>
+          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="sticky top-0 text-[11px] text-gray-600 border-b border-gray-200 bg-gray-50"><th class="px-3 py-2 font-bold uppercase tracking-wide">Name</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Value</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Action</th></tr></thead><tbody id="tv-osc-body" class="text-[11px] text-gray-800 divide-y divide-gray-100 [&>tr:nth-child(even)]:bg-gray-50/70 [&>tr:hover]:bg-cyan-50"></tbody></table></div>
         </div>
         <div class="border border-gray-200 rounded-lg overflow-hidden">
           <div class="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between"><span class="text-[12px] font-extrabold text-black tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Moving Averages</span><span id="tv-ma-head" class="text-[11px] font-bold" style="color:#EF4444;">—</span></div>
-          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-500 border-b border-gray-200 bg-white"><th class="px-3 py-1.5 font-semibold">Name</th><th class="px-3 py-1.5 font-semibold text-right">Value</th><th class="px-3 py-1.5 font-semibold text-right">Action</th></tr></thead><tbody id="tv-ma-body" class="text-[11px] text-black divide-y divide-gray-100"></tbody></table></div>
+          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="sticky top-0 text-[11px] text-gray-600 border-b border-gray-200 bg-gray-50"><th class="px-3 py-2 font-bold uppercase tracking-wide">Name</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Value</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Action</th></tr></thead><tbody id="tv-ma-body" class="text-[11px] text-gray-800 divide-y divide-gray-100 [&>tr:nth-child(even)]:bg-gray-50/70 [&>tr:hover]:bg-cyan-50"></tbody></table></div>
         </div>
       </div>
       <div class="border border-gray-200 rounded-lg overflow-hidden">
         <div class="bg-gray-50 px-3 py-2 border-b border-gray-200"><span class="text-[12px] font-extrabold text-black tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Pivots</span></div>
-        <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-500 border-b border-gray-200 bg-white"><th class="px-3 py-1.5 font-semibold">Pivot</th><th class="px-3 py-1.5 font-semibold text-right">Classic</th><th class="px-3 py-1.5 font-semibold text-right">Fibonacci</th><th class="px-3 py-1.5 font-semibold text-right">Camarilla</th><th class="px-3 py-1.5 font-semibold text-right">Woodie</th><th class="px-3 py-1.5 font-semibold text-right">DM</th></tr></thead><tbody id="tv-pivot-body" class="text-[11px] text-black divide-y divide-gray-100 font-mono"></tbody></table></div>
+        <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-500 border-b border-gray-200 bg-white"><tr class="sticky top-0 text-[11px] text-gray-600 border-b border-gray-200 bg-gray-50"><th class="px-3 py-2 font-bold uppercase tracking-wide">Pivot</th><th class="px-3 py-1.5 font-semibold text-right">Classic</th><th class="px-3 py-1.5 font-semibold text-right">Fibonacci</th><th class="px-3 py-1.5 font-semibold text-right">Camarilla</th><th class="px-3 py-1.5 font-semibold text-right">Woodie</th><th class="px-3 py-1.5 font-semibold text-right">DM</th></tr></thead><tbody id="tv-pivot-body" class="text-[11px] text-gray-800 divide-y divide-gray-100 font-mono [&>tr:nth-child(even)]:bg-gray-50/70 [&>tr:hover]:bg-cyan-50"></tbody></table></div>
       </div>
     </div>
   </div>
