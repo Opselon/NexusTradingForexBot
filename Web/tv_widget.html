@@ -45,7 +45,41 @@
 
   <div class="tv-toast" id="tv-toast" role="status"></div>
 
-  <!-- 3) PRIMARY ANALYSIS SUMMARY -->
+  <!-- 3) CYCLES — TradingView-style gauges in dark theme (additive: keeps distribution bars below) -->
+  <div class="tv-cycles" role="group" aria-label="Technical summary gauges">
+    <section class="tv-cycle" aria-label="Oscillators gauge">
+      <div class="tv-cycle-name">Oscillators</div>
+      <div class="tv-cycle-gauge"><svg id="tv-cycle-osc" viewBox="0 0 200 115" class="tv-cycle-svg" aria-hidden="true"></svg></div>
+      <div class="tv-cycle-verdict is-neutral" id="tv-cycle-osc-label">—</div>
+      <div class="tv-cycle-counts">
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Sell</span><span class="tv-cycle-v" id="tv-cycle-osc-sell">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Neutral</span><span class="tv-cycle-v" id="tv-cycle-osc-neu">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Buy</span><span class="tv-cycle-v" id="tv-cycle-osc-buy">—</span></div>
+      </div>
+    </section>
+    <section class="tv-cycle tv-cycle--hero" aria-label="Overall summary gauge">
+      <div class="tv-cycle-name">Summary</div>
+      <div class="tv-cycle-gauge"><svg id="tv-cycle-sum" viewBox="0 0 200 115" class="tv-cycle-svg" aria-hidden="true"></svg></div>
+      <div class="tv-cycle-verdict is-neutral" id="tv-cycle-sum-label">—</div>
+      <div class="tv-cycle-counts">
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Sell</span><span class="tv-cycle-v" id="tv-cycle-sum-sell">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Neutral</span><span class="tv-cycle-v" id="tv-cycle-sum-neu">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Buy</span><span class="tv-cycle-v" id="tv-cycle-sum-buy">—</span></div>
+      </div>
+    </section>
+    <section class="tv-cycle" aria-label="Moving averages gauge">
+      <div class="tv-cycle-name">Moving Averages</div>
+      <div class="tv-cycle-gauge"><svg id="tv-cycle-ma" viewBox="0 0 200 115" class="tv-cycle-svg" aria-hidden="true"></svg></div>
+      <div class="tv-cycle-verdict is-neutral" id="tv-cycle-ma-label">—</div>
+      <div class="tv-cycle-counts">
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Sell</span><span class="tv-cycle-v" id="tv-cycle-ma-sell">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Neutral</span><span class="tv-cycle-v" id="tv-cycle-ma-neu">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Buy</span><span class="tv-cycle-v" id="tv-cycle-ma-buy">—</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 4) PRIMARY ANALYSIS SUMMARY — distribution bars (kept) -->
   <div class="tv-signal-bar">
     <section class="tv-signal-hero" aria-label="Overall technical summary">
       <div class="tv-signal-name">Overall Technical Summary</div>
@@ -108,7 +142,7 @@
     </div>
   </div>
 
-  <!-- 4) DETAILED INDICATOR ANALYSIS -->
+  <!-- 5) DETAILED INDICATOR ANALYSIS -->
   <div class="tv-tables">
     <section class="tv-panel" aria-label="Oscillators detail">
       <div class="tv-panel-h">
@@ -138,7 +172,7 @@
     </section>
   </div>
 
-  <!-- 5) PIVOT MATRIX -->
+  <!-- 6) PIVOT MATRIX -->
   <section class="tv-panel tv-pivots" aria-label="Pivot levels">
     <div class="tv-panel-h">
       <h3 class="tv-panel-t">Pivot Levels</h3>

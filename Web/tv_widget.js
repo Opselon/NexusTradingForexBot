@@ -17,6 +17,20 @@
 
   var GLYPH = { buy: '\u25B2', sell: '\u25BC', neutral: '\u25CF' };
 
+  // ── cycles palette — same red→purple→blue as your reference screenshot,
+  //     tuned for dark: idle track #3b4a6b (not white), labels readable on #0d1526
+  var TC = {
+    arcIdle: '#3b4a6b',
+    labelIdle: '#8ea0bd',
+    labelSell: '#f87171',
+    labelBuy: '#5fb3ff',
+    verdictSell: '#f87171',
+    verdictBuy: '#5fb3ff',
+    verdictNeutral: '#dbe4f2',
+    needle: '#e6edf7',
+    hub: '#0d1526'
+  };
+
   function el(id){ return document.getElementById(id); }
   function setText(id, t){ var n = el(id); if (n) n.textContent = t; }
   function setCls(n, cls, on){ if (!n) return; if (on) n.classList.add(cls); else n.classList.remove(cls); }
@@ -44,7 +58,47 @@
     return 'neutral';
   }
 
-  // ── distribution bar (widths = real counts via flex-grow) ──────────────
+  // ── TV-style semicircular cycles (exact-colors match reference, dark substrate)
+  // viewBox 200x115, center (100,100), r=80. Idle 180° arc in #3b4a6b; active
+  // segment colored sell=red band from left, buy=blue band from right, neutral=grey.
+  function drawCycle(svgId, label, angleDeg){
+    var svg = el(svgId);
+    if (!svg) return;
+    var cx = 100, cy = 100, r = 80;
+    function pt(deg){ var th = (180 - deg) * Math.PI / 180; return [cx + r * Math.cos(th), cy - r * Math.sin(th)]; }
+    function arc(a0, a1){
+      var p0 = pt(a0), p1 = pt(a1);
+      var large = Math.abs(a1 - a0) > 180 ? 1 : 0;
+      var sweep = a1 > a0 ? 1 : 0;
+      return 'M ' + p0[0].toFixed(1) + ' ' + p0[1].toFixed(1) + ' A ' + r + ' ' + r + ' 0 ' + large + ' ' + sweep + ' ' + p1[0].toFixed(1) + ' ' + p1[1].toFixed(1);
+    }
+    var gid = 'g-' + svgId, gbid = 'gb-' + svgId;
+    var html = '<defs>' +
+      '<linearGradient id="' + gid + '" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#DC2626"/><stop offset="100%" stop-color="#F472B6"/></linearGradient>' +
+      '<linearGradient id="' + gbid + '" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#38bdf8"/></linearGradient>' +
+      '</defs>';
+    html += '<path d="' + arc(0, 180) + '" fill="none" stroke="' + TC.arcIdle + '" stroke-width="11" stroke-linecap="round"/>';
+    function band(a0, a1, stroke){ if (Math.abs(a1 - a0) < 2) return; html += '<path d="' + arc(a0, a1) + '" fill="none" stroke="' + stroke + '" stroke-width="11" stroke-linecap="butt"/>'; }
+    if (label === 'Strong sell') band(0, 22, 'url(#' + gid + ')');
+    else if (label === 'Sell') band(0, 55, 'url(#' + gid + ')');
+    else if (label === 'Buy') band(125, 180, 'url(#' + gbid + ')');
+    else if (label === 'Strong buy') band(158, 180, 'url(#' + gbid + ')');
+    var L = [['Strong sell', 8, 108], ['Sell', 45, 34], ['Neutral', 90, 8], ['Buy', 135, 34], ['Strong buy', 172, 108]];
+    for (var i = 0; i < L.length; i++){
+      var name = L[i][0], isActive = (label === name);
+      var col = TC.labelIdle;
+      if (isActive) col = (name.indexOf('sell') >= 0) ? TC.labelSell : (name.indexOf('buy') >= 0 ? TC.labelBuy : '#ffffff');
+      var w = isActive ? ' font-weight="800"' : ' font-weight="600"';
+      html += '<text x="' + L[i][1] + '" y="' + L[i][2] + '" font-size="8.5" fill="' + col + '" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif"' + w + '>' + name + '</text>';
+    }
+    var ang = (typeof angleDeg === 'number' && isFinite(angleDeg)) ? angleDeg : 90;
+    var theta = (180 - ang) * Math.PI / 180, nx = cx + 66 * Math.cos(theta), ny = cy - 66 * Math.sin(theta);
+    html += '<line x1="' + cx + '" y1="' + cy + '" x2="' + nx.toFixed(1) + '" y2="' + ny.toFixed(1) + '" stroke="' + TC.needle + '" stroke-width="2.4" stroke-linecap="round"/>';
+    html += '<circle cx="' + cx + '" cy="' + cy + '" r="5" fill="' + TC.hub + '" stroke="#e2e8f0" stroke-width="1.4"/>';
+    svg.innerHTML = html;
+  }
+
+  // ── distribution bar (widths = real counts via flex-grow) — kept as primary signal
   function seg(id, count){
     var n = el(id);
     if (!n) return;
@@ -56,7 +110,7 @@
     seg(prefix + 'seg-buy', g.buy);
   }
 
-  // ── signal cards ────────────────────────────────────────────────────────
+  // ── signal cards — distribution bars kept; cycles are ADDITIONAL visual
   function verdictClass(label){
     if (label === 'Buy' || label === 'Strong buy') return 'is-buy';
     if (label === 'Sell' || label === 'Strong sell') return 'is-sell';
@@ -111,7 +165,8 @@
 
   // ── loading skeletons / banner / toast ─────────────────────────────────
   var SKELETON_IDS = ['tv-price','tv-updated','tv-sum-label','tv-osc-label','tv-ma-label',
-    'tv-gauge-sum','tv-gauge-osc','tv-gauge-ma'];
+    'tv-gauge-sum','tv-gauge-osc','tv-gauge-ma',
+    'tv-cycle-osc','tv-cycle-sum','tv-cycle-ma'];
   function skeleton(on){
     for (var i=0;i<SKELETON_IDS.length;i++){
       var n = el(SKELETON_IDS[i]);
@@ -171,6 +226,20 @@
     renderSignal('tv-sum-', gs, total + ' signals \u00B7 ' + (data.timeframe || TF));
     renderSignal('tv-osc-', go, (go.sell + go.neutral + go.buy) + ' oscillators');
     renderSignal('tv-ma-',  gm, (gm.sell + gm.neutral + gm.buy) + ' averages');
+
+    // cycles — same gauges as your reference (red→blue, dark substrate), additive
+    var aOsc = go.angle_deg, aSum = gs.angle_deg, aMa = gm.angle_deg;
+    drawCycle('tv-cycle-osc', go.label, aOsc);
+    drawCycle('tv-cycle-sum', gs.label, aSum);
+    drawCycle('tv-cycle-ma',  gm.label, aMa);
+    // cycle verdicts + counts mirror distribution bars (same data, second visual)
+    function cycleVerdict(id, label){ var n = el(id); if (!n) return; n.textContent = label; n.classList.remove('is-buy','is-sell','is-neutral'); n.classList.add(label === 'Buy' || label === 'Strong buy' ? 'is-buy' : label === 'Sell' || label === 'Strong sell' ? 'is-sell' : 'is-neutral'); }
+    cycleVerdict('tv-cycle-osc-label', go.label);
+    cycleVerdict('tv-cycle-sum-label', gs.label);
+    cycleVerdict('tv-cycle-ma-label', gm.label);
+    setText('tv-cycle-osc-sell', String(go.sell)); setText('tv-cycle-osc-neu', String(go.neutral)); setText('tv-cycle-osc-buy', String(go.buy));
+    setText('tv-cycle-sum-sell', String(gs.sell)); setText('tv-cycle-sum-neu', String(gs.neutral)); setText('tv-cycle-sum-buy', String(gs.buy));
+    setText('tv-cycle-ma-sell',  String(gm.sell)); setText('tv-cycle-ma-neu',  String(gm.neutral)); setText('tv-cycle-ma-buy',  String(gm.buy));
 
     setBody('tv-osc-body', osc, 3, 'No oscillator data for this timeframe yet \u2014 waiting for completed bars.');
     setBody('tv-ma-body', ma, 3, 'No moving-average data for this timeframe yet \u2014 waiting for completed bars.');

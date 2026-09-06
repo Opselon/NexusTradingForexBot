@@ -124,7 +124,53 @@
 .tv-tf:focus-visible, .tv-retry:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: 2px; }
 
 /* --------------------------------------------------------------------------
-   3. SIGNAL BAR — hero summary + two sub cards (distribution bars)
+   3. CYCLES — TradingView triple gauge (additive: distribution bars kept below)
+   -------------------------------------------------------------------------- */
+.tv-cycles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--tv-line);
+  align-items: start;
+}
+.tv-cycle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 8px 12px;
+  background: var(--tv-panel);
+  border: 1px solid var(--tv-line);
+  border-radius: 10px;
+  min-width: 0;
+}
+.tv-cycle--hero { border-color: var(--tv-line2); box-shadow: 0 0 0 1px rgba(127,179,255,0.08) inset; }
+.tv-cycle-name {
+  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.10em;
+  color: var(--tv-dim); margin-bottom: 4px;
+}
+.tv-cycle-gauge { width: 180px; height: 108px; }
+.tv-cycle-svg { width: 100%; height: 100%; display: block; }
+.tv-cycle-verdict { font-size: 16px; font-weight: 800; line-height: 1.1; margin-top: 2px; }
+.tv-cycle-verdict.is-buy { color: var(--tv-buy); }
+.tv-cycle-verdict.is-sell { color: var(--tv-sell); }
+.tv-cycle-verdict.is-neutral { color: #dbe4f2; }
+.tv-cycle-counts { display: flex; gap: 14px; margin-top: 8px; }
+.tv-cycle-count { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.tv-cycle-k { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--tv-dim); }
+.tv-cycle-v { font-family: var(--tv-mono); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--tv-text); }
+
+@media (max-width: 900px) {
+  .tv-cycles { grid-template-columns: 1fr; gap: 10px; }
+  .tv-cycle-gauge { width: 200px; height: 120px; }
+}
+@media (max-width: 640px) {
+  .tv-cycles { padding: 10px; }
+}
+
+/* --------------------------------------------------------------------------
+   4. SIGNAL BAR — hero summary + two sub cards (distribution bars, kept)
    -------------------------------------------------------------------------- */
 .tv-signal-bar { display: flex; flex-direction: column; gap: 10px; padding: 10px 14px 12px; }
 .tv-signal-hero, .tv-signal-card {
@@ -183,7 +229,7 @@
 .tv-signal-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-width: 0; }
 
 /* --------------------------------------------------------------------------
-   4. TABLES — indicators + pivots
+   5. TABLES — indicators + pivots
    -------------------------------------------------------------------------- */
 .tv-tables { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 0 14px 4px; }
 @media (min-width: 1100px) { .tv-tables { grid-template-columns: 1fr 1fr; } }
@@ -253,7 +299,7 @@
 .tv-table tr.is-pivot .tv-pivotlvl { color: var(--tv-gold); }
 
 /* --------------------------------------------------------------------------
-   5. LOADING / EMPTY / TOAST
+   6. LOADING / EMPTY / TOAST
    -------------------------------------------------------------------------- */
 .tv-empty { padding: 26px 14px; text-align: center; font-size: 12.5px; color: var(--tv-muted); border-top: 1px solid var(--tv-line); }
 
@@ -280,7 +326,7 @@
 .tv-toast.show { opacity: 1; transform: none; }
 
 /* --------------------------------------------------------------------------
-   6. MOTION / ACCESSIBILITY / RESPONSIVE
+   7. MOTION / ACCESSIBILITY / RESPONSIVE
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   #tv-indicator-widget *, #tv-indicator-widget *::before, #tv-indicator-widget *::after {
