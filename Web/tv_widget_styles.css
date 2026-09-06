@@ -1,0 +1,310 @@
+/* ==========================================================================
+   Nexus Technicals card — professional terminal restyle (TV-REDESIGN-1)
+   Agent: Hermes-Main (Hermes-UI-01) — UI layer only, zero API/logic changes.
+   Loaded AFTER tailwind.css / styles.css (index.html <head>); every rule is
+   scoped to #tv-indicator-widget so nothing outside the card is touched.
+
+   Design language: Bloomberg-terminal density, not gaming neon.
+   - color is never the only signal: every state carries a word + glyph
+   - one accent per meaning: buy=green, sell=red, neutral=slate, info=blue
+   - tabular mono numerals, hairline borders, restrained motion
+   ========================================================================== */
+
+#tv-indicator-widget {
+  /* palette tokens */
+  --tv-bg: #0d1526;            /* card body */
+  --tv-bg2: #0a101e;           /* deepest well (context strip) */
+  --tv-panel: #0f1830;         /* nested panel bg */
+  --tv-panel-h: #101a33;       /* panel header bg */
+  --tv-line: #1d2a47;          /* hairline border */
+  --tv-line2: #2a3a5e;         /* stronger border / hover */
+  --tv-text: #e6edf7;          /* primary text */
+  --tv-muted: #8ea0bd;         /* secondary text */
+  --tv-dim: #5d6f90;           /* tertiary text */
+  --tv-buy: #34d399;
+  --tv-sell: #f0616d;
+  --tv-neu: #94a3b8;
+  --tv-accent: #7fb3ff;
+  --tv-warn: #fbbf24;
+  --tv-gold: #e8c15a;
+  --tv-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  position: relative;
+  background: var(--tv-bg);
+  border: 1px solid var(--tv-line);
+  border-radius: 14px;
+  overflow: hidden;
+  color: var(--tv-text);
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: 0 12px 32px -18px rgba(0, 0, 0, 0.65);
+}
+#tv-indicator-widget .hidden { display: none !important; }
+
+/* state borders (subtle, never neon) */
+#tv-indicator-widget.tv-error { border-color: rgba(240, 97, 109, 0.45); }
+#tv-indicator-widget.tv-stale { border-color: rgba(251, 191, 36, 0.35); }
+
+/* --------------------------------------------------------------------------
+   1. MARKET CONTEXT STRIP
+   -------------------------------------------------------------------------- */
+.tv-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 9px 14px;
+  background: var(--tv-bg2);
+  border-bottom: 1px solid var(--tv-line);
+}
+.tv-idbox { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.tv-flag {
+  width: 22px; height: 22px; border-radius: 6px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #e8c15a, #b98a2e);
+  color: #231a04; font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
+}
+.tv-currency { font-size: 14.5px; font-weight: 800; letter-spacing: 0.02em; color: #fff; white-space: nowrap; }
+.tv-curfullname { font-size: 11.5px; color: var(--tv-muted); white-space: nowrap; }
+
+.tv-pricewrap { display: flex; flex-direction: column; align-items: flex-end; gap: 0; margin-left: auto; }
+.tv-plabel { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--tv-dim); }
+.tv-price { font-family: var(--tv-mono); font-size: 15px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+.tv-updated { font-family: var(--tv-mono); font-size: 10.5px; color: var(--tv-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.tv-live {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+  padding: 3px 9px; border-radius: 999px;
+  color: #6ee7b7; background: rgba(52, 211, 153, 0.10); border: 1px solid rgba(52, 211, 153, 0.35);
+}
+.tv-live.is-warn { color: #fcd34d; background: rgba(251, 191, 36, 0.10); border-color: rgba(251, 191, 36, 0.35); }
+
+/* error / stale banner (hidden until a real state demands it) */
+.tv-error {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; font-size: 12px; font-weight: 600;
+  color: #fda4af; background: rgba(240, 97, 109, 0.08);
+  border-bottom: 1px solid rgba(240, 97, 109, 0.30);
+}
+.tv-error.is-stale { color: #fcd34d; background: rgba(251, 191, 36, 0.07); border-bottom-color: rgba(251, 191, 36, 0.30); }
+.tv-error-ico { font-size: 12px; }
+.tv-retry {
+  margin-left: auto; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 700;
+  color: #ffd7dc; background: rgba(240, 97, 109, 0.15);
+  border: 1px solid rgba(240, 97, 109, 0.4); border-radius: 6px; padding: 2px 10px;
+  transition: background-color 0.15s ease;
+}
+.tv-error.is-stale .tv-retry { color: #fde9b8; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.4); }
+.tv-retry:hover { background: rgba(240, 97, 109, 0.28); }
+.tv-error.is-stale .tv-retry:hover { background: rgba(251, 191, 36, 0.22); }
+
+/* --------------------------------------------------------------------------
+   2. TIMEFRAME TOOLBAR (segmented pill row)
+   -------------------------------------------------------------------------- */
+.tv-tfbar { padding: 8px 14px 2px; }
+.tv-tfs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tv-tf {
+  appearance: none; cursor: pointer; white-space: nowrap;
+  font: inherit; font-size: 11.5px; font-weight: 600;
+  color: var(--tv-muted); background: transparent;
+  border: 1px solid transparent; border-radius: 999px;
+  padding: 4px 11px; line-height: 1.2;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+.tv-tf:hover { color: var(--tv-text); background: rgba(127, 179, 255, 0.08); }
+.tv-tf.active { background: #e8eefb; border-color: #e8eefb; color: #0b1220; font-weight: 700; }
+.tv-tf:focus-visible, .tv-retry:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: 2px; }
+
+/* --------------------------------------------------------------------------
+   3. SIGNAL BAR — hero summary + two sub cards (distribution bars)
+   -------------------------------------------------------------------------- */
+.tv-signal-bar { display: flex; flex-direction: column; gap: 10px; padding: 10px 14px 12px; }
+.tv-signal-hero, .tv-signal-card {
+  background: var(--tv-panel);
+  border: 1px solid var(--tv-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.tv-signal-hero { border-color: var(--tv-line2); }
+.tv-signal-name {
+  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.10em;
+  color: var(--tv-dim); margin-bottom: 4px;
+}
+.tv-hero-main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.tv-signal-meta { font-family: var(--tv-mono); font-size: 10.5px; color: var(--tv-dim); white-space: nowrap; }
+
+.tv-verdict { font-weight: 800; letter-spacing: 0.01em; line-height: 1.1; }
+.tv-signal-hero .tv-verdict { font-size: 26px; }
+.tv-signal-card .tv-verdict { font-size: 15px; }
+.tv-verdict.is-buy { color: var(--tv-buy); }
+.tv-verdict.is-sell { color: var(--tv-sell); }
+.tv-verdict.is-neutral { color: #dbe4f2; }
+
+/* distribution bar — widths ARE the sell/neutral/buy counts (flex-grow) */
+.tv-gauge-wrap { margin-top: 6px; border-radius: 999px; }
+.tv-gauge {
+  display: flex; height: 8px; border-radius: 999px; overflow: hidden;
+  background: var(--tv-bg2);
+  box-shadow: inset 0 0 0 1px var(--tv-line);
+}
+.tv-gseg { flex-basis: 0; min-width: 6px; transition: flex-grow 0.45s ease; }
+.tv-gseg.is-sell { background: #e05560; }
+.tv-gseg.is-neutral { background: #3d4c6e; }
+.tv-gseg.is-buy { background: #2fbf8f; }
+
+.tv-counts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.tv-count {
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  min-width: 52px; padding: 3px 8px 4px; border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025); border: 1px solid var(--tv-line);
+}
+.tv-count-k { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--tv-dim); }
+.tv-count-v { font-family: var(--tv-mono); font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tv-count.is-sell { border-color: rgba(240, 97, 109, 0.30); }
+.tv-count.is-sell .tv-count-v { color: var(--tv-sell); }
+.tv-count.is-neutral .tv-count-v { color: var(--tv-neu); }
+.tv-count.is-buy { border-color: rgba(52, 211, 153, 0.30); }
+.tv-count.is-buy .tv-count-v { color: var(--tv-buy); }
+
+/* two-column layout: hero | oscillator+MA pair */
+@media (min-width: 900px) {
+  .tv-signal-bar { display: grid; grid-template-columns: minmax(280px, 2fr) 3fr; align-items: stretch; }
+  .tv-signal-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+}
+.tv-signal-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-width: 0; }
+
+/* --------------------------------------------------------------------------
+   4. TABLES — indicators + pivots
+   -------------------------------------------------------------------------- */
+.tv-tables { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 0 14px 4px; }
+@media (min-width: 1100px) { .tv-tables { grid-template-columns: 1fr 1fr; } }
+
+.tv-panel {
+  background: var(--tv-panel);
+  border: 1px solid var(--tv-line);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+.tv-panel-h {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px;
+  background: var(--tv-panel-h);
+  border-bottom: 1px solid var(--tv-line);
+}
+.tv-panel-t { margin: 0; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em; color: #c7d4ea; }
+.tv-panel-sub { font-size: 9.5px; color: var(--tv-dim); }
+.tv-chip {
+  margin-left: auto; font-size: 10px; font-weight: 700;
+  padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+  color: var(--tv-neu); background: rgba(148, 163, 184, 0.10); border: 1px solid rgba(148, 163, 184, 0.30);
+}
+.tv-chip.is-buy { color: var(--tv-buy); background: var(--tv-buybg, rgba(52, 211, 153, 0.10)); border-color: rgba(52, 211, 153, 0.35); }
+.tv-chip.is-sell { color: var(--tv-sell); background: rgba(240, 97, 109, 0.10); border-color: rgba(240, 97, 109, 0.35); }
+
+.tv-scroll { overflow-x: auto; }
+.tv-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+.tv-table thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--tv-panel-h);
+  padding: 6px 12px;
+  text-align: left; white-space: nowrap;
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.10em;
+  color: var(--tv-dim);
+  border-bottom: 1px solid var(--tv-line);
+}
+.ta-r { text-align: right !important; }
+.tv-table tbody td { padding: 5px 12px; border-bottom: 1px solid rgba(29, 42, 71, 0.55); vertical-align: middle; }
+.tv-table tbody tr:last-child td { border-bottom: none; }
+.tv-table tbody tr:nth-child(odd) td { background: rgba(255, 255, 255, 0.015); }
+.tv-table tbody tr:hover td { background: rgba(127, 179, 255, 0.06); }
+.tv-name { color: var(--tv-text); font-weight: 600; }
+.tv-val { font-family: var(--tv-mono); font-size: 12px; color: #dbe6f5; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tv-act { text-align: right; white-space: nowrap; }
+.tv-muted { color: var(--tv-muted); }
+
+/* action badges — glyph + word, color reinforces (never sole channel) */
+.tv-action {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 700; line-height: 1;
+  padding: 3px 8px; border-radius: 999px;
+  border: 1px solid transparent;
+}
+.tv-action i { font-style: normal; font-size: 8.5px; line-height: 1; }
+.tv-action.is-buy { color: var(--tv-buy); background: rgba(52, 211, 153, 0.10); border-color: rgba(52, 211, 153, 0.32); }
+.tv-action.is-sell { color: var(--tv-sell); background: rgba(240, 97, 109, 0.10); border-color: rgba(240, 97, 109, 0.32); }
+.tv-action.is-neutral { color: var(--tv-neu); background: rgba(148, 163, 184, 0.08); border-color: rgba(148, 163, 184, 0.28); }
+
+/* pivots */
+.tv-pivots { margin: 10px 14px 12px; }
+.tv-pivot-table .tv-val { font-size: 11.5px; }
+.tv-pivotlvl { font-weight: 800; color: #fff; font-size: 11px; letter-spacing: 0.05em; }
+.tv-table tr.is-pivot td { background: rgba(232, 193, 90, 0.07); }
+.tv-table tr.is-pivot td:first-child { box-shadow: inset 2px 0 0 var(--tv-gold); }
+.tv-table tr.is-pivot .tv-pivotlvl { color: var(--tv-gold); }
+
+/* --------------------------------------------------------------------------
+   5. LOADING / EMPTY / TOAST
+   -------------------------------------------------------------------------- */
+.tv-empty { padding: 26px 14px; text-align: center; font-size: 12.5px; color: var(--tv-muted); border-top: 1px solid var(--tv-line); }
+
+.tv-skeleton-target.skeleton {
+  color: transparent !important;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #16203a 25%, #1e2b4d 45%, #16203a 65%);
+  background-size: 200% 100%;
+  animation: tv-shimmer 1.15s linear infinite;
+}
+.tv-gauge-wrap.skeleton { background: linear-gradient(90deg, #16203a 25%, #1e2b4d 45%, #16203a 65%); background-size: 200% 100%; animation: tv-shimmer 1.15s linear infinite; }
+.tv-gauge-wrap.skeleton .tv-gauge { visibility: hidden; }
+@keyframes tv-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+.tv-toast {
+  position: absolute; right: 14px; top: 64px; z-index: 30; max-width: min(420px, 80%);
+  font-size: 11.5px; font-weight: 600; color: #ffd7dc;
+  background: #1a1020; border: 1px solid rgba(240, 97, 109, 0.45);
+  border-radius: 8px; padding: 7px 11px;
+  box-shadow: 0 10px 26px -12px rgba(0, 0, 0, 0.8);
+  opacity: 0; transform: translateY(-6px); pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.tv-toast.show { opacity: 1; transform: none; }
+
+/* --------------------------------------------------------------------------
+   6. MOTION / ACCESSIBILITY / RESPONSIVE
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  #tv-indicator-widget *, #tv-indicator-widget *::before, #tv-indicator-widget *::after {
+    animation: none !important; transition: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .tv-context { padding: 8px 10px; gap: 6px 10px; }
+  .tv-curfullname { display: none; }
+  .tv-tfbar { padding: 7px 10px 2px; }
+  .tv-tf { padding: 4px 9px; font-size: 11px; }
+  .tv-signal-bar { padding: 8px 10px 10px; gap: 8px; }
+  .tv-hero-main { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .tv-signal-hero .tv-verdict { font-size: 22px; }
+  .tv-count { min-width: 46px; padding: 2px 6px 3px; }
+  .tv-count-v { font-size: 11.5px; }
+  .tv-tables { padding: 0 10px 4px; gap: 8px; }
+  .tv-pivots { margin: 8px 10px 10px; }
+  .tv-table { font-size: 11.5px; }
+  .tv-table thead th { padding: 5px 8px; font-size: 9px; }
+  .tv-table tbody td { padding: 4px 8px; }
+  .tv-name { font-size: 11.5px; }
+  .tv-val { font-size: 11px; }
+  .tv-action { font-size: 9.5px; padding: 2px 6px; }
+  .tv-toast { top: 58px; right: 10px; }
+}
+@media (max-width: 479px) {
+  .tv-signal-sub { grid-template-columns: 1fr; }
+}
+@media (min-width: 1600px) {
+  #tv-indicator-widget { max-width: 1760px; margin: 0 auto; }
+}
