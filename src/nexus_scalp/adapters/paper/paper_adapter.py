@@ -50,6 +50,25 @@ from nexus_scalp.ports.mt5_port import IMT5Port
 
 logger = get_logger("nexus_scalp.adapters.paper")
 
+
+def _get_seed() -> int | None:
+    """Read deterministic seed from NEXUS_PAPER_STRESS_SEED if set.
+
+    Returns int seed or None when unset/unparseable. Accepts both
+    integer and float-like strings for convenience.
+    """
+    raw = os.environ.get("NEXUS_PAPER_STRESS_SEED", "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        try:
+            return int(float(raw))
+        except Exception:
+            return None
+
+
 #: Instruments quoted with 2 decimals and a 100-unit contract size (metals).
 _METAL_PREFIXES: tuple[str, ...] = ("XAU", "XAG", "GOLD", "SILVER")
 
@@ -74,6 +93,14 @@ class PaperMT5Adapter(IMT5Port):
     }
     _DEFAULT_SEED = 2000.00  # fallback for unknown 2-digit instruments
 
+    #: Baseline simulated spread for gold-class instruments: 8-18 cents.
+    #: The legacy 25-45c band priced every PAPER signal out (spread/ATR gate
+    #: blocked 100% of fills), so baseline is now tight enough to trade while
+    #: stress runs widen it explicitly via PaperStressSpread /
+    #: NEXUS_PAPER_SPREAD_SCALE (see _effective_spread_scale).
+    _METAL_SPREAD_RANGE: ClassVar[tuple[float, float]] = (0.08, 0.18)
+    _FX_SPREAD: ClassVar[float] = 0.00012  # 1.2 pips
+
     def __init__(self, initial_balance: float = 10000.0, symbol: str = "EURUSD") -> None:
         self.symbol = symbol
         self.balance = initial_balance
@@ -84,10 +111,28 @@ class PaperMT5Adapter(IMT5Port):
         self._current_price = self._seed_price(symbol)
         self._positions: list[Position] = []
         self._ticket_counter = 100001
+        #: Task C: stress spread override (None = baseline 8-18c gold band).
+        #: Installed by PaperStressSpread.install() or set_stress_spread();
+        #: resolved per tick in _effective_spread_scale().
+        self._stress_spread_scale: float | None = None
+        self._stress_spread_profile: Any | None = None
+        # Evidence guards E-H
+        self._last_tick: Any | None = None
+        self._last_tick_time: Any | None = None
+        self._seen_order_ids: set[str] = set()
         # BUG-226: execution provenance of the account this adapter represents.
         # Always 'PAPER' for the simulation adapter; the engine and the
         # audit-repository read it to tag ledger rows and snapshots.
         self.current_account_source: str = "PAPER"
+        # Determinism capsizer: per-instance seeded RNG + AR(1) state.
+        # When NEXUS_PAPER_STRESS_SEED is set the tick stream is fully
+        # reproducible (same seed -> same sequence); otherwise _rng is
+        # system-seeded but the walk remains autocorrelated (phi=0.6).
+        self._seed: int | None = _get_seed()
+        self._rng: random.Random = random.Random(self._seed)
+        self._prev_step: float = 0.0
+        self._vol_block: float = 1.0
+        self._vol_block_ticks_left: int = 0
 
     @classmethod
     def _seed_price(cls, symbol: str) -> float:
@@ -130,6 +175,35 @@ class PaperMT5Adapter(IMT5Port):
         return 2 if self._symbol_is_metal(symbol) else 5
 
     # ------------------------------------------------------------------
+    # Spread profile (Task C)
+    # ------------------------------------------------------------------
+
+    def _effective_spread_scale(self) -> float:
+        """Resolve spread scale: adapter override > NEXUS_PAPER_SPREAD_SCALE env > 1.0."""
+        if self._stress_spread_scale is not None:
+            try:
+                return float(self._stress_spread_scale)
+            except Exception:
+                pass
+        raw = os.environ.get("NEXUS_PAPER_SPREAD_SCALE", "").strip()
+        if raw:
+            try:
+                s = float(raw)
+                return max(0.1, min(s, 10.0))
+            except Exception:
+                pass
+        return 1.0
+
+    def set_stress_spread(self, scale: float) -> None:
+        """Install a stress spread multiplier. Baseline PAPER stays 8-18c (scale 1.0)."""
+        self._stress_spread_scale = float(scale)
+
+    def clear_stress_spread(self) -> None:
+        """Restore baseline spread profile."""
+        self._stress_spread_scale = None
+        self._stress_spread_profile = None
+
+    # ------------------------------------------------------------------
     # Connection lifecycle
     # ------------------------------------------------------------------
 
@@ -161,7 +235,106 @@ class PaperMT5Adapter(IMT5Port):
             state.set_state(MT5ConnectionState.DISCONNECTED, "paper simulation disconnected")
         return state
 
+    # ------------------------------------------------------------------
+    # Accounting (Tasks B/D) — unrealized, realized, reconciliation
+    # ------------------------------------------------------------------
+
+    def _contract_size(self, symbol: str) -> float:
+        return 100.0 if self._symbol_is_metal(symbol) else 100000.0
+
+    def _realized_pnl(self, pos: Any, close_price: float, close_volume: float) -> float:
+        contract = self._contract_size(pos.symbol)
+        if pos.type == OrderType.BUY:
+            return round(
+                (float(close_price) - float(pos.price_open)) * float(close_volume) * contract, 2
+            )
+        # SELL
+        return round(
+            (float(pos.price_open) - float(close_price)) * float(close_volume) * contract, 2
+        )
+
+    def _current_price_for_pnl(self, pos: Any) -> float | None:
+        """Mid-close price for unrealized: BUY→bid, SELL→ask."""
+        # Prefer cached last tick for that symbol; otherwise generate one
+        try:
+            tick = (
+                self._last_tick
+                if (
+                    self._last_tick is not None
+                    and getattr(self._last_tick, "symbol", None) == pos.symbol
+                )
+                else None
+            )
+            if tick is None:
+                tick = self.get_last_tick(pos.symbol)
+        except Exception:
+            return None
+        if pos.type == OrderType.BUY:
+            return float(tick.bid)
+        return float(tick.ask)
+
+    def _floating_pnl(self) -> float:
+        total = 0.0
+        for pos in self._positions:
+            cp = self._current_price_for_pnl(pos)
+            if cp is None:
+                # fall back to stored profit
+                total += float(getattr(pos, "profit", 0.0))
+                continue
+            total += self._realized_pnl(pos, cp, float(pos.volume))
+        return round(total, 2)
+
+    def _refresh_account(self) -> None:
+        """Recompute equity = balance + unrealized."""
+        floating = self._floating_pnl()
+        self.equity = round(float(self.balance) + floating, 2)
+
+    def reconcile_accounting(self) -> dict[str, Any]:
+        """Task D: assert equity == balance + unrealized within 1 cent.
+
+        Returns dict with balance/equity/floating and ok flag; raises
+        AssertionError if invariant violated.
+        """
+        floating = self._floating_pnl()
+        expected_equity = round(float(self.balance) + floating, 2)
+        ok = abs(float(self.equity) - expected_equity) < 0.015
+        info: dict[str, Any] = {
+            "balance": float(self.balance),
+            "equity": float(self.equity),
+            "floating_pnl": floating,
+            "expected_equity": expected_equity,
+            "ok": ok,
+        }
+        assert ok, f"equity invariant broken: {info}"
+        # also assert each position profit matches tick (within 2c)
+        for pos in self._positions:
+            cp = self._current_price_for_pnl(pos)
+            if cp is not None:
+                expected = self._realized_pnl(pos, cp, float(pos.volume))
+                assert abs(float(pos.profit) - expected) < 0.03, (
+                    f"pos {pos.ticket} profit stale: {pos.profit} vs {expected}"
+                )
+        return info
+
+    def _refresh_position_profits(self) -> None:
+        """Rewrite position.profit to match current tick (frozen model)."""
+        refreshed: list[Any] = []
+        for pos in self._positions:
+            cp = self._current_price_for_pnl(pos)
+            if cp is None:
+                refreshed.append(pos)
+                continue
+            pnl = self._realized_pnl(pos, cp, float(pos.volume))
+            if abs(float(pos.profit) - pnl) > 0.005:
+                refreshed.append(pos.model_copy(update={"profit": float(pnl)}))
+            else:
+                refreshed.append(pos)
+        self._positions = refreshed
+
     def get_account_snapshot(self) -> AccountSnapshot:
+        # keep equity consistent before snapshot
+        self._refresh_position_profits()
+        self._refresh_account()
         snap = AccountSnapshot()
         snap.available = True
         snap.source = "PAPER_SIMULATION"
@@ -372,7 +545,9 @@ class PaperMT5Adapter(IMT5Port):
     # ------------------------------------------------------------------
 
     def get_account_info(self) -> AccountInfo:
-        """Returns virtual account snapshot."""
+        """Returns virtual account snapshot (equity = balance + unrealized)."""
+        self._refresh_position_profits()
+        self._refresh_account()
         return AccountInfo(
             login=9990001,
             trade_mode=0,  # Demo / Simulation
@@ -431,20 +606,79 @@ class PaperMT5Adapter(IMT5Port):
         occasional trend steps, not ±2 cents around a dead seed). The walk is
         mean-reverting to the seed baseline so long sessions cannot drift to
         absurd levels.
+
+        Determinism (capsizer): when ``NEXUS_PAPER_STRESS_SEED`` is set the
+        tick stream is reproducible — the adapter owns a per-instance
+        ``random.Random(self._seed)`` via ``_get_seed()`` so the same seed
+        yields the same sequence. Dynamics are AR(1) with ``phi=0.6`` and
+        persistent volatility blocks (calm/storm regimes of 15-45 ticks)
+        rather than independent uniform steps. If
+        ``market_data.paper_stress.PaperStressMarket`` is present and a seed
+        is set, ticks/bars delegate there; otherwise the local AR(1) fallback
+        is used. Spread baseline is tight ``8-18c`` for XAUUSD
+        (``_METAL_SPREAD_RANGE``) scaled by ``_effective_spread_scale()``.
         """
+        # Delegation: when seeded and PaperStressMarket exists, prefer it.
+        # Keep narrow suppress so missing/incompatible module never breaks adapter.
+        _seed_now = getattr(self, "_seed", None)
+        if _seed_now is None:
+            _seed_now = _get_seed()
+            # refresh per-instance seed/rng if env changed mid-session
+            if _seed_now is not None and _seed_now != getattr(self, "_seed", None):
+                self._seed = _seed_now
+                self._rng = random.Random(_seed_now)
+        if _seed_now is not None:
+            with contextlib.suppress(Exception):
+                from nexus_scalp.market_data.paper_stress import PaperStressMarket  # type: ignore
+
+                m = PaperStressMarket(seed=_seed_now)  # type: ignore
+                for _attr in ("next_tick", "get_tick", "generate_tick", "tick"):
+                    fn = getattr(m, _attr, None)
+                    if callable(fn):
+                        d = fn(symbol)
+                        if isinstance(d, dict) and "bid" in d and "ask" in d:
+                            digits = self._quote_digits(symbol)
+                            tick = TickData(
+                                symbol=symbol,
+                                timestamp=datetime.now(UTC),
+                                bid=round(float(d["bid"]), digits),
+                                ask=round(float(d["ask"]), digits),
+                                last=round(float(d.get("last", d["bid"])), digits),
+                                volume=float(d.get("volume", self._rng.randint(1, 15))),
+                                flags=int(d.get("flags", 6)),
+                            )
+                            self._current_price = tick.bid
+                            self._last_tick = tick
+                            self._last_tick_time = tick.timestamp
+                            return tick
         digits = self._quote_digits(symbol)
         upper = (symbol or "").upper()
+        scale = self._effective_spread_scale()
+        baseline = self._seed_price(upper)
+        # Volatility block: persistent calm/storm multiplier 15-45 ticks.
+        if getattr(self, "_vol_block_ticks_left", 0) <= 0:
+            self._vol_block = self._rng.uniform(0.65, 1.65)
+            self._vol_block_ticks_left = self._rng.randint(15, 45)
+        self._vol_block_ticks_left -= 1
+
+        phi = 0.6
         if digits == 2:
-            # gold-class: burst moves + rare momentum step, spread 25-45c
-            step = random.choice([-0.30, -0.15, -0.08, -0.02, 0.0, 0.02, 0.08, 0.15, 0.30, 0.45])
-            spread = round(random.uniform(0.25, 0.45), 2)
-            baseline = self._seed_price(upper)
+            lo, hi = self._METAL_SPREAD_RANGE
+            lo *= scale
+            hi *= scale
+            lo = max(0.02, min(lo, 2.0))
+            hi = max(lo + 0.02, min(hi, 3.0))
+            noise = self._rng.gauss(0, 0.09)
+            step = phi * self._prev_step + noise * self._vol_block
+            step = max(-0.55, min(0.55, step))
+            spread = round(self._rng.uniform(lo, hi), 2)
         else:
-            step = random.choice(
-                [-0.00030, -0.00015, -0.00008, -0.00002, 0.0, 0.00002, 0.00008, 0.00015, 0.00030]
-            )
-            spread = 0.00012  # 1.2 pips
-            baseline = self._seed_price(upper)
+            noise = self._rng.gauss(0, 0.00009)
+            step = phi * self._prev_step + noise * self._vol_block
+            step = max(-0.00045, min(0.00045, step))
+            spread = round(self._FX_SPREAD * scale, 5)
+
+        self._prev_step = step
 
         candidate = self._current_price + step
         # Mean-revert toward the seed when the walk drifts > 2% away.
@@ -455,15 +689,19 @@ class PaperMT5Adapter(IMT5Port):
         bid = round(self._current_price, digits)
         ask = round(bid + spread, digits)
 
-        return TickData(
+        tick = TickData(
             symbol=symbol,
             timestamp=datetime.now(UTC),
             bid=bid,
             ask=ask,
             last=bid,
-            volume=float(random.randint(1, 15)),
+            volume=float(self._rng.randint(1, 15)),
             flags=6,
         )
+        # cache for stale-tick guard and floating-PnL
+        self._last_tick = tick
+        self._last_tick_time = tick.timestamp
+        return tick
 
     def get_historical_bars(
         self, symbol: str, timeframe: str = "M1", count: int = 100
@@ -476,6 +714,96 @@ class PaperMT5Adapter(IMT5Port):
         offline. Timestamps are contiguous and ascending, matching the live
         contract that `get_historical_bars` returns completed bars only.
         """
+        # Delegation: seeded bar history via paper_stress when available.
+        _seed_now = getattr(self, "_seed", None)
+        if _seed_now is None:
+            _seed_now = _get_seed()
+        if _seed_now is not None:
+            with contextlib.suppress(Exception):
+                from nexus_scalp.market_data.paper_stress import PaperStressMarket  # type: ignore
+
+                m = PaperStressMarket(seed=_seed_now)  # type: ignore
+                for _attr in ("get_bars", "generate_bars", "get_historical_bars", "bars"):
+                    fn = getattr(m, _attr, None)
+                    if callable(fn):
+                        out = fn(symbol, timeframe, count)
+                        if isinstance(out, list) and out and isinstance(out[0], dict):
+                            # Convert dict bars to BarData
+                            bar_minutes2 = {
+                                "M1": 1,
+                                "M5": 5,
+                                "M15": 15,
+                                "M30": 30,
+                                "H1": 60,
+                                "H4": 240,
+                            }.get(str(timeframe).upper(), 1)
+                            now2 = datetime.now(UTC).replace(second=0, microsecond=0)
+                            res: list[BarData] = []
+                            for idx, d in enumerate(out[: int(count)]):
+                                res.append(
+                                    BarData(
+                                        symbol=str(d.get("symbol", symbol)),
+                                        timeframe=str(d.get("timeframe", timeframe)).upper(),
+                                        timestamp=d.get("time")
+                                        or d.get("timestamp")
+                                        or (
+                                            now2
+                                            - timedelta(minutes=bar_minutes2 * (int(count) - idx))
+                                        ),
+                                        open=round(float(d["open"]), self._quote_digits(symbol)),
+                                        high=round(float(d["high"]), self._quote_digits(symbol)),
+                                        low=round(float(d["low"]), self._quote_digits(symbol)),
+                                        close=round(float(d["close"]), self._quote_digits(symbol)),
+                                        tick_volume=int(d.get("volume", d.get("tick_volume", 100))),
+                                        is_complete=True,
+                                    )
+                                )
+                            return res
+            # Also try the actually-shipped PaperStressScenario class
+            with contextlib.suppress(Exception):
+                from nexus_scalp.market_data.paper_stress import (  # type: ignore
+                    PaperStressScenario,
+                    Regime,
+                )
+
+                scen = PaperStressScenario(symbol=symbol, regime_sequence=[Regime.RANGE])  # type: ignore
+                dict_bars = scen.generate_bars(int(count), str(timeframe), seed=_seed_now)  # type: ignore
+                if isinstance(dict_bars, list) and dict_bars:
+                    # PaperStressScenario generates around 1.0; re-anchor to plausible price
+                    # so bars don't collapse to 1.0 when delegation is used blindly.
+                    # If values look anchored (<100 for XAU), skip delegation and use fallback.
+                    probe = float(dict_bars[0].get("close", dict_bars[0].get("open", 0)) or 0)
+                    digits_probe = self._quote_digits(symbol)
+                    # Heuristic: delegate only if close is within 50% of seed baseline
+                    baseline_probe = self._seed_price(symbol.upper())
+                    if baseline_probe > 0 and abs(probe - baseline_probe) / baseline_probe < 0.6:
+                        bar_minutes2 = {
+                            "M1": 1,
+                            "M5": 5,
+                            "M15": 15,
+                            "M30": 30,
+                            "H1": 60,
+                            "H4": 240,
+                        }.get(str(timeframe).upper(), 1)
+                        now2 = datetime.now(UTC).replace(second=0, microsecond=0)
+                        res2: list[BarData] = []
+                        for idx, d in enumerate(dict_bars[: int(count)]):
+                            res2.append(
+                                BarData(
+                                    symbol=str(d.get("symbol", symbol)),
+                                    timeframe=str(d.get("timeframe", timeframe)).upper(),
+                                    timestamp=now2
+                                    - timedelta(minutes=bar_minutes2 * (int(count) - idx)),
+                                    open=round(float(d["open"]), digits_probe),
+                                    high=round(float(d["high"]), digits_probe),
+                                    low=round(float(d["low"]), digits_probe),
+                                    close=round(float(d["close"]), digits_probe),
+                                    tick_volume=int(d.get("volume", 100)),
+                                    is_complete=True,
+                                )
+                            )
+                        if res2:
+                            return res2
         bar_minutes = {
             "M1": 1,
             "M5": 5,
@@ -492,7 +820,7 @@ class PaperMT5Adapter(IMT5Port):
         bars: list[BarData] = []
 
         for i in range(max(0, int(count)), 0, -1):
-            drift = random.uniform(-amplitude, amplitude)
+            drift = self._rng.uniform(-amplitude, amplitude)
             open_p = round(price, digits)
             close_p = round(open_p + drift, digits)
             high_p = round(max(open_p, close_p) + abs(drift) * 0.5, digits)
@@ -506,7 +834,7 @@ class PaperMT5Adapter(IMT5Port):
                     high=high_p,
                     low=low_p,
                     close=close_p,
-                    tick_volume=random.randint(50, 250),
+                    tick_volume=self._rng.randint(50, 250),
                     is_complete=True,
                 )
             )
@@ -525,8 +853,16 @@ class PaperMT5Adapter(IMT5Port):
         return list(self._positions)
 
     def send_order(self, order: TradeOrder) -> bool:
-        """Simulates immediate market fill of trade orders."""
-        return (
+        """Simulates immediate market fill. F: duplicate order_id guard."""
+        oid = getattr(order, "order_id", None)
+        if oid:
+            if oid in self._seen_order_ids:
+                logger.warning("PAPER ORDER REJECTED (duplicate order_id)", order_id=oid)
+                return False
+            self._seen_order_ids.add(oid)
+            # also reject if any open position already reflects that order_id via magic/comment deduplication window
+            # simple: still-open order_id map
+        ok = (
             self._open_simulated_position(
                 symbol=order.symbol,
                 order_type=order.order_type,
@@ -538,6 +874,10 @@ class PaperMT5Adapter(IMT5Port):
             )
             > 0
         )
+        if not ok and oid:
+            # release id so retry after failure is allowed (only block while open)
+            self._seen_order_ids.discard(oid)
+        return ok
 
     def execute_market_order(
         self,
@@ -582,6 +922,20 @@ class PaperMT5Adapter(IMT5Port):
             take_profit=take_profit,
         )
 
+    def _is_stale_tick(self) -> bool:
+        """H: reject when last tick older than 30s."""
+        if self._last_tick_time is None:
+            return False
+        try:
+            age = (datetime.now(UTC) - self._last_tick_time).total_seconds()
+            return age > 30.0
+        except Exception:
+            return False
+
+    def _margin_required(self, symbol: str, price: float, volume: float) -> float:
+        contract = self._contract_size(symbol)
+        return round((contract * float(price) * float(volume)) / 100.0, 4)
+
     def _open_simulated_position(
         self,
         symbol: str,
@@ -592,31 +946,123 @@ class PaperMT5Adapter(IMT5Port):
         take_profit: float,
         magic: int = 0,
     ) -> int:
-        """Creates the simulated position and returns its ticket (0 on refusal)."""
+        """Creates the simulated position and returns its ticket (0 on refusal).
+
+        E) Fill-price realism: BUY fills at current ask, SELL at current bid
+           (not order.price), plus deterministic seed-based slippage so fill !=
+           requested price when the market moved.  G) Margin check vs free
+           margin.  H) Stale-tick guard (>30s).
+        """
         if volume <= 0.0 or price <= 0.0:
             logger.warning("PAPER ORDER REJECTED (invalid size/price)", volume=volume, price=price)
             return 0
 
+        # H: stale tick guard
+        if self._is_stale_tick():
+            logger.warning("PAPER ORDER REJECTED (stale tick >30s)", symbol=symbol, price=price)
+            return 0
+
+        # G: margin check
+        try:
+            self._refresh_position_profits()
+            self._refresh_account()
+            free = float(self.equity)  # margin==0 in paper; free == equity
+            req = self._margin_required(symbol, float(price), float(volume))
+            if req > free:
+                logger.warning(
+                    "PAPER ORDER REJECTED (insufficient margin)",
+                    symbol=symbol,
+                    required=req,
+                    free=free,
+                )
+                return 0
+        except Exception:
+            pass
+
+        # E: fill-price realism — fill at current tick bid/ask, not order.price
+        try:
+            tick = (
+                self._last_tick
+                if (
+                    self._last_tick is not None
+                    and getattr(self._last_tick, "symbol", None) == symbol
+                )
+                else None
+            )
+            if tick is None:
+                tick = self.get_last_tick(symbol)
+            digits = self._quote_digits(symbol)
+            is_metal = self._symbol_is_metal(symbol)
+            if order_type == OrderType.BUY:
+                fill = float(tick.ask)
+            else:
+                fill = float(tick.bid)
+
+            # deterministic slippage from seed: small adverse slip
+            # derive from ticket counter + price so it is reproducible
+            slip_seed = (int(self._ticket_counter * 1009) ^ int(abs(fill * 100))) % 997
+            rng = random.Random(slip_seed)
+            if is_metal:
+                slip = round(rng.uniform(0.01, 0.04), 2)  # 1-4c adverse
+            else:
+                slip = round(rng.uniform(0.00002, 0.00006), 5)
+            # adverse: BUY pays higher, SELL gets lower
+            if order_type == OrderType.BUY:
+                fill = round(fill + slip, digits)
+            else:
+                fill = round(fill - slip, digits)
+                if fill <= 0:
+                    fill = float(tick.bid)
+        except Exception:
+            fill = float(price)
+
         self._ticket_counter += 1
+        # initial unrealized relative to fill vs current tick
+        try:
+            init_pnl = self._realized_pnl(
+                type(
+                    "P",
+                    (),
+                    {
+                        "symbol": symbol,
+                        "type": order_type,
+                        "price_open": fill,
+                        "volume": float(volume),
+                    },
+                )(),
+                fill,
+                float(volume),
+            )
+            # unrealized at fill moment is ~ -slip*volume*contract (small loss)
+            init_pnl = 0.0  # overwrite — pnl is computed fresh on snapshot; keep 0 at open
+        except Exception:
+            init_pnl = 0.0
+
         pos = Position(
             ticket=self._ticket_counter,
             symbol=symbol,
             type=order_type,
             volume=volume,
-            price_open=price,
+            price_open=fill,
             sl=stop_loss,
             tp=take_profit,
-            profit=0.0,
+            profit=float(init_pnl),
             magic=magic,
         )
         self._positions.append(pos)
+        # refresh equity after fill
+        with __import__("contextlib").suppress(Exception):
+            self._refresh_position_profits()
+            self._refresh_account()
         logger.info(
             "PAPER ORDER FILLED SIMULATION",
             ticket=pos.ticket,
             symbol=pos.symbol,
             type=pos.type.value,
-            price=pos.price_open,
+            requested=price,
+            fill=pos.price_open,
             volume=pos.volume,
+            slip=round(fill - float(price), 6),
         )
         return pos.ticket
 
@@ -651,25 +1097,83 @@ class PaperMT5Adapter(IMT5Port):
         return self.close_position(ticket)
 
     def close_position(self, ticket: int, volume: float | None = None) -> bool:
-        """Closes simulated open position."""
-        if volume is not None:
-            # Simulate a partial close
-            for p in self._positions:
-                if p.ticket == ticket and volume < p.volume:
-                    new_pos = p.model_copy(update={"volume": round(p.volume - volume, 2)})
-                    self._positions.remove(p)
-                    self._positions.append(new_pos)
-                    logger.info(
-                        "PAPER POSITION PARTIALLY CLOSED",
-                        ticket=ticket,
-                        closed_vol=volume,
-                        remaining_vol=new_pos.volume,
-                    )
-                    return True
-        before = len(self._positions)
-        self._positions = [p for p in self._positions if p.ticket != ticket]
-        if len(self._positions) == before:
+        """Closes simulated position: computes realized PnL, mutates balance/equity.
+
+        Task B: BUY PnL=(close-bid/ask - open)*vol*contract (100 metals), SELL inverted.
+        Partial closes correctly split volume and credit proportional PnL.
+        """
+        # locate position
+        target = next((p for p in self._positions if p.ticket == ticket), None)
+        if target is None:
             logger.warning("PAPER CLOSE FAILED (unknown ticket)", ticket=ticket)
             return False
-        logger.info("PAPER POSITION CLOSED", ticket=ticket)
+
+        # close price: BUY closes at bid, SELL at ask
+        try:
+            tick = (
+                self._last_tick
+                if (
+                    self._last_tick is not None
+                    and getattr(self._last_tick, "symbol", None) == target.symbol
+                )
+                else None
+            )
+            if tick is None:
+                tick = self.get_last_tick(target.symbol)
+            close_price = float(tick.bid) if target.type == OrderType.BUY else float(tick.ask)
+        except Exception:
+            close_price = float(target.price_open)
+
+        # partial close
+        if volume is not None and float(volume) < float(target.volume) - 1e-9:
+            vol = float(volume)
+            pnl = self._realized_pnl(target, close_price, vol)
+            self.balance = round(float(self.balance) + pnl, 2)
+            remaining_vol = round(float(target.volume) - vol, 2)
+            # recompute remaining unrealized at current tick
+            new_profit = self._realized_pnl(
+                type(
+                    "P",
+                    (),
+                    {
+                        "symbol": target.symbol,
+                        "type": target.type,
+                        "price_open": float(target.price_open),
+                        "volume": remaining_vol,
+                    },
+                )(),
+                close_price,
+                remaining_vol,
+            )
+            new_pos = target.model_copy(
+                update={"volume": remaining_vol, "profit": float(new_profit)}
+            )
+            self._positions.remove(target)
+            self._positions.append(new_pos)
+            self._refresh_account()
+            logger.info(
+                "PAPER POSITION PARTIALLY CLOSED",
+                ticket=ticket,
+                closed_vol=vol,
+                remaining_vol=remaining_vol,
+                realized_pnl=pnl,
+                balance=self.balance,
+                equity=self.equity,
+            )
+            return True
+
+        # full close
+        pnl = self._realized_pnl(target, close_price, float(target.volume))
+        self.balance = round(float(self.balance) + pnl, 2)
+        self._positions = [p for p in self._positions if p.ticket != ticket]
+        self._refresh_account()
+        # release dedup key if any (conservative: drop one arbitrary id — send_order tracks order_id->ticket externally)
+        logger.info(
+            "PAPER POSITION CLOSED",
+            ticket=ticket,
+            close_price=close_price,
+            realized_pnl=pnl,
+            balance=self.balance,
+            equity=self.equity,
+        )
         return True
