@@ -40,13 +40,14 @@ _DEFAULT_AUDIT_DB_URL = "sqlite:///artifacts/audit.db"
 
 
 def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    """PRAGMA pre-check: column names already present on `table`.
+    """PRAGMA pre-check shared by every SQLite ADD COLUMN site in this repo.
 
-    Every ADD COLUMN site consults this BEFORE attempting the ALTER, so on a
-    current-schema DB no duplicate-column exception is ever raised — not even
-    a first-chance one for an attached debugger to print (the user's 08:45 +
-    08:50 duplicate-column walls: correction_of, recent_expectancy_r, ...).
-    The suppress() around the ALTER stays as the second net for races.
+    Central helper (lives in audit_repository to avoid a new module + import
+    cycle; every store imports AuditRepository already). Returns the column
+    names present on `table`, or empty set when the table is missing.
+    Consulting this BEFORE the ALTER means no duplicate-column exception is
+    ever raised — not even a first-chance one for an attached debugger to
+    print (the user's 08:45/08:50/09:05 duplicate-column walls).
     """
     try:
         return {row[1] for row in conn.execute(f"PRAGMA table_info({table});").fetchall()}

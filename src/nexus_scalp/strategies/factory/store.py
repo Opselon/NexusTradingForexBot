@@ -51,19 +51,30 @@ CONTEXT_MATRICES_COLUMN = "context_matrices"
 def ensure_factory_context_columns(conn: sqlite3.Connection) -> None:
     """Idempotent ALTER TABLE for the context-matrices evidence columns.
 
-    SQLite has no ``ADD COLUMN IF NOT EXISTS``; the codebase-standard
-    try/except pattern (see audit_repository research_runs migration) makes
-    the operation idempotent: an existing column raises OperationalError
-    ("duplicate column name") which is swallowed, a missing column is added.
-    Safe to call on every schema check / startup.
+    SQLite has no ``ADD COLUMN IF NOT EXISTS``; the PRAGMA pre-check (shared
+    helper in audit_repository) makes the operation idempotent with ZERO
+    exception raised: an existing column is skipped before the ALTER is even
+    attempted, so an attached debugger prints no first-chance wall (the
+    user's 09:05 duplicate-column wall). Safe to call on every startup.
     """
+    try:
+        from nexus_scalp.adapters.database.audit_repository import _existing_columns
+    except Exception:
+        _existing_columns = None  # type: ignore[assignment]
+    try:
+        if _existing_columns is not None and CONTEXT_MATRICES_COLUMN in _existing_columns(
+            conn, "factory_candidates"
+        ):
+            return
+    except Exception:
+        pass
     try:
         conn.execute(
             f"ALTER TABLE factory_candidates ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
             "TEXT DEFAULT '{}';"
         )
     except Exception:
-        pass  # column already exists (idempotent) or table not created yet
+        pass  # column already exists (race) or table not created yet
 
 
 def _json(value: Any) -> str:
