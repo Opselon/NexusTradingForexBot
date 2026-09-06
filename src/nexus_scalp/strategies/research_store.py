@@ -349,21 +349,30 @@ class StrategyResearchStore:
                 )
             # Safe forward migration for existing factory_loop_state tables
             # that predate the generation_id / last_error columns (mission
-            # NEXUS-STRATEGY-FACTORY-PERSISTENCE-RECOVERY-G29). ALTER is a
-            # no-op if the columns already exist; we swallow the duplicate-
-            # column OperationalError so ensure_schema stays idempotent.
+            # NEXUS-STRATEGY-FACTORY-PERSISTENCE-RECOVERY-G29). PRAGMA
+            # pre-check (shared helper) so no duplicate-column exception is
+            # ever raised — not even a first-chance one for a debugger.
             for col, col_def in (
                 ("generation_id", "TEXT DEFAULT ''"),
                 ("last_error", "TEXT DEFAULT ''"),
             ):
+                try:
+                    from nexus_scalp.adapters.database.audit_repository import (
+                        _existing_columns as _have_cols,
+                    )
+
+                    if col in _have_cols(conn, "factory_loop_state"):
+                        continue
+                except Exception:
+                    pass
                 try:
                     self.driver.execute(
                         f"ALTER TABLE factory_loop_state ADD COLUMN {col} {col_def};",
                         conn=conn,
                     )
                 except Exception:
-                    # Column already present (fresh schema) or provider does
-                    # not support ALTER — either way schema is correct.
+                    # Race, or provider does not support ALTER — either way
+                    # schema is correct.
                     pass
             self._set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             self._set_meta(conn, "provider", self.config.provider.value)

@@ -31,17 +31,29 @@ CONTEXT_MATRICES_COLUMN = "context_matrices"
 def ensure_registry_context_columns(conn: sqlite3.Connection) -> None:
     """Idempotent ALTER TABLE adding ``context_matrices`` to strategy_registry.
 
-    Mirrors the audit_repository migration pattern: duplicate-column errors
-    are swallowed so repeated calls are no-ops; fresh databases gain the
-    column immediately after CREATE TABLE.
+    PRAGMA pre-check (shared helper in audit_repository): an existing column
+    is skipped before the ALTER is attempted, so no duplicate-column
+    exception is ever raised — not even a first-chance one for an attached
+    debugger. Fresh databases gain the column immediately after CREATE TABLE.
     """
+    try:
+        from nexus_scalp.adapters.database.audit_repository import _existing_columns
+    except Exception:
+        _existing_columns = None  # type: ignore[assignment]
+    try:
+        if _existing_columns is not None and CONTEXT_MATRICES_COLUMN in _existing_columns(
+            conn, "strategy_registry"
+        ):
+            return
+    except Exception:
+        pass
     try:
         conn.execute(
             f"ALTER TABLE strategy_registry ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
             "TEXT DEFAULT '{}';"
         )
     except Exception:
-        pass  # column already exists (idempotent) or table not created yet
+        pass  # column already exists (race) or table not created yet
 
 
 def _json_text_safe(value: Any) -> str:
