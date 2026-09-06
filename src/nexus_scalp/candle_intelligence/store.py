@@ -424,7 +424,12 @@ class CandleIntelStore:
             return
 
         batch: list[tuple[str, list[str], list[Any]]] = []
-        flush_interval = 0.3  # seconds; bounded latency for readers <-> DB
+        # IDLE-POLL (2026-09-06 debugger wall): the old 0.3s timeout raised
+        # queue.Empty ~3x/sec whenever the writer idled; an attached debugger
+        # prints every first-chance Empty as a full wall. 5s keeps the same
+        # bounded-latency class for readers<->DB while cutting walls ~16x.
+        # Items dispatch IMMEDIATELY on arrival (get returns at once).
+        flush_interval = 5.0  # seconds; bounded latency for readers <-> DB
         while not self._stop.is_set() or not self._write_queue.empty():
             try:
                 item = self._write_queue.get(timeout=flush_interval)
