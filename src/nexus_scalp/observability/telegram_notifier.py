@@ -292,6 +292,12 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         self._lock = threading.Lock()
         self._worker_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        # Idle-poll interval for the worker's blocking get(): heartbeat fires
+        # at most every 5s (see _heartbeat), so a 3s idle timeout keeps the
+        # cadence class of the original 0.2s poll while cutting first-chance
+        # queue.Empty walls ~15x. Records dispatch IMMEDIATELY on arrival
+        # (get returns without waiting) — never delayed by this interval.
+        self._idle_timeout = 3.0
         self._pending_tasks_count = 0
         self._sent_timestamps = []  # type: list[float]
         self._recent_messages: dict[str, float] = {}
@@ -356,10 +362,20 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
     def _worker_main(self) -> None:
         self._worker_running = True
         logger.info("[TELEGRAM_WORKER] event=RUNNING")
+        # BLOCKING-WAIT IDLE (2026-09-06 debugger wall): the worker must not
+        # spin on get_nowait (that starved dispatch: send() waits only 50ms
+        # for DELIVERED, and a spinning worker still raised Empty ~10k/sec).
+        # get(timeout=self._idle_timeout) blocks until a record arrives, the
+        # stop sentinel arrives, or the idle interval elapses — whichever
+        # comes first. An arrived record is dispatched IMMEDIATELY (get
+        # returns it; never delayed by the interval). queue.Empty is STILL
+        # raised+caught on each idle timeout, but at 3s instead of 0.2s —
+        # ~15x fewer first-chance walls for an attached debugger.
+        # Sending/retry/ordering logic below is untouched.
         while not self._stop_event.is_set():
             try:
                 try:
-                    record = self._queue.get(timeout=0.2)
+                    record = self._queue.get(timeout=self._idle_timeout)
                 except queue.Empty:
                     self._heartbeat()
                     continue
