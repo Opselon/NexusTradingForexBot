@@ -15,6 +15,8 @@ module.exports = {
     "divide-gray-100",
     "text-black",
     "text-gray-500",
+    "bg-gray-900",
+    "text-white",
   ],
   theme: {
     extend: {
