@@ -349,3 +349,138 @@ def gauge_from_rating_spec(rating: float, sell: int, neutral: int, buy: int):
     else:
         label, angle = "Strong buy", 165
     return {"label": label, "sell": sell, "neutral": neutral, "buy": buy, "angle_deg": angle}
+
+
+# -- TV-parity vote layer (reverse-engineered from TV's own pasted panels) --
+# Evidence (TV M1/M5 pastes): MOM +0.945->Sell +2.075->Sell (sign rule dead);
+# StochK 14.87->Neutral (80/20 dead); W%R abs 85.3->Neutral (abs-level dead);
+# BBP +0.099/+0.161->Neutral (sign dead); MACD +0.021->Buy vs +0.273->Sell
+# (MACD-vs-signal ALIVE); AO flat +0.686/+1.245->Neutral (directional ALIVE).
+# Model: MOM/BBP/W%R directional (slope), StochK/StochRSI K-vs-D crossover,
+# RSI/CCI/UO level bands, ADX DI-gated, MA sign, ICH deadband. TV displays
+# Williams as POSITIVE (abs) — vote uses raw canonical slope.
+
+
+def _slope_vote(cur, prev, eps: float = 1e-9) -> str:
+    """Directional vote: rising -> Buy, falling -> Sell, flat -> Neutral."""
+    if cur is None or prev is None:
+        return "Neutral"
+    if cur > prev + eps:
+        return "Buy"
+    if cur < prev - eps:
+        return "Sell"
+    return "Neutral"
+
+
+def momentum_pair_from_closes(closes, period: int = 10):
+    """(MOM_t, MOM_{t-1}) for the directional vote."""
+    if len(closes) < period + 2:
+        return None, None
+    return closes[-1] - closes[-(period + 1)], closes[-2] - closes[-(period + 2)]
+
+
+def momentum_vote_tv(closes, period: int = 10) -> str:
+    cur, prev = momentum_pair_from_closes(closes, period)
+    return _slope_vote(cur, prev)
+
+
+def bull_bear_pair_from_bars(bars, period: int = 13):
+    cur = bull_bear_from_bars(bars, period)
+    prev = bull_bear_from_bars(bars[:-1], period) if len(bars) >= period + 1 else None
+    return cur, prev
+
+
+def bull_bear_vote_tv(bars, period: int = 13) -> str:
+    cur, prev = bull_bear_pair_from_bars(bars, period)
+    return _slope_vote(cur, prev)
+
+
+def williams_pair_from_bars(bars, period: int = 14):
+    cur = williams_r_from_bars(bars, period)
+    prev = williams_r_from_bars(bars[:-1], period) if len(bars) >= period + 1 else None
+    return cur, prev
+
+
+def williams_vote_tv(bars, period: int = 14) -> str:
+    """TV W%R vote is directional on raw %R (flat 60.9/85.3 abs -> Neutral)."""
+    cur, prev = williams_pair_from_bars(bars, period)
+    return _slope_vote(cur, prev)
+
+
+def stoch_kd_pair(closes, k_period: int = 14, smooth: int = 3, d_smooth: int = 3):
+    """(SlowK %K, SlowD %D): D = SMA(K_series, 3). Returns (None,None) if short."""
+    from nexus_scalp.indicators.calculators import stochastic_slow_k as _sk
+
+    if len(closes) < k_period + smooth - 1 + d_smooth - 1:
+        return None, None
+    # K series: SlowK evaluated on prefixes ending at successive bars
+    ks = []
+    for end in range(len(closes) - d_smooth + 1, len(closes) + 1):
+        v = _sk(closes[:end], k_period, smooth)
+        if v is None:
+            return None, None
+        ks.append(v)
+    if len(ks) < d_smooth:
+        return None, None
+    d = sum(ks[-d_smooth:]) / d_smooth
+    return ks[-1], d
+
+
+def stoch_k_vote_tv(closes, k_period: int = 14, smooth: int = 3, eps: float = 0.5) -> str:
+    """TV Stoch %K vote is K-vs-D crossover (14.87 deep-oversold still Neutral)."""
+    k, d = stoch_kd_pair(closes, k_period, smooth)
+    if k is None or d is None:
+        # fallback: strict 80/20 only at extremes, else Neutral
+        from nexus_scalp.indicators.calculators import stochastic_slow_k as _sk2
+
+        v = _sk2(closes, k_period, smooth)
+        if v is None:
+            return "Neutral"
+        if v >= 90:
+            return "Sell"
+        if v <= 10:
+            return "Buy"
+        return "Neutral"
+    if k > d + eps:
+        return "Buy"
+    if k < d - eps:
+        return "Sell"
+    return "Neutral"
+
+
+def stoch_rsi_kd_pair(closes, rsi_period: int = 14, k_smooth: int = 3, d_smooth: int = 3):
+    """(StochRSI %K, %D): D = SMA(K_series, 3)."""
+    if len(closes) < rsi_period * 2 + k_smooth + d_smooth:
+        return None, None
+    ks = []
+    for end in range(len(closes) - d_smooth + 1, len(closes) + 1):
+        v = stoch_rsi_k_spec(closes[:end], rsi_period, k_smooth)
+        if v is None:
+            return None, None
+        ks.append(v)
+    if len(ks) < d_smooth:
+        return None, None
+    return ks[-1], sum(ks[-d_smooth:]) / d_smooth
+
+
+def stoch_rsi_vote_tv(closes, eps: float = 0.5) -> str:
+    """TV StochRSI vote is K-vs-D crossover (17.84 Buy = crossed up)."""
+    k, d = stoch_rsi_kd_pair(closes)
+    if k is None or d is None:
+        return stoch_rsi_action_spec(stoch_rsi_k_spec(closes, 14, 3))
+    if k > d + eps:
+        return "Buy"
+    if k < d - eps:
+        return "Sell"
+    return "Neutral"
+
+
+def ichimoku_vote_tv(close, base, deadband: float = 0.35) -> str:
+    """Ichimoku vote with Neutral deadband (TV: 4430.143 Neutral at ~0.06-0.4 diff)."""
+    if close is None or base is None:
+        return "Neutral"
+    if abs(close - base) <= deadband:
+        return "Neutral"
+    if close > base:
+        return "Buy"
+    return "Sell"
