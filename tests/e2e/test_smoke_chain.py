@@ -58,22 +58,55 @@ import sqlite3
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
 import torch
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.configuration.config import RiskConfig
+from nexus_scalp.configuration.config import AppConfig, RiskConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.domain.models import (
+    AccountInfo,
+    SymbolInfo,
+    TickData,
+    TradeOrder,
+    TradeProposal,
+)
+from nexus_scalp.experience.evaluator import StrategyEvaluator
+from nexus_scalp.experience.intelligence import ExperienceIntelligenceEngine
+from nexus_scalp.experience.ledger import ExperienceLedger
+from nexus_scalp.experience.models import ExperienceAction
+from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.features70 import LIQUIDITY_NEUTRAL_10D, NEWS_NEUTRAL_10D, assemble_70d
+from nexus_scalp.features.liquidity_engine import compute_liquidity_features
+from nexus_scalp.features.regime_classifier import (
+    MarketRegimeClassifier,
+    MarketRegimeState,
+    RegimeType,
+)
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema_contract import feature_schema_hash, validate_70d_vector
+from nexus_scalp.incidents.models import (
+    Incident,
+    IncidentCategory,
+    IncidentSeverity,
+    IncidentStatus,
+)
+from nexus_scalp.incidents.store import IncidentStore
 from nexus_scalp.market_data.bar_aggregator import BarAggregator, BarData
 from nexus_scalp.models.scalp_net import ScalpNet
+from nexus_scalp.mslie.engine import MarketStructureEngine
+from nexus_scalp.news.context import NewsContextCache
+from nexus_scalp.news.database import NewsDatabase
+from nexus_scalp.news.gate import NewsGate, NewsGateDecision
+from nexus_scalp.news.models import CurrentNewsContext, NewsState
+from nexus_scalp.observability.event_aggregator import EventBatchAggregator
 from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.settings.service import SettingsDatabase
 from nexus_scalp.signals.policy import SignalPolicy
+from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 # ---------------------------------------------------------------------------
 # pretty helpers
@@ -143,6 +176,9 @@ def _account() -> AccountInfo:
 
 def _symbol_info() -> SymbolInfo:
     return SymbolInfo(**SYMBOL_INFO_KW)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _make_bars(n: int, t0: datetime = T0, start: float = 1995.0) -> list[BarData]:
@@ -836,3 +872,371 @@ def test_smoke_feature_cold_start_and_schema() -> None:
         FEATURE_SCHEMAS.resolve("does_not_exist")  # strict, never silent default
     _ok("schema registry strict — unknown id raises KeyError (no silent 50D default)")
     print()
+
+
+# ---------------------------------------------------------------------------
+# EXTENDED CHAIN — whole-project subsystems (stages 11-21, Nexus-Main)
+# Every stage: real objects, hermetic (tmp_path), deterministic, no network.
+# ---------------------------------------------------------------------------
+
+
+def _make_ticks(classifier: MarketRegimeClassifier, n: int) -> list[TickData]:
+    """Deterministic trending tick stream that escalates regime activity."""
+    ticks: list[TickData] = []
+    price = 2000.0
+    t = T0
+    for i in range(n):
+        price += 0.02  # persistent directional drift -> TRENDING_MOMENTUM
+        tick = TickData(
+            symbol="XAUUSD",
+            timestamp=t + timedelta(seconds=i),
+            bid=round(price - 0.02, 2),
+            ask=round(price + 0.02, 2),
+            volume=1.0,
+        )
+        ticks.append(tick)
+        classifier.classify_tick(tick)
+    return ticks
+
+
+def test_smoke_regime_classifier() -> None:
+    """STAGE 11 — Regime Guardian: classify_tick reachable, diagnostics real."""
+    _banner("🌡️  STAGE 11 · REGIME CLASSIFIER (MarketRegimeClassifier)")
+    t0 = time.monotonic()
+    clf = MarketRegimeClassifier(symbol="XAUUSD", rolling_seconds=300)
+    ticks = _make_ticks(clf, 12)
+    state = clf.classify_tick(ticks[-1])
+    assert isinstance(state, MarketRegimeState), "classify_tick must return MarketRegimeState"
+    assert state.symbol == "XAUUSD"
+    assert state.regime_type in RegimeType, f"unknown regime {state.regime_type}"
+    assert 0.0 <= state.regime_probability <= 1.0
+    assert state.current_spread_usd >= 0.0
+    assert state.timestamp_utc
+    diag = clf.decision_diagnostics()
+    assert isinstance(diag, dict) and diag, "decision_diagnostics must be non-empty"
+    _ok(
+        f"Regime OK — {len(ticks)} ticks → {state.regime_type.value} p={state.regime_probability:.2f}"
+    )
+    _info(f"stage 11 in {(time.monotonic() - t0) * 1000:.1f} ms  reason={state.reason.value}")
+
+
+def test_smoke_liquidity_real_10d(tmp_path) -> None:
+    """STAGE 12 — real causal liquidity 10D via compute_liquidity_features."""
+    _banner("💧 STAGE 12 · LIQUIDITY 10D (compute_liquidity_features, causal)")
+    t0 = time.monotonic()
+    bars = _make_bars(70)
+    decision_at = bars[-1].timestamp
+    liq = compute_liquidity_features(
+        bars,
+        decision_at=decision_at,
+        mid_price=float(bars[-1].close),
+        atr=float(bars[1].high - bars[1].low),
+    )
+    v = liq.as_vector()
+    assert len(v) == 10, f"liquidity vector must be 10D, got {len(v)}"
+    for i, x in enumerate(v):
+        assert math.isfinite(x), f"liquidity non-finite at {i}: {x!r}"
+        assert -3.0 <= x <= 3.0, f"liquidity bounds violation at {i}: {x}"
+    # causal probe: a past decision_at must still yield a valid bounded vector
+    liq_past = compute_liquidity_features(
+        bars, decision_at=bars[40].timestamp, mid_price=float(bars[40].close)
+    )
+    v_past = liq_past.as_vector()
+    assert len(v_past) == 10 and all(math.isfinite(x) and -3.0 <= x <= 3.0 for x in v_past)
+    _ok(f"Liquidity 10D OK — causal, bounded, decision_at={decision_at.isoformat()}")
+    _info(f"stage 12 in {(time.monotonic() - t0) * 1000:.1f} ms  bsl={v[0]:.3f} ssl={v[1]:.3f}")
+
+
+def test_smoke_news_context_and_gate(tmp_path) -> None:
+    """STAGE 13 — News: fresh DB → cache cold start → gate on proposal."""
+    _banner("📰 STAGE 13 · NEWS CONTEXT + NEWS GATE (hermetic)")
+    t0 = time.monotonic()
+    db_path = os.path.join(str(tmp_path), "smoke_news.db")
+    news_db = NewsDatabase(db_path=db_path)
+    cache = NewsContextCache(db=news_db)
+    ctx = cache.build_once_safe()
+    assert isinstance(ctx, CurrentNewsContext)
+    assert ctx.available is False, "fresh DB must be unavailable (never fake-neutral)"
+    assert ctx.state == NewsState.NORMAL
+    assert ctx.confidence == 0.0 and ctx.stale is False
+    adj = ctx.news_adjustment
+    assert adj == 0.0
+    gate = NewsGate()
+    verdict = gate.evaluate(
+        context=ctx,
+        proposal_action="BUY_MARKET",
+        strategy_direction="BULLISH",
+        proposal_confidence=0.9,
+        regime_aligned=True,
+    )
+    assert verdict.decision == NewsGateDecision.IGNORE
+    assert verdict.reason == "NEWS_UNAVAILABLE_OR_STALE"
+    # non-entry action never gated
+    v2 = gate.evaluate(
+        context=ctx,
+        proposal_action="MODIFY_SL_TP",
+        strategy_direction="BULLISH",
+        proposal_confidence=0.9,
+        regime_aligned=True,
+    )
+    assert v2.decision == NewsGateDecision.IGNORE
+    assert v2.reason in ("NON_ENTRY_ACTION_NOT_GATED", "NEWS_UNAVAILABLE_OR_STALE")
+    _ok(f"News OK — cold start honest (available=False), gate IGNORE ({verdict.reason})")
+    _info(f"stage 13 in {(time.monotonic() - t0) * 1000:.1f} ms  news_adjustment={adj}")
+    news_db.close()
+
+
+def test_smoke_mslie_perception(tmp_path) -> None:
+    """STAGE 14 — MSLIE: market structure perception over synthetic bars."""
+    _banner("🧭 STAGE 14 · MSLIE (MarketStructureEngine)")
+    t0 = time.monotonic()
+    bars = _make_bars(70)
+    engine = MarketStructureEngine(symbol="XAUUSD", timeframe="M1")
+    vec = engine.analyze_market(
+        bars, decision_at=bars[-1].timestamp, atr=float(bars[1].high - bars[1].low)
+    )
+    assert vec is not None
+    assert vec.symbol == "XAUUSD" and vec.timeframe == "M1"
+    assert vec.version, "MSLIE vector must carry version"
+    assert vec.structure_confidence >= 0.0, "structure confidence must be non-negative"
+    assert vec.bias is not None and vec.structure
+    assert vec.swing_count_high >= 0 and vec.swing_count_low >= 0
+    last = engine.last_vector
+    assert last is not None and last.version == vec.version
+    assert int(vec.bias) in (-1, 0, 1), f"bias out of MarketBias domain: {vec.bias}"
+    _ok(
+        f"MSLIE OK — structure={vec.structure} bias={int(vec.bias)} conf={vec.structure_confidence:.2f}"
+    )
+    _info(
+        f"stage 14 in {(time.monotonic() - t0) * 1000:.1f} ms  engine_latency_ms={engine.last_latency_ms}"
+    )
+
+
+def test_smoke_rule_matrix(tmp_path) -> None:
+    """STAGE 15 — RuleMatrixEngine over disposable AuditRepository."""
+    _banner("📐 STAGE 15 · RULE MATRIX (30+ rule registry)")
+    t0 = time.monotonic()
+    db_path = os.path.join(str(tmp_path), "smoke_rules.db")
+    repo = AuditRepository(db_url=f"sqlite:///{db_path}")
+    rm = RuleMatrixEngine(repo)
+    # disabled-by-default DB: every rule must resolve False, params empty
+    assert rm.is_enabled("RULE_FVG_SNIPER_FILL") is False
+    params = rm.get_params("RULE_FVG_SNIPER_FILL")
+    assert isinstance(params, dict), "params must be a dict even when rule disabled"
+    assert rm.is_enabled("DOES_NOT_EXIST_XYZ") is False, (
+        "unknown rule must be disabled, never crash"
+    )
+    # evaluation path is safe on synthetic inputs (no enabled rules → no proposal)
+    ticks_tick = TickData(timestamp=T0, **XAU_TICK_KW)
+    fv = ScalpFeatureEngine(symbol="XAUUSD").compute_from_bars(_make_bars(70), ticks_tick)
+    prop = rm.evaluate_pre_trade_entry(ticks_tick, fv, None, [0.25, 0.25, 0.25, 0.25])
+    assert prop is None, "no rules enabled → no custom proposal"
+    repo.close()
+    _ok("RuleMatrix OK — registry strict, defaults disabled, eval path safe")
+    _info(f"stage 15 in {(time.monotonic() - t0) * 1000:.1f} ms")
+
+
+def test_smoke_experience_intelligence(tmp_path) -> None:
+    """STAGE 16 — Experience gate: fail-safe verdict, no order authority."""
+    _banner("🧠 STAGE 16 · EXPERIENCE INTELLIGENCE (pre-trade gate)")
+    t0 = time.monotonic()
+    db_path = os.path.join(str(tmp_path), "smoke_exp.db")
+    repo = AuditRepository(db_url=f"sqlite:///{db_path}")
+    ledger = ExperienceLedger(repo)
+    evaluator = StrategyEvaluator(repo)
+    retriever = ExperienceRetriever(ledger)
+    engine = ExperienceIntelligenceEngine(ledger=ledger, evaluator=evaluator, retriever=retriever)
+    assert engine.gate_failure_count == 0
+    # experience must NEVER hold order authority surface
+    assert not hasattr(engine, "adapter") and not hasattr(engine, "order_manager")
+    now = datetime.now(UTC)
+    proposal = TradeProposal(
+        request_id=str(uuid.uuid4()),
+        symbol="XAUUSD",
+        generated_at=now,
+        action=ActionType.BUY_MARKET,
+        confidence=0.85,
+        proposed_entry=2000.0,
+        stop_loss=1998.0,
+        take_profit=2006.0,
+        risk_reward_ratio=3.0,
+    )
+    fv = ScalpFeatureEngine(symbol="XAUUSD").compute_from_bars(
+        _make_bars(70), TickData(timestamp=now, **XAU_TICK_KW)
+    )
+    out, decision = engine.evaluate_proposal(proposal, fv)
+    assert decision.decision_id.startswith("exp_dec_")
+    assert decision.action in ExperienceAction, f"invalid action {decision.action}"
+    assert isinstance(decision.qualifies_trade, bool)
+    assert out.request_id == proposal.request_id
+    # empty-ledger fail-safe: INSUFFICIENT_EVIDENCE passes the proposal through unchanged
+    assert (
+        decision.action == ExperienceAction.INSUFFICIENT_EVIDENCE
+        or decision.qualifies_trade is True
+    )
+    ledger.flush_pending(timeout_sec=5.0)
+    repo.close()
+    _ok(
+        f"Experience OK — {decision.action.value} qualifies={decision.qualifies_trade} (no order authority)"
+    )
+    _info(f"stage 16 in {(time.monotonic() - t0) * 1000:.1f} ms  strategy={decision.strategy_id}")
+
+
+def test_smoke_runtime_config_and_settings(tmp_path) -> None:
+    """STAGE 17 — RuntimeConfigStore snapshot + SettingsDatabase roundtrip."""
+    _banner("⚙️  STAGE 17 · RUNTIME CONFIG + SETTINGS DB")
+    t0 = time.monotonic()
+    from nexus_scalp.configuration.runtime_config import RuntimeConfigStore
+
+    cfg = AppConfig.load_from_yaml(REPO_ROOT / "configs" / "base.yaml")
+    store = RuntimeConfigStore(bootstrap=cfg)
+    snap = store.get_snapshot()
+    assert snap is not None
+    v1 = snap.version
+    snap2 = store.get_snapshot()
+    assert snap2.version >= v1, "snapshot version must be monotonic"
+    # settings DB: isolated, typed roundtrip, no real DB touched
+    sdb = SettingsDatabase(db_path=tmp_path / "smoke_settings.db")
+    sdb.set("smoke.test_key", "42", source="SMOKE")
+    got = sdb.get("smoke.test_key")
+    assert got is not None and str(got.value) == "42"
+    assert got.value_type in ("int", "str", "json")
+    health = sdb.health()
+    assert health is not None
+    sdb.close()
+    _ok(f"RuntimeConfig OK — snapshot v{snap.version}; Settings OK — typed roundtrip 42")
+    _info(f"stage 17 in {(time.monotonic() - t0) * 1000:.1f} ms")
+
+
+def test_smoke_incidents_store(tmp_path) -> None:
+    """STAGE 18 — Incident store: schema, save, read-back, dedup fingerprint."""
+    _banner("🚨 STAGE 18 · INCIDENT STORE (hermetic)")
+    t0 = time.monotonic()
+    db_path = tmp_path / "smoke_incidents.db"
+    store = IncidentStore(db_path=str(db_path))
+    store.ensure_schema()
+    inc = Incident(
+        severity=IncidentSeverity.MEDIUM,
+        category=IncidentCategory.WORKER,
+        component="smoke_chain",
+        operation="stage18",
+        root_cause="synthetic smoke incident (not real)",
+    )
+    iid = store.save(inc)
+    assert iid, "save must return incident id"
+    got = store.get(iid)
+    assert got is not None, "incident must be readable after save"
+    assert got.component == "smoke_chain"
+    assert got.severity == IncidentSeverity.MEDIUM
+    assert got.status == IncidentStatus.OPEN
+    counts = store.count()
+    assert counts, "count() must return stats"
+    store.delete_by_id(iid)
+    assert store.get(iid) is None, "delete must remove incident"
+    _ok(f"Incidents OK — save/read/count/delete verified (id={iid[:12]}…)")
+    _info(f"stage 18 in {(time.monotonic() - t0) * 1000:.1f} ms")
+
+
+def test_smoke_observability_aggregator() -> None:
+    """STAGE 19 — Observability contract: aggregate repeats, flush summary."""
+    _banner("📊 STAGE 19 · OBSERVABILITY (EventBatchAggregator contract)")
+    t0 = time.monotonic()
+    agg = EventBatchAggregator()
+    lines: list[str] = []
+    first = agg.add(event="SMOKE_TEST_EVENT", reason="synthetic", stage="stage19", recoverable=True)
+    assert first is True, "first occurrence must return True"
+    for _ in range(8):
+        assert (
+            agg.add(event="SMOKE_TEST_EVENT", reason="synthetic", stage="stage19", recoverable=True)
+            is False
+        )
+    # different signature → first again
+    assert (
+        agg.add(event="SMOKE_TEST_EVENT", reason="other", stage="stage19", recoverable=False)
+        is True
+    )
+    agg.flush(lines.append)
+    blob = "\n".join(lines)
+    assert "SMOKE_TEST_EVENT" in blob
+    # repeats must be aggregated, not 10 log lines
+    metrics = agg._metrics
+    assert metrics["events_seen"] == 10
+    assert metrics["first_occurrences"] == 2
+    assert metrics["dropped_events"] == 0, "protected evidence must never drop"
+    _ok("Observability OK — 10 events → 2 signatures, flush produced summary, 0 dropped")
+    _info(f"stage 19 in {(time.monotonic() - t0) * 1000:.1f} ms")
+
+
+def test_smoke_important_files_integrity() -> None:
+    """STAGE 20 — whole-project file integrity: entrypoints, core modules, registries."""
+    _banner("🗂️  STAGE 20 · IMPORTANT FILES INTEGRITY (whole project)")
+    t0 = time.monotonic()
+    required = (
+        "NexusTradingForexBot.py",
+        "main.py",
+        "configs/base.yaml",
+        "pyproject.toml",
+        "agents/skill.md",
+        "agents/bugs.md",
+        "agents/contracts.md",
+        "agents/runtime_invariants.md",
+        "agents/taskboard.md",
+        "src/nexus_scalp/application/live_engine.py",
+        "src/nexus_scalp/execution/order_manager.py",
+        "src/nexus_scalp/features/schema_contract.py",
+        "src/nexus_scalp/features/features70.py",
+        "src/nexus_scalp/features/liquidity_engine.py",
+        "src/nexus_scalp/features/regime_classifier.py",
+        "src/nexus_scalp/models/scalp_net.py",
+        "src/nexus_scalp/signals/policy.py",
+        "src/nexus_scalp/signals/rule_matrix.py",
+        "src/nexus_scalp/risk/risk_engine.py",
+        "src/nexus_scalp/adapters/paper/paper_adapter.py",
+        "src/nexus_scalp/adapters/database/audit_repository.py",
+        "src/nexus_scalp/news/gate.py",
+        "src/nexus_scalp/mslie/engine.py",
+        "src/nexus_scalp/experience/intelligence.py",
+        "src/nexus_scalp/configuration/runtime_config.py",
+        "src/nexus_scalp/settings/service.py",
+        "src/nexus_scalp/incidents/store.py",
+        "src/nexus_scalp/observability/event_aggregator.py",
+        "src/nexus_scalp/web/server.py",
+        "src/nexus_scalp/smoke/runner.py",
+        "tests/e2e/test_smoke_chain.py",
+        "tests/critical_suite.txt",
+        ".github/workflows/ci.yml",
+    )
+    missing = [p for p in required if not (REPO_ROOT / p).exists()]
+    assert not missing, f"important files absent: {missing}"
+    # entrypoints must compile
+    import py_compile
+
+    for entry in ("NexusTradingForexBot.py", "main.py"):
+        py_compile.compile(str(REPO_ROOT / entry), doraise=True)
+    # governance registries must be non-empty
+    skill_txt = (REPO_ROOT / "agents" / "skill.md").read_text(encoding="utf-8", errors="ignore")
+    assert "INV-001" in skill_txt, "agents/skill.md must carry the invariant registry"
+    bugs_size = (REPO_ROOT / "agents" / "bugs.md").stat().st_size
+    assert bugs_size > 10_000, f"agents/bugs.md suspiciously small ({bugs_size}B)"
+    _ok(f"File integrity OK — {len(required)} important files present, entrypoints compile")
+    _info(f"stage 20 in {(time.monotonic() - t0) * 1000:.1f} ms  bugs.md={bugs_size // 1024}KB")
+
+
+def test_smoke_critical_suite_manifest_wiring() -> None:
+    """STAGE 21 — the smoke chain itself must stay wired into the quality gate."""
+    _banner("🔗 STAGE 21 · QUALITY-GATE WIRING (critical suite + CI)")
+    t0 = time.monotonic()
+    crit = (REPO_ROOT / "tests" / "critical_suite.txt").read_text(encoding="utf-8")
+    assert "tests/e2e/test_smoke_chain.py" in crit, "smoke chain must stay in critical_suite.txt"
+    assert "tests/unit/test_smoke_self.py" in crit, (
+        "smoke self-tests must stay in critical_suite.txt"
+    )
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "test_smoke_chain.py" in ci, "CI smoke job must run the chain"
+    assert "nexus_scalp.cli.main smoke --fast" in ci, (
+        "CI layered-smoke job must run nse smoke --fast"
+    )
+    self_test = (REPO_ROOT / "tests" / "unit" / "test_smoke_self.py").read_text(encoding="utf-8")
+    assert "critical_ids" in self_test, "self-test must guard registry completeness"
+    _ok("Gate wiring OK — chain + self-tests in critical_suite, CI smoke jobs present")
+    _info(f"stage 21 in {(time.monotonic() - t0) * 1000:.1f} ms")

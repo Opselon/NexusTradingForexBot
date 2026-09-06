@@ -458,7 +458,7 @@ def compute_liquidity_features_v1_1(
     decision = decision_at or (times[-1] if times else None)
     if decision is None or not bars:
         return LiquidityFeatures(
-            decision_at=datetime.now(UTC) if False else (times[-1] if times else datetime.now(UTC)),
+            decision_at=times[-1] if times else datetime.now(UTC),
             bsl_distance_atr=DEFAULT_BSL_DISTANCE,
             ssl_distance_atr=DEFAULT_SSL_DISTANCE,
             eqh_strength=DEFAULT_EQH_STRENGTH,

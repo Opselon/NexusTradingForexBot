@@ -60,7 +60,7 @@ CRITICAL_PACKAGES = {
     "adapters",  # MT5 / DB adapters
     "accounting",
     "web",  # API availability
-    "runtime_config" if False else "configuration",
+    "configuration",
 }
 
 # Substring hints that raise criticality for specific modules/files.

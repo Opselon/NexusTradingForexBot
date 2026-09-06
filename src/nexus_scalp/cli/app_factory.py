@@ -85,7 +85,7 @@ app.add_typer(
 )
 # GATEWAY — Windows MT5 bridge server for the existing Linux gateway client
 try:
-    import nexus_scalp.cli.gateway_commands as _gateway_commands  # noqa: F401,E402 (side effect: registers nexus gateway)
+    import nexus_scalp.cli.gateway_commands as _gateway_commands  # noqa: F401 (side effect: registers nexus gateway)
 except Exception:
     pass
 
