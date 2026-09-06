@@ -19,8 +19,8 @@ Architecture policy (from the ACTUAL dependency stack, 2026-08):
 """
 
 from __future__ import annotations
-import contextlib
 
+import contextlib
 import ctypes
 import os
 import platform
@@ -83,6 +83,15 @@ class EnvironmentInfo:
 
 
 def _run(cmd: list[str], timeout: int = 5) -> str | None:
+    # Pre-flight: skip the spawn entirely when the binary is absent
+    # (wmic removed on Win11 24H2+). This avoids even a first-chance
+    # FileNotFoundError reaching an attached debugger (which prints the
+    # scary [WinError 2] wall even though the except below would catch it).
+    try:
+        if shutil.which(cmd[0]) is None:
+            return None
+    except Exception:
+        pass
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return (out.stdout or out.stderr).strip() or None
