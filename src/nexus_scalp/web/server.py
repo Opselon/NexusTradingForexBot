@@ -1804,6 +1804,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_forensic() -> FileResponse:
         return FileResponse(WEB_DIR / "forensic_console.js")
 
+    @app.get("/tv_widget.html")
+    def serve_tv_widget_html() -> FileResponse:
+        return FileResponse(WEB_DIR / "tv_widget.html")
+
+    @app.get("/tv_widget.js")
+    def serve_tv_widget_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "tv_widget.js")
+
     @app.get("/api_client.js")
     def serve_api_client() -> FileResponse:
         """Serves the NX API client (defines window.NX).
