@@ -1435,9 +1435,24 @@ class AuditRepository:
         while self._running or not q.empty():
             batch: list[tuple[str, tuple]] = []
             try:
-                # Wait for records, batch them up to 500 per transaction
+                # Wait for records, batch them up to 500 per transaction.
+                # IDLE-POLL (2026-09-06 debugger wall): the old 1.0s default
+                # _flush_interval raised queue.Empty 1x/sec whenever the
+                # writer idled; an attached debugger prints every
+                # first-chance Empty as a full wall. The batch window is now
+                # decoupled from the idle cadence: drain whatever is already
+                # queued WITHOUT blocking (get_nowait), then — only when the
+                # batch is still empty — block up to the flush interval for
+                # the first record. Arrivals dispatch immediately; idle walls
+                # drop to ~1 per flush interval.
                 while len(batch) < 500:
-                    query_tuple = q.get(timeout=self._flush_interval)
+                    if batch:
+                        try:
+                            query_tuple = q.get_nowait()
+                        except queue.Empty:
+                            break
+                    else:
+                        query_tuple = q.get(timeout=self._flush_interval)
                     batch.append(query_tuple)
             except queue.Empty:
                 pass
