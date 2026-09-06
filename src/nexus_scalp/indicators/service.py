@@ -258,7 +258,7 @@ class IndicatorService:
 
         return [
             IndicatorResult("Relative Strength Index (14)", v_rsi, calc.rsi_action(v_rsi)),
-            IndicatorResult("Stochastic %K (14, 3, 3)", v_k, spec.stoch_k_action_spec(v_k)),
+            IndicatorResult("Stochastic %K (14, 3, 3)", v_k, spec.stoch_k_vote_tv(closes)),
             IndicatorResult("Commodity Channel Index (20)", v_cci, calc.cci_action(v_cci)),
             IndicatorResult(
                 "Average Directional Index (14)",
@@ -279,22 +279,24 @@ class IndicatorService:
             IndicatorResult(
                 "Momentum (10)",
                 v_mom,
-                _sign_vote(v_mom),
+                spec.momentum_vote_tv(closes),
             ),
             IndicatorResult("MACD Level (12, 26)", v_macd_level, spec.macd_action_spec(closes)),
             IndicatorResult(
                 "Stochastic RSI Fast (3, 3, 14, 14)",
                 v_stochrsi,
-                spec.stoch_rsi_action_spec(v_stochrsi),
+                spec.stoch_rsi_vote_tv(closes),
             ),
-            # Williams %R: display canonical -100..0, vote on canonical scale
+            # Williams %R: TV DISPLAYS abs (positive); vote is directional on raw %R
             IndicatorResult(
-                "Williams Percent Range (14)", v_willr, spec.williams_r_action_spec(v_willr)
+                "Williams Percent Range (14)",
+                abs(v_willr) if v_willr is not None else None,
+                spec.williams_vote_tv(rows, 14) if len(rows) >= 15 else "Neutral",
             ),
             IndicatorResult(
                 "Bull Bear Power",
                 v_bbp,
-                _sign_vote(v_bbp),
+                spec.bull_bear_vote_tv(rows, 13) if len(rows) >= 14 else _sign_vote(v_bbp),
             ),
             IndicatorResult("Ultimate Oscillator (7, 14, 28)", v_uo, spec.uo_action_spec(v_uo)),
         ]
@@ -336,7 +338,7 @@ class IndicatorService:
             IndicatorResult(
                 "Ichimoku Base Line (9, 26, 52, 26)",
                 _spec.ichimoku_baseline_from_bars(rows),
-                calc.ma_action(last_close, _spec.ichimoku_baseline_from_bars(rows)),
+                _spec.ichimoku_vote_tv(last_close, _spec.ichimoku_baseline_from_bars(rows)),
             ),
             _ma_row("Volume Weighted Moving Average (20)", 20, "VWMA"),
             _ma_row("Hull Moving Average (9)", 9, "HMA"),

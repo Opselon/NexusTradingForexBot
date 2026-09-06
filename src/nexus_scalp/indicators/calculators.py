@@ -258,15 +258,21 @@ def ichimoku_baseline(prices: Sequence[float]) -> float | None:
 
 
 def classic_pivots(high: float, low: float, close: float) -> dict[str, float]:
+    # TV-proven: R3 = R2 + range, S3 = S2 - range (NOT H+2(P-L)/L-2(H-P)).
     p = (high + low + close) / 3
+    rng = high - low
+    r1 = 2 * p - low
+    r2 = p + rng
+    s1 = 2 * p - high
+    s2 = p - rng
     return {
-        "R3": high + 2 * (p - low),
-        "R2": p + (high - low),
-        "R1": 2 * p - low,
+        "R3": r2 + rng,
+        "R2": r2,
+        "R1": r1,
         "P": p,
-        "S1": 2 * p - high,
-        "S2": p - (high - low),
-        "S3": low - 2 * (high - p),
+        "S1": s1,
+        "S2": s2,
+        "S3": s2 - rng,
     }
 
 
@@ -299,15 +305,21 @@ def camarilla_pivots(high: float, low: float, close: float) -> dict[str, float]:
 
 
 def woodie_pivots(high: float, low: float, close: float, open_: float) -> dict[str, float]:
+    # TV-proven: same R2+-range R3/S3 shape on top of the Woodie P.
     p = (high + low + 2 * close) / 4
+    rng = high - low
+    r1 = 2 * p - low
+    r2 = p + rng
+    s1 = 2 * p - high
+    s2 = p - rng
     return {
-        "R3": high + 2 * (p - low),
-        "R2": p + (high - low),
-        "R1": 2 * p - low,
+        "R3": r2 + rng,
+        "R2": r2,
+        "R1": r1,
         "P": p,
-        "S1": 2 * p - high,
-        "S2": p - (high - low),
-        "S3": low - 2 * (high - p),
+        "S1": s1,
+        "S2": s2,
+        "S3": s2 - rng,
     }
 
 
