@@ -188,7 +188,9 @@ def bull_bear_power(prices: Sequence[float], period: int = 13) -> float | None:
     return prices[-1] - ema
 
 
-def ultimate_oscillator(prices: Sequence[float], p1: int = 7, p2: int = 14, p3: int = 28) -> float | None:
+def ultimate_oscillator(
+    prices: Sequence[float], p1: int = 7, p2: int = 14, p3: int = 28
+) -> float | None:
     if len(prices) < p3 + 1:
         return None
 
@@ -313,7 +315,9 @@ def dm_pivots(high: float, low: float, close: float) -> dict[str, float | None]:
     return {"R1": None, "P": None, "S1": None, "R2": None, "R3": None, "S2": None, "S3": None}
 
 
-def dm_pivots_with_open(high: float, low: float, close: float, open_: float) -> dict[str, float | None]:
+def dm_pivots_with_open(
+    high: float, low: float, close: float, open_: float
+) -> dict[str, float | None]:
     if close < open_:
         x = high + 2 * low + close
     elif close > open_:
@@ -357,11 +361,25 @@ def _action_from_value(
 
 
 def rsi_action(v: float | None) -> str:
-    return _action_from_value(v, buy_threshold=70, sell_threshold=30, strong_buy=80, strong_sell=20)
+    # Spec A1: RSI > 70 -> Sell (overbought), RSI < 30 -> Buy (oversold).
+    if v is None:
+        return "Neutral"
+    if v > 70:
+        return "Sell"
+    if v < 30:
+        return "Buy"
+    return "Neutral"
 
 
 def cci_action(v: float | None) -> str:
-    return _action_from_value(v, buy_threshold=100, sell_threshold=-100, strong_buy=200, strong_sell=-200)
+    # Spec A3: CCI > 100 -> Sell, CCI < -100 -> Buy.
+    if v is None:
+        return "Neutral"
+    if v > 100:
+        return "Sell"
+    if v < -100:
+        return "Buy"
+    return "Neutral"
 
 
 def adx_action(v: float | None) -> str:
