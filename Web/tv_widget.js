@@ -1,6 +1,6 @@
 // Nexus Technicals widget — professional terminal redesign (TV-REDESIGN-1).
 // Agent: Hermes-Main (Hermes-UI-01). UI layer only: SAME endpoint, SAME params,
-// SAME payload shape as before (/api/v1/indicators?timeframe=TF&limit=2000).
+// SAME payload shape as before (/api/v1/indicators?timeframe=TF&limit=20000).
 // State machine: OK / STALE / ERROR (+ skeleton on first load) — all states are
 // driven by real fetch outcomes; no fabricated timestamps, prices, or liveness.
 // Gauges replaced (user-approved 2026-09-06) by count-proportional distribution
@@ -285,7 +285,7 @@
     inflight = true;
     var firstLoad = !lastGood;
     if (firstLoad) skeleton(true);
-    var url = '/api/v1/indicators?timeframe=' + encodeURIComponent(TF) + '&limit=2000';
+    var url = '/api/v1/indicators?timeframe=' + encodeURIComponent(TF) + '&limit=20000';
     fetch(url).then(function(r){
       if (!r.ok) return r.json().then(function(j){ throw j; });
       return r.json();

@@ -48,7 +48,7 @@ function angleFor(label) {
 }
 
 async function snap(tf) {
-  const r = await fetch(`${BASE}/api/v1/indicators?timeframe=${tf}&limit=2000`);
+  const r = await fetch(`${BASE}/api/v1/indicators?timeframe=${tf}&limit=20000`);
   if (!r.ok) throw new Error(`HTTP ${r.status} for ${tf}`);
   const j = await r.json();
   return j.data || j;

@@ -10,8 +10,10 @@ Routes (all GET, read-only, share the /api/v1 envelope):
 
 Bars source: engine.aggregator.get_completed_bars() when an engine is
 attached (live truth). When no engine, a bounded 503 — no synthetic bars.
-Query params: timeframe (M1/M5/…; validated, defaults to M1), limit (1..500 for
-bar window fed into the calculators), symbol (optional; defaults to configured).
+Query params: timeframe (M1/M5/…; validated, defaults to M1), limit (1..20000
+M1-bar window fed into the calculators; 20000 M1 ≈ 14 days — covers SMA200 on
+M1 and gives H1/H4/D1 enough resampled history), symbol (optional; defaults
+to configured).
 
 Never fabricates indicator values: if insufficient bars, value=None + Neutral.
 """
@@ -26,7 +28,28 @@ from nexus_scalp.web.api_v1.common import fail, get_engine, ok
 
 router = APIRouter(prefix="/api/v1/indicators", tags=["indicators"])
 
-_ALLOWED_TFS = {"M1", "M5", "M15", "M30", "H1", "H2", "H4", "D1", "W1", "MN1", "1M", "1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"}
+_ALLOWED_TFS = {
+    "M1",
+    "M5",
+    "M15",
+    "M30",
+    "H1",
+    "H2",
+    "H4",
+    "D1",
+    "W1",
+    "MN1",
+    "1M",
+    "1m",
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "2h",
+    "4h",
+    "1d",
+    "1w",
+}
 
 
 def _tf_or_fail(request: Request, timeframe: str | None) -> str | Any:
@@ -35,7 +58,11 @@ def _tf_or_fail(request: Request, timeframe: str | None) -> str | Any:
     # keep comparison case-insensitive but store canonical
     allowed_up = {t.upper() for t in _ALLOWED_TFS}
     if up not in allowed_up:
-        return fail(request, "VALIDATION_ERROR", details={"timeframe": f"must be one of {sorted(_ALLOWED_TFS)}"})
+        return fail(
+            request,
+            "VALIDATION_ERROR",
+            details={"timeframe": f"must be one of {sorted(_ALLOWED_TFS)}"},
+        )
     return tf
 
 
@@ -47,7 +74,7 @@ def _get_bars(request: Request, limit: int) -> tuple[list[Any] | None, Any]:
     if agg is None:
         return None, fail(request, "RESOURCE_UNAVAILABLE", message="bar aggregator not attached")
     try:
-        bars = agg.get_completed_bars()[-int(limit):]
+        bars = agg.get_completed_bars()[-int(limit) :]
     except Exception:
         bars = []
     return list(bars), None
@@ -63,7 +90,9 @@ def _symbol(request: Request, symbol: str | None) -> str:
         return "XAUUSD"
 
 
-def _build_snapshot(request: Request, timeframe: str, limit: int, symbol: str | None) -> tuple[Any, Any]:
+def _build_snapshot(
+    request: Request, timeframe: str, limit: int, symbol: str | None
+) -> tuple[Any, Any]:
     tf_checked = _tf_or_fail(request, timeframe)
     if hasattr(tf_checked, "status_code"):  # fail response
         return None, tf_checked
@@ -85,7 +114,7 @@ def _build_snapshot(request: Request, timeframe: str, limit: int, symbol: str | 
 def indicators_snapshot(
     request: Request,
     timeframe: str | None = Query(default="M1", description="M1/M5/M15/M30/H1/H2/H4/D1/W1/MN1"),
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=20000, ge=1, le=20000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -98,33 +127,45 @@ def indicators_snapshot(
 def indicators_oscillators(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=20000, ge=1, le=20000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
     if err is not None:
         return err
-    return ok(request, {"oscillators": api["oscillators"], "gauges": {"oscillators": api["gauges"]["oscillators"]}})
+    return ok(
+        request,
+        {
+            "oscillators": api["oscillators"],
+            "gauges": {"oscillators": api["gauges"]["oscillators"]},
+        },
+    )
 
 
 @router.get("/moving-averages", summary="Moving-average breakdown")
 def indicators_moving_averages(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=20000, ge=1, le=20000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
     if err is not None:
         return err
-    return ok(request, {"moving_averages": api["moving_averages"], "gauges": {"moving_averages": api["gauges"]["moving_averages"]}})
+    return ok(
+        request,
+        {
+            "moving_averages": api["moving_averages"],
+            "gauges": {"moving_averages": api["gauges"]["moving_averages"]},
+        },
+    )
 
 
 @router.get("/pivots", summary="Pivot matrix (Classic/Fibonacci/Camarilla/Woodie/DM)")
 def indicators_pivots(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=20000, ge=1, le=20000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -137,7 +178,7 @@ def indicators_pivots(
 def indicators_gauges(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=20000, ge=1, le=20000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -150,7 +191,7 @@ def indicators_gauges(
 def indicators_summary(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=500, ge=1, le=2000),
+    limit: int = Query(default=20000, ge=1, le=20000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
