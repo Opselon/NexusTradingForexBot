@@ -1,0 +1,90 @@
+{
+  "generated_at": "2026-09-06T01:46:53.577000Z",
+  "calibration_status": "MEASURED_FROM_REAL_DATA",
+  "sources": [
+    "scratch/data/forensic_50d_live_T1_bars.json",
+    "scratch/archive/historic-20260823/forensic_50d_live_T2_bars.json",
+    "scratch/archive/historic-20260823/forensic_50d_live_T3_bars.json"
+  ],
+  "dedupe_note": "T1 duplicate (scratch/data vs scratch/archive) counted once",
+  "real": {
+    "n_bars": 909,
+    "time_from": "2026-08-18T01:14:00+00:00",
+    "time_to": "2026-08-18T16:22:00+00:00",
+    "price_range": [
+      4354.47,
+      4430.61
+    ],
+    "ret_log": {
+      "mean_per_bar": -1.539659114480676e-05,
+      "sd_per_bar": 0.00033001726096890084,
+      "ann_vol_proxy_pct": 19.880082022963933,
+      "skew": -0.2781067794797341,
+      "excess_kurtosis": 4.385669972373744
+    },
+    "acf_ret_lag1": -0.01958287491921341,
+    "acf_ret_lag5": 0.02098641747850128,
+    "acf_absret": {
+      "lag1": 0.2033,
+      "lag2": 0.1727,
+      "lag3": 0.1767,
+      "lag5": 0.2393,
+      "lag10": 0.171
+    },
+    "spread_points": {
+      "min": 7.0,
+      "p50": 14.0,
+      "mean": 14.676567656765677,
+      "p95": 24.0,
+      "max": 37.0,
+      "mean_cents": 0.14676567656765677
+    },
+    "session_bars_utc": {
+      "asia_00_07": 346,
+      "london_07_12": 300,
+      "ldn_ny_overlap_12_17": 263,
+      "ny_17_21": 0,
+      "late_21_24": 0
+    },
+    "trend_persistence": {
+      "sign_autocorr_lag1": -0.05331175082295576,
+      "pct_up_bars": 0.4911894273127753,
+      "mean_run_len": 1.8799171842650104,
+      "max_run_len": 9
+    },
+    "shocks": {
+      "gt_3sd_count": 17,
+      "gt_3sd_pct": 1.8722466960352422,
+      "gt_1pct_move_count": 0,
+      "bar_range_mean": 1.9312431243124433,
+      "bar_range_p95": 4.640000000000327
+    },
+    "gaps": {
+      "non_60s_bars": 0,
+      "gap_distribution_top": {
+        "60": 908
+      }
+    },
+    "tick_volume": {
+      "p50": 331.0,
+      "mean": 381.64026402640263
+    }
+  },
+  "n_bars_total_unique": 909,
+  "synthetic_5000_ticks_seed42": {
+    "n_ticks": 5000,
+    "ret_log": {
+      "mean_per_tick": -2.008199932791443e-07,
+      "sd_per_tick": 3.569817235426094e-05,
+      "skew": 0.31511553247262253,
+      "excess_kurtosis": 0.6063334679899608
+    },
+    "acf_ret_lag1": -0.027961386350366494,
+    "acf_absret_lag1": -0.004366713931751401,
+    "spread_cents": {
+      "min": 0.07999999999992724,
+      "mean": 0.1479520000000013,
+      "max": 0.28000000000065484
+    }
+  }
+}

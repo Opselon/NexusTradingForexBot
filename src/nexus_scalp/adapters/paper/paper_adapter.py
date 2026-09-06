@@ -133,6 +133,14 @@ class PaperMT5Adapter(IMT5Port):
         self._prev_step: float = 0.0
         self._vol_block: float = 1.0
         self._vol_block_ticks_left: int = 0
+        # Priority 4: per-adapter execution ledger (audit trail). Every order
+        # attempt appends one dict here — fills AND rejections — so
+        # requested_price != fill_price (BUY@ask + slippage), spread, and
+        # rejection_reason are observable from data, not from log prints.
+        # Fields: ts, symbol, order_type, volume, requested_price,
+        # bid_at_request, ask_at_request, spread, fill_price, slippage,
+        # latency_ticks, rejection_reason (None on fill), is_fill, ticket.
+        self._execution_ledger: list[dict[str, Any]] = []
 
     @classmethod
     def _seed_price(cls, symbol: str) -> float:
@@ -650,6 +658,19 @@ class PaperMT5Adapter(IMT5Port):
                             self._current_price = tick.bid
                             self._last_tick = tick
                             self._last_tick_time = tick.timestamp
+                            try:
+                                self.process_tick_execution(tick)
+                            except Exception as exc:  # defensive: tick feed must never break
+                                try:
+                                    from nexus_scalp.observability.logging import get_logger as _gl
+
+                                    _gl("nexus_scalp.adapters.paper").error(
+                                        "PAPER_SLTP_PROCESSING_FAILED",
+                                        error=repr(exc),
+                                        symbol=symbol,
+                                    )
+                                except Exception:
+                                    pass
                             return tick
         digits = self._quote_digits(symbol)
         upper = (symbol or "").upper()
@@ -701,7 +722,168 @@ class PaperMT5Adapter(IMT5Port):
         # cache for stale-tick guard and floating-PnL
         self._last_tick = tick
         self._last_tick_time = tick.timestamp
+        # PAPER Reality Phase 2: automatic SL/TP execution — every generated
+        # tick is immediately checked against open positions (broker-managed
+        # stop realism). process_tick_execution uses the cached tick only, so
+        # this never recurses back into get_last_tick.
+        try:
+            self.process_tick_execution(tick)
+        except Exception as exc:  # defensive: tick feed must never break
+            logger.error(
+                "PAPER_SLTP_PROCESSING_FAILED",
+                error=repr(exc),
+                symbol=symbol,
+            )
         return tick
+
+    # ------------------------------------------------------------------
+    # PAPER Reality Phase 2 — automatic SL/TP execution on every tick
+    # ------------------------------------------------------------------
+
+    def _slippage_for_close(self, symbol: str, side: str) -> float:
+        """Deterministic adverse slippage for a stop-level close.
+
+        Drawn from the instance RNG (``self._rng``) so a seeded run replays
+        identically: same seed -> same slip sequence -> same close prices.
+        STOP orders absorb adverse slippage only (never favourable), matching
+        broker stop semantics.
+        """
+        is_metal = self._symbol_is_metal(symbol)
+        if is_metal:
+            slip = self._rng.uniform(0.01, 0.04)  # 1-4 cents adverse
+        else:
+            slip = self._rng.uniform(0.00002, 0.00006)
+        return slip
+
+    def process_tick_execution(self, tick: Any | None = None) -> list[dict[str, Any]]:
+        """Evaluate open positions against the CURRENT tick and auto-execute SL/TP.
+
+        Called automatically at the end of :meth:`get_last_tick` so paper
+        positions behave like broker-managed stops (no manual close needed).
+        May also be called directly with an explicit tick.
+
+        Semantics (broker-style):
+          - BUY  SL (STOP): fills when ``tick.bid <= pos.sl`` at
+            ``min(tick.bid, pos.sl)`` MINUS deterministic slippage.
+          - BUY  TP (LIMIT): fills when ``tick.bid >= pos.tp`` AT ``pos.tp``
+            (limit semantics — fill at the limit price, no positive slippage).
+          - SELL SL (STOP): fills when ``tick.ask >= pos.sl`` at
+            ``max(tick.ask, pos.sl)`` PLUS deterministic slippage.
+          - SELL TP (LIMIT): fills when ``tick.ask <= pos.tp`` AT ``pos.tp``.
+
+        Iterates a SNAPSHOT copy of ``self._positions`` so each position is
+        evaluated independently; closes go through the existing
+        :meth:`close_position` path exactly once per event (the ticket is
+        removed from ``self._positions`` first, so a manual close racing the
+        auto close cannot double-credit balance).
+
+        Returns a list of dicts ``{ticket, event, close_price, realized_pnl}``
+        (empty when nothing triggered).
+        """
+        triggered: list[dict[str, Any]] = []
+        # Use the CURRENT tick: explicit argument, else the last generated one.
+        if tick is None:
+            tick = self._last_tick
+        if tick is None:
+            return triggered
+        if not self._positions:
+            return triggered
+
+        # SNAPSHOT: independent evaluation per position, immune to list churn
+        # caused by closes during iteration.
+        for pos in list(self._positions):
+            # Only positions on the tick's symbol react to this tick.
+            if getattr(pos, "symbol", None) != getattr(tick, "symbol", None):
+                continue
+            # Already-fired guard: if the ticket vanished from the live book
+            # between snapshot and evaluation, skip (closed manually mid-loop).
+            live = next((p for p in self._positions if p.ticket == pos.ticket), None)
+            if live is None:
+                continue
+            side = pos.type.value if hasattr(pos.type, "value") else str(pos.type)
+            is_buy = pos.type == OrderType.BUY
+            bid = float(tick.bid)
+            ask = float(tick.ask)
+            digits = self._quote_digits(pos.symbol)
+
+            sl = float(pos.sl) if pos.sl else 0.0
+            tp = float(pos.tp) if pos.tp else 0.0
+
+            event: str | None = None
+            close_price: float | None = None
+
+            if is_buy:
+                # BUY SL: bid touched-or-crossed the stop -> STOP fill with
+                # adverse slippage (worse than the stop level).
+                if sl > 0 and bid <= sl:
+                    slip = self._slippage_for_close(pos.symbol, "BUY")
+                    close_price = round(min(bid, sl) - slip, digits)
+                    if close_price <= 0:
+                        close_price = min(bid, sl)
+                    event = "SL_HIT"
+                # BUY TP: bid reached the target -> LIMIT fill at TP.
+                elif tp > 0 and bid >= tp:
+                    close_price = round(float(tp), digits)
+                    event = "TP_HIT"
+            # SELL SL: ask touched-or-crossed the stop -> STOP fill with
+            # adverse slippage (worse than the stop level).
+            elif sl > 0 and ask >= sl:
+                slip = self._slippage_for_close(pos.symbol, "SELL")
+                close_price = round(max(ask, sl) + slip, digits)
+                event = "SL_HIT"
+            # SELL TP: ask reached the target -> LIMIT fill at TP.
+            elif tp > 0 and ask <= tp:
+                close_price = round(float(tp), digits)
+                event = "TP_HIT"
+
+            if event is None or close_price is None:
+                continue
+
+            balance_before = float(self.balance)
+            ticket = int(pos.ticket)
+            volume = float(pos.volume)
+
+            # Guarded single-credit close: remove the ticket from the live
+            # book BEFORE crediting, so a concurrent manual close_position()
+            # for the same ticket finds nothing and returns False (and vice
+            # versa — exactly one path can ever credit balance for a ticket).
+            self._positions = [p for p in self._positions if p.ticket != ticket]
+
+            # Credit via the SAME accounting primitives close_position() uses
+            # (full-close branch): _realized_pnl + balance mutation +
+            # _refresh_account. close_position() itself cannot be re-used
+            # verbatim here because it re-locates the ticket in
+            # self._positions — which we just removed as the double-credit
+            # guard — and would fall back to a fresh tick from get_last_tick
+            # (recursion). Same helpers => same numbers, zero double credit.
+            realized_pnl = self._realized_pnl(pos, close_price, volume)
+            self.balance = round(float(self.balance) + realized_pnl, 2)
+            self._refresh_account()
+
+            triggered.append(
+                {
+                    "ticket": ticket,
+                    "event": event,
+                    "close_price": float(close_price),
+                    "realized_pnl": float(realized_pnl),
+                }
+            )
+            logger.info(
+                "[PAPER_SLTP]",
+                sltp_event=event,
+                ticket=ticket,
+                side=side,
+                sl=sl,
+                tp=tp,
+                price=float(close_price),
+                close_price=float(close_price),
+                realized_pnl=float(realized_pnl),
+                balance_before=balance_before,
+                balance_after=float(self.balance),
+            )
+
+        # Equity already refreshed per close above.
+        return triggered
 
     def get_historical_bars(
         self, symbol: str, timeframe: str = "M1", count: int = 100
@@ -858,6 +1040,23 @@ class PaperMT5Adapter(IMT5Port):
         if oid:
             if oid in self._seen_order_ids:
                 logger.warning("PAPER ORDER REJECTED (duplicate order_id)", order_id=oid)
+                # Priority 4: ledger the duplicate rejection so it is data, not just a log line.
+                try:
+                    _, lbid, lask, lspread = self._ledger_quote(order.symbol)
+                except Exception:
+                    lbid = lask = lspread = 0.0
+                self._ledger_append(
+                    symbol=order.symbol,
+                    order_type=order.order_type,
+                    volume=order.volume,
+                    requested_price=order.price,
+                    bid=lbid,
+                    ask=lask,
+                    spread=lspread,
+                    fill_price=None,
+                    slippage=None,
+                    rejection_reason="duplicate_order_id",
+                )
                 return False
             self._seen_order_ids.add(oid)
             # also reject if any open position already reflects that order_id via magic/comment deduplication window
@@ -936,6 +1135,76 @@ class PaperMT5Adapter(IMT5Port):
         contract = self._contract_size(symbol)
         return round((contract * float(price) * float(volume)) / 100.0, 4)
 
+    # ------------------------------------------------------------------
+    # Execution ledger (Priority 4 — audit trail)
+    # ------------------------------------------------------------------
+
+    def _ledger_quote(self, symbol: str) -> tuple[Any | None, float, float, float]:
+        """Return (tick, bid, ask, spread) at request time for the ledger.
+
+        Never advances the walk — reuses the cached last tick when it matches
+        the symbol so ledger bid/ask reflect the quote the order saw.
+        Returns (None, 0.0, 0.0, 0.0) when no cached quote exists.
+        """
+        tick = (
+            self._last_tick
+            if (self._last_tick is not None and getattr(self._last_tick, "symbol", None) == symbol)
+            else None
+        )
+        if tick is None:
+            return None, 0.0, 0.0, 0.0
+        bid = float(tick.bid)
+        ask = float(tick.ask)
+        return tick, bid, ask, round(ask - bid, 6)
+
+    def _ledger_append(
+        self,
+        *,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        requested_price: float,
+        bid: float,
+        ask: float,
+        spread: float,
+        fill_price: float | None,
+        slippage: float | None,
+        rejection_reason: str | None,
+        ticket: int = 0,
+        latency_ticks: int = 0,
+    ) -> dict[str, Any]:
+        """Append one execution-ledger row and return it.
+
+        Every order attempt (fill or rejection) lands here exactly once.
+        ``rejection_reason`` is non-None iff ``is_fill`` is False.
+        """
+        entry: dict[str, Any] = {
+            "ts": datetime.now(UTC).isoformat(),
+            "symbol": symbol,
+            "order_type": getattr(order_type, "value", str(order_type)),
+            "volume": float(volume),
+            "requested_price": float(requested_price),
+            "bid_at_request": float(bid),
+            "ask_at_request": float(ask),
+            "spread": float(spread),
+            "fill_price": (float(fill_price) if fill_price is not None else None),
+            "slippage": (float(slippage) if slippage is not None else None),
+            "latency_ticks": int(latency_ticks),
+            "rejection_reason": rejection_reason,
+            "is_fill": rejection_reason is None,
+            "ticket": int(ticket),
+        }
+        self._execution_ledger.append(entry)
+        return entry
+
+    def get_execution_ledger(self) -> list[dict[str, Any]]:
+        """Read-only copy of the execution ledger (audit consumers)."""
+        return [dict(e) for e in self._execution_ledger]
+
+    def clear_execution_ledger(self) -> None:
+        """Reset the ledger (per-scenario isolation in tests/stress runs)."""
+        self._execution_ledger = []
+
     def _open_simulated_position(
         self,
         symbol: str,
@@ -952,14 +1221,42 @@ class PaperMT5Adapter(IMT5Port):
            (not order.price), plus deterministic seed-based slippage so fill !=
            requested price when the market moved.  G) Margin check vs free
            margin.  H) Stale-tick guard (>30s).
+        Priority 4: every path appends one execution-ledger row; rejections
+        carry ``rejection_reason`` and fills record requested vs fill price,
+        spread and slippage as data (not log prints).
         """
         if volume <= 0.0 or price <= 0.0:
             logger.warning("PAPER ORDER REJECTED (invalid size/price)", volume=volume, price=price)
+            self._ledger_append(
+                symbol=symbol,
+                order_type=order_type,
+                volume=volume,
+                requested_price=float(price),
+                bid=0.0,
+                ask=0.0,
+                spread=0.0,
+                fill_price=None,
+                slippage=None,
+                rejection_reason="invalid_size_or_price",
+            )
             return 0
 
         # H: stale tick guard
         if self._is_stale_tick():
             logger.warning("PAPER ORDER REJECTED (stale tick >30s)", symbol=symbol, price=price)
+            _, lbid, lask, lspread = self._ledger_quote(symbol)
+            self._ledger_append(
+                symbol=symbol,
+                order_type=order_type,
+                volume=volume,
+                requested_price=float(price),
+                bid=lbid,
+                ask=lask,
+                spread=lspread,
+                fill_price=None,
+                slippage=None,
+                rejection_reason="stale_tick_gt_30s",
+            )
             return 0
 
         # G: margin check
@@ -975,11 +1272,25 @@ class PaperMT5Adapter(IMT5Port):
                     required=req,
                     free=free,
                 )
+                _, lbid, lask, lspread = self._ledger_quote(symbol)
+                self._ledger_append(
+                    symbol=symbol,
+                    order_type=order_type,
+                    volume=volume,
+                    requested_price=float(price),
+                    bid=lbid,
+                    ask=lask,
+                    spread=lspread,
+                    fill_price=None,
+                    slippage=None,
+                    rejection_reason="insufficient_margin",
+                )
                 return 0
         except Exception:
             pass
 
         # E: fill-price realism — fill at current tick bid/ask, not order.price
+        latency_ticks = 0
         try:
             tick = (
                 self._last_tick
@@ -991,6 +1302,7 @@ class PaperMT5Adapter(IMT5Port):
             )
             if tick is None:
                 tick = self.get_last_tick(symbol)
+                latency_ticks = 1  # order waited one tick for a fresh quote
             digits = self._quote_digits(symbol)
             is_metal = self._symbol_is_metal(symbol)
             if order_type == OrderType.BUY:
@@ -1013,8 +1325,11 @@ class PaperMT5Adapter(IMT5Port):
                 fill = round(fill - slip, digits)
                 if fill <= 0:
                     fill = float(tick.bid)
+            fill_tick = tick
         except Exception:
             fill = float(price)
+            fill_tick = None
+            digits = self._quote_digits(symbol)
 
         self._ticket_counter += 1
         # initial unrealized relative to fill vs current tick
@@ -1054,6 +1369,46 @@ class PaperMT5Adapter(IMT5Port):
         with __import__("contextlib").suppress(Exception):
             self._refresh_position_profits()
             self._refresh_account()
+        # Priority 4: ledger fill row — requested vs fill observable as data.
+        if fill_tick is not None:
+            self._ledger_append(
+                symbol=symbol,
+                order_type=order_type,
+                volume=volume,
+                requested_price=float(price),
+                bid=float(fill_tick.bid),
+                ask=float(fill_tick.ask),
+                spread=round(float(fill_tick.ask) - float(fill_tick.bid), 6),
+                fill_price=float(fill),
+                slippage=round(
+                    float(fill)
+                    - (
+                        float(fill_tick.ask)
+                        if order_type == OrderType.BUY
+                        else float(fill_tick.bid)
+                    ),
+                    6,
+                ),
+                rejection_reason=None,
+                ticket=pos.ticket,
+                latency_ticks=latency_ticks,
+            )
+        else:
+            # defensive: quote unavailable at fill time — still record the row
+            self._ledger_append(
+                symbol=symbol,
+                order_type=order_type,
+                volume=volume,
+                requested_price=float(price),
+                bid=0.0,
+                ask=0.0,
+                spread=0.0,
+                fill_price=float(fill),
+                slippage=round(float(fill) - float(price), 6),
+                rejection_reason=None,
+                ticket=pos.ticket,
+                latency_ticks=latency_ticks,
+            )
         logger.info(
             "PAPER ORDER FILLED SIMULATION",
             ticket=pos.ticket,
