@@ -51,6 +51,16 @@ pre, code, .font-mono {
     background: transparent;
 }
 
+/* Viewport (document) scrollbar explicitly — after the responsive.css fix the
+   document is the single scroller, so style html-level scrollbar too. */
+html::-webkit-scrollbar {
+    width: 8px;
+}
+html {
+    scrollbar-width: thin;
+    scrollbar-color: #2a3a57 transparent;
+}
+
 /* Horizontal slim variant (tables / header strip) keeps same look, thinner */
 ::-webkit-scrollbar:horizontal {
     height: 6px;

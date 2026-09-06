@@ -216,8 +216,14 @@ table { border-collapse: collapse; }
   #replay-panel .flex.flex-wrap { gap: 6px !important; }
 }
 
-/* ---- Ensure no horizontal page scroll ---- */
-html, body { max-width: 100%; overflow-x: hidden; }
+/* ---- Ensure no horizontal page scroll ----
+   NOTE (scroll-lock bug): `overflow-x: hidden` on BOTH html and body makes each a
+   potential scroll container (CSS: hidden -> overflow-y computes to auto), which
+   suppressed the document scrollbar entirely and froze wheel scrolling.
+   Fix: `overflow-x: clip` on body only — clips horizontal blowout WITHOUT creating
+   a scroll container, so the page scrolls vertically and the custom scrollbar shows. */
+html { max-width: 100%; }
+body { max-width: 100%; overflow-x: clip; }
 main, aside, header, section, div { max-width: 100%; }
 
 /* ---- Touch target sizing (a11y) ---- */
