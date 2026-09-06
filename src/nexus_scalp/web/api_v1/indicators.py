@@ -77,6 +77,7 @@ def _build_snapshot(request: Request, timeframe: str, limit: int, symbol: str | 
     svc = IndicatorService()
     snap = svc.snapshot(sym, bars or [], timeframe=tf)
     api = svc.to_api_dict(snap)
+    api["source_bar_count"] = len(bars or [])
     return api, None
 
 
@@ -84,7 +85,7 @@ def _build_snapshot(request: Request, timeframe: str, limit: int, symbol: str | 
 def indicators_snapshot(
     request: Request,
     timeframe: str | None = Query(default="M1", description="M1/M5/M15/M30/H1/H2/H4/D1/W1/MN1"),
-    limit: int = Query(default=300, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -97,7 +98,7 @@ def indicators_snapshot(
 def indicators_oscillators(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=300, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -110,7 +111,7 @@ def indicators_oscillators(
 def indicators_moving_averages(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=300, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -123,7 +124,7 @@ def indicators_moving_averages(
 def indicators_pivots(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=300, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -136,7 +137,7 @@ def indicators_pivots(
 def indicators_gauges(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=300, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)
@@ -149,7 +150,7 @@ def indicators_gauges(
 def indicators_summary(
     request: Request,
     timeframe: str | None = Query(default="M1"),
-    limit: int = Query(default=300, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     symbol: str | None = Query(default=None),
 ) -> Any:
     api, err = _build_snapshot(request, timeframe or "M1", limit, symbol)

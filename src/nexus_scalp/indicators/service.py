@@ -120,30 +120,29 @@ class IndicatorService:
     """
 
     def snapshot(self, symbol: str, bars: Sequence[Any], timeframe: str = "M1") -> IndicatorSnapshot:
-        prices: list[float] = []
-        highs: list[float] = []
-        lows: list[float] = []
-        for b in bars:
-            # BarData compatible (open/high/low/close + is_complete)
-            if getattr(b, "is_complete", True) is False:
-                continue
-            c = getattr(b, "close", None)
-            if c is None:
-                continue
-            prices.append(float(c))
-            h = getattr(b, "high", c)
-            lows.append(float(getattr(b, "low", c)))
-            highs.append(float(h))
+        from nexus_scalp.indicators.resample import BarResampler
+
+        tf = _normalize_tf(timeframe)
+        rows = BarResampler(tf).resample(bars)
+        prices: list[float] = [r["close"] for r in rows]
 
         last_close = prices[-1] if prices else None
-        last_high = highs[-1] if highs else (last_close or 0)
-        last_low = lows[-1] if lows else (last_close or 0)
-        last_open = float(getattr(bars[-1], "open", last_close or 0)) if bars else (last_close or 0)
+
+        # Daily/weekly/monthly pivots use the PREVIOUS completed bucket's H/L/C
+        # (TradingView convention); M1..H4 fall back to the prior bar's range.
+        if len(rows) >= 2:
+            pv = rows[-2]
+            pv_high, pv_low, pv_close, pv_open = pv["high"], pv["low"], pv["close"], pv["open"]
+        elif rows:
+            pv = rows[-1]
+            pv_high, pv_low, pv_close, pv_open = pv["high"], pv["low"], pv["close"], pv["open"]
+        else:
+            pv_high = pv_low = pv_close = pv_open = (last_close or 0)
 
         oscillators = self._oscillators(prices)
         moving_averages = self._moving_averages(prices, last_close)
 
-        pivots = self._pivots(last_high, last_low, last_close or 0, last_open)
+        pivots = self._pivots(pv_high, pv_low, pv_close, pv_open)
 
         osc_s, osc_n, osc_b = _counts(oscillators)
         ma_s, ma_n, ma_b = _counts(moving_averages)
@@ -157,7 +156,7 @@ class IndicatorService:
 
         return IndicatorSnapshot(
             symbol=symbol,
-            timeframe=_normalize_tf(timeframe),
+            timeframe=tf,
             bar_count=len(prices),
             last_close=last_close,
             oscillators=oscillators,

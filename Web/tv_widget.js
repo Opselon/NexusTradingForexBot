@@ -1,84 +1,113 @@
-// TradingView-exact widget — fetches /api/v1/indicators and renders gauges + tables.
-// Polls every 10s; timeframe buttons drive the query param.
+// Nexus Technicals widget — native dark theme, AA contrast.
+// Fetches /api/v1/indicators?timeframe=TF (server resamples M1 bars → TF) and renders
+// gauges + tables. Polls every 10s; timeframe buttons refetch immediately.
 (function(){
   var TF = 'M1';
   var POLL_MS = 10000;
   var timer = null;
+  var bound = false;
+
+  var C = {
+    bg: '#0b1220',
+    arcIdle: '#3b4a6b',          // visible gray-blue idle arc (NOT near-black)
+    labelIdle: '#cbd5e1',        // slate-300 idle labels
+    labelActiveSell: '#f87171',  // red-400
+    labelActiveBuy: '#4ade80',   // green-400
+    verdictSell: '#f87171',
+    verdictBuy: '#4ade80',
+    verdictNeutral: '#e2e8f0',
+    needle: '#f8fafc',
+    hub: '#0b1220',
+    rowName: '#e2e8f0',
+    rowValue: '#f1f5f9',
+    rowNeutral: '#94a3b8',
+    rowSell: '#f87171',
+    rowBuy: '#4ade80',
+    zebra: 'rgba(148,163,184,0.06)',
+    hover: 'rgba(56,189,248,0.10)'
+  };
 
   function el(id){ return document.getElementById(id); }
 
   function fmt(v){
     if (v === null || v === undefined) return '—';
     if (typeof v !== 'number') return String(v);
-    if (Math.abs(v) >= 1000) {
-      return v.toLocaleString('en-US',{minimumFractionDigits:3, maximumFractionDigits:3});
-    }
+    if (!isFinite(v)) return '—';
+    if (Math.abs(v) >= 1000) return v.toLocaleString('en-US',{minimumFractionDigits:3, maximumFractionDigits:3});
     var s = Math.abs(v) >= 100 ? v.toFixed(2) : v.toFixed(3);
     return s.replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'');
   }
   function actionColor(a){
-    if (a === 'Buy') return '#16A34A';
-    if (a === 'Sell') return '#EF4444';
-    if (a === 'Strong buy') return '#16A34A';
-    if (a === 'Strong sell') return '#EF4444';
-    return '#6B7280';
+    if (a === 'Buy' || a === 'Strong buy') return C.rowBuy;
+    if (a === 'Sell' || a === 'Strong sell') return C.rowSell;
+    return C.rowNeutral;
   }
 
+  // Semicircle gauge, viewBox 200x115, center (100,100), r=80.
   function drawGauge(svgId, angleDeg, label){
     var svg = el(svgId);
     if (!svg) return;
-    // 180° arc: center (100,100) radius 80, from 180deg to 0deg
     var cx=100, cy=100, r=80;
-    // classify label color / active arc fraction
-    var isSell = label === 'Sell' || label === 'Strong sell';
-    var isBuy  = label === 'Buy'  || label === 'Strong buy';
-    var activeFrac = 0;
-    if (label === 'Strong sell') activeFrac = 0.06;
-    else if (label === 'Sell')   activeFrac = 0.14;
-    else if (label === 'Neutral') activeFrac = 0.42;
-    else if (label === 'Buy')     activeFrac = 0.14;
-    else if (label === 'Strong buy') activeFrac = 0.06;
-    var gradId = 'g-'+svgId;
-    var html = '<defs><linearGradient id="'+gradId+'" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#EF4444"/><stop offset="100%" stop-color="#EC4899"/></linearGradient><linearGradient id="'+gradId+'-buy" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#10B981"/><stop offset="100%" stop-color="#22C55E"/></linearGradient></defs>';
-    // background
-    html += '<path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#E5E7EB" stroke-width="11" stroke-linecap="round"/>';
-    if (activeFrac > 0) {
-      var aLen = 180*activeFrac;
-      if (isSell) {
-        var rad = (180 - aLen)*Math.PI/180;
-        var x2 = cx + r*Math.cos(Math.PI - aLen*Math.PI/180); // start at 180deg, sweep aLen
-        // simpler: arc from 180deg (20,100) to 180-aLen deg
-        var x = cx + r*Math.cos(rad);
-        var y = cy - r*Math.sin(rad);
-        // large-arc? no, aLen <90 so small arc
-        html += '<path d="M 20 100 A 80 80 0 0 1 '+x.toFixed(1)+' '+y.toFixed(1)+'" fill="none" stroke="url(#'+gradId+')" stroke-width="11" stroke-linecap="round"/>';
-      } else if (isBuy) {
-        var rad2 = aLen*Math.PI/180;
-        var xb = cx + r*Math.cos(rad2);
-        var yb = cy - r*Math.sin(rad2);
-        html += '<path d="M 180 100 A 80 80 0 0 1 '+xb.toFixed(1)+' '+yb.toFixed(1)+'" fill="none" stroke="url(#'+gradId+'-buy)" stroke-width="11" stroke-linecap="round"/>';
-      } else {
-        // Neutral: no colored arc (truthful) — label + needle carry the state.
-      }
+    function pt(deg){ var th=(180-deg)*Math.PI/180; return [cx + r*Math.cos(th), cy - r*Math.sin(th)]; }
+    function arc(a0, a1){
+      var p0 = pt(a0), p1 = pt(a1);
+      var large = Math.abs(a1-a0) > 180 ? 1 : 0;
+      var sweep = a1 > a0 ? 1 : 0;
+      return 'M '+p0[0].toFixed(1)+' '+p0[1].toFixed(1)+' A '+r+' '+r+' 0 '+large+' '+sweep+' '+p1[0].toFixed(1)+' '+p1[1].toFixed(1);
     }
-    var labels = [['Strong sell',5,105],['Sell',33,38],['Neutral',100,12],['Buy',167,38],['Strong buy',195,105]];
-    for (var i=0;i<labels.length;i++){
-      var L=labels[i];
-      var col = '#9CA3AF';
-      if (label === 'Sell' && L[0]==='Sell') col='#EF4444';
-      else if (label === 'Strong sell' && L[0]==='Strong sell') col='#EF4444';
-      else if (label === 'Buy' && L[0]==='Buy') col='#16A34A';
-      else if (label === 'Strong buy' && L[0]==='Strong buy') col='#16A34A';
-      html += '<text x="'+L[1]+'" y="'+L[2]+'" font-size="8" fill="'+col+'" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif"'+(col!=='#9CA3AF'?' font-weight="700"':'')+'>'+L[0]+'</text>';
+    var html = '<defs>' +
+      '<linearGradient id="g-'+svgId+'" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#DC2626"/><stop offset="100%" stop-color="#F472B6"/></linearGradient>' +
+      '<linearGradient id="gb-'+svgId+'" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#34D399"/><stop offset="100%" stop-color="#10B981"/></linearGradient>' +
+      '</defs>';
+    // idle arc (full 180)
+    html += '<path d="'+arc(0,180)+'" fill="none" stroke="'+C.arcIdle+'" stroke-width="11" stroke-linecap="round"/>';
+    // active segment (TV-style: sell fills from left tip, buy from right tip)
+    function band(a0, a1, stroke){
+      if (Math.abs(a1-a0) < 2) return;
+      html += '<path d="'+arc(a0,a1)+'" fill="none" stroke="'+stroke+'" stroke-width="11" stroke-linecap="butt"/>';
     }
-    // needle: angleDeg 0=Strong sell (left, ~0deg horizontal), 90=Neutral (up), 180=Strong buy (right)
-    // map: 0->180deg, 90->90deg, 180->0deg in math coords
+    if (label === 'Strong sell') band(0, 22, 'url(#g-'+svgId+')');
+    else if (label === 'Sell') band(0, 55, 'url(#g-'+svgId+')');
+    else if (label === 'Buy') band(125, 180, 'url(#gb-'+svgId+')');
+    else if (label === 'Strong buy') band(158, 180, 'url(#gb-'+svgId+')');
+    // labels: five zones, positioned ON the arc, readable
+    var L = [
+      ['Strong sell', 8,   108],
+      ['Sell',        45,  34],
+      ['Neutral',     90,  8],
+      ['Buy',         135, 34],
+      ['Strong buy',  172, 108]
+    ];
+    for (var i=0;i<L.length;i++){
+      var name = L[i][0];
+      var isActive = (label === name);
+      var col = C.labelIdle;
+      if (isActive) col = (name.indexOf('sell')>=0) ? C.labelActiveSell : (name.indexOf('buy')>=0 ? C.labelActiveBuy : '#ffffff');
+      var w = isActive ? ' font-weight="800"' : ' font-weight="600"';
+      html += '<text x="'+L[i][1]+'" y="'+L[i][2]+'" font-size="8.5" fill="'+col+'" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif"'+w+'>'+name+'</text>';
+    }
+    // needle
     var theta = (180 - angleDeg)*Math.PI/180;
-    var nx = cx + 72*Math.cos(theta);
-    var ny = cy - 72*Math.sin(theta);
-    html += '<line x1="'+cx+'" y1="'+cy+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+'" stroke="#111827" stroke-width="2.2" stroke-linecap="round"/>';
-    html += '<circle cx="'+cx+'" cy="'+cy+'" r="4.5" fill="#111827" stroke="white" stroke-width="1"/>';
+    var nx = cx + 66*Math.cos(theta);
+    var ny = cy - 66*Math.sin(theta);
+    html += '<line x1="'+cx+'" y1="'+cy+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+'" stroke="'+C.needle+'" stroke-width="2.4" stroke-linecap="round"/>';
+    html += '<circle cx="'+cx+'" cy="'+cy+'" r="5" fill="'+C.hub+'" stroke="#e2e8f0" stroke-width="1.4"/>';
     svg.innerHTML = html;
+  }
+
+  function verdictColor(label){
+    if (label === 'Sell' || label === 'Strong sell') return C.verdictSell;
+    if (label === 'Buy' || label === 'Strong buy') return C.verdictBuy;
+    return C.verdictNeutral;
+  }
+
+  function rowHTML(r){
+    var c = actionColor(r.action);
+    var w = c === C.rowNeutral ? 500 : 700;
+    return '<tr style="background:transparent">' +
+      '<td class="px-3 py-1.5" style="color:'+C.rowName+'">'+r.name+'</td>' +
+      '<td class="px-3 py-1.5 text-right font-mono tabular-nums" style="color:'+C.rowValue+'">'+fmt(r.value)+'</td>' +
+      '<td class="px-3 py-1.5 text-right" style="color:'+c+';font-weight:'+w+'">'+r.action+'</td></tr>';
   }
 
   function render(data){
@@ -87,9 +116,7 @@
     var ma  = data.moving_averages || [];
     var piv = data.pivots || {levels:[], columns:[], rows:{}};
     var g   = data.gauges || {};
-    var sum = data.summary || {};
 
-    // gauges: server gives {oscillators:{label,sell,neutral,buy,angle_deg}, moving_averages, summary}
     var go = g.oscillators || {label:'Neutral',sell:0,neutral:0,buy:0,angle_deg:90};
     var gs = g.summary     || {label:'Neutral',sell:0,neutral:0,buy:0,angle_deg:90};
     var gm = g.moving_averages || {label:'Neutral',sell:0,neutral:0,buy:0,angle_deg:90};
@@ -98,65 +125,61 @@
     drawGauge('tv-gauge-sum', gs.angle_deg, gs.label);
     drawGauge('tv-gauge-ma',  gm.angle_deg, gm.label);
 
-    if (el('tv-osc-label')) { el('tv-osc-label').textContent = go.label; el('tv-osc-label').style.color = (go.label==='Sell'||go.label==='Strong sell') ? '#EF4444' : (go.label==='Buy'||go.label==='Strong buy' ? '#16A34A' : '#111827'); }
-    if (el('tv-sum-label')) { el('tv-sum-label').textContent = gs.label; el('tv-sum-label').style.color = (gs.label==='Sell'||gs.label==='Strong sell') ? '#EF4444' : (gs.label==='Buy'||gs.label==='Strong buy' ? '#16A34A' : '#111827'); }
-    if (el('tv-ma-label'))  { el('tv-ma-label').textContent  = gm.label; el('tv-ma-label').style.color  = (gm.label==='Sell'||gm.label==='Strong sell') ? '#EF4444' : (gm.label==='Buy'||gm.label==='Strong buy' ? '#16A34A' : '#111827'); }
+    function setVerdict(id, label){ var n = el(id); if (n){ n.textContent = label; n.style.color = verdictColor(label); } }
+    setVerdict('tv-osc-label', go.label);
+    setVerdict('tv-sum-label', gs.label);
+    setVerdict('tv-ma-label',  gm.label);
 
-    if (el('tv-osc-sell')) el('tv-osc-sell').textContent = String(go.sell);
-    if (el('tv-osc-neu'))  el('tv-osc-neu').textContent  = String(go.neutral);
-    if (el('tv-osc-buy'))  el('tv-osc-buy').textContent  = String(go.buy);
-    if (el('tv-sum-sell')) el('tv-sum-sell').textContent = String(gs.sell);
-    if (el('tv-sum-neu'))  el('tv-sum-neu').textContent  = String(gs.neutral);
-    if (el('tv-sum-buy'))  el('tv-sum-buy').textContent  = String(gs.buy);
-    if (el('tv-ma-sell')) el('tv-ma-sell').textContent = String(gm.sell);
-    if (el('tv-ma-neu'))  el('tv-ma-neu').textContent  = String(gm.neutral);
-    if (el('tv-ma-buy'))  el('tv-ma-buy').textContent  = String(gm.buy);
-    if (el('tv-osc-head')) el('tv-osc-head').textContent = go.label;
-    if (el('tv-ma-head'))  el('tv-ma-head').textContent  = gm.label;
+    function cnt(id, v){ var n = el(id); if (n) n.textContent = String(v); }
+    cnt('tv-osc-sell', go.sell); cnt('tv-osc-neu', go.neutral); cnt('tv-osc-buy', go.buy);
+    cnt('tv-sum-sell', gs.sell); cnt('tv-sum-neu', gs.neutral); cnt('tv-sum-buy', gs.buy);
+    cnt('tv-ma-sell',  gm.sell); cnt('tv-ma-neu',  gm.neutral); cnt('tv-ma-buy',  gm.buy);
+    cnt('tv-osc-head', 0); // placeholder to no-op
+    var oh = el('tv-osc-head'); if (oh){ oh.textContent = go.label; oh.style.color = verdictColor(go.label); }
+    var mh = el('tv-ma-head'); if (mh){ mh.textContent = gm.label; mh.style.color = verdictColor(gm.label); }
 
-    var ob = el('tv-osc-body');
-    if (ob) {
-      ob.innerHTML = osc.map(function(r){
-        var c = actionColor(r.action);
-        var w = c==='#6B7280' ? 500 : 700;
-        return '<tr><td class="px-3 py-1.5 text-gray-800">'+r.name+'</td><td class="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900">'+fmt(r.value)+'</td><td class="px-3 py-1.5 text-right" style="color:'+c+';font-weight:'+w+'">'+r.action+'</td></tr>';
-      }).join('');
-    }
-    var mb = el('tv-ma-body');
-    if (mb) {
-      mb.innerHTML = ma.map(function(r){
-        var c = actionColor(r.action);
-        var w = c==='#6B7280' ? 500 : 700;
-        return '<tr><td class="px-3 py-1.5 text-gray-800">'+r.name+'</td><td class="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900">'+fmt(r.value)+'</td><td class="px-3 py-1.5 text-right" style="color:'+c+';font-weight:'+w+'">'+r.action+'</td></tr>';
-      }).join('');
-    }
+    var ob = el('tv-osc-body'); if (ob) ob.innerHTML = osc.map(rowHTML).join('');
+    var mb = el('tv-ma-body');  if (mb) mb.innerHTML = ma.map(rowHTML).join('');
+
     var pb = el('tv-pivot-body');
     if (pb) {
       var levels = piv.levels || ['R3','R2','R1','P','S1','S2','S3'];
       var cols = ['Classic','Fibonacci','Camarilla','Woodie','DM'];
       pb.innerHTML = levels.map(function(lv){
         var row = (piv.rows && piv.rows[lv]) || {};
-        var tds = cols.map(function(col){ var v=row[col]; return '<td class="px-3 py-1.5 text-right">'+(v===null||v===undefined?'—':fmt(v))+'</td>'; }).join('');
-        var bold = lv==='P' ? ' font-extrabold bg-gray-50/60' : ' font-semibold';
-        return '<tr class="'+bold+'"><td class="px-3 py-1.5 font-sans'+bold+'">'+lv+'</td>'+tds+'</tr>';
+        var tds = cols.map(function(col){
+          var v = row[col];
+          return '<td class="px-3 py-1.5 text-right" style="color:'+C.rowValue+'">'+(v===null||v===undefined?'—':fmt(v))+'</td>';
+        }).join('');
+        var isP = lv === 'P';
+        var bg = isP ? ' style="background:'+C.zebra+'"' : '';
+        var wgt = isP ? 'font-extrabold' : 'font-bold';
+        return '<tr'+bg+'><td class="px-3 py-1.5 '+wgt+'" style="color:#ffffff">'+lv+'</td>'+tds+'</tr>';
       }).join('');
     }
+
     var badge = el('tv-live-badge');
     if (badge) {
       var n = data.bar_count || 0;
+      var m1b = data.source_bar_count || null;
       badge.classList.remove('hidden');
-      badge.textContent = (n ? n+' bars · ' : '') + (data.timeframe||TF) + ' · ' + (data.symbol||'');
-      badge.className = 'ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full border ' + (n>=50 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200');
+      badge.textContent = (data.timeframe||TF) + ' · ' + (data.symbol||'') + (m1b ? ' · '+m1b+' M1 bars' : (n ? ' · '+n+' bars' : ''));
+      badge.className = 'ml-auto text-[10px] font-bold px-2.5 py-1 rounded-full border ' +
+        (n >= 50 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' : 'bg-amber-500/15 text-amber-300 border-amber-500/40');
     }
   }
 
   function showError(msg){
     var badge = el('tv-live-badge');
-    if (badge){ badge.classList.remove('hidden'); badge.textContent = msg; badge.className='ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-600 border-rose-200'; }
+    if (badge){
+      badge.classList.remove('hidden');
+      badge.textContent = msg;
+      badge.className = 'ml-auto text-[10px] font-bold px-2.5 py-1 rounded-full border bg-rose-500/15 text-rose-300 border-rose-500/40';
+    }
   }
 
   function fetchAndRender(){
-    var url = '/api/v1/indicators?timeframe='+encodeURIComponent(TF)+'&limit=300';
+    var url = '/api/v1/indicators?timeframe='+encodeURIComponent(TF)+'&limit=2000';
     fetch(url).then(function(r){
       if (!r.ok) return r.json().then(function(j){ throw j; });
       return r.json();
@@ -171,19 +194,24 @@
   }
 
   function bindTF(){
+    if (bound) return;
     var nodes = document.querySelectorAll('#tv-timeframes .tv-tf');
+    if (!nodes.length) return;
+    bound = true;
     nodes.forEach(function(btn){
       btn.addEventListener('click', function(){
         TF = btn.getAttribute('data-tf') || 'M1';
-        nodes.forEach(function(b){ b.classList.remove('active','bg-gray-900','text-white','font-semibold'); b.classList.add('text-black'); b.classList.add('hover:bg-gray-50'); });
-        btn.classList.add('active','bg-gray-900','text-white','font-semibold'); btn.classList.remove('text-black');
-        btn.classList.remove('hover:bg-gray-50');
+        nodes.forEach(function(b){
+          b.classList.remove('active','bg-white','font-bold');
+          b.classList.add('text-gray-300');
+        });
+        btn.classList.add('active','bg-white','font-bold');
+        btn.classList.remove('text-gray-300');
         fetchAndRender();
       });
     });
   }
 
-  // init when widget is in DOM (tv_widget.html may be fetched async)
   function init(){
     if (!el('tv-indicator-widget')) return false;
     bindTF();
@@ -194,7 +222,7 @@
   }
   if (!init()){
     var iv = setInterval(function(){ if (init()) clearInterval(iv); }, 300);
-    setTimeout(function(){ clearInterval(iv); }, 5000);
+    setTimeout(function(){ clearInterval(iv); }, 10000);
   }
   window.__tvIndicatorRefresh = fetchAndRender;
 })();
