@@ -45,14 +45,20 @@ from nexus_scalp.observability._tg_core_protocol import _TelegramCoreProto
 # Category constants — defined locally to break the facade cycle; facade
 # re-imports the same values from here (single source is this module's
 # duplicated literals, kept identical to telegram_notifier.py).
+TELEGRAM_API_ERROR = "TELEGRAM_API_ERROR"
+TELEGRAM_AUTH_ERROR = "TELEGRAM_AUTH_ERROR"
 TELEGRAM_CONFIG_ERROR = "TELEGRAM_CONFIG_ERROR"
 TELEGRAM_DNS_BLOCKED = "TELEGRAM_DNS_BLOCKED"
+TELEGRAM_HTTP_ERROR = "TELEGRAM_HTTP_ERROR"
 TELEGRAM_NETWORK_ERROR = "TELEGRAM_NETWORK_ERROR"
 TELEGRAM_QUEUE_ERROR = "TELEGRAM_QUEUE_ERROR"
 TELEGRAM_RATE_LIMIT = "TELEGRAM_RATE_LIMIT"
 TELEGRAM_SERIALIZATION_ERROR = "TELEGRAM_SERIALIZATION_ERROR"
+TELEGRAM_SERVER_ERROR = "TELEGRAM_SERVER_ERROR"
+TELEGRAM_TARGET_ERROR = "TELEGRAM_TARGET_ERROR"
 TELEGRAM_TIMEOUT = "TELEGRAM_TIMEOUT"
 TELEGRAM_UNKNOWN_ERROR = "TELEGRAM_UNKNOWN_ERROR"
+TELEGRAM_WORKER_ERROR = "TELEGRAM_WORKER_ERROR"
 
 
 def _record_placeholder_late() -> str:
@@ -224,7 +230,25 @@ class TransportMixin(_TelegramCoreProto):
         )
 
     def _send_msg_sync(self, record: Any) -> dict[str, Any]:
-        """One HTTP POST. Returns an outcome dict (never raises except network)."""
+        """One HTTP POST. Returns an outcome dict (never raises except network).
+
+        AUTH circuit-breaker: once a 401 has been observed, every further
+        send is rejected LOCALLY (no HTTP) until the process restarts with a
+        fresh token. Rationale: a 401 means the token itself is dead — the
+        user's 08:10 log shows attempt=1..4 over 17s against a revoked token
+        (safe_reason=HTTP 401), each burning a full timeout window while the
+        event loop was already saturated by the 20k reseed + 62s liquidity
+        compute. Retrying a dead credential is never productive.
+        """
+        if getattr(self, "_auth_dead", False):
+            return {
+                "ok": False,
+                "retryable": False,
+                "category": TELEGRAM_AUTH_ERROR,
+                "safe_message": "telegram token rejected earlier (HTTP 401); restart with a valid token",
+                "http_status": 401,
+                "telegram_error_code": 401,
+            }
         header = f"<b>[{record.priority}]</b>"
         if self.environment:
             header += f" <b>({self.environment.upper()})</b>"
@@ -276,6 +300,12 @@ class TransportMixin(_TelegramCoreProto):
             http_status = resp.status
             body = resp.read()
         outcome = self._parse_response(http_status, body)
+        # Trip the AUTH breaker on a 401: the token is dead, never retry it.
+        try:
+            if outcome.get("http_status") == 401 or outcome.get("telegram_error_code") == 401:
+                self._auth_dead = True
+        except Exception:
+            pass
         if outcome.get("ok") is True:
             # Register the dedup signature ONLY on a confirmed delivery:
             # a failed send (timeout/5xx) never registers, so a retry is
@@ -336,6 +366,22 @@ class TransportMixin(_TelegramCoreProto):
         return _get_classify()(http_status, body)
 
     def _classify_exception(self, exc: Exception) -> tuple[str, bool]:
+        # NOTE: urllib.error.HTTPError SUBCLASSES URLError, so it matches
+        # _TIMEOUT_ERRORS first — check HTTPError BEFORE the timeout branch
+        # (this was the live bug: 401s classified TELEGRAM_TIMEOUT/retryable).
+        if isinstance(exc, urllib.error.HTTPError):
+            cat = _get_classify()(exc.code, exc.read() if hasattr(exc, "read") else None)[
+                "category"
+            ]
+            retry = _get_classify()(exc.code, None)["retryable"]
+            # A 401 raised as HTTPError must ALSO trip the AUTH breaker —
+            # otherwise the dispatch loop retries a dead token 4x per message.
+            if exc.code == 401:
+                try:
+                    self._auth_dead = True
+                except Exception:
+                    pass
+            return cat, retry
         if isinstance(exc, _TIMEOUT_ERRORS):
             if self._last_dns_poisoned:
                 self._last_dns_poisoned = False
@@ -343,10 +389,6 @@ class TransportMixin(_TelegramCoreProto):
             return TELEGRAM_TIMEOUT, True
         if isinstance(exc, ConnectionError):
             return TELEGRAM_NETWORK_ERROR, True
-        if isinstance(exc, urllib.error.HTTPError):
-            return _get_classify()(exc.code, exc.read() if hasattr(exc, "read") else None)[
-                "category"
-            ], _get_classify()(exc.code, None)["retryable"]
         return TELEGRAM_UNKNOWN_ERROR, False
 
     # =====================================================================
