@@ -1,77 +1,153 @@
-<!-- Nexus Technicals — native dark panel (matches dashboard theme, AA contrast) -->
-<div id="tv-indicator-widget" class="rounded-xl border border-[#2b3a5e] bg-[#0b1220] shadow-2xl overflow-hidden">
-  <div class="border-l-[3px] border-[#84CC16]">
-    <!-- header -->
-    <div class="px-5 pt-4 pb-3">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-full bg-[#C9A227] flex items-center justify-center shrink-0" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 3.5L10.5 7L5 10.5V3.5Z" fill="#0b1220" stroke="#0b1220" stroke-linejoin="round"/></svg></div>
-        <h2 class="text-[18px] font-extrabold tracking-tight text-white" style="font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">Gold Spot / U.S. Dollar</h2>
-        <span id="tv-live-badge" class="ml-auto hidden text-[10px] font-bold px-2.5 py-1 rounded-full border">—</span>
-      </div>
-      <div id="tv-timeframes" class="flex flex-wrap items-center gap-1.5 mt-3 text-[12px] leading-none select-none" style="font-family:ui-sans-serif,system-ui,sans-serif;">
-        <button data-tf="M1" class="tv-tf active px-3 py-1.5 rounded-full bg-white text-[#0b1220] font-bold">1 minute</button>
-        <button data-tf="M5" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">5 minutes</button>
-        <button data-tf="M15" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">15 minutes</button>
-        <button data-tf="M30" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">30 minutes</button>
-        <button data-tf="H1" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">1 hour</button>
-        <button data-tf="H2" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">2 hours</button>
-        <button data-tf="H4" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">4 hours</button>
-        <button data-tf="D1" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">1 day</button>
-        <button data-tf="W1" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">1 week</button>
-        <button data-tf="MN1" class="tv-tf px-3 py-1.5 rounded-full text-gray-300 hover:bg-[#1a2540] hover:text-white">1 month</button>
-      </div>
+<!-- Nexus Technicals — professional terminal card (TV-REDESIGN-1, Hermes-Main/Hermes-UI-01).
+     UI-only redesign. Data contract unchanged: /api/v1/indicators?timeframe=TF&limit=2000
+     Renders: Market Context strip → timeframe toolbar → signal bar (hero + 2 cards,
+     count-proportional distribution bars) → indicator tables → pivot matrix. -->
+<link rel="stylesheet" href="tv_widget_styles.css">
+<div id="tv-indicator-widget" class="tv-scope">
+  <!-- 1) MARKET CONTEXT -->
+  <div class="tv-context">
+    <div class="tv-idbox">
+      <span class="tv-flag" aria-hidden="true">XAU</span>
+      <span class="tv-currency" id="tv-symbol">XAUUSD</span>
+      <span class="tv-curfullname">Gold Spot / U.S. Dollar</span>
+      <span id="tv-live-badge" class="tv-live hidden">—</span>
     </div>
-
-    <!-- gauges -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 px-5 py-6 border-t border-[#22304f]">
-      <div class="flex flex-col items-center">
-        <div class="text-[13px] font-bold text-white mb-2 tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Oscillators</div>
-        <div class="relative w-[230px] h-[138px]"><svg id="tv-gauge-osc" viewBox="0 0 200 115" class="w-full h-full" aria-hidden="true"></svg></div>
-        <div id="tv-osc-label" class="text-[17px] font-extrabold text-white -mt-1" style="font-family:ui-sans-serif,system-ui,sans-serif;">—</div>
-        <div class="flex gap-7 mt-2 text-center" style="font-family:ui-sans-serif,system-ui,sans-serif;">
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Sell</div><div id="tv-osc-sell" class="text-[13px] text-white font-bold">—</div></div>
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Neutral</div><div id="tv-osc-neu" class="text-[13px] text-white font-bold">—</div></div>
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Buy</div><div id="tv-osc-buy" class="text-[13px] text-white font-bold">—</div></div>
-        </div>
-      </div>
-      <div class="flex flex-col items-center">
-        <div class="text-[13px] font-bold text-white mb-2 tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Summary</div>
-        <div class="relative w-[230px] h-[138px]"><svg id="tv-gauge-sum" viewBox="0 0 200 115" class="w-full h-full" aria-hidden="true"></svg></div>
-        <div id="tv-sum-label" class="text-[17px] font-extrabold text-white -mt-1" style="font-family:ui-sans-serif,system-ui,sans-serif;">—</div>
-        <div class="flex gap-7 mt-2 text-center" style="font-family:ui-sans-serif,system-ui,sans-serif;">
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Sell</div><div id="tv-sum-sell" class="text-[13px] text-white font-bold">—</div></div>
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Neutral</div><div id="tv-sum-neu" class="text-[13px] text-white font-bold">—</div></div>
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Buy</div><div id="tv-sum-buy" class="text-[13px] text-white font-bold">—</div></div>
-        </div>
-      </div>
-      <div class="flex flex-col items-center">
-        <div class="text-[13px] font-bold text-white mb-2 tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Moving Averages</div>
-        <div class="relative w-[230px] h-[138px]"><svg id="tv-gauge-ma" viewBox="0 0 200 115" class="w-full h-full" aria-hidden="true"></svg></div>
-        <div id="tv-ma-label" class="text-[17px] font-extrabold text-white -mt-1" style="font-family:ui-sans-serif,system-ui,sans-serif;">—</div>
-        <div class="flex gap-7 mt-2 text-center" style="font-family:ui-sans-serif,system-ui,sans-serif;">
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Sell</div><div id="tv-ma-sell" class="text-[13px] text-white font-bold">—</div></div>
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Neutral</div><div id="tv-ma-neu" class="text-[13px] text-white font-bold">—</div></div>
-          <div><div class="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">Buy</div><div id="tv-ma-buy" class="text-[13px] text-white font-bold">—</div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- tables -->
-    <div class="px-5 pb-5 space-y-6">
-      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div class="border border-[#22304f] rounded-lg overflow-hidden bg-[#0e1628]">
-          <div class="bg-[#131c33] px-3 py-2 border-b border-[#22304f] flex items-center justify-between"><span class="text-[13px] font-extrabold text-white tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Oscillators</span><span id="tv-osc-head" class="text-[11px] font-bold text-white">—</span></div>
-          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-400 border-b border-[#22304f] bg-[#131c33]"><th class="px-3 py-2 font-bold uppercase tracking-wide">Name</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Value</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Action</th></tr></thead><tbody id="tv-osc-body" class="text-[12px] divide-y divide-[#1a2440]"></tbody></table></div>
-        </div>
-        <div class="border border-[#22304f] rounded-lg overflow-hidden bg-[#0e1628]">
-          <div class="bg-[#131c33] px-3 py-2 border-b border-[#22304f] flex items-center justify-between"><span class="text-[13px] font-extrabold text-white tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Moving Averages</span><span id="tv-ma-head" class="text-[11px] font-bold text-white">—</span></div>
-          <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-400 border-b border-[#22304f] bg-[#131c33]"><th class="px-3 py-2 font-bold uppercase tracking-wide">Name</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Value</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Action</th></tr></thead><tbody id="tv-ma-body" class="text-[12px] divide-y divide-[#1a2440]"></tbody></table></div>
-        </div>
-      </div>
-      <div class="border border-[#22304f] rounded-lg overflow-hidden bg-[#0e1628]">
-        <div class="bg-[#131c33] px-3 py-2 border-b border-[#22304f]"><span class="text-[13px] font-extrabold text-white tracking-wide" style="font-family:ui-sans-serif,system-ui,sans-serif;">Pivots</span></div>
-        <div class="overflow-x-auto"><table class="w-full text-left border-collapse" style="font-family:ui-sans-serif,system-ui,sans-serif;"><thead><tr class="text-[11px] text-gray-400 border-b border-[#22304f] bg-[#131c33]"><th class="px-3 py-2 font-bold uppercase tracking-wide">Pivot</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Classic</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Fibonacci</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Camarilla</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">Woodie</th><th class="px-3 py-2 font-bold uppercase tracking-wide text-right">DM</th></tr></thead><tbody id="tv-pivot-body" class="text-[12px] divide-y divide-[#1a2440] font-mono"></tbody></table></div>
-      </div>
+    <div class="tv-pricewrap">
+      <span class="tv-plabel">Last close</span>
+      <span class="tv-price" id="tv-price">—</span>
+      <span class="tv-updated" id="tv-updated"></span>
     </div>
   </div>
+
+  <!-- error / stale banner (real states only) -->
+  <div id="tv-error" class="tv-error hidden">
+    <span class="tv-error-ico" aria-hidden="true" id="tv-error-ico">●</span>
+    <span id="tv-error-text">—</span>
+    <button type="button" id="tv-retry" class="tv-retry">Retry</button>
+  </div>
+
+  <!-- 2) TIMEFRAME SELECTOR -->
+  <div class="tv-tfbar">
+    <div id="tv-timeframes" class="tv-tfs" role="group" aria-label="Timeframe selection">
+      <button type="button" data-tf="M1" class="tv-tf active" aria-pressed="true">1m</button>
+      <button type="button" data-tf="M5" class="tv-tf" aria-pressed="false">5m</button>
+      <button type="button" data-tf="M15" class="tv-tf" aria-pressed="false">15m</button>
+      <button type="button" data-tf="M30" class="tv-tf" aria-pressed="false">30m</button>
+      <button type="button" data-tf="H1" class="tv-tf" aria-pressed="false">1h</button>
+      <button type="button" data-tf="H2" class="tv-tf" aria-pressed="false">2h</button>
+      <button type="button" data-tf="H4" class="tv-tf" aria-pressed="false">4h</button>
+      <button type="button" data-tf="D1" class="tv-tf" aria-pressed="false">1D</button>
+      <button type="button" data-tf="W1" class="tv-tf" aria-pressed="false">1W</button>
+      <button type="button" data-tf="MN1" class="tv-tf" aria-pressed="false">1M</button>
+    </div>
+  </div>
+
+  <div class="tv-toast" id="tv-toast" role="status"></div>
+
+  <!-- 3) PRIMARY ANALYSIS SUMMARY -->
+  <div class="tv-signal-bar">
+    <section class="tv-signal-hero" aria-label="Overall technical summary">
+      <div class="tv-signal-name">Overall Technical Summary</div>
+      <div class="tv-hero-main">
+        <span class="tv-verdict is-neutral" id="tv-sum-label">—</span>
+        <span class="tv-signal-meta" id="tv-sum-meta">—</span>
+      </div>
+      <div class="tv-gauge-wrap" id="tv-gauge-sum">
+        <div class="tv-gauge" aria-hidden="true">
+          <div class="tv-gseg is-sell" id="tv-sum-seg-sell"></div>
+          <div class="tv-gseg is-neutral" id="tv-sum-seg-neu"></div>
+          <div class="tv-gseg is-buy" id="tv-sum-seg-buy"></div>
+        </div>
+      </div>
+      <div class="tv-counts">
+        <div class="tv-count is-sell"><span class="tv-count-k">Sell</span><span class="tv-count-v" id="tv-sum-sell">—</span></div>
+        <div class="tv-count is-neutral"><span class="tv-count-k">Neutral</span><span class="tv-count-v" id="tv-sum-neu">—</span></div>
+        <div class="tv-count is-buy"><span class="tv-count-k">Buy</span><span class="tv-count-v" id="tv-sum-buy">—</span></div>
+      </div>
+    </section>
+    <div class="tv-signal-sub">
+      <section class="tv-signal-card" aria-label="Oscillators signal">
+        <div class="tv-signal-name">Oscillators</div>
+        <div class="tv-hero-main">
+          <span class="tv-verdict is-neutral" id="tv-osc-label">—</span>
+          <span class="tv-signal-meta" id="tv-osc-meta">—</span>
+        </div>
+        <div class="tv-gauge-wrap" id="tv-gauge-osc">
+          <div class="tv-gauge" aria-hidden="true">
+            <div class="tv-gseg is-sell" id="tv-osc-seg-sell"></div>
+            <div class="tv-gseg is-neutral" id="tv-osc-seg-neu"></div>
+            <div class="tv-gseg is-buy" id="tv-osc-seg-buy"></div>
+          </div>
+        </div>
+        <div class="tv-counts">
+          <div class="tv-count is-sell"><span class="tv-count-k">Sell</span><span class="tv-count-v" id="tv-osc-sell">—</span></div>
+          <div class="tv-count is-neutral"><span class="tv-count-k">Neutral</span><span class="tv-count-v" id="tv-osc-neu">—</span></div>
+          <div class="tv-count is-buy"><span class="tv-count-k">Buy</span><span class="tv-count-v" id="tv-osc-buy">—</span></div>
+        </div>
+      </section>
+      <section class="tv-signal-card" aria-label="Moving averages signal">
+        <div class="tv-signal-name">Moving Averages</div>
+        <div class="tv-hero-main">
+          <span class="tv-verdict is-neutral" id="tv-ma-label">—</span>
+          <span class="tv-signal-meta" id="tv-ma-meta">—</span>
+        </div>
+        <div class="tv-gauge-wrap" id="tv-gauge-ma">
+          <div class="tv-gauge" aria-hidden="true">
+            <div class="tv-gseg is-sell" id="tv-ma-seg-sell"></div>
+            <div class="tv-gseg is-neutral" id="tv-ma-seg-neu"></div>
+            <div class="tv-gseg is-buy" id="tv-ma-seg-buy"></div>
+          </div>
+        </div>
+        <div class="tv-counts">
+          <div class="tv-count is-sell"><span class="tv-count-k">Sell</span><span class="tv-count-v" id="tv-ma-sell">—</span></div>
+          <div class="tv-count is-neutral"><span class="tv-count-k">Neutral</span><span class="tv-count-v" id="tv-ma-neu">—</span></div>
+          <div class="tv-count is-buy"><span class="tv-count-k">Buy</span><span class="tv-count-v" id="tv-ma-buy">—</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 4) DETAILED INDICATOR ANALYSIS -->
+  <div class="tv-tables">
+    <section class="tv-panel" aria-label="Oscillators detail">
+      <div class="tv-panel-h">
+        <h3 class="tv-panel-t">Oscillators</h3>
+        <span class="tv-panel-sub">momentum &amp; strength</span>
+        <span class="tv-chip is-neutral" id="tv-osc-chip">—</span>
+      </div>
+      <div class="tv-scroll">
+        <table class="tv-table">
+          <thead><tr><th scope="col">Indicator</th><th scope="col" class="ta-r">Value</th><th scope="col" class="ta-r">Action</th></tr></thead>
+          <tbody id="tv-osc-body" class="tv-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="tv-panel" aria-label="Moving averages detail">
+      <div class="tv-panel-h">
+        <h3 class="tv-panel-t">Moving Averages</h3>
+        <span class="tv-panel-sub">trend &amp; crossover</span>
+        <span class="tv-chip is-neutral" id="tv-ma-chip">—</span>
+      </div>
+      <div class="tv-scroll">
+        <table class="tv-table">
+          <thead><tr><th scope="col">Indicator</th><th scope="col" class="ta-r">Value</th><th scope="col" class="ta-r">Action</th></tr></thead>
+          <tbody id="tv-ma-body" class="tv-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- 5) PIVOT MATRIX -->
+  <section class="tv-panel tv-pivots" aria-label="Pivot levels">
+    <div class="tv-panel-h">
+      <h3 class="tv-panel-t">Pivot Levels</h3>
+      <span class="tv-panel-sub">classic · fibonacci · camarilla · woodie · demark</span>
+    </div>
+    <div class="tv-scroll">
+      <table class="tv-table tv-pivot-table">
+        <thead><tr><th scope="col">Pivot</th><th scope="col" class="ta-r">Classic</th><th scope="col" class="ta-r">Fibonacci</th><th scope="col" class="ta-r">Camarilla</th><th scope="col" class="ta-r">Woodie</th><th scope="col" class="ta-r">DM</th></tr></thead>
+        <tbody id="tv-pivot-body" class="tv-tbody"></tbody>
+      </table>
+    </div>
+  </section>
 </div>
