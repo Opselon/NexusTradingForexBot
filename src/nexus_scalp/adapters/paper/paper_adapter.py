@@ -17,9 +17,11 @@ against this adapter.
 """
 
 import contextlib
+import json
 import os
 import random
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, ClassVar
 
 from nexus_scalp.adapters.mt5.diagnostics import MT5ConnectionState
@@ -133,6 +135,10 @@ class PaperMT5Adapter(IMT5Port):
         self._prev_step: float = 0.0
         self._vol_block: float = 1.0
         self._vol_block_ticks_left: int = 0
+        # PAPER Persistence Phase 2: durability across restarts
+        self._initial_balance: float = float(initial_balance)
+        self._closed_tickets: set[int] = set()
+        self._last_tick_iso: str | None = None
         # Priority 4: per-adapter execution ledger (audit trail). Every order
         # attempt appends one dict here — fills AND rejections — so
         # requested_price != fill_price (BUY@ask + slippage), spread, and
@@ -215,9 +221,142 @@ class PaperMT5Adapter(IMT5Port):
     # Connection lifecycle
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # PAPER Persistence Phase 2 — JSON file durability (no client/UI changes)
+    # ------------------------------------------------------------------
+
+    def _persist_enabled(self) -> bool:
+        raw = os.environ.get("NEXUS_PAPER_PERSIST", "1").strip().lower()
+        return raw not in ("0", "false", "no", "off")
+
+    def _persist_path(self) -> Path:
+        # Test-isolation seam: NEXUS_DATA_ROOT redirects the state file without
+        # code changes (conftest sets it per pytest run).
+        env_root = os.environ.get("NEXUS_DATA_ROOT", "").strip()
+        if env_root:
+            try:
+                return Path(env_root) / "paper_state.json"
+            except Exception:
+                pass
+        try:
+            from nexus_scalp.release import paths as rpaths  # type: ignore
+
+            root = rpaths.get_data_root()
+            return Path(root) / "paper_state.json"
+        except Exception:
+            return Path.cwd() / "artifacts" / "paper_state.json"
+
+    def _persist_state(self) -> None:
+        if not self._persist_enabled():
+            return
+        path = self._persist_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # _last_tick_iso: prefer cached tick time else now
+            if (
+                self._last_tick is not None
+                and getattr(self._last_tick, "timestamp", None) is not None
+            ):
+                try:
+                    self._last_tick_iso = self._last_tick.timestamp.isoformat()  # type: ignore[union-attr]
+                except Exception:
+                    self._last_tick_iso = datetime.now(UTC).isoformat()
+            elif self._last_tick_iso is None:
+                self._last_tick_iso = datetime.now(UTC).isoformat()
+            payload = {
+                "balance": float(self.balance),
+                "equity": float(self.equity),
+                "_ticket_counter": int(self._ticket_counter),
+                "_positions": [p.model_dump(mode="json") for p in self._positions],
+                "_last_tick_iso": self._last_tick_iso,
+                "closed_tickets": sorted(int(x) for x in getattr(self, "_closed_tickets", set())),
+                "symbol": str(self.symbol),
+                "initial_balance": float(getattr(self, "_initial_balance", self.balance)),
+            }
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            tmp.replace(path)
+            with contextlib.suppress(Exception):
+                if os.name != "nt":
+                    os.chmod(path, 0o600)
+        except Exception as exc:  # never break trading path on persist failure
+            with contextlib.suppress(Exception):
+                logger.warning("PAPER persist failed", error=str(exc), path=str(path))
+
+    def _load_state(self) -> bool:
+        if not self._persist_enabled():
+            return False
+        path = self._persist_path()
+        if not path.exists():
+            return False
+        try:
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+        except Exception:
+            return False
+        # Provenance guard: symbol must match; initial_balance is NOT used to gate or reset.
+        try:
+            saved_symbol = str(data.get("symbol", ""))
+            if saved_symbol and saved_symbol != str(self.symbol):
+                logger.info(
+                    "PAPER persist skip (symbol mismatch)", saved=saved_symbol, current=self.symbol
+                )
+                return False
+        except Exception:
+            pass
+        try:
+            self.balance = float(data.get("balance", self.balance))
+            self.equity = float(data.get("equity", self.equity))
+            self._ticket_counter = int(data.get("_ticket_counter", self._ticket_counter))
+            self._last_tick_iso = data.get("_last_tick_iso")
+            # closed tickets
+            ct = data.get("closed_tickets", [])
+            self._closed_tickets = set(int(x) for x in ct) if isinstance(ct, list) else set()
+            # positions
+            raw_positions = data.get("_positions", [])
+            restored: list[Any] = []
+            if isinstance(raw_positions, list):
+                for d in raw_positions:
+                    try:
+                        restored.append(Position.model_validate(d))
+                    except Exception:
+                        continue
+            self._positions = restored
+            # Recompute equity from restored positions (persisted balance stays authoritative).
+            with contextlib.suppress(Exception):
+                self._refresh_position_profits()
+                self._refresh_account()
+            logger.info(
+                "PAPER persist restored",
+                path=str(path),
+                balance=self.balance,
+                positions=len(self._positions),
+                closed=len(self._closed_tickets),
+            )
+            return True
+        except Exception as exc:
+            with contextlib.suppress(Exception):
+                logger.warning("PAPER load failed", error=str(exc), path=str(path))
+            return False
+
+    def _clear_persisted_state(self) -> None:
+        """Remove the persistence file (test teardown helper)."""
+        try:
+            p = self._persist_path()
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+        # also clear in-memory closed set for the instance
+        with contextlib.suppress(Exception):
+            self._closed_tickets = set()
+
     def connect(self) -> bool:
         """Initializes paper trading simulation state."""
         self._connected = True
+        # Restore durable state if present — loaded balance wins over initial_balance (no hidden reset).
+        with contextlib.suppress(Exception):
+            self._load_state()
         logger.info("Connected to Paper Simulation Broker Adapter", initial_balance=self.balance)
         return True
 
@@ -734,6 +873,14 @@ class PaperMT5Adapter(IMT5Port):
                 error=repr(exc),
                 symbol=symbol,
             )
+        # Durability: the tick may have mutated state (auto SL/TP close) —
+        # record its timestamp and persist post-execution state.
+        try:
+            self._last_tick_iso = tick.timestamp.isoformat()
+        except Exception:
+            self._last_tick_iso = None
+        with contextlib.suppress(Exception):
+            self._persist_state()
         return tick
 
     # ------------------------------------------------------------------
@@ -868,9 +1015,12 @@ class PaperMT5Adapter(IMT5Port):
                     "realized_pnl": float(realized_pnl),
                 }
             )
+            # Contract line: [PAPER_SLTP] event=SL_HIT|TP_HIT ticket side sl/tp
+            # price close_price realized_pnl balance_before balance_after.
+            # The event NAME rides in the message prefix because 'event' is the
+            # reserved structlog record key (kwargs named event collide).
             logger.info(
-                "[PAPER_SLTP]",
-                sltp_event=event,
+                f"[PAPER_SLTP] event={event}",
                 ticket=ticket,
                 side=side,
                 sl=sl,
@@ -882,6 +1032,12 @@ class PaperMT5Adapter(IMT5Port):
                 balance_after=float(self.balance),
             )
 
+        # Durability: persist after any auto SL/TP close so a restart sees
+        # the same balance and closed_tickets set (no double credit).
+        if triggered:
+            self._closed_tickets.update(int(t["ticket"]) for t in triggered)
+            with contextlib.suppress(Exception):
+                self._persist_state()
         # Equity already refreshed per close above.
         return triggered
 
@@ -1239,6 +1395,8 @@ class PaperMT5Adapter(IMT5Port):
                 slippage=None,
                 rejection_reason="invalid_size_or_price",
             )
+            with contextlib.suppress(Exception):
+                self._persist_state()
             return 0
 
         # H: stale tick guard
@@ -1257,6 +1415,8 @@ class PaperMT5Adapter(IMT5Port):
                 slippage=None,
                 rejection_reason="stale_tick_gt_30s",
             )
+            with contextlib.suppress(Exception):
+                self._persist_state()
             return 0
 
         # G: margin check
@@ -1285,6 +1445,8 @@ class PaperMT5Adapter(IMT5Port):
                     slippage=None,
                     rejection_reason="insufficient_margin",
                 )
+                with contextlib.suppress(Exception):
+                    self._persist_state()
                 return 0
         except Exception:
             pass
@@ -1419,6 +1581,8 @@ class PaperMT5Adapter(IMT5Port):
             volume=pos.volume,
             slip=round(fill - float(price), 6),
         )
+        with contextlib.suppress(Exception):
+            self._persist_state()
         return pos.ticket
 
     def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
@@ -1456,11 +1620,20 @@ class PaperMT5Adapter(IMT5Port):
 
         Task B: BUY PnL=(close-bid/ask - open)*vol*contract (100 metals), SELL inverted.
         Partial closes correctly split volume and credit proportional PnL.
+        Duplicate-close guard: if ticket is in _closed_tickets (persisted), do not credit again.
         """
+        # Duplicate-close guard (already closed & persisted — never double-credit).
+        try:
+            if int(ticket) in getattr(self, "_closed_tickets", set()):
+                logger.warning("PAPER CLOSE IGNORED (already closed)", ticket=ticket)
+                return False
+        except Exception:
+            pass
         # locate position
         target = next((p for p in self._positions if p.ticket == ticket), None)
         if target is None:
             logger.warning("PAPER CLOSE FAILED (unknown ticket)", ticket=ticket)
+            # If ticket was once open but already removed, treat as duplicate guard above.
             return False
 
         # close price: BUY closes at bid, SELL at ask
@@ -1515,6 +1688,9 @@ class PaperMT5Adapter(IMT5Port):
                 balance=self.balance,
                 equity=self.equity,
             )
+            # Partial closes do not mark the ticket as fully closed; just persist the split.
+            with contextlib.suppress(Exception):
+                self._persist_state()
             return True
 
         # full close
@@ -1522,6 +1698,11 @@ class PaperMT5Adapter(IMT5Port):
         self.balance = round(float(self.balance) + pnl, 2)
         self._positions = [p for p in self._positions if p.ticket != ticket]
         self._refresh_account()
+        # Record closed ticket so a restart never double-credits it.
+        try:
+            self._closed_tickets.add(int(ticket))
+        except Exception:
+            pass
         # release dedup key if any (conservative: drop one arbitrary id — send_order tracks order_id->ticket externally)
         logger.info(
             "PAPER POSITION CLOSED",
@@ -1531,4 +1712,7 @@ class PaperMT5Adapter(IMT5Port):
             balance=self.balance,
             equity=self.equity,
         )
+        # Durability: write state after every close (balance/tickets/positions).
+        with contextlib.suppress(Exception):
+            self._persist_state()
         return True

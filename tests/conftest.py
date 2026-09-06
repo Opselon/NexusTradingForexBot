@@ -81,3 +81,20 @@ def _isolate_implicit_audit_db(
     run_dir = tmp_path_factory.mktemp("audit_db")
     monkeypatch.setenv("NEXUS_AUDIT_DB", str(run_dir / "audit.db"))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_paper_persist(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+):
+    """PAPER Reality Phase 2: paper_adapter persists account/positions to a JSON
+    state file under the data root. Point that root at a per-run temp dir (and
+    keep persistence ENABLED so recovery behaviour itself is testable) so unit
+    tests never read or write the real user data root. Respects an explicit
+    ``NEXUS_PAPER_PERSIST=0`` set by a test (opt-out) via :meth:`setenv` and
+    via module-level monkeypatching."""
+    run_dir = tmp_path_factory.mktemp("paper_persist")
+    monkeypatch.setenv("NEXUS_DATA_ROOT", str(run_dir))
+    if os.environ.get("NEXUS_PAPER_PERSIST", "") == "":
+        monkeypatch.setenv("NEXUS_PAPER_PERSIST", "1")
+    yield
