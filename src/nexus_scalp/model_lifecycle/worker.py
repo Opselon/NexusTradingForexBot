@@ -171,8 +171,14 @@ class TrainingWorker:
     def _maybe_train(self) -> None:
         """
         When auto-training is enabled and the ledger holds enough verified
-        experience, builds a dataset and runs one controlled training pass
-        (bounded: one at a time, cancellable).
+        EXECUTED+CLOSED experience, builds a dataset and runs one controlled
+        training pass (bounded: one at a time, cancellable).
+
+        IDEMPOTENT TRIGGER (learning-loop closure): the dataset id is a
+        deterministic function of the ledger content + config. The worker
+        compares it against the last COMPLETED run's dataset id in the
+        persistent run store — an unchanged experience set never retrains,
+        across restarts (watermark survives process death).
         """
         if not self.auto_train_enabled or self._cancel_requested:
             return
@@ -195,6 +201,14 @@ class TrainingWorker:
                         samples=dataset.sample_count,
                     )
                     return
+                # ---- idempotency watermark ---------------------------------
+                last_done = self._last_completed_dataset_id()
+                if last_done is not None and dataset.dataset_id == last_done:
+                    logger.info(
+                        "[TRAINING_WORKER] event=SKIP_UNCHANGED_DATASET",
+                        dataset_id=dataset.dataset_id,
+                    )
+                    return
                 result = self.orchestrator.run_controlled_training(
                     dataset,
                     hyperparameters={"num_folds": 5, "epochs_per_fold": 3, "batch_size": 64},
@@ -206,12 +220,25 @@ class TrainingWorker:
                     "[TRAINING_WORKER] event=TRAINING_COMPLETE",
                     run_id=self.last_run_id,
                     gates_passed=result.get("all_gates_passed"),
+                    dataset_id=dataset.dataset_id,
                 )
             finally:
                 self.inflight = False
                 self._cancel_requested = False
         except Exception as e:
             logger.error("[TRAINING_WORKER] training cycle failed (isolated)", error=str(e))
+
+    def _last_completed_dataset_id(self) -> str | None:
+        """Latest COMPLETED run's dataset id from the persistent run store."""
+        try:
+            runs = self.orchestrator.run_store.list_runs(status="COMPLETED", limit=1)
+        except Exception as exc:
+            logger.warning("[TRAINING_WORKER] run-store lookup failed: %s", exc)
+            return None
+        if not runs:
+            return None
+        dataset_id = runs[0].get("dataset_id") or ""
+        return dataset_id or None
 
 
 def format_training_worker_status(worker: TrainingWorker) -> dict[str, Any]:
