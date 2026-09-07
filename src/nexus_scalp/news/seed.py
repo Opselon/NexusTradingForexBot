@@ -19,7 +19,7 @@ from nexus_scalp.news.database import NewsDatabase
 from nexus_scalp.news.models import AssetImpactProfile, SourceKind, SourceTier
 
 #: Version of the seed payload; bump when the seed content changes.
-SEED_VERSION = "2026-08-16-v2"
+SEED_VERSION = "2026-09-07-v3"  # market-context P0: dead sources disabled/replaced
 
 # ---------------------------------------------------------------------------
 # Official macro sources (Tier 1) - high-trust inputs for USD/FX/XAUUSD
@@ -42,9 +42,17 @@ _OFFICIAL_SOURCES: list[dict] = [
         "kind": SourceKind.OFFICIAL,
         "tier": SourceTier.TIER_1,
         "url": "https://www.bls.gov",
+        # Verified 2026-09-07 (market-context P0): BLS serves 403 (Akamai) to
+        # ALL non-browser clients incl. browser UA — feed AND schedule pages.
+        # Blocked at the WAF: not parser-fixable. DISABLED so the worker stops
+        # burning 118-failure backoff cycles; the official BLS release
+        # SCHEDULE arrives via the forward calendar layer (calendar/, FF
+        # provider + FedFOMCProvider), and CPI/NFP releases still reach the
+        # pipeline through marketwatch/forexlive/fxstreet when they happen.
         "feed_url": "https://www.bls.gov/feed/news.releases.rss",
         "poll_interval_sec": 600,
         "priority": 1.0,
+        "enabled": False,
     },
     {
         "source_id": "bea",
@@ -52,11 +60,16 @@ _OFFICIAL_SOURCES: list[dict] = [
         "kind": SourceKind.OFFICIAL,
         "tier": SourceTier.TIER_1,
         "url": "https://www.bea.gov",
-        # Verified 2026-08-16: /rss/news returns 404; the live releases page
-        # (https://www.bea.gov/news) is 200. The HTML adapter extracts items.
+        # Verified 2026-09-07 (market-context P0): the HTML releases page is
+        # 200 but feedparser extracts ZERO entries (bozo=1, 0 items) — the
+        # 200-but-wrong-schema trap (OFFICIAL adapter correctly flags it).
+        # No machine-readable BEA feed exists without an API key (BEA API
+        # requires registration). DISABLED; BEA release dates remain covered
+        # by the forward calendar layer (FF weekly JSON verified live).
         "feed_url": "https://www.bea.gov/news",
         "poll_interval_sec": 600,
         "priority": 0.95,
+        "enabled": False,
     },
     {
         "source_id": "ecb",
@@ -94,13 +107,21 @@ _OFFICIAL_SOURCES: list[dict] = [
     },
     {
         "source_id": "ustreasury",
-        "name": "U.S. Treasury",
-        "kind": SourceKind.OFFICIAL,
+        "name": "U.S. Treasury (JSON manifest)",
+        "kind": SourceKind.API,
         "tier": SourceTier.TIER_1,
         "url": "https://home.treasury.gov",
-        # Verified 2026-08-16: the RSS feed path returns 503; the live
-        # press-releases page is 200. HTML adapter extracts releases.
-        "feed_url": "https://home.treasury.gov/news/press-releases",
+        # Verified 2026-09-07 (market-context P0): the old RSS path 503s and
+        # the HTML press-releases page parses to ZERO feedparser entries
+        # (bozo=1, 0 entries — verified live). The site exposes a STABLE JSON
+        # manifest per section (Drupal data-news-manifest):
+        #   /news-data/press-releases/manifest.json -> year shard index
+        #   /news-data/press-releases/search/2026.json -> items[]
+        # items carry {title, url, datetime (ISO-8601 Z), dateDisplay} — a
+        # machine-readable, durable contract; parsed by
+        # JSONManifestSourceAdapter (kind=API). Same source_id keeps health
+        # history continuity in news_health.
+        "feed_url": "https://home.treasury.gov/news-data/press-releases/search/2026.json",
         "poll_interval_sec": 600,
         "priority": 0.85,
     },
@@ -112,14 +133,40 @@ _OFFICIAL_SOURCES: list[dict] = [
 
 _MAJOR_SOURCES: list[dict] = [
     {
+        # Verified 2026-09-07 (market-context P0): feeds.reuters.com dies with
+        # TLS EOF (SSL: UNEXPECTED_EOF_WHILE_READING) on every attempt —
+        # Reuters retired this feed host; not fixable client-side. REPLACED
+        # by CNBC business RSS (verified 200, 30 entries, clean RSS 2.0) and
+        # FXStreet (verified 200, 30 entries) under a new source_id.
         "source_id": "reuters",
-        "name": "Reuters Markets",
+        "name": "Reuters Markets (DEAD — replaced by cnbc_business)",
         "kind": SourceKind.RSS,
         "tier": SourceTier.TIER_2,
         "url": "https://www.reuters.com",
         "feed_url": "https://feeds.reuters.com/reuters/businessNews",
         "poll_interval_sec": 300,
         "priority": 0.8,
+        "enabled": False,
+    },
+    {
+        "source_id": "cnbc_business",
+        "name": "CNBC Business (Reuters replacement)",
+        "kind": SourceKind.RSS,
+        "tier": SourceTier.TIER_2,
+        "url": "https://www.cnbc.com",
+        "feed_url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
+        "poll_interval_sec": 300,
+        "priority": 0.8,
+    },
+    {
+        "source_id": "fxstreet",
+        "name": "FXStreet (FX/macro news)",
+        "kind": SourceKind.RSS,
+        "tier": SourceTier.TIER_2,
+        "url": "https://www.fxstreet.com",
+        "feed_url": "https://www.fxstreet.com/rss/news",
+        "poll_interval_sec": 300,
+        "priority": 0.75,
     },
     {
         "source_id": "marketwatch",
