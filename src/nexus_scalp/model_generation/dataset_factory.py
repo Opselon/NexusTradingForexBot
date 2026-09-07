@@ -32,7 +32,7 @@ from typing import Any
 
 import polars as pl
 
-from nexus_scalp.model_generation.artifact_store import ArtifactStore
+from nexus_scalp.model_generation.artifact_store import ArtifactConflictError, ArtifactStore
 from nexus_scalp.model_generation.lineage import LabelOrigin, stamp_manifest
 from nexus_scalp.model_generation.models import DatasetManifest
 from nexus_scalp.model_generation.sample_factory import SampleFactory, samples_to_frame
@@ -312,6 +312,49 @@ class DatasetFactory:
         # eligibility of any candidate trained on this dataset is decided
         # from this field, never inferred).
         manifest_payload = stamp_manifest(manifest.model_dump(mode="json"), label_origin)
+        # Content digest recorded in the manifest so a REBUILD with the same
+        # deterministic id can prove content equality (idempotent reuse)
+        # instead of tripping the immutability conflict (CHG-0061).
+        manifest_payload["content_digest"] = c_digest
+
+        # Idempotent rebuild: the CLI contract (deterministic identity, same
+        # input -> same id -> exit OK on rebuild) meets the store's
+        # immutability contract (never overwrite an existing identity).
+        # When the artifact for THIS id already exists AND is intact AND its
+        # recorded content digest matches, the rebuild is a no-op: return
+        # the existing handle. Any other pre-existing state (different
+        # content under the same id = digest collision, or a corrupt
+        # artifact) still raises ArtifactConflictError — never silently
+        # overwritten.
+        existing_manifest = self.store.read_dataset_manifest(real_id)
+        existing_parquet = self.store.dataset_path(real_id)
+        if existing_manifest is not None and existing_parquet.exists():
+            actual = hashlib.sha256(existing_parquet.read_bytes()).hexdigest()
+            if actual != str(existing_manifest.get("dataset_hash") or ""):
+                raise ArtifactConflictError(
+                    f"dataset {real_id!r}: existing artifact is CORRUPT "
+                    f"(manifest dataset_hash != parquet bytes) - refusing to "
+                    "overwrite; mint a NEW dataset id"
+                )
+            recorded = str(existing_manifest.get("content_digest") or "")
+            if recorded and recorded != c_digest:
+                raise ArtifactConflictError(
+                    f"dataset {real_id!r}: same id but DIFFERENT content "
+                    "(content digest mismatch) - refusing to overwrite; "
+                    "mint a NEW dataset id"
+                )
+            logger.info(
+                "[DATASET] event=REUSED dataset_id=%s (deterministic rebuild, artifact intact)",
+                real_id,
+            )
+            return {
+                "path": str(existing_parquet),
+                "hash": str(existing_manifest.get("dataset_hash") or ""),
+                "dataset_id": real_id,
+                "counts": existing_manifest.get("row_counts") or {},
+                "config_hash": c_hash,
+                "reused": True,
+            }
 
         handle = self.store.save_dataset(
             real_id,
