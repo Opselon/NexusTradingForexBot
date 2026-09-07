@@ -19,11 +19,14 @@ from __future__ import annotations
 
 import contextlib
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus_scalp.governance.models import GovernanceEvent, GovernanceStage
 from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.observability.logging import get_logger
+
+if TYPE_CHECKING:  # import-cycle breaker
+    from nexus_scalp.application.live_engine import LiveEngine
 
 logger = get_logger("nexus_scalp.application.live.champion_sync")
 
@@ -34,7 +37,7 @@ class ChampionSync:
     def __init__(self, om: Any) -> None:
         self.om = om
 
-
+    @staticmethod
     def evaluate_champion_registry_sync(
         _self: LiveEngine | None,
         *,
@@ -45,7 +48,7 @@ class ChampionSync:
         serving_fingerprint: str | None = None,
     ) -> dict[str, Any]:
         """Pure decision for _sync_champion_registry_state (no I/O).
-    
+
         Returns {"action": NOOP|REPAIR|BOOTSTRAP, ...} describing exactly
         what the caller must do to make the registry truthful.
         """
@@ -60,7 +63,7 @@ class ChampionSync:
         }
         if current_row is None:
             return {**base, "action": "BOOTSTRAP", "reason": "no champion row"}
-    
+
         row_path = norm(current_row.get("artifact_path", ""))
         row_schema = str(current_row.get("feature_schema_id", "") or "")
         row_dim = int(current_row.get("feature_dimension", 0) or 0)
@@ -71,7 +74,7 @@ class ChampionSync:
         )
         if contract_match:
             return {**base, "action": "NOOP", "reason": "already_truthful"}
-    
+
         # Path matches but the CONTRACT is contradictory: the row claims
         # the serving artifact under the wrong schema/dimension. Repair =
         # demote the stale row to ARCHIVED and re-register truthfully.
@@ -86,7 +89,6 @@ class ChampionSync:
             "demote_stale_to": ModelStatus.ARCHIVED.value,
         }
 
-
     def sync_champion_registry_state(self) -> None:
         """Makes the registry truthful about the CURRENT Champion (spec 3)."""
         try:
@@ -96,7 +98,7 @@ class ChampionSync:
             if champ is None or not champ.artifact_hash:
                 return
             from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
-    
+
             lifecycle = ModelLifecycleRegistry(
                 audit_repo=self.om.audit, model_registry=self.om.model_registry
             )
@@ -145,7 +147,9 @@ class ChampionSync:
             try:
                 lifecycle.set_status(
                     model_id=iid,
-                    model_version=str(getattr(self.om.config.model, "feature_schema_version", "v1.0")),
+                    model_version=str(
+                        getattr(self.om.config.model, "feature_schema_version", "v1.0")
+                    ),
                     status=ModelStatus.CHAMPION,
                     reason="registry truthfulness sync: live Champion row",
                 )
@@ -157,7 +161,9 @@ class ChampionSync:
                     event="REGISTRY_RECONCILED",
                     stage=GovernanceStage.REGISTRY,
                     model_id=self.om.champion_manager.model_id,
-                    model_version=str(getattr(self.om.config.model, "feature_schema_version", "v1.0")),
+                    model_version=str(
+                        getattr(self.om.config.model, "feature_schema_version", "v1.0")
+                    ),
                     schema_id=self.om.FEATURE_SCHEMA_ID,
                     reason="live Champion registry truthfulness correction",
                     payload={"artifact_path": self.om.config.model.model_artifact_path},
@@ -165,4 +171,3 @@ class ChampionSync:
             )
         except Exception as e:
             logger.error("[MODEL_GOVERNANCE] registry sync failed (isolated)", error=str(e))
-
