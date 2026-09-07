@@ -239,3 +239,68 @@ def test_m4_guard_clean_on_current_repo_sources() -> None:
         check=False,
     )
     assert probe.returncode == 0, probe.stdout + probe.stderr
+
+
+# ---------------------------------------------------------------------------
+# J2. fine-tune in-place persist rebinds integrity sidecars (atomic pair)
+# ---------------------------------------------------------------------------
+def test_j2_sidecar_rebind_refreshes_manifest_digest(tmp_path: Path) -> None:
+    from nexus_scalp.application.live_engine import LiveEngine
+
+    d = tmp_path / "bundle"
+    d.mkdir()
+    w = d / "model.pt"
+    w.write_bytes(b"OLD-WEIGHTS")
+    manifest = d / "manifest.json"
+    manifest.write_text(
+        json.dumps({"manifest_version": "1.0.0", "model_sha256": _sha(w)}),
+        encoding="utf-8",
+    )
+    # Accepted fine-tune persisted NEW weights in place:
+    w.write_bytes(b"NEW-WEIGHTS")
+    # BEFORE rebind: verification fails closed (manifest stale)
+    with pytest.raises(ArtifactIntegrityError) as err:
+        verify_artifact_integrity(w)
+    assert err.value.verdict.status is ArtifactIntegrityStatus.HASH_MISMATCH
+    # Engine-side rebind (same static helper the persist path calls):
+    assert LiveEngine._refresh_artifact_integrity_metadata(w) is True
+    # AFTER rebind: pair coherent again
+    verdict = verify_artifact_integrity(w)
+    assert verdict.status is ArtifactIntegrityStatus.VERIFIED
+    # manifest provenance preserved (only the digest field changed)
+    rec = json.loads(manifest.read_text(encoding="utf-8"))
+    assert rec["manifest_version"] == "1.0.0"
+    assert rec["model_sha256"] == _sha(w)
+
+
+def test_j2b_meta_sidecar_rebound_too(tmp_path: Path) -> None:
+    from nexus_scalp.application.live_engine import LiveEngine
+
+    d = tmp_path / "bundle"
+    d.mkdir()
+    w = d / "model.pt"
+    w.write_bytes(b"V1")
+    (d / "model.meta.json").write_text(
+        json.dumps({"model_sha256": _sha(w), "feature_schema_dimension": 70}),
+        encoding="utf-8",
+    )
+    w.write_bytes(b"V2")
+    assert LiveEngine._refresh_artifact_integrity_metadata(w) is True
+    meta = json.loads((d / "model.meta.json").read_text(encoding="utf-8"))
+    assert meta["model_sha256"] == _sha(w)
+    assert meta["feature_schema_dimension"] == 70
+    assert verify_artifact_integrity(w).status is ArtifactIntegrityStatus.VERIFIED
+
+
+def test_j3_unreadable_sidecar_refuses_rebind(tmp_path: Path) -> None:
+    from nexus_scalp.application.live_engine import LiveEngine
+
+    d = tmp_path / "bundle"
+    d.mkdir()
+    w = d / "model.pt"
+    w.write_bytes(b"V1")
+    # A declared-but-unreadable sidecar (directory in place of the JSON):
+    # read_text raises OSError -> rebind must FAIL (refuse activation).
+    (d / "manifest.json").mkdir()
+    w.write_bytes(b"V2")
+    assert LiveEngine._refresh_artifact_integrity_metadata(w) is False
