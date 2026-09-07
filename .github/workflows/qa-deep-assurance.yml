@@ -4,6 +4,12 @@ name: QA Deep Assurance
 # INDEPENDENT lane: does NOT touch ci.yml, security.yml, or beforePush.
 # fast lane  = --fast  (property + state machines + execution safety)
 # deep lane  = --json full layer + mutation proof (scheduled / dispatch)
+# Weekly mutation baseline: run_mutations.py is the canonical mutation
+# engine; the scheduled Sunday run IS the weekly critical-surface mutation
+# gate (full catalog, pristine-battery-checked, JSON artifact 90 days).
+# A weekly full-repo pytest-mutation sweep is NOT practical (the engine's
+# honest runner takes ~3min for 9 anchor mutations; whole-repo would be
+# hours); the anchor catalog IS the tracked critical production surface.
 
 on:
   pull_request:
@@ -61,7 +67,11 @@ jobs:
       - name: Mutation proof (deep lane / dispatch opt-in)
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_mutations)
         run: |
-          python scripts/qa/run_mutations.py > qa-deep-mutations.json
+          # HONESTY CONTRACT: exit 0 = every verdict KILLED/ACCEPTED;
+          # exit 1 = unaccepted SURVIVED (test blind spot -> file in
+          # agents/bugs.md); exit 2 = INVALID battery/anchor (runner
+          # untrustworthy). Either non-zero exit MUST fail the lane.
+          python scripts/qa/run_mutations.py --out qa-deep-mutations.json
           Get-Content qa-deep-mutations.json
 
       - name: Upload deep-assurance results
@@ -74,6 +84,7 @@ jobs:
             qa-deep-full.json
             qa-deep-mutations.json
           if-no-files-found: ignore
+          retention-days: 90
 
       - name: Job summary
         if: always()
@@ -87,4 +98,12 @@ jobs:
             Add-Content $env:GITHUB_STEP_SUMMARY "- Tests: $($j.tests_run) run, $($j.tests_passed) passed, $($j.tests_xfailed) xfail (owner-routed), $($j.tests_failed) failed"
             Add-Content $env:GITHUB_STEP_SUMMARY "- Duration: $($j.duration_ms) ms"
             Add-Content $env:GITHUB_STEP_SUMMARY "- Live trading actions: $($j.live_trading_actions)"
+          }
+          if (Test-Path qa-deep-mutations.json) {
+            $m = Get-Content qa-deep-mutations.json -Raw | ConvertFrom-Json
+            Add-Content $env:GITHUB_STEP_SUMMARY ""
+            Add-Content $env:GITHUB_STEP_SUMMARY "## Mutation baseline (weekly critical surface)"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Commit: $($m.git_commit) | Score: **$($m.mutation_score)** ($($m.killed)/$($m.mutations_total) killed)"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Survivors: $($m.survivor_ids -join ', ')"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Invalid (battery/anchor broken): $($m.invalid_ids -join ', ')"
           }
