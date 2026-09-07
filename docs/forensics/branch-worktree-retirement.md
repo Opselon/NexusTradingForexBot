@@ -226,4 +226,72 @@ Links                  → docs/forensics/README.md (21 relative links) + Agent/
 
 ---
 
-*This audit is a record, not a plan. No `git branch -D`, no `git worktree remove`, no force-push, no God Module file mutation was performed.*
+## 10. Hygiene pass — 2026-09-07 (false-confidence removal task, Phase 5)
+
+Scope: stale TEMP worktrees + fully-merged local branches only. No force
+operations on content; no tracked files deleted; foreign WIP preserved.
+
+### 10a. Worktrees removed (9 + 1 stale registration)
+
+All were detached-HEAD TEMP-dir worktrees from FINISHED PR/bug/QA
+investigations, verified CLEAN (`git status --porcelain` == 0 entries)
+immediately before removal. Commits remain reachable via git history.
+
+```
+C:/c/Users/Capsizer/AppData/Local/Temp/nse-pr62
+C:/Users/Capsizer/AppData/Local/Temp/a17_f5
+C:/Users/Capsizer/AppData/Local/Temp/a17_p2
+C:/Users/Capsizer/AppData/Local/Temp/agent16-verify-pristine
+C:/Users/Capsizer/AppData/Local/Temp/agent5-inv/wt_head
+C:/Users/Capsizer/AppData/Local/Temp/nexus-main-supervisor/verify_worktree
+C:/Users/Capsizer/AppData/Local/Temp/nqa_wt_bug154
+C:/Users/Capsizer/AppData/Local/Temp/nse_pre212_wt
+C:/Users/Capsizer/AppData/Local/Temp/nse_wt
+(+ l1_baseline_probe: registration pruned, directory already gone)
+```
+
+### 10b. Worktrees PRESERVED (5, foreign WIP present at inspection)
+
+Dirty trees carry another agent's uncommitted work — DO NOT TOUCH:
+
+```
+Temp/a17_bisect             (M tests/unit/test_phase27_consistency.py)
+Temp/a17_p27                (?? tests/unit/test_phase27_consistency.py)
+Temp/nexus-relcert          (?? scripts/cert/)
+Temp/nse_bug223_failsbefore (M tests/unit/test_audit_db_default_isolation_bug223.py)
+Temp/nse_qa_head_wt         (M tests/unit/test_release_system.py)
+```
+
+(The ~1580-dirty nse-merge90/pr90/pr47/pr72/security-pr62 copies are
+deleted-file shells from earlier partial cleanups — retained, untouched,
+pending owner confirmation.)
+
+### 10c. Branches deleted (6, all `git branch -d` — fully merged into main)
+
+```
+agent4-servint                         52d874f6
+agent4-servint-2                       2e3a762d
+agent4-servint-final                   60b1f42f
+nm-format10                            0699bd8f
+agent/nexus-main/agent16-w2-ecosystem  cc9ebbfa
+agent/nexus-main/agent2-data-forensics e48803f1
+```
+
+### 10d. Deliberately retained
+
+- The 4 FULLY-MERGED (referenced) forensic branches + ~54 forensic
+  branches (provenance per §3e/§8).
+- `chore/*` + `refactor/*` merged branches referenced by this document.
+- `archive/` (git-ignored forensic records: hygiene state, quarantine,
+  stash salvage) — ignored, NOT deleted.
+- `scratch/` tracked probes (419 files, other agents' committed evidence)
+  and untracked probes (active/foreign WIP). Untouched.
+
+Counters: local branches 110 -> 104; worktree registrations 44 -> 35.
+
+---
+
+*This audit is a record, not a plan. No `git branch -D`, no force-push, no
+God Module file mutation was performed. The 2026-09-07 pass used only
+`git branch -d` (merge-verified) and `git worktree remove` on verified-clean
+TEMP registrations.*
