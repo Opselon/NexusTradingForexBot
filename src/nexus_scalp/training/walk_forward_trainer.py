@@ -70,6 +70,20 @@ def resolve_schema(schema_id: str | None) -> FeatureSchema:
     return FEATURE_SCHEMAS.resolve(schema_id)
 
 
+def _session_semantics_payload() -> dict[str, Any]:
+    """P1: the session-time provenance block for training metadata.
+
+    Failure-isolated: metadata writing must never break training; a missing
+    block is reported honestly ('UNAVAILABLE') rather than fabricated.
+    """
+    try:
+        from nexus_scalp.features.session_time import session_semantics_metadata
+
+        return dict(session_semantics_metadata())
+    except Exception as e:  # pragma: no cover - defensive
+        return {"session_semantics_version": "UNAVAILABLE", "error": str(e)}
+
+
 # =============================================================================
 # DATASET
 # =============================================================================
@@ -163,6 +177,8 @@ class WalkForwardTrainer:
         learning_rate: float = 5e-4,
         epochs_per_fold: int = 3,
         early_stopping_patience: int = 3,
+        time_decay_full_train_half_life_bars: float | None = None,
+        time_decay_online_half_life_bars: float = 120.0,
         purge_gap_bars: int = 15,
         random_seed: int = 42,
         active_class_boost: float = 3.0,
@@ -287,7 +303,38 @@ class WalkForwardTrainer:
         self.min_validation_accuracy = 0.35  # Required minimum 35% validation accuracy
         self.min_accuracy_improvement = 0.03  # Required minimum +3% accuracy gain over baseline
         self.max_sell_dominance = 0.58  # SELL predicted ratio must not exceed 58%
-        self.time_decay_half_life_bars = 120.0  # 2-hour half life for exponential sample weighting
+        # -----------------------------------------------------------------
+        # TIME-DECAY PROFILES (ECON v1 phase 3): full historical training and
+        # online adaptation used ONE shared half-life (120.0 bars). The two
+        # modes serve different information horizons:
+        #
+        #   * FULL_TRAIN (train_and_validate): multi-fold purged training over
+        #     months of M1 bars. A 120-bar (2h) half-life effectively discards
+        #     everything older than ~a day of bars — the "full" training
+        #     carried almost no full history. The decay here must RETAIN
+        #     meaningful historical information: default half-life is one
+        #     fold's span (total_samples/num_folds, computed per run and
+        #     clamped), so the newest data is weighted highest while older
+        #     folds still contribute. Overridable via
+        #     time_decay_full_train_half_life_bars.
+        #   * ONLINE (fine_tune_online): adaptation on a RECENT buffer where
+        #     aggressive recency weighting is legitimate. Keeps the historical
+        #     120.0-bar half-life (2h on M1) via
+        #     time_decay_online_half_life_bars.
+        #
+        # The two profiles never share a mutable value; metadata records both
+        # (reproducibility/provenance) and the modes are separately testable.
+        # -----------------------------------------------------------------
+        self.time_decay_full_train_half_life_bars: float | None = (
+            float(time_decay_full_train_half_life_bars)
+            if time_decay_full_train_half_life_bars is not None
+            else None  # None => per-run fold-span default (resolved at train time)
+        )
+        self.time_decay_online_half_life_bars: float = float(time_decay_online_half_life_bars)
+        # Back-compat alias: the historical attribute name resolves to the
+        # ONLINE profile (the only mode that used it in practice at the old
+        # default). New code must read the profile fields explicitly.
+        self.time_decay_half_life_bars = self.time_decay_online_half_life_bars
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
         elif torch.backends.mps.is_available():
@@ -489,6 +536,18 @@ class WalkForwardTrainer:
             raise ValueError(
                 f"Insufficient dataset size ({total_samples}) for {self.num_folds} folds."
             )
+        # ECON v1 FULL_TRAIN decay resolution: default half-life = one fold's
+        # span, clamped to [1h, 1 week] of M1 bars. Rationale (no invented
+        # magic): the newest fold must dominate while older folds retain
+        # meaningful weight — a half-life equal to the fold span weights the
+        # oldest fold's center at ~2^-1.5, i.e. ~35% of the newest, instead
+        # of the historical 120-bar value that zeroed everything older than
+        # ~2 hours regardless of dataset size. Explicit override wins.
+        if self.time_decay_full_train_half_life_bars is not None:
+            full_train_half_life = float(self.time_decay_full_train_half_life_bars)
+        else:
+            full_train_half_life = float(min(max(fold_size, 60.0), 7 * 24 * 60.0))
+        fold_decay_meta: list[dict[str, Any]] = []
         oos_predictions: list[int] = []
         oos_targets: list[int] = []
         for fold in range(self.num_folds):
@@ -539,18 +598,43 @@ class WalkForwardTrainer:
             best_val_loss = float("inf")
             best_state: dict[str, torch.Tensor] | None = None
             patience_counter = 0
+            best_epoch = 0
+            epochs_run = 0
+            early_stopped = False
+            fold_train_losses: list[float] = []
+            fold_val_losses: list[float] = []
             for _epoch in range(self.epochs):
-                self._train_one_epoch(model, train_loader, optimizer, criterion)
+                train_loss = self._train_one_epoch(model, train_loader, optimizer, criterion)
                 scheduler.step()
                 val_loss = self._evaluate_loss(model, test_loader, criterion)
+                epochs_run = _epoch + 1
+                fold_train_losses.append(float(train_loss))
+                fold_val_losses.append(float(val_loss))
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     best_state = copy.deepcopy(model.state_dict())
+                    best_epoch = _epoch + 1
                     patience_counter = 0
                 else:
                     patience_counter += 1
                     if patience_counter >= self.patience:
+                        early_stopped = True
                         break
+            fold_decay_meta.append(
+                {
+                    "fold": fold + 1,
+                    "half_life_bars": full_train_half_life,
+                    "epochs_requested": int(self.epochs),
+                    "epochs_run": epochs_run,
+                    "best_epoch": best_epoch,
+                    "early_stopped": early_stopped,
+                    "best_val_loss": float(best_val_loss)
+                    if best_val_loss != float("inf")
+                    else None,
+                    "train_losses": [round(v, 6) for v in fold_train_losses],
+                    "val_losses": [round(v, 6) for v in fold_val_losses],
+                }
+            )
             if best_state is not None:
                 model.load_state_dict(best_state)
             fold_preds = self._predict_classes(model, test_loader)
@@ -605,6 +689,34 @@ class WalkForwardTrainer:
         for _epoch in range(self.epochs):
             self._train_one_epoch(final_model, full_loader, final_optimizer, final_criterion)
             final_scheduler.step()
+        # ECON v1 convergence metadata: persisted on the trainer + stamped into
+        # the bundle manifest so promotion can judge whether the model actually
+        # converged, overfit, collapsed, or never learned.
+        self._last_full_train_half_life = full_train_half_life
+        self.last_convergence_metadata = {
+            "training_mode": "FULL_TRAIN",
+            "time_decay_profile": "FULL_TRAIN",
+            "time_decay_half_life_bars": full_train_half_life,
+            "epochs_requested": int(self.epochs),
+            "num_folds": int(self.num_folds),
+            "early_stopping_patience": int(self.patience),
+            "folds": fold_decay_meta,
+            "any_fold_early_stopped": any(bool(f.get("early_stopped")) for f in fold_decay_meta),
+            "mean_best_val_loss": (
+                float(
+                    np.mean(
+                        [
+                            f["best_val_loss"]
+                            for f in fold_decay_meta
+                            if f.get("best_val_loss") is not None
+                        ]
+                    )
+                )
+                if any(f.get("best_val_loss") is not None for f in fold_decay_meta)
+                else None
+            ),
+            "seed": int(self.seed),
+        }
         # Model diagnostics verification post final training
         final_model.eval()
         sample_x = torch.tensor(X_full[:5], dtype=torch.float32).to(self.device)
@@ -714,6 +826,11 @@ class WalkForwardTrainer:
                     "learning_rate": float(self.learning_rate),
                     "purge_gap_bars": int(self.purge_gap),
                     "embargo_bars": int(self.embargo_bars),
+                    # ECON v1 provenance: decay profile + convergence evidence
+                    "time_decay_full_train_half_life_bars": getattr(
+                        self, "_last_full_train_half_life", None
+                    ),
+                    "convergence": getattr(self, "last_convergence_metadata", None),
                 },
             )
             (staging / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -795,7 +912,9 @@ class WalkForwardTrainer:
             min_val_acc=self.min_validation_accuracy,
             min_acc_gain=self.min_accuracy_improvement,
             max_sell_dom=self.max_sell_dominance,
-            time_decay_half_life=self.time_decay_half_life_bars,
+            # ECON v1 ONLINE decay profile (separate from FULL_TRAIN)
+            time_decay_profile="ONLINE",
+            time_decay_half_life=self.time_decay_online_half_life_bars,
         )
         purge_len = int(max_holding_bars)
         if len(recent_df) <= (purge_len + 30):
@@ -876,8 +995,11 @@ class WalkForwardTrainer:
             )
             return attach_decision(copy.deepcopy(target_model), _skip_labels)
         # Compute Exponential Time-Decay Sample Weights across valid buffer
+        # (ECON v1 ONLINE profile — aggressive recency weighting is legitimate
+        # for recent-buffer adaptation and is deliberately NOT the FULL_TRAIN
+        # profile used by train_and_validate).
         time_weights = _compute_time_decay_weights(
-            len(y), half_life_bars=self.time_decay_half_life_bars
+            len(y), half_life_bars=self.time_decay_online_half_life_bars
         )
         # Chronological train/validation split (80% train, 20% validation)
         val_size = max(5, int(len(y) * 0.20))
@@ -897,7 +1019,7 @@ class WalkForwardTrainer:
             )
             # Recompute time weights for resampled array size
             w_train_res = _compute_time_decay_weights(
-                len(y_train_res), half_life_bars=self.time_decay_half_life_bars
+                len(y_train_res), half_life_bars=self.time_decay_online_half_life_bars
             )
             logger.info(
                 "Minority Class Oversampling applied to training buffer",
@@ -1936,6 +2058,11 @@ class WalkForwardTrainer:
                 "class_names": list(TRAINED_CLASS_NAMES),
                 "wait_is_policy_state": True,
             },
+            # P1 SESSION-TIME PROVENANCE: which session time semantics this
+            # artifact was trained under. Governance verify gates promotion
+            # on this identity — artifacts trained under the superseded
+            # fixed-UTC windows are blocked for revalidation.
+            "session_semantics": _session_semantics_payload(),
             "model_class_contract_id": MODEL_CLASS_CONTRACT_ID,
             "model_class_contract_version": "1.0.0",
             "smoke": self.smoke,
