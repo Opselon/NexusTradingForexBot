@@ -319,6 +319,20 @@ class NewsIngestor:
                     "created_at": datetime.now(UTC).isoformat(),
                 }
             )
+            # DETERMINISTIC HIGH-IMPACT CLASSIFICATION (market-context P0 5A):
+            # obvious scheduled-release identities (CPI/NFP/FOMC/...) are
+            # tagged here — zero LLM cost — so the AI path can skip them.
+            from nexus_scalp.calendar.classify import classify_event_title
+
+            match = classify_event_title(title)
+            if match.event_type:
+                with contextlib.suppress(Exception):
+                    self.db.mark_deterministic_high_impact(
+                        article_id=article_id,
+                        event_type=match.event_type.value,
+                        strong=match.strong,
+                        matched_alias=match.matched_alias,
+                    )
             self.deduplicator.register_canonical(
                 article_hash=article_hash,
                 title_hash=canonical["title_hash"],

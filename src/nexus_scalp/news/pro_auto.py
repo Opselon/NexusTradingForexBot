@@ -123,6 +123,19 @@ PRO_SYSTEM_PROMPT = (
     + '- When is_junk=true include \\"junk_reason\\" (one of NO_GOLD_DRIVER_LIFESTYLE|CELEBRITY_NOISE|SPORTS_NOISE|LOW_SIGNAL_RETAIL|ANECDOTAL_OPINION, <=60 chars); else \\"\\".\n'
 )
 
+#: Versioned prompt identity (market-context P0 2A): the EXACT prompt text
+#: above is hashed so any future edit changes the recorded provenance —
+#: sentiment rows become attributable to (provider, model, prompt hash) and
+#: drift analysis can segment by prompt generation. Format:
+#:   news-pro-v2:<16 hex of sha256(PRO_SYSTEM_PROMPT)>
+def _prompt_identity(prompt_text: str) -> str:
+    import hashlib
+
+    return f"news-pro-v2:{hashlib.sha256(prompt_text.encode('utf-8')).hexdigest()[:16]}"
+
+
+PRO_PROMPT_VERSION: str = _prompt_identity(PRO_SYSTEM_PROMPT)
+
 # Bounded in-process console ring — the News tab streams this via REST.
 # Also persisted into news console table would bloat; we keep last N in
 # memory and expose it via the server route so answers are traceable.
@@ -518,6 +531,11 @@ def run_pro_auto_analysis_for_article(
         )
         validated.model = getattr(provider, "model", "") if provider else ""
         validated.analysis_version = NEWS_AI_ANALYSIS_VERSION
+        # MARKET-CONTEXT P0 2A: stamp the hashed prompt identity on every AI
+        # row. The PRO prompt's bytes are the source of the version; changing
+        # the prompt changes PRO_PROMPT_VERSION, making all future rows
+        # attributable to the new generation (drift analysis can segment).
+        validated.prompt_version = PRO_PROMPT_VERSION
         # Persist AI layer
         try:
             from nexus_scalp.news.ai_service import (

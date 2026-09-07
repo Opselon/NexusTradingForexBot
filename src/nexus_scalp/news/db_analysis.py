@@ -256,6 +256,54 @@ class AnalysisMixin(_NewsDbCoreProto):
     # Article status (ACTIVE / IRRELEVANT) + prune audit (recoverable)
     # ------------------------------------------------------------------
 
+    def mark_deterministic_high_impact(
+        self,
+        *,
+        article_id: str,
+        event_type: str,
+        strong: bool,
+        matched_alias: str,
+    ) -> None:
+        """Tags an article as a deterministically-identified high-impact event
+        (market-context P0 5A). No LLM call is needed for these.
+
+        Writes a tagged entity row + bumps importance in news_analysis when
+        the analysis already exists; the tag itself lives in news_entities
+        (entity_type='DETERMINISTIC_EVENT') so no schema migration is needed
+        and the info survives with the article.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO news_entities
+                    (article_id, name, entity_type, relevance, mentions, is_primary)
+                VALUES (?, ?, ?, ?, 1, 1)
+                """,
+                (
+                    article_id,
+                    f"{event_type}:{matched_alias}",
+                    "DETERMINISTIC_EVENT",
+                    1.0 if strong else 0.6,
+                ),
+            )
+
+    def list_deterministic_high_impact(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Recent articles carrying a deterministic high-impact tag."""
+        with self._connect() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    """
+                    SELECT n.article_id, n.name AS event_type_alias, n.relevance,
+                           a.title, a.published_at
+                    FROM news_entities n JOIN news_articles a ON n.article_id = a.article_id
+                    WHERE n.entity_type = 'DETERMINISTIC_EVENT'
+                    ORDER BY a.published_at DESC LIMIT ?;
+                    """,
+                    (int(limit),),
+                ).fetchall()
+            ]
+
     def insert_ai_analysis(self, row: dict[str, Any], *, allow_overwrite: bool = False) -> None:
         """Idempotent: skips if article already has a completed AI analysis (prevents duplicate AI noise)."""
         if not allow_overwrite:
