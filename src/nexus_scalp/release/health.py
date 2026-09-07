@@ -709,6 +709,34 @@ class HealthEngine:
             state=AVAILABLE,
         )
 
+    def check_execution_costs(self) -> HealthEntry:
+        """PHASE-2 money path: the canonical execution-cost artifact loads.
+
+        The research engines + labeling consume configs/execution_assumptions.json
+        (single source of truth). Missing/invalid artifact = research and
+        labeling silently degrade to per-module defaults, so doctor reports it
+        loudly (first-run without the artifact is NOT_INITIALIZED, not FAIL).
+        """
+        try:
+            from nexus_scalp.configuration.execution_costs import get_execution_assumptions
+
+            costs = get_execution_assumptions()
+        except Exception as exc:
+            return HealthEntry(
+                "EXECUTION_COSTS",
+                "FAIL",
+                f"canonical execution-cost assumptions unavailable: {exc}",
+                "Restore configs/execution_assumptions.json (calibrated artifact).",
+                state=NOT_INITIALIZED,
+            )
+        return HealthEntry(
+            "EXECUTION_COSTS",
+            "PASS",
+            f"calibration={costs.calibration_version} spread_mean={costs.spread.mean} "
+            f"friction_usd={costs.labeling.friction_usd_per_oz}",
+            state=AVAILABLE,
+        )
+
     def check_gpu(self) -> HealthEntry:
         env = self.env()
         if env.cuda_available:
@@ -772,9 +800,7 @@ class HealthEngine:
                 "no outbound connectivity",
                 "News feeds and updates need internet; local features work.",
             )
-        return HealthEntry(
-            "NETWORK", "WARNING", "connectivity undetermined"
-        )
+        return HealthEntry("NETWORK", "WARNING", "connectivity undetermined")
 
     def check_disk(self) -> HealthEntry:
         env = self.env()
@@ -1058,6 +1084,7 @@ class HealthEngine:
             ("MODEL", self.check_model),
             ("MODEL_CONTRACT", self.check_model_contract),
             ("FEATURE_SCHEMA", self.check_feature_schema),
+            ("EXECUTION_COSTS", self.check_execution_costs),
             ("GPU", self.check_gpu),
             ("MT5", self.check_mt5),
             ("NETWORK", self.check_network),
