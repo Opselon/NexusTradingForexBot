@@ -104,11 +104,17 @@ services:
     environment:
       POSTGRES_DB: ${NSE_PG_DATABASE:-nse_audit}
       POSTGRES_USER: ${NSE_PG_USER:-nse_user}
-      POSTGRES_PASSWORD: ${NSE_PG_PASSWORD:-nse_password_dev}
+      # AUDIT-B3: no silent default password — the operator MUST set
+      # NSE_PG_PASSWORD. Compose fails fast with this empty default.
+      POSTGRES_PASSWORD: ${NSE_PG_PASSWORD:?set NSE_PG_PASSWORD in .env}
     volumes:
       - nexus-postgres-data:/var/lib/postgresql/data
-    ports:
-      - "${NSE_PG_PORT:-5432}:5432"
+    # AUDIT-B3: NO host port mapping. Postgres is reachable only from the
+    # nexus-scalp-net internal network (service name: postgres:5432).
+    # If you truly need host access for debugging, override in a
+    # docker-compose.override.yml and keep it out of git.
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${NSE_PG_USER:-nse_user} -d ${NSE_PG_DATABASE:-nse_audit}"]
       interval: 5s
