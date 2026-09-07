@@ -105,6 +105,15 @@ from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
 from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.risk.runtime_safety import (
+    AccountFreshness,
+    BootDecision,
+    HotPathErrorCircuit,
+    PersistedRiskState,
+    RuntimeRiskState,
+    classify_account_freshness,
+    resolve_boot_decision,
+)
 from nexus_scalp.settings import (
     load_settings_service,
 )
@@ -649,6 +658,39 @@ class LiveEngine:
 
         self._consecutive_losses: int = 0
         self._survival_mode_active: bool = False
+
+        # =====================================================================
+        # PERSISTED RUNTIME SAFETY STATE (P0, runtime-safety mission).
+        # Canonical durable safety decision (RUNNING/HALTED/KILL_SWITCH) +
+        # hot-path error circuit + account freshness guard. Pure policy lives
+        # in risk/runtime_safety.py; persistence lives in AuditRepository
+        # (runtime_risk_state single-row store). A safety halt triggered by a
+        # real trading event MUST survive process restart until explicitly
+        # released (nexus risk release); DEGRADED is session-local by design.
+        # =====================================================================
+        self._runtime_risk_state: str = "RUNNING"
+        self._runtime_risk_detail: str = ""
+        self._halt_reason: str = ""
+        self._halt_triggered_at: str = ""
+        self._hot_path_circuit = HotPathErrorCircuit()
+        # Same config-derived default as the G29 freshness block below (which
+        # assigns _freshness_max_age_sec later in __init__ — init-order safe).
+        self._account_age_max_sec: float = float(
+            (
+                getattr(config, "freshness", None) is not None
+                and getattr(config.freshness, "max_age_sec", 30.0)
+            )
+            or 30.0
+        )
+        self._account_freshness: str = "MISSING"
+        self._account_last_successful_refresh: float = 0.0
+        self._account_stale_blocked_total: int = 0
+        # Consecutive-loss governance: derived from CANONICAL finalized ledger
+        # outcomes (audit_ledger), never from volatile memory — survives
+        # restart and cannot be fabricated from rejected/unfilled events.
+        self._consecutive_loss_threshold: int = 3
+        self._consecutive_loss_freeze_hours: float = 1.0
+        self._loss_freeze_active: bool = False
 
         # HTF Warmup State Machine
         self.warmup_state: str = "WARMING_UP"
@@ -1515,7 +1557,6 @@ class LiveEngine:
 
         return ModelBundleStore._save_model_weights_atomic(self, *args, **kwargs)
 
-
     async def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
         """Delegate: atomic serving-artifact swap (owned by HotSwapService, L4)."""
         eng = self._hot_swap
@@ -2118,7 +2159,6 @@ class LiveEngine:
     # Model / scaler bundle
     # -------------------------
 
-
     def _declared_contract_dim_for_path(self, model_path: Path) -> int | None:
         """BUG-141: DECLARED feature width for an artifact path (meta.json first).
 
@@ -2179,9 +2219,6 @@ class LiveEngine:
                     if isinstance(val, int) and val in (TRAINED_CLASS_COUNT, LEGACY_HEAD_CLASSES):
                         return int(val)
         return TRAINED_CLASS_COUNT
-
-
-
 
     # -------------------------
     # Warmup + bootstrap training
@@ -3061,7 +3098,6 @@ class LiveEngine:
             # and guarantees a UI save is reflected on the very next
             # evaluation without restarting or reading the DB per tick.
             self._sync_runtime_config()
-
             is_new_bar = self.aggregator.process_tick(tick)
 
             # cap bars (O(1) amortized)
@@ -3284,11 +3320,51 @@ class LiveEngine:
             )
 
         except Exception as pipeline_err:
+            # =================================================================
+            # HOT-PATH CONSECUTIVE-ERROR CIRCUIT BREAKER (P1, runtime-safety
+            # mission). The old handler was pure log-and-continue: a
+            # systematically broken pipeline ran LIVE-but-disabled forever.
+            # Now every failure feeds HotPathErrorCircuit; when the
+            # consecutive-error threshold trips inside the error window the
+            # engine DEGRADES: no NEW entries (survival mode tightens policy)
+            # while manage_active_positions keeps protecting existing
+            # positions (never closed by the breaker itself). Recovery:
+            # explicit via the persisted safety-state release path.
+            # =================================================================
+            now_t = time.time()
+            tripped = self._hot_path_circuit.record_error(now_t, pipeline_err)
             logger.error(
-                "Silent recovery: exception caught in hot-path tick processing pipeline",
-                error=str(pipeline_err),
+                "Hot-path tick pipeline exception "
+                "consecutive=%d/%d window=%.0fs total=%d error_type=%s",
+                self._hot_path_circuit.consecutive_error_count,
+                self._hot_path_circuit.max_consecutive_errors,
+                self._hot_path_circuit.error_window_sec,
+                self._hot_path_circuit.total_errors,
+                self._hot_path_circuit.last_error_type,
                 exc_info=True,
             )
+            if tripped and not self._survival_mode_active:
+                self._survival_mode_active = True
+                self.emit_incident_telemetry(
+                    event_type="HOT_PATH_ERROR_CIRCUIT_TRIPPED",
+                    component="tick_pipeline",
+                    error_code="CONSECUTIVE_ERRORS",
+                    severity="HIGH",
+                    correlation_id="tick-pipeline",
+                )
+                logger.critical(
+                    "[SAFETY_STATE] HOT-PATH CIRCUIT TRIPPED: %d consecutive errors "
+                    "in %.0fs — new entries BLOCKED (DEGRADED); position protection "
+                    "continues; explicit recovery required",
+                    self._hot_path_circuit.consecutive_error_count,
+                    self._hot_path_circuit.error_window_sec,
+                )
+                with contextlib.suppress(Exception):
+                    self.notifier.notify_error(
+                        "Hot-Path Circuit Breaker",
+                        f"{self._hot_path_circuit.consecutive_error_count} consecutive "
+                        "tick-pipeline errors — new trades blocked (DEGRADED)",
+                    )
 
     # ---------------------------------------------------------------------
     # PHASE 09: position lifecycle observation
@@ -3886,6 +3962,23 @@ class LiveEngine:
                 )
                 self._bars_since_last_retrain = 0
                 return
+            # P1 ARTIFACT TRUST: the accepted persist rewrote model.pt IN
+            # PLACE. Any integrity metadata beside it (manifest.json /
+            # model.meta.json declaring model_sha256) now describes the OLD
+            # bytes — the next cold load would fail closed with
+            # HASH_MISMATCH. Refresh the sidecar digests BEFORE the bundle
+            # swap so ACTIVE_ARTIFACT <=> ACTIVE_MANIFEST <=> ACTIVE_HASH
+            # always refer to the same version (atomic pair semantics; a
+            # sidecar refresh failure refuses the whole activation).
+            if not self._refresh_artifact_integrity_metadata(bundle.artifact_path):
+                logger.error(
+                    "[ASYNC_RETRAIN_REFUSED] event=MANIFEST_REFRESH_REFUSED "
+                    "reason=SIDECAR_DIGEST_UPDATE_FAILED (baseline kept on disk "
+                    "is the NEW weights, in-memory baseline still serving)",
+                    path=str(bundle.artifact_path),
+                )
+                self._bars_since_last_retrain = 0
+                return
 
             with self._bundle_lock:
                 self._bundle = ModelBundle(
@@ -3912,6 +4005,84 @@ class LiveEngine:
     # -------------------------
     # Diagnostics
     # -------------------------
+
+    @staticmethod
+    def _refresh_artifact_integrity_metadata(model_path: Path) -> bool:
+        """P1: after an in-place accepted persist, re-bind every integrity
+        sidecar (manifest.json / model.meta.json) to the NEW weight digest.
+
+        Sidecars are updated ATOMICALLY (tmp+replace) and only ever gain a
+        fresh model_sha256 — provenance fields are preserved. Returns False
+        (refusing activation) when a declared sidecar cannot be refreshed,
+        so the engine never activates a pair whose manifest still describes
+        the previous artifact.
+        """
+        import hashlib as _hashlib
+        import json as _json
+
+        digest = ""
+        try:
+            h = _hashlib.sha256()
+            with open(model_path, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            digest = h.hexdigest()
+        except OSError as e:
+            logger.error("[ARTIFACT_META] event=DIGEST_COMPUTE_FAILED", error=str(e))
+            return False
+        refreshed_any = False
+        for sidecar_name in ("manifest.json", "model.meta.json"):
+            sidecar = model_path.parent / sidecar_name
+            if not sidecar.exists():
+                continue
+            try:
+                record = _json.loads(sidecar.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:
+                logger.error(
+                    "[ARTIFACT_META] event=SIDECAR_UNREADABLE sidecar=%s error=%s",
+                    sidecar_name,
+                    str(e),
+                )
+                return False
+            if not isinstance(record, dict):
+                logger.error("[ARTIFACT_META] event=SIDECAR_INVALID sidecar=%s", sidecar_name)
+                return False
+            if not (record.get("model_sha256") or record.get("artifact_hash")):
+                continue  # sidecar declares no weight digest: nothing to rebind
+            changed = False
+            for key in ("model_sha256", "artifact_hash"):
+                if key in record and str(record[key]).lower() != digest:
+                    record[key] = digest
+                    changed = True
+            if not changed:
+                refreshed_any = True
+                continue
+            tmp = sidecar.with_name(sidecar.name + ".tmp")
+            try:
+                tmp.write_text(_json.dumps(record, indent=2), encoding="utf-8")
+                tmp.replace(sidecar)
+            except OSError as e:
+                logger.error(
+                    "[ARTIFACT_META] event=SIDECAR_WRITE_FAILED sidecar=%s error=%s",
+                    sidecar_name,
+                    str(e),
+                )
+                with contextlib.suppress(Exception):
+                    tmp.unlink(missing_ok=True)
+                return False
+            refreshed_any = True
+            logger.info(
+                "[ARTIFACT_META] event=SIDECAR_REBOUND sidecar=%s sha256=%s",
+                sidecar_name,
+                digest[:12],
+            )
+        logger.info(
+            "[ARTIFACT_META] event=INTEGRITY_METADATA_REFRESHED artifact=%s sha256=%s sidecars=%s",
+            model_path.name,
+            digest[:12],
+            refreshed_any,
+        )
+        return True
 
     def _run_model_diagnostics_and_summary(
         self, df_labeled: pl.DataFrame, feature_cols: list[str]
@@ -4077,7 +4248,19 @@ class LiveEngine:
             # BUG-185: the fresh model was seeded at the PATH-declared
             # contract width - rebind the trainer to it.
             self._rebind_trainer_to_bundle()
-            self._save_model_weights_atomic(fresh, model_path)
+            saved = self._save_model_weights_atomic(fresh, model_path)
+            if saved:
+                # P1 ARTIFACT TRUST: rebind integrity sidecars to the NEW
+                # digest so the fresh pair stays verifiable (same contract as
+                # the fine-tune persist path). A refresh failure keeps the
+                # in-memory fresh bundle serving but flags loudly: the NEXT
+                # cold load will fail closed rather than serve unverified.
+                if not self._refresh_artifact_integrity_metadata(model_path):
+                    logger.error(
+                        "[MODEL] event=COLLAPSE_RECOVERY_SIDECAR_REFRESH_FAILED "
+                        "next_cold_load_will_fail_closed artifact=%s",
+                        model_path.name,
+                    )
             self._register_active_model(model_path=model_path, replaced=True)
             logger.warning("[MODEL] COLLAPSE_RECOVERY_COMPLETE - fresh weights serving live ticks")
             return True
@@ -4480,6 +4663,203 @@ class LiveEngine:
                 equity=account.equity,
             )
 
+    # =====================================================================
+    # PERSISTED RUNTIME SAFETY STATE (P0, runtime-safety mission)
+    # ---------------------------------------------------------------------
+    # Canonical durable safety state: persist -> stop trading -> audit ->
+    # observe -> survive restart. HALT INVARIANT: a safety state triggered by
+    # a real trading event MUST survive process restart until explicitly
+    # released. Resolution happens at boot BEFORE any trading is enabled;
+    # restart / reconnect / reload can NEVER clear HALTED or KILL_SWITCH.
+    # =====================================================================
+
+    def _persist_runtime_risk_state(
+        self,
+        *,
+        state: str,
+        reason: str,
+        source: str,
+        account: AccountInfo | None = None,
+        release_required: bool = True,
+    ) -> bool:
+        """Persists the canonical safety decision through the audit store.
+
+        Crash-safe: the store performs one atomic single-row upsert (old
+        valid state or new valid state — never half-written). Returns False
+        on persistence failure; the in-memory state is still updated by the
+        caller so the running process fails safe even if persistence failed
+        (which is logged CRITICAL by the store).
+        """
+        try:
+            return bool(
+                self.audit.set_runtime_risk_state(
+                    state=state,
+                    reason=reason,
+                    source=source,
+                    balance=float(getattr(account, "balance", 0.0) or 0.0),
+                    equity=float(getattr(account, "equity", 0.0) or 0.0),
+                    peak_equity=float(getattr(self, "_peak_equity", 0.0) or 0.0),
+                    release_required=release_required,
+                    consecutive_losses=int(getattr(self, "_consecutive_losses", 0) or 0),
+                )
+            )
+        except Exception as persist_err:
+            logger.critical(
+                "RUNTIME SAFETY STATE PERSIST FAILED state=%s error=%s", state, persist_err
+            )
+            return False
+
+    def _apply_persisted_halt(self, decision: BootDecision) -> None:
+        """Adopts a resolved boot decision into the live engine (fail closed).
+
+        HALTED / KILL_SWITCH: trading is refused for the whole process
+        lifetime — the in-memory gate mirrors the persisted row and only
+        release_runtime_risk_state (operator CLI / audited API) may lift it.
+        """
+        self._runtime_risk_state = decision.state
+        self._runtime_risk_detail = decision.detail
+        if decision.state in ("HALTED", "KILL_SWITCH"):
+            # Do NOT start the trading loop: restore-first contract. The
+            # engine idles (run_loop returns before arming _running) and the
+            # operator sees the persisted safety state, not a silent start.
+            self._running = False
+            self._halt_reason = decision.detail
+            logger.critical(
+                "[SAFETY_STATE] persisted=%s trading=REFUSED detail=%s "
+                "(explicit release required: nexus risk release --confirm)",
+                decision.state,
+                decision.detail,
+            )
+            with contextlib.suppress(Exception):
+                self.notifier.notify_kill_switch_activated(
+                    f"Persisted {decision.state} restored at startup — "
+                    "trading disabled until explicit release"
+                )
+            self.emit_incident_telemetry(
+                event_type="PERSISTED_SAFETY_STATE_RESTORED",
+                component="runtime_safety",
+                error_code=decision.state,
+                severity="CRITICAL",
+                correlation_id="startup",
+            )
+
+    def _restore_runtime_risk_state(self) -> BootDecision:
+        """Boot resolution: restore persisted safety state BEFORE trading.
+
+        Called at the very start of run_loop. Never recalculates drawdown —
+        only the persisted decision decides.
+        """
+        decision = resolve_boot_decision(
+            PersistedRiskState.from_row(self.audit.get_runtime_risk_state())
+        )
+        self._apply_persisted_halt(decision)
+        if decision.state == "RUNNING":
+            # Mirror the RUNNING decision back durably (single canonical row,
+            # first boot writes it; later boots keep provenance fresh).
+            self._persist_runtime_risk_state(
+                state="RUNNING",
+                reason="",
+                source="BOOT",
+                release_required=False,
+            )
+            logger.info("[SAFETY_STATE] boot decision=RUNNING (trading permitted)")
+        return decision
+
+    def trigger_runtime_halt(
+        self,
+        *,
+        reason: str,
+        source: str,
+        state: str = "HALTED",
+        account: AccountInfo | None = None,
+    ) -> None:
+        """The ONE canonical halt entrypoint for real trading events.
+
+        Order matters (HALT INVARIANT):
+        1. persist the safety state durably (crash-safe atomic upsert),
+        2. stop new trading (in-memory gate + loop flag),
+        3. record an incident/audit event,
+        4. expose observable runtime state (attributes read by the UI),
+        5. the persisted row guarantees survival across restart.
+        """
+        # 1) PERSIST (first — a crash after this point still leaves the
+        #    decision durable).
+        persisted = self._persist_runtime_risk_state(
+            state=state, reason=reason, source=source, account=account
+        )
+        if not persisted:
+            logger.critical(
+                "SAFETY HALT persistence failed — halting in-memory anyway "
+                "(fail safe, operator MUST be notified)"
+            )
+        # 2) STOP NEW TRADING (in-memory gate mirrors the persisted decision).
+        self._runtime_risk_state = state
+        self._halt_reason = reason
+        self._halt_triggered_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        self._runtime_risk_detail = reason
+        self._running = False
+        # 3) RECORD INCIDENT (observability-only; never mutates risk).
+        self.emit_incident_telemetry(
+            event_type="RUNTIME_SAFETY_HALT",
+            component="runtime_safety",
+            error_code=state,
+            severity="CRITICAL",
+            correlation_id=str(source or "runtime"),
+        )
+        # 4) NOTIFY + OBSERVE.
+        logger.critical(
+            "[SAFETY_STATE] event=HALT state=%s reason=%s source=%s persisted=%s",
+            state,
+            reason,
+            source,
+            persisted,
+        )
+        with contextlib.suppress(Exception):
+            self.notifier.notify_kill_switch_activated(f"{state}: {reason}")
+
+    @property
+    def runtime_risk_state(self) -> str:
+        """Observable canonical safety state (UI/health surface).
+
+        DEGRADED (session-local: hot-path circuit / stale account / loss
+        freeze) is derived on the fly and never overrides a persisted halt.
+        """
+        if self._runtime_risk_state in ("HALTED", "KILL_SWITCH"):
+            return self._runtime_risk_state
+        if (
+            self._loss_freeze_active
+            or self._hot_path_circuit.is_tripped(time.time())
+            or (self._account_freshness == AccountFreshness.STALE.value)
+        ):
+            return "DEGRADED"
+        return self._runtime_risk_state
+
+    def release_persisted_safety_state(self, *, actor: str, note: str = "") -> bool:
+        """In-process explicit release (audited, durable, observable).
+
+        Wraps AuditRepository.release_runtime_risk_state; used by the CLI
+        release command. A normal restart never reaches this method.
+        """
+        released = bool(self.audit.release_runtime_risk_state(actor=actor, note=note))
+        if released:
+            self._runtime_risk_state = "RUNNING"
+            self._halt_reason = ""
+            self._runtime_risk_detail = ""
+            self._hot_path_circuit.reset()
+            self._loss_freeze_active = False
+            logger.info("[SAFETY_STATE] event=RELEASED actor=%s note=%s", actor, note)
+            self.emit_incident_telemetry(
+                event_type="RUNTIME_SAFETY_RELEASED",
+                component="runtime_safety",
+                severity="HIGH",
+                correlation_id=str(actor or "operator"),
+            )
+        return released
+
+    def _trading_blocked_by_safety_state(self) -> bool:
+        """True when the persisted safety state refuses new trading."""
+        return self._runtime_risk_state in ("HALTED", "KILL_SWITCH")
+
     def _update_survival_state(self, account: AccountInfo, current_pos_count: int) -> None:
         # RUNTIME CONFIG (BUG-132): the survival guard must use the SAME
         # max_account_drawdown_pct the user sees / persists (runtime snapshot)
@@ -4535,7 +4915,18 @@ class LiveEngine:
                     self.notifier.notify_kill_switch_activated(
                         f"Max Drawdown Exceeded ({drawdown_pct:.2f}%)"
                     )
-                self._running = False
+                # PERSISTED SAFETY HALT (P0): the old behavior only set
+                # self._running = False — a restart silently FORGOT the
+                # drawdown event and resumed trading. The canonical halt
+                # entrypoint persists the decision FIRST (crash-safe), then
+                # stops trading, records the incident and exposes state.
+                self.trigger_runtime_halt(
+                    reason=f"Max drawdown exceeded: {drawdown_pct:.2f}% > limit "
+                    f"{dd_limit_pct:.2f}%",
+                    source="SURVIVAL_DRAWDOWN_GUARD",
+                    state="HALTED",
+                    account=account,
+                )
 
     # -------------------------
     # -------------------------
