@@ -110,6 +110,8 @@ class TrainingDatasetBuilder:
             session=rec.context.session,
             sample_weight=weight,
             outcome_r=rec.realized_r_multiple,
+            mae_r=getattr(rec, "mae_r", 0.0),
+            mfe_r=getattr(rec, "mfe_r", 0.0),
             is_executed=rec.is_executed,
             is_closed=rec.is_closed,
             exit_reason=rec.exit_reason,

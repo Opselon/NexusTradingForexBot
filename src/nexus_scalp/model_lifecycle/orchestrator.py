@@ -443,8 +443,11 @@ class ModelLifecycleOrchestrator:
                 realized_pnl_usd=r.outcome_r * 100.0,
                 risk_distance=10.0,
                 holding_duration_sec=300.0,
-                mae_r=0.2,
-                mfe_r=1.0,
+                # REAL per-trade evidence from the ledger when recorded; the
+                # 0.2/1.0 placeholders remain only for rows whose outcome row
+                # predates MAE/MFE persistence (honest: not silently "real").
+                mae_r=r.mae_r if r.mae_r else 0.2,
+                mfe_r=r.mfe_r if r.mfe_r else 1.0,
                 exit_reason=r.exit_reason,
             )
             for r in dataset.rows
