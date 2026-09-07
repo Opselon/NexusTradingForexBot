@@ -14,6 +14,10 @@ from typing import Any
 
 from nexus_scalp.release import packaging
 from nexus_scalp.release.metadata import parse_version
+from nexus_scalp.release.signing import (
+    UpdateManifestError,
+    verify_payload_against_manifest,
+)
 from nexus_scalp.release.update_engine.constants import (
     _CHECKSUM_ASSET_RE,
     _REVOKED_MARKER_RE,
@@ -664,6 +668,31 @@ class UpdatePlanBuilder:
             return base
         base["artifact_sha256"] = str(digest).lower()
 
+        # 6b. SIGNED UPDATE MANIFEST (P0 trust root). The resolved digest is
+        #     integrity evidence whose authority must come from a trusted
+        #     Ed25519 signature over the canonical manifest. A release without
+        #     a valid signed manifest is SECURITY_BLOCKED: payload+checksum
+        #     replacement by a compromised publisher account can NEVER
+        #     authorize an install (no silent unsigned fallback).
+        signed_manifest = release.get("update_manifest") or {}
+        try:
+            sig_verdict = verify_payload_against_manifest(
+                signed_manifest,
+                None,  # plan stage: metadata-only (payload bound at download)
+                expected_sha256=str(digest).lower(),
+            )
+        except UpdateManifestError as sig_err:
+            decisions.append(
+                f"signed update manifest REJECTED "
+                f"({getattr(sig_err, 'reason', 'SIGNATURE_INVALID')}) "
+                "— the signature is the trust root; refusing without it"
+            )
+            base["status"] = STATUS_SECURITY_BLOCKED
+            base["signature_status"] = getattr(sig_err, "reason", "SIGNATURE_INVALID")
+            return base
+        base["signature_status"] = "SIGNED_MANIFEST_OK"
+        base["signed_manifest_key_id"] = sig_verdict["key_id"]
+
         # 7. schema metadata from the attached release-manifest.json
         manifest = asset.get("release_manifest") or {}
         base["database_schema"] = manifest.get("database_schema")
@@ -693,7 +722,7 @@ class UpdatePlanBuilder:
             return base
 
         decisions.append(f"release {tag} offers {base['artifact_name']} for {self.architecture}")
-        decisions.append("SHA-256 + release manifest will be verified before install")
+        decisions.append("Ed25519-signed manifest + SHA-256 verified before install")
         base["status"] = STATUS_UPDATE_AVAILABLE
         base["ready"] = True
         return base
