@@ -188,6 +188,13 @@ jobs:
       # Skipped (=> BLOCKED, never "errored") while the source tree is an
       # unrepaired format failure: running expensive stages on a tree the
       # canonical formatter rejects wastes minutes and muddies the root cause.
+      # P2 torch.load security guard: every torch.load in src/ must be
+      # weights_only=True (arbitrary pickle deserialization from a model
+      # file is arbitrary code execution). AST-based — comments/strings
+      # cannot false-positive. A newly introduced unsafe call fails CI.
+      - name: torch.load safety guard (P2)
+        run: python scripts/ci/check_torch_load_safety.py
+
       - name: Mypy - Type checking
         id: mypy
         if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'

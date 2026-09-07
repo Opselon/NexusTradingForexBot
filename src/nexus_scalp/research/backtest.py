@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.economics import EconomicAssumptions, normalize_assumptions
-from nexus_scalp.research.metrics import compute_backtest
+from nexus_scalp.research.metrics import compute_backtest, compute_sized_economic_pnl
 from nexus_scalp.research.models import (
     BacktestResult,
     ExecutionAssumptions,
