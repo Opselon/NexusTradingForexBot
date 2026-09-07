@@ -22,18 +22,16 @@ hot_swap_governance / debug_snapshot tests) keep working unchanged.
 from __future__ import annotations
 
 import contextlib
-import os
-from nexus_scalp.models.scalp_net import ScalpNet
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 
+from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.model_bundle_store")
-
 
 
 def _engine_types():
@@ -185,9 +183,7 @@ class ModelBundleStore:
         else:
             expected_dim = self._expected_num_features_for_artifact(model_path)
         # BUG-243: mint at the bundle's DECLARED head width, not hardcoded 4.
-        declared_head = self._declared_head_classes_for_path(
-            model_path.with_suffix(".meta.json")
-        )
+        declared_head = self._declared_head_classes_for_path(model_path.with_suffix(".meta.json"))
         model = ScalpNet(num_features=expected_dim, num_classes=declared_head)
         model.eval()
 
