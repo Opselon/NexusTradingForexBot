@@ -78,13 +78,13 @@ class ModelFactory:
         input_dim = int(params.get("input_dim", self.feature_schema.dimension))
 
         if architecture == ModelArchitecture.LEGACY_SCALPNET_V1.value:
-            # Legacy baseline: raw ScalpNet. num_classes defaults to its own
-            # 4-head (NO_TRADE/BUY/SELL/WAIT-policy-bridge). When the caller
-            # demands the 3-class contract we still build 4 logits and the
-            # runtime maps class 3 -> WAIT policy state (never a label).
-            head = int(params.get("num_classes", LEGACY_HEAD_CLASSES))
-            if num_classes == CONTRACT_3CLASS:
-                head = LEGACY_HEAD_CLASSES  # preserve legacy geometry
+            # MODEL CLASS CONTRACT (P0 phase 2): the legacy ScalpNet baseline is
+            # now built with the CALLER-DECLARED head width (the label-schema
+            # contract, 3 by default). The old forced 4-wide WAIT head minted a
+            # dead logit into every fresh baseline model. A 4-wide legacy
+            # geometry remains available by explicitly passing
+            # parameters={"num_classes": 4} (legacy-artifact compat only).
+            head = int(params.get("num_classes", num_classes))
             return ScalpNet(
                 num_features=input_dim,
                 num_classes=head,

@@ -300,7 +300,8 @@ def test_70d_model_07_70d_model_forward_pass() -> None:
     m.eval()
     with torch.inference_mode():
         out = m(torch.randn(4, 70))
-    assert out.shape == (4, 4)  # ScalpNet 4-head (WAIT policy bridge)
+    # P0 phase 2: fresh builds follow the 3-class trained contract.
+    assert out.shape == (4, 3)  # ScalpNet 3-head (WAIT is not a label)
     assert torch.isfinite(out).all()
 
 
@@ -313,7 +314,7 @@ def test_70d_model_08_60d_baseline_forward_pass() -> None:
     m.eval()
     with torch.inference_mode():
         out = m(torch.randn(4, 60))
-    assert out.shape == (4, 4)
+    assert out.shape == (4, 3)
     assert torch.isfinite(out).all()
     # 60D baseline must NEVER accept a 70D vector
     with pytest.raises((RuntimeError, ValueError)):
@@ -820,8 +821,12 @@ def test_70d_model_29_parameter_count_and_latency_reported() -> None:
     )
     p60 = sum(p.numel() for p in m60.parameters())
     p70 = sum(p.numel() for p in m70.parameters())
-    assert p60 == 266_212  # frozen evidence
-    assert p70 == 267_492
+    # P0 phase 2 (model class contract): fresh LEGACY_SCALPNET_V1 builds are
+    # 3-head (WAIT is dead), so the frozen evidence moves from 266_212/267_492
+    # to 266_179/267_459 (one fewer output neuron = 128 hidden x 1 + 1 bias
+    # per head removed = 33 params per model).
+    assert p60 == 266_179  # frozen evidence (3-head contract)
+    assert p70 == 267_459
     assert p70 - p60 == 1_280  # input projection only
     assert (p70 - p60) / p60 < 0.01  # <1% parameter growth
 
@@ -1053,9 +1058,7 @@ def test_70d_model_33_manifest_input_dimension_no_double_count() -> None:
 
     rt = validate_and_load(res["model_id"], root=str(REPO_ROOT / "artifacts/model_generation"))
     pred = rt.predict(np.random.default_rng(1).normal(0, 1, 72))
-    # LEGACY baseline geometry is INTENTIONALLY 4-wide (NO_TRADE/BUY/SELL +
-    # WAIT policy bridge): ModelFactory preserves the legacy ScalpNet head for
-    # LEGACY_SCALPNET_V1 even under the canonical-3 contract, and the runtime
-    # maps index 3 -> WAIT policy state (never a label). The manifest still
-    # declares class_count=3; the extra logit is compat-only.
-    assert len(pred["probabilities"]) == 4
+    # P0 phase 2 (model class contract): fresh candidates are built at the
+    # DECLARED head width — the 3-class trained contract. The old forced
+    # 4-wide WAIT head is compat-only and must be explicitly opted into.
+    assert len(pred["probabilities"]) == 3

@@ -303,14 +303,23 @@ class Test70DPath:
         dim = LiveEngine._expected_num_features_for_artifact(None, path)
         assert dim == 70
 
+        # MODEL CLASS CONTRACT v1 (P0 phase 2): the deployed champion meta
+        # declares model_head_classes=3, so fresh ScalpNet construction now
+        # defaults to the 3-class trained contract. The legacy 4-wide geometry
+        # is an explicit opt-in (ScalpNet(num_classes=LEGACY_HEAD_CLASSES)).
+        from nexus_scalp.model_lifecycle.model_class_contract import (
+            TRAINED_CLASS_COUNT,
+        )
+
         m = ScalpNet(num_features=dim)
+        assert m.num_classes == TRAINED_CLASS_COUNT == 3
         state = torch.load(path, map_location="cpu")
         m.load_state_dict(state)
         m.eval()
         x = torch.randn(1, 70)
         with torch.inference_mode():
             out = m(x)
-        assert out.shape == (1, 4)
+        assert out.shape == (1, 3)
 
 
 # ---------------------------------------------------------------------------
