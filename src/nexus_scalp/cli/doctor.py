@@ -1312,6 +1312,104 @@ def _late_block() -> None:
         )
         _emit(handle, as_json=False, plain=True)
 
+    @app.command("data-fetch")
+    def data_fetch(
+        symbol: str = typer.Option("XAUUSD", "--symbol"),
+        timeframe: str = typer.Option("M1", "--timeframe"),
+        count: int = typer.Option(
+            100_000, "--count", help="Number of bars to request from the MT5 terminal."
+        ),
+        output: Path = typer.Option(
+            Path(""), "--out", help="Output parquet path (default data/raw/<SYM>_<TF>.parquet)."
+        ),
+        json_mode: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Acquire historical bars from a connected MT5 terminal into data/raw/.
+
+        Closes first-run GAP 2: data/raw/<SYM>_<TF>.parquet previously had NO
+        producer in the codebase (one-off manual capture), so `model-train-3`
+        hard-failed on a fresh machine. This command wraps the broker adapter's
+        copy_rates path (DirectMT5Adapter.get_rate_history), normalizes the
+        bars through the runtime cleaner (bars_normalize), and writes the same
+        column schema the training commands expect. Requires a running,
+        logged-in MT5 terminal (paper mode does NOT need one).
+        """
+        import polars as pl
+
+        from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
+        from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+
+        out_path = output or Path(f"data/raw/{symbol.upper()}_{timeframe.upper()}.parquet")
+        adapter = DirectMT5Adapter()
+        try:
+            adapter.connect()
+        except Exception as exc:
+            if json_mode:
+                _emit({"error": f"MT5 connect failed: {exc}", "exit_code": xc.EXIT_RUNTIME}, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "MT5 not available",
+                        f"{exc}. Start and log in to the MetaTrader 5 terminal, then retry.",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        try:
+            bars = adapter.get_rate_history(symbol, timeframe=timeframe, count=count)
+        finally:
+            with contextlib.suppress(Exception):
+                adapter.disconnect()
+        if not bars:
+            if json_mode:
+                _emit({"error": "terminal returned 0 bars", "exit_code": xc.EXIT_RUNTIME}, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "No bars returned",
+                        "The terminal may not have the symbol's history enabled "
+                        "(enable Max bars in chart + download history).",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+        frame = pl.DataFrame(
+            {
+                "time": [int(b.time or 0) for b in bars],
+                "open": [float(b.open or 0.0) for b in bars],
+                "high": [float(b.high or 0.0) for b in bars],
+                "low": [float(b.low or 0.0) for b in bars],
+                "close": [float(b.close or 0.0) for b in bars],
+                "tick_volume": [int(b.tick_volume or 0) for b in bars],
+                "spread": [int(b.spread or 0) for b in bars],
+                "real_volume": [int(b.real_volume or 0) for b in bars],
+                "time_utc": [b.time_utc for b in bars],
+            }
+        )
+        frame, _stats = normalize_bars_frame(frame)
+        frame = frame.sort("time")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        frame.write_parquet(out_path)
+        summary = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "rows": frame.height,
+            "output": str(out_path),
+            "span": [str(frame["time_utc"].min()), str(frame["time_utc"].max())],
+        }
+        if json_mode:
+            _emit(summary, True)
+        else:
+            console.print(
+                _success_panel(
+                    "Historical data fetched",
+                    f"{frame.height} bars -> {out_path}",
+                    border="green",
+                )
+            )
+            _emit(summary, as_json=False, plain=True)
+
     @app.command("model-experiment-create")
     def model_experiment_create(
         dataset_id: str = typer.Option(..., "--dataset", help="dataset artifact id"),
