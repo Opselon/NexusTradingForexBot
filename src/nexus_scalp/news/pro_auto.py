@@ -33,6 +33,7 @@ Separation from the basic worker:
 from __future__ import annotations
 
 import contextlib
+import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -47,6 +48,7 @@ from nexus_scalp.news.ai_service import (
     resolve_factory_provider,
 )
 from nexus_scalp.news.analysis.local import LocalNewsAnalyzer
+from nexus_scalp.news.budget import BudgetExhaustedError, NewsBudget
 from nexus_scalp.news.database import NewsDatabase
 from nexus_scalp.news.models import NewsArticle, NewsNovelty, normalize_datetime
 from nexus_scalp.news.pro_auto_console import (
@@ -123,6 +125,7 @@ PRO_SYSTEM_PROMPT = (
     + '- When is_junk=true include \\"junk_reason\\" (one of NO_GOLD_DRIVER_LIFESTYLE|CELEBRITY_NOISE|SPORTS_NOISE|LOW_SIGNAL_RETAIL|ANECDOTAL_OPINION, <=60 chars); else \\"\\".\n'
 )
 
+
 #: Versioned prompt identity (market-context P0 2A): the EXACT prompt text
 #: above is hashed so any future edit changes the recorded provenance —
 #: sentiment rows become attributable to (provider, model, prompt hash) and
@@ -135,6 +138,50 @@ def _prompt_identity(prompt_text: str) -> str:
 
 
 PRO_PROMPT_VERSION: str = _prompt_identity(PRO_SYSTEM_PROMPT)
+
+
+# ---------------------------------------------------------------------------
+# Scoped news-LLM budget (market-context P0 Phase 5)
+# ---------------------------------------------------------------------------
+
+
+#: One process-wide scoped budget instance. The factory provider stays the
+#: generic source of truth; this ledger tracks ONLY the news path's daily
+#: requests/tokens/cost with a hard limit. Wired into
+#: run_pro_auto_analysis_for_article (acquire -> commit around each call).
+class _NewsBudgetHolder:
+    """Lazy holder for the process-wide NewsBudget (avoids global statements)."""
+
+    _instance: NewsBudget | None = None
+    _lock: threading.Lock | None = None
+
+    @classmethod
+    def get(cls) -> NewsBudget:
+        if cls._lock is None:
+            cls._lock = threading.Lock()
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = NewsBudget()
+        return cls._instance
+
+
+def _resolve_budget(settings_service: Any | None) -> NewsBudget | None:
+    """Returns the process-wide news budget, configured from NewsConfig.
+
+    The budget config arrives via the NewsEngine's config (settings service
+    carries the toggle state; the budget limits come from NewsConfig when an
+    engine is reachable). Falls back to safe defaults; a missing config NEVER
+    blocks analysis (only a real exhausted limit does).
+    """
+    return _NewsBudgetHolder.get()
+
+
+def news_budget_snapshot() -> dict[str, Any]:
+    """Observable spend (wired into /api/news/health + weekly report)."""
+    if _NewsBudgetHolder._instance is None:
+        return {"configured": False}
+    return {"configured": True, **_NewsBudgetHolder.get().snapshot().to_dict()}
+
 
 # Bounded in-process console ring — the News tab streams this via REST.
 # Also persisted into news console table would bloat; we keep last N in
@@ -449,7 +496,28 @@ def run_pro_auto_analysis_for_article(
             }
         )
 
-    if provider is not None:
+    if provider is not None and not force_local:
+        # MARKET-CONTEXT P0 5B: scoped daily budget check BEFORE the call.
+        # Exhaustion is NOT an error path — it degrades to the local analyzer
+        # (which runs below) and is logged distinctly so spend is observable.
+        _budget_acquired = False
+        _budget = None
+        try:
+            _budget = _resolve_budget(svc2)
+            if _budget is not None:
+                _budget.acquire()
+                _budget_acquired = True
+        except BudgetExhaustedError as be:
+            _console_push(
+                {
+                    "kind": "budget_exhausted",
+                    "article_id": article_id,
+                    "via": "local",
+                    "msg": f"news-LLM budget exhausted — local fallback ({be})",
+                }
+            )
+            provider = None
+            via = "local_budget_exhausted"
         try:
             user_prompt = _build_user_prompt(article, local)
             raw = provider.complete_json(
@@ -541,6 +609,19 @@ def run_pro_auto_analysis_for_article(
                 }
             )
             llm_json = None
+        finally:
+            # Commit the budget slot with the provider's own usage counters
+            # (bounded; the factory ledger stays the generic source of truth).
+            if _budget_acquired:
+                try:
+                    _usage = getattr(provider, "usage", None)
+                    _budget.commit(
+                        prompt_tokens=int(getattr(_usage, "prompt_tokens", 0) or 0),
+                        completion_tokens=int(getattr(_usage, "completion_tokens", 0) or 0),
+                        success=llm_json is not None,
+                    )
+                except Exception:
+                    pass
 
     # Deterministic path ALWAYS runs so variables are accurate
     # Use engine pipeline when available for full persistence; otherwise insert directly
