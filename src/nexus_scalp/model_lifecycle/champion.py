@@ -47,9 +47,17 @@ class ChampionModel:
         model_version: str,
         feature_schema_id: str,
         feature_dimension: int,
-        num_classes: int = 4,
+        num_classes: int | None = None,
         scaler_path: Path | str = "",
     ) -> None:
+        # P0 phase 2: default head width follows the canonical trained contract;
+        # 4-wide legacy artifacts keep their explicit declaration path.
+        if num_classes is None:
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                TRAINED_CLASS_COUNT,
+            )
+
+            num_classes = TRAINED_CLASS_COUNT
         self.artifact_path = Path(artifact_path)
         self.model_id = model_id
         self.model_version = model_version
@@ -130,8 +138,14 @@ class ChampionManager:
         model_version: str = "1.0.0",
         feature_schema_id: str | None = None,
         feature_dimension: int | None = None,
-        num_classes: int = 4,
+        num_classes: int | None = None,
     ) -> None:
+        if num_classes is None:
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                TRAINED_CLASS_COUNT,
+            )
+
+            num_classes = TRAINED_CLASS_COUNT
         schema = resolve_schema(feature_schema_id)
         self.artifact_path = Path(artifact_path)
         self.model_id = model_id
