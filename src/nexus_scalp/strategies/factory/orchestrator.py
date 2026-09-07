@@ -27,6 +27,7 @@ CRASH RECOVERY (spec 41 / 74 / 75):
 
 from __future__ import annotations
 
+import json
 import random
 import time
 import uuid
@@ -1504,12 +1505,30 @@ class StrategyFactory:
                 rows.append(_decode_registry_row(entry))
         return rows
 
+    @staticmethod
+    def _coerce_config(value: Any) -> dict[str, Any]:
+        """Bounded double-encoded-JSON unwrap (see complete_generation guard).
+
+        The generation config column round-trips through a JSON-text serializer;
+        on the second round-trip the value is a JSON string OF a JSON string.
+        Returns a dict; unparsable text yields {} (never crashes the loop).
+        """
+        out = value
+        for _ in range(3):
+            if not isinstance(out, str):
+                break
+            try:
+                out = json.loads(out) if out.strip() else {}
+            except Exception:
+                return {}
+        return out if isinstance(out, dict) else {}
+
     def build_memory(self) -> dict[str, Any]:
         """Structured evolution memory from all completed generations."""
         gens = list_generations(self._research_backend, limit=50)
         summaries: list[Any] = []
         for g in gens:
-            cfg = g.get("config") or {}
+            cfg = self._coerce_config(g.get("config"))
             s = cfg.get("summary")
             if s:
                 summaries.append(s)
