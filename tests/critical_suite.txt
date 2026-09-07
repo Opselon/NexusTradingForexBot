@@ -93,3 +93,17 @@ tests/unit/test_agent14_dataset_integrity.py
 tests/unit/test_dataset_split_purge_bug244.py
 tests/unit/test_70d_dataset_parity_task3.py
 tests/unit/test_smoke_self.py
+
+# QA HARDENING MISSION (2026-09-07): critical-source floor mapping.
+# scripts/ci/critical_manifest.py REQUIRES every execution-critical
+# module to have at least one critical-suite guardian. These entries map
+# the previously-unguarded floor modules (drift closure, not bloat):
+#   live_freshness gate -> freshness characterization battery
+#   position_state_machine + recovery_budget -> qa_deep state battery
+#   provider_gate -> qa_deep provider-gate chaos battery
+#   update_engine (orchestrator/discovery/rollback) -> phase17 + BUG-237
+tests/unit/test_live_freshness_characterization.py
+tests/unit/test_qa_deep_state_machines.py
+tests/unit/test_qa_deep_provider_gate_chaos.py
+tests/unit/test_release_update_phase17.py
+tests/unit/test_bug237_update_setup_payload.py
