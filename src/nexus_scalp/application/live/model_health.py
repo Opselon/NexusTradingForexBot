@@ -18,13 +18,18 @@ contracts preserved; the BUG-182B effective-cols contract follows the code).
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import polars as pl
 import torch
 
+from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
+
+if TYPE_CHECKING:  # import-cycle breaker: ModelBundle lives on the engine
+    from nexus_scalp.application.live_engine import ModelBundle
 
 logger = get_logger("nexus_scalp.application.live.model_health")
 
