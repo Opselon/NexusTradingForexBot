@@ -451,10 +451,11 @@ class DatabaseMigrationEngine:
                 continue
             cols_now = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
             if col not in cols_now:
-                try:
-                    con.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
-                except sqlite3.Error:
-                    pass
+                # MIGRATION-SAFETY: fail-loud. The PRAGMA pre-check makes the
+                # ALTER idempotent; if the DDL still fails the baseline is
+                # incomplete and later migrations may reference a missing
+                # column — a real failure, never a swallowed one.
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         # ------------------------------------------------------------------
         # BUG-197 (TASK-DB-PLATFORM 2026-09-02): heal minimal skeletons so
         # the APPLICATION bootstrap cannot crash after a bare migration.
@@ -503,31 +504,32 @@ class DatabaseMigrationEngine:
             for col_def in heal_cols:
                 col_name = col_def.split()[0]
                 if col_name not in cols_now:
-                    try:
-                        con.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
-                        cols_now.add(col_name)
-                    except sqlite3.Error:
-                        pass
+                    # MIGRATION-SAFETY: fail-loud (PRAGMA pre-check makes the
+                    # ALTER idempotent; a real DDL failure must propagate so
+                    # the engine records FAILED instead of shipping a
+                    # half-healed baseline skeleton).
+                    con.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
+                    cols_now.add(col_name)
         # Retype audit_ledger.ticket TEXT → INTEGER PRIMARY KEY when the
         # skeleton shape is present and the table is EMPTY (fresh install
         # only; any pre-existing row means a real DB we never rebuild).
-        try:
-            ledger_cols = con.execute("PRAGMA table_info(audit_ledger)").fetchall()
-            ticket_col = next((c for c in ledger_cols if c[1] == "ticket"), None)
-            if (
-                ticket_col is not None
-                and str(ticket_col[2]).upper() == "TEXT"
-                and ticket_col[5] == 0  # not PK
-                and con.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0] == 0
-            ):
-                cols_txt = ", ".join(f'"{c[1]}"' for c in ledger_cols if c[1] != "ticket")
-                con.execute("DROP TABLE audit_ledger")
-                con.execute(
-                    f"CREATE TABLE audit_ledger ("
-                    f"ticket INTEGER PRIMARY KEY{',' if cols_txt else ''} {cols_txt})"
-                )
-        except sqlite3.Error:
-            pass
+        # MIGRATION-SAFETY: fail-loud — a dropped-but-not-recreated ledger
+        # table is catastrophic; the guard conditions above are checked
+        # before any DDL, so an exception here is a real failure.
+        ledger_cols = con.execute("PRAGMA table_info(audit_ledger)").fetchall()
+        ticket_col = next((c for c in ledger_cols if c[1] == "ticket"), None)
+        if (
+            ticket_col is not None
+            and str(ticket_col[2]).upper() == "TEXT"
+            and ticket_col[5] == 0  # not PK
+            and con.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0] == 0
+        ):
+            cols_txt = ", ".join(f'"{c[1]}"' for c in ledger_cols if c[1] != "ticket")
+            con.execute("DROP TABLE audit_ledger")
+            con.execute(
+                f"CREATE TABLE audit_ledger ("
+                f"ticket INTEGER PRIMARY KEY{',' if cols_txt else ''} {cols_txt})"
+            )
         con.commit()
 
     def _detect_tamper(self) -> bool:
@@ -826,10 +828,14 @@ class DatabaseMigrationEngine:
                             duration_ms=round((time.perf_counter() - m_started) * 1000.0, 1),
                         )
                     except Exception as err:
+                        # Rollback first — but NEVER swallow a rollback
+                        # failure silently: it degrades the compensation
+                        # guarantee and must be visible in the failure record.
+                        rollback_error = ""
                         try:
                             con.rollback()
-                        except sqlite3.Error:
-                            pass
+                        except sqlite3.Error as rb_err:
+                            rollback_error = f"rollback also failed: {rb_err}"
                         # Compensation: best-effort rollback.
                         rollback_status = "none"
                         if mig.rollback is not None:
@@ -848,8 +854,12 @@ class DatabaseMigrationEngine:
                         )
                         try:
                             con.commit()
-                        except sqlite3.Error:
-                            pass
+                        except sqlite3.Error as rec_err:
+                            # The failed-migration history row could not be
+                            # persisted — surface it in the failure record.
+                            rollback_error = (
+                                rollback_error or f"history record commit failed: {rec_err}"
+                            )
                         duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
                         logger.error(
                             "[DB_MIGRATION] event=FAILED",
@@ -867,6 +877,7 @@ class DatabaseMigrationEngine:
                             "applied": applied,
                             "error": str(err),
                             "rollback_status": rollback_status,
+                            "rollback_error": rollback_error,
                             "backup_path": str(backup_path),
                             "duration_ms": duration_ms,
                         }
@@ -876,8 +887,16 @@ class DatabaseMigrationEngine:
                 if con is not None:
                     try:
                         con.close()
-                    except sqlite3.Error:
-                        pass
+                    except sqlite3.Error as close_err:
+                        # Teardown-only: the migration outcome has already
+                        # been committed/recorded; a connection close failure
+                        # is OS-level noise but must still be logged, never
+                        # silently discarded.
+                        logger.warning(
+                            "[DB_MIGRATION] event=CONNECTION_CLOSE_FAILED",
+                            database=self.domain.value,
+                            error=str(close_err),
+                        )
 
             final_version = self.current_version()
             integrity = self._integrity()
