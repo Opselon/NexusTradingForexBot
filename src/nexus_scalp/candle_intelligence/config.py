@@ -16,9 +16,18 @@ from pydantic import BaseModel, Field
 
 
 class CandleIntelligenceConfig(BaseModel):
-    """Conservative defaults for the candle intelligence gate."""
+    """Conservative defaults for the candle intelligence gate.
 
-    enabled: bool = Field(default=True)
+    MARKET-CONTEXT P0 Phase 3 (2026-09-07): `enabled` default flipped True ->
+    False. Evidence (docs/agent_handoffs/
+    2026-09-07_candle_intel_connect_or_disable_decision.md): the engine
+    computes entry/hold/fast-exit verdicts per M1 bar but NOTHING consumes
+    `_last_candle_decision` (no policy/execution/feature/UI read), while the
+    isolated DB accumulated ~33.5k rows in 21 days. Runtime cost removed;
+    code + historical candle_intel.db preserved; re-enable = one config flip.
+    """
+
+    enabled: bool = Field(default=False)
 
     # --- close geometry thresholds ---
     min_candle_range: float = Field(default=1e-9, ge=0.0)  # below -> invalid
