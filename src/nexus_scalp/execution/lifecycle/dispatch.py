@@ -52,6 +52,17 @@ def _om_dispatch_symbols() -> tuple[float, int]:
     return HARD_MAX_LOTS, MAX_TOTAL_EXPOSURE
 
 
+def _is_directional_entry(action: Any) -> bool:
+    """True for NEW directional entries (market/limit/stop, both sides).
+
+    Position lifecycle actions (CLOSE_POSITION, PARTIAL_CLOSE,
+    MODIFY_SL_TP, CANCEL_ORDER, CLOSE_ALL...) are NOT entries and must
+    never be gated — protective exits stay reachable at all times.
+    """
+    name = str(getattr(action, "value", action) or "").upper()
+    return name.startswith(("BUY", "SELL"))
+
+
 class DispatchEngine:
     """Broker dispatch owner: hedge submission + unified entry router (S10)."""
 
@@ -196,8 +207,9 @@ class DispatchEngine:
         """
         Unified dispatch router for new entry signals (BUY, SELL, BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP).
 
-        Enforces, in order: MAX_TOTAL_EXPOSURE, the HARD_MAX_LOTS clamp via the risk
-        engine, and entry-context capture for the ledger autopsy.
+        Enforces, in order: SAFE_MODE, the MAINTENANCE-WINDOW guard, MAX_TOTAL_EXPOSURE,
+        the HARD_MAX_LOTS clamp via the risk engine, and entry-context capture for the
+        ledger autopsy.
 
         `setup_snapshot` (2026-08-18): the full chart-state fingerprint (HTF/SMC/ICT
         structure, displacement, sessions, guardian) captured at dispatch by the
@@ -228,6 +240,57 @@ class DispatchEngine:
         price = decision.proposed_entry
         sl = decision.stop_loss
         tp = decision.take_profit
+
+        # --- MAINTENANCE-WINDOW ENTRY GUARD (ECON v1 phase 6, P1) ---
+        # Blocks NEW entries inside the nightly server-time maintenance
+        # break (23:00->01:00 server, +/-30m spread-evidence buffer) where
+        # the raw feed shows spread p90 48 / p95 87 points vs 20 outside.
+        # Semantics:
+        #   * gate applies ONLY to directional NEW entries (BUY/SELL
+        #     families). CLOSE / MODIFY / CANCEL lifecycle actions route
+        #     through execute_lifecycle_action and are never blocked —
+        #     protective SL/TP, trailing, reconciliation and exits stay
+        #     fully intact.
+        #   * the AI-REVERSAL flip reaches this router only AFTER the
+        #     opposing positions were closed; the close itself is not
+        #     gated. The fresh flip entry IS gated here (same predicate)
+        #     — the reversal cannot bypass the window.
+        #   * the predicate is the CANONICAL one
+        #     (research/economics.in_maintenance_window) driven by the
+        #     canonical broker/server clock offset
+        #     (adapters.mt5.providers.BROKER_SERVER_UTC_OFFSET_MINUTES).
+        #     No local UTC hardcode, no second time implementation.
+        #   * fail-closed: an unknown/failed server-time derivation blocks
+        #     the entry (safe side — a tick with no timestamp cannot be
+        #     proven in-session).
+        from nexus_scalp.adapters.mt5.providers import BROKER_SERVER_UTC_OFFSET_MINUTES
+        from nexus_scalp.research.economics import in_maintenance_window
+
+        if _is_directional_entry(action):
+            tick_ts = getattr(decision, "generated_at", None)
+            server_offset = BROKER_SERVER_UTC_OFFSET_MINUTES / 60.0
+            in_window = (
+                in_maintenance_window(tick_ts, server_utc_offset_hours=server_offset)
+                if tick_ts is not None
+                else True  # no timestamp -> cannot prove out-of-window
+            )
+            if in_window:
+                logger.warning(
+                    "[ENTRY_BLOCKED] layer=MAINTENANCE_WINDOW "
+                    "reason=NIGHTLY_MAINTENANCE_BREAK action=%s symbol=%s "
+                    "decision_ts=%s server_offset_min=%s",
+                    getattr(action, "value", str(action)),
+                    symbol,
+                    tick_ts.isoformat() if tick_ts is not None else None,
+                    BROKER_SERVER_UTC_OFFSET_MINUTES,
+                )
+                emit_terminal_pending_outcome(
+                    experience_engine=self.om.experience_engine,
+                    request_id=str(getattr(decision, "request_id", "") or ""),
+                    state=DecisionLifecycle.NOT_DISPATCHED,
+                    detail="NIGHTLY_MAINTENANCE_BREAK entry guard",
+                )
+                return False
 
         # --- ENGINE-LEVEL DUPLICATE DISPATCH GUARD (EXEC-QUALITY) ---
         # `execute_order` (hedge path) has had an idempotency guard via
