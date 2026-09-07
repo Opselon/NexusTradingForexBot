@@ -24,7 +24,7 @@ Integrity contract (mission 5C):
 from __future__ import annotations
 
 import csv
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -228,5 +228,5 @@ class ReplayTickSource:
                 "close": r["close"],
                 "tick_volume": r.get("tick_volume", 0),
             }
-            for r in upto[-int(count):]
+            for r in upto[-int(count) :]
         ]
