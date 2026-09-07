@@ -110,13 +110,25 @@ class ScalpNet(nn.Module):
     def __init__(
         self,
         num_features: int = 50,  # 50D Master FeatureVector alignment
-        num_classes: int = 4,  # Legacy serving default (MLFIX-T4): NO_TRADE/BUY/SELL + WAIT policy bridge
+        num_classes: int | None = None,  # default: TRAINED_CLASS_COUNT (3) — see model_class_contract
         hidden_dim: int = 128,  # Latent channel capacity
         num_heads: int = 4,  # Attention heads
         dropout_rate: float = 0.25,
     ) -> None:
         super().__init__()
 
+        # MODEL CLASS CONTRACT (P0 phase 2): the DEFAULT head is the canonical
+        # 3-class trained contract (NO_TRADE/BUY/SELL). The old class-level
+        # default of 4 minted dead WAIT logits into every fresh model that did
+        # not pass num_classes explicitly. 4 is still constructible (legacy
+        # artifact compatibility) but must be OPTED INTO, never defaulted.
+        # Import is local to avoid a torch<->lifecycle import cycle.
+        if num_classes is None:
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                TRAINED_CLASS_COUNT,
+            )
+
+            num_classes = TRAINED_CLASS_COUNT
         if not isinstance(num_classes, int) or num_classes < 2:
             raise ValueError(
                 f"MODEL_CLASS_CONTRACT VIOLATION: ScalpNet num_classes must be an int >= 2, got {num_classes!r}"

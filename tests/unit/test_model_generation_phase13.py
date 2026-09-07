@@ -539,8 +539,9 @@ class TestRuntime:
         rt = LocalModelRuntime(store=store).load("cand_pred")
         pred = rt.predict([0.1] * 50)
         assert "probabilities" in pred
-        assert len(pred["probabilities"]) == 4  # legacy 4-head geometry
-        assert 0 <= pred["argmax"] <= 3
+        # P0 phase 2: trained candidates follow the 3-class label contract.
+        assert len(pred["probabilities"]) == 3
+        assert 0 <= pred["argmax"] <= 2
 
     def test_36_schema_mismatch_blocks_loading(self, store: ArtifactStore, built_dataset):
         store, built_dataset = built_dataset
