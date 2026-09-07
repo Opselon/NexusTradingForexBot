@@ -121,7 +121,7 @@ def _fit_logistic_numpy(train_df: Any, feature_columns: list[str], label_column:
     X = np.asarray(train_df.select(feature_columns).to_numpy(), dtype=np.float64)
     y = np.asarray(train_df.select(label_column).to_numpy().ravel())
     classes, counts = np.unique(y, return_counts=True)
-    weight_map = {c: len(y) / (len(classes) * cnt) for c, cnt in zip(classes, counts)}
+    weight_map = {c: len(y) / (len(classes) * cnt) for c, cnt in zip(classes, counts, strict=False)}
     sample_w = np.array([weight_map[c] for c in y], dtype=np.float64)
     sample_w /= sample_w.mean()
     k = len(classes)
