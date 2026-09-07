@@ -65,6 +65,18 @@ class NewsImpactBounds(BaseModel):
     )
 
 
+class NewsBudgetConfig(BaseModel):
+    """Scoped daily budget for the news-LLM path (market-context P0 Phase 5).
+
+    Limits are REQUESTS and TOKENS per UTC day on the news path only — the
+    factory's own budget stays untouched (no second provider abstraction).
+    Exhaustion falls back to deterministic/local analysis, never a crash.
+    """
+
+    daily_request_limit: int = Field(default=120, ge=0)
+    daily_token_limit: int = Field(default=1_500_000, ge=0)
+
+
 class NewsConfig(BaseModel):
     """Complete News subsystem configuration."""
 
@@ -79,6 +91,7 @@ class NewsConfig(BaseModel):
     analysis: NewsAnalysisConfig = Field(default_factory=NewsAnalysisConfig)
     decay: NewsDecayConfig = Field(default_factory=NewsDecayConfig)
     bounds: NewsImpactBounds = Field(default_factory=NewsImpactBounds)
+    budget: NewsBudgetConfig = Field(default_factory=NewsBudgetConfig)
 
     def resolve_db_path(self, repo_root: Path | None = None) -> Path:
         """Resolves the news DB path relative to the repository root.
