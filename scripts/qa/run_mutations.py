@@ -164,12 +164,97 @@ MUTATIONS: list[dict[str, str]] = [
 #: Anything not listed that survives = test blind spot = defect.
 ACCEPTED_SURVIVORS: dict[str, str] = {}
 
+# ---------------------------------------------------------------------------
+# DOMAIN-CONTRACT MUTATIONS (critical invariants generic mutation cannot
+# understand).  Each id maps one CRITICAL INVARIANT to its guard battery:
+#   * bypass the risk engine kill-switch / fail-closed rejection contract
+#   * admit future data into training (purge/embargo semantics)
+#   * weaken the 70D schema / freshness contract
+#   * disable the single-flight provider gate
+#   * admit stale market state (freshness check removed)
+# These are the mutations the mission brief calls "higher value than random
+# cosmetic mutations": if one of these survives, a SAFETY contract has lost
+# its regression net, not just a branch.
+# Anchors verified unique against the CURRENT tree; the runner still asserts
+# count==1 at run time (INVALID_ANCHOR on drift), so a stale entry can never
+# silently skip.
+# ---------------------------------------------------------------------------
+CONTRACT_MUTATIONS: list[dict[str, str]] = [
+    {
+        "id": "MUT-RISK-KILLSWITCH",
+        "desc": "risk gate bypass: kill-switch consult removed from evaluate_proposal",
+        "target": "src/nexus_scalp/risk/risk_engine.py",
+        "anchor": '        if self._kill_switch_active:\n            logger.warning("Proposal rejected: Emergency kill switch active.")\n            return None',
+        "replacement": '        if False and self._kill_switch_active:\n            logger.warning("Proposal rejected: Emergency kill switch active.")\n            return None',
+        "battery": "tests/unit/test_mutation_contract_guard.py",
+    },
+    {
+        "id": "MUT-TEMPORAL-PURGE",
+        "desc": "temporal purge bypass: DEFAULT_PURGE_SECONDS zeroed (5min -> 0)",
+        "target": "src/nexus_scalp/research/splitting.py",
+        "anchor": "DEFAULT_PURGE_SECONDS: float = 300.0",
+        "replacement": "DEFAULT_PURGE_SECONDS: float = 0.0",
+        "battery": "tests/unit/test_mutation_contract_guard.py",
+    },
+    {
+        "id": "MUT-TEMPORAL-EMBARGO",
+        "desc": "temporal embargo bypass: DEFAULT_EMBARGO_SECONDS zeroed (60 -> 0)",
+        "target": "src/nexus_scalp/research/splitting.py",
+        "anchor": "DEFAULT_EMBARGO_SECONDS: float = 60.0",
+        "replacement": "DEFAULT_EMBARGO_SECONDS: float = 0.0",
+        "battery": "tests/unit/test_mutation_contract_guard.py",
+    },
+    {
+        "id": "MUT-FRESHNESS-GATE",
+        "desc": "market freshness check bypass: stale-data staging always FRESH",
+        "target": "src/nexus_scalp/application/live_freshness.py",
+        "anchor": '        if age > max_age_sec:\n            return "STALE", round(age * 1000.0, 1)',
+        "replacement": '        if False and age > max_age_sec:\n            return "STALE", round(age * 1000.0, 1)',
+        "battery": "tests/unit/test_mutation_contract_guard.py",
+    },
+    {
+        "id": "MUT-SHADOW-BOUNDARY",
+        "desc": "SHADOW observation-only boundary removed (shadow may execute)",
+        "target": "src/nexus_scalp/application/live/decision_executor.py",
+        "anchor": "            self.om.om.config.execution.mode == ExecutionMode.SHADOW\n            and policy_decision.action != ActionType.NO_TRADE\n        ):",
+        "replacement": "            False\n            and policy_decision.action != ActionType.NO_TRADE\n        ):",
+        "battery": "tests/unit/test_mutation_contract_guard.py",
+    },
+    {
+        "id": "MUT-SM-HYSTERESIS",
+        "desc": "state machine: time hysteresis leg dropped (>= -> >) [same class as MUT-SM-01, contract battery]",
+        "target": "src/nexus_scalp/execution/position_state_machine.py",
+        "anchor": "if elapsed >= min_dur and new_count >= min_cnt:",
+        "replacement": "if elapsed > min_dur and new_count >= min_cnt:",
+        "battery": "tests/unit/test_mutation_contract_guard.py",
+    },
+    {
+        "id": "MUT-RB-HORIZON",
+        "desc": "recovery budget: horizon clamp inverted (max->min) [same class as MUT-RB-01, contract battery]",
+        "target": "src/nexus_scalp/execution/recovery_budget.py",
+        "anchor": "horizon = max(min_horizon, min(max_horizon, base_hor))",
+        "replacement": "horizon = min(min_horizon, min(max_horizon, base_hor))",
+        "battery": "tests/unit/test_mutation_contract_guard.py",
+    },
+]
+
 
 def _apply_mutation(source: str, anchor: str, replacement: str) -> str:
-    count = source.count(anchor)
+    # EOL-TOLERANT matching: multi-line anchors are written with \n but
+    # target files on disk may use CRLF (git autocrlf / editor). Normalize
+    # BOTH sides to \n for the count/match, then apply on the normalized
+    # text and restore the original EOL convention afterwards.
+    eol = "\r\n" if "\r\n" in source else "\n"
+    norm_source = source.replace("\r\n", "\n")
+    norm_anchor = anchor.replace("\r\n", "\n")
+    norm_repl = replacement.replace("\r\n", "\n")
+    count = norm_source.count(norm_anchor)
     if count != 1:
-        raise ValueError(f"anchor count {count} != 1 for {anchor[:60]!r}")
-    return source.replace(anchor, replacement)
+        raise ValueError(f"anchor count {count} != 1 for {norm_anchor[:60]!r}")
+    mutated = norm_source.replace(norm_anchor, norm_repl)
+    if eol != "\n":
+        mutated = mutated.replace("\n", eol)
+    return mutated
 
 
 def _battery_prime(battery: str) -> str:
@@ -279,6 +364,12 @@ def main(argv: list[str] | None = None) -> int:
         help="print the mutation catalog as JSON (targets/batteries/anchors) "
         "and exit 0 - smoke/CI introspection, runs no batteries",
     )
+    p.add_argument(
+        "--no-contract",
+        action="store_true",
+        help="run ONLY the frozen anchor catalog (skip domain-contract "
+        "mutations) - cheap smoke path",
+    )
     args = p.parse_args(argv)
 
     # --list-targets: pure introspection - catalog + resolver contract, no
@@ -286,12 +377,13 @@ def main(argv: list[str] | None = None) -> int:
     # catalog echo without paying the minutes-long campaign cost.
     if args.list_targets:
         catalog = []
-        for m in MUTATIONS:
+        for m in [*MUTATIONS, *CONTRACT_MUTATIONS]:
             target_abs = REPO / m["target"]
             exists = target_abs.exists()
             unique = False
             if exists:
-                unique = target_abs.read_text(encoding="utf-8").count(m["anchor"]) == 1
+                disk = target_abs.read_text(encoding="utf-8").replace("\r\n", "\n")
+                unique = disk.count(m["anchor"].replace("\r\n", "\n")) == 1
             catalog.append(
                 {
                     "id": m["id"],
@@ -311,7 +403,9 @@ def main(argv: list[str] | None = None) -> int:
                     "repo_root_ok": (REPO / "pyproject.toml").exists(),
                     "python_executable": _repo_python(),
                     "python_is_running_interpreter": _repo_python() == sys.executable,
-                    "mutations_total": len(MUTATIONS),
+                    "mutations_total": len(MUTATIONS) + len(CONTRACT_MUTATIONS),
+                    "anchor_catalog_total": len(MUTATIONS),
+                    "contract_catalog_total": len(CONTRACT_MUTATIONS),
                     "accepted_survivors": sorted(ACCEPTED_SURVIVORS),
                     "catalog": catalog,
                 },
@@ -321,9 +415,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     wanted_ids = {s.strip() for s in args.ids.split(",") if s.strip()}
+    # HYBRID CATALOG (QA hardening mission): the frozen anchor catalog
+    # (MUTATIONS) AND the domain-contract registry (CONTRACT_MUTATIONS)
+    # are both live by default. Contract mutations protect critical
+    # invariants generic mutation cannot understand (risk-gate bypass,
+    # temporal purge bypass, freshness bypass, SHADOW boundary).
+    # --no-contract opts out for cheap smoke runs.
+    catalog: list[dict[str, str]] = list(MUTATIONS)
+    if not args.no_contract:
+        catalog.extend(CONTRACT_MUTATIONS)
     selected = [
         m
-        for m in MUTATIONS
+        for m in catalog
         if (not wanted_ids or m["id"] in wanted_ids)
         and (not args.target or args.target in m["target"])
     ]
@@ -396,6 +499,8 @@ def main(argv: list[str] | None = None) -> int:
 
     killed = sum(1 for r in results if r["verdict"] == "KILLED")
     survived = [r["id"] for r in results if r["verdict"] == "SURVIVED"]
+    contract_ids = {m["id"] for m in CONTRACT_MUTATIONS}
+    contract_survived = [r for r in survived if r in contract_ids]
     accepted = [r["id"] for r in results if r["verdict"] == "ACCEPTED_SURVIVOR"]
     invalid = [r["id"] for r in results if str(r["verdict"]).startswith("INVALID")]
     score = round(killed / len(results), 4) if results else 0.0
@@ -411,6 +516,11 @@ def main(argv: list[str] | None = None) -> int:
         "killed": killed,
         "survived": len(survived),
         "survivor_ids": survived,
+        "contract_mutation_survivors": contract_survived,
+        "note_contract": (
+            "a surviving CONTRACT_MUTATION is a safety-invariant regression "
+            "net loss; it ALWAYS fails the gate (never accept-listed)"
+        ),
         "accepted_survivor_ids": accepted,
         "invalid_ids": invalid,
         "mutation_score": score,
