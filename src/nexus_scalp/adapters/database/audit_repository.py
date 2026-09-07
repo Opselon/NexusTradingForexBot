@@ -31,8 +31,8 @@ from nexus_scalp.adapters.database.broker_history import (
 from nexus_scalp.domain.models import AccountInfo, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.risk.runtime_safety import (
-    RUNTIME_RISK_STATE_VERSION,
     PERSISTED_STATES,
+    RUNTIME_RISK_STATE_VERSION,
 )
 
 logger = get_logger("nexus_scalp.adapters.audit_db")
@@ -608,9 +608,7 @@ class AuditRepository:
         """
         state_up = str(state or "").upper()
         if state_up not in PERSISTED_STATES:
-            logger.error(
-                "runtime_risk_state refused unknown state=%r (fail closed)", state
-            )
+            logger.error("runtime_risk_state refused unknown state=%r (fail closed)", state)
             return False
         if not triggered_at:
             from datetime import UTC, datetime
@@ -648,7 +646,9 @@ class AuditRepository:
             int(consecutive_losses),
         )
         try:
-            with sqlite3.connect(self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")) as conn:
+            with sqlite3.connect(
+                self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")
+            ) as conn:
                 conn.execute(sql, args)
                 conn.commit()
             return True
@@ -662,7 +662,9 @@ class AuditRepository:
         if not self._is_sqlite:
             return None
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+            with sqlite3.connect(
+                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
+            ) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute("SELECT * FROM runtime_risk_state WHERE id = 1").fetchone()
                 return dict(row) if row is not None else None
@@ -689,9 +691,10 @@ class AuditRepository:
         if current is None:
             logger.warning("runtime_risk_state release: no persisted state row")
             return False
-        if expected_state is not None and str(current.get("state", "")).upper() != str(
-            expected_state
-        ).upper():
+        if (
+            expected_state is not None
+            and str(current.get("state", "")).upper() != str(expected_state).upper()
+        ):
             logger.error(
                 "runtime_risk_state release refused: expected=%s actual=%s",
                 expected_state,
@@ -710,8 +713,13 @@ class AuditRepository:
             WHERE id=1
         """
         try:
-            with sqlite3.connect(self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")) as conn:
-                conn.execute(sql, (datetime.now(UTC).isoformat(), str(actor), str(note or ""), str(note or "")))
+            with sqlite3.connect(
+                self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")
+            ) as conn:
+                conn.execute(
+                    sql,
+                    (datetime.now(UTC).isoformat(), str(actor), str(note or ""), str(note or "")),
+                )
                 conn.commit()
             logger.info(
                 "RUNTIME RISK STATE RELEASED actor=%s previous=%s note=%s",
@@ -761,9 +769,15 @@ class AuditRepository:
             if not derived:
                 q = (query or "").strip().upper()
                 if q.startswith("INSERT INTO") or q.startswith("REPLACE INTO"):
-                    rest = query.strip()[len("INSERT INTO "):].split()[0] if q.startswith("INSERT INTO") else query.strip()[len("REPLACE INTO "):].split()[0]
+                    rest = (
+                        query.strip()[len("INSERT INTO ") :].split()[0]
+                        if q.startswith("INSERT INTO")
+                        else query.strip()[len("REPLACE INTO ") :].split()[0]
+                    )
                     derived = rest.strip('"`[]')
-            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+            with sqlite3.connect(
+                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
+            ) as conn:
                 conn.execute(
                     sql,
                     (
@@ -798,7 +812,9 @@ class AuditRepository:
         if not self._is_sqlite:
             return []
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+            with sqlite3.connect(
+                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
+            ) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     "SELECT * FROM audit_dead_letter ORDER BY id DESC LIMIT ?",
@@ -809,9 +825,7 @@ class AuditRepository:
             logger.error("get_dead_letter_rows failed: %s", e)
             return []
 
-    def get_consecutive_losses(
-        self, limit: int = 100
-    ) -> tuple[int, str]:
+    def get_consecutive_losses(self, limit: int = 100) -> tuple[int, str]:
         """Canonical consecutive-loss chain from FINALIZED ledger outcomes.
 
         Reads closed audit_ledger rows (newest first). Only finalized
@@ -825,7 +839,9 @@ class AuditRepository:
         try:
             from nexus_scalp.risk.runtime_safety import evaluate_consecutive_losses_with_time
 
-            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+            with sqlite3.connect(
+                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
+            ) as conn:
                 rows = conn.execute(
                     """
                     SELECT status, net_pnl_usd, COALESCE(NULLIF(close_time,''), timestamp) AS close_ts
@@ -2004,7 +2020,9 @@ class AuditRepository:
                 "args": self._json_safe_args(args),
                 "error": type(error).__name__ if error else "QUEUE_SATURATED",
             }
-            (overflow_dir / fname).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            (overflow_dir / fname).write_text(
+                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+            )
             logger.critical(
                 "FINANCIAL AUDIT OVERFLOW — event persisted to durable overflow file %s "
                 "(queue saturated; accounting evidence preserved)",
@@ -2019,8 +2037,7 @@ class AuditRepository:
                 payload_note="overflow-file write failure",
             )
             logger.critical(
-                "FINANCIAL AUDIT EVENT COULD NOT BE DURABLY PRESERVED "
-                "(overflow file failed): %s",
+                "FINANCIAL AUDIT EVENT COULD NOT BE DURABLY PRESERVED (overflow file failed): %s",
                 of_err,
             )
 
@@ -2034,7 +2051,10 @@ class AuditRepository:
             self._queue.put_nowait((query, args))
         except queue.Full:
             self.telemetry_dropped += 1
-            logger.error("Audit telemetry queue full — counter dropped (telemetry_dropped=%d)", self.telemetry_dropped)
+            logger.error(
+                "Audit telemetry queue full — counter dropped (telemetry_dropped=%d)",
+                self.telemetry_dropped,
+            )
 
     def log_signal(self, proposal: TradeProposal) -> None:
         """Zero-latency async logging of generated trade signals.
