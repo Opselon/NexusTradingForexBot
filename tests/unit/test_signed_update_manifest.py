@@ -31,10 +31,10 @@ from nexus_scalp.release.signing import (
     build_manifest,
     canonical_manifest_bytes,
     sign_manifest,
+    trusted_keys,
     verify_manifest_signature,
     verify_payload_against_manifest,
 )
-from nexus_scalp.release.signing import trusted_keys
 
 
 # ---------------------------------------------------------------------------
