@@ -529,9 +529,21 @@ class ScalpFeatureEngine:
         current_tick: TickData,
         benchmark_bars: list[float] | None = None,
         current_benchmark: float | None = None,
+        *,
+        htf_lists: dict[int, list[BarData]] | None = None,
     ) -> FeatureVector:
         """
         Hot-path execution computing 50D master feature tensor directly from recent history.
+
+        ``htf_lists`` (optional, BUG-106 PHASE-2): pre-aggregated M15/M30/H1/H4
+        bar lists keyed by period (15/30/60/240) for the causal window passed
+        in ``completed_bars``. When supplied, the internal ``aggregate_bars``
+        calls are skipped and these lists are used verbatim — they MUST be
+        byte-identical to what ``aggregate_bars(completed_bars, period)``
+        would produce (the dataset builder guarantees this via
+        ``_FastHTFState.window``; parity is pinned by
+        tests/unit/test_bug106_phase2_optimization.py). Live callers never
+        pass it and keep the canonical re-aggregation per tick.
         """
         mid_price = (current_tick.bid + current_tick.ask) / 2.0
 
@@ -754,10 +766,18 @@ class ScalpFeatureEngine:
         cross_asset_z_score = float((mid_price - mu_20) / (sigma_20 + epsilon))
 
         # 9. Group 8: True Multi-Timeframe Context Features [NEW]
-        m15_bars = aggregate_bars(completed_bars, 15)
-        m30_bars = aggregate_bars(completed_bars, 30)
-        h1_bars = aggregate_bars(completed_bars, 60)
-        h4_bars = aggregate_bars(completed_bars, 240)
+        # BUG-106 PHASE-2: htf_lists (pre-aggregated, builder-only fast path)
+        # or canonical per-tick aggregation — both produce identical lists.
+        if htf_lists is not None:
+            m15_bars = htf_lists[15]
+            m30_bars = htf_lists[30]
+            h1_bars = htf_lists[60]
+            h4_bars = htf_lists[240]
+        else:
+            m15_bars = aggregate_bars(completed_bars, 15)
+            m30_bars = aggregate_bars(completed_bars, 30)
+            h1_bars = aggregate_bars(completed_bars, 60)
+            h4_bars = aggregate_bars(completed_bars, 240)
 
         # H4 trend
         if len(h4_bars) >= 3:

@@ -38,6 +38,7 @@ tests/unit/test_70d_frame_incremental_phase19.py).
 
 from __future__ import annotations
 
+import bisect
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -68,7 +69,11 @@ from nexus_scalp.features.liquidity_engine import (
     internal_external_distances,
     liquidity_confluence,
 )
-from nexus_scalp.features.scalp_features import HTF_HISTORY_BARS, ScalpFeatureEngine
+from nexus_scalp.features.scalp_features import (
+    HTF_HISTORY_BARS,
+    ScalpFeatureEngine,
+    aggregate_bars,
+)
 from nexus_scalp.market_data.bar_aggregator import BarData
 
 #: Bounded lookback for detect_reactive_sweep (BUG-106): the detector only
@@ -139,6 +144,37 @@ def _session_ranges(decision: datetime) -> tuple[datetime, datetime]:
 
 #: Max retained swing pools per side (BUG-106 bounded retention).
 POOL_RETENTION: int = 200
+
+
+class _PoolEvidenceRun:
+    """Cursor state for one pool's monotone evidence scan (BUG-106 PHASE-2).
+
+    All predicates evaluated over the bar sequence (touch / sweep evidence /
+    reclaim evidence) are monotone: once true they stay true. The run caches
+    the highest bar index already scanned (``k_done``) plus the accumulated
+    evidence, so advancing to a later decision only needs the new slice.
+    """
+
+    __slots__ = (
+        "confirmed_at",
+        "k_done",
+        "last_touched",
+        "price",
+        "reclaimed",
+        "side",
+        "swept",
+        "touches",
+    )
+
+    def __init__(self, price: float, side: Any, confirmed_at: datetime) -> None:
+        self.price = price
+        self.side = side
+        self.confirmed_at = confirmed_at
+        self.k_done: int = -1
+        self.touches: int = 0
+        self.swept: bool = False
+        self.reclaimed: bool = False
+        self.last_touched: datetime | None = None
 
 
 class IncrementalLiquidityState:
@@ -257,51 +293,80 @@ class IncrementalLiquidityState:
 
     def pools_visible_at(self, decision: datetime, atr: float) -> list[LiquidityPool]:
         """All confirmed pools with confirmed_at <= decision, state recomputed
-        with the CURRENT atr (byte-identical to canonical update_pool_states)."""
+        with the CURRENT atr (byte-identical to canonical update_pool_states).
+
+        BUG-106 PHASE-2 (2026-09-07): the per-pool evidence scan is CURSOR-
+        INCREMENTAL. Every predicate here is monotone over the bar sequence
+        (a touch/sweep/reclaim once observed stays observed), so the state at
+        decision k is fully determined by evidence scanned up to the previous
+        decision plus the slice (k_prev, k]. Each pool keeps a cursor
+        (``_pool_runs``) and rescans only the new bars; the resolved state,
+        touch count and last_touched_at are byte-identical to a full-history
+        rescan (verified per-row against the canonical scan on real data and
+        pinned by tests/unit/test_bug106_phase2_optimization.py).
+        """
         safe_atr = max(atr, MIN_ATR)
         tol = safe_atr * TOUCH_PROXIMITY_ATR
         k = self._bar_index_at(decision)
+        runs = getattr(self, "_pool_runs", None)
+        if runs is None:
+            runs = {}
+            self._pool_runs = runs
         out: list[LiquidityPool] = []
-        for p in self.all_pools:
+        for idx, p in enumerate(self.all_pools):
             if p.confirmed_at > decision:
                 continue  # not confirmed yet at this decision (canonical vis)
+            run = runs.get(idx)
+            if (
+                run is None
+                or run.price != p.price
+                or run.side != p.side
+                or run.confirmed_at != p.confirmed_at
+            ):
+                run = _PoolEvidenceRun(p.price, p.side, p.confirmed_at)
+                runs[idx] = run
             c = self._first_bar_index_at_or_after(p.confirmed_at)
             if c > k:
                 out.append(p)
                 continue
-            hi_slice = self.highs[c : k + 1]
-            lo_slice = self.lows[c : k + 1]
-            cl_slice = self.closes[c : k + 1]
-            if p.side == PoolSide.BSL:
-                touches = int((hi_slice >= p.price - tol).sum())
-                sweep_evidence = bool(
-                    (
-                        (hi_slice > p.price)
-                        & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)
-                    ).any()
-                )
-                reclaim_evidence = bool(
-                    (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any()
-                )
-            else:
-                touches = int((lo_slice <= p.price + tol).sum())
-                sweep_evidence = bool(
-                    (
-                        (lo_slice < p.price)
-                        & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)
-                    ).any()
-                )
-                reclaim_evidence = bool(
-                    (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any()
-                )
+            start = max(run.k_done + 1, c)
+            if start <= k:
+                hi_slice = self.highs[start : k + 1]
+                lo_slice = self.lows[start : k + 1]
+                cl_slice = self.closes[start : k + 1]
+                if p.side == PoolSide.BSL:
+                    run.touches += int((hi_slice >= p.price - tol).sum())
+                    if bool(
+                        (
+                            (hi_slice > p.price)
+                            & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)
+                        ).any()
+                    ):
+                        run.swept = True
+                    if bool((cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any()):
+                        run.reclaimed = True
+                else:
+                    run.touches += int((lo_slice <= p.price + tol).sum())
+                    if bool(
+                        (
+                            (lo_slice < p.price)
+                            & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)
+                        ).any()
+                    ):
+                        run.swept = True
+                    if bool((cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any()):
+                        run.reclaimed = True
+                if run.touches and run.last_touched is None:
+                    run.last_touched = self.times[c]
+                run.k_done = k
             state = PoolState.CONFIRMED
             last_touched = p.last_touched_at
-            if touches:
+            if run.touches:
                 state = PoolState.TOUCHED
-                last_touched = last_touched or self.times[c]
-            if sweep_evidence and touches:
+                last_touched = run.last_touched
+            if run.swept and run.touches:
                 state = PoolState.SWEPT
-            if sweep_evidence and reclaim_evidence:
+            if run.swept and run.reclaimed:
                 state = PoolState.RECLAIMED
             out.append(
                 LiquidityPool(
@@ -315,7 +380,7 @@ class IncrementalLiquidityState:
                     last_touched_at=last_touched,
                     state=state,
                     active=state not in (PoolState.INVALIDATED,),
-                    touch_count=touches,
+                    touch_count=run.touches,
                 )
             )
         return out
@@ -556,6 +621,99 @@ class IncrementalLiquidityState:
         return _clip3(float(np.tanh(sum(scores))) * 3.0)
 
 
+class _FastHTFState:
+    """Prefix-stable HTF aggregation cache (BUG-106 PHASE-2).
+
+    ``compute_from_bars`` re-aggregates the SAME causal M1 bar list for
+    four HTF periods (M15/M30/H1/H4) on every row - with the 4000-bar
+    causal window that is ~60% of total build time. Every per-row window
+    is a contiguous slice of the SAME ``all_bars`` list, so the four
+    full-history aggregations are computed ONCE and each per-row HTF list
+    is rebuilt in O(log n + bucket) via bisect + partial-bucket
+    reconstruction:
+
+    * closed buckets = full-aggregation buckets with
+      ``timestamp + period <= decision + 1 bar`` (buckets never change
+      once closed, so the prefix equals canonical window aggregation);
+    * buckets entirely BEFORE the window start are dropped;
+    * the leading straddling bucket is rebuilt from the window bars;
+    * the trailing in-progress bucket (containing the decision bar) is
+      rebuilt from the window bars.
+
+    Byte-identity to ``aggregate_bars(window)`` is pinned by
+    tests/unit/test_bug106_phase2_optimization.py (random-window parity
+    against the canonical function on real data). Windows that are NOT
+    contiguous slices of the registered bar list fall back to the
+    canonical function (correct for any foreign caller).
+    """
+
+    PERIODS: tuple[int, ...] = (15, 30, 60, 240)
+
+    def __init__(self, all_bars: list[BarData]) -> None:
+        self._index = {id(b): i for i, b in enumerate(all_bars)}
+        self._full: dict[int, list[BarData]] = {}
+        self._ts: dict[int, list[datetime]] = {}
+        for period in self.PERIODS:
+            agg = aggregate_bars(all_bars, period)
+            self._full[period] = agg
+            self._ts[period] = [b.timestamp for b in agg]
+
+    @staticmethod
+    def _bucket_start(ts: datetime, period: int) -> datetime:
+        total_min = int(ts.timestamp()) // 60
+        return datetime.fromtimestamp(((total_min // period) * period) * 60, tz=UTC)
+
+    def _rebuild(
+        self, m1_bars: list[BarData], period: int, ts: datetime, seg: list[BarData]
+    ) -> BarData:
+        return BarData(
+            symbol=m1_bars[-1].symbol,
+            timeframe=f"M{period}" if period < 60 else f"H{period // 60}",
+            timestamp=ts,
+            open=seg[0].open,
+            high=max(b.high for b in seg),
+            low=min(b.low for b in seg),
+            close=seg[-1].close,
+            tick_volume=sum(b.tick_volume for b in seg),
+            is_complete=True,
+        )
+
+    def window(self, m1_bars: list[BarData], period: int) -> list[BarData]:
+        lo = self._index.get(id(m1_bars[0])) if m1_bars else None
+        hi = self._index.get(id(m1_bars[-1])) if m1_bars else None
+        if lo is None or hi is None or hi < lo or period not in self._full:
+            return aggregate_bars(m1_bars, period)
+        decision = m1_bars[-1].timestamp
+        win_start = m1_bars[0].timestamp
+        close_cutoff = decision + timedelta(minutes=1)
+        limit = close_cutoff - timedelta(minutes=period)
+        ts_list = self._ts[period]
+        k = bisect.bisect_right(ts_list, limit)
+        out = list(self._full[period][:k])
+        cut = 0
+        while cut < len(out) and out[cut].timestamp + timedelta(minutes=period) <= win_start:
+            cut += 1
+        out = out[cut:]
+        if out and out[0].timestamp < win_start:
+            fs = out[0].timestamp
+            fe = fs + timedelta(minutes=period)
+            seg = [b for b in m1_bars if fs <= b.timestamp < fe]
+            if seg:
+                out[0] = self._rebuild(m1_bars, period, fs, seg)
+            else:
+                out.pop(0)
+        cur_start = self._bucket_start(decision, period)
+        if cur_start + timedelta(minutes=period) > close_cutoff:
+            seg = [b for b in m1_bars if b.timestamp >= cur_start]
+            if seg:
+                nb = self._rebuild(m1_bars, period, cur_start, seg)
+                if out and out[-1].timestamp == cur_start:
+                    out[-1] = nb
+                else:
+                    out.append(nb)
+        return out
+
+
 def compute_70d_frame_fast(
     df: pl.DataFrame,
     *,
@@ -608,6 +766,9 @@ def compute_70d_frame_fast(
 
     news_enabled = news_frame is not None and not news_frame.is_empty()
     lstate = IncrementalLiquidityState(all_bars)
+    # BUG-106 PHASE-2: prefix-stable HTF aggregation (computed once, reused
+    # for every row) + identity-guarded fast path inside aggregate_bars.
+    htf_state = _FastHTFState(all_bars)
     rows: list[dict[str, Any]] = []
     for i in range(n):
         if i + 1 < min_bars:
@@ -625,7 +786,8 @@ def compute_70d_frame_fast(
         # BUG-234: HTF window parity — pass full causal history so h1/m30
         # train == live. Base features still see only the last 55 (engine slices internally).
         fv_window = all_bars[max(0, i + 1 - HTF_HISTORY_BARS) : i + 1]
-        fv = engine.compute_from_bars(fv_window, tick)
+        htf_lists = {p: htf_state.window(fv_window, p) for p in _FastHTFState.PERIODS}
+        fv = engine.compute_from_bars(fv_window, tick, htf_lists=htf_lists)
         x50 = fv.to_tensor_input()
 
         # --- liquidity: incremental, same semantics ---
