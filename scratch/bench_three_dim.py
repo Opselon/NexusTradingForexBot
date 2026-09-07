@@ -6,10 +6,14 @@ friction_usd=0.35), same rows, same purged/embargoed folds, same seed - ONLY
 the feature prefix width differs:
 
     50D = feat_0..49   (scalp_v1 base block)
-    60D = feat_0..59   (base + news block; news was disabled when this dataset
-                        was built, so feat_50..59 are the neutral zeros the
-                        canonical builder wrote - the honest no-news 60D)
-    70D = feat_0..69   (base + news + liquidity, the canonical contract)
+    60D = feat_0..59   (base + the NEWS block, which is ALL-ZERO in this
+                        dataset - verified feat_50..59 == 0.0. This arm is
+                        "50D + 10 dead inputs", a DEAD-INPUT ablation, NOT
+                        canonical scalp_v2: canonical scalp_v2's feat_50..59
+                        are compute_60d_extras, semantically different.
+                        A true scalp_v2 arm requires build_60d_dataset from
+                        raw bars - separate budgeted run.)
+    70D = feat_0..69   (base + news(zeros) + liquidity, canonical scalp_v3)
 
 Metrics-only runs: this driver's trainer subclass (a) skips artifact
 publication (the canonical emission gate hard-locks published artifacts to
