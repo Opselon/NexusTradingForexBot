@@ -187,7 +187,12 @@ def _live_sizing_volume(equity: float, entry: float, sl: float, risk_pct: float)
     ],
 )
 def test_sizing_matches_live_risk_engine(equity: float, entry: float, sl: float, risk_pct: float) -> None:
-    """Same inputs -> same sizing decision as the live engine (no drift)."""
+    """Same inputs -> same sizing decision as the live engine (no drift).
+
+    The confidence factor feeds the canonical CALIBRATED multiplier bounded
+    [0.25, 1.0] (de-risk only). confidence=1.0 maps to exactly 1.0, so this
+    matrix compares the raw risk path against the live engine 1:1.
+    """
     from nexus_scalp.research.economics import compute_sizing
 
     decision = compute_sizing(
@@ -197,7 +202,7 @@ def test_sizing_matches_live_risk_engine(equity: float, entry: float, sl: float,
         peak_equity=equity,  # no drawdown: raw risk sizing
         entry=entry,
         stop_loss=sl,
-        confidence=0.85,  # neutral scalar: exactly 1.0 (the live divisor)
+        confidence=1.0,  # canonical multiplier: calibrated(1.0) -> exactly 1.0
         regime=None,
     )
     live = _live_sizing_volume(equity, entry, sl, risk_pct)
@@ -205,7 +210,8 @@ def test_sizing_matches_live_risk_engine(equity: float, entry: float, sl: float,
 
 
 def test_sizing_confidence_factor_matches_live() -> None:
-    """confidence 0.85 -> scalar 1.0; volume equals raw live risk sizing."""
+    """confidence 1.0 -> calibrated multiplier exactly 1.0; the flat path
+    matches the live engine's NOT_CALIBRATED sizing."""
     from nexus_scalp.research.economics import compute_sizing
 
     decision = compute_sizing(
@@ -215,12 +221,26 @@ def test_sizing_confidence_factor_matches_live() -> None:
         peak_equity=10000.0,
         entry=2000.0,
         stop_loss=1998.0,
-        confidence=0.85,
+        confidence=1.0,
         regime=None,
     )
     assert decision.factors["confidence"] == 1.0
     live = _live_sizing_volume(10000.0, 2000.0, 1998.0, 1.0)
     assert decision.volume == pytest.approx(live)
+    # mid confidence de-risks to the midpoint of [0.25, 1.0]
+    mid = compute_sizing(
+        policy=SizingPolicy(base_risk_pct=1.0),
+        instrument=InstrumentEconomics(),
+        equity=10000.0,
+        peak_equity=10000.0,
+        entry=2000.0,
+        stop_loss=1998.0,
+        confidence=0.5,
+        regime=None,
+    )
+    assert mid.factors["confidence"] == pytest.approx(0.625)
+    live_mid = _live_sizing_volume(10000.0, 2000.0, 1998.0, 0.625)
+    assert mid.volume == pytest.approx(live_mid)
 
 
 def test_sizing_drawdown_penalty_is_causal_and_matches_live_formula() -> None:
@@ -234,7 +254,7 @@ def test_sizing_drawdown_penalty_is_causal_and_matches_live_formula() -> None:
         peak_equity=10000.0,
         entry=2000.0,
         stop_loss=1998.0,
-        confidence=0.85,
+        confidence=1.0,  # flat calibrated multiplier
         regime=None,
     )
     assert decision.factors["drawdown"] == pytest.approx(0.6)
@@ -248,7 +268,7 @@ def test_sizing_drawdown_penalty_is_causal_and_matches_live_formula() -> None:
         peak_equity=10000.0,
         entry=2000.0,
         stop_loss=1998.0,
-        confidence=0.85,
+        confidence=1.0,
         regime=None,
     )
     assert deep.factors["drawdown"] == 0.2
@@ -266,7 +286,7 @@ def test_sizing_regime_scalar_vol_expansion() -> None:
         peak_equity=10000.0,
         entry=2000.0,
         stop_loss=1998.0,
-        confidence=0.85,
+        confidence=1.0,  # flat calibrated multiplier
         regime="VOLATILITY_EXPANSION",
     )
     assert decision.factors["regime"] == 0.5
