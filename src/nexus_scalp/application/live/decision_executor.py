@@ -74,8 +74,7 @@ class DecisionExecutor:
                 }
             )
             logger.info(
-                "[SHADOW_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED "
-                "suppressed_action=%s ticket=%s",
+                "[SHADOW_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED suppressed_action=%s ticket=%s",
                 _shadow_action.value,
                 getattr(proposal, "ticket", 0) or 0,
             )
@@ -156,9 +155,7 @@ class DecisionExecutor:
                                     ("ny", bool(getattr(fv_snap, "session_ny", False))),
                                     (
                                         "ov",
-                                        bool(
-                                            getattr(fv_snap, "session_overlap_london_ny", False)
-                                        ),
+                                        bool(getattr(fv_snap, "session_overlap_london_ny", False)),
                                     ),
                                 )
                                 if flag
@@ -166,19 +163,12 @@ class DecisionExecutor:
                             or "?"
                         )
                         setup_snapshot = {
-                            "execution_mode": str(
-                                getattr(policy_decision, "execution_mode", "")
-                            ),
+                            "execution_mode": str(getattr(policy_decision, "execution_mode", "")),
                             "model_action": str(getattr(policy_decision, "model_action", "")),
-                            "htf_score": float(
-                                getattr(policy_decision, "htf_score", 0.0) or 0.0
-                            ),
-                            "smc_score": float(
-                                getattr(policy_decision, "smc_score", 0.0) or 0.0
-                            ),
+                            "htf_score": float(getattr(policy_decision, "htf_score", 0.0) or 0.0),
+                            "smc_score": float(getattr(policy_decision, "smc_score", 0.0) or 0.0),
                             "conf_before": float(
-                                getattr(policy_decision, "confidence_before_filters", 0.0)
-                                or 0.0
+                                getattr(policy_decision, "confidence_before_filters", 0.0) or 0.0
                             ),
                             "conf_after": float(
                                 getattr(policy_decision, "confidence_after_filters", 0.0) or 0.0
@@ -189,14 +179,10 @@ class DecisionExecutor:
                             "sell_prob": float(
                                 getattr(policy_decision, "sell_probability", None) or 0.0
                             ),
-                            "disp": float(
-                                getattr(fv_snap, "live_tick_displacement", 0.0) or 0.0
-                            ),
+                            "disp": float(getattr(fv_snap, "live_tick_displacement", 0.0) or 0.0),
                             "atr": float(getattr(fv_snap, "atr_m1", 0.0) or 0.0),
                             "trend": float(getattr(fv_snap, "trend_strength", 0.0) or 0.0),
-                            "sweep_sig": int(
-                                getattr(fv_snap, "liquidity_sweep_signal", 0) or 0
-                            ),
+                            "sweep_sig": int(getattr(fv_snap, "liquidity_sweep_signal", 0) or 0),
                             "ob_type": int(getattr(fv_snap, "order_block_type", 0) or 0),
                             "fvg_bull": bool(getattr(fv_snap, "fvg_bullish_active", False)),
                             "fvg_bear": bool(getattr(fv_snap, "fvg_bearish_active", False)),
@@ -204,18 +190,14 @@ class DecisionExecutor:
                             "choch_bear": bool(getattr(fv_snap, "choch_bearish", False)),
                             "broke_high": bool(getattr(fv_snap, "broke_previous_high", False)),
                             "broke_low": bool(getattr(fv_snap, "broke_previous_low", False)),
-                            "z_score": float(
-                                getattr(fv_snap, "cross_asset_z_score", 0.0) or 0.0
-                            ),
+                            "z_score": float(getattr(fv_snap, "cross_asset_z_score", 0.0) or 0.0),
                             "h4": float(getattr(fv_snap, "htf_h4_trend", 0.0) or 0.0),
                             "h1": float(getattr(fv_snap, "htf_h1_momentum", 0.0) or 0.0),
                             "m30": float(getattr(fv_snap, "htf_m30_structure", 0.0) or 0.0),
                             "m15": float(getattr(fv_snap, "htf_m15_confirmation", 0.0) or 0.0),
                             "session": session,
                             "guardian": str(getattr(policy_decision, "guardian_status", "")),
-                            "rr": float(
-                                getattr(policy_decision, "risk_reward_ratio", 0.0) or 0.0
-                            ),
+                            "rr": float(getattr(policy_decision, "risk_reward_ratio", 0.0) or 0.0),
                         }
                     except Exception as snap_err:
                         logger.warning("[ENTRY] setup snapshot failed", error=str(snap_err))
