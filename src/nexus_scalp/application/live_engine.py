@@ -87,6 +87,7 @@ from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
+from nexus_scalp.model_lifecycle.dataset_snapshot import TrainingDatasetSnapshotStore
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
 from nexus_scalp.model_lifecycle.persist_decision import decision_of
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
@@ -1156,6 +1157,29 @@ class LiveEngine:
         )
         self._shadow_worker_started: bool = False
         self._shadow_challenger: ChallengerRuntime | None = None
+
+        # =====================================================================
+        # LEARNING-LOOP CLOSURE (P1): config-gated LearningCycleOrchestrator.
+        # Default behavior: learning disabled -> the orchestrator exists but
+        # refuses every cycle (fail-closed). When learning.enabled=true the
+        # lifecycle may trigger ONLY under all existing guards (dataset-state
+        # watermark, bounded concurrency, snapshot integrity, handoff
+        # safeguards). Shadow attachment is delegated through the narrow
+        # _attach_learning_candidate callback (no LiveEngine object is passed
+        # into the orchestrator). Online fine-tune remains governed by
+        # _online_finetune_enabled (default False) — unrelated to this.
+        # =====================================================================
+        from nexus_scalp.model_lifecycle.learning_config import LearningConfig
+        from nexus_scalp.model_lifecycle.learning_loop import LearningCycleOrchestrator
+
+        self.learning_config: LearningConfig = self.config.learning or LearningConfig()
+        self.learning_cycle_orchestrator = LearningCycleOrchestrator(
+            audit_repo=self.audit,
+            ledger=self.experience_ledger,
+            orchestrator=self.model_lifecycle_orchestrator,
+            config=self.learning_config,
+            snapshot_store=TrainingDatasetSnapshotStore(),
+        )
 
         # =================================================================
         # TASK-6: LIVE MODEL GOVERNANCE (CHG-0003)
@@ -3571,6 +3595,112 @@ class LiveEngine:
 
         finally:
             self._retrain_inflight = False
+
+    # ------------------------------------------------------------------
+    # LEARNING-LOOP HANDOFF (P1): narrow callback for the learning cycle.
+    # ------------------------------------------------------------------
+
+    def request_learning_cycle(
+        self,
+        *,
+        trigger: str = "operator",
+        num_epochs: int = 3,
+        hyperparameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Runs ONE governed learning cycle behind config.learning (P1).
+
+        Contract (narrow — no LiveEngine object crosses the boundary):
+          * learning disabled -> refused with an explicit reason (default).
+          * a cycle in flight -> refused (idempotent, no stacking).
+          * online fine-tune unaffected: _online_finetune_enabled stays the
+            ONLY gate for the direct serving-artifact path (default False).
+          * shadow attach is delegated to _attach_learning_candidate, which
+            reuses the EXISTING attach path (load_challenger +
+            ShadowEngine.attach_challenger/start_run) — no parallel attach
+            implementation, and ONLY when learning.shadow.enabled=true.
+          * promotion is NEVER triggered here; the challenger merely becomes
+            registry-CHALLENGER (shadow-eligible) and waits for the operator.
+        """
+        if self._retrain_inflight:
+            return {"cycle": None, "blocked": "another training is in flight"}
+        self._retrain_inflight = True
+        try:
+            return self.learning_cycle_orchestrator.run_cycle(
+                trigger=trigger,
+                shadow_attach=self._attach_learning_candidate
+                if self.learning_config.shadow.enabled
+                else None,
+                num_epochs=num_epochs,
+                hyperparameters=hyperparameters,
+            )
+        finally:
+            self._retrain_inflight = False
+
+    def _attach_learning_candidate(
+        self,
+        cycle_id: str,
+        candidate_model_id: str,
+        artifact_path: str,
+    ) -> str:
+        """Shadow attach for a VALIDATED challenger (learning-loop P1).
+
+        Reuses the existing attach path exactly as /api/models/shadow/attach:
+        10-gate load gate -> load_challenger -> ShadowEngine.attach_challenger
+        -> start_run. Raises on any failure so the cycle records BLOCKED.
+        """
+        from nexus_scalp.governance.load_gate import ModelLoadGate, read_manifest_file
+        from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
+        from nexus_scalp.shadow.challenger import load_challenger
+        from nexus_scalp.shadow.models import ShadowModelRef
+
+        path = Path(artifact_path)
+        scaler = Path(str(path) + ".scaler.npz")
+        registry = ModelLifecycleRegistry(
+            audit_repo=self.audit, model_registry=self.model_registry
+        )
+        row = registry.get_status(candidate_model_id, candidate_model_id)
+        status = str((row or {}).get("lifecycle_status", ""))
+        if status not in ("CHALLENGER", "CANDIDATE"):
+            raise RuntimeError(f"candidate registry status invalid: {status or 'MISSING'}")
+        manifest = read_manifest_file(path.parent / "model.json") or {}
+        gate = ModelLoadGate(db_path=self.audit._db_path).evaluate(
+            artifact_path=path,
+            scaler_path=scaler,
+            model_id=candidate_model_id,
+            model_version=candidate_model_id,
+            manifest=manifest,
+            lifecycle_state=status,
+        )
+        if not gate.passed:
+            raise RuntimeError(f"candidate load gate rejected: {gate.failing_gate}")
+        runtime = load_challenger(
+            artifact_path=path,
+            scaler_path=scaler,
+            model_id=candidate_model_id,
+            model_version=candidate_model_id,
+            live_schema_id=self.effective_feature_schema_id,
+            live_dimension=int(self.effective_feature_dim),
+        )
+        self._shadow_challenger = runtime
+        self.shadow_engine.attach_challenger(runtime)
+        champ = self.champion_manager.champion_or_none()
+        champ_ref = (
+            ShadowModelRef(
+                model_id=champ.model_id,
+                model_version=champ.model_version,
+                feature_schema_id=champ.feature_schema_id,
+                feature_dimension=champ.feature_dimension,
+                artifact_hash=champ.artifact_hash,
+                is_champion=True,
+            )
+            if champ
+            else ShadowModelRef(model_id="none", model_version="")
+        )
+        return self.shadow_engine.start_run(
+            run_id=None,
+            champion=champ_ref,
+            challenger_ref=runtime.ref or ShadowModelRef(model_id="none", model_version=""),
+        )
 
     @staticmethod
     def _refresh_artifact_integrity_metadata(model_path: Path) -> bool:
