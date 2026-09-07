@@ -30,6 +30,10 @@ from nexus_scalp.adapters.database.broker_history import (
 )
 from nexus_scalp.domain.models import AccountInfo, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.risk.runtime_safety import (
+    RUNTIME_RISK_STATE_VERSION,
+    PERSISTED_STATES,
+)
 
 logger = get_logger("nexus_scalp.adapters.audit_db")
 
@@ -129,6 +133,23 @@ class AuditRepository:
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
         self._running = False
         self._worker_thread: threading.Thread | None = None
+        # =====================================================================
+        # DATA-INTEGRITY METRICS (runtime safety mission, P0).
+        # Financial record loss MUST be observable. These counters are the
+        # canonical drop / dead-letter / backpressure surfaces consumed by
+        # debug_snapshot + the safety tests. Financial producers use bounded
+        # backpressure + durable overflow (never silent drops); telemetry
+        # producers remain dropable by design.
+        # =====================================================================
+        self.audit_batch_failures: int = 0
+        self.audit_dead_letter_rows: int = 0
+        self.audit_dropped_rows: int = 0
+        self.audit_salvaged_rows: int = 0
+        self.financial_queue_backpressure: int = 0
+        self.financial_events_overflowed: int = 0
+        self.financial_events_failed: int = 0
+        self.telemetry_dropped: int = 0
+        self._dead_letter_seq: int = 0
         # BUG-226: execution provenance of the account feeding this audit
         # stream ('LIVE' / 'PAPER' / 'SHADOW'). The engine sets this from the
         # effective mode; ledger + snapshot writes read it at write time so a
@@ -490,6 +511,338 @@ class AuditRepository:
         # mirrors the in-memory PaperMT5Adapter ledger so paper fills and
         # rejections survive restarts and parity can be measured from data.
         create_paper_executions_table(conn)
+
+        # =====================================================================
+        # RUNTIME SAFETY STATE (P0, runtime-safety mission): ONE canonical
+        # single-row store for durable safety decisions (HALT / KILL_SWITCH /
+        # RUNNING) + the durable audit dead-letter table. Atomic upserts;
+        # versioned for future migrations. See risk/runtime_safety.py for the
+        # pure policy contract; AuditRepository owns the ONLY persistence.
+        # =====================================================================
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS runtime_risk_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                version INTEGER NOT NULL DEFAULT 1,
+                state TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT '',
+                triggered_at TEXT NOT NULL DEFAULT '',
+                balance REAL NOT NULL DEFAULT 0.0,
+                equity REAL NOT NULL DEFAULT 0.0,
+                peak_equity REAL NOT NULL DEFAULT 0.0,
+                release_required INTEGER NOT NULL DEFAULT 1,
+                released_at TEXT,
+                release_actor TEXT,
+                consecutive_losses INTEGER NOT NULL DEFAULT 0
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_dead_letter (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                failed_at TEXT NOT NULL,
+                table_name TEXT NOT NULL DEFAULT '',
+                query TEXT NOT NULL DEFAULT '',
+                args_json TEXT NOT NULL DEFAULT '',
+                error_type TEXT NOT NULL DEFAULT '',
+                error_message TEXT NOT NULL DEFAULT '',
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                sequence_no INTEGER NOT NULL DEFAULT 0,
+                payload_note TEXT NOT NULL DEFAULT ''
+            );
+            """
+        )
+
+    # ---------------------------------------------------------------------
+    # RUNTIME SAFETY STATE (P0) — canonical durable store.
+    # One single-row table (id=1) holding the current safety decision.
+    # Writes are ATOMIC upserts: either the old valid row or the new valid
+    # row is visible — never a half-written state. HALT/KILL_SWITCH survive
+    # restart until release_runtime_risk_state() (explicit, audited).
+    # ---------------------------------------------------------------------
+
+    @staticmethod
+    def _json_safe_args(args: tuple[Any, ...]) -> str:
+        """Durable JSON encoding of a failed row's SQL args (dead-letter).
+
+        Never raises and never silently discards: a value that cannot be
+        serialized (binary blob, open handle, exotic object) is replaced by
+        a safe diagnostic envelope describing it, so the failing row is
+        still recoverable/replayable in identity.
+        """
+        safe: list[Any] = []
+        for value in args:
+            try:
+                json.dumps(value)
+                safe.append(value)
+            except Exception:
+                safe.append(
+                    {
+                        "__unserializable__": True,
+                        "type": type(value).__name__,
+                        "repr": repr(value)[:500],
+                    }
+                )
+        return json.dumps(safe, ensure_ascii=False, default=str)
+
+    def set_runtime_risk_state(
+        self,
+        *,
+        state: str,
+        reason: str = "",
+        source: str = "",
+        triggered_at: str = "",
+        balance: float = 0.0,
+        equity: float = 0.0,
+        peak_equity: float = 0.0,
+        release_required: bool = True,
+        consecutive_losses: int = 0,
+        version: int = RUNTIME_RISK_STATE_VERSION,
+    ) -> bool:
+        """Atomically persists the canonical runtime risk state (single row).
+
+        state must be a durable state ('RUNNING' | 'HALTED' | 'KILL_SWITCH').
+        Unknown states are refused (fail closed) — never persisted.
+        """
+        state_up = str(state or "").upper()
+        if state_up not in PERSISTED_STATES:
+            logger.error(
+                "runtime_risk_state refused unknown state=%r (fail closed)", state
+            )
+            return False
+        if not triggered_at:
+            from datetime import UTC, datetime
+
+            triggered_at = datetime.now(UTC).isoformat()
+        sql = """
+            INSERT INTO runtime_risk_state
+                (id, version, state, reason, source, triggered_at, balance,
+                 equity, peak_equity, release_required, consecutive_losses)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                version=excluded.version,
+                state=excluded.state,
+                reason=excluded.reason,
+                source=excluded.source,
+                triggered_at=excluded.triggered_at,
+                balance=excluded.balance,
+                equity=excluded.equity,
+                peak_equity=excluded.peak_equity,
+                release_required=excluded.release_required,
+                consecutive_losses=excluded.consecutive_losses,
+                released_at=NULL,
+                release_actor=NULL
+        """
+        args = (
+            int(version),
+            state_up,
+            str(reason or ""),
+            str(source or ""),
+            str(triggered_at),
+            float(balance),
+            float(equity),
+            float(peak_equity),
+            1 if release_required else 0,
+            int(consecutive_losses),
+        )
+        try:
+            with sqlite3.connect(self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")) as conn:
+                conn.execute(sql, args)
+                conn.commit()
+            return True
+        except Exception as e:
+            # NEVER swallow: a failed safety-state persist must be loud.
+            logger.error("runtime_risk_state persist FAILED state=%s error=%s", state_up, e)
+            return False
+
+    def get_runtime_risk_state(self) -> dict[str, Any] | None:
+        """Synchronous read of the persisted runtime risk state (None if unset)."""
+        if not self._is_sqlite:
+            return None
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT * FROM runtime_risk_state WHERE id = 1").fetchone()
+                return dict(row) if row is not None else None
+        except Exception as e:
+            logger.error("get_runtime_risk_state failed: %s", e)
+            return None
+
+    def release_runtime_risk_state(
+        self,
+        *,
+        actor: str,
+        note: str = "",
+        expected_state: str | None = None,
+    ) -> bool:
+        """Explicit, auditable release of a persisted safety halt.
+
+        Only this path (or the CLI wrapper) may clear HALTED / KILL_SWITCH.
+        Stamps release_actor + released_at durably; a restart/reconnect can
+        NEVER reach this code path. Idempotent: releasing an already-RUNNING
+        row re-stamps provenance without resurrecting a lost decision.
+        Refuses (returns False) when expected_state is given and mismatched.
+        """
+        current = self.get_runtime_risk_state()
+        if current is None:
+            logger.warning("runtime_risk_state release: no persisted state row")
+            return False
+        if expected_state is not None and str(current.get("state", "")).upper() != str(
+            expected_state
+        ).upper():
+            logger.error(
+                "runtime_risk_state release refused: expected=%s actual=%s",
+                expected_state,
+                current.get("state"),
+            )
+            return False
+        from datetime import UTC, datetime
+
+        sql = """
+            UPDATE runtime_risk_state
+            SET state='RUNNING',
+                release_required=0,
+                released_at=?,
+                release_actor=?,
+                reason=CASE WHEN ? != '' THEN reason || ' | RELEASED: ' || ? ELSE reason END
+            WHERE id=1
+        """
+        try:
+            with sqlite3.connect(self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")) as conn:
+                conn.execute(sql, (datetime.now(UTC).isoformat(), str(actor), str(note or ""), str(note or "")))
+                conn.commit()
+            logger.info(
+                "RUNTIME RISK STATE RELEASED actor=%s previous=%s note=%s",
+                actor,
+                current.get("state"),
+                note,
+            )
+            return True
+        except Exception as e:
+            logger.error("runtime_risk_state release FAILED actor=%s error=%s", actor, e)
+            return False
+
+    def record_dead_letter(
+        self,
+        *,
+        query: str,
+        args: tuple[Any, ...],
+        error: BaseException,
+        table_name: str = "",
+        retry_count: int = 0,
+        payload_note: str = "",
+    ) -> bool:
+        """Durably stores one failed audit row (dead-letter path).
+
+        Enough information to recover/replay: the SQL + safely-encoded args,
+        failure classification, timestamps and a producer note. Never raises;
+        on catastrophic failure the loss is still counted in metrics and
+        logged CRITICAL.
+        """
+        if not self._is_sqlite:
+            self.audit_dead_letter_rows += 1
+            return False
+        self._dead_letter_seq += 1
+        from datetime import UTC, datetime
+
+        err_type = type(error).__name__ if error is not None else "UnknownError"
+        err_msg = str(error)[:2000] if error is not None else ""
+        sql = """
+            INSERT INTO audit_dead_letter
+                (failed_at, table_name, query, args_json, error_type,
+                 error_message, retry_count, sequence_no, payload_note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        try:
+            # Derive table_name from the INSERT target when not provided.
+            derived = table_name
+            if not derived:
+                q = (query or "").strip().upper()
+                if q.startswith("INSERT INTO") or q.startswith("REPLACE INTO"):
+                    rest = query.strip()[len("INSERT INTO "):].split()[0] if q.startswith("INSERT INTO") else query.strip()[len("REPLACE INTO "):].split()[0]
+                    derived = rest.strip('"`[]')
+            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+                conn.execute(
+                    sql,
+                    (
+                        datetime.now(UTC).isoformat(),
+                        derived,
+                        str(query or "")[:8000],
+                        self._json_safe_args(args or ()),
+                        err_type,
+                        err_msg,
+                        int(retry_count),
+                        self._dead_letter_seq,
+                        str(payload_note or "")[:1000],
+                    ),
+                )
+                conn.commit()
+            self.audit_dead_letter_rows += 1
+            return True
+        except Exception as dl_err:
+            # Dead-letter persistence itself failed: the loss MUST be loud.
+            self.audit_dead_letter_rows += 1
+            logger.critical(
+                "DEAD-LETTER WRITE FAILED — financial record unrecoverable. "
+                "query=%s error_type=%s dl_error=%s",
+                (query or "")[:200],
+                err_type,
+                dl_err,
+            )
+            return False
+
+    def get_dead_letter_rows(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Reads dead-letter rows for inspection/tests (newest first)."""
+        if not self._is_sqlite:
+            return []
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT * FROM audit_dead_letter ORDER BY id DESC LIMIT ?",
+                    (int(limit),),
+                ).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error("get_dead_letter_rows failed: %s", e)
+            return []
+
+    def get_consecutive_losses(
+        self, limit: int = 100
+    ) -> tuple[int, str]:
+        """Canonical consecutive-loss chain from FINALIZED ledger outcomes.
+
+        Reads closed audit_ledger rows (newest first). Only finalized
+        financial outcomes participate: OPENED placeholders (no exit), rows
+        with NULL exit_price, and rejected/unfilled events are excluded by
+        the status filter — a loss can never be fabricated from telemetry.
+        Returns (count, newest_loss_close_time_iso).
+        """
+        if not self._is_sqlite:
+            return 0, ""
+        try:
+            from nexus_scalp.risk.runtime_safety import evaluate_consecutive_losses_with_time
+
+            with sqlite3.connect(self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT status, net_pnl_usd, COALESCE(NULLIF(close_time,''), timestamp) AS close_ts
+                    FROM audit_ledger
+                    WHERE status IN ('CLOSED','CLOSED_TP','CLOSED_SL','RECONCILED','MANUALLY_CLOSED')
+                      AND exit_price IS NOT NULL
+                    ORDER BY COALESCE(NULLIF(close_time,''), timestamp) DESC
+                    LIMIT ?
+                    """,
+                    (int(limit),),
+                ).fetchall()
+            return evaluate_consecutive_losses_with_time(
+                [(r[0], float(r[1] or 0.0), str(r[2] or "")) for r in rows]
+            )
+        except Exception as e:
+            logger.error("get_consecutive_losses failed: %s", e)
+            return 0, ""
 
     # ---------------------------------------------------------------------
     # Broker history sync (MT5 = broker truth, DB = durable normalized copy)
@@ -1476,12 +1829,50 @@ class AuditRepository:
                     for _ in batch:
                         q.task_done()
                 except Exception as e:
-                    logger.error("Audit Background Worker failed to insert batch", error=str(e))
-                    # Never leave the queue items un-accounted: a persistent
-                    # insert error must not deadlock every future join() caller
-                    # (including close()/shutdown). The failed items are
-                    # dropped (data loss is logged above) but task_done() is
-                    # still called so queue.join() can always return.
+                    # =================================================================
+                    # AUDIT BATCH RECOVERY (P0, runtime-safety mission).
+                    # The OLD behavior discarded the ENTIRE batch on any
+                    # error — one bad row silently destroyed up to 499 good
+                    # financial records. Recovery algorithm:
+                    #   1. retry records individually (salvage every good row);
+                    #   2. isolate permanently failing rows;
+                    #   3. dead-letter the failures DURABLY (audit_dead_letter
+                    #      table with query + args + error classification);
+                    #   4. count every outcome in observable metrics
+                    #      (audit_batch_failures / audit_salvaged_rows /
+                    #      audit_dead_letter_rows) — financial loss is never
+                    #      silent. task_done() is still called for every item
+                    #      so queue.join()/close() can always return.
+                    # =================================================================
+                    self.audit_batch_failures += 1
+                    salvaged = 0
+                    dead_lettered = 0
+                    with contextlib.suppress(Exception):
+                        conn.rollback()
+                    for failed_query, failed_args in batch:
+                        try:
+                            with conn:
+                                conn.execute(failed_query, failed_args)
+                            salvaged += 1
+                        except Exception as row_err:
+                            dead_lettered += 1
+                            self.record_dead_letter(
+                                query=failed_query,
+                                args=failed_args,
+                                error=row_err,
+                                retry_count=1,
+                                payload_note="audit worker batch-retry failure",
+                            )
+                    self.audit_salvaged_rows += salvaged
+                    logger.error(
+                        "Audit batch insert failed; recovery applied "
+                        "batch=%d salvaged=%d dead_lettered=%d error_type=%s error=%s",
+                        len(batch),
+                        salvaged,
+                        dead_lettered,
+                        type(e).__name__,
+                        str(e)[:500],
+                    )
                     for _ in batch:
                         q.task_done()
                     time.sleep(1.0)  # Backoff on error
@@ -1529,6 +1920,121 @@ class AuditRepository:
         reason = str(proposal.reason_code or "MODEL_SIGNAL")
         raw = "|".join([proposal.symbol, candle, model_action, stage, mode, reason])
         return f"sig_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]}"
+
+    # ---------------------------------------------------------------------
+    # CRITICALITY-AWARE ENQUEUE (P0, runtime-safety mission).
+    #
+    # Queue semantics MUST match data criticality:
+    #   * FINANCIAL events (signals, orders, executions, ledger open/close,
+    #     account snapshots) carry reconstruction truth — they use
+    #     bounded BACKPRESSURE (short blocking put) + a durable overflow
+    #     file when the audit writer cannot keep up. They are NEVER
+    #     silently dropped: every overflow/failure is counted in
+    #     financial_queue_backpressure / financial_events_overflowed /
+    #     financial_events_failed and the event survives on disk.
+    #   * TELEMETRY events (guard counters, diagnostics) remain dropable by
+    #     design — counted in telemetry_dropped.
+    # A bounded blocking timeout keeps INV-001 (hot path: no unbounded
+    # synchronous DB wait) intact: worst case costs one flush interval.
+    # ---------------------------------------------------------------------
+
+    _FINANCIAL_OVERFLOW_DIR = "artifacts/audit_overflow"
+
+    def _enqueue_financial(self, query: str, args: tuple[Any, ...]) -> None:
+        """Enqueue a CRITICAL FINANCIAL audit row. Never silently drops.
+
+        Order of defense:
+        1. bounded blocking put (backpressure — producer waits for capacity
+           up to ~2 flush intervals);
+        2. durable overflow file (the row survives even if the queue never
+           drains and the process dies);
+        3. metrics + CRITICAL log (observable loss of durability).
+        """
+        backpressured = False
+        if self._queue.qsize() >= 8000:
+            # Soft watermark: capacity pressure is observable even before
+            # any blocking starts.
+            self.financial_queue_backpressure += 1
+        try:
+            if self._queue.qsize() >= 9000:
+                self._queue.put((query, args), timeout=max(self._flush_interval * 2.0, 2.0))
+                backpressured = True
+            else:
+                self._queue.put_nowait((query, args))
+            if backpressured:
+                self.financial_queue_backpressure += 1
+                logger.warning(
+                    "Financial audit enqueue backpressured (queue near full; "
+                    "producer waited for capacity) qsize=%d",
+                    self._queue.qsize(),
+                )
+            return
+        except queue.Full:
+            self.financial_queue_backpressure += 1
+        except Exception as put_err:
+            self.financial_events_failed += 1
+            logger.error("Financial audit enqueue failed: %s", put_err)
+            self.record_dead_letter(
+                query=query, args=args, error=put_err, payload_note="enqueue exception"
+            )
+            return
+        # Queue stayed full past the bounded wait -> durable overflow file.
+        self.financial_events_overflowed += 1
+        self._write_financial_overflow(query, args, error=None)
+
+    def _write_financial_overflow(
+        self, query: str, args: tuple[Any, ...], error: BaseException | None
+    ) -> None:
+        """Persists one financial event to the durable overflow directory.
+
+        Best-effort: if even the filesystem refuses, the event is
+        dead-letter-counted and logged CRITICAL — never silently lost.
+        """
+        try:
+            from nexus_scalp.release.paths import get_runtime_workspace
+
+            overflow_dir = Path(get_runtime_workspace()) / self._FINANCIAL_OVERFLOW_DIR
+            overflow_dir.mkdir(parents=True, exist_ok=True)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            fname = f"overflow_{ts}_{self._dead_letter_seq:08d}.json"
+            self._dead_letter_seq += 1
+            payload = {
+                "failed_at": ts,
+                "query": query,
+                "args": self._json_safe_args(args),
+                "error": type(error).__name__ if error else "QUEUE_SATURATED",
+            }
+            (overflow_dir / fname).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            logger.critical(
+                "FINANCIAL AUDIT OVERFLOW — event persisted to durable overflow file %s "
+                "(queue saturated; accounting evidence preserved)",
+                fname,
+            )
+        except Exception as of_err:
+            self.financial_events_failed += 1
+            self.record_dead_letter(
+                query=query,
+                args=args,
+                error=error or of_err,
+                payload_note="overflow-file write failure",
+            )
+            logger.critical(
+                "FINANCIAL AUDIT EVENT COULD NOT BE DURABLY PRESERVED "
+                "(overflow file failed): %s",
+                of_err,
+            )
+
+    def _enqueue_telemetry(self, query: str, args: tuple[Any, ...]) -> None:
+        """Enqueue a NON-CRITICAL telemetry row: dropable by design.
+
+        Telemetry loss is observable (telemetry_dropped) but never blocks
+        the producer and never triggers fail-safe behavior.
+        """
+        try:
+            self._queue.put_nowait((query, args))
+        except queue.Full:
+            self.telemetry_dropped += 1
+            logger.error("Audit telemetry queue full — counter dropped (telemetry_dropped=%d)", self.telemetry_dropped)
 
     def log_signal(self, proposal: TradeProposal) -> None:
         """Zero-latency async logging of generated trade signals.
@@ -1667,10 +2173,7 @@ class AuditRepository:
             spread_usd,
         )
 
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            logger.error("Audit Signal Queue is full! Dropping telemetry.")
+        self._enqueue_financial(query, args)
 
     def _log_guard_telemetry(self, proposal: TradeProposal, reason_code: str) -> None:
         """Aggregates a guard/rejection event into a counter row (BUG-054).
@@ -1687,10 +2190,7 @@ class AuditRepository:
             DO UPDATE SET count = count + 1
         """
         args = (window, proposal.symbol, reason_code)
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            logger.error("Audit Guard Telemetry Queue is full! Dropping counter.")
+        self._enqueue_telemetry(query, args)
 
     def log_order(
         self,
@@ -1734,10 +2234,7 @@ class AuditRepository:
             datetime.now(UTC).isoformat(),
         )
 
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            logger.error("Audit Orders Queue is full! Dropping order log.")
+        self._enqueue_financial(query, args)
 
     def log_execution(self, order: TradeOrder, status: str) -> None:
         """Zero-latency async logging of order execution attempts."""
@@ -1762,10 +2259,7 @@ class AuditRepository:
             order.model_dump_json(),
         )
 
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            logger.error("Audit Execution Queue is full! Dropping execution log.")
+        self._enqueue_financial(query, args)
 
     def log_account_snapshot(self, account: AccountInfo, peak_equity: float) -> None:
         """
@@ -1809,10 +2303,7 @@ class AuditRepository:
             str(getattr(self, "current_account_source", "") or "LIVE"),
         )
 
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            pass
+        self._enqueue_financial(query, args)
 
     def log_ledger_opened(
         self,
@@ -1865,10 +2356,7 @@ class AuditRepository:
             float(initial_sl_price),
             str(account_source or ""),
         )
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            logger.error("Audit Ledger Queue full! Dropping ledger open log.")
+        self._enqueue_financial(query, args)
 
     def has_ledger_opened(self, ticket: int) -> bool:
         """
@@ -2324,10 +2812,7 @@ class AuditRepository:
             reversal_events_json or "[]",
             str(account_source or ""),
         )
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            logger.error("Audit Ledger Queue full! Dropping ledger close log.")
+        self._enqueue_financial(query, args)
 
     def get_account_performance_metrics(self) -> dict[str, Any]:
         """
