@@ -1,0 +1,207 @@
+name: Nightly Deep QA
+
+# QA HARDENING MISSION (2026-09-07) — scheduled deep-validation tier.
+#
+# Tier contract (mission §"CI POLICY MUST BE EXPLICIT"):
+#   FAST / PUSH   -> ci.yml quality job (compile, ruff, mypy, critical suite,
+#                    critical-file coverage floors, mutation smoke)
+#   NIGHTLY       -> THIS workflow (slow suite, lifecycle chaos scenarios,
+#                    mutation campaign, Telegram failure notification)
+#   WEEKLY        -> qa-deep-assurance.yml Sunday run (full adversarial layer)
+#
+# Everything here runs against CI fixtures only: no real broker, no MT5
+# terminal, no production data, no real Telegram account beyond the
+# existing advisory notifier (secrets via GitHub secrets, presence-only).
+
+on:
+  schedule:
+    # Nightly 01:17 UTC (off-peak; Iran local ~04:47)
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One nightly per ref; a new scheduled run supersedes a stuck old one.
+concurrency:
+  group: nightly-deep-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI_RESULTS_DIR: nightly-results
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  slow-suite:
+    name: Nightly slow suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Run slow suite (tests/slow_suite.txt)
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/slow"
+          # LF-pinned manifest; same parse contract as ci.yml critical gate.
+          SLOW_FILES=()
+          while IFS= read -r line || [[ -n "$line" ]]; do line="${line%%#*}"; line="$(echo "$line" | xargs)"; [[ -n "$line" ]] && SLOW_FILES+=("$line"); done < tests/slow_suite.txt
+          pytest "${SLOW_FILES[@]}" \
+                 -n auto --dist loadgroup \
+                 -q --tb=short \
+                 --junitxml="$CI_RESULTS_DIR/slow/junit.xml" \
+                 > "$CI_RESULTS_DIR/slow/pytest.txt" 2>&1
+          rc=$?
+          tail -20 "$CI_RESULTS_DIR/slow/pytest.txt"
+          echo "SLOW_SUITE_RC=$rc" >> "$GITHUB_ENV"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::nightly slow suite failed (rc=$rc)"
+          fi
+          exit 0
+
+      - name: Fail if slow suite failed
+        if: env.SLOW_SUITE_RC != '0'
+        run: exit 1
+
+      - name: Upload slow-suite results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-slow-suite-${{ github.run_number }}
+          path: ${{ env.CI_RESULTS_DIR }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  lifecycle-chaos:
+    name: Nightly lifecycle chaos (updater scenarios)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Lifecycle chaos scenarios (sandboxed)
+        # 21-scenario operator chaos matrix incl. update/backup/activate/
+        # verify/rollback/recovery paths. The suite sandboxes itself:
+        # temp LOCALAPPDATA/USERPROFILE/HOME, throwaway clones, sleeping
+        # child processes we own — never the operator's real profile,
+        # never production install paths, never a real engine/MT5.
+        run: |
+          pytest tests/unit/test_lifecycle_chaos.py `
+                 -q --tb=short `
+                 --junitxml="$CI_RESULTS_DIR/chaos/junit.xml" `
+                 > "$CI_RESULTS_DIR/chaos/pytest.txt" 2>&1
+          echo "CHAOS_RC=$LASTEXITCODE" >> "$GITHUB_ENV"
+          if ($LASTEXITCODE -ne 0) { echo "::error::lifecycle chaos failed" }
+
+      - name: Upload chaos evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-chaos-${{ github.run_number }}
+          path: |
+            ${{ env.CI_RESULTS_DIR }}/
+            artifacts/chaos/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  mutation-campaign:
+    name: Nightly mutation campaign (hybrid catalog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Mutation campaign (full catalog incl. contract mutations)
+        # HONESTY CONTRACT (honesty-v2): exit 0 = every verdict
+        # KILLED/ACCEPTED_SURVIVOR; exit 1 = unaccepted SURVIVED (test
+        # blind spot); exit 2 = INVALID battery/anchor (runner
+        # untrustworthy). ANY non-zero fails the nightly.
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/mutations"
+          python scripts/qa/run_mutations.py --out "$CI_RESULTS_DIR/mutations/report.json" \
+            > "$CI_RESULTS_DIR/mutations/stdout.json" 2> "$CI_RESULTS_DIR/mutations/stderr.txt"
+          rc=$?
+          echo "MUTATION_RC=$rc" >> "$GITHUB_ENV"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::mutation campaign failed (rc=$rc): survivors or invalid verdicts present"
+          fi
+          exit 0
+
+      - name: Fail if mutations survived
+        if: env.MUTATION_RC != '0'
+        run: exit 1
+
+      - name: Upload mutation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-mutations-${{ github.run_number }}
+          path: ${{ env.CI_RESULTS_DIR }}/
+          if-no-files-found: error
+          retention-days: 90
+
+  notify:
+    name: Nightly failure notification
+    needs: [slow-suite, lifecycle-chaos, mutation-campaign]
+    if: always() && (needs.slow-suite.result == 'failure' || needs.lifecycle-chaos.result == 'failure' || needs.mutation-campaign.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Telegram failure notification (advisory)
+        # Reuses the repo's canonical notifier: no credentials printed, no
+        # secrets in payloads, never fails CI. Absent secrets => no-op.
+        env:
+          NIGHTLY_STATUS: ${{ join(needs.*.result, ',') }}
+        run: |
+          python scripts/ci/telegram_notify.py release-failed \
+            --tag "nightly-${{ github.run_number }}" \
+            --failed-phase "nightly-deep-qa" \
+            --error-class "NIGHTLY_FAILURE" \
+            --error-detail "slow-suite=${{ needs.slow-suite.result }} chaos=${{ needs.lifecycle-chaos.result }} mutations=${{ needs.mutation-campaign.result }} ref=${{ github.ref_name }} sha=${{ github.sha }}" \
+            || true
