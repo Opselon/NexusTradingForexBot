@@ -61,6 +61,26 @@ CHECKLIST_EVIDENCE_KEYS: tuple[str, ...] = (
     "rollback_target",
 )
 
+#: ECON v1 economic-integrity evidence keys. These are evaluated by
+#: :meth:`economic_integrity` from the candidate's research evidence dict:
+#: every key must be EXPLICITLY True — a missing/None/False key fails the
+#: gate (fail-closed; no optimistic default substitution). A candidate may
+#: satisfy the technical checklist above and still be NON-PROMOTABLE when
+#: its economic world is unknown or frictionless.
+ECONOMIC_EVIDENCE_KEYS: tuple[str, ...] = (
+    "sizing_model_recorded",          # sizing policy identity present (ECON_V1)
+    "friction_assumptions_recorded",  # explicit friction, not silent zeros
+    "swap_assumptions_recorded",      # swap rates explicit (or evidence=none)
+    "training_decay_profile_recorded",  # full_train vs online decay identity
+    "convergence_evidence_recorded",  # epochs/best-epoch/early-stop metadata
+    "execution_profile_production_like",  # NOT frictionless research
+    "economic_pnl_basis_present",     # sized economic P&L view attached
+)
+
+#: Keys in CHECKLIST_EVIDENCE_KEYS whose evidence producer must ALSO record
+#: the economic integrity verdict before a candidate reaches READY_FOR_REVIEW.
+ECONOMIC_INTEGRITY_REQUIRED: bool = True
+
 
 class PromotionGateError(RuntimeError):
     """Raised when a promotion/rollback is blocked by a hard gate."""
@@ -339,6 +359,31 @@ class ModelGovernanceEngine:
             "checklist": CHECKLIST_EVIDENCE_KEYS,
         }
 
+    def economic_integrity(self, evidence: dict[str, Any]) -> dict[str, Any]:
+        """ECON v1: evaluates the economic-integrity evidence (fail-closed).
+
+        Every ECONOMIC_EVIDENCE_KEYS entry must be EXPLICITLY True. Missing,
+        None, False or non-boolean values all FAIL — the promotion layer must
+        never substitute optimistic defaults for absent provenance. Returns
+        the same shape as :meth:`promotion_checklist` so callers can compose
+        the two verdicts uniformly.
+        """
+        passed: list[str] = []
+        failed: list[str] = []
+        for key in ECONOMIC_EVIDENCE_KEYS:
+            v = evidence.get(key)
+            if v is True:
+                passed.append(key)
+            else:
+                failed.append(key)
+        return {
+            "passed": passed,
+            "failed": failed,
+            "ready_for_review": not failed,
+            "checklist": ECONOMIC_EVIDENCE_KEYS,
+            "verdict": "PROMOTABLE" if not failed else "NON_PROMOTABLE",
+        }
+
     def promote_to_review(
         self,
         *,
@@ -349,9 +394,22 @@ class ModelGovernanceEngine:
         source_commit: str = "",
         artifact_hash: str = "",
     ) -> PromotionTransition:
-        """SHADOW -> READY_FOR_REVIEW. Blocks unless the FULL checklist passes."""
+        """SHADOW -> READY_FOR_REVIEW. Blocks unless the FULL checklist passes.
+
+        ECON v1: when ECONOMIC_INTEGRITY_REQUIRED, the economic-integrity
+        verdict must ALSO pass (either recorded directly in the evidence as
+        ``economic_integrity_pass: True`` — produced by economic_integrity()
+        — or evaluated here from the same evidence dict). A candidate whose
+        economic world is unknown/frictionless can never reach review.
+        """
         check = self.promotion_checklist(evidence)
+        if check["ready_for_review"] and ECONOMIC_INTEGRITY_REQUIRED:
+            eco = self.economic_integrity(evidence)
+            check = dict(check)
+            check["ready_for_review"] = eco["ready_for_review"]
+            check["economic_failed"] = eco["failed"]
         if not check["ready_for_review"]:
+            failed_keys = list(check.get("failed", [])) + list(check.get("economic_failed", []))
             ev = GovernanceEvent(
                 event_id=f"ev_{uuid.uuid4().hex[:16]}",
                 event=GovernanceErrorCode.PROMOTION_BLOCKED.value,
@@ -362,10 +420,10 @@ class ModelGovernanceEngine:
                 previous_state=PromotionState.SHADOW.value,
                 new_state=PromotionState.READY_FOR_REVIEW.value,
                 reason="promotion checklist not satisfied",
-                payload={"failed": check["failed"]},
+                payload={"failed": failed_keys},
             )
             self.store.record_event(ev)
-            raise PromotionGateError(f"promotion checklist failed: {check['failed']}")
+            raise PromotionGateError(f"promotion checklist failed: {failed_keys}")
         return self.transition(
             model_id=model_id,
             model_version=model_version,

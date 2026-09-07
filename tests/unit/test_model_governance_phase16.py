@@ -691,6 +691,14 @@ class TestPromotionLifecycle:
             "latency_acceptable": True,
             "no_critical_anomalies": True,
             "rollback_target": True,
+            # ECON v1 economic-integrity evidence (fail-closed gate)
+            "sizing_model_recorded": True,
+            "friction_assumptions_recorded": True,
+            "swap_assumptions_recorded": True,
+            "training_decay_profile_recorded": True,
+            "convergence_evidence_recorded": True,
+            "execution_profile_production_like": True,
+            "economic_pnl_basis_present": True,
         }
         eng.transition(
             model_id="ch1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
@@ -884,6 +892,14 @@ class TestGovernance70:
                 "latency_acceptable",
                 "no_critical_anomalies",
                 "rollback_target",
+                # ECON v1 economic-integrity evidence (fail-closed gate)
+                "sizing_model_recorded",
+                "friction_assumptions_recorded",
+                "swap_assumptions_recorded",
+                "training_decay_profile_recorded",
+                "convergence_evidence_recorded",
+                "execution_profile_production_like",
+                "economic_pnl_basis_present",
             )
         }
         eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=ok_ev)
@@ -1116,6 +1132,14 @@ class TestGovernance70:
                 "latency_acceptable",
                 "no_critical_anomalies",
                 "rollback_target",
+                # ECON v1 economic-integrity evidence (fail-closed gate)
+                "sizing_model_recorded",
+                "friction_assumptions_recorded",
+                "swap_assumptions_recorded",
+                "training_decay_profile_recorded",
+                "convergence_evidence_recorded",
+                "execution_profile_production_like",
+                "economic_pnl_basis_present",
             )
         }
         eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=ok_ev)
