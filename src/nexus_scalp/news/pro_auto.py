@@ -367,11 +367,19 @@ def run_pro_auto_analysis_for_article(
     settings_service: Any | None = None,
     analyzer: LocalNewsAnalyzer | None = None,
     force: bool = False,
+    force_local: bool = False,
 ) -> dict[str, Any]:
     """Analyze ONE article in PRO mode (LLM via Factory, local fallback).
 
     Always ensures deterministic variables are set; also writes the AI layer
     when LLM succeeds. Returns a console-friendly result dict.
+
+    ``force_local`` (market-context P0 5A): deterministic high-impact
+    scheduled-release identities are analyzed by the LOCAL analyzer only —
+    the LLM is never called for them (cost cut, no signal loss: the release
+    facts are already deterministic). The AI layer row is stamped
+    via='local_deterministic' so the fallback stays DISTINGUISHABLE from
+    both real LLM sentiment and a budget-exhaustion fallback.
     """
     analyzer = analyzer or LocalNewsAnalyzer()
     row = db.get_article(article_id)
@@ -424,6 +432,22 @@ def run_pro_auto_analysis_for_article(
     provider = resolve_factory_provider(_eng_for_provider, svc2)
     llm_json: dict[str, Any] | None = None
     via = "local"
+
+    # MARKET-CONTEXT P0 5A/5B: deterministic high-impact identities skip the
+    # LLM entirely (facts are already deterministic — zero spend, zero drift
+    # surface). Distinct console kind keeps it observable and distinguishable
+    # from both LLM output and budget-exhaustion fallback.
+    if force_local:
+        provider = None
+        via = "local_deterministic"
+        _console_push(
+            {
+                "kind": "deterministic_skip",
+                "article_id": article_id,
+                "via": via,
+                "msg": "deterministic high-impact identity — LLM not required (cost guard)",
+            }
+        )
 
     if provider is not None:
         try:
@@ -777,6 +801,20 @@ def run_pro_cycle(
                         analysis_id=str(ex0.get("analysis_id", "")),
                     )
     pending = _ranked_pending(db, analyzer, raw_pending, limit)
+    # MARKET-CONTEXT P0 5A: articles deterministically tagged as obvious
+    # high-impact scheduled-release identities (CPI/NFP/FOMC/...) never need
+    # LLM sentiment — the local deterministic variables already carry the
+    # directional facts, and the calendar layer carries the event identity.
+    # Route them to LOCAL analysis first so a budget-constrained cycle can
+    # never waste spend re-stating what is already known. (No separate
+    # pipeline: same analyzer, same persistence; `via` is local by design.)
+    _deterministic_ids: set[str] = set()
+    try:
+        _deterministic_ids = {
+            str(t["article_id"]) for t in db.list_deterministic_high_impact(limit=200)
+        }
+    except Exception:
+        _deterministic_ids = set()
     # Keep true total for the status card (ranked slice is bounded by limit)
     total_pending = len(raw_pending)
     # Stash true total for logging before slicing limits upstream
@@ -815,6 +853,7 @@ def run_pro_cycle(
             engine=engine,
             settings_service=settings_service,
             analyzer=analyzer,
+            force_local=art["article_id"] in _deterministic_ids,
         )
         if res.get("ok"):
             if res.get("via") == "cached":

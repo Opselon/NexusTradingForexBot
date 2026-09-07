@@ -41,6 +41,10 @@ class MaintenanceCycle:
         self._parity_snapshot_interval_sec: float = 7 * 86400.0
         self._last_parity_export_time: float = 0.0
         self._last_parity_snapshot_time: float = 0.0
+        #: Daily operational digest cadence (mission 5) — state lives on the
+        #: composition root so both maintenance call sites share one throttle.
+        self._operational_digest_interval_sec: float = 24 * 3600.0
+        self._last_operational_digest_time: float = 0.0
 
     async def run_cycle(self, *, now_t: float) -> None:
         """Runs one maintenance pass (all stages internally throttled)."""
@@ -97,6 +101,26 @@ class MaintenanceCycle:
                 )
             except Exception as snap_err:
                 logger.warning("[PARITY] event=SNAPSHOT_FAILED (isolated)", error=str(snap_err))
+
+        # MISSION 5: compact OPERATIONAL digest (one message — mode,
+        # protections, drift, parity, rollbacks) alongside the existing deep
+        # performance report. Throttled to once per day, failure-isolated.
+        if (
+            now_t - self.om._last_operational_digest_time
+            >= self.om._operational_digest_interval_sec
+        ):
+            self.om._last_operational_digest_time = now_t
+            try:
+                from nexus_scalp.reporting.operational_digest import (
+                    build_operational_digest,
+                )
+
+                digest = await asyncio.to_thread(build_operational_digest, self.om)
+                if self.om.notifier.enabled:
+                    self.om.notifier.send(digest, severity="INFO", event_type="OPERATIONAL_DIGEST")
+                logger.info("[DIGEST] event=OPERATIONAL_DIGEST_BUILT")
+            except Exception as dig_err:
+                logger.warning("[DIGEST] event=BUILD_FAILED (isolated)", error=str(dig_err))
 
         # TASK-11 + TASK-22: database hygiene cycle (config-driven
         # cadence; AUDIT_ONLY first run, off the tick path via

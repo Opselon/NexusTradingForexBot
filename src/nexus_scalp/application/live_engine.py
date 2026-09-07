@@ -611,6 +611,10 @@ class LiveEngine:
         # Daily Telegram performance summary (BUG-057): once per 24h.
         self._daily_summary_interval_sec: float = 24 * 3600.0
         self._last_daily_summary_time: float = 0.0
+        # MISSION 5: compact operational digest throttle (composition-root
+        # state; MaintenanceCycle owns the logic and reads/writes these).
+        self._operational_digest_interval_sec: float = 24 * 3600.0
+        self._last_operational_digest_time: float = 0.0
         # TASK-11: database hygiene worker cycle (low frequency, off hot path).
         # First-run posture is AUDIT_ONLY (never deletes on debut); an operator
         # opts into SAFE_CLEAN --apply via the CLI. Idle scan ~6h, deep cycle
@@ -3792,6 +3796,18 @@ class LiveEngine:
             eng = TickPipeline(self)
             self._tick_pipeline_instance = eng
         return eng
+
+    def apply_command_intent(self, intent: dict) -> dict:
+        """Authenticated operator intent boundary (Telegram command bus).
+
+        INV-010: the Telegram layer never mutates canonical state itself;
+        intents route through the EXISTING authority layers here
+        (RiskEngine kill switch / governance rollback). Owned by
+        application/command_intent.py (seam extraction, keep-this-file-thin).
+        """
+        from nexus_scalp.application.command_intent import apply_command_intent as _apply
+
+        return _apply(self, intent)
 
     def _record_shadow_decision(
         self,
