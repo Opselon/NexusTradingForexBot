@@ -269,8 +269,8 @@ def test_current_70d_10_bug105_shadow_hook():
     registered on the live engine and independent of the 50D shadow gate."""
     import inspect
 
-    from nexus_scalp.application.live_engine import LiveEngine
     from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+    from nexus_scalp.application.live_engine import LiveEngine
 
     # L1 extraction: the hook's IMPLEMENTATION is owned by ShadowRecorder;
     # LiveEngine must delegate (registration contract) and the owner must
