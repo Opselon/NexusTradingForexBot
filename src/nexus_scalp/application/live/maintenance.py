@@ -267,6 +267,19 @@ class MaintenanceCycle:
             except Exception as wkr_err:
                 logger.warning("[RESEARCH_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
+        # Strategy-factory autonomous loop pump (factory-loop audit fix):
+        # tick() drives generate->validate->evaluate->complete through the
+        # SAME real research pipeline — but only when the operator explicitly
+        # started the autonomous loop (/api/factory/loop/start primes the
+        # worker pump). Bounded, thread-isolated, never touches execution.
+        if getattr(self.om, "_factory_worker_started", False) and getattr(
+            self.om, "strategy_factory_worker", None
+        ) is not None and self.om.strategy_factory_worker.running:
+            try:
+                self.om._kick_worker("FACTORY", self.om.strategy_factory_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[FACTORY_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
         # PHASE 10: controlled training worker kick (heavy CPU work is
         # bounded to worker threads; training can NEVER block ticks).
         if self.om._training_worker_started:
@@ -288,6 +301,36 @@ class MaintenanceCycle:
                 self.om._kick_worker("NEWS", self.om.news_worker.tick)
             except Exception as wkr_err:
                 logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # MARKET-CONTEXT P0: forward economic-calendar worker (lazy compose +
+        # kick). The worker composes ON TOP of the news engine's dedicated DB
+        # (news.db) so no new connection surface exists. Lifecycle: news
+        # enabled only (same operator toggle), throttled internally at its
+        # refresh interval; failure-isolated exactly like the news kick. The
+        # tick path reads ONLY the in-memory envelope via the /api/news/health
+        # observability leg and the event-gate policy consumer (INV-001).
+        if self.om._news_enabled and self.om._news_worker_started:
+            cal = getattr(self.om, "calendar_worker", None)
+            if cal is None:
+                try:
+                    from nexus_scalp.calendar.worker import CalendarWorker
+
+                    cal = CalendarWorker(
+                        self.om.news_engine.db,
+                        refresh_interval_sec=900.0,
+                    )
+                    self.om.calendar_worker = cal
+                    logger.info("[CALENDAR] event=COMPOSED (lazy, off tick path)")
+                except Exception as cal_err:
+                    logger.warning(
+                        "[CALENDAR] event=COMPOSE_FAILED (isolated) error=%s", cal_err
+                    )
+                    cal = None
+            if cal is not None:
+                try:
+                    self.om._kick_worker("CALENDAR", cal.tick)
+                except Exception as wkr_err:
+                    logger.warning("[CALENDAR] event=KICK_FAILED error=%s", wkr_err)
 
         # TASK-6: bounded governance health snapshot (~5 min cadence,
         # queued write, failure-isolated — never blocks ticks).
