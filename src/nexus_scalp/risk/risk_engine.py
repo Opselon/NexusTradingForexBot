@@ -513,6 +513,10 @@ class RiskEngine:
         # back conservative, never aggressive. The raw-confidence scaling
         # path is removed, not bypassed.
         if hasattr(proposal, "confidence"):
+            from nexus_scalp.model_lifecycle.calibration_identity import (
+                SERVING_CALIBRATION_PATH,
+                load_bound_calibrator,
+            )
             from nexus_scalp.model_lifecycle.confidence_calibration import (
                 ConfidenceCalibrator,
                 confidence_to_risk_multiplier,
@@ -520,11 +524,12 @@ class RiskEngine:
 
             calibrator: ConfidenceCalibrator | None = getattr(self, "_confidence_calibrator", None)
             if calibrator is None:
-                from pathlib import Path as _Path
-
-                calibrator = ConfidenceCalibrator.from_artifact(
-                    _Path("artifacts/models/scalp/XAUUSD/70d_liquidity/confidence_calibration.json")
-                )
+                # load_bound_calibrator ENFORCES the model-identity binding:
+                # a calibration artifact whose provenance fingerprint does
+                # not match the artifact currently being served is treated
+                # exactly like a missing artifact (NOT_CALIBRATED -> flat
+                # sizing). A curve can never silently survive a model swap.
+                calibrator = load_bound_calibrator(calibration_path=SERVING_CALIBRATION_PATH)
                 self._confidence_calibrator = calibrator
             calibrated_conf, cal_state = calibrator.calibrate(float(proposal.confidence))
             risk_multiplier = confidence_to_risk_multiplier(calibrated_conf, cal_state)

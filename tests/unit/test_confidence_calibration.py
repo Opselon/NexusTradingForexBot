@@ -83,6 +83,7 @@ def _complete_provenance(sample_count: int = MIN_CALIBRATION_SAMPLES) -> Calibra
     return CalibrationProvenance(
         model_version="test-model",
         calibration_dataset_id="ds_cal",
+        artifact_fingerprint="test-artifact-fingerprint",
         calibration_period_start="2026-01-01T00:00:00+00:00",
         calibration_period_end="2026-02-01T00:00:00+00:00",
         validation_dataset_id="ds_val",
@@ -134,6 +135,8 @@ def test_build_artifact_requires_sufficient_samples() -> None:
             calibration_dataset_id="a",
             validation_dataset_id="b",
             cal_start="t1", cal_end="t2", val_start="t3", val_end="t4",
+            calibration_is_oos=True,
+            validation_is_oos=True,
         )
 
 
@@ -153,6 +156,9 @@ def test_build_artifact_calibrates_and_measures() -> None:
         cal_end="2026-02-01T00:00:00+00:00",
         val_start="2026-02-01T00:00:00+00:00",
         val_end="2026-03-01T00:00:00+00:00",
+        artifact_fingerprint="abc123",
+        calibration_is_oos=True,
+        validation_is_oos=True,
     )
     assert set(art["params"]) == {"a", "b"}
     assert math.isfinite(art["params"]["a"]) and math.isfinite(art["params"]["b"])
@@ -178,6 +184,7 @@ def test_incomplete_provenance_is_not_calibrated() -> None:
     prov = CalibrationProvenance(
         model_version="",  # missing model identity
         calibration_dataset_id="ds",
+        artifact_fingerprint="",  # missing binding — also alone would suffice
         calibration_period_start="s", calibration_period_end="e",
         validation_dataset_id="ds2",
         validation_period_start="s", validation_period_end="e",
@@ -188,6 +195,21 @@ def test_incomplete_provenance_is_not_calibrated() -> None:
     )
     cal = ConfidenceCalibrator(params={"a": 1.0, "b": 0.0}, provenance=prov)
     assert cal.state == "NOT_CALIBRATED"
+    # Identity binding alone is mandatory: complete fields EXCEPT the
+    # artifact fingerprint must still be NOT_CALIBRATED (mission phase 7).
+    prov_nofp = CalibrationProvenance(
+        model_version="m", calibration_dataset_id="ds",
+        artifact_fingerprint="",
+        calibration_period_start="s", calibration_period_end="e",
+        validation_dataset_id="ds2",
+        validation_period_start="s", validation_period_end="e",
+        method="platt_logistic", created_at="now",
+        feature_schema_version="scalp_v3",
+        sample_count=MIN_CALIBRATION_SAMPLES,
+        validation_sample_count=MIN_CALIBRATION_SAMPLES,
+    )
+    cal2 = ConfidenceCalibrator(params={"a": 1.0, "b": 0.0}, provenance=prov_nofp)
+    assert cal2.state == "NOT_CALIBRATED"
 
 
 def test_invalid_calibration_falls_back_flat() -> None:
