@@ -129,9 +129,7 @@ class TickPipeline:
             except Exception as news_gate_err:
                 # News must never disturb trading: failure = no-op.
                 self.om._last_news_gate = None
-                logger.debug(
-                    "[NEWS_GATE] event=FAILED (isolated, no-op)", error=str(news_gate_err)
-                )
+                logger.debug("[NEWS_GATE] event=FAILED (isolated, no-op)", error=str(news_gate_err))
 
         self.om.audit.log_signal(proposal)
 
@@ -202,7 +200,6 @@ class TickPipeline:
         # state_version), and stores change-detection hashes. This does NOT
         # gate or block trading; gates live in `live_freshness_gate()`.
         # =====================================================================
-        import hashlib
 
         now_utc = datetime.now(UTC)
         # Monotonic tick timestamp: strictly increasing ms of the newest
@@ -221,9 +218,9 @@ class TickPipeline:
         raw_market_hash = hashlib.sha1(raw_market.encode()).hexdigest()[:16]
         # Feature change detection
         feat_vals = list(getattr(fv, "to_tensor_input", lambda: [])())
-        feature_hash = hashlib.sha1(
-            ("|".join(f"{v:.6g}" for v in feat_vals)).encode()
-        ).hexdigest()[:16]
+        feature_hash = hashlib.sha1(("|".join(f"{v:.6g}" for v in feat_vals)).encode()).hexdigest()[
+            :16
+        ]
         self.om.last_feature_update = now_utc
         self.om._feature_builds_total += 1
         if feature_hash != self.om._last_feature_hash:
