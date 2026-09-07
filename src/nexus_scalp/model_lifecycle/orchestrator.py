@@ -38,6 +38,8 @@ from nexus_scalp.model_lifecycle.gates import (
     gate_training_stability,
     gate_validation_performance,
     gate_walkforward,
+    gate_production_eligible,
+    check_model_collapse,
 )
 from nexus_scalp.model_lifecycle.models import (
     GateResult,
@@ -217,12 +219,6 @@ class ModelLifecycleOrchestrator:
         )
 
         # ---- 4. CHAMPION COMPARISON (learning-loop closure) -------------------
-        # The challenger-vs-champion comparison is now part of EVERY gated
-        # training pass (it was dead code before). When the champion's own
-        # metrics are unavailable the comparison records eligible=False with
-        # the reason — promotion eligibility is never asserted from missing
-        # evidence (fail-closed).
-        # ---- 4. CHAMPION COMPARISON (learning-loop closure) -------------------
         # The challenger-vs-champion comparison is part of EVERY gated
         # training pass that produced an artifact (it was dead code before).
         # When the champion's own metrics are unavailable the comparison
@@ -387,6 +383,24 @@ class ModelLifecycleOrchestrator:
                 logger.error("[MODEL] gate evaluation failed", error=str(e))
         if oos_result is not None:
             gates.append(lambda: gate_oos(oos_result))
+        # PHASE-7 closure: wire the two dormant gates. (a) collapse guard —
+        # a model that abstains/predicts a single class is not a challenger;
+        # (b) production-eligibility — smoke artifacts never promote.
+        if run.artifacts and run.metrics.get("prediction_class_counts"):
+            counts = run.metrics["prediction_class_counts"]
+            gates.append(
+                lambda: check_model_collapse(
+                    class_counts={str(k): int(v) for k, v in counts.items()}
+                )
+            )
+        if run.artifacts:
+            artifact = run.artifacts[0]
+            meta_path = Path(artifact.artifact_path).with_suffix(".meta.json")
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                meta = None
+            gates.append(lambda: gate_production_eligible(meta))
         try:
             wf_result = self._evaluate_walkforward(dataset)
         except Exception as e:
