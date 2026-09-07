@@ -142,7 +142,7 @@ class HoldDurationClock:
         'wallclock_sec': ..., 'broker_clock_sec': ..., 'divergence_sec': ...}``.
         Status is SUSPECT when |monotonic - wallclock| or (when a broker now
         is supplied) |monotonic - broker| exceeds
-        ``max(60.0, 0.02 * max(monotonic, comparison))`` — sized so a +/−1h
+        ``max(60.0, 0.02 * max(monotonic, comparison))`` — sized so a +/-1h
         DST jump or an NTP step flags SUSPECT while sub-minute jitter does
         not. ``divergence_sec`` is the worst offending divergence. Numeric
         fields are None where a domain is unavailable; MISSING carries no
