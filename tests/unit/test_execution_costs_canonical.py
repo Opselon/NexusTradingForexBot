@@ -84,6 +84,41 @@ def test_research_bridge_converts_usd_to_ticks() -> None:
     assert cal_version == costs.calibration_version
 
 
+def test_units_block_pinned_and_notes_tick_value_inconsistency() -> None:
+    costs = get_execution_assumptions()
+    assert costs.units is not None
+    assert costs.units.point_size == pytest.approx(0.01)
+    assert costs.units.contract_size == pytest.approx(100.0)
+    assert "INCONSISTENT" in costs.units.tick_value_note  # paper 1.0 vs replay 0.1
+
+
+def test_r_view_records_all_three_friction_conventions() -> None:
+    costs = get_execution_assumptions()
+    assert costs.r_view is not None
+    assert costs.r_view.labeling_friction_r == pytest.approx(0.35)
+    assert costs.r_view.baseline_eval_friction_r == pytest.approx(0.15)
+    assert costs.r_view.backtest_friction_cap_r == pytest.approx(0.5)
+
+
+def test_synthetic_bar_spread_and_paper_model_pinned() -> None:
+    costs = get_execution_assumptions()
+    assert costs.synthetic_bar_spread_usd is not None
+    assert costs.synthetic_bar_spread_usd.value == pytest.approx(0.20)
+    assert costs.paper_model is not None
+    assert costs.paper_model.spread_band_usd == (0.08, 0.18)
+    assert costs.paper_model.commission == 0.0
+    assert costs.paper_model.swap == 0.0
+
+
+def test_both_real_evidence_bases_recorded() -> None:
+    """The 15h detailed window AND the 100k-bar distribution must both be cited,
+    including their disagreement (p50 $0.147 vs $0.04 — session dependence)."""
+    costs = get_execution_assumptions()
+    evidence = " ".join(costs.broker_context["evidence"])
+    assert "regime_classifier" in evidence
+    assert "DISAGREE" in costs.broker_context["limitations"]
+
+
 def test_provenance_stamp_carries_calibration_version() -> None:
     costs = get_execution_assumptions()
     prov = friction_provenance(costs)

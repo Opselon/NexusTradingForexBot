@@ -8,10 +8,11 @@
     "evidence": [
       "scratch/calibration/xauusd_real_calibration.json (909 real M1 bars 2026-08-18, MEASURED_FROM_REAL_DATA)",
       "artifacts/audit.db audit_experience_outcomes: 158 executed closed paper trades",
-      "artifacts/audit.db broker_outcome payloads: commission=0 swap=0 (account type: spread-only)"
+      "artifacts/audit.db broker_outcome payloads: commission=0 swap=0 (account type: spread-only)",
+      "features/regime_classifier.py:132-140 \u2014 100k real M1 bars (2026-05-01..2026-08-17) spread p50=$0.04, p90=$0.20, p95=$0.24, p99=$0.34, max=$6.22; session/season dependent \u2014 its p50 is ~3.7x tighter than the 15h-window mean; BOTH distributions are kept as evidence"
     ],
     "source_data_range": "2026-08-18T01:14:00+00:00 .. 2026-08-18T16:22:00+00:00 (Asia+London)",
-    "limitations": "No NY-session bars in the calibration window; commission/swap zero on this account; slippage measured on PAPER fills only (mean -0.077 pts, p95 +0.05 pts, worst -2.23 pts favorable-skewed synthetic)"
+    "limitations": "No NY-session bars in the calibration window; commission/swap zero on this account; slippage measured on PAPER fills only (mean -0.077 pts, p95 +0.05 pts, worst -2.23 pts favorable-skewed synthetic); the 15h detailed window and the 100k-bar percentile summary DISAGREE on p50 by ~3.7x \u2014 hour-of-day/session spread curve is the single most valuable missing measurement"
   },
   "spread": {
     "unit": "usd_per_oz",
@@ -57,5 +58,44 @@
     "labeling": "TripleBarrierLabeler.friction_usd",
     "backtest": "ExecutionAssumptions (spread_ticks/slippage_ticks) via research engines",
     "paper": "PaperMT5Adapter._METAL_SPREAD_RANGE + _slippage_for_close"
+  },
+  "units": {
+    "point_size": 0.01,
+    "digits": 2,
+    "contract_size": 100,
+    "tick_value_note": "INCONSISTENT in repo: paper SymbolInfo.tick_value=1.0 vs streaming_replay ReplayExecutionConfig.tick_value=0.1 \u2014 reconcile before trusting USD PnL across paper/replay",
+    "lot_volume_min": 0.01,
+    "lot_volume_step": 0.01
+  },
+  "r_view": {
+    "labeling_friction_r": 0.35,
+    "derivation": "friction_usd 0.35 / ~1R risk (1.0 USD risk distance convention)",
+    "baseline_eval_friction_r": 0.15,
+    "baseline_eval_note": "third friction convention (research/baseline_eval.py FRICTION_R=0.15, sweep 0.05/0.15/0.25) \u2014 unevidenced assumption, NOT reconciled with the 0.35R labeling view; treat baseline_eval R numbers as conservative-relative-only until reconciled",
+    "backtest_friction_cap_r": 0.5,
+    "backtest_cap_note": "research/metrics.py caps total friction at 0.5R and models spread+slip in ticks with price_tick 0.01"
+  },
+  "synthetic_bar_spread_usd": {
+    "value": 0.2,
+    "sites": "schema_v2.SPREAD_USD + schema_v2_incremental literal + model_generation/replay.py + live_engine warmup literals (six duplicate sites)",
+    "parity_note": "canonical (schema_v2) and fast (schema_v2_incremental) builders must change in lockstep \u2014 BUG-106 parity self-check requires byte-identical frames"
+  },
+  "paper_model": {
+    "spread_band_usd": [
+      0.08,
+      0.18
+    ],
+    "fx_spread": 0.00012,
+    "entry_slippage_usd": [
+      0.01,
+      0.04
+    ],
+    "stop_close_slippage_usd": [
+      0.01,
+      0.04
+    ],
+    "commission": 0.0,
+    "swap": 0.0,
+    "note": "paper PnL has NO commission/swap term \u2014 paper realized PnL systematically overstates live by those amounts when the account charges them"
   }
 }
