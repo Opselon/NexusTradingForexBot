@@ -23,13 +23,16 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
+
+if TYPE_CHECKING:  # import-cycle breaker: value imports stay inside _engine_types()
+    from nexus_scalp.application.live_engine import ModelBundle, ScalerBundle
 
 logger = get_logger("nexus_scalp.application.live.model_bundle_store")
 
@@ -45,7 +48,10 @@ class ModelBundleStore:
     """Bundle load/verify/persist operations (composition root: LiveEngine)."""
 
     def __init__(self, om: Any) -> None:
-        self = om
+        # Composition root pattern: the engine IS the state surface; the
+        # methods are also invoked UNBOUND with the engine as the first
+        # argument (see module docstring), so no per-instance state here.
+        self.om = om
 
     def _load_or_create_bundle(self, model_path: Path, force_fresh: bool) -> ModelBundle:
         # P1 ARTIFACT TRUST: verify the EXACT on-disk artifact against its
@@ -163,6 +169,8 @@ class ModelBundleStore:
         # BUG-125 regression: tests call via LiveEngine._expected_num_features_for_artifact(None, path)
         # (unbound with self=None on macOS). Handle None gracefully.
         if self is None:
+            from nexus_scalp.application.live_engine import LiveEngine
+
             return int(LiveEngine.FEATURE_DIM)
         return int(self.__class__.FEATURE_DIM)
 
