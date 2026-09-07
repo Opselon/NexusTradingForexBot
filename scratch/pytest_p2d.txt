@@ -1,0 +1,85 @@
+...F.                                                                    [100%]
+================================== FAILURES ===================================
+_________ test_70d_model_33_manifest_input_dimension_no_double_count __________
+
+    def test_70d_model_33_manifest_input_dimension_no_double_count() -> None:
+        from nexus_scalp.model_generation.experiment_factory import ExperimentFactory
+        from nexus_scalp.model_generation.training import CandidateTrainer
+    
+        rng = np.random.default_rng(3)
+        n = 400
+        cols: dict[str, object] = {
+            "sample_id": [f"s{i}" for i in range(n)],
+            "timestamp": list(range(n)),
+            "feature_schema_id": ["scalp_v2"] * n,
+            "label": list(
+                np.concatenate(
+                    [
+                        np.zeros(280),
+                        np.ones(60),
+                        np.full(60, 2),
+                    ]
+                ).astype(int)
+            ),
+        }
+        for i in range(60):
+            cols[f"feat_{i}"] = rng.normal(0, 1, n)
+        # 12 numeric news fields
+        for _j, name in enumerate(
+            [
+                "active_high_impact_events",
+                "xauusd_relevance",
+                "usd_relevance",
+                "bullish_pressure",
+                "bearish_pressure",
+                "conflict_score",
+                "novelty",
+                "freshness",
+                "confidence",
+                "source_consensus",
+                "news_state",
+                "time_since_event_sec",
+            ]
+        ):
+            cols[f"news_{name}"] = rng.normal(0, 1, n)
+        df = pl.DataFrame(cols)
+        exp = ExperimentFactory().create(
+            "ds_test", template="baseline_scalpnet_v1_news", experiment_id="exp_liq33"
+        )
+        feat_cols = [c for c in df.columns if c.startswith("feat_")] + [
+            c for c in df.columns if c.startswith("news_")
+        ]
+        res = CandidateTrainer().train_candidate(exp, df, feature_cols=feat_cols, epochs=2)
+        assert res["status"] == "COMPLETED", res
+        from nexus_scalp.model_generation.artifact_store import ArtifactStore
+    
+        man = ArtifactStore().read_model_manifest(res["model_id"])
+        assert man is not None
+        fdim = man.get("feature_dimension")
+        input_dim = man.get("build_metadata", {}).get("input_dimension")
+        # BUG-114 contract: feature_dimension = base only (60); input_dimension =
+        # base + news (72); they must NEVER be 84 (double count).
+        assert fdim == 60
+        assert input_dim == 72, f"BUG-114: input_dimension double-counts news: {input_dim}"
+        # runtime must accept its own width
+        from nexus_scalp.model_generation.runtime import validate_and_load
+    
+        rt = validate_and_load(res["model_id"], root=str(REPO_ROOT / "artifacts/model_generation"))
+        pred = rt.predict(np.random.default_rng(1).normal(0, 1, 72))
+        # LEGACY baseline geometry is INTENTIONALLY 4-wide (NO_TRADE/BUY/SELL +
+        # WAIT policy bridge): ModelFactory preserves the legacy ScalpNet head for
+        # LEGACY_SCALPNET_V1 even under the canonical-3 contract, and the runtime
+        # maps index 3 -> WAIT policy state (never a label). The manifest still
+        # declares class_count=3; the extra logit is compat-only.
+>       assert len(pred["probabilities"]) == 4
+E       assert 3 == 4
+E        +  where 3 = len([0.3265356719493866, 0.3671875, 0.306276798248291])
+
+tests\unit\test_70d_model_validation_task4.py:1066: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:19:50 [info     ] [EXPERIMENT] event=CREATED experiment_id=exp_liq33 template=baseline_scalpnet_v1_news
+2026-09-07 05:19:53 [info     ] [TRAIN] event=CANDIDATE_READY model_id=cand_298a28df308874db val_acc=0.2500
+2026-09-07 05:19:53 [info     ] [MODEL] event=LOADED model_id=cand_298a28df308874db device=cpu
+=========================== short test summary info ===========================
+FAILED tests/unit/test_70d_model_validation_task4.py::test_70d_model_33_manifest_input_dimension_no_double_count
+1 failed, 4 passed in 7.92s

@@ -418,7 +418,7 @@ def check_model_dimension_contract() -> CheckResult:
     try:
         import torch  # type: ignore[import-not-found]
 
-        state = torch.load(info["path"], map_location="cpu", weights_only=False)
+        state = torch.load(info["path"], map_location="cpu", weights_only=True)
         if isinstance(state, dict):
             w = state.get("input_projection.weight")
             if w is not None and hasattr(w, "shape") and w.ndim == 2:

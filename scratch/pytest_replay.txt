@@ -1,0 +1,30 @@
+..F.F                                                                    [100%]
+================================== FAILURES ===================================
+___________________ test_deterministic_and_order_preserved ____________________
+
+    def test_deterministic_and_order_preserved() -> None:
+        rows = _rows(800)
+        a = _apply_bounded_replay(rows, {"enabled": True})
+        b = _apply_bounded_replay(rows, {"enabled": True})
+        assert a == b
+        ts = [r.decision_timestamp for r in a]
+>       assert ts == sorted(ts)
+E       assert [datetime.dat...one.utc), ...] == [datetime.dat...one.utc), ...]
+E         
+E         At index 0 diff: datetime.datetime(2026, 1, 1, 0, 1, tzinfo=datetime.timezone.utc) != datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+E         Use -v to get more diff
+
+tests\unit\test_training_dataset_replay.py:69: AssertionError
+__________________ test_disabled_or_empty_policy_is_identity __________________
+
+    def test_disabled_or_empty_policy_is_identity() -> None:
+        rows = _rows(100)
+        assert _apply_bounded_replay(rows, {"enabled": False}) == rows
+>       with pytest.raises(Exception):
+E       Failed: DID NOT RAISE Exception
+
+tests\unit\test_training_dataset_replay.py:85: Failed
+=========================== short test summary info ===========================
+FAILED tests/unit/test_training_dataset_replay.py::test_deterministic_and_order_preserved
+FAILED tests/unit/test_training_dataset_replay.py::test_disabled_or_empty_policy_is_identity
+2 failed, 3 passed in 0.63s

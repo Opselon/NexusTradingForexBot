@@ -1,0 +1,196 @@
+
+
+ProcessId   : 4904
+CommandLine : 
+
+ProcessId   : 5960
+CommandLine : 
+
+ProcessId   : 4676
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 3676
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 16456
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 5496
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 17996
+CommandLine : C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe 
+              C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel__ado0k8l\hermes_kernel_runner.py
+
+ProcessId   : 3644
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel__ado0k8l\hermes_kernel_runner.py
+
+ProcessId   : 18764
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 19864
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 8912
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"  chat --max-turns 0
+
+ProcessId   : 18664
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"  chat --max-turns 0
+
+ProcessId   : 10008
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 20552
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 10224
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 17744
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 10496
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 18188
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 12972
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 2248
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 5248
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 20076
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 16816
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"  chat --max-turns 1000
+
+ProcessId   : 19828
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"  chat --max-turns 1000
+
+ProcessId   : 6368
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"  chat --max-turns 10000
+
+ProcessId   : 4012
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"  chat --max-turns 10000
+
+ProcessId   : 13836
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 12564
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 21292
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 21180
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 6220
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 15508
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 16220
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" 
+              "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 22248
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  "C:\Users\Capsizer\AppData\Local\hermes\bin\hermes.exe"
+
+ProcessId   : 20560
+CommandLine : C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe 
+              C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel_xc6qu99f\hermes_kernel_runner.py
+
+ProcessId   : 8388
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel_xc6qu99f\hermes_kernel_runner.py
+
+ProcessId   : 17728
+CommandLine : C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe 
+              C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel_ayz5mkvt\hermes_kernel_runner.py
+
+ProcessId   : 5976
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel_ayz5mkvt\hermes_kernel_runner.py
+
+ProcessId   : 7888
+CommandLine : C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe 
+              C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel_5by0faey\hermes_kernel_runner.py
+
+ProcessId   : 17240
+CommandLine : "C:\Users\Capsizer\AppData\Local\hermes\hermes-agent\.hermes-runtime\python\cpython-3.11-windows-x86_64-n
+              one\python.exe"  C:\Users\Capsizer\AppData\Local\Temp\hermes_kernel_5by0faey\hermes_kernel_runner.py
+
+ProcessId   : 6696
+CommandLine : C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Scripts\python.exe -m pytest 
+              tests/unit/test_debug_snapshot_phase20.py tests/unit/test_winner_protection_geometry_sprint.py 
+              tests/unit/test_adaptive_position_management.py tests/unit/test_log_autopsy_fixes.py 
+              tests/unit/test_s6_hold_score_ownership_golden.py tests/unit/test_hardened_protocol.py 
+              tests/unit/test_audit_db_growth_bug054.py tests/unit/test_order_manager_exit_bugs.py -q --no-header -p 
+              no:cacheprovider --tb=line
+
+ProcessId   : 10932
+CommandLine : "C:\Users\Capsizer\AppData\Roaming\uv\python\cpython-3.11.16-windows-x86_64-none\python.exe" -m pytest 
+              tests/unit/test_debug_snapshot_phase20.py tests/unit/test_winner_protection_geometry_sprint.py 
+              tests/unit/test_adaptive_position_management.py tests/unit/test_log_autopsy_fixes.py 
+              tests/unit/test_s6_hold_score_ownership_golden.py tests/unit/test_hardened_protocol.py 
+              tests/unit/test_audit_db_growth_bug054.py tests/unit/test_order_manager_exit_bugs.py -q --no-header -p 
+              no:cacheprovider --tb=line
+
+ProcessId   : 7480
+CommandLine : C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Scripts\python.exe -m pytest 
+              tests/unit/test_signed_update_manifest.py tests/unit/test_release_update_phase17.py -p no:cacheprovider 
+              -q --tb=short
+
+ProcessId   : 9204
+CommandLine : "C:\Users\Capsizer\AppData\Roaming\uv\python\cpython-3.11.16-windows-x86_64-none\python.exe" -m pytest 
+              tests/unit/test_signed_update_manifest.py tests/unit/test_release_update_phase17.py -p no:cacheprovider 
+              -q --tb=short
+
+ProcessId   : 19136
+CommandLine : C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Scripts\python.exe -m pytest 
+              tests/unit/test_replay_candidate_benchmark.py -p no:cacheprovider
+
+ProcessId   : 16860
+CommandLine : "C:\Users\Capsizer\AppData\Roaming\uv\python\cpython-3.11.16-windows-x86_64-none\python.exe" -m pytest 
+              tests/unit/test_replay_candidate_benchmark.py -p no:cacheprovider
+
+
+

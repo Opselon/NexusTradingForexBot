@@ -1,0 +1,18 @@
+..F....                                                                  [100%]
+================================== FAILURES ===================================
+___________________ test_global_numpy_rng_state_not_mutated ___________________
+
+    def test_global_numpy_rng_state_not_mutated() -> None:
+        X, y = _buffer()
+        np.random.seed(123)
+        state_before = np.random.get_state()
+        _balance_oversample_dataset(X, y, seed=7)
+        state_after = np.random.get_state()
+>       assert state_before[1] == state_after[1]  # legacy MT19937 key stream untouched
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+
+tests\unit\test_oversample_determinism.py:60: ValueError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_oversample_determinism.py::test_global_numpy_rng_state_not_mutated
+1 failed, 6 passed in 3.03s

@@ -1,0 +1,8 @@
+............................................F.......................     [100%]
+================================== FAILURES ===================================
+E   assert 0 == 1
+     +  where 0 = <Result okay>.exit_code
+     +  and   1 = <Result ArtifactConflictError("dataset 'ds_058ee14401b1c612': artifact already exists (3e9a407e25f5). Refusing to overwrite an immutable artifact - corrections must mint a NEW dataset id, or pass allow_overwrite=True explicitly.")>.exit_code
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\tests\unit\test_cli_end_to_end.py:910: assert 0 == 1
+=========================== short test summary info ===========================
+FAILED tests/unit/test_cli_end_to_end.py::test_e2e_45_model_dataset_build_deterministic_identity_same_input_same_id

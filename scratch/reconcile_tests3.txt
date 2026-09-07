@@ -1,0 +1,100 @@
+F.FF.............................................................        [100%]
+================================== FAILURES ===================================
+________________ test_required_version_matches_source_of_truth ________________
+
+    def test_required_version_matches_source_of_truth():
+        """The governance expectation is pinned to the features SSOT."""
+>       from nexus_scalp.governance.verify import REQUIRED_SESSION_SEMANTICS_VERSION
+E       ImportError: cannot import name 'REQUIRED_SESSION_SEMANTICS_VERSION' from 'nexus_scalp.governance.verify' (C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\governance\verify.py)
+
+tests\unit\test_session_semantics_revalidation.py:34: ImportError
+____________ test_verify_candidate_blocks_missing_session_version _____________
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7354/test_verify_candidate_blocks_m0')
+
+    def test_verify_candidate_blocks_missing_session_version(tmp_path):
+        """A candidate trained BEFORE the correction (no session_semantics field
+        in metadata) must fail the governance verification — never silently
+        equivalent."""
+        import hashlib
+    
+        from nexus_scalp.governance.verify import verify_candidate
+    
+        art = tmp_path / "model.pt"
+        art.write_bytes(b"fake-artifact-bytes")
+        sca = tmp_path / "model.pt.scaler.npz"
+    
+        import numpy as np
+    
+        np.savez(sca, mean=np.zeros(50, dtype=np.float32), std=np.ones(50, dtype=np.float32))
+        manifest = {
+            "model_id": "c1",
+            "model_version": "v1",
+            "feature_schema_id": "scalp_v1",
+            "feature_dimension": 50,
+            "class_count": 3,
+            "artifact_hash": hashlib.sha256(art.read_bytes()).hexdigest(),
+            # NOTE: no session_semantics key at all — pre-correction artifact.
+        }
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=manifest,
+        )
+        assert not res["eligible"], "pre-correction artifact must be blocked"
+>       assert "session_semantics_revalidated" in res["failures"]
+E       AssertionError: assert 'session_semantics_revalidated' in []
+
+tests\unit\test_session_semantics_revalidation.py:80: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 06:19:45 [info     ] [GOVERNANCE] event=VERIFY_CANDIDATE eligible=False failures=[] model_id=c1 skipped=['schema_matches_runtime', 'input_dimension_matches', 'feature_schema_hash_matches', 'liquidity_version_matches', 'training_commit_recorded', 'oos_artifact_recorded', 'shadow_evidence_recorded', 'news_contract_valid', 'liquidity_contract_valid']
+_____________ test_verify_candidate_blocks_stale_session_version ______________
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7354/test_verify_candidate_blocks_s0')
+
+    def test_verify_candidate_blocks_stale_session_version(tmp_path):
+        """An artifact whose metadata declares an OLDER session semantics version
+        is not equivalent to the corrected semantics — blocked for revalidation."""
+        import hashlib
+    
+        import numpy as np
+    
+        from nexus_scalp.governance.verify import verify_candidate
+    
+        art = tmp_path / "model.pt"
+        art.write_bytes(b"fake-artifact-bytes")
+        sca = tmp_path / "model.pt.scaler.npz"
+        np.savez(sca, mean=np.zeros(50, dtype=np.float32), std=np.ones(50, dtype=np.float32))
+        manifest = {
+            "model_id": "c1",
+            "model_version": "v1",
+            "feature_schema_id": "scalp_v1",
+            "feature_dimension": 50,
+            "class_count": 3,
+            "artifact_hash": hashlib.sha256(art.read_bytes()).hexdigest(),
+            "session_semantics": {
+                "session_semantics_version": "fixed_utc_v0",
+                "method": "fixed UTC hour windows",
+            },
+        }
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=manifest,
+        )
+        assert not res["eligible"]
+>       assert "session_semantics_revalidated" in res["failures"]
+E       AssertionError: assert 'session_semantics_revalidated' in []
+
+tests\unit\test_session_semantics_revalidation.py:116: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 06:19:45 [info     ] [GOVERNANCE] event=VERIFY_CANDIDATE eligible=False failures=[] model_id=c1 skipped=['schema_matches_runtime', 'input_dimension_matches', 'feature_schema_hash_matches', 'liquidity_version_matches', 'training_commit_recorded', 'oos_artifact_recorded', 'shadow_evidence_recorded', 'news_contract_valid', 'liquidity_contract_valid']
+=========================== short test summary info ===========================
+FAILED tests/unit/test_session_semantics_revalidation.py::test_required_version_matches_source_of_truth
+FAILED tests/unit/test_session_semantics_revalidation.py::test_verify_candidate_blocks_missing_session_version
+FAILED tests/unit/test_session_semantics_revalidation.py::test_verify_candidate_blocks_stale_session_version
+3 failed, 62 passed in 41.28s

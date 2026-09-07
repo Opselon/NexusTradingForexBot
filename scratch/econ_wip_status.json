@@ -1,0 +1,3 @@
+{"foreign_wip_files_at_mission_start": ["walk_forward_trainer.py (time-based purge, in progress)", "live_engine.py (L8 runtime loop)", "features/session_time.py", "shadow/comparison.py", "paper parity", "news pipeline", "release signing"],
+"my_mission_files": ["research/economics.py (NEW, landed f2b4a0b7)", "risk/sizing_policy.py (NEW, landed)", "research/metrics.py", "research/models.py", "research/backtest.py", "research/oos.py", "research/walkforward.py", "research/robustness.py", "risk/risk_engine.py", "training/walk_forward_trainer.py (OVERLAP - foreign time-purge WIP active)"],
+"protocol": "re-verify git status immediately before each commit; stage only files verified to contain only my hunks; for walk_forward_trainer.py wait for foreign commit or coordinate"}

@@ -1,0 +1,17 @@
+sssss.............sssssss...s.s...                                       [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:163: existing 50D/60D artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:180: existing 50D/60D artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:206: 70D artifact not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:230: artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:242: artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:578: 70D dataset not built
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:595: TASK-5 70D candidate not trained
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:618: TASK-5 benchmark report not yet written
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:644: 70D dataset not built
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:671: 70D candidate not trained
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:685: TASK-5 70D candidate not trained
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:703: TASK-5 70D candidate not trained (benchmark pending)
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:800: 50D artifact not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:879: 50D artifact not present
+20 passed, 14 skipped in 27.49s

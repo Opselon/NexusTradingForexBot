@@ -1,0 +1,149 @@
+......FFFFF                                                              [100%]
+================================== FAILURES ===================================
+______ TestBreakerEngine.test_insufficient_data_never_fabricates_a_block ______
+
+self = <tests.unit.test_risk_circuit_breakers.TestBreakerEngine object at 0x0000021EADC47D10>
+
+    def test_insufficient_data_never_fabricates_a_block(self) -> None:
+        br = CircuitBreakerEngine()
+        snap = br.evaluate(5000.0, _ts())
+        assert snap.allowed is True
+>       assert snap.level == "INSUFFICIENT_DATA"
+E       AssertionError: assert 'NORMAL' == 'INSUFFICIENT_DATA'
+E         
+E         - INSUFFICIENT_DATA
+E         + NORMAL
+
+tests\unit\test_risk_circuit_breakers.py:198: AssertionError
+________ TestRiskEngineBreakerGate.test_daily_breach_rejects_proposal _________
+
+self = <tests.unit.test_risk_circuit_breakers.TestRiskEngineBreakerGate object at 0x0000021EADC47F10>
+
+    def test_daily_breach_rejects_proposal(self) -> None:
+        eng = _engine(10000.0)
+        # breach the daily budget
+>       acct = _account(9700.0)
+               ^^^^^^^^^^^^^^^^
+
+tests\unit\test_risk_circuit_breakers.py:210: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+equity = 9700.0
+
+    def _account(equity: float) -> AccountInfo:
+>       return AccountInfo(
+            login=1,
+            balance=equity,
+            equity=equity,
+            margin_free=equity,
+            margin=0.0,
+            leverage=100,
+            currency="USD",
+            name="breaker-test",
+            server="test",
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AccountInfo
+E       trade_mode
+E         Field required [type=missing, input_value={'login': 1, 'balance': 9...test', 'server': 'test'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests\unit\test_risk_circuit_breakers.py:65: ValidationError
+_ TestRiskEngineBreakerGate.test_within_budget_allows_evaluation_to_continue __
+
+self = <tests.unit.test_risk_circuit_breakers.TestRiskEngineBreakerGate object at 0x0000021EADC502D0>
+
+    def test_within_budget_allows_evaluation_to_continue(self) -> None:
+        eng = _engine(10000.0)
+>       acct = _account(9990.0)
+               ^^^^^^^^^^^^^^^^
+
+tests\unit\test_risk_circuit_breakers.py:224: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+equity = 9990.0
+
+    def _account(equity: float) -> AccountInfo:
+>       return AccountInfo(
+            login=1,
+            balance=equity,
+            equity=equity,
+            margin_free=equity,
+            margin=0.0,
+            leverage=100,
+            currency="USD",
+            name="breaker-test",
+            server="test",
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AccountInfo
+E       trade_mode
+E         Field required [type=missing, input_value={'login': 1, 'balance': 9...test', 'server': 'test'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests\unit\test_risk_circuit_breakers.py:65: ValidationError
+_ TestRiskEngineBreakerGate.test_cooldown_rejects_entries_without_touching_kill_switch _
+
+self = <tests.unit.test_risk_circuit_breakers.TestRiskEngineBreakerGate object at 0x0000021EADC50650>
+
+    def test_cooldown_rejects_entries_without_touching_kill_switch(self) -> None:
+        eng = _engine(10000.0)
+        cfg = eng.breakers.config
+>       eng.breakers.config = CircuitBreakerConfig(
+            daily_loss_budget_pct=100.0,
+            weekly_loss_budget_pct=100.0,
+            consecutive_loss_cooldown=1,
+            cooldown_duration_sec=86400.0,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for CircuitBreakerConfig
+E       consecutive_loss_cooldown
+E         Input should be greater than or equal to 2 [type=greater_than_equal, input_value=1, input_type=int]
+E           For further information visit https://errors.pydantic.dev/2.13/v/greater_than_equal
+
+tests\unit\test_risk_circuit_breakers.py:239: ValidationError
+_ TestRiskEngineBreakerGate.test_budget_uses_proposal_timestamp_not_wall_clock _
+
+self = <tests.unit.test_risk_circuit_breakers.TestRiskEngineBreakerGate object at 0x0000021EADC50A50>
+
+    def test_budget_uses_proposal_timestamp_not_wall_clock(self) -> None:
+        eng = _engine(10000.0)
+        # equity drop breached YESTERDAY's budget; proposal stamped TODAY
+        yesterday = _ts() - timedelta(days=1)
+        eng.breakers.update_equity(10000.0, yesterday)
+        result = eng.evaluate_proposal(
+            proposal=_proposal(now=_ts()),
+>           account=_account(5000.0),
+                    ^^^^^^^^^^^^^^^^
+            symbol_info=_symbol_info(),
+            active_positions=[],
+            current_tick=_tick(),
+        )
+
+tests\unit\test_risk_circuit_breakers.py:268: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+equity = 5000.0
+
+    def _account(equity: float) -> AccountInfo:
+>       return AccountInfo(
+            login=1,
+            balance=equity,
+            equity=equity,
+            margin_free=equity,
+            margin=0.0,
+            leverage=100,
+            currency="USD",
+            name="breaker-test",
+            server="test",
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AccountInfo
+E       trade_mode
+E         Field required [type=missing, input_value={'login': 1, 'balance': 5...test', 'server': 'test'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests\unit\test_risk_circuit_breakers.py:65: ValidationError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_risk_circuit_breakers.py::TestBreakerEngine::test_insufficient_data_never_fabricates_a_block
+FAILED tests/unit/test_risk_circuit_breakers.py::TestRiskEngineBreakerGate::test_daily_breach_rejects_proposal
+FAILED tests/unit/test_risk_circuit_breakers.py::TestRiskEngineBreakerGate::test_within_budget_allows_evaluation_to_continue
+FAILED tests/unit/test_risk_circuit_breakers.py::TestRiskEngineBreakerGate::test_cooldown_rejects_entries_without_touching_kill_switch
+FAILED tests/unit/test_risk_circuit_breakers.py::TestRiskEngineBreakerGate::test_budget_uses_proposal_timestamp_not_wall_clock
+5 failed, 6 passed in 0.60s

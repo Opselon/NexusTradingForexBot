@@ -582,7 +582,7 @@ def register_model_governance_routes(app: Any) -> None:
                 from nexus_scalp.models.scalp_net import ScalpNet
                 from nexus_scalp.shadow.compat import scale_like_champion
 
-                state = torch.load(path, map_location="cpu", weights_only=False)
+                state = torch.load(path, map_location="cpu", weights_only=True)
                 # BUG-243: head width inferred from the checkpoint tensor itself
                 # (legacy 4 vs canonical 3) - never a hardcoded 4.
                 _bug243_cw = state.get("classifier.weight")

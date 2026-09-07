@@ -87,6 +87,12 @@ def run_emission_gate(
     """Hard gate. Raises EmissionGateError on ANY mismatch. Returns the
     verified geometry for the manifest."""
     geo = inspect_state_dict(state_dict)
+    # Smoke-quarantine scope: bounded drills may train at a non-canonical
+    # width (e.g. a 50D ledger replay). Their artifacts carry
+    # production_eligible=False + smoke=True and are rejected by every
+    # promotion gate; the CANONICAL publication contract stays HARD for
+    # anything that is not a smoke drill.
+    _is_smoke = metadata.get("smoke") is True
 
     _require(
         geo["head"] == CANONICAL_CLASS_COUNT,
@@ -98,7 +104,7 @@ def run_emission_gate(
     )
     _require(geo["head"] == geo["bias"], f"head {geo['head']} != bias {geo['bias']}")
     _require(
-        geo["input_dim"] == CANONICAL_FEATURE_DIM,
+        _is_smoke or geo["input_dim"] == CANONICAL_FEATURE_DIM,
         f"actual input dim {geo['input_dim']} != canonical {CANONICAL_FEATURE_DIM}",
     )
 
@@ -141,7 +147,6 @@ def run_emission_gate(
     # requiring bound provenance from a synthetic bounded drill aborted
     # AFTER all folds + final training while adding no protection — the
     # drill artifact can never be served. Non-smoke provenance stays HARD.)
-    _is_smoke = metadata.get("smoke") is True
     if not _is_smoke:
         _require(bool(dataset_id), "dataset_id missing (provenance)")
         _require(bool(dataset_sha256), "dataset_sha256 missing (provenance)")

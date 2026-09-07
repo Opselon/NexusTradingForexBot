@@ -1,0 +1,243 @@
+{
+  "generated_at": "2026-09-07T00:52:00.060136+00:00",
+  "seed": {
+    "fed": {
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+      "status": 200,
+      "ms": 1828,
+      "bytes": 14479,
+      "content_type": "text/xml",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "W/\"faa38167e3cdd1:0\"",
+      "last_modified": "Fri, 04 Sep 2026 15:00:12 GMT",
+      "snippet": "\ufeff<?xml version=\"1.0\" encoding=\"utf-8\" ?>\r\n<rss version=\"2.0\">\r\n    <channel>\r\n        <title>FRB: Press Release - All Releases</title>\r\n        <link><![CDATA[https://www.federalreserve.gov/feeds/feeds.htm]]></link>\r\n "
+    },
+    "bls": {
+      "url": "https://www.bls.gov/feed/news.releases.rss",
+      "status": 403,
+      "ms": 1594,
+      "bytes": 1325,
+      "content_type": "text/html",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "",
+      "last_modified": "",
+      "snippet": "<!DOCTYPE HTML>\n<html lang=\"en-us\">      \n               <head> \n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n<title>Access Denied</title>\n</head>\n  <style type=\"text/css\">\n    .centerDiv\n    {\n "
+    },
+    "bea": {
+      "url": "https://www.bea.gov/news",
+      "status": 200,
+      "ms": 2375,
+      "bytes": 37975,
+      "content_type": "text/html; charset=UTF-8",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "\"1788739203\"",
+      "last_modified": "Mon, 07 Sep 2026 00:00:03 GMT",
+      "snippet": "\n<!DOCTYPE html>\n<html  lang=\"en\" dir=\"ltr\" prefix=\"content: http://purl.org/rss/1.0/modules/content/  dc: http://purl.org/dc/terms/  foaf: http://xmlns.com/foaf/0.1/  og: http://ogp.me/ns#  rdfs: http://www.w3.org/2000/"
+    },
+    "ecb": {
+      "url": "https://www.ecb.europa.eu/rss/press.html",
+      "status": 200,
+      "ms": 1985,
+      "bytes": 5728,
+      "content_type": "application/rss+xml",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "\"myra-9b409f35\"",
+      "last_modified": "",
+      "snippet": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\"><channel>\n\t\t\t\t<title>ECB - European Central Bank</title><link>https://www.ecb.europa.eu/</link><description>Latest releas"
+    },
+    "boe": {
+      "url": "https://www.bankofengland.co.uk/rss/news",
+      "status": 200,
+      "ms": 2485,
+      "bytes": 25079,
+      "content_type": "text/xml; charset=utf-8",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "",
+      "last_modified": "",
+      "snippet": "<rss xmlns:a10=\"http://www.w3.org/2005/Atom\" version=\"2.0\"><channel><title>News</title><link>https://www.bankofengland.co.uk/rss/news</link><description>News</description><language>en</language><item><guid isPermaLink=\"f"
+    },
+    "cftc": {
+      "url": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm",
+      "status": 200,
+      "ms": 1687,
+      "bytes": 85067,
+      "content_type": "text/html; charset=utf-8",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "",
+      "last_modified": "Fri, 04 Sep 2026 19:29:48 GMT",
+      "snippet": "<!DOCTYPE html>\n<html  lang=\"en\" dir=\"ltr\" prefix=\"content: http://purl.org/rss/1.0/modules/content/  dc: http://purl.org/dc/terms/  foaf: http://xmlns.com/foaf/0.1/  og: http://ogp.me/ns#  rdfs: http://www.w3.org/2000/0"
+    },
+    "treasury": {
+      "url": "https://home.treasury.gov/news/press-releases",
+      "status": 200,
+      "ms": 1781,
+      "bytes": 71259,
+      "content_type": "text/html; charset=utf-8",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "W/\"810d48c3a3a5ad6c908f446422043c5c\"",
+      "last_modified": "Fri, 04 Sep 2026 14:31:27 GMT",
+      "snippet": "<!doctype html><html lang=en-us><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><meta http-equiv=X-UA-Compatible content=\"IE=edge\"><title>Press Releases | U.S. Department of the"
+    },
+    "reuters": {
+      "url": "https://feeds.reuters.com/reuters/businessNews",
+      "status": null,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)",
+      "ms": 1625
+    },
+    "marketwatch": {
+      "url": "https://feeds.marketwatch.com/marketwatch/topstories/",
+      "status": 200,
+      "ms": 3594,
+      "bytes": 8402,
+      "content_type": "application/xml; charset=utf-8",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "W/\"20d2-X7no3IBTdldsQNMkIALohJ2+Nv0\"",
+      "last_modified": "",
+      "snippet": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss xmlns:content=\"http://purl.org/rss/1.0/modules/content/\" xmlns:media=\"http://search.yahoo.com/mrss/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" version=\"2.0\"\n>\n<channel>\n<titl"
+    },
+    "forexlive": {
+      "url": "https://www.forexlive.com/feed/",
+      "status": 200,
+      "ms": 3313,
+      "bytes": 134368,
+      "content_type": "application/rss+xml",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "W/\"5LHRG4kUJr5dXILqrZOO5tHyaC0\"",
+      "last_modified": "",
+      "snippet": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"\n     xmlns:content=\"http://purl.org/rss/1.0/modules/content/\"\n     xmlns:wfw=\"http://wellformedweb.org/CommentAPI/\"\n     xmlns:dc=\"http://purl.org/dc/elements/1.1"
+    },
+    "zerohedge": {
+      "url": "https://feeds.feedburner.com/zerohedge/feed",
+      "status": 200,
+      "ms": 1907,
+      "bytes": 246232,
+      "content_type": "text/xml; charset=utf-8",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "",
+      "last_modified": "Sun, 6 Sep 2026 23:38:28 GMT",
+      "snippet": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<rss xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\" xmlns:foaf=\"http://xmlns.com/foaf/0.1/\" xmlns:og=\"http://ogp.me/ns#\" xmlns:"
+    }
+  },
+  "candidates": {
+    "cnbc_top": {
+      "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
+      "status": 200,
+      "ms": 1813,
+      "bytes": 20137,
+      "content_type": "application/xml",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "",
+      "last_modified": "",
+      "snippet": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss xmlns:metadata=\"http://search.cnbc.com/rss/2.0/modules/siteContentMetadata\" version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:cnbc=\"http://cnbc.com/rss/elements/1.0/\""
+    },
+    "fed_press_monetary": {
+      "url": "https://www.federalreserve.gov/feeds/press_monetary.xml",
+      "status": 200,
+      "ms": 1765,
+      "bytes": 9637,
+      "content_type": "text/xml",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "W/\"221e993bb34dd1:0\"",
+      "last_modified": "Tue, 25 Aug 2026 18:00:13 GMT",
+      "snippet": "\ufeff<?xml version=\"1.0\" encoding=\"utf-8\" ?>\r\n<rss version=\"2.0\">\r\n    <channel>\r\n        <title>FRB: Press Release - Monetary Policy</title>\r\n        <link><![CDATA[https://www.federalreserve.gov/feeds/feeds.htm]]></link>"
+    },
+    "bls_rss_alt": {
+      "url": "https://www.bls.gov/feed/bls_latest.rss",
+      "status": 403,
+      "ms": 1562,
+      "bytes": 1325,
+      "content_type": "text/html",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "",
+      "last_modified": "",
+      "snippet": "<!DOCTYPE HTML>\n<html lang=\"en-us\">      \n               <head> \n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n<title>Access Denied</title>\n</head>\n  <style type=\"text/css\">\n    .centerDiv\n    {\n "
+    },
+    "imf_press": {
+      "url": "https://www.imf.org/en/RSS/News",
+      "status": 403,
+      "ms": 1735,
+      "bytes": 384,
+      "content_type": "text/html",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "",
+      "last_modified": "",
+      "snippet": "<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n \nYou don't have permission to access \"http&#58;&#47;&#47;www&#46;imf&#46;org&#47;en&#47;RSS&#47;News\" on this server.<P>\nReference&#32;&#35;"
+    },
+    "ecb_euro_ref": {
+      "url": "https://www.ecb.europa.eu/rss/fxref-usd.html",
+      "status": 200,
+      "ms": 1640,
+      "bytes": 7302,
+      "content_type": "application/rss+xml",
+      "looks_rss": true,
+      "looks_html": false,
+      "etag": "\"myra-3202e7bc\"",
+      "last_modified": "",
+      "snippet": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<rdf:RDF  xmlns = \"http://purl.org/rss/1.0/\" xmlns:cb = \"http://www.cbwiki.net/wiki/index.php/Specification_1.1\" xmlns:dc = \"http://purl.org/dc/elements/1.1/\" xmlns:dcterms = \"http:"
+    }
+  },
+  "calendar": {
+    "fomc_calendars_html": {
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "status": 200,
+      "ms": 1782,
+      "bytes": 164831,
+      "content_type": "text/html",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "",
+      "last_modified": "Wed, 19 Aug 2026 18:00:38 GMT",
+      "snippet": "\ufeff<!doctype html>\r\n<html lang=\"en\" class=\"no-js\">\r\n    <head>\r\n        <meta charset=\"utf-8\">\r\n        <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/>\r\n        <meta name=\"viewport\" content=\"width=device-width, i"
+    },
+    "bls_schedule_hub": {
+      "url": "https://www.bls.gov/schedule/news_release/bls.info.calendar.htm",
+      "status": 403,
+      "ms": 1625,
+      "bytes": 1325,
+      "content_type": "text/html",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "",
+      "last_modified": "",
+      "snippet": "<!DOCTYPE HTML>\n<html lang=\"en-us\">      \n               <head> \n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n<title>Access Denied</title>\n</head>\n  <style type=\"text/css\">\n    .centerDiv\n    {\n "
+    },
+    "bls_cpi_sched": {
+      "url": "https://www.bls.gov/schedule/news_release/cpi.htm",
+      "status": 403,
+      "ms": 1578,
+      "bytes": 1325,
+      "content_type": "text/html",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "",
+      "last_modified": "",
+      "snippet": "<!DOCTYPE HTML>\n<html lang=\"en-us\">      \n               <head> \n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n<title>Access Denied</title>\n</head>\n  <style type=\"text/css\">\n    .centerDiv\n    {\n "
+    },
+    "bea_release_sched": {
+      "url": "https://www.bea.gov/news/schedule",
+      "status": 200,
+      "ms": 2578,
+      "bytes": 75122,
+      "content_type": "text/html; charset=UTF-8",
+      "looks_rss": false,
+      "looks_html": true,
+      "etag": "\"1788739219\"",
+      "last_modified": "Mon, 07 Sep 2026 00:00:19 GMT",
+      "snippet": "\n<!DOCTYPE html>\n<html  lang=\"en\" dir=\"ltr\" prefix=\"content: http://purl.org/rss/1.0/modules/content/  dc: http://purl.org/dc/terms/  foaf: http://xmlns.com/foaf/0.1/  og: http://ogp.me/ns#  rdfs: http://www.w3.org/2000/"
+    }
+  }
+}

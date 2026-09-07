@@ -1,0 +1,4 @@
+src\nexus_scalp\adapters\paper\paper_adapter.py:148: error: Attribute "market_data_mode" already defined on line 139  [no-redef]
+src\nexus_scalp\adapters\paper\paper_adapter.py:149: error: Attribute "replay_provenance" already defined on line 140  [no-redef]
+pyproject.toml: note: unused section(s): module = ['MetaTrader5.*', 'fastapi.*', 'scripts.*', 'starlette.*']
+Found 2 errors in 1 file (checked 2 source files)

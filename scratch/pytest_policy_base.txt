@@ -1,0 +1,38 @@
+..............F......                                                    [100%]
+================================== FAILURES ===================================
+_________ test_flip_penalty_raises_required_confidence_within_window __________
+
+    def test_flip_penalty_raises_required_confidence_within_window() -> None:
+        """Inside the flip-memory window, an opposite-direction STANDARD-channel
+        candidate must be flip-blocked when its confidence sits in
+        [base_threshold, base_threshold + flip_confidence_penalty) — the penalty
+        is additive on top of the base gate."""
+        policy = SignalPolicy()  # defaults: base 0.20, flip penalty 0.10, memory 8s
+        now = datetime.now(UTC)
+        fv = _feature_vector()  # ichimoku_bearish standard channel, zone-neutral
+    
+        policy._last_active_direction = ActionType.BUY_MARKET
+        policy._last_active_direction_time = now - timedelta(seconds=1.0)
+        policy._last_signal_time = None  # keep COOLDOWN out of the way
+    
+        # sell=0.24/(0.04+0.24+0.65) => conf ~0.258 in [0.20, 0.30): passes the
+        # base gate, fails the flip gate.
+        proposal = policy.evaluate_probabilities(
+            probabilities=torch.tensor([[0.65, 0.04, 0.24, 0.07]]),
+            current_tick=_tick(now),
+            feature_vector=fv,
+            order_manager=_MockOrderManager(),
+        )
+>       assert proposal.blocked_by == "FLIP_PROTECTION", (
+            f"expected flip-block inside window, got blocked_by={proposal.blocked_by} "
+            f"stage={proposal.decision_stage} reason={proposal.reason_code}"
+        )
+E       AssertionError: expected flip-block inside window, got blocked_by=CONFIDENCE_FAIL stage=CONFIDENCE_GATE reason=INSUFFICIENT_CONFIDENCE: Model Confidence (0.26) < Effective Threshold (0.35) [Base: 0.35, Range Penalty: +0.00, Survival Mode: +0.00]
+E       assert 'CONFIDENCE_FAIL' == 'FLIP_PROTECTION'
+E         
+E         - FLIP_PROTECTION
+E         + CONFIDENCE_FAIL
+
+tests\unit\test_policy_flip_protection_pins_bug227.py:151: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_policy_flip_protection_pins_bug227.py::test_flip_penalty_raises_required_confidence_within_window

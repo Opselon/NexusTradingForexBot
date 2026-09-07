@@ -1,0 +1,6 @@
+src\nexus_scalp\model_lifecycle\learning_loop.py:213: error: "Literal[True]" not callable  [misc]
+src\nexus_scalp\model_lifecycle\learning_loop.py:227: error: Argument 1 to "sha256_file" has incompatible type "str"; expected "Path"  [arg-type]
+src\nexus_scalp\model_lifecycle\learning_loop.py:281: error: Incompatible types in assignment (expression has type "list[dict[str, Any]]", variable has type "dict[str, Any]")  [assignment]
+src\nexus_scalp\model_lifecycle\learning_loop.py:283: error: "None" has no attribute "__iter__" (not iterable)  [attr-defined]
+pyproject.toml: note: unused section(s): module = ['MetaTrader5.*', 'fastapi.*', 'scripts.*', 'starlette.*']
+Found 4 errors in 1 file (checked 2 source files)

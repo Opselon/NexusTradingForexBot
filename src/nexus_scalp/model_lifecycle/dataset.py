@@ -123,6 +123,7 @@ class TrainingDatasetBuilder:
         only_executed: bool = True,
         dataset_version: str = "1.0.0",
         config: dict[str, Any] | None = None,
+        replay: dict[str, Any] | None = None,
     ) -> TrainingDataset:
         """
         Builds the deterministic training dataset.
@@ -148,6 +149,8 @@ class TrainingDatasetBuilder:
         }
         if config:
             cfg.update(config)
+        if replay:
+            cfg["replay"] = replay
 
         rows: list[TrainingDatasetRow] = []
         source_experience_ids: list[str] = []
@@ -172,6 +175,8 @@ class TrainingDatasetBuilder:
                 source_experience_ids.append(rec.experience_id)
 
         rows.sort(key=lambda r: r.decision_timestamp)
+        if replay and replay.get("enabled"):
+            rows = _apply_bounded_replay(rows, replay)
         dataset_id = _dataset_id(rows, cfg)
         source_range: dict[str, str] = {}
         if rows:
@@ -198,6 +203,63 @@ LABEL_STR: dict[int, str] = {
     1: ActionType.BUY_MARKET.value,
     2: ActionType.SELL_MARKET.value,
 }
+
+
+def _apply_bounded_replay(
+    rows: list[TrainingDatasetRow], policy: dict[str, Any]
+) -> list[TrainingDatasetRow]:
+    """PHASE 5 bounded anti-forgetting replay (deterministic).
+
+    Composition: the most-recent ``recent_fraction`` of rows (>= ``min_recent``,
+    capped at the full set) is kept at full weight — fresh experience trains at
+    full fidelity. Older rows are REPLAYED through per-stratum quotas:
+    strata are (regime, outcome_sign) so historical regimes, rare conditions
+    and both winning and losing tails keep representation, never silently
+    drowned by the newest data. Within a stratum the most recent rows win the
+    quota (recency tie-break), and replayed rows carry ``replay_weight`` so the
+    trainer can down-weight stale evidence. Nothing is random: the same ledger
+    state yields the same subset (and the same dataset_id).
+
+    Policy keys (all optional): recent_fraction (0.6), min_recent (500),
+    stratum_quota (300), replay_weight (0.5).
+    """
+    if not rows:
+        return rows
+    recent_fraction = float(policy.get("recent_fraction", 0.6))
+    min_recent = int(policy.get("min_recent", 500))
+    stratum_quota = int(policy.get("stratum_quota", 300))
+    replay_weight = float(policy.get("replay_weight", 0.5))
+
+    n = len(rows)
+    recent_count = min(n, max(min_recent, int(n * recent_fraction)))
+    split = n - recent_count
+    recent = rows[split:]
+    older = rows[:split]
+
+    strata: dict[tuple[str, str], list[TrainingDatasetRow]] = {}
+    for r in older:
+        sign = "pos" if r.outcome_r > 0 else ("neg" if r.outcome_r < 0 else "flat")
+        strata.setdefault((r.regime or "UNKNOWN", sign), []).append(r)
+
+    kept: list[TrainingDatasetRow] = []
+    for key in sorted(strata):  # deterministic stratum order
+        bucket = strata[key]
+        if stratum_quota <= 0 or len(bucket) <= stratum_quota:
+            chosen = bucket
+        else:
+            chosen = bucket[-stratum_quota:]  # most recent within the stratum
+        kept.extend(chosen)
+
+    replayed: list[TrainingDatasetRow] = []
+    for r in kept:
+        replayed.append(
+            r.model_copy(update={"sample_weight": round(replay_weight * r.sample_weight, 6)})
+        )
+    out = replayed + recent
+    # chronological order is a hard dataset invariant — restore it after the
+    # stratum-grouped selection (stable sort keeps recent block relative order)
+    out.sort(key=lambda r: r.decision_timestamp)
+    return out
 
 
 def _dataset_id(rows: list[TrainingDatasetRow], cfg: dict[str, Any]) -> str:

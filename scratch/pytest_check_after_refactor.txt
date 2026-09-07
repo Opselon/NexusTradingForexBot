@@ -1,0 +1,30 @@
+.........................................FF.F........................... [ 97%]
+..                                                                       [100%]
+================================== FAILURES ===================================
+E   assert None is not None
+---------------------------- Captured stdout call -----------------------------
+2026-09-07T06:20:06.778+03:30 [error    ] [MODEL] event=INTEGRITY_FAILURE (compatibility) [nexus_scalp.model_lifecycle.integrity] actual_classes=4 actual_dim=50 expected_classes=3 expected_dim=50 head_key=classifier.weight model_id=primary_scalp reason=CLASS_COUNT_MISMATCH scaler_dimension=50
+2026-09-07T06:20:06.779+03:30 [warning  ] [MODEL] Champion unavailable [nexus_scalp.model_lifecycle.champion] error='Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7355\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=86443e46f69fdf73)'
+------------------------------ Captured log call ------------------------------
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T06:20:06.778+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7355\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=86443e46f69fdf73)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T06:20:06.779+03:30'}
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\tests\unit\test_model_lifecycle_phase10.py:616: assert None is not None
+E   assert None is not None
+---------------------------- Captured stdout call -----------------------------
+2026-09-07T06:20:06.820+03:30 [error    ] [MODEL] event=INTEGRITY_FAILURE (compatibility) [nexus_scalp.model_lifecycle.integrity] actual_classes=4 actual_dim=50 expected_classes=3 expected_dim=50 head_key=classifier.weight model_id=primary_scalp reason=CLASS_COUNT_MISMATCH scaler_dimension=50
+2026-09-07T06:20:06.822+03:30 [warning  ] [MODEL] Champion unavailable [nexus_scalp.model_lifecycle.champion] error='Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7355\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=61fdd81a719337ff)'
+------------------------------ Captured log call ------------------------------
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T06:20:06.820+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7355\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=61fdd81a719337ff)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T06:20:06.822+03:30'}
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\tests\unit\test_model_lifecycle_phase10.py:642: assert None is not None
+E   assert None is not None
+------------------------------ Captured log call ------------------------------
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T06:20:06.869+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7355\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=095ef7dc8a63ebb7)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T06:20:06.870+03:30'}
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T06:20:06.877+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7355\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=095ef7dc8a63ebb7)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T06:20:06.878+03:30'}
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\tests\unit\test_model_lifecycle_phase10.py:689: assert None is not None
+=========================== short test summary info ===========================
+FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_champion_verified_logs_once_per_fingerprint
+FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_artifact_rewrite_reverifies_once
+FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_force_reload_performs_fresh_verify

@@ -1,0 +1,38 @@
+..F...                                                                   [100%]
+================================== FAILURES ===================================
+_________________ test_time_purge_respects_irregular_spacing __________________
+
+    def test_time_purge_respects_irregular_spacing() -> None:
+        """09:00, 09:01, 14:30 — a fixed ROW gap must not mean a fixed duration."""
+        tr = _trainer()
+        fold_len = 60
+        raw_split = int(fold_len * tr.train_ratio)  # 36
+        # Rows 0..35 (train region): mostly 1-minute spacing, but the last train
+        # row (index 35) sits only 1 second before the validation boundary, and an
+        # earlier one (index 33) sits 30 minutes before it with a 15-minute
+        # horizon => it must SURVIVE while the near-boundary row is purged.
+        timestamps = [T0 + timedelta(minutes=i) for i in range(fold_len)]
+        timestamps[35] = T0 + timedelta(minutes=36) - timedelta(seconds=1)
+        # Validation region continues at 1-minute spacing from minute 36.
+        outcome_offsets = [15.0 * 60] * fold_len
+        train_end, val_start, _ = tr._split_fold_with_embargo(
+            fold_len, timestamps=timestamps, outcome_offsets=outcome_offsets
+        )
+        assert val_start == raw_split
+        # Row 35 (1s before boundary, 15-min horizon) => purged (overlap + embargo
+        # gap 1s <= 4s). Regular row i decides at minute i and resolves at minute
+        # i+15: rows with i+15 > 36 (strict overlap) purge => rows 22..35 (14
+        # rows). Row 21 resolves exactly AT the boundary (not overlapping) and its
+        # 15-minute gap exceeds the 4-second embargo => kept. The purge width in
+        # ROWS (14) is derived from TIME overlap (the 15-minute horizon at
+        # 1-minute spacing), NOT from the configured 5-row purge gap.
+        assert val_start - train_end == 14
+        last_kept_ts = timestamps[train_end - 1]
+>       assert (boundary_ts - last_kept_ts).total_seconds() > tr.embargo_bars
+                ^^^^^^^^^^^
+E       NameError: name 'boundary_ts' is not defined
+
+tests\unit\test_wft_time_based_purge.py:93: NameError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_wft_time_based_purge.py::test_time_purge_respects_irregular_spacing
+1 failed, 5 passed in 4.18s

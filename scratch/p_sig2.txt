@@ -1,0 +1,121 @@
+.............FF.....F............................F....FF...FF.FF.....F.. [ 90%]
+..F.....                                                                 [100%]
+================================== FAILURES ===================================
+_______________ test_sig14_plan_builder_blocks_tampered_digest ________________
+tests\unit\test_signed_update_manifest.py:316: in test_sig14_plan_builder_blocks_tampered_digest
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(release)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\release\update_engine\discovery.py:679: in build
+    sig_verdict = verify_payload_against_manifest(
+src\nexus_scalp\release\signing\update_manifest.py:275: in verify_payload_against_manifest
+    with open(payload_path, "rb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+___________ test_sig15_plan_builder_accepts_validly_signed_release ____________
+tests\unit\test_signed_update_manifest.py:340: in test_sig15_plan_builder_accepts_validly_signed_release
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(release)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\release\update_engine\discovery.py:679: in build
+    sig_verdict = verify_payload_against_manifest(
+src\nexus_scalp\release\signing\update_manifest.py:275: in verify_payload_against_manifest
+    with open(payload_path, "rb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '857fe4339be4b84ed667af35bd38a37e2bbd088cd5e0fe75c025eebb39ce447d'
+____________________ test_beta_channel_accepts_prerelease _____________________
+tests\unit\test_release_update_phase17.py:208: in test_beta_channel_accepts_prerelease
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="beta").build(
+src\nexus_scalp\release\update_engine\discovery.py:679: in build
+    sig_verdict = verify_payload_against_manifest(
+src\nexus_scalp\release\signing\update_manifest.py:275: in verify_payload_against_manifest
+    with open(payload_path, "rb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'abababababababababababababababababababababababababababababababab'
+_______________________ test_dry_run_makes_no_mutation ________________________
+tests\unit\test_release_update_phase17.py:599: in test_dry_run_makes_no_mutation
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(
+src\nexus_scalp\release\update_engine\discovery.py:679: in build
+    sig_verdict = verify_payload_against_manifest(
+src\nexus_scalp\release\signing\update_manifest.py:275: in verify_payload_against_manifest
+    with open(payload_path, "rb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'abababababababababababababababababababababababababababababababab'
+________________ test_no_automatic_model_promotion_app_update _________________
+tests\unit\test_release_update_phase17.py:679: in test_no_automatic_model_promotion_app_update
+    assert plan["status"] == "UPDATE_AVAILABLE"
+E   AssertionError: assert 'SECURITY_BLOCKED' == 'UPDATE_AVAILABLE'
+E     
+E     - UPDATE_AVAILABLE
+E     + SECURITY_BLOCKED
+______________________ test_up36_release_identity_locked ______________________
+tests\unit\test_release_update_phase17.py:700: in test_up36_release_identity_locked
+    assert plan["status"] == "UPDATE_AVAILABLE"
+E   AssertionError: assert 'SECURITY_BLOCKED' == 'UPDATE_AVAILABLE'
+E     
+E     - UPDATE_AVAILABLE
+E     + SECURITY_BLOCKED
+______________________ test_up40_include_prerelease_flag ______________________
+tests\unit\test_release_update_phase17.py:739: in test_up40_include_prerelease_flag
+    assert withpr["status"] == "UPDATE_AVAILABLE"
+E   AssertionError: assert 'SECURITY_BLOCKED' == 'UPDATE_AVAILABLE'
+E     
+E     - UPDATE_AVAILABLE
+E     + SECURITY_BLOCKED
+_______________________ test_up41_allow_downgrade_gate ________________________
+tests\unit\test_release_update_phase17.py:753: in test_up41_allow_downgrade_gate
+    assert allowed["status"] == "UPDATE_AVAILABLE"
+E   AssertionError: assert 'SECURITY_BLOCKED' == 'UPDATE_AVAILABLE'
+E     
+E     - UPDATE_AVAILABLE
+E     + SECURITY_BLOCKED
+___________________ test_up43_minimum_client_version_matrix ___________________
+tests\unit\test_release_update_phase17.py:768: in test_up43_minimum_client_version_matrix
+    assert plan["status"] == "INCOMPATIBLE"
+E   AssertionError: assert 'SECURITY_BLOCKED' == 'INCOMPATIBLE'
+E     
+E     - INCOMPATIBLE
+E     + SECURITY_BLOCKED
+_________________ test_up44_checksum_asset_digest_resolution __________________
+tests\unit\test_release_update_phase17.py:823: in test_up44_checksum_asset_digest_resolution
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\release\update_engine\discovery.py:679: in build
+    sig_verdict = verify_payload_against_manifest(
+src\nexus_scalp\release\signing\update_manifest.py:275: in verify_payload_against_manifest
+    with open(payload_path, "rb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '808b59664b6adb9274e3bbd0766e7aec9659786c22fdb825c49ca7fda1c6236e'
+____________________ test_up50_model_matrix_fields_in_plan ____________________
+tests\unit\test_release_update_phase17.py:994: in test_up50_model_matrix_fields_in_plan
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(
+src\nexus_scalp\release\update_engine\discovery.py:679: in build
+    sig_verdict = verify_payload_against_manifest(
+src\nexus_scalp\release\signing\update_manifest.py:275: in verify_payload_against_manifest
+    with open(payload_path, "rb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'abababababababababababababababababababababababababababababababab'
+_________________ test_up55_e2e_check_download_verify_install _________________
+tests\unit\test_release_update_phase17.py:1257: in test_up55_e2e_check_download_verify_install
+    plan = orch.check(api_url=api)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\release\update_engine\orchestrator.py:166: in check
+    ).build(release)
+      ^^^^^^^^^^^^^^
+src\nexus_scalp\release\update_engine\discovery.py:679: in build
+    sig_verdict = verify_payload_against_manifest(
+src\nexus_scalp\release\signing\update_manifest.py:275: in verify_payload_against_manifest
+    with open(payload_path, "rb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '722b1803df4a01c4796c8354184d4911901a05764a6643af60058778404078da'
+=========================== short test summary info ===========================
+FAILED tests/unit/test_signed_update_manifest.py::test_sig14_plan_builder_blocks_tampered_digest
+FAILED tests/unit/test_signed_update_manifest.py::test_sig15_plan_builder_accepts_validly_signed_release
+FAILED tests/unit/test_release_update_phase17.py::test_beta_channel_accepts_prerelease
+FAILED tests/unit/test_release_update_phase17.py::test_dry_run_makes_no_mutation
+FAILED tests/unit/test_release_update_phase17.py::test_no_automatic_model_promotion_app_update
+FAILED tests/unit/test_release_update_phase17.py::test_up36_release_identity_locked
+FAILED tests/unit/test_release_update_phase17.py::test_up40_include_prerelease_flag
+FAILED tests/unit/test_release_update_phase17.py::test_up41_allow_downgrade_gate
+FAILED tests/unit/test_release_update_phase17.py::test_up43_minimum_client_version_matrix
+FAILED tests/unit/test_release_update_phase17.py::test_up44_checksum_asset_digest_resolution
+FAILED tests/unit/test_release_update_phase17.py::test_up50_model_matrix_fields_in_plan
+FAILED tests/unit/test_release_update_phase17.py::test_up55_e2e_check_download_verify_install

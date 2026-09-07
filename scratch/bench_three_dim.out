@@ -1,0 +1,113 @@
+trainable rows: 26947 span 2026-05-01 18:09:00+00:00 .. 2026-08-17 19:19:00+00:00
+2026-09-07 05:58:05 [info     ] Lineage guard passed           context=train_and_validate governance_override=False label_origin=CLEAN_HISTORICAL
+2026-09-07 05:58:05 [info     ] Initiating production walk-forward training active_class_boost=3.0 device=cpu num_features=50 num_folds=10 purge_gap=15 scaling_enabled=True seed=42 total_rows=26947 trainable_rows=26947
+2026-09-07 05:58:05 [info     ] Class Weights computed for fine-tuning class_counts=[1006, 453, 411] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:07 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.011047 fold=1 sharpe_proxy=1904940943.967 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:07 [info     ] Class Weights computed for fine-tuning class_counts=[961, 457, 452] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:09 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.014980 fold=2 sharpe_proxy=-7.499 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:09 [info     ] Class Weights computed for fine-tuning class_counts=[1023, 449, 398] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:10 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.992808 fold=3 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:10 [info     ] Class Weights computed for fine-tuning class_counts=[944, 461, 465] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:11 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.068499 fold=4 sharpe_proxy=-9.624 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:11 [info     ] Class Weights computed for fine-tuning class_counts=[1032, 442, 396] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:12 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.042939 fold=5 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:12 [info     ] Class Weights computed for fine-tuning class_counts=[1000, 466, 404] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:13 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.976551 fold=6 sharpe_proxy=-4.082 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:13 [info     ] Class Weights computed for fine-tuning class_counts=[1047, 429, 394] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:14 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.954560 fold=7 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:14 [info     ] Class Weights computed for fine-tuning class_counts=[1096, 411, 363] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:15 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.924250 fold=8 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:15 [info     ] Class Weights computed for fine-tuning class_counts=[1114, 394, 362] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:16 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.969898 fold=9 sharpe_proxy=1904940943.967 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:16 [info     ] Class Weights computed for fine-tuning class_counts=[1040, 465, 370] is_online_fine_tune=True num_classes=3 total_samples=1875 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:17 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.998203 fold=10 sharpe_proxy=0.000 test_rows=796 total_folds=10 train_rows=1875
+2026-09-07 05:58:17 [info     ] === MODEL DIAGNOSTICS ===
+2026-09-07 05:58:17 [info     ] class_id mapping (self.label_map):
+2026-09-07 05:58:17 [info     ] {'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2}
+2026-09-07 05:58:17 [info     ] Inference class mapping (self.inverse_label_map):
+2026-09-07 05:58:17 [info     ] {0: 'NO_TRADE', 1: 'BUY_MARKET', 2: 'SELL_MARKET'}
+2026-09-07 05:58:17 [info     ] Verifying training labels distribution label_mapping={'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2} train_labels_counts=[14898, 6261, 5788]
+2026-09-07 05:58:17 [info     ] Out-of-sample global metrics   profit_factor=0.46 total_oos_samples=7942 total_oos_trades=40 trade_rate=0.5% win_rate=27.5%
+2026-09-07 05:58:17 [info     ] Initiating final production training on full trainable dataset
+2026-09-07 05:58:17 [info     ] Class Weights computed for fine-tuning class_counts=[14898, 6261, 5788] is_online_fine_tune=False num_classes=3 total_samples=26947 weights=[0.4285714328289032, 1.2857142686843872, 1.2857142686843872]
+2026-09-07 05:58:45 [info     ] === POST-TRAINING VERIFICATION ===
+2026-09-07 05:58:45 [info     ] Raw Logits: [[-0.3619544506072998, 0.13944564759731293, 0.31180670857429504], [-0.3867204785346985, 0.3077315092086792, 0.33182889223098755], [-0.24070610105991364, 0.11679522693157196, 0.21165189146995544], [-0.03393610939383507, 0.05642640218138695, 0.2545355558395386], [-0.12788158655166626, 0.10544507205486298, 0.023827984929084778]]
+2026-09-07 05:58:45 [info     ] Softmax Probabilities: [[0.21679595112800598, 0.3579368591308594, 0.42526718974113464], [0.1978604644536972, 0.3962376117706299, 0.40590187907218933], [0.24988959729671478, 0.35728025436401367, 0.39283010363578796], [0.29163381457328796, 0.3192139267921448, 0.38915225863456726], [0.29183313250541687, 0.36852508783340454, 0.33964183926582336]]
+2026-09-07 05:58:45 [info     ] ==================================
+2026-09-07 05:58:45 [info     ] Production training complete   model_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\three_dim_benchmark\20260907_022802\50D\model.pt scaler_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\three_dim_benchmark\20260907_022802\50D\model.scaler.npz
+[50D] OK OOS: {'trades': 40, 'long_trades': 16, 'short_trades': 24, 'win_rate': 0.275, 'expectancy_r': -0.8, 'sharpe_proxy': -14.221, 'profit_factor': 0.183, 'max_dd_r': 33.3, 'sum_r': -32.0, 'wins': 11, 'losses': 29, 'oos_samples': 7942, 'elapsed_sec': 43.4}
+2026-09-07 05:58:45 [info     ] Lineage guard passed           context=train_and_validate governance_override=False label_origin=CLEAN_HISTORICAL
+2026-09-07 05:58:45 [info     ] Initiating production walk-forward training active_class_boost=3.0 device=cpu num_features=60 num_folds=10 purge_gap=15 scaling_enabled=True seed=42 total_rows=26947 trainable_rows=26947
+2026-09-07 05:58:45 [info     ] Class Weights computed for fine-tuning class_counts=[1006, 453, 411] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:47 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.020647 fold=1 sharpe_proxy=7.143 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:47 [info     ] Class Weights computed for fine-tuning class_counts=[961, 457, 452] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:49 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.990800 fold=2 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:49 [info     ] Class Weights computed for fine-tuning class_counts=[1023, 449, 398] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:51 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.992260 fold=3 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:51 [info     ] Class Weights computed for fine-tuning class_counts=[944, 461, 465] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:52 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.071833 fold=4 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:52 [info     ] Class Weights computed for fine-tuning class_counts=[1032, 442, 396] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:56 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.041930 fold=5 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:56 [info     ] Class Weights computed for fine-tuning class_counts=[1000, 466, 404] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:58:57 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.971397 fold=6 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:58:57 [info     ] Class Weights computed for fine-tuning class_counts=[1047, 429, 394] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:00 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.954134 fold=7 sharpe_proxy=-1587450786.639 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:00 [info     ] Class Weights computed for fine-tuning class_counts=[1096, 411, 363] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:06 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.934941 fold=8 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:06 [info     ] Class Weights computed for fine-tuning class_counts=[1114, 394, 362] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:08 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.981147 fold=9 sharpe_proxy=-1587450786.639 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:08 [info     ] Class Weights computed for fine-tuning class_counts=[1040, 465, 370] is_online_fine_tune=True num_classes=3 total_samples=1875 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:20 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.001330 fold=10 sharpe_proxy=0.000 test_rows=796 total_folds=10 train_rows=1875
+2026-09-07 05:59:20 [info     ] === MODEL DIAGNOSTICS ===
+2026-09-07 05:59:20 [info     ] class_id mapping (self.label_map):
+2026-09-07 05:59:20 [info     ] {'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2}
+2026-09-07 05:59:20 [info     ] Inference class mapping (self.inverse_label_map):
+2026-09-07 05:59:20 [info     ] {0: 'NO_TRADE', 1: 'BUY_MARKET', 2: 'SELL_MARKET'}
+2026-09-07 05:59:20 [info     ] Verifying training labels distribution label_mapping={'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2} train_labels_counts=[14898, 6261, 5788]
+2026-09-07 05:59:20 [info     ] Out-of-sample global metrics   profit_factor=0.80 total_oos_samples=7942 total_oos_trades=5 trade_rate=0.1% win_rate=40.0%
+2026-09-07 05:59:20 [info     ] Initiating final production training on full trainable dataset
+2026-09-07 05:59:20 [info     ] Class Weights computed for fine-tuning class_counts=[14898, 6261, 5788] is_online_fine_tune=False num_classes=3 total_samples=26947 weights=[0.4285714328289032, 1.2857142686843872, 1.2857142686843872]
+2026-09-07 05:59:31 [info     ] === POST-TRAINING VERIFICATION ===
+2026-09-07 05:59:31 [info     ] Raw Logits: [[-0.6536386013031006, -0.12690280377864838, 0.14625005424022675], [-0.6561558246612549, -0.015580996870994568, 0.03627471625804901], [-0.42596501111984253, -0.01572263240814209, 0.04136480391025543], [-0.21560955047607422, -0.19237270951271057, -0.020011723041534424], [-0.10456757247447968, 0.015137851238250732, -0.08019363880157471]]
+2026-09-07 05:59:31 [info     ] Softmax Probabilities: [[0.20330622792243958, 0.34427785873413086, 0.45241594314575195], [0.20424258708953857, 0.38756489753723145, 0.40819254517555237], [0.24372942745685577, 0.36734485626220703, 0.3889257609844208], [0.30868518352508545, 0.31594201922416687, 0.37537282705307007], [0.31727519631385803, 0.3576214015483856, 0.3251034617424011]]
+2026-09-07 05:59:31 [info     ] ==================================
+2026-09-07 05:59:31 [info     ] Production training complete   model_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\three_dim_benchmark\20260907_022802\60D\model.pt scaler_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\three_dim_benchmark\20260907_022802\60D\model.scaler.npz
+[60D] OK OOS: {'trades': 5, 'long_trades': 0, 'short_trades': 5, 'win_rate': 0.4, 'expectancy_r': -0.55, 'sharpe_proxy': -8.911, 'profit_factor': 0.321, 'max_dd_r': 3.4, 'sum_r': -2.75, 'wins': 2, 'losses': 3, 'oos_samples': 7942, 'elapsed_sec': 45.3}
+2026-09-07 05:59:31 [info     ] Lineage guard passed           context=train_and_validate governance_override=False label_origin=CLEAN_HISTORICAL
+2026-09-07 05:59:31 [info     ] Initiating production walk-forward training active_class_boost=3.0 device=cpu num_features=70 num_folds=10 purge_gap=15 scaling_enabled=True seed=42 total_rows=26947 trainable_rows=26947
+2026-09-07 05:59:31 [info     ] Class Weights computed for fine-tuning class_counts=[1006, 453, 411] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:32 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.018998 fold=1 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:32 [info     ] Class Weights computed for fine-tuning class_counts=[961, 457, 452] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:33 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.010199 fold=2 sharpe_proxy=-1587450786.639 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:33 [info     ] Class Weights computed for fine-tuning class_counts=[1023, 449, 398] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:34 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.991142 fold=3 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:34 [info     ] Class Weights computed for fine-tuning class_counts=[944, 461, 465] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:35 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.070739 fold=4 sharpe_proxy=1.443 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:35 [info     ] Class Weights computed for fine-tuning class_counts=[1032, 442, 396] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:35 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.046923 fold=5 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:35 [info     ] Class Weights computed for fine-tuning class_counts=[1000, 466, 404] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:36 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.960230 fold=6 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:36 [info     ] Class Weights computed for fine-tuning class_counts=[1047, 429, 394] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:39 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.961268 fold=7 sharpe_proxy=-1587450786.639 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:39 [info     ] Class Weights computed for fine-tuning class_counts=[1096, 411, 363] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:40 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.941596 fold=8 sharpe_proxy=0.000 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:40 [info     ] Class Weights computed for fine-tuning class_counts=[1114, 394, 362] is_online_fine_tune=True num_classes=3 total_samples=1870 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:41 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=0.986468 fold=9 sharpe_proxy=-1587450786.639 test_rows=794 total_folds=10 train_rows=1870
+2026-09-07 05:59:41 [info     ] Class Weights computed for fine-tuning class_counts=[1040, 465, 370] is_online_fine_tune=True num_classes=3 total_samples=1875 weights=[1.0, 1.0, 1.0]
+2026-09-07 05:59:42 [info     ] Walk-forward fold complete     batch_size=187 best_val_loss=1.016115 fold=10 sharpe_proxy=1904940943.967 test_rows=796 total_folds=10 train_rows=1875
+2026-09-07 05:59:42 [info     ] === MODEL DIAGNOSTICS ===
+2026-09-07 05:59:42 [info     ] class_id mapping (self.label_map):
+2026-09-07 05:59:42 [info     ] {'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2}
+2026-09-07 05:59:42 [info     ] Inference class mapping (self.inverse_label_map):
+2026-09-07 05:59:42 [info     ] {0: 'NO_TRADE', 1: 'BUY_MARKET', 2: 'SELL_MARKET'}
+2026-09-07 05:59:42 [info     ] Verifying training labels distribution label_mapping={'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2} train_labels_counts=[14898, 6261, 5788]
+2026-09-07 05:59:42 [info     ] Out-of-sample global metrics   profit_factor=0.60 total_oos_samples=7942 total_oos_trades=9 trade_rate=0.1% win_rate=33.3%
+2026-09-07 05:59:42 [info     ] Initiating final production training on full trainable dataset
+2026-09-07 05:59:42 [info     ] Class Weights computed for fine-tuning class_counts=[14898, 6261, 5788] is_online_fine_tune=False num_classes=3 total_samples=26947 weights=[0.4285714328289032, 1.2857142686843872, 1.2857142686843872]
+2026-09-07 05:59:56 [info     ] === POST-TRAINING VERIFICATION ===
+2026-09-07 05:59:56 [info     ] Raw Logits: [[-0.383156955242157, 0.21189920604228973, 0.36771053075790405], [-0.3532260060310364, 0.21047234535217285, 0.21541085839271545], [-0.25390109419822693, 0.12392140924930573, 0.118683360517025], [-0.12097661942243576, 0.0797949880361557, 0.19209042191505432], [-0.19584962725639343, 0.09898258745670319, 0.08084326237440109]]
+2026-09-07 05:59:56 [info     ] Softmax Probabilities: [[0.20275871455669403, 0.3676284849643707, 0.4296127259731293], [0.22109133005142212, 0.3884926736354828, 0.3904159963130951], [0.2557162344455719, 0.37311655282974243, 0.37116727232933044], [0.2785547375679016, 0.3404901623725891, 0.38095515966415405], [0.27309998869895935, 0.36674627661705017, 0.3601537048816681]]
+2026-09-07 05:59:56 [info     ] ==================================
+2026-09-07 05:59:56 [info     ] Production training complete   model_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\three_dim_benchmark\20260907_022802\70D\model.pt scaler_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\three_dim_benchmark\20260907_022802\70D\model.scaler.npz
+[70D] OK OOS: {'trades': 9, 'long_trades': 8, 'short_trades': 1, 'win_rate': 0.3333, 'expectancy_r': -0.6833, 'sharpe_proxy': -11.506, 'profit_factor': 0.241, 'max_dd_r': 6.8, 'sum_r': -6.15, 'wins': 3, 'losses': 6, 'oos_samples': 7942, 'elapsed_sec': 25.3}
+report: C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\three_dim_benchmark\20260907_022802\report.json

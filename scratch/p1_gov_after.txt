@@ -1,0 +1,520 @@
+.........................................F......FF..........             [100%]
+================================== FAILURES ===================================
+_____________ TestGovernance70.test_gov12_promotion_audit_record ______________
+
+self = <tests.unit.test_model_governance_phase16.TestGovernance70 object at 0x00000279B4FC2590>
+gov_engine = (<nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x00000279B582DE90>, <nexus_scalp.governance.store.Gov... at 0x00000279B582C750>, <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000279B582C350>)
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov12_promotion_audit_rec0')
+
+    def test_gov12_promotion_audit_record(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import execute_promotion_transaction
+    
+        _eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+        )
+        lock_path = tmp_path / "locks" / "promotion.lock"
+>       row = execute_promotion_transaction(
+            store=store,
+            lock_path=lock_path,
+            model_id="c1",
+            model_version="v1",
+            actor="operator_1",
+            reason="audit test",
+            approval_token="tok123",
+            old_champion={
+                "model_id": "champ",
+                "version": "v1.0",
+                "artifact_hash": "oldhash",
+                "schema_id": "scalp_v1",
+            },
+            candidate={
+                "model_id": "c1",
+                "version": "v1",
+                "artifact_hash": "c1hash",
+                "schema_id": "scalp_v1",
+            },
+            activate=lambda mid, mver: None,
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            runtime_schema_id="scalp_v1",
+            runtime_dimension=50,
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+            shadow_evidence={
+                "sample_floor_met": True,
+                "samples_observed": 300,
+                "samples_required": 300,
+            },
+            news_contract={"valid": True},
+            liquidity_contract={"valid": True},
+        )
+
+tests\unit\test_model_governance_phase16.py:1142: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+store = <nexus_scalp.governance.store.GovernanceStore object at 0x00000279B582C750>
+lock_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov12_promotion_audit_rec0/locks/promotion.lock')
+model_id = 'c1', model_version = 'v1', actor = 'operator_1'
+reason = 'audit test', approval_token = 'tok123'
+old_champion = {'model_id': 'champ', 'version': 'v1.0', 'artifact_hash': 'oldhash', 'schema_id': 'scalp_v1'}
+candidate = {'model_id': 'c1', 'version': 'v1', 'artifact_hash': 'c1hash', 'schema_id': 'scalp_v1'}
+activate = <function TestGovernance70.test_gov12_promotion_audit_record.<locals>.<lambda> at 0x00000279B5805E40>
+verify_new = None, rollback_activate = None
+artifact_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov12_promotion_audit_rec0/model.pt')
+scaler_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov12_promotion_audit_rec0/model.pt.scaler.npz')
+manifest = {'model_id': 'cand70', 'model_version': 'v1', 'feature_schema_id': 'scalp_v1', 'feature_dimension': 50, ...}
+runtime_schema_id = 'scalp_v1', runtime_dimension = 50
+feature_schema_hash = 'abc123', liquidity_algorithm_version = 'liq_v1'
+training_commit = 'c0ffee', oos_artifact = 'oos_v1'
+shadow_evidence = {'sample_floor_met': True, 'samples_observed': 300, 'samples_required': 300}
+news_contract = {'valid': True}, liquidity_contract = {'valid': True}
+correlation_id = ''
+
+    def execute_promotion_transaction(
+        *,
+        store: GovernanceStore,
+        lock_path: Path | str,
+        model_id: str,
+        model_version: str,
+        actor: str,
+        reason: str,
+        approval_token: str,
+        old_champion: dict[str, Any],
+        candidate: dict[str, Any],
+        activate: Callable[[str, str], None],
+        verify_new: Callable[[str, str], dict[str, Any]] | None = None,
+        rollback_activate: Callable[[str, str], None] | None = None,
+        artifact_path: Path | str = "",
+        scaler_path: Path | str = "",
+        manifest: dict[str, Any] | None = None,
+        runtime_schema_id: str = "",
+        runtime_dimension: int = 0,
+        feature_schema_hash: str = "",
+        liquidity_algorithm_version: str = "",
+        training_commit: str = "",
+        oos_artifact: str = "",
+        shadow_evidence: dict[str, Any] | None = None,
+        news_contract: dict[str, Any] | None = None,
+        liquidity_contract: dict[str, Any] | None = None,
+        correlation_id: str = "",
+    ) -> dict[str, Any]:
+        """Runs the atomic promotion transaction. Returns the audit row.
+    
+        Raises PromotionTransactionError on any hard failure; NEVER leaves a
+        half-promoted Champion (the previous model is restored when activation
+        succeeded but post-verification failed).
+        """
+        promotion_id = f"prom_{uuid.uuid4().hex[:16]}"
+        rollback_target = f"{old_champion.get('model_id', '')}@{old_champion.get('version', '')}"
+    
+        def _audit_row(status: str) -> dict[str, Any]:
+            return {
+                "promotion_id": promotion_id,
+                "old_champion_model_id": old_champion.get("model_id", ""),
+                "old_champion_version": old_champion.get("version", ""),
+                "old_champion_hash": old_champion.get("artifact_hash", ""),
+                "old_champion_schema": old_champion.get("schema_id", ""),
+                "new_champion_model_id": model_id,
+                "new_champion_version": model_version,
+                "new_champion_hash": candidate.get("artifact_hash", ""),
+                "new_champion_schema": candidate.get("schema_id", ""),
+                "candidate_hash": candidate.get("artifact_hash", ""),
+                "schema_id": candidate.get("schema_id", ""),
+                "approval_actor": actor,
+                "approval_reason": reason,
+                "approval_token": approval_token,
+                "rollback_target": rollback_target,
+                "status": status,
+                "recorded_at": _utcnow(),
+            }
+    
+        def _rec(status: str, message: str = "") -> None:
+            store.record_promotion_audit(_audit_row(status))
+            store.record_event(
+                GovernanceEvent(
+                    event_id=f"ev_{promotion_id}",
+                    event=(
+                        GovernanceErrorCode.PROMOTION_EXECUTED.value
+                        if status == "PROMOTION_COMMITTED"
+                        else GovernanceErrorCode.PROMOTION_BLOCKED.value
+                        if status == "PROMOTION_STARTED"
+                        else GovernanceErrorCode.ROLLBACK_EXECUTED.value
+                        if status == "PROMOTION_ROLLED_BACK"
+                        else "PROMOTION_FAILED"
+                    ),
+                    stage=GovernanceStage.PROMOTION,
+                    model_id=model_id,
+                    model_version=model_version,
+                    correlation_id=correlation_id or promotion_id,
+                    error_code=(
+                        "PROMOTION_EXECUTED" if status == "PROMOTION_COMMITTED" else "PROMOTION_FAILED"
+                    ),
+                    actor=actor,
+                    previous_state=old_champion.get("lifecycle_state", "CHAMPION"),
+                    new_state="CHAMPION"
+                    if status == "PROMOTION_COMMITTED"
+                    else old_champion.get("lifecycle_state", "CHAMPION"),
+                    reason=f"{message} ({status})" if message else status,
+                    payload={
+                        "promotion_id": promotion_id,
+                        "old_champion": old_champion,
+                        "candidate": candidate,
+                        "rollback_target": rollback_target,
+                    },
+                )
+            )
+    
+        # ---- 0. Actor + approval token (spec 5: no implicit promotion) ----
+        if not actor or actor == "system":
+            raise PromotionTransactionError("promotion requires an explicit operator actor")
+        if not approval_token:
+            raise PromotionTransactionError(
+                "promotion requires the operator approval token (no auto-promotion)"
+            )
+    
+        # ---- 1. VERIFY CANDIDATE (fresh, read-only; spec 7) ----
+        verification = verify_candidate(
+            model_id=model_id,
+            model_version=model_version,
+            artifact_path=artifact_path,
+            scaler_path=scaler_path,
+            manifest=manifest,
+            runtime_schema_id=runtime_schema_id,
+            runtime_dimension=runtime_dimension,
+            feature_schema_hash=feature_schema_hash,
+            liquidity_algorithm_version=liquidity_algorithm_version,
+            training_commit=training_commit,
+            oos_artifact=oos_artifact,
+            shadow_evidence=shadow_evidence,
+            news_contract=news_contract,
+            liquidity_contract=liquidity_contract,
+            store=store,
+            correlation_id=correlation_id or promotion_id,
+        )
+        if not verification["eligible"]:
+            _rec(
+                "PROMOTION_FAILED",
+                f"candidate verification blocked: {verification['reason']}",
+            )
+>           raise PromotionTransactionError(f"promotion verification failed: {verification['reason']}")
+E           nexus_scalp.governance.transaction.PromotionTransactionError: promotion verification failed: promotion blocked by: session_semantics_revalidated
+
+src\nexus_scalp\governance\transaction.py:187: PromotionTransactionError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 05:49:05 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7249\test_gov12_promotion_audit_rec0\gov70.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:49:05 [info     ] [GOVERNANCE] event=VERIFY_CANDIDATE eligible=False failures=['session_semantics_revalidated'] model_id=c1 skipped=[]
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 05:49:05 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 05:49:06 [info     ] Audit Database safely closed.
+____________ TestGovernance70.test_gov19_post_promotion_monitoring ____________
+
+self = <tests.unit.test_model_governance_phase16.TestGovernance70 object at 0x00000279B4FCD290>
+gov_engine = (<nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x00000279B5877E90>, <nexus_scalp.governance.store.Gov... at 0x00000279B5875610>, <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000279B58755D0>)
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov19_post_promotion_moni0')
+
+    def test_gov19_post_promotion_monitoring(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import execute_promotion_transaction
+    
+        _eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+        )
+>       row = execute_promotion_transaction(
+            store=store,
+            lock_path=tmp_path / "locks" / "promotion.lock",
+            model_id="c1",
+            model_version="v1",
+            actor="operator_1",
+            reason="monitoring test",
+            approval_token="tok",
+            old_champion={
+                "model_id": "champ",
+                "version": "v1.0",
+                "artifact_hash": "h",
+                "schema_id": "scalp_v1",
+            },
+            candidate={
+                "model_id": "c1",
+                "version": "v1",
+                "artifact_hash": "h",
+                "schema_id": "scalp_v1",
+            },
+            activate=lambda mid, mver: None,
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            runtime_schema_id="scalp_v1",
+            runtime_dimension=50,
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+            shadow_evidence={
+                "sample_floor_met": True,
+                "samples_observed": 300,
+                "samples_required": 300,
+            },
+            news_contract={"valid": True},
+            liquidity_contract={"valid": True},
+        )
+
+tests\unit\test_model_governance_phase16.py:1382: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+store = <nexus_scalp.governance.store.GovernanceStore object at 0x00000279B5875610>
+lock_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov19_post_promotion_moni0/locks/promotion.lock')
+model_id = 'c1', model_version = 'v1', actor = 'operator_1'
+reason = 'monitoring test', approval_token = 'tok'
+old_champion = {'model_id': 'champ', 'version': 'v1.0', 'artifact_hash': 'h', 'schema_id': 'scalp_v1'}
+candidate = {'model_id': 'c1', 'version': 'v1', 'artifact_hash': 'h', 'schema_id': 'scalp_v1'}
+activate = <function TestGovernance70.test_gov19_post_promotion_monitoring.<locals>.<lambda> at 0x00000279B5804B80>
+verify_new = None, rollback_activate = None
+artifact_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov19_post_promotion_moni0/model.pt')
+scaler_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov19_post_promotion_moni0/model.pt.scaler.npz')
+manifest = {'model_id': 'cand70', 'model_version': 'v1', 'feature_schema_id': 'scalp_v1', 'feature_dimension': 50, ...}
+runtime_schema_id = 'scalp_v1', runtime_dimension = 50
+feature_schema_hash = 'abc123', liquidity_algorithm_version = 'liq_v1'
+training_commit = 'c0ffee', oos_artifact = 'oos_v1'
+shadow_evidence = {'sample_floor_met': True, 'samples_observed': 300, 'samples_required': 300}
+news_contract = {'valid': True}, liquidity_contract = {'valid': True}
+correlation_id = ''
+
+    def execute_promotion_transaction(
+        *,
+        store: GovernanceStore,
+        lock_path: Path | str,
+        model_id: str,
+        model_version: str,
+        actor: str,
+        reason: str,
+        approval_token: str,
+        old_champion: dict[str, Any],
+        candidate: dict[str, Any],
+        activate: Callable[[str, str], None],
+        verify_new: Callable[[str, str], dict[str, Any]] | None = None,
+        rollback_activate: Callable[[str, str], None] | None = None,
+        artifact_path: Path | str = "",
+        scaler_path: Path | str = "",
+        manifest: dict[str, Any] | None = None,
+        runtime_schema_id: str = "",
+        runtime_dimension: int = 0,
+        feature_schema_hash: str = "",
+        liquidity_algorithm_version: str = "",
+        training_commit: str = "",
+        oos_artifact: str = "",
+        shadow_evidence: dict[str, Any] | None = None,
+        news_contract: dict[str, Any] | None = None,
+        liquidity_contract: dict[str, Any] | None = None,
+        correlation_id: str = "",
+    ) -> dict[str, Any]:
+        """Runs the atomic promotion transaction. Returns the audit row.
+    
+        Raises PromotionTransactionError on any hard failure; NEVER leaves a
+        half-promoted Champion (the previous model is restored when activation
+        succeeded but post-verification failed).
+        """
+        promotion_id = f"prom_{uuid.uuid4().hex[:16]}"
+        rollback_target = f"{old_champion.get('model_id', '')}@{old_champion.get('version', '')}"
+    
+        def _audit_row(status: str) -> dict[str, Any]:
+            return {
+                "promotion_id": promotion_id,
+                "old_champion_model_id": old_champion.get("model_id", ""),
+                "old_champion_version": old_champion.get("version", ""),
+                "old_champion_hash": old_champion.get("artifact_hash", ""),
+                "old_champion_schema": old_champion.get("schema_id", ""),
+                "new_champion_model_id": model_id,
+                "new_champion_version": model_version,
+                "new_champion_hash": candidate.get("artifact_hash", ""),
+                "new_champion_schema": candidate.get("schema_id", ""),
+                "candidate_hash": candidate.get("artifact_hash", ""),
+                "schema_id": candidate.get("schema_id", ""),
+                "approval_actor": actor,
+                "approval_reason": reason,
+                "approval_token": approval_token,
+                "rollback_target": rollback_target,
+                "status": status,
+                "recorded_at": _utcnow(),
+            }
+    
+        def _rec(status: str, message: str = "") -> None:
+            store.record_promotion_audit(_audit_row(status))
+            store.record_event(
+                GovernanceEvent(
+                    event_id=f"ev_{promotion_id}",
+                    event=(
+                        GovernanceErrorCode.PROMOTION_EXECUTED.value
+                        if status == "PROMOTION_COMMITTED"
+                        else GovernanceErrorCode.PROMOTION_BLOCKED.value
+                        if status == "PROMOTION_STARTED"
+                        else GovernanceErrorCode.ROLLBACK_EXECUTED.value
+                        if status == "PROMOTION_ROLLED_BACK"
+                        else "PROMOTION_FAILED"
+                    ),
+                    stage=GovernanceStage.PROMOTION,
+                    model_id=model_id,
+                    model_version=model_version,
+                    correlation_id=correlation_id or promotion_id,
+                    error_code=(
+                        "PROMOTION_EXECUTED" if status == "PROMOTION_COMMITTED" else "PROMOTION_FAILED"
+                    ),
+                    actor=actor,
+                    previous_state=old_champion.get("lifecycle_state", "CHAMPION"),
+                    new_state="CHAMPION"
+                    if status == "PROMOTION_COMMITTED"
+                    else old_champion.get("lifecycle_state", "CHAMPION"),
+                    reason=f"{message} ({status})" if message else status,
+                    payload={
+                        "promotion_id": promotion_id,
+                        "old_champion": old_champion,
+                        "candidate": candidate,
+                        "rollback_target": rollback_target,
+                    },
+                )
+            )
+    
+        # ---- 0. Actor + approval token (spec 5: no implicit promotion) ----
+        if not actor or actor == "system":
+            raise PromotionTransactionError("promotion requires an explicit operator actor")
+        if not approval_token:
+            raise PromotionTransactionError(
+                "promotion requires the operator approval token (no auto-promotion)"
+            )
+    
+        # ---- 1. VERIFY CANDIDATE (fresh, read-only; spec 7) ----
+        verification = verify_candidate(
+            model_id=model_id,
+            model_version=model_version,
+            artifact_path=artifact_path,
+            scaler_path=scaler_path,
+            manifest=manifest,
+            runtime_schema_id=runtime_schema_id,
+            runtime_dimension=runtime_dimension,
+            feature_schema_hash=feature_schema_hash,
+            liquidity_algorithm_version=liquidity_algorithm_version,
+            training_commit=training_commit,
+            oos_artifact=oos_artifact,
+            shadow_evidence=shadow_evidence,
+            news_contract=news_contract,
+            liquidity_contract=liquidity_contract,
+            store=store,
+            correlation_id=correlation_id or promotion_id,
+        )
+        if not verification["eligible"]:
+            _rec(
+                "PROMOTION_FAILED",
+                f"candidate verification blocked: {verification['reason']}",
+            )
+>           raise PromotionTransactionError(f"promotion verification failed: {verification['reason']}")
+E           nexus_scalp.governance.transaction.PromotionTransactionError: promotion verification failed: promotion blocked by: session_semantics_revalidated
+
+src\nexus_scalp\governance\transaction.py:187: PromotionTransactionError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 05:49:13 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7249\test_gov19_post_promotion_moni0\gov70.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:49:13 [info     ] [GOVERNANCE] event=VERIFY_CANDIDATE eligible=False failures=['session_semantics_revalidated'] model_id=c1 skipped=[]
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 05:49:13 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 05:49:14 [info     ] Audit Database safely closed.
+___________ TestGovernance70.test_gov20_technical_failure_rollback ____________
+
+self = <tests.unit.test_model_governance_phase16.TestGovernance70 object at 0x00000279B4FCD850>
+gov_engine = (<nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x00000279B5841990>, <nexus_scalp.governance.store.Gov... at 0x00000279B5842910>, <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000279B5843410>)
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7249/test_gov20_technical_failure_r0')
+
+    def test_gov20_technical_failure_rollback(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import (
+            PromotionTransactionError,
+            execute_promotion_transaction,
+        )
+    
+        _eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(Path(art).read_bytes()).hexdigest(),
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+        )
+        rollback_calls = []
+    
+        def verify_fail(mid, mver):
+            return {"ok": False, "reason": "model cannot load"}
+    
+        def rb(mid, mver):
+            rollback_calls.append((mid, mver))
+    
+        with pytest.raises(PromotionTransactionError):
+            execute_promotion_transaction(
+                store=store,
+                lock_path=tmp_path / "locks" / "promotion.lock",
+                model_id="c1",
+                model_version="v1",
+                actor="operator_1",
+                reason="tech failure test",
+                approval_token="tok",
+                old_champion={
+                    "model_id": "champ",
+                    "version": "v1.0",
+                    "artifact_hash": "h",
+                    "schema_id": "scalp_v1",
+                },
+                candidate={
+                    "model_id": "c1",
+                    "version": "v1",
+                    "artifact_hash": "h",
+                    "schema_id": "scalp_v1",
+                },
+                activate=lambda mid, mver: None,
+                verify_new=verify_fail,
+                rollback_activate=rb,
+                artifact_path=art,
+                scaler_path=sca,
+                manifest=mf,
+                runtime_schema_id="scalp_v1",
+                runtime_dimension=50,
+                feature_schema_hash="abc123",
+                liquidity_algorithm_version="liq_v1",
+                training_commit="c0ffee",
+                oos_artifact="oos_v1",
+                shadow_evidence={
+                    "sample_floor_met": True,
+                    "samples_observed": 300,
+                    "samples_required": 300,
+                },
+                news_contract={"valid": True},
+                liquidity_contract={"valid": True},
+            )
+>       assert rollback_calls  # rollback callback invoked
+        ^^^^^^^^^^^^^^^^^^^^^
+E       assert []
+
+tests\unit\test_model_governance_phase16.py:1489: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 05:49:14 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7249\test_gov20_technical_failure_r0\gov70.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:49:14 [info     ] [GOVERNANCE] event=VERIFY_CANDIDATE eligible=False failures=['session_semantics_revalidated'] model_id=c1 skipped=[]
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 05:49:14 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 05:49:15 [info     ] Audit Database safely closed.
+=========================== short test summary info ===========================
+FAILED tests/unit/test_model_governance_phase16.py::TestGovernance70::test_gov12_promotion_audit_record
+FAILED tests/unit/test_model_governance_phase16.py::TestGovernance70::test_gov19_post_promotion_monitoring
+FAILED tests/unit/test_model_governance_phase16.py::TestGovernance70::test_gov20_technical_failure_rollback
+3 failed, 57 passed in 41.92s

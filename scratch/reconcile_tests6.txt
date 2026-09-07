@@ -1,0 +1,19 @@
+
+=================================== ERRORS ====================================
+_____ ERROR collecting tests/unit/test_shadow_replay_evidence_chg0047.py ______
+tests\unit\test_shadow_replay_evidence_chg0047.py:25: in <module>
+    from nexus_scalp.shadow.replay import (
+src\nexus_scalp\shadow\replay.py:46: in <module>
+    from nexus_scalp.research.streaming_replay import (  # noqa: F401  (re-export)
+src\nexus_scalp\research\__init__.py:44: in <module>
+    from nexus_scalp.research.backtest import BacktestEngine
+src\nexus_scalp\research\backtest.py:18: in <module>
+    from nexus_scalp.research.metrics import compute_backtest
+src\nexus_scalp\research\metrics.py:398: in <module>
+    class SizedEconomicResult(BaseModel):
+                              ^^^^^^^^^
+E   NameError: name 'BaseModel' is not defined
+=========================== short test summary info ===========================
+ERROR tests/unit/test_shadow_replay_evidence_chg0047.py - NameError: name 'Ba...
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 3.44s

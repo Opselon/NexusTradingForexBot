@@ -1,0 +1,46 @@
+{
+  "tool": "scripts/qa/run_mutations.py",
+  "contract": "honesty-v2: KILLED requires pristine battery rc==0; INVALID_* never counts as KILLED",
+  "git_commit": "f51a8373",
+  "timestamp": "2026-09-07T00:18:54Z",
+  "scope": "filtered",
+  "mutations_total": 2,
+  "killed": 2,
+  "survived": 0,
+  "survivor_ids": [],
+  "accepted_survivor_ids": [],
+  "invalid_ids": [],
+  "mutation_score": 1.0,
+  "duration_sec": 16.4,
+  "note": "SURVIVED = test blind spot (a critical mutation no test catches); file in agents/bugs.md",
+  "results": [
+    {
+      "id": "MUT-70D-01",
+      "desc": "70D contract: clip window widened [-3,+3] -> [-5,+5]",
+      "target": "src/nexus_scalp/features/schema_contract.py",
+      "battery": "tests/unit/test_qa_deep_70d_contract_properties.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_inference_validator_structured_rejection_for_non_numeric - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)",
+        "FAILED tests/unit/test_qa_deep_70d_contract_properties.py::test_property_single_mutation_rejected_at_same_index[oob_high]",
+        "FAILED tests/unit/test_qa_deep_70d_contract_properties.py::test_property_single_mutation_rejected_at_same_index[oob_low]"
+      ]
+    },
+    {
+      "id": "MUT-DB-01",
+      "desc": "migration: downgrade protection disabled",
+      "target": "src/nexus_scalp/database/engine.py",
+      "battery": "tests/unit/test_qa_deep_db_migration_adversarial.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "2026-09-07 03:48:52 [info     ] [DB_MIGRATION] event=COMPLETE  current_version=7 database=audit duration_ms=300.39 expected_version=7 integrity=ok",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_qa_deep_db_migration_adversarial.py::test_adv_db_downgrade_blocked"
+      ]
+    }
+  ]
+}

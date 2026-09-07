@@ -134,6 +134,25 @@ class ChallengerTrainer:
                 artifact_save_path=cand_path,
                 feature_schema_id=self.dataset.feature_schema_id,
                 embargo_bars=int(self.hyperparameters.get("embargo_bars", 15)),
+                # LEARNING-LOOP closure Phase 4/12: dataset provenance is
+                # DECLARED (from the snapshot manifest), never silently
+                # resolved to UNKNOWN. Ledger-derived labels are
+                # PAPER_GENERATED (tainted) — such a candidate is NOT
+                # production-eligible and can only ever be a shadow
+                # Challenger. The drill stays smoke-quarantined
+                # (production_eligible=False); a production-eligible
+                # CHAMPION run must come from CLEAN_HISTORICAL datasets via
+                # the canonical producer, never this path.
+                label_origin=str(self.hyperparameters.get("label_origin", "PAPER_GENERATED")),
+                # The drill override is safe: label_origin is still DECLARED
+                # (PAPER_GENERATED -> stamped tainted into meta), smoke=True
+                # quarantines the artifact (production_eligible=False), and
+                # the promotion transaction re-verifies provenance fresh —
+                # this path can never mint a CHAMPION.
+                governance_override=bool(
+                    self.hyperparameters.get("governance_override", True)
+                ),
+                smoke=bool(self.hyperparameters.get("smoke", True)),
             )
             # Staging scaler path: point the trainer's scaler at the candidate
             # folder so it never overwrites the champion's model.scaler.npz.

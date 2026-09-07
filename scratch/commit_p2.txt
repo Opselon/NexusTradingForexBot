@@ -1,0 +1,3 @@
+[main ddf736a6] refactor(models): canonical 3-class head is the ScalpNet default — dead WAIT logit now opt-in legacy compat (P0 phase 2)
+ 6 files changed, 134 insertions(+), 21 deletions(-)
+ create mode 100644 tests/unit/test_model_contract_migration.py

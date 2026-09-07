@@ -16,11 +16,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from nexus_scalp.experience.models import CANONICAL_FEATURE_DIMENSION, CANONICAL_FEATURE_SCHEMA_ID
+
+#: ECON v1: SizedEconomicResult lives in metrics (it is produced by the
+#: backtest statistics) but metrics imports models for BacktestResult, so the
+#: sized-view model is defined LAZILY-compatible: metrics defines it in its
+#: own module scope and models resolves it via model_rebuild at first use.
+from nexus_scalp.research.economics import EconomicAssumptions  # noqa: E402
 
 #: Minimum samples before a candidate may be scored with any confidence.
 MIN_EVIDENCE_SAMPLES: int = 20
@@ -204,6 +210,10 @@ class BacktestResult(BaseModel):
     strategy_version: str = Field(...)
     dataset_id: str = Field(...)
     assumptions: ExecutionAssumptions = Field(default_factory=ExecutionAssumptions)
+    #: ECON v1: optional explicit economic world. Present (production-like or
+    #: labelled frictionless) whenever the caller supplied EconomicAssumptions;
+    #: promotion requires it. `sized` below is the causally re-priced view.
+    economic: "EconomicAssumptions | None" = Field(default=None)
     #: BUG-140 Phase 5: explicit evaluation semantics. EMPIRICAL_REPLAY
     #: = expectancy recomputed over RECORDED experiences (what the engine
     #: does today); HISTORICAL_SIMULATION = strategy logic executed against
@@ -239,6 +249,8 @@ class BacktestResult(BaseModel):
     slippage_sensitivity_r: float = Field(default=0.0)
     latency_sensitivity_r: float = Field(default=0.0)
     equity_curve_r: list[float] = Field(default_factory=list)
+    #: ECON v1 sized economic view (None = no economic world was supplied).
+    sized: "SizedEconomicResult | None" = Field(default=None)
 
     @property
     def has_positive_expectancy(self) -> bool:
@@ -423,3 +435,23 @@ class ResearchRun(BaseModel):
         if v is None:
             return None
         return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
+
+
+def rebuild_economic_refs() -> None:
+    """ECON v1: resolve BacktestResult's SizedEconomicResult forward ref.
+
+    SizedEconomicResult is defined in ``research.metrics``, which itself
+    imports this module, so the reference becomes resolvable only after
+    metrics finishes importing. metrics calls this at the bottom of its
+    module body; the call here (during models import) is a guarded no-op
+    that tolerates the not-yet-imported state.
+    """
+    try:
+        BacktestResult.model_rebuild(_parent_namespace_depth=2)
+    except Exception:
+        # SizedEconomicResult not yet importable (models imported first) —
+        # metrics performs the definitive rebuild at the end of its body.
+        pass
+
+
+rebuild_economic_refs()

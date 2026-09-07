@@ -1,0 +1,41 @@
+............F                                                            [100%]
+================================== FAILURES ===================================
+____________ test_risk_engine_without_calibration_uses_flat_sizing ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000023FCF218210>
+
+    def test_risk_engine_without_calibration_uses_flat_sizing(monkeypatch) -> None:
+        """With NO calibration artifact the confidence multiplier must be exactly
+        1.0 — the old raw-softmax lever (up to 1.2x) is gone."""
+        from nexus_scalp.domain.enums import ActionType
+        from nexus_scalp.domain.models import (
+            AccountInfo,
+            Position,
+            SymbolInfo,
+            TickData,
+            TradeProposal,
+        )
+        from datetime import UTC, datetime
+    
+        engine = _risk_engine()
+        monkeypatch.setattr(engine, "_confidence_calibrator", ConfidenceCalibrator(), raising=False)
+    
+        account = AccountInfo(
+            login=1, trade_mode=0, balance=10000.0, equity=10000.0, margin=0.0,
+            margin_free=10000.0,
+            leverage=100,
+        )
+>       symbol_info = SymbolInfo(
+            symbol="XAUUSD", point=0.01, digits=2, spread=20, trade_contract_size=100.0,
+            tick_value=0.1, tick_size=0.01, volume_min=0.01, volume_max=10.0, volume_step=0.01,
+            stops_level=0,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for SymbolInfo
+E       freeze_level
+E         Field required [type=missing, input_value={'symbol': 'XAUUSD', 'poi... 0.01, 'stops_level': 0}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests\unit\test_confidence_calibration.py:271: ValidationError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_confidence_calibration.py::test_risk_engine_without_calibration_uses_flat_sizing
+1 failed, 12 passed in 2.22s

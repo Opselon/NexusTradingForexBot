@@ -63,7 +63,7 @@ def _state_dict_input_dim(path: Path) -> int | None:
     try:
         import torch
 
-        state = torch.load(path, map_location="cpu", weights_only=False)
+        state = torch.load(path, map_location="cpu", weights_only=True)
         if not isinstance(state, dict):
             return None
         w = state.get("input_projection.weight")

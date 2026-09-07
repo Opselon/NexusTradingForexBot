@@ -1,0 +1,76 @@
+.........................................FF.F...................         [100%]
+================================== FAILURES ===================================
+__ TestCompatibility.test_bug118_champion_verified_logs_once_per_fingerprint __
+
+self = <tests.unit.test_model_lifecycle_phase10.TestCompatibility object at 0x00000272DE98D410>
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7256/test_bug118_champion_verified_0')
+
+    def test_bug118_champion_verified_logs_once_per_fingerprint(self, tmp_path):
+        """Repeated champion_or_none() polls must NOT spam the log."""
+    
+        mgr = self._make_bug118_champion(tmp_path)
+        capture, root, original_level, original_handlers = self._capture_champion_logs()
+        try:
+            first = mgr.champion_or_none()
+>           assert first is not None
+E           assert None is not None
+
+tests\unit\test_model_lifecycle_phase10.py:616: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07T05:52:35.179+03:30 [error    ] [MODEL] event=INTEGRITY_FAILURE (compatibility) [nexus_scalp.model_lifecycle.integrity] actual_classes=4 actual_dim=50 expected_classes=3 expected_dim=50 head_key=classifier.weight model_id=primary_scalp reason=CLASS_COUNT_MISMATCH scaler_dimension=50
+2026-09-07T05:52:35.180+03:30 [warning  ] [MODEL] Champion unavailable [nexus_scalp.model_lifecycle.champion] error='Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7256\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=0f955a4608eaf3e1)'
+------------------------------ Captured log call ------------------------------
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T05:52:35.179+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7256\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=0f955a4608eaf3e1)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T05:52:35.180+03:30'}
+_______ TestCompatibility.test_bug118_artifact_rewrite_reverifies_once ________
+
+self = <tests.unit.test_model_lifecycle_phase10.TestCompatibility object at 0x00000272DE98DB90>
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7256/test_bug118_artifact_rewrite_r0')
+
+    def test_bug118_artifact_rewrite_reverifies_once(self, tmp_path):
+        """A content rewrite (retrain/promotion) invalidates the cache and
+        re-verifies, logging CHAMPION VERIFIED once for the new hash."""
+        import os
+        import time
+    
+        import torch
+    
+        from nexus_scalp.models.scalp_net import ScalpNet
+    
+        mgr = self._make_bug118_champion(tmp_path)
+        capture, root, original_level, original_handlers = self._capture_champion_logs()
+        try:
+            first = mgr.champion_or_none()
+>           assert first is not None
+E           assert None is not None
+
+tests\unit\test_model_lifecycle_phase10.py:642: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07T05:52:35.219+03:30 [error    ] [MODEL] event=INTEGRITY_FAILURE (compatibility) [nexus_scalp.model_lifecycle.integrity] actual_classes=4 actual_dim=50 expected_classes=3 expected_dim=50 head_key=classifier.weight model_id=primary_scalp reason=CLASS_COUNT_MISMATCH scaler_dimension=50
+2026-09-07T05:52:35.220+03:30 [warning  ] [MODEL] Champion unavailable [nexus_scalp.model_lifecycle.champion] error='Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7256\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=c7c46bb417e56021)'
+------------------------------ Captured log call ------------------------------
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T05:52:35.219+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7256\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=c7c46bb417e56021)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T05:52:35.220+03:30'}
+______ TestCompatibility.test_bug118_force_reload_performs_fresh_verify _______
+
+self = <tests.unit.test_model_lifecycle_phase10.TestCompatibility object at 0x00000272DE98EA10>
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7256/test_bug118_force_reload_perfo0')
+
+    def test_bug118_force_reload_performs_fresh_verify(self, tmp_path):
+        """force_reload=True bypasses the memo (startup/hot-swap contract)."""
+        mgr = self._make_bug118_champion(tmp_path)
+        first = mgr.champion_or_none()
+        second = mgr.champion_or_none(force_reload=True)
+>       assert second is not None
+E       assert None is not None
+
+tests\unit\test_model_lifecycle_phase10.py:689: AssertionError
+------------------------------ Captured log call ------------------------------
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T05:52:35.273+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7256\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=274e8f965c510f73)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T05:52:35.273+03:30'}
+ERROR    nexus_scalp.model_lifecycle.integrity:integrity.py:207 {'model_id': 'primary_scalp', 'expected_dim': 50, 'actual_dim': 50, 'expected_classes': 3, 'actual_classes': 4, 'head_key': 'classifier.weight', 'scaler_dimension': 50, 'reason': 'CLASS_COUNT_MISMATCH', 'event': '[MODEL] event=INTEGRITY_FAILURE (compatibility)', 'logger': 'nexus_scalp.model_lifecycle.integrity', 'level': 'error', 'timestamp': '2026-09-07T05:52:35.280+03:30'}
+WARNING  nexus_scalp.model_lifecycle.champion:champion.py:217 {'error': 'Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7256\\[REDACTED_SECRET]\\model.pt is missing or invalid (hash=274e8f965c510f73)', 'event': '[MODEL] Champion unavailable', 'logger': 'nexus_scalp.model_lifecycle.champion', 'level': 'warning', 'timestamp': '2026-09-07T05:52:35.281+03:30'}
+=========================== short test summary info ===========================
+FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_champion_verified_logs_once_per_fingerprint
+FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_artifact_rewrite_reverifies_once
+FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_force_reload_performs_fresh_verify
