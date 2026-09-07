@@ -1,57 +1,39 @@
-# ==============================================================================
-# Nexus Scalp Engine (NSE) — Production & Development Requirements
-# ==============================================================================
-# Fast Installation Command:
-#   pip install -r requirements.txt
-# ==============================================================================
+# =============================================================================
+# GENERATED - DO NOT EDIT
+# Source: pyproject.toml + requirements.lock
+# Regenerate: python scripts/ci/check_dependency_drift.py --regen
+# The exact resolution (with hashes) lives in requirements.lock; this file
+# only carries the top-level pins for tooling that cannot read the lock.
+# Drift is enforced by scripts/ci/check_dependency_drift.py (CI + local).
+# =============================================================================
 
-# ------------------------------------------------------------------------------
-# Core Framework & Validation Layer
-# ------------------------------------------------------------------------------
-pydantic>=2.6.0,<3.0.0             # High-performance data contract validation (Rust core)
-pydantic-settings>=2.1.0,<3.0.0    # Environment-aware YAML & ENV settings parsing
-pyyaml>=6.0.1,<7.0.0               # Robust YAML configuration parser
-
-# ------------------------------------------------------------------------------
-# High-Throughput Quantitative Data Processing & Storage
-# ------------------------------------------------------------------------------
-polars>=0.20.0,<2.0.0              # Multi-threaded zero-copy columnar DataFrame engine
-pyarrow>=15.0.0,<26.0.0            # High-speed Parquet storage serialization
-numpy>=1.26.0,<3.0.0               # Vectorized mathematical array operations
-
-# ------------------------------------------------------------------------------
-# Deep Learning & Neural Inference Engine
-# ------------------------------------------------------------------------------
-torch>=2.2.0,<3.0.0                # PyTorch deep learning library for model inference/training
-
-# ------------------------------------------------------------------------------
-# Observability, Logging & Terminal Interface
-# ------------------------------------------------------------------------------
-structlog>=24.1.0,<27.0.0          # Non-blocking structured JSON logging pipeline
-typer>=0.9.0,<1.0.0                # Ergonomic CLI framework
-rich>=13.7.0,<16.0.0               # Colored terminal presentation and status tables
-
-# ------------------------------------------------------------------------------
-# MetaTrader 5 Broker Adapter (Windows Platform Conditional)
-# ------------------------------------------------------------------------------
-MetaTrader5>=5.0.45; platform_system == 'Windows'  # Official MT5 C++ Python IPC API bindings
-
-# ------------------------------------------------------------------------------
-# Web Control Server & News Intelligence (Runtime)
-# ------------------------------------------------------------------------------
-fastapi>=0.110.0,<1.0.0            # REST/SSE/WebSocket control server
-uvicorn>=0.27.0,<1.0.0             # ASGI server for the web control panel
-httpx>=0.26.0,<1.0.0               # Async HTTP client (news sources / AI provider)
-feedparser>=6.0.0,<7.0.0           # RSS/Atom news feed parsing (Phase 12)
-
-# ------------------------------------------------------------------------------
-# Testing, Code Quality & Development Environment
-# ------------------------------------------------------------------------------
-pytest>=8.0.0                      # Automated unit and integration testing runner
-pytest-asyncio>=0.23.0             # Asyncio event loop testing extension for pytest
-pytest-cov>=4.1.0                  # Code test coverage metrics calculator
-ruff==0.16.5                       # Ultra-fast Rust-based linter and formatter
-mypy>=1.8.0                        # Static type-checking analyzer
-types-pyyaml>=6.0.12               # Type hints for PyYAML library
-
-Pygments>=2.20.0  # CVE-2022-40896 + CVE-2026-4539: ReDoS in <2.20.0 (transitive via rich/pytest)
+fastapi==0.141.1
+feedparser==6.0.14
+httpx==0.28.1
+metatrader5==5.0.6180 ; sys_platform == 'win32'
+mypy==2.3.1
+networkx==3.6.1
+numpy==2.4.6 ; python_full_version < '3.12'
+numpy==2.5.3 ; python_full_version >= '3.12'
+polars==1.44.1
+psycopg==3.3.5
+pyarrow==25.0.1
+pydantic-settings==2.15.0
+pydantic==2.13.5
+pygments==2.21.0
+pyinstaller==6.22.2
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+pytest-xdist==3.8.0
+pytest==9.1.1
+pyyaml==6.0.3
+rich==15.0.0
+ruff==0.16.5
+structlog==26.1.0
+torch==2.14.0
+typer==0.27.2
+types-pyyaml==6.0.12.20260906
+types-requests==2.33.0.20260906
+types-setuptools==84.0.0.20260812
+tzdata==2026.3
+uvicorn==0.52.4
