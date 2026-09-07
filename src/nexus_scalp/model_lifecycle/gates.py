@@ -122,9 +122,15 @@ def gate_training_stability(metrics: dict[str, Any]) -> GateResult:
     reasons: list[str] = []
     ok = True
     final_loss = metrics.get("final_loss")
-    if final_loss is None:
+    if final_loss is None or final_loss == "NOT_AVAILABLE":
+        # None pre-ac414e82 or the honest NOT_AVAILABLE sentinel: the producer
+        # did not emit a real loss -> missing evidence, gate fails (never crash).
         ok = False
-        reasons.append("no final loss recorded")
+        reasons.append(
+            "no final loss recorded"
+            if final_loss is None
+            else "final_loss=NOT_AVAILABLE (producer did not emit a real value)"
+        )
     else:
         if not math.isfinite(float(final_loss)):
             ok = False
@@ -143,10 +149,15 @@ def gate_training_stability(metrics: dict[str, Any]) -> GateResult:
 def gate_validation_performance(metrics: dict[str, Any], min_accuracy: float = 0.35) -> GateResult:
     """GATE 5: validation accuracy above floor."""
     acc = metrics.get("validation_accuracy")
-    ok = acc is not None and float(acc) >= min_accuracy
-    reason = ""
-    if not ok:
-        reason = f"validation accuracy {acc} below floor {min_accuracy}"
+    if acc == "NOT_AVAILABLE":
+        # Honest sentinel (ac414e82): no real validation accuracy exists.
+        ok = False
+        reason = "validation_accuracy=NOT_AVAILABLE (producer did not emit a real value)"
+    else:
+        ok = acc is not None and float(acc) >= min_accuracy
+        reason = ""
+        if not ok:
+            reason = f"validation accuracy {acc} below floor {min_accuracy}"
     logger.info("[MODEL] event=VALIDATION_GATE gate=VALIDATION status=%s", "PASS" if ok else "FAIL")
     return GateResult(
         gate="GATE5_VALIDATION",
