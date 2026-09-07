@@ -226,6 +226,10 @@ class ShadowComparison(BaseModel):
     mean_delta_r: float = Field(default=0.0)
     median_delta_r: float = Field(default=0.0)
     outcome_resolved_count: int = Field(default=0, ge=0)
+    # P0 statistical evidence: the paired delta VECTOR the aggregates were
+    # computed from (snapshot at comparison time; empty for legacy rows).
+    # Consumed by shadow.statistical_gate — never fabricated from aggregates.
+    paired_deltas: list[float] = Field(default_factory=list)
 
     champion_expectancy_r: float = Field(default=0.0)
     challenger_expectancy_r: float = Field(default=0.0)
@@ -312,6 +316,10 @@ class PromotionEvaluation(BaseModel):
     eligible: bool = Field(default=False)
     vetoes: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
+    # P0 statistical provenance: bootstrap CI evidence behind the decision
+    # (sample_count / mean / median / CI / resamples / confidence / seed /
+    # method). Empty dict = legacy row (statistical gate predates this field).
+    statistical_provenance: dict[str, object] = Field(default_factory=dict)
 
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

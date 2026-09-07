@@ -20,6 +20,9 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime
 
+from nexus_scalp.model_lifecycle.statistical_promotion_policy import (
+    StatisticalPromotionPolicy,
+)
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.shadow.models import (
     PromotionEvaluation,
@@ -28,6 +31,7 @@ from nexus_scalp.shadow.models import (
     ShadowEvidenceStatus,
     ShadowModelRef,
 )
+from nexus_scalp.shadow.statistical_gate import evaluate_statistical_gate
 
 logger = get_logger("nexus_scalp.shadow.comparison")
 
@@ -96,6 +100,18 @@ class ShadowComparer:
             champ_r.append(c_r)
             chal_r.append(s_r)
             deltas.append(s_r - c_r)
+
+        # P0 statistical evidence: the paired delta VECTOR drives the
+        # bootstrap CI in evaluate_promotion. Recomputed from the RESOLVED
+        # records exactly as the aggregates above; a shadow_r of None on a
+        # resolved record is malformed evidence — the statistical gate must
+        # see it as such instead of silently treating it as 0.0 (fail-closed).
+        paired_deltas: list[float] = []
+        for d in resolved:
+            if d.shadow_r is None:
+                paired_deltas = []  # malformed: vetoes the statistical gate
+                break
+            paired_deltas.append(d.shadow_r - d.hypothetical_r)
 
         champion_exp = _mean(champ_r)
         challenger_exp = _mean(chal_r)
@@ -240,6 +256,10 @@ class ShadowComparer:
             by_regime=by_regime,
             by_strategy=by_strategy,
             by_session=by_session,
+            # P0: snapshot the paired delta vector for the statistical
+            # promotion gate (deterministic bootstrap evidence). Empty list =
+            # malformed/legacy evidence -> the statistical gate fails closed.
+            paired_deltas=[round(v, 6) for v in paired_deltas],
             best_regimes=best_regimes,
             worst_regimes=worst_regimes,
             degraded_regimes=degraded_regimes,
@@ -261,6 +281,9 @@ class ShadowComparer:
         comparison: ShadowComparison,
         oos_expectancy_r: float | None = None,
         robustness_status: str = "PASS",
+        *,
+        statistical_policy: StatisticalPromotionPolicy | None = None,
+        statistical_cfg: object | None = None,
     ) -> PromotionEvaluation:
         """
         Explainable promotion evaluation with hard vetoes (spec 22 / 23).
@@ -274,9 +297,17 @@ class ShadowComparer:
           - severe calibration failure
           - invalid comparisons dominating
           - robustness failure
+          - statistical gate failure (P0: bootstrap CI on the paired delta)
+
+        The statistical gate (P0) is an ADDITIONAL evidence layer on top of
+        every veto above: the challenger may be eligible only when the
+        paired-difference bootstrap confidence interval supports a positive
+        advantage at the configured confidence level with sufficient resolved
+        samples. Missing/malformed statistical evidence FAILS the gate.
         """
         vetoes: list[str] = []
         reasons: list[str] = []
+        statistical_provenance: dict[str, object] = {}
 
         observed = comparison.samples_observed
         if observed < comparison.samples_required:
@@ -321,6 +352,20 @@ class ShadowComparer:
             and comparison.invalid_comparisons / max(1, comparison.sample_count) > 0.1
         ):
             vetoes.append("invalid comparisons exceed 10% of shadow samples")
+
+        # P0 STATISTICAL GATE — uncertainty-aware evidence on the paired delta.
+        # Runs on EVERY evaluation (fail-closed); its vetoes join the list
+        # above and its provenance is persisted on the PromotionEvaluation.
+        stat = evaluate_statistical_gate(
+            comparison,
+            policy=statistical_policy,
+            cfg=statistical_cfg,
+        )
+        statistical_provenance = dict(stat.get("provenance") or {})
+        if not stat["passed"]:
+            vetoes.extend(str(v) for v in stat["vetoes"])
+        else:
+            reasons.extend(str(r) for r in stat["reasons"])
 
         # Strategy regression penalty (relative to champion expectancy).
         penalty = 0.0
@@ -395,6 +440,7 @@ class ShadowComparer:
             eligible=eligible,
             vetoes=vetoes,
             reasons=reasons,
+            statistical_provenance=statistical_provenance,
         )
 
 
