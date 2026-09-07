@@ -30,6 +30,8 @@ from typing import Any
 import numpy as np
 
 from nexus_scalp.domain.enums import ActionType
+from nexus_scalp.domain.models import TradeProposal
+from nexus_scalp.features.regime_classifier import MarketRegimeState
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.tick_pipeline")
@@ -343,3 +345,213 @@ class TickPipeline:
                 self.om._last_chart_snapshot_time = time.time()
                 self.om.server_state.update_live_visuals(bars_list, real_overlays)
         return proposal
+
+    def run_pre_policy_stages(
+        self,
+        tick: Any,
+        account: Any,
+        is_new_bar: bool,
+        completed_bars: list[Any],
+    ):
+        """Runs the pre-policy stage of the tick pipeline: runtime-config sync,
+        liquidity warmup, regime classification (BUG-169 dedup + BUG-TDF-Q2
+        freshness stamps), position management (Phase 15 threading), lifecycle
+        timeline feed, warmup-readiness re-evaluation, and the fail-closed
+        warmup gate. Returns:
+
+            (False, proposal, probs, regime_state, active, pos_count)  -> stop:
+                warmup fail-closed produced a NO_TRADE proposal that was fully
+                recorded downstream; the caller must return immediately.
+            (True, proposal, probs, regime_state, active, pos_count)  -> continue
+                with policy + post-policy stages. `proposal` is the fresh
+                policy evaluation result.
+        """
+        # RUNTIME CONFIGURATION: re-sync services each tick. This is
+        # cheap (two attribute assignments from an immutable snapshot)
+        # and guarantees a UI save is reflected on the very next
+        # evaluation without restarting or reading the DB per tick.
+        self.om._sync_runtime_config()
+        is_new_bar = self.om.aggregator.process_tick(tick)
+
+        # cap bars (O(1) amortized)
+        if len(self.om.aggregator._completed_bars) > 4000:
+            self.om.aggregator._completed_bars = self.om.aggregator._completed_bars[-4000:]
+
+        completed_bars = self.om.aggregator.get_completed_bars()
+        fv = self.om.feature_engine.compute_from_bars(
+            completed_bars=completed_bars, current_tick=tick
+        )
+        # TASK-02-70D-INTEGRATION: liquidity snapshot from COMPLETED bars.
+        # BUG-169 (2026-08-31, live latency forensics): the governor is
+        # IDEMPOTENT per completed-bar series — its only inputs are the
+        # bars + their last close + the bar ATR, none of which change
+        # between new bars. Recomputing it on EVERY tick burned
+        # p50=67ms / p95=655ms / p99=982ms (max 5.0s) of the LOOP THREAD
+        # per call (~12.5k calls/day), which was the dominant source of
+        # the slow/sticky live decision loop (measured 2026-08-31 log).
+        # Now: compute only on a new M1 bar (or first availability), and
+        # else reuse the last snapshot. Information-freshness is
+        # unchanged (the inputs literally cannot change between bars);
+        # INV-020 (information-only, failure-isolated) still holds.
+        if completed_bars:
+            _liq_new_bar = is_new_bar or (
+                self.om.liquidity_governor is not None
+                and self.om.liquidity_governor.last_snapshot is None
+            )
+            if _liq_new_bar:
+                self.om._warm_liquidity_from_bars(
+                    completed_bars,
+                    atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                )
+
+        if is_new_bar and completed_bars:
+            self.om._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
+
+        # Regime state (Module 1)
+        # BUG-169: skip RE-EVALUATION for a duplicate tick (identical
+        # bid/ask + timestamp). The metrics are functionally idempotent,
+        # but classify_tick() PUSHES the duplicate into its rolling
+        # rings (_ts/_log_ret/_ofi), double-counting it and skewing
+        # tick_velocity + rv_5m + norm_ofi. This duplicates the dedup
+        # predicate from SignalPolicy._evaluate_duplicate_tick on
+        # purpose: the classifier must stay a pure per-tick consumer.
+        _tick_dupe = tick.timestamp == getattr(self.om, "_regime_last_ts", None) or (
+            float(tick.bid) == getattr(self.om, "_regime_last_bid", 0.0)
+            and float(tick.ask) == getattr(self.om, "_regime_last_ask", 0.0)
+            and float(tick.bid) > 0.0
+        )
+        if _tick_dupe:
+            regime_state: MarketRegimeState = getattr(
+                self.om, "_regime_last_state", None
+            ) or self.om.regime_classifier.classify_tick(
+                current_tick=tick,
+                is_macro_news_window=False,
+            )
+            # BUG-TDF-Q2 (TDF-R2 Q2/Q2b): a frozen/duplicate quote
+            # stream can keep the reused state alive indefinitely.
+            # Alarm-only freshness guard (BUG-169 dedup contract
+            # preserved: duplicates are never re-pushed into the
+            # classifier's rolling rings).
+            self.om._assert_regime_state_freshness(tick=tick)
+        else:
+            regime_state = self.om.regime_classifier.classify_tick(
+                current_tick=tick,
+                is_macro_news_window=False,
+            )
+            self.om._regime_last_ts = tick.timestamp
+            self.om._regime_last_bid = float(tick.bid)
+            self.om._regime_last_ask = float(tick.ask)
+            self.om._regime_last_state = regime_state
+            # BUG-TDF-Q2: stamp when the cached state was last
+            # PROVEN fresh by a successful classify_tick() call.
+            self.om._regime_state_classified_at = time.time()
+
+
+        # Manage open positions
+        # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded
+        # into position management so the in-trade exit evaluation sees the
+        # CURRENT model state and CURRENT regime. Previously the call omitted
+        # both, which (a) disabled the AI direction-flip exit and (b) degraded
+        # the adaptive evidence scores to static heuristics on the live path.
+        # When inference is blocked by the warmup gate we still manage
+        # positions (protective stops must never pause) but with probs=None.
+        probs_for_mgmt = None
+        if self.om._inference_enabled and self.om.warmup_state == "READY":
+            try:
+                probs_for_mgmt = self.om._infer_probabilities(fv=fv)
+            except Exception as infer_err:
+                logger.error(
+                    "[INFERENCE] in-trade inference failed (isolated, positions still managed)",
+                    error=str(infer_err),
+                )
+                probs_for_mgmt = None
+        active_positions = self.om.order_manager.manage_active_positions(
+            symbol=tick.symbol,
+            current_tick=tick,
+            feature_vector=fv,
+            symbol_info=self.om._symbol_info,
+            account=account,
+            probs=probs_for_mgmt,
+            regime_state=regime_state,
+        )
+        current_pos_count = len(active_positions)
+
+        # PHASE 09: feed the immutable position-lifecycle timeline. This is
+        # a pure classification + queued write; it never executes anything
+        # and can never block the tick path.
+        self.om._observe_positions(
+            positions=active_positions,
+            tick=tick,
+            fv=fv,
+            regime_state=regime_state,
+        )
+
+        # Check Warmup Readiness Gate before Inference
+        if not self.om._inference_enabled or self.om.warmup_state != "READY":
+            curr_t = time.time()
+
+            # On new bar or every 15 seconds, attempt to re-evaluate warmup readiness
+            if is_new_bar or (curr_t - getattr(self.om, "_last_warmup_check_time", 0.0)) >= 15.0:
+                self.om._last_warmup_check_time = curr_t
+                h1_bars = (
+                    self.om.adapter.get_historical_bars(tick.symbol, "H1", self.om.H1_REQUIRED_BARS)
+                    or []
+                )
+                h4_bars = (
+                    self.om.adapter.get_historical_bars(tick.symbol, "H4", self.om.H4_REQUIRED_BARS)
+                    or []
+                )
+                if self.om.evaluate_warmup_readiness(tick.symbol, h1_bars, h4_bars):
+                    logger.info("[WARMUP] RE-EVALUATION PASSED -> Engine transition to READY")
+
+            if not self.om._inference_enabled or self.om.warmup_state != "READY":
+                if curr_t - self.om._last_inference_blocked_log >= 10.0:
+                    logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
+                    self.om._last_inference_blocked_log = curr_t
+
+                # Fail closed: with no inference (cold warmup or disabled)
+                # there must never be a trade decision, so a NO_TRADE proposal
+                # keeps the downstream pipeline contracts satisfied.
+                proposal = TradeProposal(
+                    request_id=f"blocked_{int(curr_t)}",
+                    symbol=tick.symbol,
+                    generated_at=tick.timestamp,
+                    action=ActionType.NO_TRADE,
+                    confidence=0.0,
+                    proposed_entry=tick.bid,
+                    stop_loss=tick.bid * 0.99,
+                    take_profit=tick.bid * 1.01,
+                    risk_reward_ratio=1.0,
+                    reason_code="HTF_WARMUP_INCOMPLETE",
+                )
+                self.om.audit.log_signal(proposal)
+                self.om._last_tick = tick
+                self.om._last_fv = fv
+                self.om._last_regime_state = regime_state
+                self.om._last_proposal = proposal
+                return False, fv, proposal, None, regime_state, active_positions, current_pos_count
+        # Inference (already computed for position management above; reuse it so the
+        # model runs once per tick)
+        if probs_for_mgmt is None and self.om._inference_enabled and self.om.warmup_state == "READY":
+            probs = self.om._infer_probabilities(fv=fv)
+        else:
+            probs = probs_for_mgmt
+
+        # Heartbeat radar logging: On EVERY M1 Bar completion or every 10 seconds of active ticks, force log.
+        current_time = time.time()
+        force_log = False
+        if is_new_bar or (current_time - self.om._last_radar_log_time) >= 10.0:
+            force_log = True
+            self.om._last_radar_log_time = current_time
+
+        # Policy
+        proposal = self.om.signal_policy.evaluate_probabilities(
+            probabilities=probs,
+            current_tick=tick,
+            feature_vector=fv,
+            regime_state=regime_state,
+            survival_mode=self.om._survival_mode_active,
+            force_log=force_log,
+            order_manager=self.om.order_manager,
+        )
+        return True, fv, proposal, probs, regime_state, active_positions, current_pos_count

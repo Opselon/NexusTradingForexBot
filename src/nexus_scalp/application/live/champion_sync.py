@@ -34,8 +34,14 @@ logger = get_logger("nexus_scalp.application.live.champion_sync")
 class ChampionSync:
     """Champion-registry truth sync (composition root: LiveEngine)."""
 
-    def __init__(self, om: Any) -> None:
-        self.om = om
+    # Stateless mixin (caller contract): this class is never constructed.
+    # LiveEngine invokes these methods UNBOUND with itself as the state
+    # surface — ChampionSync.sync_champion_registry_state(engine) — exactly
+    # as documented in the module docstring and exercised by
+    # tests/unit/test_agent3_champion_registry_sync.py. Storing ``self.om``
+    # would be shadow state nothing reads; every access below consumes the
+    # engine attributes (governance_store, champion_manager, audit, ...)
+    # directly off the ``self`` the caller passes.
 
     @staticmethod
     def evaluate_champion_registry_sync(
@@ -92,24 +98,24 @@ class ChampionSync:
     def sync_champion_registry_state(self) -> None:
         """Makes the registry truthful about the CURRENT Champion (spec 3)."""
         try:
-            if self.om.governance_store is None:
+            if self.governance_store is None:
                 return
-            champ = self.om.champion_manager.champion_or_none()
+            champ = self.champion_manager.champion_or_none()
             if champ is None or not champ.artifact_hash:
                 return
             from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
 
             lifecycle = ModelLifecycleRegistry(
-                audit_repo=self.om.audit, model_registry=self.om.model_registry
+                audit_repo=self.audit, model_registry=self.model_registry
             )
             rows = lifecycle.list_models(status=ModelStatus.CHAMPION, limit=5)
             current = rows[0] if rows else None
-            decision = self.om._evaluate_champion_registry_sync(
+            decision = ChampionSync.evaluate_champion_registry_sync(
                 None,
                 current_row=current,
-                serving_artifact_path=self.om.config.model.model_artifact_path,
-                serving_schema_id=self.om.FEATURE_SCHEMA_ID,
-                serving_dimension=self.om.FEATURE_DIM,
+                serving_artifact_path=self.config.model.model_artifact_path,
+                serving_schema_id=self.FEATURE_SCHEMA_ID,
+                serving_dimension=self.FEATURE_DIM,
                 serving_fingerprint=champ.artifact_hash,
             )
             action = decision.get("action")
@@ -131,42 +137,42 @@ class ChampionSync:
                                 "contract mismatch (declared "
                                 f"{decision.get('stale_row_schema')}"
                                 f"@{decision.get('stale_row_dimension')}D vs "
-                                f"serving {self.om.FEATURE_SCHEMA_ID}"
-                                f"@{self.om.FEATURE_DIM}D)"
+                                f"serving {self.FEATURE_SCHEMA_ID}"
+                                f"@{self.FEATURE_DIM}D)"
                             ),
                         )
-            self.om.model_registry.register_model(
-                artifact_path=self.om.config.model.model_artifact_path,
-                model_version=str(getattr(self.om.config.model, "feature_schema_version", "v1.0")),
-                feature_schema_id=self.om.FEATURE_SCHEMA_ID,
-                feature_dimension=self.om.FEATURE_DIM,
-                config_version=str(getattr(self.om.runtime_config, "get_version", lambda: 0)()),
+            self.model_registry.register_model(
+                artifact_path=self.config.model.model_artifact_path,
+                model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                feature_schema_id=self.FEATURE_SCHEMA_ID,
+                feature_dimension=self.FEATURE_DIM,
+                config_version=str(getattr(self.runtime_config, "get_version", lambda: 0)()),
                 replaced=False,
             )
-            iid = f"{self.om.model_registry.current.model_role.lower()}_{self.om.FEATURE_SCHEMA_ID}_{self.om.FEATURE_DIM}d"
+            iid = f"{self.model_registry.current.model_role.lower()}_{self.FEATURE_SCHEMA_ID}_{self.FEATURE_DIM}d"
             try:
                 lifecycle.set_status(
                     model_id=iid,
                     model_version=str(
-                        getattr(self.om.config.model, "feature_schema_version", "v1.0")
+                        getattr(self.config.model, "feature_schema_version", "v1.0")
                     ),
                     status=ModelStatus.CHAMPION,
                     reason="registry truthfulness sync: live Champion row",
                 )
             except Exception as e:
                 logger.error("[MODEL_GOVERNANCE] champion registry sync failed", error=str(e))
-            self.om.governance_store.record_event(
+            self.governance_store.record_event(
                 GovernanceEvent(
                     event_id=f"ev_{uuid.uuid4().hex[:16]}",
                     event="REGISTRY_RECONCILED",
                     stage=GovernanceStage.REGISTRY,
-                    model_id=self.om.champion_manager.model_id,
+                    model_id=self.champion_manager.model_id,
                     model_version=str(
-                        getattr(self.om.config.model, "feature_schema_version", "v1.0")
+                        getattr(self.config.model, "feature_schema_version", "v1.0")
                     ),
-                    schema_id=self.om.FEATURE_SCHEMA_ID,
+                    schema_id=self.FEATURE_SCHEMA_ID,
                     reason="live Champion registry truthfulness correction",
-                    payload={"artifact_path": self.om.config.model.model_artifact_path},
+                    payload={"artifact_path": self.config.model.model_artifact_path},
                 )
             )
         except Exception as e:
