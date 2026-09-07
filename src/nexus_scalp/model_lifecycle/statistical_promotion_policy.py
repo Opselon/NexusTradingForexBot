@@ -61,6 +61,9 @@ def resolve_policy(
         return policy
     data: dict[str, object] = {}
     if cfg is not None:
+        # StatisticalPromotionPolicy instance passthrough (already resolved).
+        if isinstance(cfg, StatisticalPromotionPolicy):
+            return cfg
         get = getattr(cfg, "get", None)
         if callable(get):
             for key in StatisticalPromotionPolicy.model_fields:
