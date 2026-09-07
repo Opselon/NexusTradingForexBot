@@ -1,57 +1,32 @@
-# DEC-0002 — Hermes Kanban Swarm Integration
+# RETIRED DUPLICATE — DEC-0002 (see DEC-0003)
 
-**Date:** 2026-08-22  
-**Status:** ACCEPTED  
-**Scope:** Repository engineering workflow / multi-agent orchestration
+**Status:** RETIRED — DUPLICATE IDENTITY
 
-## Decision
+## Why this file is empty
 
-Adopt **Hermes Kanban Swarm / multi-agent orchestration** as an approved way to parallelize NexusTradingForexBot engineering, while keeping the repository's existing multi-agent Git/forensic contract authoritative.
+`DEC-0002` in this repository canonically refers to:
 
-The swarm is an orchestration mechanism. It does not replace `agents/taskboard.md`, `agents/locks.yaml`, contracts, runtime invariants, handoffs, Git history, or verification gates.
+> **DEC-0002 — Node.js Runtime Role in Nexus Scalp Engine**
+> (`agents/decisions/DEC-0002-nodejs-runtime-role.md`)
 
-## Rationale
+This file previously carried a full copy of the **Hermes Kanban Swarm
+Integration** decision under the same `DEC-0002` identifier — a numbering
+collision (two different subjects, one ID). The kanban-swarm decision's
+canonical, renumbered home is:
 
-Nexus already has explicit ownership, task, lock, contract, invariant, and handoff mechanisms. Introducing a second independent coordination state would create conflicting sources of truth.
+> **DEC-0003 — Hermes Kanban Swarm Integration**
+> (`agents/decisions/DEC-0003-hermes-kanban-swarm-integration.md`)
+> (renumbered from the upstream `DEC-0002` precisely to avoid this collision;
+> see the renumbering note inside DEC-0003.)
 
-Therefore:
+The full content was removed from this duplicate on 2026-09-07 by the
+decision-record integrity pass (P3). One decision ID maps to exactly ONE
+canonical record. Enforcement: `scripts/ci/check_decision_ids.py`
+(runs in the local pre-push gate and CI static lane).
 
-```text
-Hermes Swarm
-     |
-     v
-Task decomposition / worker execution
-     |
-     v
-Nexus durable project memory
-     |
-     +--> taskboard
-     +--> locks
-     +--> contracts
-     +--> invariants
-     +--> handoffs
-     +--> Git history
-     +--> verification
-```
-
-## Important boundary
-
-The project does **not** assume that Hermes provides Slack/Discord-style peer-to-peer live chat between independent sessions. Any ephemeral agent-to-agent messaging supplied by a particular Hermes release is supplemental. Durable conclusions must be recorded in repository artifacts.
-
-## Workspace policy
-
-For independent write-heavy workers, isolated Git worktrees are preferred when supported by the installed Hermes runtime. A shared workspace is allowed only for explicitly non-overlapping tasks with ownership control.
-
-Unknown WIP remains foreign until ownership is established.
-
-## Safety
-
-Swarm agents must not bypass live-trading, risk, MT5, model-governance, database, forensic-integrity, or security contracts. No agent may declare a partial test run to be a global green state.
-
-## Consequence
-
-The detailed operational contract lives in:
-
-`agents/hermes-kanban-swarm.md`
-
-`agents/skill.md` remains the master entry point and must receive a short dated reference entry when this integration is promoted to the default workflow.
+Inbound references:
+- `agents/repository_state.md` (Snapshot 2026-08-22) → points at DEC-0003.
+- `agents/forensic_reports/2026-09-02_repository_hygiene.md` cites
+  "DEC-0002 keeps blanket ignore out" — that citation is about the Node.js
+  runtime decision (node_modules handling) and resolves correctly to
+  `DEC-0002-nodejs-runtime-role.md`.

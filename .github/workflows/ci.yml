@@ -73,6 +73,10 @@ jobs:
         run: |
           python scripts/ci/check_workflows.py --format text --strict
 
+      - name: Decision-ID uniqueness (P3 — one DEC id, one canonical record)
+        run: |
+          python scripts/ci/check_decision_ids.py
+
       - name: Local-gate parity (same contracts as check_local.py)
         run: |
           # GATE PARITY CONTRACT (CHG-0049): CI must FAIL when the local

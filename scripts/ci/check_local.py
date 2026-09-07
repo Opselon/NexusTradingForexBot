@@ -353,6 +353,41 @@ def stage_manifest() -> StageResult:
     )
 
 
+def stage_decision_ids() -> StageResult:
+    """P3: duplicate ADR/DEC identifier guard (one ID, one canonical record)."""
+    t0 = time.perf_counter()
+    script = REPO_ROOT / "scripts" / "ci" / "check_decision_ids.py"
+    if not script.exists():
+        return StageResult(
+            name="decision_ids",
+            command=[],
+            exit_code=-1,
+            status="configuration_error",
+            duration_sec=0.0,
+            detail="check_decision_ids.py missing",
+        )
+    r = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=30,
+    )
+    return StageResult(
+        name="decision_ids",
+        command=[sys.executable, "scripts/ci/check_decision_ids.py"],
+        exit_code=r.returncode,
+        status="passed" if r.returncode == 0 else "failed",
+        duration_sec=time.perf_counter() - t0,
+        detail=(r.stdout or r.stderr).strip().splitlines()[0][:200]
+        if (r.stdout or r.stderr)
+        else "",
+    )
+
+
 def stage_fast_tests(scope_files: list[str]) -> StageResult:
     """Cheap targeted tests: the local-gate regression suite (does NOT modify
     the real tree) + the manifest unit tests when they exist. Never xdist,
@@ -510,6 +545,12 @@ def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_
 
     # [4] Critical-suite manifest validation (cheap, configuration-level)
     results.append(stage_manifest())
+
+    # [4b] Decision-ID uniqueness (P3): one DEC-XXXX id, one canonical record.
+    # Cheap static scan of agents/decisions/ — runs on every gate invocation
+    # so a re-introduced duplicate (the DEC-0002 collision class) fails the
+    # local gate exactly as it fails CI.
+    results.append(stage_decision_ids())
 
     # [5] Fast targeted unit tests
     results.append(stage_fast_tests(scope))
