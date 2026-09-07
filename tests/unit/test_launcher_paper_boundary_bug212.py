@@ -192,14 +192,23 @@ def _make_proposal(action: ActionType, ticket: int = 0):
 def test_shadow_boundary_source_contains_no_mutation_downgrade() -> None:
     """The decision path must downgrade non-NO_TRADE proposals in SHADOW
     before dispatch (structural regression on the fix site)."""
-    from pathlib import Path
+    import inspect
 
-    src = Path("src/nexus_scalp/application/live_engine.py").read_text(encoding="utf-8")
+    # L2 extraction: the decision-execution stage (boundary + downgrade +
+    # dispatch) is owned by DecisionExecutor; LiveEngine must delegate and
+    # the owner must carry the contract markers in the right order.
+    from nexus_scalp.application.live.decision_executor import DecisionExecutor
+    from nexus_scalp.application.live_engine import LiveEngine
+    facade_src = inspect.getsource(LiveEngine._process_tick_pipeline)
+    assert "_decision_executor.execute_decision_stage(" in facade_src, (
+        "LiveEngine tick pipeline must delegate the decision stage to DecisionExecutor"
+    )
+    src = inspect.getsource(DecisionExecutor.execute_decision_stage)
     assert "SHADOW_OBSERVATION_ONLY" in src, "SHADOW downgrade marker missing"
     assert "SHADOW_BOUNDARY" in src, "SHADOW boundary logging missing"
     # the downgrade must run BEFORE the dispatch router call site
     boundary_pos = src.find("SHADOW EXECUTION BOUNDARY")
-    dispatch_pos = src.find("self.order_manager.dispatch_order(")
+    dispatch_pos = src.find("dispatch_order(")
     assert boundary_pos != -1 and dispatch_pos != -1
     assert boundary_pos < dispatch_pos, "SHADOW boundary must precede dispatch"
 
