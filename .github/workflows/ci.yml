@@ -199,6 +199,36 @@ jobs:
       - name: torch.load safety guard (P2)
         run: python scripts/ci/check_torch_load_safety.py
 
+      # -------- Critical-path manifest enforcement (QA hardening, P0) --------
+      # DRIFT = a critical source module (explicit floor: live_engine,
+      # order_manager, risk_engine, policy, update_engine, ...) with NO
+      # critical-suite guardian test. This FAILS CI: "developer must
+      # remember" is not an enforcement mechanism. Graph-discovered
+      # unguarded hotspots print as visible warnings (report-only).
+      - name: Critical manifest enforcement (drift gate)
+        run: python scripts/ci/critical_manifest.py
+
+      # -------- Mutation runner smoke (QA hardening, P0) --------
+      # Cheap contract check of the mutation engine itself: repo root,
+      # python resolver, catalog integrity, anchor uniqueness. A broken
+      # runner can never falsely report a green campaign downstream.
+      - name: Mutation runner smoke
+        run: |
+          python scripts/qa/run_mutations.py --list-targets > "$CI_RESULTS_DIR/mutation-smoke.json"
+          python - <<'PY'
+          import json, os, sys
+          d = json.load(open(os.path.join(os.environ["CI_RESULTS_DIR"], "mutation-smoke.json")))
+          ok = (
+              d.get("repo_root_ok") is True
+              and d.get("python_is_running_interpreter") is True
+              and d.get("mutations_total", 0) >= 9
+              and all(e.get("target_exists") and e.get("battery_exists") and e.get("anchor_unique")
+                      for e in d.get("catalog", []))
+          )
+          print("mutation runner smoke:", "PASS" if ok else "FAIL")
+          sys.exit(0 if ok else 1)
+          PY
+
       - name: Mypy - Type checking
         id: mypy
         if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
@@ -307,6 +337,27 @@ jobs:
               json.dump({"percent": pct}, fh)
           print(f"coverage={pct}")
           PY
+          exit 0
+
+      # -------- Critical-file coverage gate (QA hardening, P1) --------
+      # The repo-wide TOTAL can hide a collapsing critical file behind
+      # healthy dead code. This gate enforces per-file floors on the
+      # execution-critical modules (thresholds = measured critical-suite
+      # baseline, ratcheted upward over time in COVERAGE_THRESHOLDS).
+      # NO_DATA on a critical file also fails: silence is not coverage.
+      - name: Critical-file coverage gate
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        run: |
+          set +e
+          python scripts/ci/critical_manifest.py --coverage "$CI_RESULTS_DIR/pytest/coverage.xml" --report-only > "$CI_RESULTS_DIR/coverage/critical-gate.txt" 2>&1
+          rc=$?
+          cat "$CI_RESULTS_DIR/coverage/critical-gate.txt"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" critical_coverage "$rc" "per-file floors on execution-critical modules (see coverage/critical-gate.txt)" || true
+          # hard gate: recorded via run-info AND failing here
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::critical-file coverage gate failed (see critical-gate.txt)"
+            exit 1
+          fi
           exit 0
 
       # -------- Blocked-state classification (CHG-0052, run #685 class) --------
@@ -542,7 +593,7 @@ jobs:
           python - <<'PY'
           import json, os
           root = os.environ["CI_RESULTS_DIR"]
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "runtime_gate", "layered_smoke"]
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "critical_coverage", "runtime_gate", "layered_smoke"]
           statuses = {}
           for name in checks:
               p = os.path.join(root, "run-info", f"{name}.json")
