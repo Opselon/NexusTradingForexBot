@@ -32,8 +32,8 @@ from nexus_scalp.risk.runtime_safety import (
     HotPathErrorCircuit,
     PersistedRiskState,
     classify_account_freshness,
-    evaluate_consecutive_losses_with_time,
     evaluate_consecutive_loss_freeze,
+    evaluate_consecutive_losses_with_time,
     resolve_boot_decision,
 )
 
@@ -103,9 +103,9 @@ def test_halt_survives_simulated_restart(repo) -> None:
         state="HALTED", reason="drawdown", source="SURVIVAL_DRAWDOWN_GUARD", equity=1234.5
     )
     # simulate restart: a brand-new repository instance over the same DB file
-    from nexus_scalp.adapters.database.audit_repository import AuditRepository as AR
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository as Repo
 
-    repo2 = AR(db_url=f"sqlite:///{repo._db_path}")
+    repo2 = Repo(db_url=f"sqlite:///{repo._db_path}")
     try:
         row = repo2.get_runtime_risk_state()
         assert row is not None and row["state"] == "HALTED"
@@ -148,9 +148,9 @@ def test_release_expected_state_mismatch_refused(repo) -> None:
 
 def test_restart_does_not_release(repo) -> None:
     repo.set_runtime_risk_state(state="KILL_SWITCH", reason="operator kill")
-    from nexus_scalp.adapters.database.audit_repository import AuditRepository as AR
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository as Repo
 
-    repo2 = AR(db_url=f"sqlite:///{repo._db_path}")
+    repo2 = Repo(db_url=f"sqlite:///{repo._db_path}")
     try:
         row = repo2.get_runtime_risk_state()
         assert row["state"] == "KILL_SWITCH" and row["release_required"] == 1
@@ -164,9 +164,7 @@ def test_restart_does_not_release(repo) -> None:
 
 
 def _insert_bad_signal_query() -> str:
-    return (
-        "INSERT INTO audit_signals (request_id, symbol, action) VALUES (?, ?, ?)"
-    )
+    return "INSERT INTO audit_signals (request_id, symbol, action) VALUES (?, ?, ?)"
 
 
 def test_batch_failure_salvages_good_rows_and_dead_letters_bad(tmp_path, monkeypatch) -> None:
@@ -177,9 +175,7 @@ def test_batch_failure_salvages_good_rows_and_dead_letters_bad(tmp_path, monkeyp
     whose executemany always fails (simulating a batch insert conflict):
     no test-side reimplementation of the algorithm.
     """
-    repo = AuditRepository(
-        db_url=f"sqlite:///{tmp_path / 'batch.db'}", flush_interval_sec=0.05
-    )
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'batch.db'}", flush_interval_sec=0.05)
     # Make audit_signals inserts fail ONLY in the bulk executemany path so
     # the batch fails but the per-row retry of the GOOD guard row succeeds.
     import nexus_scalp.adapters.database.audit_repository as ar_mod
@@ -332,7 +328,9 @@ def test_telemetry_enqueue_is_dropable_and_counted(repo) -> None:
     put_nowait = repo._queue.put_nowait
     repo._queue.put_nowait = _raise_full  # type: ignore[method-assign]
     try:
-        repo._enqueue_telemetry("INSERT INTO audit_guard_telemetry VALUES (?, ?, ?, 1)", ("w", "s", "r"))
+        repo._enqueue_telemetry(
+            "INSERT INTO audit_guard_telemetry VALUES (?, ?, ?, 1)", ("w", "s", "r")
+        )
     finally:
         repo._queue.put_nowait = put_nowait  # type: ignore[method-assign]
     assert repo.telemetry_dropped == 1
