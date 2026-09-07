@@ -29,22 +29,23 @@ fails closed on anything that is not RUNNING).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Iterable
+from typing import Any
 
 __all__ = [
     "RUNTIME_RISK_STATE_VERSION",
-    "RuntimeRiskState",
-    "PersistedRiskState",
-    "BootDecision",
-    "resolve_boot_decision",
-    "HotPathErrorCircuit",
     "AccountFreshness",
+    "BootDecision",
+    "HotPathErrorCircuit",
+    "PersistedRiskState",
+    "RuntimeRiskState",
     "classify_account_freshness",
-    "evaluate_consecutive_losses",
     "evaluate_consecutive_loss_freeze",
+    "evaluate_consecutive_losses",
+    "resolve_boot_decision",
 ]
 
 #: Row-schema version for future migrations. Unknown higher versions are
@@ -129,8 +130,8 @@ class PersistedRiskState:
         """
         if row is None:
             return None
-        get = row.get if isinstance(row, dict) else lambda k, d=None: (
-            row[k] if k in row.keys() else d
+        get = (
+            row.get if isinstance(row, dict) else lambda k, d=None: row[k] if k in row.keys() else d
         )
         state = str(get("state", "") or "")
         if not state:
