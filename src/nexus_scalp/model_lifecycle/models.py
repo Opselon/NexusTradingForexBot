@@ -79,6 +79,10 @@ class TrainingDatasetRow(BaseModel):
     session: str = Field(default="ALL")
     sample_weight: float = Field(default=1.0, ge=0.0)
     outcome_r: float = Field(default=0.0)
+    #: REAL per-trade execution evidence from the ledger (0.0 = not recorded —
+    #: never fabricate; consumers must treat 0 as unknown, not as a value).
+    mae_r: float = Field(default=0.0)
+    mfe_r: float = Field(default=0.0)
     is_executed: bool = Field(default=False)
     is_closed: bool = Field(default=False)
     exit_reason: str = Field(default="")
