@@ -198,15 +198,16 @@ def run_emission_gate(
             "smoke artifact flagged production_eligible",
         )
 
-    # scaler geometry
+    # scaler geometry (smoke-scoped: a 50D ledger drill ships a 50D scaler;
+    # canonical publication still requires the canonical width)
     if scaler_mean_dim is not None:
         _require(
-            scaler_mean_dim == CANONICAL_FEATURE_DIM,
+            _is_smoke or scaler_mean_dim == CANONICAL_FEATURE_DIM,
             f"scaler mean dim {scaler_mean_dim} != {CANONICAL_FEATURE_DIM}",
         )
     if scaler_std_dim is not None:
         _require(
-            scaler_std_dim == CANONICAL_FEATURE_DIM,
+            _is_smoke or scaler_std_dim == CANONICAL_FEATURE_DIM,
             f"scaler std dim {scaler_std_dim} != {CANONICAL_FEATURE_DIM}",
         )
 
