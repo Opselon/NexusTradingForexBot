@@ -72,8 +72,11 @@ def _capture_train_slices(monkeypatch: pytest.MonkeyPatch):
             cls = getattr(module, "WalkForwardTrainer", None)
             if cls is not None:
                 patch_class(cls)
-    # Also patch the class object THIS test file's import resolved to (may
-    # differ from any sys.modules entry after the w2 purge).
+    # Also patch the class object THIS test file's import resolved to. After
+    # the w2 purge, sys.modules holds a NEW module while this file's
+    # top-level WalkForwardTrainer binding is the ORPHANED old class —
+    # instances built from it never touch the sys.modules class.
+    patch_class(WalkForwardTrainer)
     patch_class(wf_module.WalkForwardTrainer)
     return slices
 
