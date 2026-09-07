@@ -65,6 +65,11 @@ class CalibrationProvenance:
 
     model_version: str
     calibration_dataset_id: str
+    #: sha256[:16] of the EXACT model artifact this calibration was fit for.
+    #: Empty = NOT_RECORDED = the artifact must be treated as NOT_CALIBRATED
+    #: (a calibration without model-identity binding is unusable — mission
+    #: phase 7: a calibration must never survive a model replacement).
+    artifact_fingerprint: str
     calibration_period_start: str  # ISO timestamps of the fitting slice
     calibration_period_end: str
     validation_dataset_id: str
@@ -81,6 +86,7 @@ class CalibrationProvenance:
             [
                 bool(self.model_version),
                 bool(self.calibration_dataset_id),
+                bool(self.artifact_fingerprint),
                 bool(self.calibration_period_start),
                 bool(self.calibration_period_end),
                 bool(self.validation_dataset_id),
@@ -99,6 +105,7 @@ class CalibrationProvenance:
             "schema": CALIBRATION_SCHEMA_VERSION,
             "model_version": self.model_version,
             "calibration_dataset_id": self.calibration_dataset_id,
+            "artifact_fingerprint": self.artifact_fingerprint,
             "calibration_period_start": self.calibration_period_start,
             "calibration_period_end": self.calibration_period_end,
             "validation_dataset_id": self.validation_dataset_id,
@@ -112,10 +119,11 @@ class CalibrationProvenance:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CalibrationProvenance":
+    def from_dict(cls, data: dict[str, Any]) -> CalibrationProvenance:
         return cls(
             model_version=str(data.get("model_version", "")),
             calibration_dataset_id=str(data.get("calibration_dataset_id", "")),
+            artifact_fingerprint=str(data.get("artifact_fingerprint", "")),
             calibration_period_start=str(data.get("calibration_period_start", "")),
             calibration_period_end=str(data.get("calibration_period_end", "")),
             validation_dataset_id=str(data.get("validation_dataset_id", "")),
@@ -256,7 +264,7 @@ class ConfidenceCalibrator:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_artifact(cls, path: str | Path) -> "ConfidenceCalibrator":
+    def from_artifact(cls, path: str | Path) -> ConfidenceCalibrator:
         """Loads a persisted calibration artifact; corrupt/missing -> NOT_CALIBRATED."""
         try:
             with open(path, encoding="utf-8") as fh:
@@ -389,13 +397,33 @@ def build_calibration_artifact(
     cal_end: str,
     val_start: str,
     val_end: str,
+    artifact_fingerprint: str = "",
+    calibration_is_oos: bool = False,
+    validation_is_oos: bool = False,
 ) -> dict[str, Any]:
     """Fits on the calibration slice, evaluates on the DISJOINT validation
     slice, and returns the artifact payload (params + provenance + metrics).
 
+    ``artifact_fingerprint`` (sha256[:16] of the exact model artifact the
+    confidences came from) is REQUIRED for a production-trustworthy artifact:
+    without it ``is_complete()`` is False and every consumer treats the
+    calibration as NOT_CALIBRATED (mission phase 7 identity binding).
+
+    ``calibration_is_oos`` / ``validation_is_oos`` are the explicit holdout
+    declaration (mission phase 2): both slices must be declared OOS/holdout.
+    A train-slice observation is in-sample BY DEFINITION — fitting on it
+    would measure memory, not calibration — so the caller must declare the
+    slice status and a False declaration is rejected with TRAIN_SLICE.
+
     Raises ValueError on insufficient samples — the caller must then keep
     flat sizing (INSUFFICIENT_DATA, never OPTIMIZED).
     """
+    if not calibration_is_oos or not validation_is_oos:
+        raise ValueError(
+            "TRAIN_SLICE_REJECTED: calibration requires OOS/holdout-declared "
+            "slices (calibration_is_oos and validation_is_oos must both be "
+            "True); fitting on training observations is contamination."
+        )
     if len(cal_confidences) < MIN_CALIBRATION_SAMPLES:
         raise ValueError(
             f"INSUFFICIENT_DATA: {len(cal_confidences)} calibration samples < "
@@ -410,6 +438,7 @@ def build_calibration_artifact(
     calibrator = ConfidenceCalibrator(params=params, provenance=CalibrationProvenance(
         model_version=model_version,
         calibration_dataset_id=calibration_dataset_id,
+        artifact_fingerprint=artifact_fingerprint,
         calibration_period_start=cal_start,
         calibration_period_end=cal_end,
         validation_dataset_id=validation_dataset_id,
