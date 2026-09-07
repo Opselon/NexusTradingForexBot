@@ -13,6 +13,8 @@ Geometry contract:
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import polars as pl
 import pytest
@@ -32,19 +34,47 @@ def _frame(n: int = 600, seed: int = 13) -> pl.DataFrame:
 
 
 def _capture_train_slices(monkeypatch: pytest.MonkeyPatch):
-    """Captures (train_start, train_end) per fold by spying on _fit_scaler."""
+    """Captures the training row count per fold by spying on _fit_scaler.
+
+    NOTE: test_agent8_w2_trainer_hygiene.py performs a module-level
+    sys.modules purge + re-import, which can leave MULTIPLE
+    walk_forward_trainer module instances alive in one pytest session. The
+    test file's top-level `from ... import WalkForwardTrainer` may be bound
+    to a DIFFERENT class object than `sys.modules[...]` holds at test time.
+    To be robust, patch _fit_scaler on EVERY live instance of the module,
+    wrapping the EXISTING attribute (staticmethod or bound function).
+    """
+    import sys
+
     import nexus_scalp.training.walk_forward_trainer as wf_module
 
-    slices: list[tuple[int, int]] = []
-    orig = WalkForwardTrainer._fit_scaler
+    slices: list[int] = []
+    seen_classes: set[int] = set()
 
-    def spy(self, X_raw):  # type: ignore[no-untyped-def]
-        # Called once per fold with the training slice, and once at the end
-        # with the full dataset. Record the observed sizes.
-        slices.append(int(X_raw.shape[0]))
-        return orig(self, X_raw)
+    def patch_class(cls: Any) -> None:
+        if id(cls) in seen_classes:
+            return
+        seen_classes.add(id(cls))
+        current = cls.__dict__.get("_fit_scaler")
+        # _fit_scaler is a @staticmethod: the stored attribute on the class
+        # is a staticmethod wrapper whose __func__ is the plain function.
+        target = current.__func__ if hasattr(current, "__func__") else current
+        # Wrap as a plain function taking (self, X_raw); assigning a plain
+        # function to the class makes it a bound method on instances.
+        def spy(self, X_raw):  # type: ignore[no-untyped-def]
+            slices.append(int(X_raw.shape[0]))
+            return target(self, X_raw)
 
-    monkeypatch.setattr(wf_module.WalkForwardTrainer, "_fit_scaler", spy)
+        monkeypatch.setattr(cls, "_fit_scaler", spy)
+
+    for name, module in list(sys.modules.items()):
+        if name == "nexus_scalp.training.walk_forward_trainer" and module is not None:
+            cls = getattr(module, "WalkForwardTrainer", None)
+            if cls is not None:
+                patch_class(cls)
+    # Also patch the class object THIS test file's import resolved to (may
+    # differ from any sys.modules entry after the w2 purge).
+    patch_class(wf_module.WalkForwardTrainer)
     return slices
 
 
