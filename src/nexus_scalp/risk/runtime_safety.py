@@ -123,7 +123,9 @@ class PersistedRiskState:
 
         Returns None when the row is unusable (missing state). Unknown
         states are PRESERVED verbatim — the boot decision fails closed
-        on them instead of silently normalizing to RUNNING.
+        on them instead of silently normalizing to RUNNING. Decoding
+        bypasses the constructing validator deliberately: a decoded row
+        is a prior persisted fact, not a new decision.
         """
         if row is None:
             return None
@@ -148,20 +150,20 @@ class PersistedRiskState:
             losses = int(get("consecutive_losses", 0) or 0)
         except (TypeError, ValueError):
             losses = 0
-        return cls(
-            state=state,
-            reason=str(get("reason", "") or ""),
-            source=str(get("source", "") or ""),
-            triggered_at=str(get("triggered_at", "") or ""),
-            balance=_f("balance"),
-            equity=_f("equity"),
-            peak_equity=_f("peak_equity"),
-            release_required=bool(get("release_required", 1)),
-            released_at=get("released_at"),
-            release_actor=get("release_actor"),
-            consecutive_losses=max(0, losses),
-            version=version,
-        )
+        obj = cls.__new__(cls)  # decode path: skip __post_init__ validation
+        object.__setattr__(obj, "state", state)
+        object.__setattr__(obj, "reason", str(get("reason", "") or ""))
+        object.__setattr__(obj, "source", str(get("source", "") or ""))
+        object.__setattr__(obj, "triggered_at", str(get("triggered_at", "") or ""))
+        object.__setattr__(obj, "balance", _f("balance"))
+        object.__setattr__(obj, "equity", _f("equity"))
+        object.__setattr__(obj, "peak_equity", _f("peak_equity"))
+        object.__setattr__(obj, "release_required", bool(get("release_required", 1)))
+        object.__setattr__(obj, "released_at", get("released_at"))
+        object.__setattr__(obj, "release_actor", get("release_actor"))
+        object.__setattr__(obj, "consecutive_losses", max(0, losses))
+        object.__setattr__(obj, "version", version)
+        return obj
 
 
 @dataclass(frozen=True)

@@ -41,7 +41,21 @@ def _make_engine(dd_limit: float) -> SimpleNamespace:
         _survival_mode_active=False,
         notifier=None,
         _running=True,
+        # Runtime-safety mission: the halt path is the canonical
+        # trigger_runtime_halt entrypoint; record the call so the unit keeps
+        # testing the DRAWDOWN POLICY in isolation while asserting the halt
+        # routes through the persisted-state mechanism.
+        _runtime_risk_state="RUNNING",
+        _halt_reason="",
+        _halt_triggered_at="",
+        _halt_calls=[],
     )
+
+    def _record_halt(**kwargs):
+        engine._halt_calls.append(kwargs)
+        engine._running = False
+
+    engine.trigger_runtime_halt = _record_halt
     engine._update_survival_state = LiveEngine._update_survival_state.__get__(
         engine, SimpleNamespace
     )
@@ -75,6 +89,19 @@ def test_survival_guard_still_halts_on_low_limit() -> None:
     assert engine._survival_mode_active is True
 
 
+def test_drawdown_halt_routes_through_persisted_state_entrypoint() -> None:
+    """Runtime-safety mission: the drawdown halt goes through
+    trigger_runtime_halt (the persisted-state entrypoint), not a bare
+    ``self._running = False`` that a restart would silently forget."""
+    engine = _make_engine(2.0)
+    engine._update_survival_state(ACCOUNT, 0)
+    assert len(engine._halt_calls) == 1
+    call = engine._halt_calls[0]
+    assert call["state"] == "HALTED"
+    assert call["source"] == "SURVIVAL_DRAWDOWN_GUARD"
+    assert "Max drawdown exceeded" in call["reason"]
+
+
 def test_survival_guard_halts_when_drawdown_exceeds_snapshot() -> None:
     """drawdown 15.94 > snapshot limit 5.0 -> halt (limit is the snapshot)."""
     engine = _make_engine(5.0)
@@ -103,7 +130,17 @@ def test_detached_runtime_config_falls_back_to_bootstrap() -> None:
         _survival_mode_active=False,
         notifier=None,
         _running=True,
+        _runtime_risk_state="RUNNING",
+        _halt_reason="",
+        _halt_triggered_at="",
+        _halt_calls=[],
     )
+
+    def _record_halt(**kwargs):
+        engine._halt_calls.append(kwargs)
+        engine._running = False
+
+    engine.trigger_runtime_halt = _record_halt
     engine._update_survival_state = LiveEngine._update_survival_state.__get__(
         engine, SimpleNamespace
     )
