@@ -20,6 +20,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+import polars as pl
+import torch
+
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.model_health")
@@ -31,13 +35,12 @@ class ModelHealth:
     def __init__(self, om: Any) -> None:
         self.om = om
 
-
     def detect_model_collapse(
         self, df_labeled: pl.DataFrame, feature_cols: list[str]
     ) -> dict[str, float] | None:
         """
         Runs the model over a recent sample and returns the class distribution.
-    
+
         Returns None when no bundle is available. The caller decides whether the
         distribution indicates a mono-class collapse and how to react.
         """
@@ -76,12 +79,11 @@ class ModelHealth:
             logger.error("[MODEL] collapse detection failed (isolated)", error=str(e))
             return None
 
-
     def reinitialize_collapsed_model(self) -> bool:
         """
         Detects a mono-class prediction collapse (>= 85% on a single active class)
         and re-initializes the live model with fresh weights.
-    
+
         Previously a collapsed baseline (e.g. 100% SELL) was kept serving live
         ticks: the fine-tuning quality gate rejected every update and rolled back
         to the SAME collapsed baseline, so the engine never escaped the bad state.
@@ -104,7 +106,7 @@ class ModelHealth:
             collapsed = buy_pct >= 85.0 or sell_pct >= 85.0
             if not collapsed:
                 return False
-    
+
             logger.warning(
                 "[MODEL] MONO_CLASS_COLLAPSE_DETECTED - re-initializing weights",
                 buy_pct=round(buy_pct, 1),
@@ -148,4 +150,3 @@ class ModelHealth:
         except Exception as e:
             logger.error("[MODEL] collapse recovery failed (isolated)", error=str(e))
             return False
-
