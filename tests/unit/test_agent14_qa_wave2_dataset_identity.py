@@ -179,3 +179,88 @@ def test_dataset_factory_id_moves_when_content_changes(tmp_path) -> None:
         "a one-cent close mutation MUST change the dataset id "
         "(content-aware identity, not config-only)"
     )
+
+
+# ---------------------------------------------------------------------------
+# W5 — deterministic rebuild is IDEMPOTENT (CLI contract vs store immutability)
+# ---------------------------------------------------------------------------
+# The CLI (nexus model-dataset-build) builds deterministically: same input ->
+# same dataset_id. Re-running the command must exit OK (idempotent reuse of
+# the intact existing artifact), while the store's immutability contract
+# still refuses DIFFERENT content under the same id and corrupt artifacts.
+
+
+def _factory_frame(rows: int = 120, close_shift: float = 0.0) -> pl.DataFrame:
+    base = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
+    data = {
+        "timestamp": [base + timedelta(minutes=i) for i in range(rows)],
+        "open": [3300.0] * rows,
+        "high": [3301.0] * rows,
+        "low": [3299.0] * rows,
+        "close": [3300.5 + (i % 7) * 0.1 + close_shift for i in range(rows)],
+        "volume": [100.0] * rows,
+        "atr": [0.5] * rows,
+    }
+    for i in range(50):
+        data[f"feat_{i}"] = [(i + 1) * 0.01 + (r % 5) * 0.001 for r in range(rows)]
+    return pl.DataFrame(data)
+
+
+def _build(root: Path, data: pl.DataFrame) -> dict[str, Any]:
+    from nexus_scalp.model_generation.dataset_factory import DatasetFactory
+    from nexus_scalp.model_generation.sample_factory import SampleFactory
+
+    factory = DatasetFactory(store=ArtifactStore(root=root), sample_factory=SampleFactory())
+    return factory.build(data, symbol="XAUUSD", timeframe="M1")
+
+
+def test_w5_rebuild_with_same_input_reuses_artifact(tmp_path) -> None:
+    """Same input twice in the SAME store: second build is an idempotent
+    no-op returning the existing handle (reused=True), exit-implied OK."""
+    df = _factory_frame()
+    h1 = _build(tmp_path, df)
+    h2 = _build(tmp_path, df)
+    assert h2["dataset_id"] == h1["dataset_id"]
+    assert h2.get("reused") is True, "intact same-content artifact must be REUSED, not rebuilt"
+
+
+def test_w5b_rebuild_refuses_different_content_same_id(tmp_path, monkeypatch) -> None:
+    """A content change that somehow maps to the SAME id (digest collision
+    or manual manifest) must still raise the immutability conflict."""
+    from nexus_scalp.model_generation.dataset_factory import DatasetFactory
+    from nexus_scalp.model_generation.sample_factory import SampleFactory
+
+    df = _factory_frame()
+    df_mut = df.with_columns(
+        pl.when(pl.arange(0, df.height) == 60)
+        .then(pl.col("close") + 0.01)
+        .otherwise(pl.col("close"))
+        .alias("close")
+    )
+    store = ArtifactStore(root=tmp_path)
+    factory = DatasetFactory(store=store, sample_factory=SampleFactory())
+    h = factory.build(df, symbol="XAUUSD", timeframe="M1")
+    # Force the mutated frame to claim the SAME id (simulate id collision):
+    # patch deterministic id resolution by writing the mutated manifest under
+    # the original id with the ORIGINAL content digest.
+    monkeypatch.setattr(
+        "nexus_scalp.model_generation.dataset_factory.deterministic_dataset_id",
+        lambda *a, **k: h["dataset_id"],
+    )
+    with pytest.raises(ArtifactConflictError):
+        factory.build(df_mut, symbol="XAUUSD", timeframe="M1")
+
+
+def test_w5c_rebuild_refuses_corrupt_existing_artifact(tmp_path) -> None:
+    """Existing artifact bytes tampered (manifest hash mismatch): rebuild
+    must REFUSE, never silently overwrite corrupt evidence."""
+    df = _factory_frame()
+    h = _build(tmp_path, df)
+    parquet = tmp_path / "datasets" / h["dataset_id"] / "dataset.parquet"
+    backup = parquet.read_bytes()
+    parquet.write_bytes(b"CORRUPTED")
+    try:
+        with pytest.raises(ArtifactConflictError):
+            _build(tmp_path, df)
+    finally:
+        parquet.write_bytes(backup)
