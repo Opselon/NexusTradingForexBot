@@ -14,13 +14,13 @@ from __future__ import annotations
 import pytest
 import torch
 
+from nexus_scalp.model_generation.model_factory import ModelFactory
 from nexus_scalp.model_lifecycle.model_class_contract import (
     LEGACY_HEAD_CLASSES,
     TRAINED_CLASS_COUNT,
     mask_wait_logit,
     masked_softmax,
 )
-from nexus_scalp.model_generation.model_factory import ModelFactory
 from nexus_scalp.models.scalp_net import ScalpNet
 
 
