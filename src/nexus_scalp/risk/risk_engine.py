@@ -46,8 +46,15 @@ class RiskEngine:
         max_impact_reward_ratio: float = 0.45,  # Allow up to 45% slippage/reward ratio on tight M1 targets
         min_risk_reward_ratio: float = 1.8,
         min_rr_high_confidence: float = 1.2,
-        high_confidence_threshold: float = 0.95,  # = config default (AlgoConfig)
+        high_confidence_threshold: float | None = None,
     ) -> None:
+        # THRESHOLD OWNERSHIP (P0 policy-governance): high_confidence_threshold
+        # defaults to the canonical AlgoConfig value (same constant the runtime
+        # snapshot syncs); the local literal duplicate default is gone.
+        if high_confidence_threshold is None:
+            from nexus_scalp.configuration.config import AlgoConfig
+
+            high_confidence_threshold = AlgoConfig().high_confidence_threshold
         self.config = config
         self.max_margin_usage_pct = max_margin_usage_pct
         self.max_allowed_lots = max_allowed_lots
@@ -373,8 +380,10 @@ class RiskEngine:
         # ----------------------------------------------------------------------
         # Determine active min required RR based on confidence (normal vs high confidence)
         active_min_rr = self.min_risk_reward_ratio
-        high_conf_thresh = getattr(self, "high_confidence_threshold", 0.95)
-        min_rr_high_conf = getattr(self, "min_rr_high_confidence", 1.2)
+        # THRESHOLD OWNERSHIP: always set in __init__ from the canonical
+        # AlgoConfig default; getattr-with-literal fallback removed (P0).
+        high_conf_thresh = self.high_confidence_threshold
+        min_rr_high_conf = self.min_rr_high_confidence
         if hasattr(proposal, "confidence") and proposal.confidence >= high_conf_thresh:
             active_min_rr = min(active_min_rr, min_rr_high_conf)
 
