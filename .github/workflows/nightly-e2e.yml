@@ -1,0 +1,130 @@
+name: Nightly Client E2E (Docker)
+
+# QA HARDENING MISSION (2026-09-07) — P1 automated client E2E.
+#
+# Previously the golden journeys (tests/e2e_client/j1..j7) only ran
+# manually against a developer's live engine. This workflow makes them
+# CI-runnable and ISOLATED:
+#
+#   docker compose up core  ->  readiness polling (no fixed sleeps:
+#   poll /health until verdict is READY/DEGRADED or budget exhausted)
+#   ->  Playwright journeys in PAPER mode  ->  screenshots + JSON
+#   evidence + server logs preserved on failure  ->  teardown.
+#
+# SAFETY: PAPER mode only (compose default, NSE_EXECUTION__MODE=PAPER),
+# no real broker, no real credentials, no production DB, no Telegram
+# (NSE_TELEGRAM__ENABLED=false in compose). Journeys themselves never
+# POST toward LIVE and never place orders (README contract).
+
+on:
+  schedule:
+    # Nightly 02:33 UTC (after the slow-suite nightly window)
+    - cron: "33 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI_RESULTS_DIR: e2e-results
+  NSE_E2E_BASE: http://127.0.0.1:9090
+
+jobs:
+  client-e2e:
+    name: Client E2E journeys (isolated compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+          python -m playwright install --with-deps chromium
+
+      - name: Boot isolated core (docker compose)
+        run: |
+          docker compose up -d --build core
+          docker compose ps
+
+      - name: Wait for engine readiness (poll, no fixed sleep)
+        run: |
+          deadline=$((SECONDS + 300))
+          ready=0
+          while [ $SECONDS -lt $deadline ]; do
+            body="$(curl -fsS --max-time 3 "$NSE_E2E_BASE/health" 2>/dev/null || true)"
+            if [ -n "$body" ]; then
+              verdict="$(echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("verdict",""))' 2>/dev/null || true)"
+              case "$verdict" in
+                READY|DEGRADED)
+                  echo "engine ready (verdict=$verdict after $((SECONDS))s)"
+                  ready=1
+                  break
+                  ;;
+              esac
+            fi
+            sleep 5
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::engine did not become ready within 300s"
+            docker compose logs --tail 200 core || true
+            exit 1
+          fi
+
+      - name: Run client E2E journeys (pytest wrapper, engine-gated)
+        # test_client_journeys.py skips offline — readiness was proven
+        # above, so a skip HERE means the readiness probe lied; treat
+        # any skip as failure to keep the gate honest.
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/journeys"
+          pytest tests/e2e_client/test_client_journeys.py \
+                 -q --tb=short \
+                 --junitxml="$CI_RESULTS_DIR/journeys/junit.xml" \
+                 > "$CI_RESULTS_DIR/journeys/pytest.txt" 2>&1
+          rc=$?
+          if grep -qE "skipped|deselected" "$CI_RESULTS_DIR/journeys/pytest.txt"; then
+            echo "::error::E2E journeys SKIPPED although engine reported ready"
+            cat "$CI_RESULTS_DIR/journeys/pytest.txt"
+            exit 1
+          fi
+          tail -20 "$CI_RESULTS_DIR/journeys/pytest.txt"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::client E2E journeys failed (rc=$rc)"
+          fi
+          exit 0
+
+      - name: Collect compose logs
+        if: always()
+        run: |
+          mkdir -p "$CI_RESULTS_DIR/compose"
+          docker compose logs --no-color --tail 500 core > "$CI_RESULTS_DIR/compose/core.log" 2>&1 || true
+          docker compose ps > "$CI_RESULTS_DIR/compose/ps.txt" 2>&1 || true
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evidence-${{ github.run_number }}
+          path: |
+            ${{ env.CI_RESULTS_DIR }}/
+            tests/e2e_client/evidence/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose down -v --remove-orphans || true
