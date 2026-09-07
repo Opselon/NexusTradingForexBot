@@ -36,7 +36,12 @@ algo:
   order_block_lookback_bars: 30
 
 candle_intel:
-  enabled: true
+  # MARKET-CONTEXT P0 Phase 3 (2026-09-07): disabled — the engine computes
+  # entry/hold/fast-exit verdicts but nothing consumes them (no policy/
+  # execution/feature/UI read; evidence in docs/agent_handoffs/
+  # 2026-09-07_candle_intel_connect_or_disable_decision.md). Runtime cost
+  # removed; historical candle_intel.db preserved; flip to true to re-enable.
+  enabled: false
   entry_min_confidence: 0.62
   strong_body_ratio: 0.60
   weak_close_blocks_entry: true
