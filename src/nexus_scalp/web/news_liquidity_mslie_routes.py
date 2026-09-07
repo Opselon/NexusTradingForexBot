@@ -542,7 +542,23 @@ def register_news_liquidity_mslie_routes(
                 from nexus_scalp.news.worker import format_news_worker_status
 
                 worker_status = format_news_worker_status(engine.news_worker)
-            return {"available": True, "enabled": True, "health": health, "worker": worker_status}
+            # MARKET-CONTEXT P0 Phase 10 observability: news-LLM scoped spend
+            # + calendar legs ride the existing health endpoint (no new
+            # monitoring subsystem).
+            from nexus_scalp.news.pro_auto import news_budget_snapshot
+
+            payload: dict[str, Any] = {
+                "available": True,
+                "enabled": True,
+                "health": health,
+                "worker": worker_status,
+                "llm_budget": news_budget_snapshot(),
+            }
+            cal_worker = getattr(engine, "calendar_worker", None) if engine else None
+            if cal_worker is not None:
+                payload["calendar"] = cal_worker.health_summary()
+                payload["event_gate"] = cal_worker.gate_verdict()
+            return payload
         except Exception:
             return _err("INTERNAL_ERROR")
 
