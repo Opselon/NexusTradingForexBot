@@ -97,6 +97,56 @@ class LabelingAssumptions(BaseModel):
     derivation: str = ""
 
 
+class UnitsAssumptions(BaseModel):
+    """Instrument units block (audit finding: paper vs replay tick_value disagree)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    point_size: float = Field(gt=0.0)
+    digits: int = Field(ge=0)
+    contract_size: float = Field(gt=0.0)
+    tick_value_note: str = ""
+    lot_volume_min: float = Field(gt=0.0)
+    lot_volume_step: float = Field(gt=0.0)
+
+
+class RViewAssumptions(BaseModel):
+    """The R-based friction views (labeling vs baseline_eval vs backtest cap)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    labeling_friction_r: float = Field(ge=0.0)
+    derivation: str = ""
+    baseline_eval_friction_r: float = Field(ge=0.0)
+    baseline_eval_note: str = ""
+    backtest_friction_cap_r: float = Field(gt=0.0)
+    backtest_cap_note: str = ""
+
+
+class SyntheticSpreadAssumptions(BaseModel):
+    """The synthetic bar-tick spread used by dataset/replay/warmup builders."""
+
+    model_config = ConfigDict(frozen=True)
+
+    value: float = Field(ge=0.0)
+    sites: str = ""
+    parity_note: str = ""
+
+
+class PaperModelAssumptions(BaseModel):
+    """Paper adapter cost model (spread band, slippage ranges, no comm/swap)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    spread_band_usd: tuple[float, float]
+    fx_spread: float = Field(ge=0.0)
+    entry_slippage_usd: tuple[float, float]
+    stop_close_slippage_usd: tuple[float, float]
+    commission: float
+    swap: float
+    note: str = ""
+
+
 class ExecutionCostAssumptions(BaseModel):
     """Typed view of the canonical artifact (frozen — treat as immutable)."""
 
@@ -114,6 +164,13 @@ class ExecutionCostAssumptions(BaseModel):
     execution_timing: ExecutionTimingAssumptions
     labeling: LabelingAssumptions
     consumers: dict[str, str] = Field(default_factory=dict)
+    #: PHASE-2B audit enrichment (additive, optional for backward compat with
+    #: older artifacts): units block, R-based friction views, the synthetic
+    #: bar-spread convention, and the paper adapter's cost model.
+    units: UnitsAssumptions | None = None
+    r_view: RViewAssumptions | None = None
+    synthetic_bar_spread_usd: SyntheticSpreadAssumptions | None = None
+    paper_model: PaperModelAssumptions | None = None
 
     def friction_r_per_trade(self, risk_r_usd: float = 1.0) -> float:
         """Labeling friction expressed in R (the benchmark scoring convention)."""
