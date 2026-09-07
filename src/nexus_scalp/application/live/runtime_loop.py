@@ -330,7 +330,41 @@ async def run(self) -> None:
                     try:
                         live_account = self.om.adapter.get_account_info()
                     except Exception:
+                        # P1 ACCOUNT FRESHNESS: a failed refresh does NOT
+                        # advance the freshness clock — the cached snapshot
+                        # keeps aging and will become STALE after
+                        # _account_age_max_sec (same policy as the G29
+                        # live-freshness model). Stale equity must never
+                        # silently drive fresh position sizing.
                         live_account = getattr(self, "_last_account_info", None)
+                        if live_account is not None:
+                            fresh = classify_account_freshness(
+                                snapshot=live_account,
+                                last_success_refresh=getattr(
+                                    self.om, "_account_last_successful_refresh", 0.0
+                                ),
+                                now=_now,
+                                max_age_sec=self.om._account_age_max_sec,
+                            )
+                            if fresh is AccountFreshness.STALE and self.om._account_freshness != "STALE":
+                                self.om._account_freshness = "STALE"
+                                self.om._account_stale_blocked_total += 1
+                                logger.error(
+                                    "[SAFETY_STATE] account snapshot STALE (age > %.0fs) — "
+                                    "sizing input aging; new entries will be refused "
+                                    "while STALE, position protection continues",
+                                    self.om._account_age_max_sec,
+                                )
+                                self.om.emit_incident_telemetry(
+                                    event_type="ACCOUNT_SNAPSHOT_STALE",
+                                    component="account",
+                                    error_code="STALE_SNAPSHOT",
+                                    severity="HIGH",
+                                    correlation_id="tick-pipeline",
+                                )
+                    else:
+                        self.om._account_last_successful_refresh = _now
+                        self.om._account_freshness = "FRESH"
                     self.om._last_account_info = live_account
                     self.om._last_account_refresh = _now
                 else:
@@ -338,8 +372,16 @@ async def run(self) -> None:
                     # still advances every iteration).
                     live_account = getattr(self, "_last_account_info", None)
                 tick = self.om.adapter.get_last_tick(symbol)
-    
-                if live_account is None or tick is None:
+
+                # P1 ACCOUNT FRESHNESS GATE: with a STALE account snapshot
+                # (failed refreshes beyond _account_age_max_sec) the engine
+                # refuses NEW decisions on the sizing path (fail closed) but
+                # keeps serving ticks so position protection / lifecycle
+                # actions never pause. MISSING is tolerated during the warmup
+                # window after boot (first successful refresh sets FRESH).
+                if live_account is None or (
+                    self.om._account_freshness == "STALE"
+                ):
                     await asyncio.sleep(0.2)
                     continue
     
