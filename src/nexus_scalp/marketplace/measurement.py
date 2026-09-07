@@ -133,14 +133,18 @@ def backtest_metrics(
     if dataset is None or not dataset.samples:
         return None
     try:
-        from nexus_scalp.research.models import ExecutionAssumptions
+        # ECON v1: the zero-friction legacy default is retired — marketplace
+        # measurement uses the production-like friction (fail-closed).
+        from nexus_scalp.research.backtest import BacktestEngine
+        from nexus_scalp.research.economics import EconomicAssumptions
 
+        economic = EconomicAssumptions.production_like()
         return compute_backtest(
             list(dataset.samples),
             strategy_id=strategy_id,
             strategy_version=strategy_version,
             dataset_id=dataset.dataset_id,
-            assumptions=ExecutionAssumptions(),
+            assumptions=BacktestEngine._to_legacy(economic),
         )
     except Exception:
         return None
