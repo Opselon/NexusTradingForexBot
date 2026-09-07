@@ -59,7 +59,10 @@ def check_file(path: Path) -> list[tuple[int, int, str]]:
         kw = _weights_only_kwarg(node)
         unsafe = kw is None or (isinstance(kw.value, ast.Constant) and kw.value.value is False)
         if unsafe:
-            rel = path.relative_to(REPO).as_posix()
+            try:
+                rel = path.relative_to(REPO).as_posix()
+            except ValueError:
+                rel = str(path)  # files outside the repo (guard self-tests)
             problems.append((node.lineno, node.col_offset, rel))
     return problems
 

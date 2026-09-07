@@ -193,6 +193,4 @@ def _log_verdict(verdict: IntegrityVerdict) -> None:
     elif verdict.status is ArtifactIntegrityStatus.LEGACY_UNVERIFIED:
         logger.warning("[ARTIFACT_INTEGRITY] status=LEGACY_UNVERIFIED (not verified)", **d)
     else:
-        logger.error(
-            "[ARTIFACT_INTEGRITY] status=%s LOAD_REJECTED_CLASS" % verdict.status.value, **d
-        )
+        logger.error("[ARTIFACT_INTEGRITY] LOAD_REJECTED_CLASS", **d)

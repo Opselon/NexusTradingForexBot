@@ -90,7 +90,9 @@ def test_i_missing_metadata_rejected_by_default(tmp_path: Path) -> None:
 def test_i2_missing_metadata_allowed_only_with_explicit_optin(tmp_path: Path) -> None:
     weights = _bundle(tmp_path, with_manifest=False)
     verdict = verify_artifact_integrity(weights, allow_legacy_unverified=True)
-    assert verdict.status is ArtifactIntegrityStatus.LEGACY_UNVERIFIED  # observable, never "verified"
+    assert (
+        verdict.status is ArtifactIntegrityStatus.LEGACY_UNVERIFIED
+    )  # observable, never "verified"
 
 
 def test_i3_meta_only_bundle_without_digest_is_legacy(tmp_path: Path) -> None:
@@ -99,7 +101,9 @@ def test_i3_meta_only_bundle_without_digest_is_legacy(tmp_path: Path) -> None:
     d.mkdir()
     w = d / "model.pt"
     w.write_bytes(b"W")
-    (d / "model.meta.json").write_text(json.dumps({"feature_schema_dimension": 70}), encoding="utf-8")
+    (d / "model.meta.json").write_text(
+        json.dumps({"feature_schema_dimension": 70}), encoding="utf-8"
+    )
     with pytest.raises(ArtifactIntegrityError):
         verify_artifact_integrity(w)
 
@@ -131,9 +135,7 @@ def test_j_write_weights_then_manifest_order_is_safe(tmp_path: Path) -> None:
     d.mkdir()
     old = d / "model.pt"
     old.write_bytes(b"OLD")
-    (d / "manifest.json").write_text(
-        json.dumps({"model_sha256": _sha(old)}), encoding="utf-8"
-    )
+    (d / "manifest.json").write_text(json.dumps({"model_sha256": _sha(old)}), encoding="utf-8")
     # Simulate crash after new weights landed but before manifest update:
     new_weights = d / "model.pt.new"
     new_weights.write_bytes(b"NEW")
@@ -151,9 +153,7 @@ def test_k_interruption_before_activation_keeps_old_verifiable(tmp_path: Path) -
     d.mkdir()
     w = d / "model.pt"
     w.write_bytes(b"PRIOR-VERIFIED")
-    (d / "manifest.json").write_text(
-        json.dumps({"model_sha256": _sha(w)}), encoding="utf-8"
-    )
+    (d / "manifest.json").write_text(json.dumps({"model_sha256": _sha(w)}), encoding="utf-8")
     # staged candidate that never activated
     staged = d / "staged"
     staged.mkdir()
@@ -166,8 +166,7 @@ def test_k_interruption_before_activation_keeps_old_verifiable(tmp_path: Path) -
 # M. unsafe torch.load detection (CI guard as a unit)
 # ---------------------------------------------------------------------------
 def _run_guard(repo: Path, tmp_tree: Path) -> tuple[int, str]:
-    script = repo / "scripts" / "ci" / "check_torch_load_safety.py"
-    # Run the guard against a synthetic tree by scanning that tree directly.
+    # Run the guard's checker against a synthetic tree directly.
     probe = subprocess.run(
         [
             sys.executable,
@@ -185,6 +184,7 @@ def _run_guard(repo: Path, tmp_tree: Path) -> tuple[int, str]:
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     return probe.returncode, probe.stdout + probe.stderr
 
@@ -236,5 +236,6 @@ def test_m4_guard_clean_on_current_repo_sources() -> None:
         text=True,
         timeout=120,
         cwd=str(REPO),
+        check=False,
     )
     assert probe.returncode == 0, probe.stdout + probe.stderr
