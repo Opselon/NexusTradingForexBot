@@ -37,8 +37,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
 
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
