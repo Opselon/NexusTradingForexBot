@@ -56,7 +56,6 @@ from nexus_scalp.domain.models import (
     Position,
     SymbolInfo,
     TickData,
-    TradeOrder,
     TradeProposal,
 )
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
