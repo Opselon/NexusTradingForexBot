@@ -30,7 +30,6 @@ from nexus_scalp.research.economics import (
 )
 from nexus_scalp.research.models import ExecutionAssumptions
 
-
 # =============================================================================
 # Profiles: fail-closed defaults
 # =============================================================================
