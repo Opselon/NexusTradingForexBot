@@ -552,6 +552,35 @@ def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_
     # local gate exactly as it fails CI.
     results.append(stage_decision_ids())
 
+    # [4c] Critical-manifest drift (QA hardening): execution-critical
+    # modules must keep at least one critical-suite guardian — same gate
+    # that fails CI on push. Report-only for hotspots, HARD on floor gaps.
+    t0_cm = time.perf_counter()
+    script_cm = REPO_ROOT / "scripts" / "ci" / "critical_manifest.py"
+    if script_cm.exists():
+        r_cm = subprocess.run(
+            [sys.executable, str(script_cm)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=60,
+        )
+        results.append(
+            StageResult(
+                name="critical_manifest_drift",
+                command=[sys.executable, "scripts/ci/critical_manifest.py"],
+                exit_code=r_cm.returncode,
+                status="passed" if r_cm.returncode == 0 else "failed",
+                duration_sec=time.perf_counter() - t0_cm,
+                detail=(r_cm.stdout or r_cm.stderr).strip().splitlines()[0][:200]
+                if (r_cm.stdout or r_cm.stderr)
+                else "",
+            )
+        )
+
     # [5] Fast targeted unit tests
     results.append(stage_fast_tests(scope))
 
