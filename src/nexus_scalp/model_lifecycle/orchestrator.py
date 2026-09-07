@@ -183,6 +183,27 @@ class ModelLifecycleOrchestrator:
             gates_total=len(gates),
         )
 
+        # ---- 4. CHAMPION COMPARISON (learning-loop closure) -------------------
+        # The challenger-vs-champion comparison is now part of EVERY gated
+        # training pass (it was dead code before). When the champion's own
+        # metrics are unavailable the comparison records eligible=False with
+        # the reason — promotion eligibility is never asserted from missing
+        # evidence (fail-closed).
+        comparison_summary: dict[str, Any] | None = None
+        if all_passed and champ is not None and run.artifacts:
+            try:
+                comparison = self.compare_against_champion(run, champ)
+                if comparison is not None:
+                    comparison_summary = {
+                        "eligible": comparison.eligible,
+                        "improvement_score": comparison.improvement_score,
+                        "reasons": list(comparison.reasons),
+                    }
+            except Exception as exc:
+                logger.error(
+                    "[MODEL] champion comparison failed (non-fatal)", error=str(exc)
+                )
+
         return {
             "run_id": run_id,
             "run": summarize_run(run),
@@ -191,6 +212,7 @@ class ModelLifecycleOrchestrator:
             "candidate_status": candidate_status.value,
             "registry_updated": registry_ok,
             "champion_unavailable": champ is None,
+            "champion_comparison": comparison_summary,
         }
 
     # ------------------------------------------------------------------
@@ -202,29 +224,94 @@ class ModelLifecycleOrchestrator:
         run: TrainingRun,
         champion: ChampionModel | None,
     ) -> Any:
-        """Runs the structured Champion vs Challenger comparison (spec 19)."""
+        """Runs the structured Champion vs Challenger comparison (spec 19).
+
+        Learning-loop closure Phase 2: the champion side MUST come from REAL
+        evidence — the persisted baseline_eval artifact keyed by the
+        champion's verified artifact hash (model_lifecycle.champion_metrics),
+        falling back to the champion's own recorded COMPLETED training run.
+        Zeroed placeholders are removed: when neither evidence source exists
+        the comparison is computed but FORCED ineligible with an explicit
+        reason (never eligible from missing evidence — fail-closed).
+        """
         if champion is None:
             return None
         # Reuse Phase 09 research engines to evaluate both models' trading
         # quality on the same execution assumptions.
         # The dataset for evaluation is the challenger's training dataset.
-        ch_metrics = run.metrics
-        champ_metrics: dict[str, Any] = {
-            "expectancy_r": 0.0,
-            "max_drawdown_r": 0.0,
-            "oos_expectancy_r": 0.0,
-            "tail_loss_count": 0,
-            "robustness_status": "PASS",
-            "stability": 1.0,
-        }
-        # In production, these would come from the research registry; we expose
-        # the comparison skeleton with documented sources so the metric source
-        # is always explicit (spec 29: never mix performance sources).
+        ch_metrics = dict(run.metrics)
+        # PRIMARY evidence: the baseline_eval artifact for the champion's
+        # exact serving bytes (research.baseline_eval output).
+        champ_metrics: dict[str, Any] | None = None
+        try:
+            from nexus_scalp.model_lifecycle.champion_metrics import ChampionMetricsProvider
+
+            baseline = ChampionMetricsProvider().load(champion)
+        except Exception as exc:
+            logger.error("[MODEL] champion baseline lookup failed", error=str(exc))
+            baseline = None
+        if baseline is not None:
+            champ_metrics = {
+                "expectancy_r": float(baseline.get("expectancy_r", 0.0)),
+                "max_drawdown_r": float(baseline.get("max_drawdown_r", 0.0)),
+                "oos_expectancy_r": float(baseline.get("oos_expectancy_r", 0.0)),
+                "tail_loss_count": int(baseline.get("tail_loss_count", 0)),
+                "robustness_status": str(baseline.get("robustness_status", "UNKNOWN")),
+                "stability": float(baseline.get("stability", 0.0)),
+                "model_id": baseline.get("model_id", ""),
+                "model_version": baseline.get("model_version", ""),
+                "source": "baseline_eval_artifact",
+                "evaluation_id": baseline.get("evaluation_id", ""),
+            }
+        # SECONDARY evidence: the champion's own recorded COMPLETED run.
+        if champ_metrics is None:
+            try:
+                runs = self.run_store.list_runs(status="COMPLETED", limit=200)
+            except Exception as exc:
+                logger.error("[MODEL] champion run lookup failed", error=str(exc))
+                runs = []
+            for prior in runs:
+                prior_metrics = prior.get("metrics") or {}
+                if isinstance(prior_metrics, str):
+                    try:
+                        import json as _json
+
+                        prior_metrics = _json.loads(prior_metrics)
+                    except Exception:
+                        prior_metrics = {}
+                if (
+                    prior_metrics
+                    and float(prior_metrics.get("expectancy_r", 0.0) or 0.0) != 0.0
+                ):
+                    champ_metrics = dict(prior_metrics)
+                    break
+
         comparison = self.comparator.compare(
-            champion=champ_metrics,
+            champion=champ_metrics
+            or {
+                "expectancy_r": 0.0,
+                "max_drawdown_r": 0.0,
+                "oos_expectancy_r": 0.0,
+                "tail_loss_count": 0,
+                "robustness_status": "PASS",
+                "stability": 1.0,
+            },
             challenger=ch_metrics,
             run_id=run.run_id,
         )
+        if champ_metrics is None:
+            # Fail-closed: without real champion evidence the challenger can
+            # never be promotion-eligible from this comparison alone.
+            comparison = comparison.model_copy(
+                update={
+                    "eligible": False,
+                    "reasons": [
+                        *list(comparison.reasons),
+                        "champion_metrics_unavailable: no baseline_eval artifact "
+                        "and no recorded COMPLETED run with real metrics",
+                    ],
+                }
+            )
         self.run_store.save_comparison(comparison)
         return comparison
 
