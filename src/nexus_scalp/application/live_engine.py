@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import math
 import os
 import signal
 import threading
@@ -1602,7 +1601,6 @@ class LiveEngine:
 
         return await WarmupService.cold_start_warmup(self, *args, **kwargs)
 
-
     async def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
         """Delegate: atomic serving-artifact swap (owned by HotSwapService, L4)."""
         eng = self._hot_swap
@@ -2270,7 +2268,6 @@ class LiveEngine:
     # Warmup + bootstrap training
     # -------------------------
 
-
     def _start_accounting_worker(self) -> None:
         from nexus_scalp.application.live_workers import WorkerSupervisor
 
@@ -2632,7 +2629,6 @@ class LiveEngine:
             logger.info("[EXPERIENCE] DERIVED INTELLIGENCE READY", strategies=len(rebuilt))
         except Exception as e:
             logger.error("[SELF_HEAL] FAILED", error=str(e), exc_info=True)
-
 
     async def _resync_from_broker(self, symbol: str) -> None:
         """Broker-authoritative reseed after downtime / reconnect (BUG-054).
