@@ -201,6 +201,15 @@ class WalkForwardTrainer:
         min_rows_per_train_split: int = 50,
         min_rows_per_test_split: int = 20,
         min_class_ratio: float = 0.08,  # Minimum 8% prediction ratio per active class required
+        # ECONOMIC FOLD METRIC assumptions (research/training-parity P1):
+        # per-trade friction in R and the reward leg in R used by the fold
+        # economic metric. Defaults mirror the label geometry (TP = 1.2R via
+        # the 1.1x ATR TP vs 1.0x ATR SL risk setup) and the calibrated
+        # execution-cost artifact convention (spread-only account, ~0.15R
+        # friction at the production risk distance). Overridable per run;
+        # values travel on every fold's economics block.
+        friction_r: float = 0.15,
+        reward_r: float = 1.2,
         focal_gamma: float = 2.0,  # Focal Loss exponent focusing on hard minority examples
         label_smoothing: float = 0.08,  # Label smoothing factor for regularization
         use_oversampling: bool = True,  # Enables Random Oversampling on BUY/SELL in buffer
@@ -271,6 +280,9 @@ class WalkForwardTrainer:
         self.min_rows_per_train_split = int(min_rows_per_train_split)
         self.min_rows_per_test_split = int(min_rows_per_test_split)
         self.min_class_ratio = float(min_class_ratio)
+        # Economic fold-metric assumptions (see constructor docs).
+        self.friction_r = float(friction_r)
+        self.reward_r = float(reward_r)
         # AGENT-3 LEARNFIX-2: the constructor declares focal_gamma as a
         # tuning parameter (docs/model_lab mirror 2.0), but this line used
         # to hard-code 1.0, silently discarding the caller value. Honor
@@ -570,6 +582,7 @@ class WalkForwardTrainer:
         # fold records its exact geometry so fold construction is auditable
         # from the persisted convergence metadata and the bundle manifest.
         fold_geometry_meta: list[dict[str, Any]] = []
+        fold_economics_history: list[dict[str, Any]] = []
         oos_predictions: list[int] = []
         oos_targets: list[int] = []
         for fold in range(self.num_folds):
@@ -697,12 +710,24 @@ class WalkForwardTrainer:
             fold_sharpe_proxy = self._calculate_fold_sharpe_proxy(
                 fold_preds, y_test[: len(fold_preds)]
             )
+            # ECONOMIC FOLD METRIC (P1): genuine money-side evidence per fold,
+            # reported ALONGSIDE the classification diagnostics (never
+            # replacing them, never conflated with them).
+            fold_economics = self._calculate_fold_economics(
+                fold_preds, y_test[: len(fold_preds)]
+            )
+            fold_econ_meta: dict[str, Any] = dict(fold_economics)
+            fold_economics_history.append(fold_econ_meta)
             logger.info(
                 "Walk-forward fold complete",
                 fold=fold + 1,
                 total_folds=self.num_folds,
                 best_val_loss=f"{best_val_loss:.6f}",
                 sharpe_proxy=f"{fold_sharpe_proxy:.3f}",
+                net_expectancy_r=f"{fold_economics['net_expectancy_r']:.4f}",
+                gross_expectancy_r=f"{fold_economics['gross_expectancy_r']:.4f}",
+                max_drawdown_r=f"{fold_economics['max_drawdown_r']:.4f}",
+                trades=fold_economics["trades"],
                 train_rows=len(X_train),
                 test_rows=len(X_test),
                 batch_size=dyn_batch,
@@ -772,6 +797,25 @@ class WalkForwardTrainer:
             "seed": int(self.seed),
             "walk_forward_mode": self.walk_forward_mode,
             "fold_geometry": fold_geometry_meta,
+            # Economic fold evidence: per-fold net/gross expectancy in R,
+            # friction, drawdown — from the SAME triple-barrier outcomes the
+            # classification metrics use. Aggregates give the OOS economics.
+            "friction_r": self.friction_r,
+            "reward_r": self.reward_r,
+            "fold_economics": fold_economics_history,
+            "net_expectancy_r": (
+                float(np.mean([f["net_expectancy_r"] for f in fold_economics_history]))
+                if fold_economics_history
+                else None
+            ),
+            "sum_net_expectancy_r": (
+                float(sum(f["net_expectancy_r"] * f["trades"] for f in fold_economics_history))
+                if fold_economics_history
+                else None
+            ),
+            "max_fold_drawdown_r": (
+                max((f["max_drawdown_r"] for f in fold_economics_history), default=None)
+            ),
         }
         # Model diagnostics verification post final training
         final_model.eval()
@@ -885,6 +929,14 @@ class WalkForwardTrainer:
                     "walk_forward_mode": self.walk_forward_mode,
                     "fold_geometry": getattr(self, "last_convergence_metadata", {}).get(
                         "fold_geometry"
+                    ),
+                    # Economic fold evidence in the manifest (P1): net R is
+                    # the fold objective; never replaced by accuracy.
+                    "fold_economics": getattr(self, "last_convergence_metadata", {}).get(
+                        "fold_economics"
+                    ),
+                    "net_expectancy_r": getattr(self, "last_convergence_metadata", {}).get(
+                        "net_expectancy_r"
                     ),
                     # ECON v1 provenance: decay profile + convergence evidence
                     "time_decay_full_train_half_life_bars": getattr(
@@ -1874,16 +1926,67 @@ class WalkForwardTrainer:
     # INTERNAL: METRICS
     # =========================================================================
     def _calculate_fold_sharpe_proxy(self, preds: list[int], targets: np.ndarray) -> float:
+        """DEPRECATED metric name retained for callers; superseded by
+        `_calculate_fold_economics`. Classification accuracy re-expressed as
+        pseudo-returns is NOT a trading Sharpe — the economic fold metric
+        below is reported alongside it and must never be conflated with it."""
+        return self._calculate_fold_economics(preds, targets)["proxy_sharpe_ratio"]
+
+    def _calculate_fold_economics(self, preds: list[int], targets: np.ndarray) -> dict[str, Any]:
+        """Economic fold metric from the triple-barrier outcomes.
+
+        PROXY SEMANTICS (honest labeling — this is NOT broker-filled P&L):
+        the frame carries only the resolved 3-class triple-barrier label, so
+        each predicted trade resolves against the label it acted on:
+          * correct directional prediction  => +reward_r (label-configured TP
+            distance in R, default 1.2R from the risk geometry)
+          * wrong / SL-resolved prediction  => -1.0R (full planned risk)
+        minus the per-trade friction assumption (friction_r). Gross R is the
+        pre-friction expectancy; net R is the friction-adjusted expectancy a
+        live account would approximately realize per trade under the same
+        assumptions. These figures are comparable fold-over-fold and across
+        candidates; they are NOT a classification accuracy (keep using the
+        accuracy/recall diagnostics for that) and NOT a measured Sharpe (the
+        'sharpe' key is a ratio of the same proxy returns, reported for
+        continuity under the historical name).
+        """
         preds_arr = np.array(preds, dtype=np.int64)
         targets_arr = np.array(targets, dtype=np.int64)
         active_mask = (preds_arr == 1) | (preds_arr == 2)
         if not np.any(active_mask):
-            return 0.0
+            return {
+                "proxy_sharpe_ratio": 0.0,
+                "net_expectancy_r": 0.0,
+                "gross_expectancy_r": 0.0,
+                "friction_r": self.friction_r,
+                "trades": 0,
+                "win_rate": 0.0,
+                "max_drawdown_r": 0.0,
+                "no_trade_rate": 1.0,
+            }
+        n_active = int(np.sum(active_mask))
         matches = (preds_arr[active_mask] == targets_arr[active_mask]).astype(np.float32)
-        returns = np.where(matches == 1.0, 1.20, -1.0)
-        mean_ret = float(np.mean(returns))
-        std_ret = float(np.std(returns)) + 1e-8
-        return float((mean_ret / std_ret) * math.sqrt(252))
+        gross_r = np.where(matches == 1.0, self.reward_r, -1.0)
+        net_r = gross_r - self.friction_r
+        net_expectancy = float(np.mean(net_r))
+        gross_expectancy = float(np.mean(gross_r))
+        win_rate = float(np.mean(matches))
+        # Max drawdown over the cumulative net-R trade path (trade order).
+        eq = np.cumsum(net_r)
+        peak = np.maximum.accumulate(eq)
+        max_dd = float(np.max(peak - eq)) if len(eq) else 0.0
+        std_ret = float(np.std(net_r)) + 1e-8
+        proxy_sharpe = float((net_expectancy / std_ret) * math.sqrt(252))
+        return {
+            "proxy_sharpe_ratio": proxy_sharpe,
+            "net_expectancy_r": net_expectancy,
+            "gross_expectancy_r": gross_expectancy,
+            "friction_r": self.friction_r,
+            "trades": n_active,
+            "win_rate": win_rate,
+            "max_drawdown_r": max_dd,
+            "no_trade_rate": float(1.0 - (n_active / len(preds_arr))),
+        }
 
     def _evaluate_global_performance(self, preds: list[int], targets: list[int]) -> dict[str, str]:
         if len(preds) == 0 or len(targets) == 0:
