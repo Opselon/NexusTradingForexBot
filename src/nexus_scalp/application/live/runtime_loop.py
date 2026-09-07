@@ -114,6 +114,18 @@ async def run(self) -> None:
 
         self.om._running = True
         symbol = self.om.config.execution.symbol
+
+        # MISSION 5: start the Telegram command bus (if constructed) - the
+        # operator control surface runs for the engine's whole lifetime.
+        # Fail-isolated: a bus fault never affects trading.
+        bus = getattr(self.om, "_command_bus", None)
+        if bus is not None:
+            try:
+                bus.start()
+            except Exception as bus_err:
+                logger.warning(
+                    "[TG_CMD] event=BUS_START_FAILED (isolated)", error=str(bus_err)
+                )
     
         account = self.om.adapter.get_account_info()
         self.om._symbol_info = self.om.adapter.get_symbol_info(symbol)

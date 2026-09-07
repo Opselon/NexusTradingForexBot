@@ -110,8 +110,6 @@ from nexus_scalp.risk.runtime_safety import (
     BootDecision,
     HotPathErrorCircuit,
     PersistedRiskState,
-    RuntimeRiskState,
-    classify_account_freshness,
     resolve_boot_decision,
 )
 from nexus_scalp.settings import (
@@ -893,6 +891,33 @@ class LiveEngine:
             )
         if config.telegram.enabled and bot_token and not admin_id:
             logger.warning("[TELEGRAM_CONFIG_ERROR] reason=ADMIN_CHAT_ID_MISSING")
+
+        # MISSION 5: Telegram OPERATIONAL CONTROL SURFACE (inbound commands).
+        # The bus issues authenticated INTENTS only — every mutation routes
+        # through apply_command_intent() -> existing authority layers
+        # (RiskEngine kill switch / governance rollback). INV-010 preserved:
+        # the bus never calls the broker adapter. Disabled unless both
+        # credentials AND the halt token are present (fail-closed control).
+        self._command_bus: Any = None
+        _halt_token = str(os.environ.get("NEXUS_TELEGRAM_CMD_TOKEN", "") or "")
+        if config.telegram.enabled and bot_token and admin_id and _halt_token:
+            from nexus_scalp.observability.tg_command_bus import TelegramCommandBus
+
+            self._command_bus = TelegramCommandBus(
+                bot_token=bot_token,
+                admin_id=admin_id,
+                target=self,
+                halt_token=_halt_token,
+            )
+            logger.info(
+                "[TG_CMD] event=BUS_CONSTRUCTED token_required=%s",
+                bool(_halt_token),
+            )
+        elif config.telegram.enabled:
+            logger.info(
+                "[TG_CMD] event=BUS_DISABLED reason=NO_CMD_TOKEN "
+                "(set NEXUS_TELEGRAM_CMD_TOKEN to enable operator commands)"
+            )
 
         # BUG-061: local candle-intelligence subsystem (candle-close gate).
         # Isolated DB (candle_intel.db); feeds decisions for entry/hold/fast-exit.
