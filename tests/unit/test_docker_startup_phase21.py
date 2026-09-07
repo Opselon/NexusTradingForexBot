@@ -3,7 +3,8 @@
 Covers the container-facing surface introduced by the Docker repair:
 
     TEST-DOCKER-01  compose file parses (docker compose config --quiet)
-    TEST-DOCKER-02  compose declares the expected services (core, redis)
+    TEST-DOCKER-02  compose declares core; redis is profile-gated (opt-in
+                    only, no core depends_on barrier)
     TEST-DOCKER-03  compose has NO postgres service (SQLite-only architecture)
     TEST-DOCKER-04  core env includes the documented NSE_* bootstrap variables
     TEST-DOCKER-05  .env.example exists and contains the documented variables
@@ -90,9 +91,29 @@ def test_docker_01_compose_parses() -> None:
     assert proc.returncode == 0, proc.stderr
 
 
-def test_docker_02_expected_services(compose_services: dict) -> None:
+def test_docker_02_core_default_and_redis_profile_gated(
+    compose_services: dict,
+) -> None:
+    """Core starts standalone; redis is opt-in only (profile-gated).
+
+    Redis is future-only infrastructure: nothing in src/ uses it yet, so a
+    plain `docker compose up -d` must not start it and core must not wait
+    on it. If redis is declared at all, it must live behind the `redis`
+    profile (started only via `docker compose --profile redis up -d redis`).
+    """
     assert "core" in compose_services, "core service must exist"
-    assert "redis" in compose_services, "redis service must exist"
+    core_depends = compose_services["core"].get("depends_on") or {}
+    assert "redis" not in core_depends, (
+        "core must have NO depends_on barrier on redis "
+        "(redis is future-only infra, opt-in via profile)"
+    )
+    redis = compose_services.get("redis")
+    if redis is None:
+        return  # acceptable: no redis service declared at all
+    assert "redis" in redis.get("profiles", []), (
+        "redis service must be profile-gated (profiles: [redis]) — "
+        "it must NOT be started by default"
+    )
 
 
 def test_docker_03_postgres_is_optional_profile(compose_data: dict) -> None:
@@ -128,7 +149,11 @@ def test_docker_05_core_has_healthcheck_and_port(compose_services: dict) -> None
 
 
 def test_docker_06_redis_internal_only(compose_services: dict) -> None:
-    redis = compose_services["redis"]
+    """When redis is declared it must stay internal (no host ports) and
+    must keep a healthcheck — even though it only starts behind a profile."""
+    redis = compose_services.get("redis")
+    if redis is None:
+        return  # acceptable: no redis service declared at all
     assert not redis.get("ports"), "redis must NOT be exposed to the host"
     assert redis.get("healthcheck"), "redis must have a healthcheck"
 

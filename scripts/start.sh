@@ -37,7 +37,7 @@ case "$cmd" in
         $COMPOSE ps
         ;;
     restart)
-        $COMPOSE restart core redis
+        $COMPOSE restart core
         ;;
     reset)
         echo "[nexus] WARNING: removing containers AND named volumes (databases, models, research artifacts will be DELETED)."

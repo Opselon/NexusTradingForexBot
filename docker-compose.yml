@@ -4,8 +4,12 @@ services:
   # ============================================================
   # Default `docker compose up -d` starts the minimum viable healthy
   # project: the Nexus core (engine + Web UI + API) in container-safe
-  # PAPER mode with an internal Redis for telemetry/cache and persistent
-  # volumes for the SQLite databases and model/research artifacts.
+  # PAPER mode with persistent volumes for the SQLite databases and
+  # model/research artifacts.
+  #
+  # Redis is FUTURE-ONLY infrastructure (nothing in src/ uses it yet):
+  # it is NOT started by default. To start it, opt in explicitly:
+  #     docker compose --profile redis up -d redis
   #
   # There is NO PostgreSQL dependency: the project's authoritative
   # persistence is per-domain SQLite (artifacts/audit.db, news.db,
@@ -46,9 +50,6 @@ services:
       - nexus-data:/app/data
     ports:
       - "${NSE_WEB_PORT:-9090}:9090"
-    depends_on:
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/docker/healthcheck.sh"]
       interval: 15s
@@ -63,9 +64,13 @@ services:
         max-file: "3"
 
   # ------------------------------------------------------------
-  # redis — internal telemetry/cache (never exposed to the host)
+  # redis — FUTURE-ONLY telemetry/cache (nothing in src/ uses it yet)
+  # NOT started by default. Opt in with:
+  #     docker compose --profile redis up -d redis
+  # Never exposed to the host.
   # ------------------------------------------------------------
   redis:
+    profiles: ["redis"]
     image: redis:7-alpine
     container_name: nexus-redis
     restart: unless-stopped
