@@ -79,6 +79,7 @@ class AutonomousLoopWorker:
         self._last_run_ts: float = 0.0
         self._stagnation_count = 0
         self._best_score_seen = 0.0
+        self._cycle_inflight = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -144,6 +145,21 @@ class AutonomousLoopWorker:
         now = time.time()
         if now - self._last_run_ts < self.pause_between_cycles_sec:
             return False
+        # Reentrancy guard: a generation cycle (LLM + population evaluation
+        # through the walk-forward pipelines) can outlive the engine's worker
+        # kick timeout, after which the supervisor frees the kick slot while
+        # the detached thread is STILL RUNNING. Without this guard the next
+        # kick would start a second concurrent generation over the same
+        # registry/store.
+        if getattr(self, "_cycle_inflight", False):
+            return False
+        self._cycle_inflight = True
+        try:
+            return self._tick_inner(now)
+        finally:
+            self._cycle_inflight = False
+
+    def _tick_inner(self, now: float) -> bool:
         self._last_run_ts = now
         self.cycle_count += 1
 

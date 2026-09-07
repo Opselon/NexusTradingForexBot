@@ -771,9 +771,20 @@ def factory_loop_start(request: Request) -> dict[str, Any]:
     factory = _factory(request)
     if factory is None:
         return _err("FACTORY_UNAVAILABLE")
+    worker = _worker(request)
     try:
         ok = factory.start_loop("AUTONOMOUS")
-        return _ok({"started": ok, "loop": factory.loop_status()})
+        # PRIME THE PUMP (factory-loop audit fix): start_loop() previously only
+        # flipped the persisted control flag — the AutonomousLoopWorker pump
+        # (tick: generate->validate->evaluate->complete) was never started, so
+        # the operator's explicit "start autonomous loop" was a state no-op.
+        # The worker runs the SAME real evaluation pipeline as the manual
+        # generate route; it holds no execution authority (sandbox unchanged).
+        worker_started = False
+        if worker is not None:
+            worker.start()
+            worker_started = worker.running
+        return _ok({"started": ok, "worker_started": worker_started, "loop": factory.loop_status()})
     except Exception as e:
         log_factory_error("/api/factory/loop/start", e)
         return _err("INTERNAL_ERROR")
