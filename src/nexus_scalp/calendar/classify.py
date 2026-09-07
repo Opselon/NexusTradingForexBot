@@ -236,12 +236,18 @@ def classify_event_title(title: str) -> EventMatch:
     best: EventMatch = EventMatch(event_type=None)
     for etype, strong, pattern, alias in _PATTERNS:
         if pattern.search(norm):
-            # strong beats non-strong; earlier aliases (longer, more specific)
-            # win within the same strength because the alias table is ordered.
-            if best.event_type is None or (strong and not best.strong):
+            # Specificity beats strength: a longer alias (e.g. "core cpi")
+            # identifies the event more precisely than a shorter generic one
+            # (e.g. "cpi") and must not be shadowed by the early `break` on
+            # the first strong hit. Prefer longer matched aliases; break only
+            # when an alias fully contains the matched span AND is longer
+            # (handled implicitly by length ordering below).
+            if (
+                best.event_type is None
+                or (strong and not best.strong)
+                or (len(alias) > len(best.matched_alias))
+            ):
                 best = EventMatch(event_type=etype, matched_alias=alias, strong=strong)
-                if strong:
-                    break
     return best
 
 

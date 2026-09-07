@@ -182,7 +182,8 @@ class CalendarEnvelope(BaseModel):
 def make_event_id(source: str, title: str, scheduled_at: datetime) -> str:
     """Deterministic event identity: stable across re-fetches of the same event."""
     stamp = scheduled_at.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-    raw = f"{source}|{title.strip().lower()}|{stamp}"
+    norm_title = " ".join((title or "").lower().split())
+    raw = f"{source}|{norm_title}|{stamp}"
     return f"ev_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]}"
 
 
