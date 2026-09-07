@@ -83,6 +83,15 @@ app.add_typer(
     name="smoke",
     help="Production E2E smoke (layered runtime verification).",
 )
+# RUNTIME SAFETY (``nexus risk status|release``) — explicit release surface for
+# persisted HALT/KILL_SWITCH states (runtime-safety mission P0).
+from nexus_scalp.cli.risk_commands import risk_app as _risk_app  # noqa: E402
+
+app.add_typer(
+    _risk_app,
+    name="risk",
+    help="Runtime safety state: inspect and explicitly release persisted halts.",
+)
 # GATEWAY — Windows MT5 bridge server for the existing Linux gateway client
 try:
     import nexus_scalp.cli.gateway_commands as _gateway_commands  # noqa: F401 (side effect: registers nexus gateway)
