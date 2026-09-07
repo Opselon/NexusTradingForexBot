@@ -18,6 +18,7 @@ import contextlib
 import os
 import sqlite3
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -737,6 +738,58 @@ class HealthEngine:
             state=AVAILABLE,
         )
 
+    def check_data(self) -> HealthEntry:
+        """First-run honesty: the canonical historical-bars file must exist.
+
+        Doctor previously had NO data-family check — a fresh machine with zero
+        bars could read READY/DEGRADED while `model-train-3` would crash on the
+        missing parquet. Missing file = FAIL with NOT_INITIALIZED state
+        (first-run condition, pointing at the remedy); stale file (older than
+        30 days) = WARNING so training on ancient data is at least visible.
+        """
+        import polars as pl
+
+        data_path = Path("data/raw/XAUUSD_M1.parquet")
+        if not data_path.exists():
+            return HealthEntry(
+                "DATA",
+                "FAIL",
+                f"canonical bars file missing: {data_path} (training cannot run)",
+                "Acquire XAUUSD M1 history from the MT5 terminal (copy_rates) "
+                "or restore a data/raw backup, then re-run doctor.",
+                state=NOT_INITIALIZED,
+            )
+        try:
+            rows = pl.scan_parquet(data_path).select(pl.len()).collect().item()
+        except Exception as exc:
+            return HealthEntry(
+                "DATA",
+                "FAIL",
+                f"bars file unreadable: {data_path} ({exc})",
+                "Restore data/raw/XAUUSD_M1.parquet from a known-good source.",
+            )
+        age_days = max(0.0, time.time() - data_path.stat().st_mtime) / 86400.0
+        if rows < 10000:
+            return HealthEntry(
+                "DATA",
+                "WARNING",
+                f"{data_path}: only {rows} rows (walk-forward needs >= 10k)",
+                "Capture a longer history window before training.",
+            )
+        if age_days > 30:
+            return HealthEntry(
+                "DATA",
+                "WARNING",
+                f"{data_path}: {rows} rows, last modified {age_days:.0f} days ago",
+                "Refresh the history window so training reflects current regimes.",
+            )
+        return HealthEntry(
+            "DATA",
+            "PASS",
+            f"{data_path}: {rows} rows, age {age_days:.0f}d",
+            state=AVAILABLE,
+        )
+
     def check_gpu(self) -> HealthEntry:
         env = self.env()
         if env.cuda_available:
@@ -1085,6 +1138,7 @@ class HealthEngine:
             ("MODEL_CONTRACT", self.check_model_contract),
             ("FEATURE_SCHEMA", self.check_feature_schema),
             ("EXECUTION_COSTS", self.check_execution_costs),
+            ("DATA", self.check_data),
             ("GPU", self.check_gpu),
             ("MT5", self.check_mt5),
             ("NETWORK", self.check_network),
