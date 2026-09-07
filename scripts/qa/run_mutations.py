@@ -59,11 +59,23 @@ SRC = REPO / "src"
 
 
 def _repo_python() -> str:
-    """The repo venv interpreter when present, else the current one."""
-    candidate = REPO / ".venv" / "Scripts" / "python.exe"
-    if not candidate.exists():
-        candidate = REPO / ".venv" / "bin" / "python"
-    return str(candidate) if candidate.exists() else sys.executable
+    """The repo venv interpreter when present, else the current one.
+
+    PORTABILITY CONTRACT (QA hardening mission):
+      * never a developer-specific absolute path (C:/Users/... is forbidden);
+      * Windows layout (`.venv/Scripts/python.exe`) and POSIX layout
+        (`.venv/bin/python`) both resolved from REPO, whichever exists;
+      * the unconditional fallback is the interpreter RUNNING this script
+        (sys.executable), so CI (which installs the package into the job's
+        interpreter) works with no venv on disk at all.
+    """
+    for candidate in (
+        REPO / ".venv" / "Scripts" / "python.exe",
+        REPO / ".venv" / "bin" / "python",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +273,52 @@ def main(argv: list[str] | None = None) -> int:
         help="only mutations whose target file is in the current git diff",
     )
     p.add_argument("--out", default="", help="also write the JSON report to this path")
+    p.add_argument(
+        "--list-targets",
+        action="store_true",
+        help="print the mutation catalog as JSON (targets/batteries/anchors) "
+        "and exit 0 - smoke/CI introspection, runs no batteries",
+    )
     args = p.parse_args(argv)
+
+    # --list-targets: pure introspection - catalog + resolver contract, no
+    # batteries, no mutation runs. Powers the smoke test and the CI fast-lane
+    # catalog echo without paying the minutes-long campaign cost.
+    if args.list_targets:
+        catalog = []
+        for m in MUTATIONS:
+            target_abs = REPO / m["target"]
+            exists = target_abs.exists()
+            unique = False
+            if exists:
+                unique = target_abs.read_text(encoding="utf-8").count(m["anchor"]) == 1
+            catalog.append(
+                {
+                    "id": m["id"],
+                    "target": m["target"],
+                    "target_exists": exists,
+                    "anchor_unique": unique,
+                    "battery": m["battery"],
+                    "battery_exists": (REPO / m["battery"]).exists(),
+                }
+            )
+        print(
+            json.dumps(
+                {
+                    "tool": "scripts/qa/run_mutations.py",
+                    "mode": "list-targets",
+                    "repo_root": str(REPO),
+                    "repo_root_ok": (REPO / "pyproject.toml").exists(),
+                    "python_executable": _repo_python(),
+                    "python_is_running_interpreter": _repo_python() == sys.executable,
+                    "mutations_total": len(MUTATIONS),
+                    "accepted_survivors": sorted(ACCEPTED_SURVIVORS),
+                    "catalog": catalog,
+                },
+                indent=2,
+            )
+        )
+        return 0
 
     wanted_ids = {s.strip() for s in args.ids.split(",") if s.strip()}
     selected = [
