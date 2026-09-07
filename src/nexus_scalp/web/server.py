@@ -2764,4 +2764,32 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_api_v1(app)
 
+    # WEB-AUTH-P0: LAST step in create_app — wraps the fully-built app so
+    # every route (current and future) is behind token auth (audit B1).
+    _install_web_auth_if_enabled(app)
+
     return app
+
+
+# ------------------------------------------------------------------------------
+# WEB-AUTH-P0 (audit B1): control-plane token auth, outermost ASGI layer.
+# Public paths: /api/health, /health, /healthz, /favicon.ico, /static/*,
+# /assets/*. Everything else requires Bearer / X-NSE-Token / ?token=.
+# Token: NSE_WEB_AUTH_TOKEN env > SecureSecretStore("web_auth_token") >
+# generated+persisted once (logged at WARNING exactly once).
+# Override (trusted-LAN only, NOT for LIVE): NSE_WEB_AUTH_DISABLE=1.
+# ------------------------------------------------------------------------------
+def _install_web_auth_if_enabled(app) -> None:
+    import os as _os
+
+    if _os.environ.get("NSE_WEB_AUTH_DISABLE", "").strip() == "1":
+        from nexus_scalp.observability.logging import get_logger as _gl
+
+        _gl("nexus_scalp.web.auth").warning(
+            "[WEB-AUTH] DISABLED via NSE_WEB_AUTH_DISABLE=1 — NEVER combine "
+            "with LIVE execution mode or a routable host binding."
+        )
+        return
+    from nexus_scalp.web.auth import install_web_auth
+
+    install_web_auth(app)
