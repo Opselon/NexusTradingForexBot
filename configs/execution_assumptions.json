@@ -1,0 +1,61 @@
+{
+  "schema": "execution_assumptions_v1",
+  "version": "2026-09-07T06:00:00Z",
+  "calibration_version": "CAL-2026-09-07-A",
+  "symbol": "XAUUSD",
+  "broker_context": {
+    "source": "REAL broker M1 bars (MT5 copy_rates, spread field) + PAPER experience ledger",
+    "evidence": [
+      "scratch/calibration/xauusd_real_calibration.json (909 real M1 bars 2026-08-18, MEASURED_FROM_REAL_DATA)",
+      "artifacts/audit.db audit_experience_outcomes: 158 executed closed paper trades",
+      "artifacts/audit.db broker_outcome payloads: commission=0 swap=0 (account type: spread-only)"
+    ],
+    "source_data_range": "2026-08-18T01:14:00+00:00 .. 2026-08-18T16:22:00+00:00 (Asia+London)",
+    "limitations": "No NY-session bars in the calibration window; commission/swap zero on this account; slippage measured on PAPER fills only (mean -0.077 pts, p95 +0.05 pts, worst -2.23 pts favorable-skewed synthetic)"
+  },
+  "spread": {
+    "unit": "usd_per_oz",
+    "p50": 0.14,
+    "mean": 0.147,
+    "p95": 0.24,
+    "max_observed": 0.37,
+    "paper_baseline_band": [
+      0.08,
+      0.18
+    ],
+    "note": "REAL M1 spread distribution; paper synthetic 8-18c band sits inside the measured mean"
+  },
+  "slippage": {
+    "unit": "usd_per_oz",
+    "stop_close_adverse_band": [
+      0.01,
+      0.04
+    ],
+    "paper_measured_p95": 0.05,
+    "paper_measured_worst": 0.33,
+    "note": "PAPER evidence only; no LIVE slippage sample exists yet \u2014 re-calibrate after live/paper-v2 fills"
+  },
+  "commission": {
+    "per_lot_usd": 0.0,
+    "evidence": "broker_outcome.commission == 0.0 on all 158 closed paper outcomes (spread-only account)"
+  },
+  "swap": {
+    "per_lot_per_night_usd": 0.0,
+    "evidence": "broker_outcome.swap == 0.0 on all 158 closed outcomes; trades closed intraday (p50 61s)"
+  },
+  "execution_timing": {
+    "latency_ms_typical": 0,
+    "latency_ms_p95_paper": 82031,
+    "latency_note": "PAPER wall-clock includes decision loop; not broker latency. LIVE latency UNKNOWN until measured",
+    "bar_close_decision_convention": "decisions evaluated at bar close (synthetic tick at close + fixed spread)"
+  },
+  "labeling": {
+    "friction_usd_per_oz": 0.35,
+    "derivation": "half-spread 0.0735 + adverse slippage 0.025 + safety margin 0.25 (rounded up to 0.35); conservative vs measured p95 spread 0.24"
+  },
+  "consumers": {
+    "labeling": "TripleBarrierLabeler.friction_usd",
+    "backtest": "ExecutionAssumptions (spread_ticks/slippage_ticks) via research engines",
+    "paper": "PaperMT5Adapter._METAL_SPREAD_RANGE + _slippage_for_close"
+  }
+}
