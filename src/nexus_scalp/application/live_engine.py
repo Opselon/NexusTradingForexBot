@@ -23,7 +23,7 @@ import time
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -47,9 +47,10 @@ from nexus_scalp.candle_intelligence import (
 # Consumers read the current immutable snapshot; live.yaml is bootstrap-only.
 from nexus_scalp.configuration import RuntimeConfigStore
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ExecutionMode
+from nexus_scalp.domain.enums import ExecutionMode, OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
+    Position,
     SymbolInfo,
     TickData,
     TradeProposal,
@@ -72,8 +73,12 @@ from nexus_scalp.governance import (
 )
 from nexus_scalp.intelligence import (
     BehaviorDetectionEngine,
+    DecisionContext,
     IntelligenceWorker,
+    MarketContext,
     PositionLifecycleTracker,
+    PositionPerformance,
+    PositionSnapshot,
     PreTradeIntelligenceGate,
     StrategyEvolutionEngine,
     TradeAutopsyEngine,
@@ -83,6 +88,7 @@ from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
+from nexus_scalp.model_lifecycle.persist_decision import decision_of
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
 from nexus_scalp.model_lifecycle.worker import TrainingWorker
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -95,7 +101,11 @@ from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.risk.runtime_safety import (
+    AccountFreshness,
+    BootDecision,
     HotPathErrorCircuit,
+    PersistedRiskState,
+    resolve_boot_decision,
 )
 from nexus_scalp.settings import (
     load_settings_service,
@@ -2842,11 +2852,10 @@ class LiveEngine:
             # application/live/tick_pipeline.py (TickPipeline).
             is_new_bar = self.aggregator.process_tick(tick)
             completed_bars = self.aggregator.get_completed_bars()
-            (_continue, proposal, probs, regime_state, active_positions, current_pos_count) = (
+            (_continue, fv, proposal, probs, regime_state, active_positions, current_pos_count) = (
                 self._tick_pipeline.run_pre_policy_stages(
                     tick=tick,
                     account=account,
-                    fv=None,
                     is_new_bar=is_new_bar,
                     completed_bars=completed_bars,
                 )
@@ -3381,6 +3390,7 @@ class LiveEngine:
 
         ShadowRecorder(self).record_shadow70_observation(tick, fv, proposal)
 
+    @staticmethod
     def _retrain_swap_decision(
         _self: LiveEngine | None,
         *,
@@ -3562,6 +3572,7 @@ class LiveEngine:
         finally:
             self._retrain_inflight = False
 
+    @staticmethod
     def _refresh_artifact_integrity_metadata(model_path: Path) -> bool:
         """P1: after an in-place accepted persist, re-bind every integrity
         sidecar (manifest.json / model.meta.json) to the NEW weight digest.
@@ -4133,6 +4144,7 @@ class LiveEngine:
                     account=account,
                 )
 
+    @classmethod
     def _validate_50d_tensor(cls, features: Sequence[float], context: str) -> list[float]:
         """
         Validates and sanitizes a feature vector against the ACTIVE schema.
