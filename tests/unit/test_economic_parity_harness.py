@@ -40,7 +40,6 @@ from nexus_scalp.research.metrics import (
 )
 from nexus_scalp.research.models import ResearchDataset, ResearchSample
 
-
 START_EQ = 10_000.0
 
 
@@ -98,7 +97,7 @@ def test_sized_view_volumes_match_canonical_sizing() -> None:
     # replicate the running-equity loop with the CANONICAL component
     equity = START_EQ
     peak = equity
-    for sample, vol in zip(ordered, view.volumes):
+    for sample, vol in zip(ordered, view.volumes, strict=True):
         decision = compute_sizing(
             policy=ECON.sizing,
             instrument=ECON.instrument,
