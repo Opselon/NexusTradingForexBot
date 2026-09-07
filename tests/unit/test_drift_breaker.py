@@ -117,8 +117,9 @@ class TestScalerReferenceWiring:
         br = FeatureDriftBreaker(mon)
         ok = br.set_reference_from_scaler(p)
         assert ok is True
-        for _ in range(40):
-            br.update(_vec(0.5))
+        rng = random.Random(2026)
+        for _ in range(400):
+            br.update(_vec(rng.gauss(0.5, 0.2)))
         assert br.state() == STATE_NORMAL
 
     def test_missing_scaler_is_honest(self, tmp_path) -> None:
