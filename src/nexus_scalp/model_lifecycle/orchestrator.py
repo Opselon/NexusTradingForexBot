@@ -178,7 +178,7 @@ class ModelLifecycleOrchestrator:
         # ---- 3. REGISTRY TRANSITION -------------------------------------------
         candidate_status = ModelStatus.CHALLENGER if all_passed else ModelStatus.REJECTED
         registry_ok = False
-        if run.artifacts:
+        if run.artifacts and self.model_registry is not None:
             artifact = run.artifacts[0]
             # The candidate must be REGISTERED before any status transition:
             # set_status alone is a silent no-op for an unregistered model

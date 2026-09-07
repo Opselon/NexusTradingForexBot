@@ -556,7 +556,7 @@ class TestCompatibility:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _make_bug118_champion(tmp_path, num_features=50, num_classes=4):
+    def _make_bug118_champion(tmp_path, num_features=50, num_classes=3):
         import numpy as np
 
         p = tmp_path / "model.pt"
@@ -567,6 +567,7 @@ class TestCompatibility:
             artifact_path=p,
             feature_schema_id="scalp_v1",
             feature_dimension=num_features,
+            num_classes=num_classes,
         )
 
     @staticmethod
@@ -645,7 +646,7 @@ class TestCompatibility:
 
             # simulate retrain artifact rewrite: a NEW checkpoint overwrites the
             # model file (new content hash + new mtime => new fingerprint)
-            net = ScalpNet(num_features=50, num_classes=4)
+            net = ScalpNet(num_features=50, num_classes=3)
             with torch.no_grad():
                 for p in net.parameters():
                     p.add_(1e-3)  # different weights => different artifact hash
