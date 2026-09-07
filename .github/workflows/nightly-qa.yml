@@ -112,6 +112,7 @@ jobs:
         # never production install paths, never a real engine/MT5.
         run: |
           pytest tests/unit/test_lifecycle_chaos.py `
+                 tests/unit/test_update_lifecycle_scenarios.py `
                  -q --tb=short `
                  --junitxml="$CI_RESULTS_DIR/chaos/junit.xml" `
                  > "$CI_RESULTS_DIR/chaos/pytest.txt" 2>&1
