@@ -131,14 +131,17 @@ class FeatureDriftBreaker:
         status = summary.get("status", "")
         if status in ("INSUFFICIENT_EVIDENCE", "NO_REFERENCE_DISTRIBUTION"):
             return STATE_INSUFFICIENT_DATA
+        # Reference may be set directly on the canonical monitor (tests,
+        # runtime wiring) rather than via set_reference_from_scaler; the
+        # monitor's own "NO_REFERENCE_DISTRIBUTION" availability check has
+        # already validated it by this point.
+        if not self._reference_set:
+            self._reference_set = True
         severity = summary.get("severity", DRIFT_SEVERITY_NORMAL)
         if severity == DRIFT_SEVERITY_CRITICAL:
             return STATE_DRIFT_CRITICAL
         if severity == DRIFT_SEVERITY_WARNING:
             return STATE_DRIFT_WARNING
-        if not self._reference_set and not summary.get("alerts"):
-            # evaluable but with zero reference: treat as insufficient
-            return STATE_INSUFFICIENT_DATA
         return STATE_NORMAL
 
     def snapshot(self) -> dict[str, Any]:
