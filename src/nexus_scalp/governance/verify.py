@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
+from nexus_scalp.features.session_time import SESSION_SEMANTICS_VERSION
 from nexus_scalp.governance.load_gate import sha256_hex
 from nexus_scalp.governance.models import (
     GovernanceErrorCode,
@@ -56,6 +57,11 @@ VERIFY_GATES: tuple[str, ...] = (
     "shadow_evidence_recorded",
     "news_contract_valid",
     "liquidity_contract_valid",
+    # P1 SESSION SEMANTICS: the artifact must be trained (and revalidated)
+    # under the corrected DST-aware session time basis. Models trained under
+    # the historical fixed-UTC session windows are NOT equivalent — the
+    # promotion gate blocks them for retraining/revalidation.
+    "session_semantics_revalidated",
     # MODEL_CLASS_CONTRACT v1 (Fix #6): smoke artifact quarantine.
     "production_eligible",
 )
@@ -252,7 +258,31 @@ def verify_candidate(
     else:
         _gate("liquidity_contract_valid", False, "not provided", "SKIP")
 
-    # 15. Smoke quarantine (MODEL_CLASS_CONTRACT v1 / Fix #6):
+    # 15. P1 SESSION SEMANTICS revalidation: the candidate metadata must
+    #     declare the corrected DST-aware session semantics version. Absent
+    #     (pre-correction artifact) or older => blocked for
+    #     retraining/revalidation; never silently equivalent.
+    _sess = mf.get("session_semantics") or {}
+    _sess_ver = (
+        str(_sess.get("session_semantics_version", "") or "")
+        if isinstance(_sess, dict)
+        else ""
+    )
+    _gate(
+        "session_semantics_revalidated",
+        _sess_ver == SESSION_SEMANTICS_VERSION,
+        (
+            f"declared={_sess_ver or 'ABSENT'} required={SESSION_SEMANTICS_VERSION}"
+            + (
+                " — artifact predates the DST-aware session correction: "
+                "RETRAIN/REVALIDATE before promotion"
+                if _sess_ver != SESSION_SEMANTICS_VERSION
+                else ""
+            )
+        ),
+    )
+
+    # 16. Smoke quarantine (MODEL_CLASS_CONTRACT v1 / Fix #6):
     #     smoke=True artifacts are bounded drills (2 folds, 1 epoch, 3000 rows)
     #     and are NEVER production-eligible. Rejected regardless of validity or
     #     width — a smoke artifact cannot reach CHAMPION via any path.

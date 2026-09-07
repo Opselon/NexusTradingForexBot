@@ -172,7 +172,14 @@ EXTRA_GROUPS: dict[str, tuple[int, ...]] = {
 
 
 def session_phase_encoding(hour_utc: int | None) -> float:
-    """Deterministic session phase for an integer UTC hour (0-23)."""
+    """DEPRECATED fixed-UTC hour mapping — superseded by
+    ``features.session_time.session_phase_encoding_for_utc`` (DST-aware).
+
+    Kept ONLY for callers that still hold an integer UTC hour without the
+    full instant; new training/live paths MUST pass the whole timestamp to
+    the DST-aware function. The fixed-UTC mapping silently shifts by an hour
+    across DST transitions (US and UK change on different schedules).
+    """
     if hour_utc is None:
         return _SESSION_ENCODING["overnight"]
     if 0 <= hour_utc < 7:

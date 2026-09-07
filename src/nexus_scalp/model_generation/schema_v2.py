@@ -166,14 +166,21 @@ def compute_60d_frame(
             all_bars[max(0, i + 1 - LIQUIDITY_HISTORY_LIMIT) : i + 1], tick
         )
         x50 = fv.to_tensor_input()
+        # P1 SESSION-TIME CORRECTION: session_phase_enc is now derived from
+        # the full decision timestamp through the DST-aware market-local
+        # session walls (features/session_time). The old fixed-UTC hour
+        # mapping drifted an hour across DST transitions.
         extras = compute_60d_extras(
             opens=w_open,
             highs=w_high,
             lows=w_low,
             closes=w_close,
             volumes=w_vol,
-            hour_utc=ts.hour,
+            hour_utc=None,
         )
+        from nexus_scalp.features.session_time import session_phase_encoding_for_utc
+
+        extras[6] = session_phase_encoding_for_utc(ts)
         rec = {
             "timestamp": ts,
             "open": float(b["open"]),

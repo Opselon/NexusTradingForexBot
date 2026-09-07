@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.schema import active_dimension, active_schema
+from nexus_scalp.features.session_time import session_flags_for_utc
 from nexus_scalp.market_data.bar_aggregator import BarData
 from nexus_scalp.observability.logging import get_logger
 
@@ -652,17 +653,17 @@ class ScalpFeatureEngine:
             stop_hunt_depth = float((highs[-1] - recent_high_10) / safe_atr)
 
         # 4. Group 3: Market Sessions & Time-of-Day
-        dt_utc = (
-            current_tick.timestamp.astimezone(UTC)
-            if current_tick.timestamp.tzinfo
-            else current_tick.timestamp.replace(tzinfo=UTC)
-        )
-        hour = dt_utc.hour
-
-        session_tokyo = bool(0 <= hour < 8)
-        session_london = bool(7 <= hour < 15)
-        session_ny = bool(13 <= hour < 21)
-        session_overlap_london_ny = bool(13 <= hour < 15)
+        # P1 SESSION-TIME CORRECTION (features/session_time.py): the session
+        # flags are now derived from each market's LOCAL wall clock through
+        # the IANA timezone database (DST-aware) instead of fixed UTC hour
+        # windows. Feature names/dimensions/contracts unchanged — only the
+        # time semantics are corrected. SESSION_SEMANTICS_VERSION travels in
+        # training metadata so pre-correction artifacts are identifiable.
+        session_flags = session_flags_for_utc(current_tick.timestamp)
+        session_tokyo = session_flags["session_tokyo"]
+        session_london = session_flags["session_london"]
+        session_ny = session_flags["session_ny"]
+        session_overlap_london_ny = session_flags["session_overlap_london_ny"]
 
         # 5. Group 4: Time-Series Lag Features
         lag_1_log_return = float(math.log(closes[-2] / closes[-3]) if closes[-3] > 0 else 0.0)
