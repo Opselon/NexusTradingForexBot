@@ -90,20 +90,32 @@ def test_degenerate_vectors_never_manufacture_confidence(probs: list[float]) -> 
 @pytest.mark.parametrize(
     "probs",
     [
-        [0.0, 0.0, 0.0, 0.0],  # all-zero -> BUG-194 ZeroDivisionError today
-        [0.0, 0.0, 0.0, 1.0],  # all mass in WAIT -> BUG-194 today
-        [0.0, 0.0, 0.0, 0.0, 0.0],  # width-5 junk -> BUG-194 today
+        [0.0, 0.0, 0.0, 0.0],  # all-zero degenerate trained mass
+        [0.0, 0.0, 0.0, 1.0],  # all mass in WAIT
+        [0.0, 0.0, 0.0, 0.0, 0.0],  # width-5 junk
     ],
 )
-def test_degenerate_zero_mass_vectors_currently_crash_bug194(probs: list[float]) -> None:
-    """Open-defect probes (BUG-194): a candidate channel can fire while the
-    trained mass is 0.0 -> ZeroDivisionError at policy.py:382. These stay
-    RED as live evidence; the dedicated BUG-194 battery documents the owner
-    fix semantics. Excluded from the 'never manufacture confidence' claim
-    until the fix lands."""
+def test_degenerate_zero_mass_vectors_survive_bug245b_guard(probs: list[float]) -> None:
+    """FIXED-CONTRACT probes (BUG-194 crash class; fixed by BUG-245B,
+    bfeb08dd, then flipped per this file's original NOTE — mirrors commit
+    52d874f6 which flipped the companion test_qa_deep_bug194 battery).
+
+    History: these probes pinned ``pytest.raises(ZeroDivisionError)``
+    while the candidate-measure defect was open. The defect was fixed
+    (bfeb08dd: degenerate candidate measure -> raw own-side fallback,
+    aligned with the CHG-0042 handler in _directional_confidence), but
+    THESE four probes in this file were missed by the flip and stayed red
+    — the deep-assurance full lane could only pass by ignoring them. The
+    agreed post-fix semantics (no crash, finite non-negative confidence,
+    NO_TRADE on degenerate mass) are the stronger assertion; a sweep
+    candidate still fires to exercise the exact guard.
+    """
     policy = _fresh_policy(0.10)
-    with pytest.raises(ZeroDivisionError):
-        _evaluate(policy, probs, fv_updates={"liquidity_sweep_signal": 1})
+    proposal = _evaluate(policy, probs, fv_updates={"liquidity_sweep_signal": 1})
+    assert proposal is not None
+    assert proposal.action == ActionType.NO_TRADE
+    assert math.isfinite(float(proposal.confidence))
+    assert float(proposal.confidence) >= 0.0
 
 
 def test_nan_slice_produces_finite_confidence_and_finite_risk_checks() -> None:
@@ -249,12 +261,15 @@ def test_confidence_source_vocabulary_freeze(probs: list[float]) -> None:
 
 
 def test_confidence_source_vocabulary_freeze_all_wait_is_bug194_class() -> None:
-    """All-WAIT vector currently crashes (BUG-194). After the owner fix the
-    risk_checks vocabulary must still hold. Marked adversarial-xfail until
-    the fix lands: xfail with STRICT reason, never silently skipped."""
+    """FIXED-CONTRACT flip (BUG-194 crash class, fixed by BUG-245B/bfeb08dd):
+    an all-WAIT vector no longer crashes; the risk_checks vocabulary must
+    still hold on the fallback path (RAW_FALLBACK expected on a degenerate
+    mass). Mirrors commit 52d874f6 which flipped the companion battery."""
     policy = _fresh_policy(0.10)
-    with pytest.raises(ZeroDivisionError):
-        _evaluate(policy, [0.0, 0.0, 0.0, 0.0])
+    proposal = _evaluate(policy, [0.0, 0.0, 0.0, 0.0])
+    assert proposal is not None
+    rc = proposal.risk_checks or {}
+    assert rc.get("confidence_source") in ("DIRECTIONAL_NORMALIZED", "RAW_FALLBACK")
 
 
 def test_three_logit_artifact_measure_is_identity_over_trained_mass() -> None:
