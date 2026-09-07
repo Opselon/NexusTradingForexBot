@@ -218,12 +218,17 @@ def _parse_hhmm(s: str) -> tuple[int, int]:
 
 
 def _server_naive(ts: datetime, offset_hours: float | None) -> datetime:
-    """Converts a timestamp to naive server (data) time."""
+    """Converts a UTC timestamp to naive server (data) time.
+
+    ``offset_hours`` is the SERVER timezone east of UTC (e.g. 2.0 for a
+    GMT+2 broker): server = utc + offset. When None the timestamp IS server
+    time already (research data convention) and is returned naive.
+    """
     if ts.tzinfo is not None:
         ts = ts.astimezone(UTC)
     if offset_hours is None:
         return ts.replace(tzinfo=None)
-    return (ts - timedelta(hours=offset_hours)).replace(tzinfo=None)
+    return (ts + timedelta(hours=offset_hours)).replace(tzinfo=None)
 
 
 def in_maintenance_window(
