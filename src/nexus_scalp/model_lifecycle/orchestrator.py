@@ -180,6 +180,20 @@ class ModelLifecycleOrchestrator:
         registry_ok = False
         if run.artifacts:
             artifact = run.artifacts[0]
+            # The candidate must be REGISTERED before any status transition:
+            # set_status alone is a silent no-op for an unregistered model
+            # (registry rows are the promotion gate's source of truth).
+            self.lifecycle_registry.register_candidate(
+                artifact_path=artifact.artifact_path,
+                run_id=run_id,
+                model_id=artifact.model_id or f"candidate_{run_id}",
+                model_version=artifact.model_version or run_id,
+                feature_schema_id=artifact.feature_schema_id,
+                feature_dimension=artifact.feature_dimension,
+                parent_model_id=champ.model_id if champ else "",
+                parent_model_version=champ.model_version if champ else "",
+                build_identity=build_identity,
+            )
             registry_ok = self.lifecycle_registry.set_status(
                 model_id=artifact.model_id or f"candidate_{run_id}",
                 model_version=artifact.model_version or run_id,
