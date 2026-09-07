@@ -3246,6 +3246,7 @@ class LiveEngine:
 
         return InferenceService.infer_probabilities(self, fv)
 
+    @property
     def _inference_service(self):
         """Lazily composed inference service (P1 seam L6)."""
         eng = getattr(self, "_inference_service_instance", None)
@@ -3261,6 +3262,7 @@ class LiveEngine:
         eng = self._bar_handler
         eng.on_new_bar(tick=tick, fv=fv, last_bar=last_bar)
 
+    @property
     def _bar_handler(self):
         """Lazily composed bar handler (P1 seam L5)."""
         eng = getattr(self, "_bar_handler_instance", None)
@@ -3349,6 +3351,7 @@ class LiveEngine:
             model = self._bundle.model
         return model(x)
 
+    @property
     def _decision_executor(self):
         """Lazily composed decision executor (P1 seam L2)."""
         eng = getattr(self, "_decision_executor_instance", None)
@@ -3359,6 +3362,7 @@ class LiveEngine:
             self._decision_executor_instance = eng
         return eng
 
+    @property
     def _maintenance(self):
         """Lazily composed maintenance cycle (P1 seam L3)."""
         eng = getattr(self, "_maintenance_instance", None)
@@ -3369,6 +3373,7 @@ class LiveEngine:
             self._maintenance_instance = eng
         return eng
 
+    @property
     def _tick_pipeline(self):
         """Lazily composed post-policy pipeline (P1 seam L7)."""
         eng = getattr(self, "_tick_pipeline_instance", None)

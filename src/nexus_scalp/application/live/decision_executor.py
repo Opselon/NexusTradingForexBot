@@ -57,7 +57,7 @@ class DecisionExecutor:
         # see the full counterfactual), so shadow evidence is preserved.
         # =================================================================
         if (
-            self.om.om.config.execution.mode == ExecutionMode.SHADOW
+            self.om.config.execution.mode == ExecutionMode.SHADOW
             and policy_decision.action != ActionType.NO_TRADE
         ):
             _shadow_action = policy_decision.action
@@ -87,25 +87,25 @@ class DecisionExecutor:
                 and "AI_REVERSAL_SIGNAL" in (policy_decision.reason_code or "")
             ):
                 reversal_volume = 0.0
-                if self.om.om._symbol_info:
-                    reversal_volume = self.om.om.risk_engine.calculate_volume(
+                if self.om._symbol_info:
+                    reversal_volume = self.om.risk_engine.calculate_volume(
                         entry=policy_decision.proposed_entry,
                         sl=policy_decision.stop_loss,
                         tp=policy_decision.take_profit,
                         account=account,
-                        symbol_info=self.om.om._symbol_info,
+                        symbol_info=self.om._symbol_info,
                     )
-                    reversal_volume = self.om.om.risk_engine.get_clamped_position_size(
+                    reversal_volume = self.om.risk_engine.get_clamped_position_size(
                         volume=reversal_volume,
                         account=account,
-                        symbol_info=self.om.om._symbol_info,
+                        symbol_info=self.om._symbol_info,
                     )
 
-                success = self.om.om.order_manager.execute_ai_reversal(
+                success = self.om.order_manager.execute_ai_reversal(
                     decision=policy_decision,
                     volume=reversal_volume,
                     current_tick=tick,
-                    symbol_info=self.om.om._symbol_info,
+                    symbol_info=self.om._symbol_info,
                 )
                 logger.info(
                     f"[info] AI REVERSAL EXECUTED ticket={policy_decision.ticket} "
@@ -124,19 +124,19 @@ class DecisionExecutor:
                 ActionType.BUY_STOP,
                 ActionType.SELL_STOP,
             ):
-                if self.om.om._symbol_info:
-                    dynamic_volume = self.om.om.risk_engine.calculate_volume(
+                if self.om._symbol_info:
+                    dynamic_volume = self.om.risk_engine.calculate_volume(
                         entry=policy_decision.proposed_entry,
                         sl=policy_decision.stop_loss,
                         tp=policy_decision.take_profit,
                         account=account,
-                        symbol_info=self.om.om._symbol_info,
+                        symbol_info=self.om._symbol_info,
                     )
                     # Guarantee that the lot size respects the safety clamp under any mathematical condition
-                    dynamic_volume = self.om.om.risk_engine.get_clamped_position_size(
+                    dynamic_volume = self.om.risk_engine.get_clamped_position_size(
                         volume=dynamic_volume,
                         account=account,
-                        symbol_info=self.om.om._symbol_info,
+                        symbol_info=self.om._symbol_info,
                     )
                     # SETUP SNAPSHOT (2026-08-18): capture the full chart-state
                     # fingerprint the AI saw at dispatch (HTF/SMC/ICT structure,
@@ -201,7 +201,7 @@ class DecisionExecutor:
                         }
                     except Exception as snap_err:
                         logger.warning("[ENTRY] setup snapshot failed", error=str(snap_err))
-                    success = self.om.om.order_manager.dispatch_order(
+                    success = self.om.order_manager.dispatch_order(
                         policy_decision, dynamic_volume, setup_snapshot=setup_snapshot
                     )
                     logger.info(
@@ -210,10 +210,10 @@ class DecisionExecutor:
 
                     if success:
                         risk_usd = account.equity * (
-                            self.om.om.config.risk.risk_per_trade_pct / 100.0
+                            self.om.config.risk.risk_per_trade_pct / 100.0
                         )
                         with contextlib.suppress(Exception):
-                            mapped_order_type = self.om.om.risk_engine._map_action_to_order_type(
+                            mapped_order_type = self.om.risk_engine._map_action_to_order_type(
                                 policy_decision.action
                             )
                             order_obj = TradeOrder(
@@ -227,11 +227,11 @@ class DecisionExecutor:
                                 magic_number=888101,
                                 comment="NSE_HFT_SIZED",
                             )
-                            self.om.om.notifier.notify_order_opened(
+                            self.om.notifier.notify_order_opened(
                                 order=order_obj,
                                 risk_usd=risk_usd,
                                 callback=lambda msg_id: (
-                                    self.om.om.order_manager.register_order_message(
+                                    self.om.order_manager.register_order_message(
                                         order_obj.order_id, msg_id
                                     )
                                     if msg_id
@@ -240,11 +240,11 @@ class DecisionExecutor:
                             )
                     else:
                         # Dispatch failed! Clear the price lock immediately so bot is not locked out of trading!
-                        self.om.om.signal_policy.last_order_price = None
-                        self.om.om.signal_policy.last_order_time = None
-                        self.om.om.signal_policy._last_active_direction = None
-                        self.om.om.signal_policy._last_active_direction_time = None
-                        self.om.om.signal_policy._last_executed_price = 0.0
+                        self.om.signal_policy.last_order_price = None
+                        self.om.signal_policy.last_order_time = None
+                        self.om.signal_policy._last_active_direction = None
+                        self.om.signal_policy._last_active_direction_time = None
+                        self.om.signal_policy._last_executed_price = 0.0
 
             # FOR POSITION LIFECYCLE ACTIONS
             elif policy_decision.action in (
@@ -253,14 +253,14 @@ class DecisionExecutor:
                 ActionType.MODIFY_SL_TP,
                 ActionType.CANCEL_ORDER,
             ):
-                self.om.om.order_manager.execute_lifecycle_action(policy_decision)
+                self.om.order_manager.execute_lifecycle_action(policy_decision)
                 ticket = getattr(policy_decision, "ticket", 0) or 0
                 logger.info(
                     f"[info] DISPATCH LIFECYCLE ACTION action={policy_decision.action.value} ticket={ticket}"
                 )
 
         # Evaluate intelligent hedging / counter-position policy
-        self.om.om._evaluate_hedging_policy(
+        self.om._evaluate_hedging_policy(
             active_positions=active_positions,
             tick=tick,
             probs=probs,
@@ -270,10 +270,10 @@ class DecisionExecutor:
         )
 
         # Equity / drawdown tracking + audit
-        self.om.om._update_survival_state(account=account, current_pos_count=current_pos_count)
-        self.om.om.audit.log_account_snapshot(account=account, peak_equity=self.om.om._peak_equity)
+        self.om._update_survival_state(account=account, current_pos_count=current_pos_count)
+        self.om.audit.log_account_snapshot(account=account, peak_equity=self.om._peak_equity)
         # Keep the order manager's account snapshot fresh so closed-trade autopsy rows
         # carry accurate balance/equity/drawdown values.
-        self.om.om.order_manager.update_account_snapshot(
-            account=account, peak_equity=self.om.om._peak_equity
+        self.om.order_manager.update_account_snapshot(
+            account=account, peak_equity=self.om._peak_equity
         )

@@ -41,9 +41,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -129,7 +128,7 @@ def _outcomes(cur: sqlite3.Cursor, fingerprint: str) -> list[dict[str, Any]]:
     """
     rows: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
-    for (payload, conf, pnl, dec_ts, out_ts) in cur.execute(q).fetchall():
+    for payload, conf, pnl, dec_ts, out_ts in cur.execute(q).fetchall():
         # E5 duplicate defense at read time (defense in depth)
         rec = json.loads(payload)
         key = str(rec.get("idempotency_key", ""))
@@ -150,9 +149,7 @@ def _outcomes(cur: sqlite3.Cursor, fingerprint: str) -> list[dict[str, Any]]:
                 continue
         except (TypeError, ValueError):
             continue
-        rows.append(
-            {"ts": str(out_ts), "decision_ts": str(dec_ts), "conf": c, "pnl": float(pnl)}
-        )
+        rows.append({"ts": str(out_ts), "decision_ts": str(dec_ts), "conf": c, "pnl": float(pnl)})
     return rows
 
 
@@ -240,9 +237,10 @@ def collect_calibration_evidence(
     result.raw_metrics = art["validation_metrics"].get("raw", {})
     result.calibrated_metrics = art["validation_metrics"].get("calibrated", {})
     ok = persist_calibration_artifact(
-        SERVING_CALIBRATION_PATH, art["params"], CalibrationProvenance.from_dict(
-            art["provenance"]
-        ), art["validation_metrics"],
+        SERVING_CALIBRATION_PATH,
+        art["params"],
+        CalibrationProvenance.from_dict(art["provenance"]),
+        art["validation_metrics"],
     )
     if not ok:
         result.notes.append("artifact persist FAILED — system stays uncalibrated")
@@ -254,9 +252,7 @@ def collect_calibration_evidence(
         result.notes.append("reloaded artifact NOT_CALIBRATED — persist schema drift")
         return result
     val_scores = [reloaded.calibrate(r["conf"])[0] for r in val]
-    reloaded_metrics = evaluate_calibration(
-        val_scores, [1 if r["pnl"] > 0 else 0 for r in val]
-    )
+    reloaded_metrics = evaluate_calibration(val_scores, [1 if r["pnl"] > 0 else 0 for r in val])
     if abs(float(reloaded_metrics["ece"]) - float(result.calibrated_metrics["ece"])) > 1e-6:
         result.notes.append("reloaded metrics diverge from fit-time metrics — REJECTED")
         return result
