@@ -16,12 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import math
 import os
 import signal
 import threading
 import time
-import uuid
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -43,20 +41,18 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.candle_intelligence import (
     CandleIntelligenceConfig,
     CandleIntelligenceEngine,
-    RegimeState,
 )
 
 # RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
 # Consumers read the current immutable snapshot; live.yaml is bootstrap-only.
 from nexus_scalp.configuration import RuntimeConfigStore
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
+from nexus_scalp.domain.enums import ExecutionMode, OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
     Position,
     SymbolInfo,
     TickData,
-    TradeOrder,
     TradeProposal,
 )
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
@@ -71,9 +67,7 @@ from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, Marke
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
 from nexus_scalp.governance import (
-    GovernanceEvent,
     GovernanceShadowRuntime,
-    GovernanceStage,
     GovernanceStore,
     ModelGovernanceEngine,
 )
@@ -93,7 +87,6 @@ from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
-from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
 from nexus_scalp.model_lifecycle.persist_decision import decision_of
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
@@ -107,6 +100,13 @@ from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
 from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.risk.runtime_safety import (
+    AccountFreshness,
+    BootDecision,
+    HotPathErrorCircuit,
+    PersistedRiskState,
+    resolve_boot_decision,
+)
 from nexus_scalp.settings import (
     load_settings_service,
 )
@@ -604,6 +604,10 @@ class LiveEngine:
         # Daily Telegram performance summary (BUG-057): once per 24h.
         self._daily_summary_interval_sec: float = 24 * 3600.0
         self._last_daily_summary_time: float = 0.0
+        # MISSION 5: compact operational digest throttle (composition-root
+        # state; MaintenanceCycle owns the logic and reads/writes these).
+        self._operational_digest_interval_sec: float = 24 * 3600.0
+        self._last_operational_digest_time: float = 0.0
         # TASK-11: database hygiene worker cycle (low frequency, off hot path).
         # First-run posture is AUDIT_ONLY (never deletes on debut); an operator
         # opts into SAFE_CLEAN --apply via the CLI. Idle scan ~6h, deep cycle
@@ -651,6 +655,39 @@ class LiveEngine:
 
         self._consecutive_losses: int = 0
         self._survival_mode_active: bool = False
+
+        # =====================================================================
+        # PERSISTED RUNTIME SAFETY STATE (P0, runtime-safety mission).
+        # Canonical durable safety decision (RUNNING/HALTED/KILL_SWITCH) +
+        # hot-path error circuit + account freshness guard. Pure policy lives
+        # in risk/runtime_safety.py; persistence lives in AuditRepository
+        # (runtime_risk_state single-row store). A safety halt triggered by a
+        # real trading event MUST survive process restart until explicitly
+        # released (nexus risk release); DEGRADED is session-local by design.
+        # =====================================================================
+        self._runtime_risk_state: str = "RUNNING"
+        self._runtime_risk_detail: str = ""
+        self._halt_reason: str = ""
+        self._halt_triggered_at: str = ""
+        self._hot_path_circuit = HotPathErrorCircuit()
+        # Same config-derived default as the G29 freshness block below (which
+        # assigns _freshness_max_age_sec later in __init__ — init-order safe).
+        self._account_age_max_sec: float = float(
+            (
+                getattr(config, "freshness", None) is not None
+                and getattr(config.freshness, "max_age_sec", 30.0)
+            )
+            or 30.0
+        )
+        self._account_freshness: str = "MISSING"
+        self._account_last_successful_refresh: float = 0.0
+        self._account_stale_blocked_total: int = 0
+        # Consecutive-loss governance: derived from CANONICAL finalized ledger
+        # outcomes (audit_ledger), never from volatile memory — survives
+        # restart and cannot be fabricated from rejected/unfilled events.
+        self._consecutive_loss_threshold: int = 3
+        self._consecutive_loss_freeze_hours: float = 1.0
+        self._loss_freeze_active: bool = False
 
         # HTF Warmup State Machine
         self.warmup_state: str = "WARMING_UP"
@@ -849,6 +886,33 @@ class LiveEngine:
             )
         if config.telegram.enabled and bot_token and not admin_id:
             logger.warning("[TELEGRAM_CONFIG_ERROR] reason=ADMIN_CHAT_ID_MISSING")
+
+        # MISSION 5: Telegram OPERATIONAL CONTROL SURFACE (inbound commands).
+        # The bus issues authenticated INTENTS only — every mutation routes
+        # through apply_command_intent() -> existing authority layers
+        # (RiskEngine kill switch / governance rollback). INV-010 preserved:
+        # the bus never calls the broker adapter. Disabled unless both
+        # credentials AND the halt token are present (fail-closed control).
+        self._command_bus: Any = None
+        _halt_token = str(os.environ.get("NEXUS_TELEGRAM_CMD_TOKEN", "") or "")
+        if config.telegram.enabled and bot_token and admin_id and _halt_token:
+            from nexus_scalp.observability.tg_command_bus import TelegramCommandBus
+
+            self._command_bus = TelegramCommandBus(
+                bot_token=bot_token,
+                admin_id=admin_id,
+                target=self,
+                halt_token=_halt_token,
+            )
+            logger.info(
+                "[TG_CMD] event=BUS_CONSTRUCTED token_required=%s",
+                bool(_halt_token),
+            )
+        elif config.telegram.enabled:
+            logger.info(
+                "[TG_CMD] event=BUS_DISABLED reason=NO_CMD_TOKEN "
+                "(set NEXUS_TELEGRAM_CMD_TOKEN to enable operator commands)"
+            )
 
         # BUG-061: local candle-intelligence subsystem (candle-close gate).
         # Isolated DB (candle_intel.db); feeds decisions for entry/hold/fast-exit.
@@ -1302,6 +1366,17 @@ class LiveEngine:
         self._bars_since_last_retrain: int = 0
         self._retrain_task: asyncio.Task | None = None
         self._retrain_inflight: bool = False
+        # LEARNING-LOOP (Phase 6/10): config-driven, fail-closed online
+        # fine-tune controls. The engine keeps its self-improving loop ONLY
+        # when config.learning.online_finetune.enabled=True; the default
+        # configuration leaves it disabled so the champion artifact is
+        # immutable between governed promotions.
+        self._online_finetune_enabled: bool = bool(
+            getattr(getattr(self.config, "learning", None), "online_finetune", None)
+            and self.config.learning
+            and self.config.learning.enabled
+            and self.config.learning.online_finetune.enabled
+        )
         # BUG-169: throttle timestamp for the width-mismatch warning (set on first use).
         self._online_train_width_warn_at: float = 0.0
 
@@ -1466,188 +1541,113 @@ class LiveEngine:
         except Exception as e:
             logger.error("[MODEL] provenance registration failed (isolated)", error=str(e))
 
+    # ------------------------------------------------------------------
+    # P1 seam L9: model-bundle load/verify/persist delegates. Implementation
+    # lives in application/live/model_bundle_store.py (ModelBundleStore);
+    # methods are invoked UNBOUND with the engine as the state surface so
+    # instance monkeypatching / harness contracts keep working.
+    # NOTE: __init__ keeps calling self._load_or_create_bundle(...) — the
+    # BUG-182B init-order source contract (rebind AFTER load) is preserved.
+    # ------------------------------------------------------------------
+
+    def _load_or_create_bundle(self, **kw):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._load_or_create_bundle(self, **kw)
+
+    @staticmethod
+    def _artifact_meta_coherence(*args, **kwargs):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._artifact_meta_coherence(*args, **kwargs)
+
+    def _expected_num_features_for_artifact(self, *args, **kwargs):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._expected_num_features_for_artifact(self, *args, **kwargs)
+
+    def _load_or_initialize_model_weights(self, *args, **kwargs):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._load_or_initialize_model_weights(self, *args, **kwargs)
+
+    def _load_scaler_artifacts(self, *args, **kwargs):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._load_scaler_artifacts(self, *args, **kwargs)
+
+    def _save_model_weights_atomic(self, *args, **kwargs):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._save_model_weights_atomic(self, *args, **kwargs)
+
+    # ------------------------------------------------------------------
+    # P1 seam L10: warmup delegates. Implementation lives in
+    # application/live/warmup.py (WarmupService); methods are invoked UNBOUND
+    # with the engine as the state surface (harness contract preserved).
+    # ------------------------------------------------------------------
+
+    def evaluate_warmup_readiness(self, *args, **kwargs):
+        from nexus_scalp.application.live.warmup import WarmupService
+
+        return WarmupService.evaluate_warmup_readiness(self, *args, **kwargs)
+
+    async def _cold_start_warmup(self, *args, **kwargs):
+        from nexus_scalp.application.live.warmup import WarmupService
+
+        return await WarmupService.cold_start_warmup(self, *args, **kwargs)
+
+    def _evaluate_champion_registry_sync(self, *args, **kwargs):
+        """Delegate: pure registry-sync decision (owned by ChampionSync, L11)."""
+        from nexus_scalp.application.live.champion_sync import ChampionSync
+
+        return ChampionSync.evaluate_champion_registry_sync(self, *args, **kwargs)
+
+    def _sync_champion_registry_state(self, *args, **kwargs) -> dict:
+        """Delegate: registry truth sync (owned by ChampionSync, L11)."""
+        from nexus_scalp.application.live.champion_sync import ChampionSync
+
+        return ChampionSync.sync_champion_registry_state(self, *args, **kwargs)
+
+    def _detect_model_collapse(self, *args, **kwargs):
+        """Delegate: collapse detection (owned by ModelHealth, L12)."""
+        from nexus_scalp.application.live.model_health import ModelHealth
+
+        return ModelHealth.detect_model_collapse(self, *args, **kwargs)
+
+    async def _reinitialize_collapsed_model(self, *args, **kwargs):
+        """Delegate: collapsed-model recovery (owned by ModelHealth, L12)."""
+        from nexus_scalp.application.live.model_health import ModelHealth
+
+        return await ModelHealth.reinitialize_collapsed_model(self, *args, **kwargs)
+
+    def set_execution_mode(self, *args, **kwargs) -> dict:
+        """Delegate: operator mode switch (owned by RuntimeModeService, L13)."""
+        from nexus_scalp.application.live.runtime_mode import RuntimeModeService
+
+        return RuntimeModeService.set_execution_mode(self, *args, **kwargs)
+
+    def _invalidate_cross_mode_state(self, *args, **kwargs) -> None:
+        """Delegate: cross-mode state invalidation (RuntimeModeService, L13)."""
+        from nexus_scalp.application.live.runtime_mode import RuntimeModeService
+
+        return RuntimeModeService.invalidate_cross_mode_state(self, *args, **kwargs)
+
     async def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
-        """Atomically swap the serving model artifact (safe hot swap).
+        """Delegate: atomic serving-artifact swap (owned by HotSwapService, L4)."""
+        eng = self._hot_swap
+        return await eng.swap_model(new_artifact_path, source=source)
 
-        Loads + validates + warms the NEW bundle FIRST; only on success the
-        current bundle is released and the new one becomes authoritative.
-        In-flight inference completes against the old bundle under the
-        bundle lock. Never replaces a healthy model with an invalid artifact.
+    @property
+    def _hot_swap(self):
+        """Lazily composed hot-swap service (P1 seam L4)."""
+        eng = getattr(self, "_hot_swap_instance", None)
+        if eng is None:
+            from nexus_scalp.application.live.hot_swap import HotSwapService
 
-        P0-2026-09-04 SECURITY HARDENING (hot-swap governance):
-          * path allow-list — the swap target must resolve inside the
-            approved artifact roots (traversal / symlink escape / arbitrary
-            external files rejected before any load);
-          * bundle coherence — a manifest.json next to the artifact is
-            verified against the actual bytes when present (stale sidecar /
-            hash mismatch rejected);
-          * safe load — weights_only state_dict deserialization with
-            declared-width verification (no arbitrary pickle objects);
-          * metadata/head coherence — model.meta.json class count must equal
-            the actual tensor head; a rejected candidate (REJECTED lifecycle
-            or production_eligible=False when the field exists) cannot be
-            activated through the swap path.
-        """
-        from nexus_scalp.training.safe_loader import load_state_dict_safe
-
-        new_path = Path(new_artifact_path)
-        old_path = Path(self.config.model.model_artifact_path)
-        if not new_path.exists():
-            logger.error(
-                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED reason=ARTIFACT_MISSING path=%s",
-                new_artifact_path,
-            )
-            return {
-                "success": False,
-                "reason": "ARTIFACT_MISSING",
-                "runtime_applied": False,
-            }
-        # P0 hardening: allow-list BEFORE any load (never trust the caller).
-        try:
-            from nexus_scalp.training.champion_guard import resolve_under
-
-            resolved = resolve_under(new_path)
-        except Exception as path_err:
-            logger.error(
-                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED reason=PATH_REJECTED detail=%s",
-                path_err,
-            )
-            return {
-                "success": False,
-                "reason": "PATH_REJECTED",
-                "detail": str(path_err),
-                "runtime_applied": False,
-            }
-        del resolved
-        try:
-            # Governance coherence: verify the bundle manifest when present.
-            manifest_path = new_path.parent / "manifest.json"
-            meta_path = new_path.with_suffix(".meta.json")
-            if manifest_path.exists():
-                import hashlib
-                import json as _json
-
-                manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
-                h = hashlib.sha256(new_path.read_bytes()).hexdigest()
-                if str(manifest.get("model_sha256", "")) and h != manifest["model_sha256"]:
-                    return {
-                        "success": False,
-                        "reason": "BUNDLE_HASH_MISMATCH",
-                        "runtime_applied": False,
-                    }
-                if manifest.get("production_eligible") is False:
-                    return {
-                        "success": False,
-                        "reason": "CANDIDATE_NOT_PRODUCTION_ELIGIBLE",
-                        "runtime_applied": False,
-                    }
-            if meta_path.exists():
-                import json as _json
-
-                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
-                if meta.get("production_eligible") is False:
-                    return {
-                        "success": False,
-                        "reason": "CANDIDATE_NOT_PRODUCTION_ELIGIBLE",
-                        "runtime_applied": False,
-                    }
-            # AGENT-10 (TASK-AGENT10-MODEL-PIPELINE): metadata/tensor
-            # coherence + schema-identity gate BEFORE any attach. The P0
-            # docstring always claimed head==meta class coherence; the check
-            # is now real: artifact head vs meta num_classes, artifact width
-            # vs meta declared dimension, and the meta schema id must be
-            # REGISTERED (dimension equality alone is not identity).
-            coherence = self._artifact_meta_coherence(new_path)
-            if not coherence["ok"]:
-                logger.error(
-                    "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED reason=%s detail=%s",
-                    coherence["reason"],
-                    coherence,
-                )
-                return {
-                    "success": False,
-                    "reason": coherence["reason"],
-                    "detail": coherence,
-                    "runtime_applied": False,
-                }
-            # Safe deserialization + declared-width verification (dimension
-            # gate: the artifact's own declared contract, as before).
-            expected_dim = self._expected_num_features_for_artifact(new_path)
-
-            def _safe_state():
-                return load_state_dict_safe(
-                    new_path, expected_input_dim=expected_dim, check_approved_root=False
-                )
-
-            await asyncio.to_thread(_safe_state)
-            # Load + validate the NEW bundle in isolation (never touching
-            # the serving bundle). _load_or_create_bundle raises on dimension
-            # mismatch and quarantines corrupt checkpoints.
-            new_bundle = await asyncio.to_thread(
-                self._load_or_create_bundle, model_path=new_path, force_fresh=False
-            )
-
-            def _warmup_and_hash():
-                # Warm-up: one forward pass validates the artifact end-to-end.
-                import hashlib
-
-                import numpy as np
-                import torch
-
-                warm = np.zeros((1, int(new_bundle.model.num_features)), dtype=np.float32)
-                warm = new_bundle.scaler.transform(warm)
-                with torch.inference_mode():
-                    new_bundle.model(torch.tensor(warm, dtype=torch.float32))
-
-                # Compute artifact hash for traceability (model version/hash)
-                h = hashlib.sha256()
-                with open(new_path, "rb") as f:
-                    for chunk in iter(lambda: f.read(65536), b""):
-                        h.update(chunk)
-                return h.hexdigest()[:16]
-
-            artifact_hash = await asyncio.to_thread(_warmup_and_hash)
-
-            # ATOMIC SWAP under the bundle lock: new bundle replaces old.
-            with self._bundle_lock:
-                self._bundle = new_bundle
-            # BUG-185: the new artifact may declare a different contract
-            # width - rebind the online trainer before anything retrains.
-            self._rebind_trainer_to_bundle()
-            self.config.model.model_artifact_path = new_artifact_path
-            self._register_active_model(model_path=new_path, replaced=True)
-            # Surface model version/hash on the runtime snapshot
-            self.runtime_config.apply(
-                {"model.model_artifact_path": new_artifact_path},
-                source=f"MODEL_HOT_SWAP::{source}",
-            )
-            logger.info(
-                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_COMPLETED source=%s "
-                "artifact_hash=%s old=%s new=%s",
-                source,
-                artifact_hash,
-                old_path.name,
-                new_path.name,
-            )
-            return {
-                "success": True,
-                "runtime_applied": True,
-                "artifact_hash": artifact_hash,
-                "artifact_path": new_artifact_path,
-                "configuration_version": self.runtime_config.get_version(),
-            }
-        except Exception as exc:
-            logger.error(
-                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED source=%s error=%s",
-                source,
-                exc,
-            )
-            return {
-                "success": False,
-                "reason": str(exc),
-                "runtime_applied": False,
-                "current_model_unchanged": True,
-            }
+            eng = HotSwapService(self)
+            self._hot_swap_instance = eng
+        return eng
 
     def rebuild_experience_intelligence(self) -> int:
         """
@@ -1873,686 +1873,30 @@ class LiveEngine:
     # promotion: no artifact is written, no gate is bypassed (INV-015).
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _evaluate_champion_registry_sync(
-        _self: LiveEngine | None,
-        *,
-        current_row: dict[str, Any] | None,
-        serving_artifact_path: str,
-        serving_schema_id: str,
-        serving_dimension: int,
-        serving_fingerprint: str | None = None,
-    ) -> dict[str, Any]:
-        """Pure decision for _sync_champion_registry_state (no I/O).
-
-        Returns {"action": NOOP|REPAIR|BOOTSTRAP, ...} describing exactly
-        what the caller must do to make the registry truthful.
-        """
-        norm = lambda p: str(p or "").replace("\\\\", "/")  # noqa: E731
-        serving_path = norm(serving_artifact_path)
-        model_id = f"primary_scalp_{serving_schema_id}_{serving_dimension}d"
-        base: dict[str, Any] = {
-            "serving_path": serving_path,
-            "serving_schema_id": serving_schema_id,
-            "serving_dimension": int(serving_dimension),
-            "new_champion_model_id": model_id,
-        }
-        if current_row is None:
-            return {**base, "action": "BOOTSTRAP", "reason": "no champion row"}
-
-        row_path = norm(current_row.get("artifact_path", ""))
-        row_schema = str(current_row.get("feature_schema_id", "") or "")
-        row_dim = int(current_row.get("feature_dimension", 0) or 0)
-        contract_match = (
-            row_path == serving_path
-            and row_schema == serving_schema_id
-            and row_dim == int(serving_dimension)
-        )
-        if contract_match:
-            return {**base, "action": "NOOP", "reason": "already_truthful"}
-
-        # Path matches but the CONTRACT is contradictory: the row claims
-        # the serving artifact under the wrong schema/dimension. Repair =
-        # demote the stale row to ARCHIVED and re-register truthfully.
-        stale_model_id = str(current_row.get("model_id", "") or "")
-        return {
-            **base,
-            "action": "REPAIR",
-            "reason": "champion_row_contract_mismatch",
-            "stale_row_model_id": stale_model_id,
-            "stale_row_schema": row_schema,
-            "stale_row_dimension": row_dim,
-            "demote_stale_to": ModelStatus.ARCHIVED.value,
-        }
-
-    def _sync_champion_registry_state(self) -> None:
-        """Makes the registry truthful about the CURRENT Champion (spec 3)."""
-        try:
-            if self.governance_store is None:
-                return
-            champ = self.champion_manager.champion_or_none()
-            if champ is None or not champ.artifact_hash:
-                return
-            from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
-
-            lifecycle = ModelLifecycleRegistry(
-                audit_repo=self.audit, model_registry=self.model_registry
-            )
-            rows = lifecycle.list_models(status=ModelStatus.CHAMPION, limit=5)
-            current = rows[0] if rows else None
-            decision = self._evaluate_champion_registry_sync(
-                None,
-                current_row=current,
-                serving_artifact_path=self.config.model.model_artifact_path,
-                serving_schema_id=self.FEATURE_SCHEMA_ID,
-                serving_dimension=self.FEATURE_DIM,
-                serving_fingerprint=champ.artifact_hash,
-            )
-            action = decision.get("action")
-            if action == "NOOP":
-                return
-            if action == "REPAIR":
-                # Demote the contradictory CHAMPION row first (append-only:
-                # ARCHIVED preserves history, never deletes evidence).
-                stale_model_id = str(decision.get("stale_row_model_id", "") or "")
-                stale_version = str(current.get("model_version", "") or "") if current else ""
-                if stale_model_id and stale_version:
-                    with contextlib.suppress(Exception):
-                        lifecycle.set_status(
-                            model_id=stale_model_id,
-                            model_version=stale_version,
-                            status=ModelStatus.ARCHIVED,
-                            reason=(
-                                "AGENT-3 registry truth repair: champion row "
-                                "contract mismatch (declared "
-                                f"{decision.get('stale_row_schema')}"
-                                f"@{decision.get('stale_row_dimension')}D vs "
-                                f"serving {self.FEATURE_SCHEMA_ID}"
-                                f"@{self.FEATURE_DIM}D)"
-                            ),
-                        )
-            self.model_registry.register_model(
-                artifact_path=self.config.model.model_artifact_path,
-                model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-                feature_schema_id=self.FEATURE_SCHEMA_ID,
-                feature_dimension=self.FEATURE_DIM,
-                config_version=str(getattr(self.runtime_config, "get_version", lambda: 0)()),
-                replaced=False,
-            )
-            iid = f"{self.model_registry.current.model_role.lower()}_{self.FEATURE_SCHEMA_ID}_{self.FEATURE_DIM}d"
-            try:
-                lifecycle.set_status(
-                    model_id=iid,
-                    model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-                    status=ModelStatus.CHAMPION,
-                    reason="registry truthfulness sync: live Champion row",
-                )
-            except Exception as e:
-                logger.error("[MODEL_GOVERNANCE] champion registry sync failed", error=str(e))
-            self.governance_store.record_event(
-                GovernanceEvent(
-                    event_id=f"ev_{uuid.uuid4().hex[:16]}",
-                    event="REGISTRY_RECONCILED",
-                    stage=GovernanceStage.REGISTRY,
-                    model_id=self.champion_manager.model_id,
-                    model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-                    schema_id=self.FEATURE_SCHEMA_ID,
-                    reason="live Champion registry truthfulness correction",
-                    payload={"artifact_path": self.config.model.model_artifact_path},
-                )
-            )
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] registry sync failed (isolated)", error=str(e))
-
     async def stop(self) -> None:
         self._running = False
 
     async def run_loop(self) -> None:
-        """
-        Main tick ingestion loop.
-        """
-        # Resilient MT5 startup connect: the adapter itself retries
-        # initialize() (bounded, backoff); the loop adds up to 3 OUTER attempts
-        # so a transient IPC timeout (-10005) while the terminal is still
-        # launching never kills the engine at boot.
-        # Every attempt is surfaced to the console + Telegram so the operator
-        # SEES the retry in progress (perfect-UI-UX requirement).
-        import time as _time  # noqa: F401 - reserved for backoff timing telemetry
+        """Delegate: async run loop (owned by RuntimeLoop, P1 seam L8)."""
+        eng = self._runtime_loop
+        await eng.run()
 
-        mt5_connected = False
-        for attempt in range(1, 4):
-            logger.info(
-                "[MT5_CONNECT] event=ATTEMPT attempt=%s/3 msg=connecting_to_terminal",
-                attempt,
-            )
-            try:
-                mt5_connected = self.adapter.connect()
-            except Exception as conn_err:
-                logger.warning(
-                    "[MT5_CONNECT] event=EXCEPTION attempt=%s/3 msg=connect_raised error=%s",
-                    attempt,
-                    str(conn_err),
-                )
-                mt5_connected = False
-            if mt5_connected:
-                break
-            if attempt < 3:
-                wait_s = 1.5 * attempt
-                logger.warning(
-                    "[MT5_CONNECT] event=RETRY_ENGINE attempt=%s/3 msg=terminal_unavailable "
-                    "wait_s=%s — retrying...",
-                    attempt,
-                    wait_s,
-                )
-                await asyncio.sleep(wait_s)
+    @property
+    def _runtime_loop(self):
+        """Lazily composed runtime loop (P1 seam L8)."""
+        eng = getattr(self, "_runtime_loop_instance", None)
+        if eng is None:
+            from nexus_scalp.application.live.runtime_loop import RuntimeLoop
 
-        if not mt5_connected:
-            logger.critical("MT5 connect() failed after 3 attempts. Engine shutting down.")
-            self.emit_incident_telemetry(
-                event_type="MT5_CONNECT_FAILED",
-                component="mt5",
-                severity="HIGH",
-                correlation_id="startup",
-            )
-            with contextlib.suppress(Exception):
-                self.notifier.notify_error(
-                    "MT5 Connectivity",
-                    "MT5 connect() failed after retries. Engine shutting down.",
-                )
-            return
-
-        self._running = True
-        symbol = self.config.execution.symbol
-
-        account = self.adapter.get_account_info()
-        self._symbol_info = self.adapter.get_symbol_info(symbol)
-
-        # PHASE 14: refresh the typed broker-aware account snapshot and derive
-        # the REAL runtime mode from connection state + account permissions.
-        try:
-            self._account_snapshot = self.adapter.get_account_snapshot()
-        except Exception:
-            self._account_snapshot = None
-        self._update_runtime_mode()
-
-        self._restore_peak_equity(account)
-        self._notify_startup(account)
-
-        # BUG-072/073 restart safety: reconcile internal pending/position
-        # state against broker truth at startup. The broker wins — a stale
-        # internal pending (or a broker order the engine never tracked) is
-        # repaired before any new entry can be considered. Isolated.
-        try:
-            om = self.order_manager
-            if om is None:
-                raise RuntimeError("order_manager not constructed yet (startup ordering)")
-            rep = om.reconcile_pending_state(
-                symbol=symbol, current_tick=self.adapter.get_last_tick(symbol)
-            )
-            logger.info(
-                "[EXECUTION_RECONCILIATION] event=STARTUP "
-                "pending_internal=%s pending_broker=%s mismatch=%s repaired=%s",
-                rep["pending_internal"],
-                rep["pending_broker"],
-                rep["mismatch"],
-                rep["repaired"],
-            )
-        except Exception as startup_rec_err:
-            logger.error(
-                "[EXECUTION_RECONCILIATION] event=STARTUP_FAILED (isolated)",
-                error=str(startup_rec_err),
-            )
-            self.emit_incident_telemetry(
-                event_type="EXECUTION_RECONCILIATION_FAILED",
-                component="execution",
-                severity="HIGH",
-                correlation_id="startup",
-            )
-
-        await self._cold_start_warmup(symbol)
-
-        await self._bootstrap_train_if_ready()
-
-        # PHASE 08 STARTUP SEQUENCE (model-independent):
-        #   1. immutable experiences already loaded from disk (SQLite)
-        #   2. verify schema/provenance census
-        #   3. rebuild derived intelligence off the event loop
-        #   4. the active model was registered during construction
-        # A missing/rebuilt model artifact does NOT reset any of this.
-        await self._startup_experience_self_heal()
-
-        # PHASE 08: start the accounting worker (background derived refresh).
-        # It never touches the tick path; the periodic kick below only ever
-        # schedules `to_thread` refreshes.
-        self._start_accounting_worker()
-
-        # ACCOUNT HISTORY: start the bounded broker-history sync worker
-        # (watermark + overlap, idempotent, kicked via to_thread).
-        self._start_history_sync_worker()
-
-        # PHASE 09: start the background intelligence worker. Fully isolated:
-        # a failure inside it can never stop trading.
-        self._start_intelligence_worker()
-
-        # PHASE 09B: start the background strategy research worker. Research is
-        # OFFLINE / BACKGROUND (dataset rebuild, discovery, validation gates).
-        # Fully isolated: it can never stop trading and never places orders.
-        self._start_research_worker()
-        self._start_factory_worker()
-
-        # PHASE 10: start the controlled training worker. Heavy training runs
-        # ONLY in worker threads, never in the tick pipeline; fully isolated.
-        self._start_training_worker()
-
-        # PHASE 11: start the shadow-aggregation worker. Shadow evaluation is
-        # bounded + isolated; it can never stop trading or touch orders.
-        self._start_shadow_worker()
-
-        # PHASE 12: start the news intelligence worker (isolated, optional).
-        self._start_news_worker()
-
-        logger.info(
-            "LIVE CONNECTED",
-            login=getattr(account, "login", 0) if account else 0,
-            balance=getattr(account, "balance", 0.0) if account else 0.0,
-            equity=getattr(account, "equity", 0.0) if account else 0.0,
-            symbol=symbol,
-            digits=self._symbol_info.digits if self._symbol_info else 2,
-            model_path=str(self.config.model.model_artifact_path),
-        )
-
-        self._last_tick_processed_time = time.time()
-
-        while self._running:
-            try:
-                # Tick Stagnation Watchdog: If no ticks/bars are processed for > 15 seconds, trigger healthcheck & reconnect.
-                current_time = time.time()
-                if (current_time - self._last_tick_processed_time) > 15.0:
-                    # Avoid spamming reconnects if connected but market is closed (e.g. weekend or holidays)
-                    if not self.adapter.is_connected():
-                        logger.warning(
-                            "[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect"
-                        )
-                        self.emit_incident_telemetry(
-                            event_type="MT5_DISCONNECTED",
-                            component="mt5",
-                            severity="HIGH",
-                            correlation_id="tick-stream",
-                        )
-                        try:
-                            self.adapter.disconnect()
-                            await asyncio.sleep(1.0)
-                            self.adapter.connect()
-                            # RESYNC (BUG-054): after a reconnect the broker may
-                            # have advanced 5-6h; reseed the aggregator from
-                            # broker history so the chart/features/regime all
-                            # rebuild from real candles instead of the stale
-                            # pre-disconnect series.
-                            try:
-                                await self._resync_from_broker(symbol)
-                            except Exception as resync_err:
-                                logger.error(
-                                    "Watchdog reconnect resync failed",
-                                    error=str(resync_err),
-                                    exc_info=True,
-                                )
-                        except Exception as conn_err:
-                            logger.error(
-                                "Error during auto-reconnect in watchdog",
-                                error=str(conn_err),
-                                exc_info=True,
-                            )
-                    else:
-                        # BUGFIX-G29: connection is *live* but the tick stream is
-                        # quiet (is_connected()==True while no new ticks arrive).
-                        # The old branch simply reset the timer and declared the
-                        # connection active, which masked a dead feed behind
-                        # health=READY for 26 minutes in production. Now we treat
-                        # a >15s quiet stream as a stalled ingestion: emit a
-                        # STALE incident and force a market-data resubscribe /
-                        # tick re-poll so ingestion actually restarts instead of
-                        # being hidden. This never trades — it only restores the
-                        # data feed; execution remains gated by the freshness
-                        # contract (live_freshness_gate).
-                        logger.warning(
-                            "[WATCHDOG] Tick stream stalled while MT5 reports "
-                            "connected (is_connected=True). Forcing market-data "
-                            "resubscribe / tick re-poll to restart ingestion."
-                        )
-                        self.emit_incident_telemetry(
-                            event_type="MT5_TICK_STREAM_STALLED",
-                            component="mt5",
-                            severity="HIGH",
-                            correlation_id="tick-stream",
-                        )
-                        try:
-                            # Re-subscribe symbols + re-poll fresh market state.
-                            if hasattr(self.adapter, "resubscribe_symbol") and callable(
-                                self.adapter.resubscribe_symbol
-                            ):
-                                self.adapter.resubscribe_symbol(symbol)
-                            elif hasattr(self.adapter, "subscribe_symbols") and callable(
-                                self.adapter.subscribe_symbols
-                            ):
-                                self.adapter.subscribe_symbols([symbol])
-                            # Probe a fresh tick so the aggregator/feature path
-                            # sees movement on the very next iteration.
-                            with contextlib.suppress(Exception):
-                                self.adapter.get_tick(symbol)
-                            try:
-                                await self._resync_from_broker(symbol)
-                            except Exception as resync_err:
-                                logger.error(
-                                    "Watchdog stalled-stream resync failed",
-                                    error=str(resync_err),
-                                    exc_info=True,
-                                )
-                        except Exception as recon_err:
-                            logger.error(
-                                "Error during stalled-stream resubscribe",
-                                error=str(recon_err),
-                                exc_info=True,
-                            )
-                    self._last_tick_processed_time = time.time()
-
-                # Account/tick refresh cadence: the account snapshot is
-                # refreshed at most every 5s (it is only used for position
-                # sizing / runtime mode / survival state — none of which need
-                # per-tick freshness), but the account info + last tick are
-                # needed for the decision loop. Between refreshes we reuse the
-                # last snapshot to avoid a per-tick remote RPC (~4ms at
-                # loopback, more over a real gateway).
-                _now = time.time()
-                if getattr(self, "_last_account_refresh", 0.0) + 5.0 < _now:
-                    try:
-                        live_account = self.adapter.get_account_info()
-                    except Exception:
-                        live_account = getattr(self, "_last_account_info", None)
-                    self._last_account_info = live_account
-                    self._last_account_refresh = _now
-                else:
-                    # Cache hit: reuse last successful account info (the tick
-                    # still advances every iteration).
-                    live_account = getattr(self, "_last_account_info", None)
-                tick = self.adapter.get_last_tick(symbol)
-
-                if live_account is None or tick is None:
-                    await asyncio.sleep(0.2)
-                    continue
-
-                if self._symbol_info is None:
-                    self._symbol_info = self.adapter.get_symbol_info(symbol)
-
-                # PHASE 14: periodically refresh the typed broker-aware account
-                # snapshot + REAL runtime mode (throttled - never per tick).
-                if getattr(self, "_last_snapshot_refresh", 0.0) + 5.0 < time.time():
-                    with contextlib.suppress(Exception):
-                        self._account_snapshot = self.adapter.get_account_snapshot()
-                    self._update_runtime_mode()
-                    self._last_snapshot_refresh = time.time()
-
-                # BUG-169: duplicate-tick early return. The MT5 last-tick poll
-                # returns the SAME quote between feed updates; re-running the
-                # full pipeline (features + policy + telemetry + audit) on it
-                # burns the loop thread and logs NO_TRADE conf=0.0
-                # (TICK_DUPLICATE_SUPPRESSED) as if it were a fresh decision,
-                # which is what the UI then displays. A duplicate carries ZERO
-                # new information: keep the previous proposal/state untouched
-                # and service the heartbeat workers below.
-                if (
-                    tick.timestamp == getattr(self, "_pipeline_last_ts", None)
-                    and float(tick.bid) == getattr(self, "_pipeline_last_bid", 0.0)
-                    and float(tick.ask) == getattr(self, "_pipeline_last_ask", 0.0)
-                ):
-                    await self._service_pipeline_workers(now_t=time.time())
-                    await asyncio.sleep(0.05)
-                    continue
-                self._pipeline_last_ts = tick.timestamp
-                self._pipeline_last_bid = float(tick.bid)
-                self._pipeline_last_ask = float(tick.ask)
-
-                self._process_tick_pipeline(tick=tick, account=live_account)
-                self._last_tick_processed_time = time.time()
-                # PHASE 08: accounting worker kick (throttled internally). This
-                # is the ONLY touch point and it schedules bounded to_thread
-                # work; it can never block the tick loop.
-                if self._accounting_worker_started:
-                    try:
-                        self._kick_worker("ACCOUNTING", self.accounting_worker.tick)
-                    except Exception:
-                        # Worker failure is fully isolated; never disturb ticks.
-                        pass
-
-                # BUG-054: audit retention purge (throttled ~6h, bounded batched
-                # deletes, NEVER on the tick path). Failure is isolated: a purge
-                # error must never disturb trading.
-                now_t = time.time()
-                if now_t - self._last_audit_purge_time >= self._audit_purge_interval_sec:
-                    self._last_audit_purge_time = now_t
-                    try:
-                        await asyncio.to_thread(self.audit.purge_old_audit_data)
-                    except Exception:
-                        logger.error("Audit retention purge failed (isolated)")
-
-                # TASK-11 + TASK-22: database hygiene cycle (config-driven
-                # cadence; AUDIT_ONLY first run, off the tick path via
-                # asyncio.to_thread; never deletes unless the operator enabled
-                # apply_deletes and execution mode is not LIVE).
-                if self._hygiene_scheduler is None and now_t - self._last_hygiene_time > 0:
-                    try:
-                        from nexus_scalp.hygiene.hygiene_runtime import (
-                            RuntimeCleanupScheduler,
-                            RuntimeHygieneSettings,
-                        )
-
-                        hyg_cfg = getattr(self.config, "database_hygiene", None) or {}
-                        hygs = RuntimeHygieneSettings.from_mapping(
-                            hyg_cfg.model_dump()
-                            if hasattr(hyg_cfg, "model_dump")
-                            else dict(hyg_cfg)
-                        )
-                        base_dir = getattr(self.config, "base_dir", None) or Path.cwd()
-                        self._hygiene_scheduler = RuntimeCleanupScheduler(
-                            repo_root=base_dir,
-                            settings=hygs,
-                            execution_mode=self._runtime_mode
-                            or str(
-                                getattr(self.config, "execution_mode", "PAPER") or "PAPER"
-                            ).upper(),
-                        )
-                    except Exception as hyg_init_err:
-                        logger.warning(
-                            "[DB_HYGIENE] event=INIT_FAILED (isolated)",
-                            error=str(hyg_init_err),
-                        )
-                if (
-                    self._hygiene_scheduler is not None
-                    and self._hygiene_scheduler.settings.enabled
-                    and now_t - self._last_hygiene_time
-                    >= self._hygiene_scheduler.light_interval_sec
-                ):
-                    self._last_hygiene_time = now_t
-                    try:
-                        deep = self._hygiene_scheduler.is_deep_due(now_t)
-                        # Run the scheduler cycle on a thread; it owns the
-                        # worker + quarantine + consistency + reports.
-                        cyc = await asyncio.to_thread(self._hygiene_scheduler.run_cycle, deep=deep)
-                        # Bounded Telegram REPORT (cooldown-gated, never spam).
-                        if self._hygiene_scheduler.settings.telegram_report and (
-                            self.notifier is not None and self.notifier.enabled
-                        ):
-                            tel = cyc.get("telemetry", {})
-                            if (
-                                not self._hygiene_scheduler._audit_done
-                                or self._hygiene_scheduler.is_telegram_due(now_t)
-                            ):
-                                from nexus_scalp.hygiene.report import (
-                                    build_telegram_report_text,
-                                )
-
-                                text = build_telegram_report_text(
-                                    tel, self._hygiene_scheduler._cycle_number
-                                )
-                                self.notifier.send(text, severity="INFO")
-                                self._hygiene_scheduler.mark_telegram_sent(now_t)
-                    except Exception as hyg_err:
-                        logger.warning(
-                            "[DB_HYGIENE] event=CYCLE_FAILED (isolated)",
-                            error=str(hyg_err),
-                        )
-
-                # TASK-13: incident response cycle (throttled ~60s, off the
-                # tick path via to_thread; observability-only, INV-019). The
-                # worker correlates structured telemetry into incidents and
-                # persists them; it can never block or alter trading.
-                if now_t - self._last_incident_time >= self._incident_interval_sec:
-                    self._last_incident_time = now_t
-                    try:
-                        if self._incident_worker is None:
-                            self._ensure_incident_worker()
-                        if self._incident_worker is not None:
-                            await asyncio.to_thread(self._incident_worker.tick)
-                    except Exception as inc_err:
-                        logger.warning(
-                            "[INCIDENT_WORKER] event=CYCLE_FAILED (isolated)",
-                            error=str(inc_err),
-                        )
-
-                # Daily Telegram performance summary (BUG-057): throttled to
-                # once per 24h; built from the canonical accounting core (never
-                # synthetic numbers). Failure is isolated.
-                if now_t - self._last_daily_summary_time >= self._daily_summary_interval_sec:
-                    self._last_daily_summary_time = now_t
-                    try:
-                        # Performance Intelligence upgrade: deterministic
-                        # multi-stage report generator (reporting package)
-                        # consumes the canonical AccountingCore read-only and
-                        # produces the structured JSON contract + Telegram text.
-                        from nexus_scalp.accounting import PeriodKind
-                        from nexus_scalp.reporting import (
-                            PerformanceReportEngine,
-                            format_deep_report,
-                            format_telegram_daily,
-                        )
-
-                        engine = PerformanceReportEngine(
-                            core=self.accounting_core, kind=PeriodKind.DAY
-                        )
-                        container = engine.generate()
-                        compact = format_telegram_daily(container)
-                        deep = format_deep_report(container)
-                        try:
-                            if self.notifier.enabled:
-                                # MESSAGE 1 = compact summary; MESSAGE 2/3 =
-                                # deep intelligence (deterministic split when
-                                # the deep text exceeds one message).
-                                self.notifier.send(compact, severity="INFO")
-                                if len(deep) > 3500:
-                                    for chunk in _split_telegram_report(deep):
-                                        self.notifier.send(chunk, severity="INFO")
-                                else:
-                                    self.notifier.send(deep, severity="INFO")
-                        except Exception:
-                            pass  # Telegram failure is isolated
-                    except Exception as summary_err:
-                        logger.error(
-                            "[TELEGRAM_REPORT] event=FAILURE error_type=GENERATION error=%s",
-                            summary_err,
-                        )
-
-                # ACCOUNT HISTORY: bounded background broker-history sync
-                # (watermark + overlap, idempotent). Never on the tick path.
-                if self._history_sync_started:
-                    try:
-                        self._kick_worker("HISTORY_SYNC", self.history_sync_worker.tick)
-                    except Exception as wkr_err:
-                        logger.warning("[HISTORY_SYNC_WORKER] event=KICK_FAILED error=%s", wkr_err)
-
-                # PHASE 09: intelligence worker kick (throttled internally). It
-                # runs in a worker thread and is fully failure-isolated; a
-                # failure can never disturb the tick loop.
-                if self._intelligence_worker_started:
-                    try:
-                        self._kick_worker("INTELLIGENCE", self.intelligence_worker.tick)
-                    except Exception as wkr_err:
-                        logger.warning("[INTELLIGENCE_WORKER] event=KICK_FAILED error=%s", wkr_err)
-
-                # PHASE 09B: research worker kick (throttled internally, runs in
-                # a worker thread). Research NEVER runs inside the tick
-                # pipeline; a failure here can never disturb trading.
-                if self._research_worker_started:
-                    try:
-                        self._kick_worker("RESEARCH", self.research_worker.tick)
-                    except Exception as wkr_err:
-                        logger.warning("[RESEARCH_WORKER] event=KICK_FAILED error=%s", wkr_err)
-
-                # PHASE 10: controlled training worker kick (heavy CPU work is
-                # bounded to worker threads; training can NEVER block ticks).
-                if self._training_worker_started:
-                    try:
-                        self._kick_worker("TRAINING", self.training_worker.tick)
-                    except Exception as wkr_err:
-                        logger.warning("[TRAINING_WORKER] event=KICK_FAILED error=%s", wkr_err)
-
-                # PHASE 11: shadow-aggregation worker kick (bounded, isolated).
-                if self._shadow_worker_started:
-                    try:
-                        self._kick_worker("SHADOW", self.shadow_worker.tick)
-                    except Exception as wkr_err:
-                        logger.warning("[SHADOW_WORKER] event=KICK_FAILED error=%s", wkr_err)
-
-                # PHASE 12: news intelligence worker kick (bounded, isolated).
-                if self._news_enabled and self._news_worker_started:
-                    try:
-                        self._kick_worker("NEWS", self.news_worker.tick)
-                    except Exception as wkr_err:
-                        logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
-
-                # TASK-6: bounded governance health snapshot (~5 min cadence,
-                # queued write, failure-isolated — never blocks ticks).
-                try:
-                    self._save_governance_health_periodic()
-                except Exception as gov_err:
-                    logger.debug("[MODEL_GOVERNANCE] periodic health skipped", error=str(gov_err))
-                await asyncio.sleep(0.05)
-
-            except Exception as e:
-                logger.error("Error in live loop", error=str(e), exc_info=True)
-                with contextlib.suppress(Exception):
-                    self.notifier.notify_error("Real-Time Execution Loop", str(e))
-                await asyncio.sleep(1.0)
-
-        await self._shutdown_async()
+            eng = RuntimeLoop(self)
+            self._runtime_loop_instance = eng
+        return eng
 
     async def _service_pipeline_workers(self, *, now_t: float) -> None:
-        """BUG-169: heartbeat maintenance normally piggybacked on the tick
-        iteration. On a duplicate tick the pipeline is skipped, but these
-        time-throttled housekeeping duties MUST still run — otherwise a quiet
-        feed would starve them. Contains only the throttled, non-trading
-        cycles (purge / hygiene / incidents / daily summary); the worker KICKS
-        are idempotent via _inflight_workers and keep their full cadence."""
-
-        # BUG-054: audit retention purge (throttled ~6h, bounded batched
-        # deletes, NEVER on the tick path).
-        if now_t - self._last_audit_purge_time >= self._audit_purge_interval_sec:
-            self._last_audit_purge_time = now_t
-            try:
-                await asyncio.to_thread(self.audit.purge_old_audit_data)
-            except Exception:
-                logger.error("Audit retention purge failed (isolated)")
-
-        # TASK-13: incident response cycle (throttled ~60s, INV-019).
-        if now_t - self._last_incident_time >= self._incident_interval_sec:
-            self._last_incident_time = now_t
-            try:
-                if self._incident_worker is None:
-                    self._ensure_incident_worker()
-                if self._incident_worker is not None:
-                    await asyncio.to_thread(self._incident_worker.tick)
-            except Exception as inc_err:
-                logger.warning(
-                    "[INCIDENT_WORKER] event=CYCLE_FAILED (isolated)", error=str(inc_err)
-                )
+        """BUG-169 duplicate-tick heartbeat: the time-throttled housekeeping
+        duties MUST still run when the pipeline is skipped. Single owner is
+        MaintenanceCycle (P1 seam L3); this shim keeps the call site."""
+        await self._maintenance.run_cycle(now_t=now_t)
 
     #: PHASE 28: per-call timeout for background worker kicks executed via
     #: asyncio.to_thread inside run_loop. A hung C-extension call (MT5 IPC,
@@ -2760,103 +2104,6 @@ class LiveEngine:
     # Model / scaler bundle
     # -------------------------
 
-    def _load_or_create_bundle(self, model_path: Path, force_fresh: bool) -> ModelBundle:
-        model = self._load_or_initialize_model_weights(
-            model_path=model_path, force_fresh=force_fresh
-        )
-        scaler = self._load_scaler_artifacts(model_path=model_path)
-        return ModelBundle(model=model, scaler=scaler, artifact_path=model_path)
-
-    @staticmethod
-    def _artifact_meta_coherence(model_path: Path) -> dict[str, Any]:
-        """AGENT-10: metadata/tensor coherence + schema-identity verdict.
-
-        Reads model.meta.json (when present) and the serialized tensors and
-        verifies:
-          * artifact head width == meta num_classes/model_head_classes
-            (the 4-head + 3-meta P0 incoherence class is rejected here);
-          * artifact input width == meta feature dimension (BUG-141 class);
-          * meta feature_schema_id is a REGISTERED schema id — dimension
-            equality alone is not identity (family semantics, 50/60/70D).
-        Returns {"ok": bool, "reason": str, ...diagnostic fields}. Missing
-        meta is NOT an error here (cold-start bundles carry no meta; the
-        width gate downstream still applies) — coherence is enforced only
-        on the fields that EXIST.
-        """
-        import json as _json
-
-        verdict: dict[str, Any] = {
-            "ok": True,
-            "reason": "",
-            "path": str(model_path),
-        }
-        try:
-            meta_path = Path(model_path).with_suffix(".meta.json")
-            if not meta_path.exists():
-                verdict["reason"] = "NO_META"
-                return verdict
-            meta = _json.loads(meta_path.read_text(encoding="utf-8"))
-            state = torch.load(model_path, map_location="cpu", weights_only=True)
-            if not isinstance(state, dict):
-                verdict.update(ok=False, reason="STATE_DICT_UNREADABLE")
-                return verdict
-            ip = state.get("input_projection.weight")
-            cls = state.get("classifier.weight")
-            if ip is None or cls is None or not hasattr(ip, "shape") or not hasattr(cls, "shape"):
-                verdict.update(ok=False, reason="MISSING_CORE_TENSORS")
-                return verdict
-            artifact_head = int(cls.shape[0])
-            artifact_dim = int(ip.shape[1])
-            meta_head = meta.get("model_head_classes", meta.get("num_classes"))
-            meta_dim = meta.get("feature_schema_dimension", meta.get("num_features"))
-            verdict.update(
-                artifact_head=artifact_head,
-                artifact_dim=artifact_dim,
-                meta_head=meta_head,
-                meta_dim=meta_dim,
-            )
-            if meta_head is not None and int(meta_head) != artifact_head:
-                verdict.update(ok=False, reason="HEAD_META_CLASS_MISMATCH")
-                return verdict
-            if meta_dim is not None and int(meta_dim) != artifact_dim:
-                verdict.update(ok=False, reason="DIMENSION_META_MISMATCH")
-                return verdict
-            schema_id = str(meta.get("feature_schema_id", "") or "")
-            if schema_id:
-                from nexus_scalp.features.schema import FEATURE_SCHEMAS
-
-                if not FEATURE_SCHEMAS.is_registered(schema_id):
-                    verdict.update(ok=False, reason="UNREGISTERED_SCHEMA_ID")
-                    return verdict
-                resolved = FEATURE_SCHEMAS.resolve(schema_id)
-                if resolved.dimension != artifact_dim:
-                    verdict.update(ok=False, reason="SCHEMA_DIMENSION_MISMATCH")
-                    return verdict
-            verdict["reason"] = "COHERENT"
-            return verdict
-        except Exception as exc:  # unreadable artifact => refuse loudly
-            verdict.update(ok=False, reason="COHERENCE_PROBE_FAILED", detail=str(exc))
-            return verdict
-
-    def _expected_num_features_for_artifact(self, model_path: Path) -> int:
-        """Infer expected input width from the on-disk artifact, falling back to class default.
-
-        When the checkpoint exists, its ``input_projection.weight.shape[1]`` is
-        the source of truth (covers 50D + 70D). On cold-start (no file) the
-        class ``FEATURE_DIM`` is kept so first-time users still bootstrap 50D.
-        """
-        with contextlib.suppress(Exception):
-            if model_path.exists():
-                probe = torch.load(model_path, map_location="cpu")
-                w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
-                if w is not None and hasattr(w, "shape") and len(w.shape) == 2:
-                    return int(w.shape[1])
-        # BUG-125 regression: tests call via LiveEngine._expected_num_features_for_artifact(None, path)
-        # (unbound with self=None on macOS). Handle None gracefully.
-        if self is None:
-            return int(LiveEngine.FEATURE_DIM)
-        return int(self.__class__.FEATURE_DIM)
-
     def _declared_contract_dim_for_path(self, model_path: Path) -> int | None:
         """BUG-141: DECLARED feature width for an artifact path (meta.json first).
 
@@ -2884,7 +2131,7 @@ class LiveEngine:
                     return int(shape[0])
         with contextlib.suppress(Exception):
             if model_path.exists():
-                probe = torch.load(model_path, map_location="cpu")
+                probe = torch.load(model_path, map_location="cpu", weights_only=True)
                 w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
                 if w is not None and hasattr(w, "shape") and len(w.shape) == 2:
                     return int(w.shape[1])
@@ -2918,253 +2165,9 @@ class LiveEngine:
                         return int(val)
         return TRAINED_CLASS_COUNT
 
-    def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
-        """Loads model.pt if present, validating against the artifact's own declared width.
-
-        BUG-125: the width gate now validates against the checkpoint's own
-        declared tensor width (artifact-driven contract selection) instead of
-        the process-wide 50D default.
-        """
-        if force_fresh:
-            # BUG-141: seed the width the PATH's declared contract demands
-            # (meta/scaler/checkpoint), not the process-wide class default -
-            # force_fresh must never mint a 50D file into a declared-70D path.
-            expected_dim = self._declared_contract_dim_for_path(model_path) or int(
-                self.__class__.FEATURE_DIM
-            )
-        else:
-            expected_dim = self._expected_num_features_for_artifact(model_path)
-        # BUG-243: mint at the bundle's DECLARED head width, not hardcoded 4.
-        declared_head = self._declared_head_classes_for_path(model_path.with_suffix(".meta.json"))
-        model = ScalpNet(num_features=expected_dim, num_classes=declared_head)
-        model.eval()
-
-        if model_path.exists() and not force_fresh:
-            state_dict = torch.load(model_path, map_location="cpu")
-
-            expected = model.input_projection.weight.shape
-            loaded = state_dict.get("input_projection.weight", torch.empty(0)).shape
-            if loaded != expected:
-                backup_path = model_path.with_suffix(".pt.corrupt")
-                logger.critical(
-                    "Checkpoint dimension mismatch; quarantining",
-                    expected=str(expected),
-                    loaded=str(loaded),
-                    backup=str(backup_path),
-                )
-                with contextlib.suppress(Exception):
-                    model_path.rename(backup_path)
-                raise RuntimeError(
-                    f"Checkpoint dimension mismatch: expected {expected}, got {loaded}"
-                )
-
-            model.load_state_dict(state_dict)
-            logger.info("Loaded model weights", path=str(model_path), expected_dim=expected_dim)
-            return model
-
-        logger.info(
-            "Initializing fresh model weights", path=str(model_path), expected_dim=expected_dim
-        )
-        self._save_model_weights_atomic(model, model_path)
-        return model
-
-    def _load_scaler_artifacts(self, model_path: Path) -> ScalerBundle:
-        scaler_path = model_path.with_suffix(".scaler.npz")
-        if not scaler_path.exists():
-            logger.info("Scaler artifact missing (cold-start acceptable)", path=str(scaler_path))
-            return ScalerBundle(mean=None, std=None)
-
-        try:
-            data = np.load(scaler_path)
-            mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
-            std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
-
-            # BUG-125: scaler width must match the MODEL's declared width
-            expected_dim = self._expected_num_features_for_artifact(model_path)
-            if mean.shape[0] != expected_dim or std.shape[0] != expected_dim:
-                raise RuntimeError(
-                    f"Scaler dim invalid: mean{mean.shape} std{std.shape} "
-                    f"expected ({expected_dim},) for artifact {model_path.name}"
-                )
-
-            logger.info(
-                "Loaded scaler artifacts successfully",
-                path=str(scaler_path),
-                mean_shape=mean.shape,
-                std_shape=std.shape,
-            )
-            # OBS-PERF-RESILIENCE: a degenerate std (zero/negative/non-finite)
-            # makes the bundle NOT-ready (transform passes features through
-            # unchanged instead of dividing by zero). Surface it loudly at
-            # load time — the degraded state must be visible, never silent.
-            degenerate = int(np.sum(~(np.isfinite(std) & (std > 0.0))))
-            if degenerate:
-                logger.warning(
-                    "[SCALER_DEGRADED] event=DEGENERATE_STD scaler_not_ready_features_passthrough",
-                    path=str(scaler_path),
-                    degenerate_columns=degenerate,
-                    total_columns=int(std.shape[0]),
-                )
-            return ScalerBundle(mean=mean, std=std)
-
-        except Exception as err:
-            logger.warning(
-                "Failed to load scaler; fallback to raw features",
-                error=str(err),
-                path=str(scaler_path),
-            )
-            return ScalerBundle(mean=None, std=None)
-
-    def _save_model_weights_atomic(self, model: ScalpNet, model_path: Path) -> bool:
-        """Saves current PyTorch model weights state_dict atomically to disk with thread lock and logging.
-
-        BUG-141 guard: refuses to persist weights whose input width contradicts
-        the target path's DECLARED contract (meta/scaler/checkpoint). A
-        desynced runtime state must never silently overwrite a bundle with a
-        mismatched-dimension artifact (the 2026-08-27 70d_liquidity clobber
-        class). Mismatch -> CRITICAL log + no write (artifact preserved).
-
-        Returns True on successful persist, False on BUG-141 refusal or I/O
-        failure so callers can refuse the END-TO-END persist (no bundle swap,
-        no provenance, explicit ASYNC_RETRAIN_REFUSED) instead of diverging
-        memory==disk identity.
-        """
-        try:
-            model_width = int(model.input_projection.weight.shape[1])
-            declared = self._declared_contract_dim_for_path(model_path)
-            if declared is not None and declared != model_width:
-                logger.critical(
-                    "[BUG141_GUARD] event=ARTIFACT_WIDTH_CONTRACT_REFUSED",
-                    path=str(model_path),
-                    model_width=model_width,
-                    declared_dim=declared,
-                )
-                return False
-        except Exception as guard_err:  # never block the save on guard failure
-            logger.warning(
-                "[BUG141_GUARD] contract probe failed (save proceeds)",
-                error=str(guard_err),
-                path=str(model_path),
-            )
-        with self._bundle_lock:
-            try:
-                model_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp = model_path.with_suffix(".pt.tmp")
-
-                # Detach state dict to CPU before saving for HFT thread safety
-                cpu_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-                torch.save(cpu_state, tmp)
-                tmp.replace(model_path)
-
-                logger.info(
-                    "Saved PyTorch model weights artifact atomically to disk",
-                    path=str(model_path),
-                    tensor_layers=len(cpu_state),
-                )
-            except Exception as err:
-                logger.error(
-                    "Failed to save atomic model weights to disk",
-                    error=str(err),
-                    path=str(model_path),
-                )
-                return False
-        return True
-
     # -------------------------
     # Warmup + bootstrap training
     # -------------------------
-
-    def evaluate_warmup_readiness(self, symbol: str, h1_bars: list, h4_bars: list) -> bool:
-        """
-        Evaluates HTF bar counts and feature vector validation state to determine if warmup is complete.
-        """
-        h1_status = "READY" if len(h1_bars) >= self.H1_REQUIRED_BARS else "INSUFFICIENT"
-        logger.info(
-            f"[WARMUP] H1\nrequired_bars={self.H1_REQUIRED_BARS}\navailable_bars={len(h1_bars)}\nstatus={h1_status}"
-        )
-
-        h4_status = "READY" if len(h4_bars) >= self.H4_REQUIRED_BARS else "INSUFFICIENT"
-        logger.info(
-            f"[WARMUP] H4\nrequired_bars={self.H4_REQUIRED_BARS}\navailable_bars={len(h4_bars)}\nstatus={h4_status}"
-        )
-
-        completed_bars = self.aggregator.get_completed_bars()
-        htf_fallbacks = 0
-        valid_count = 0
-        fallback_count = 0
-        invalid_count = 0
-
-        if completed_bars:
-            last_b = completed_bars[-1]
-            last_tick = TickData(
-                symbol=symbol,
-                timestamp=getattr(last_b, "timestamp", datetime.now(UTC)),
-                bid=last_b.close,
-                ask=last_b.close + 0.20,
-                volume=last_b.tick_volume,
-            )
-            sample_fv = self.feature_engine.compute_from_bars(completed_bars, last_tick)
-
-            # 0.0 is the documented HTF cold-start fallback value (not a real
-            # reading); counting fallbacks here quantifies warmup progress.
-            if sample_fv.htf_h4_trend == 0.0:
-                htf_fallbacks += 1
-                logger.warning(
-                    "[FEATURE_FALLBACK]\ntimeframe=H4\nfeature=htf_h4_trend\nreason=INSUFFICIENT_H4_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
-                    + self.warmup_state
-                )
-            if sample_fv.htf_h1_momentum == 0.0:
-                htf_fallbacks += 1
-                logger.warning(
-                    "[FEATURE_FALLBACK]\ntimeframe=H1\nfeature=htf_h1_momentum\nreason=INSUFFICIENT_H1_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
-                    + self.warmup_state
-                )
-
-            x50 = sample_fv.to_tensor_input()
-            for val in x50:
-                if math.isnan(val) or math.isinf(val):
-                    invalid_count += 1
-                elif val == 0.0:
-                    fallback_count += 1
-                else:
-                    valid_count += 1
-
-        is_ready = (h1_status == "READY") and (h4_status == "READY") and (htf_fallbacks == 0)
-
-        if not is_ready:
-            missing_h1 = max(0, self.H1_REQUIRED_BARS - len(h1_bars))
-            missing_h4 = max(0, self.H4_REQUIRED_BARS - len(h4_bars))
-            missing_tf = "H1" if missing_h1 > 0 else "H4"
-            missing_cnt = missing_h1 if missing_h1 > 0 else missing_h4
-            req_cnt = self.H1_REQUIRED_BARS if missing_h1 > 0 else self.H4_REQUIRED_BARS
-            avail_cnt = len(h1_bars) if missing_h1 > 0 else len(h4_bars)
-
-            logger.info(
-                f"[WARMUP] WAITING\ntimeframe={missing_tf}\nrequired={req_cnt}\navailable={avail_cnt}\nmissing={missing_cnt}\nattempt={self._warmup_attempt}"
-            )
-            logger.info(
-                f"[FEATURE_STATUS]\nbase_features=50\nmodel_input_features={self.effective_feature_dim}\nfeature_schema={self.effective_feature_schema_id}\nvalid={valid_count}\nbase_fallbacks={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=NOT_READY"
-            )
-            self.warmup_state = "SAFE_NOT_READY"
-            self._inference_enabled = False
-            logger.error("[WARMUP] FAILED\nreason=INSUFFICIENT_HTF_HISTORY\nstate=SAFE_NOT_READY")
-            logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
-        else:
-            self.warmup_state = "READY"
-            self._inference_enabled = True
-            logger.info(
-                f"[FEATURE_STATUS]\nbase_features=50\nmodel_input_features={self.effective_feature_dim}\nfeature_schema={self.effective_feature_schema_id}\nvalid={valid_count}\nbase_fallbacks={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=READY"
-            )
-            # STATE-SEMANTICS (C-002, 2026-09-02): the htf_fallbacks counter
-            # is the HTF (H1/H4) fallback count ONLY. It was previously
-            # mislabeled fallback_features=N, contradicting
-            # [FEATURE_STATUS] base_fallbacks=17 (BUG-070-5 class).
-            logger.info(
-                f"[WARMUP] COMPLETE\nsymbol={symbol}\nH1={len(h1_bars)}/{self.H1_REQUIRED_BARS}\nH4={len(h4_bars)}/{self.H4_REQUIRED_BARS}\nhtf_fallbacks={htf_fallbacks}\nbase_fallbacks={fallback_count}\nstatus=READY"
-            )
-            logger.info("[INFERENCE] ENABLED\nreason=HTF_WARMUP_COMPLETE")
-
-        return is_ready
 
     def _start_accounting_worker(self) -> None:
         from nexus_scalp.application.live_workers import WorkerSupervisor
@@ -3528,106 +2531,6 @@ class LiveEngine:
         except Exception as e:
             logger.error("[SELF_HEAL] FAILED", error=str(e), exc_info=True)
 
-    async def _cold_start_warmup(self, symbol: str) -> None:
-        self._warmup_attempt += 1
-        logger.info(f"[WARMUP] START\nsymbol={symbol}\nrequired_timeframes=[H1,H4]")
-
-        # Non-blocking async fetch of HTF historical bars
-        h1_bars = (
-            await asyncio.to_thread(
-                self.adapter.get_historical_bars, symbol, "H1", self.H1_REQUIRED_BARS
-            )
-            or []
-        )
-        h4_bars = (
-            await asyncio.to_thread(
-                self.adapter.get_historical_bars, symbol, "H4", self.H4_REQUIRED_BARS
-            )
-            or []
-        )
-
-        # Fetch 20000 M1 bars (~14 days) to populate full M1..MN1 aggregations.
-        # 20000 covers SMA200 on M1 and gives H1/H4/D1/W1 real resampled history
-        # so the technicals card shows values (not Neutral-gaps) on every TF.
-        hist_m1_bars = (
-            await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", 20000) or []
-        )
-
-        # RESYNC (BUG-054): reseed the aggregator with the broker-authoritative
-        # M1 history instead of blind-appending. After 5-6h downtime the first
-        # live tick must CONTINUE the broker's current minute, not mint a
-        # duplicate stale bar with the same timestamp.
-        last_seeded = self.aggregator.reseed(hist_m1_bars)
-        completed_init = self.aggregator.get_completed_bars()
-        if completed_init:
-            self._warm_liquidity_from_bars(completed_init, atr=1.5)
-
-        completed = self.aggregator.get_completed_bars()
-        if len(completed) >= 55:
-            last_300 = completed[-300:] if len(completed) > 300 else completed
-            for i in range(54, len(last_300)):
-                window = last_300[: i + 1]
-                b = last_300[i]
-                bar_time = getattr(b, "timestamp", getattr(b, "time", datetime.now(UTC)))
-                synthetic_tick = TickData(
-                    symbol=symbol,
-                    timestamp=bar_time,
-                    bid=b.close,
-                    ask=b.close + 0.20,
-                    volume=b.tick_volume,
-                )
-                fv = self.feature_engine.compute_from_bars(window, synthetic_tick)
-                # BUG-185 PART-3: 70D champion => the record carries the full
-                # canonical scalp_v3 geometry (Base|News|Liquidity) via the
-                # shared builder; the builder REFUSES (returns None) when the
-                # real liquidity snapshot is not yet VALID instead of indexing
-                # a 50-element base over a 70-wide range (IndexError class).
-                record = self._build_retrain_record(
-                    base50=fv.to_tensor_input(),
-                    fv=fv,
-                    bar=b,
-                    spread=0.20,
-                    context="cold_start_warmup",
-                )
-                if record is None:
-                    continue
-                self._rolling_feature_records.append(record)
-
-        self.evaluate_warmup_readiness(symbol, h1_bars, h4_bars)
-
-        # Immediately extract and update real SMC overlays to prevent cold-start blank canvas in MT5 mode
-        completed_bars = self.aggregator.get_completed_bars()
-        if completed_bars and hasattr(self, "server_state") and self.server_state is not None:
-            raw_atr = (
-                self._rolling_feature_records[-1]["atr_m1"]
-                if self._rolling_feature_records
-                else 1.5
-            )
-            real_overlays = self.signal_policy.extract_live_chart_overlays(
-                completed_bars=completed_bars, atr_val=raw_atr
-            )
-            bars_list = []
-            for b in completed_bars[-900:]:
-                bars_list.append(
-                    {
-                        "time": b.timestamp.isoformat()
-                        if hasattr(b.timestamp, "isoformat")
-                        else str(b.timestamp),
-                        "open": b.open,
-                        "high": b.high,
-                        "low": b.low,
-                        "close": b.close,
-                        "volume": b.tick_volume,
-                        "is_complete": True,
-                    }
-                )
-            self.server_state.update_live_visuals(bars_list, real_overlays)
-            logger.info(
-                "Cold-start SMC visual overlays successfully bridged to server state!",
-                bars=len(bars_list),
-                last_seeded=last_seeded.timestamp.isoformat() if last_seeded else None,
-            )
-
     async def _resync_from_broker(self, symbol: str) -> None:
         """Broker-authoritative reseed after downtime / reconnect (BUG-054).
 
@@ -3943,747 +2846,96 @@ class LiveEngine:
 
     def _process_tick_pipeline(self, tick: TickData, account: AccountInfo) -> None:
         try:
-            # RUNTIME CONFIGURATION: re-sync services each tick. This is
-            # cheap (two attribute assignments from an immutable snapshot)
-            # and guarantees a UI save is reflected on the very next
-            # evaluation without restarting or reading the DB per tick.
-            self._sync_runtime_config()
-
+            # P1 seam L14: pre-policy stage (runtime-config sync, liquidity
+            # warmup, regime classification + freshness stamps, position
+            # management, lifecycle timeline, warmup gate) moved to
+            # application/live/tick_pipeline.py (TickPipeline).
             is_new_bar = self.aggregator.process_tick(tick)
-
-            # cap bars (O(1) amortized)
-            if len(self.aggregator._completed_bars) > 4000:
-                self.aggregator._completed_bars = self.aggregator._completed_bars[-4000:]
-
             completed_bars = self.aggregator.get_completed_bars()
-            fv = self.feature_engine.compute_from_bars(
-                completed_bars=completed_bars, current_tick=tick
+            (_continue, fv, proposal, probs, regime_state, active_positions, current_pos_count) = (
+                self._tick_pipeline.run_pre_policy_stages(
+                    tick=tick,
+                    account=account,
+                    is_new_bar=is_new_bar,
+                    completed_bars=completed_bars,
+                )
             )
-            # TASK-02-70D-INTEGRATION: liquidity snapshot from COMPLETED bars.
-            # BUG-169 (2026-08-31, live latency forensics): the governor is
-            # IDEMPOTENT per completed-bar series — its only inputs are the
-            # bars + their last close + the bar ATR, none of which change
-            # between new bars. Recomputing it on EVERY tick burned
-            # p50=67ms / p95=655ms / p99=982ms (max 5.0s) of the LOOP THREAD
-            # per call (~12.5k calls/day), which was the dominant source of
-            # the slow/sticky live decision loop (measured 2026-08-31 log).
-            # Now: compute only on a new M1 bar (or first availability), and
-            # else reuse the last snapshot. Information-freshness is
-            # unchanged (the inputs literally cannot change between bars);
-            # INV-020 (information-only, failure-isolated) still holds.
-            if completed_bars:
-                _liq_new_bar = is_new_bar or (
-                    self.liquidity_governor is not None
-                    and self.liquidity_governor.last_snapshot is None
-                )
-                if _liq_new_bar:
-                    self._warm_liquidity_from_bars(
-                        completed_bars,
-                        atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
-                    )
-
-            if is_new_bar and completed_bars:
-                self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
-
-            # Regime state (Module 1)
-            # BUG-169: skip RE-EVALUATION for a duplicate tick (identical
-            # bid/ask + timestamp). The metrics are functionally idempotent,
-            # but classify_tick() PUSHES the duplicate into its rolling
-            # rings (_ts/_log_ret/_ofi), double-counting it and skewing
-            # tick_velocity + rv_5m + norm_ofi. This duplicates the dedup
-            # predicate from SignalPolicy._evaluate_duplicate_tick on
-            # purpose: the classifier must stay a pure per-tick consumer.
-            _tick_dupe = tick.timestamp == getattr(self, "_regime_last_ts", None) or (
-                float(tick.bid) == getattr(self, "_regime_last_bid", 0.0)
-                and float(tick.ask) == getattr(self, "_regime_last_ask", 0.0)
-                and float(tick.bid) > 0.0
-            )
-            if _tick_dupe:
-                regime_state: MarketRegimeState = getattr(
-                    self, "_regime_last_state", None
-                ) or self.regime_classifier.classify_tick(
-                    current_tick=tick,
-                    is_macro_news_window=False,
-                )
-                # BUG-TDF-Q2 (TDF-R2 Q2/Q2b): a frozen/duplicate quote
-                # stream can keep the reused state alive indefinitely.
-                # Alarm-only freshness guard (BUG-169 dedup contract
-                # preserved: duplicates are never re-pushed into the
-                # classifier's rolling rings).
-                self._assert_regime_state_freshness(tick=tick)
-            else:
-                regime_state = self.regime_classifier.classify_tick(
-                    current_tick=tick,
-                    is_macro_news_window=False,
-                )
-                self._regime_last_ts = tick.timestamp
-                self._regime_last_bid = float(tick.bid)
-                self._regime_last_ask = float(tick.ask)
-                self._regime_last_state = regime_state
-                # BUG-TDF-Q2: stamp when the cached state was last
-                # PROVEN fresh by a successful classify_tick() call.
-                self._regime_state_classified_at = time.time()
-
-            # Manage open positions
-            # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded
-            # into position management so the in-trade exit evaluation sees the
-            # CURRENT model state and CURRENT regime. Previously the call omitted
-            # both, which (a) disabled the AI direction-flip exit and (b) degraded
-            # the adaptive evidence scores to static heuristics on the live path.
-            # When inference is blocked by the warmup gate we still manage
-            # positions (protective stops must never pause) but with probs=None.
-            probs_for_mgmt = None
-            if self._inference_enabled and self.warmup_state == "READY":
-                try:
-                    probs_for_mgmt = self._infer_probabilities(fv=fv)
-                except Exception as infer_err:
-                    logger.error(
-                        "[INFERENCE] in-trade inference failed (isolated, positions still managed)",
-                        error=str(infer_err),
-                    )
-                    probs_for_mgmt = None
-            active_positions = self.order_manager.manage_active_positions(
-                symbol=tick.symbol,
-                current_tick=tick,
-                feature_vector=fv,
-                symbol_info=self._symbol_info,
+            if not _continue:
+                return
+            # P1 seam L7: post-policy stages (PHASE 08/09 gates, PHASE 12 news
+            # gate, BUG-169 terminal outcome, G29 freshness gate + instrumentation,
+            # PHASE 11 shadow recording, BUG-105 70D hook, chart overlays) moved
+            # to application/live/tick_pipeline.py (TickPipeline).
+            proposal = self._tick_pipeline.run_post_policy_stages(
+                tick=tick,
                 account=account,
-                probs=probs_for_mgmt,
-                regime_state=regime_state,
-            )
-            current_pos_count = len(active_positions)
-
-            # PHASE 09: feed the immutable position-lifecycle timeline. This is
-            # a pure classification + queued write; it never executes anything
-            # and can never block the tick path.
-            self._observe_positions(
-                positions=active_positions,
-                tick=tick,
                 fv=fv,
-                regime_state=regime_state,
-            )
-
-            # Check Warmup Readiness Gate before Inference
-            if not self._inference_enabled or self.warmup_state != "READY":
-                curr_t = time.time()
-
-                # On new bar or every 15 seconds, attempt to re-evaluate warmup readiness
-                if is_new_bar or (curr_t - getattr(self, "_last_warmup_check_time", 0.0)) >= 15.0:
-                    self._last_warmup_check_time = curr_t
-                    h1_bars = (
-                        self.adapter.get_historical_bars(tick.symbol, "H1", self.H1_REQUIRED_BARS)
-                        or []
-                    )
-                    h4_bars = (
-                        self.adapter.get_historical_bars(tick.symbol, "H4", self.H4_REQUIRED_BARS)
-                        or []
-                    )
-                    if self.evaluate_warmup_readiness(tick.symbol, h1_bars, h4_bars):
-                        logger.info("[WARMUP] RE-EVALUATION PASSED -> Engine transition to READY")
-
-                if not self._inference_enabled or self.warmup_state != "READY":
-                    if curr_t - self._last_inference_blocked_log >= 10.0:
-                        logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
-                        self._last_inference_blocked_log = curr_t
-
-                    # Fail closed: with no inference (cold warmup or disabled)
-                    # there must never be a trade decision, so a NO_TRADE proposal
-                    # keeps the downstream pipeline contracts satisfied.
-                    proposal = TradeProposal(
-                        request_id=f"blocked_{int(curr_t)}",
-                        symbol=tick.symbol,
-                        generated_at=tick.timestamp,
-                        action=ActionType.NO_TRADE,
-                        confidence=0.0,
-                        proposed_entry=tick.bid,
-                        stop_loss=tick.bid * 0.99,
-                        take_profit=tick.bid * 1.01,
-                        risk_reward_ratio=1.0,
-                        reason_code="HTF_WARMUP_INCOMPLETE",
-                    )
-                    self.audit.log_signal(proposal)
-                    self._last_tick = tick
-                    self._last_fv = fv
-                    self._last_regime_state = regime_state
-                    self._last_proposal = proposal
-                    return
-
-            # Inference (already computed for position management above; reuse it so the
-            # model runs once per tick)
-            if probs_for_mgmt is None and self._inference_enabled and self.warmup_state == "READY":
-                probs = self._infer_probabilities(fv=fv)
-            else:
-                probs = probs_for_mgmt
-
-            # Heartbeat radar logging: On EVERY M1 Bar completion or every 10 seconds of active ticks, force log.
-            current_time = time.time()
-            force_log = False
-            if is_new_bar or (current_time - self._last_radar_log_time) >= 10.0:
-                force_log = True
-                self._last_radar_log_time = current_time
-
-            # Policy
-            proposal = self.signal_policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv,
-                regime_state=regime_state,
-                survival_mode=self._survival_mode_active,
-                force_log=force_log,
-                order_manager=self.order_manager,
-            )
-
-            # =================================================================
-            # PHASE 08 PRE-TRADE EXPERIENCE INTELLIGENCE GATE
-            # -----------------------------------------------------------------
-            # Runs AFTER the signal policy and BEFORE risk sizing / dispatch, so
-            # a rejection here happens strictly before any order placement. The
-            # gate can only down-rank or convert to NO_TRADE; it never sizes,
-            # places or modifies an order, and it never blocks the tick loop
-            # (score lookups are TTL-cached and rate-limited).
-            # =================================================================
-            proposal, exp_decision = self.experience_engine.evaluate_proposal(
-                proposal=proposal,
-                feature_vector=fv,
-                regime_state=regime_state,
-            )
-            self._last_experience_decision = exp_decision
-
-            # =================================================================
-            # PHASE 09 PRE-TRADE INTELLIGENCE GATE (suitability / WARN tier)
-            # -----------------------------------------------------------------
-            # Layers a bounded suitability + WARN decision on top of the Phase 08
-            # gate. It can only DOWNGRADE (WARN / PENALIZE / REJECT), never
-            # upgrade; rejection is a NO_TRADE before risk sizing / dispatch.
-            # =================================================================
-            proposal, exp_decision, suitability = self.intelligence_gate.evaluate(
-                proposal=proposal, fv=fv, regime=regime_state
-            )
-            self._last_experience_decision = exp_decision
-            self._last_suitability_verdict = suitability
-
-            # =================================================================
-            # PHASE 12: NEWS INTELLIGENCE GATE (bounded, isolated, optional)
-            # -----------------------------------------------------------------
-            # Applies a BOUNDED confidence adjustment from the current news
-            # context. News can NEVER force a direction: alignment gives at
-            # most max_confidence_boost (default 0.05), conflict lowers
-            # confidence by at most max_confidence_penalty (default 0.10).
-            # Position-protection actions are never gated; when the news
-            # subsystem is disabled/unavailable this is a pure no-op.
-            # =================================================================
-            if self._news_enabled and self.news_gate is not None:
-                try:
-                    news_ctx = self.news_engine.current_context()
-                    news_verdict = self.news_gate.evaluate(
-                        context=news_ctx,
-                        proposal_action=(
-                            proposal.action.value
-                            if hasattr(proposal.action, "value")
-                            else str(proposal.action)
-                        ),
-                        strategy_direction=self._news_strategy_direction(proposal),
-                        proposal_confidence=float(getattr(proposal, "confidence", 0.0) or 0.0),
-                        regime_aligned=True,
-                    )
-                    self._last_news_gate = news_verdict
-                    adjustment = news_verdict.confidence_adjustment
-                    if adjustment != 0.0:
-                        proposal = proposal.model_copy(
-                            update={
-                                "confidence": round(
-                                    max(0.0, min(1.0, proposal.confidence + adjustment)), 4
-                                )
-                            }
-                        )
-                    logger.debug(
-                        "[NEWS_GATE] decision=%s strategy=%s adjustment=%+.4f",
-                        news_verdict.decision,
-                        news_verdict.strategy_direction,
-                        adjustment,
-                    )
-                except Exception as news_gate_err:
-                    # News must never disturb trading: failure = no-op.
-                    self._last_news_gate = None
-                    logger.debug(
-                        "[NEWS_GATE] event=FAILED (isolated, no-op)", error=str(news_gate_err)
-                    )
-
-            self.audit.log_signal(proposal)
-
-            # =================================================================
-            # BUG-169: TERMINAL OUTCOME FOR PRE-DISPATCH REJECTIONS.
-            # -----------------------------------------------------------------
-            # The Phase 08/09 gates convert an ENTRY proposal to NO_TRADE
-            # BEFORE any dispatch. The experience row for that decision was
-            # already written (_record_decision_experience), so without a
-            # terminal outcome it hangs in the ledger as MISSING_OUTCOME
-            # forever (295 rows / 22k log lines on 2026-08-31). Emit an
-            # explicit NOT_DISPATCHED outcome for entry proposals that the
-            # pre-trade stack rejected. Idempotent via the ledger's unique
-            # key; failure-isolated (learning never disturbs trading).
-            # =================================================================
-            if (
-                proposal.action == ActionType.NO_TRADE
-                and str(getattr(proposal, "model_action", "") or "") != "NO_TRADE"
-                and proposal.decision_stage
-                in ("EXPERIENCE_INTELLIGENCE_GATE", "TRADE_INTELLIGENCE_GATE")
-                and self.experience_engine is not None
-            ):
-                try:
-                    from nexus_scalp.execution.terminal_outcome import (
-                        emit_terminal_pending_outcome,
-                    )
-                    from nexus_scalp.experience.lifecycle import (
-                        DecisionLifecycle as DecisionLifecycleAlias,
-                    )
-
-                    emit_terminal_pending_outcome(
-                        experience_engine=self.experience_engine,
-                        request_id=str(getattr(proposal, "request_id", "") or ""),
-                        state=DecisionLifecycleAlias.NOT_DISPATCHED,
-                        detail=f"pre-dispatch gate rejection: {proposal.rejection_reason or proposal.reason_code}",
-                    )
-                except Exception as _term_err:
-                    logger.debug(
-                        "[TERMINAL_OUTCOME] pre-dispatch emission skipped",
-                        error=str(_term_err),
-                    )
-
-            # =====================================================================
-            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: SAFETY FRESHNESS GATE
-            # ---------------------------------------------------------------------
-            # Runs AFTER all model/experience/news/intelligence gates. If the
-            # feature->inference->decision chain is proven STALE (frozen), the
-            # proposal is converted to NO_TRADE / BLOCKED_BY_STALE so a frozen
-            # intelligence state can NEVER masquerade as a live BUY/SELL.
-            # is a pure downgrade to NO_TRADE; it relaxes NO existing guard and
-            # fabricates NO confidence. It is the only production touchpoint of
-            # the freshness model.
-            # =====================================================================
-            proposal, _fresh_blocked = self.live_freshness_gate(proposal)
-            if _fresh_blocked:
-                logger.warning(
-                    "[FRESHNESS_GATE] event=BLOCKED reason=BLOCKED_BY_STALE "
-                    "(inference chain frozen; proposal downgraded to NO_TRADE)"
-                )
-
-            # =====================================================================
-            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: FRESHNESS INSTRUMENTATION
-            # ---------------------------------------------------------------------
-            # Purely OBSERVATIONAL bookkeeping at the live sync point. Records
-            # the authoritative stage timestamps, bumps monotonic sequence ids
-            # ONLY when the substantive input/output actually changed (so the
-            # UI/QA can prove inference progressed without trusting
-            # state_version), and stores change-detection hashes. This does NOT
-            # gate or block trading; gates live in `live_freshness_gate()`.
-            # =====================================================================
-            import hashlib
-
-            now_utc = datetime.now(UTC)
-            # Monotonic tick timestamp: strictly increasing ms of the newest
-            # market tick on the live path.
-            tick_ms = int(tick.timestamp.timestamp() * 1000.0)
-            if tick_ms > self._monotonic_tick_ms:
-                self._monotonic_tick_ms = tick_ms
-                self._last_tick_timestamp = tick.timestamp
-                self._tick_sequence += 1
-                self._market_updates_total += 1
-            # Deterministic raw-market hash (price/spread/regime, NOT timestamp)
-            raw_market = (
-                f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}|"
-                f"{getattr(tick, 'spread', '')}|{regime_state}"
-            )
-            raw_market_hash = hashlib.sha1(raw_market.encode()).hexdigest()[:16]
-            # Feature change detection
-            feat_vals = list(getattr(fv, "to_tensor_input", lambda: [])())
-            feature_hash = hashlib.sha1(
-                ("|".join(f"{v:.6g}" for v in feat_vals)).encode()
-            ).hexdigest()[:16]
-            self.last_feature_update = now_utc
-            self._feature_builds_total += 1
-            if feature_hash != self._last_feature_hash:
-                self._feature_sequence += 1
-                self._last_feature_hash = feature_hash
-            # Model input + output change detection
-            with self._bundle_lock:
-                _b = self._bundle
-            try:
-                if _b is not None:
-                    x_np = np.array(feat_vals, dtype=np.float32).reshape(1, -1)
-                    x_scaled = _b.scaler.transform(x_np)
-                    model_input_hash = hashlib.sha1(x_scaled.tobytes()).hexdigest()[:16]
-                else:
-                    model_input_hash = ""
-            except Exception:
-                model_input_hash = ""
-            probs_list = probs.cpu().numpy().flatten().tolist() if probs is not None else []
-            model_output_hash = hashlib.sha1(
-                ("|".join(f"{v:.8g}" for v in probs_list)).encode()
-            ).hexdigest()[:16]
-            self.last_inference_timestamp = now_utc
-            self.last_successful_inference = now_utc
-            self._inference_runs_total += 1
-            if model_input_hash and model_input_hash != self._last_model_input_hash:
-                self._inference_sequence += 1
-                self._last_model_input_hash = model_input_hash
-            if model_output_hash != self._last_model_output_hash:
-                self._last_model_output_hash = model_output_hash
-            self._last_raw_market_hash = raw_market_hash
-            # Decision stage
-            self.last_decision_timestamp = getattr(proposal, "generated_at", now_utc)
-            self._decision_updates_total += 1
-            self._decision_sequence += 1
-
-            # Update synchronization properties for the Web backend
-            self._last_tick = tick
-            self._last_fv = fv
-            self._last_regime_state = regime_state
-            self._last_probs = probs
-            self._last_proposal = proposal
-
-            # =================================================================
-            # PHASE 11: CHALLENGER SHADOW RECORDING (SAME live feature vector)
-            # -----------------------------------------------------------------
-            # Records the Champion's real decision and runs the Challenger on
-            # the IDENTICAL feature vector used by the live path. Purely
-            # observational: the Challenger produces a hypothetical proposal
-            # only and can never place an order. Bounded + failure-isolated.
-            # =================================================================
-            self._record_shadow_decision(
-                tick=tick,
-                fv=fv,
-                regime_state=regime_state,
-                proposal=proposal,
-            )
-
-            # =================================================================
-            # TASK-05-70D-SHADOW: 70D OBSERVATION HOOK (observability ONLY)
-            # -----------------------------------------------------------------
-            # Independent of the 50D shadow gate (BUG-105): runs on EVERY tick
-            # once a validated 70D candidate is attached and enabled, building
-            # the 70D vector from the SAME canonical state (50D + news +
-            # liquidity). A failure here is isolated (INV-018).
-            # =================================================================
-            self._record_shadow70_observation(
-                tick=tick,
-                fv=fv,
-                proposal=proposal,
-            )
-
-            # (Liquidity governor is pre-warmed on every tick/new-bar above)
-
-            # Extract and update real SMC overlays for the live chart canvas.
-            # Recomputed ONLY when the completed-bar series changes (new bar)
-            # or on the first tick; between bars the series cannot change, so
-            # the O(n) extraction + 900-bar serialization is CACHED (measured
-            # ~6-7ms/tick at 900 bars vs ~0 for the cached path).
-            if getattr(self, "server_state", None) is not None:
-                snapshot_key = completed_bars[-1].timestamp if completed_bars else None
-                # Also refresh on a 10s cadence so the forming bar's live
-                # OHLC updates reach the UI even without a bar close.
-                if (
-                    self._last_chart_snapshot_key is None
-                    or snapshot_key != self._last_chart_snapshot_key
-                    or (time.time() - self._last_chart_snapshot_time) >= 10.0
-                ):
-                    real_overlays = self.signal_policy.extract_live_chart_overlays(
-                        completed_bars=completed_bars, atr_val=fv.atr_m1
-                    )
-                    bars_list = []
-                    for b in completed_bars[-900:]:
-                        bars_list.append(
-                            {
-                                "time": b.timestamp.isoformat(),
-                                "open": b.open,
-                                "high": b.high,
-                                "low": b.low,
-                                "close": b.close,
-                                "volume": b.tick_volume,
-                                "is_complete": True,
-                            }
-                        )
-                    forming_bar = self.aggregator.get_current_forming_bar()
-                    if forming_bar:
-                        bars_list.append(
-                            {
-                                "time": forming_bar.timestamp.isoformat(),
-                                "open": forming_bar.open,
-                                "high": forming_bar.high,
-                                "low": forming_bar.low,
-                                "close": forming_bar.close,
-                                "volume": forming_bar.tick_volume,
-                                "is_complete": False,
-                            }
-                        )
-                    self._last_chart_snapshot_key = snapshot_key
-                    self._last_chart_snapshot_bars = bars_list
-                    self._last_chart_snapshot_overlays = real_overlays
-                    self._last_chart_snapshot_time = time.time()
-                    self.server_state.update_live_visuals(bars_list, real_overlays)
-            policy_decision = proposal
-            # =================================================================
-            # BUG-212: SHADOW EXECUTION BOUNDARY (observation-only mutations).
-            # -----------------------------------------------------------------
-            # SHADOW means "live data, live prediction, NO execution". The
-            # position-management pass above keeps running (protective
-            # observation), but this engine must never MUTATE broker state
-            # from the decision path: entries, lifecycle actions, AI
-            # reversals and intelligent hedges are all downgraded to logged
-            # NO_TRADE observations before any order authority is consulted.
-            # The proposal itself stays recorded (audit + experience ledger
-            # see the full counterfactual), so shadow evidence is preserved.
-            # =================================================================
-            if (
-                self.config.execution.mode == ExecutionMode.SHADOW
-                and policy_decision.action != ActionType.NO_TRADE
-            ):
-                _shadow_action = policy_decision.action
-                policy_decision = proposal.model_copy(
-                    update={
-                        "action": ActionType.NO_TRADE,
-                        "reason_code": "SHADOW_OBSERVATION_ONLY",
-                        "rejection_reason": (
-                            f"SHADOW mode is observation-only: {_shadow_action.value} suppressed"
-                        ),
-                        "final_action": "NO_TRADE",
-                        "is_ai_reversal": False,
-                        "reversal_action": None,
-                    }
-                )
-                logger.info(
-                    "[SHADOW_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED "
-                    "suppressed_action=%s ticket=%s",
-                    _shadow_action.value,
-                    getattr(proposal, "ticket", 0) or 0,
-                )
-            if policy_decision.action != ActionType.NO_TRADE:
-                # ---------------------------------------------------------------
-                # AI POSITION REVERSAL: close-then-flip, never stack
-                # ---------------------------------------------------------------
-                if getattr(policy_decision, "is_ai_reversal", False) or (
-                    policy_decision.action == ActionType.CLOSE_POSITION
-                    and "AI_REVERSAL_SIGNAL" in (policy_decision.reason_code or "")
-                ):
-                    reversal_volume = 0.0
-                    if self._symbol_info:
-                        reversal_volume = self.risk_engine.calculate_volume(
-                            entry=policy_decision.proposed_entry,
-                            sl=policy_decision.stop_loss,
-                            tp=policy_decision.take_profit,
-                            account=account,
-                            symbol_info=self._symbol_info,
-                        )
-                        reversal_volume = self.risk_engine.get_clamped_position_size(
-                            volume=reversal_volume,
-                            account=account,
-                            symbol_info=self._symbol_info,
-                        )
-
-                    success = self.order_manager.execute_ai_reversal(
-                        decision=policy_decision,
-                        volume=reversal_volume,
-                        current_tick=tick,
-                        symbol_info=self._symbol_info,
-                    )
-                    logger.info(
-                        f"[info] AI REVERSAL EXECUTED ticket={policy_decision.ticket} "
-                        f"new_action={getattr(policy_decision.reversal_action, 'value', None)} "
-                        f"volume={reversal_volume} success={success}"
-                    )
-
-                # FOR NEW ENTRY SIGNALS
-                elif policy_decision.action in (
-                    ActionType.BUY,
-                    ActionType.SELL,
-                    ActionType.BUY_MARKET,
-                    ActionType.SELL_MARKET,
-                    ActionType.BUY_LIMIT,
-                    ActionType.SELL_LIMIT,
-                    ActionType.BUY_STOP,
-                    ActionType.SELL_STOP,
-                ):
-                    if self._symbol_info:
-                        dynamic_volume = self.risk_engine.calculate_volume(
-                            entry=policy_decision.proposed_entry,
-                            sl=policy_decision.stop_loss,
-                            tp=policy_decision.take_profit,
-                            account=account,
-                            symbol_info=self._symbol_info,
-                        )
-                        # Guarantee that the lot size respects the safety clamp under any mathematical condition
-                        dynamic_volume = self.risk_engine.get_clamped_position_size(
-                            volume=dynamic_volume,
-                            account=account,
-                            symbol_info=self._symbol_info,
-                        )
-                        # SETUP SNAPSHOT (2026-08-18): capture the full chart-state
-                        # fingerprint the AI saw at dispatch (HTF/SMC/ICT structure,
-                        # displacement, sessions, guardian) and attach it to the
-                        # entry context so the closed-trade autopsy can attribute
-                        # every trade to its exact setup.
-                        setup_snapshot: dict = {}
-                        try:
-                            fv_snap = fv
-                            session = (
-                                "".join(
-                                    seg
-                                    for seg, flag in (
-                                        ("tokyo", bool(getattr(fv_snap, "session_tokyo", False))),
-                                        ("london", bool(getattr(fv_snap, "session_london", False))),
-                                        ("ny", bool(getattr(fv_snap, "session_ny", False))),
-                                        (
-                                            "ov",
-                                            bool(
-                                                getattr(fv_snap, "session_overlap_london_ny", False)
-                                            ),
-                                        ),
-                                    )
-                                    if flag
-                                )
-                                or "?"
-                            )
-                            setup_snapshot = {
-                                "execution_mode": str(
-                                    getattr(policy_decision, "execution_mode", "")
-                                ),
-                                "model_action": str(getattr(policy_decision, "model_action", "")),
-                                "htf_score": float(
-                                    getattr(policy_decision, "htf_score", 0.0) or 0.0
-                                ),
-                                "smc_score": float(
-                                    getattr(policy_decision, "smc_score", 0.0) or 0.0
-                                ),
-                                "conf_before": float(
-                                    getattr(policy_decision, "confidence_before_filters", 0.0)
-                                    or 0.0
-                                ),
-                                "conf_after": float(
-                                    getattr(policy_decision, "confidence_after_filters", 0.0) or 0.0
-                                ),
-                                "buy_prob": float(
-                                    getattr(policy_decision, "buy_probability", None) or 0.0
-                                ),
-                                "sell_prob": float(
-                                    getattr(policy_decision, "sell_probability", None) or 0.0
-                                ),
-                                "disp": float(
-                                    getattr(fv_snap, "live_tick_displacement", 0.0) or 0.0
-                                ),
-                                "atr": float(getattr(fv_snap, "atr_m1", 0.0) or 0.0),
-                                "trend": float(getattr(fv_snap, "trend_strength", 0.0) or 0.0),
-                                "sweep_sig": int(
-                                    getattr(fv_snap, "liquidity_sweep_signal", 0) or 0
-                                ),
-                                "ob_type": int(getattr(fv_snap, "order_block_type", 0) or 0),
-                                "fvg_bull": bool(getattr(fv_snap, "fvg_bullish_active", False)),
-                                "fvg_bear": bool(getattr(fv_snap, "fvg_bearish_active", False)),
-                                "choch_bull": bool(getattr(fv_snap, "choch_bullish", False)),
-                                "choch_bear": bool(getattr(fv_snap, "choch_bearish", False)),
-                                "broke_high": bool(getattr(fv_snap, "broke_previous_high", False)),
-                                "broke_low": bool(getattr(fv_snap, "broke_previous_low", False)),
-                                "z_score": float(
-                                    getattr(fv_snap, "cross_asset_z_score", 0.0) or 0.0
-                                ),
-                                "h4": float(getattr(fv_snap, "htf_h4_trend", 0.0) or 0.0),
-                                "h1": float(getattr(fv_snap, "htf_h1_momentum", 0.0) or 0.0),
-                                "m30": float(getattr(fv_snap, "htf_m30_structure", 0.0) or 0.0),
-                                "m15": float(getattr(fv_snap, "htf_m15_confirmation", 0.0) or 0.0),
-                                "session": session,
-                                "guardian": str(getattr(policy_decision, "guardian_status", "")),
-                                "rr": float(
-                                    getattr(policy_decision, "risk_reward_ratio", 0.0) or 0.0
-                                ),
-                            }
-                        except Exception as snap_err:
-                            logger.warning("[ENTRY] setup snapshot failed", error=str(snap_err))
-                        success = self.order_manager.dispatch_order(
-                            policy_decision, dynamic_volume, setup_snapshot=setup_snapshot
-                        )
-                        logger.info(
-                            f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}"
-                        )
-
-                        if success:
-                            risk_usd = account.equity * (
-                                self.config.risk.risk_per_trade_pct / 100.0
-                            )
-                            with contextlib.suppress(Exception):
-                                mapped_order_type = self.risk_engine._map_action_to_order_type(
-                                    policy_decision.action
-                                )
-                                order_obj = TradeOrder(
-                                    order_id=policy_decision.request_id,
-                                    symbol=policy_decision.symbol,
-                                    order_type=mapped_order_type,
-                                    volume=dynamic_volume,
-                                    price=policy_decision.proposed_entry,
-                                    stop_loss=policy_decision.stop_loss,
-                                    take_profit=policy_decision.take_profit,
-                                    magic_number=888101,
-                                    comment="NSE_HFT_SIZED",
-                                )
-                                self.notifier.notify_order_opened(
-                                    order=order_obj,
-                                    risk_usd=risk_usd,
-                                    callback=lambda msg_id: (
-                                        self.order_manager.register_order_message(
-                                            order_obj.order_id, msg_id
-                                        )
-                                        if msg_id
-                                        else None
-                                    ),
-                                )
-                        else:
-                            # Dispatch failed! Clear the price lock immediately so bot is not locked out of trading!
-                            self.signal_policy.last_order_price = None
-                            self.signal_policy.last_order_time = None
-                            self.signal_policy._last_active_direction = None
-                            self.signal_policy._last_active_direction_time = None
-                            self.signal_policy._last_executed_price = 0.0
-
-                # FOR POSITION LIFECYCLE ACTIONS
-                elif policy_decision.action in (
-                    ActionType.CLOSE_POSITION,
-                    ActionType.PARTIAL_CLOSE,
-                    ActionType.MODIFY_SL_TP,
-                    ActionType.CANCEL_ORDER,
-                ):
-                    self.order_manager.execute_lifecycle_action(policy_decision)
-                    ticket = getattr(policy_decision, "ticket", 0) or 0
-                    logger.info(
-                        f"[info] DISPATCH LIFECYCLE ACTION action={policy_decision.action.value} ticket={ticket}"
-                    )
-
-            # Evaluate intelligent hedging / counter-position policy
-            self._evaluate_hedging_policy(
-                active_positions=active_positions,
-                tick=tick,
                 probs=probs,
                 regime_state=regime_state,
-                fv=fv,
+                proposal=proposal,
+                active_positions=active_positions,
+                current_pos_count=current_pos_count,
+                completed_bars=completed_bars,
+                is_new_bar=is_new_bar,
+            )
+            policy_decision = proposal
+            # P1 seam L2: decision execution stage (BUG-212 shadow boundary,
+            # reversal/entry dispatch, lifecycle actions, hedging, survival
+            # audit) — implementation moved to application/live/decision_executor.py.
+            self._decision_executor.execute_decision_stage(
+                tick=tick,
                 account=account,
+                fv=fv,
+                probs=probs,
+                regime_state=regime_state,
+                proposal=proposal,
+                policy_decision=policy_decision,
+                active_positions=active_positions,
+                current_pos_count=current_pos_count,
             )
-
-            # Equity / drawdown tracking + audit
-            self._update_survival_state(account=account, current_pos_count=current_pos_count)
-            self.audit.log_account_snapshot(account=account, peak_equity=self._peak_equity)
-            # Keep the order manager's account snapshot fresh so closed-trade autopsy rows
-            # carry accurate balance/equity/drawdown values.
-            self.order_manager.update_account_snapshot(
-                account=account, peak_equity=self._peak_equity
-            )
-
         except Exception as pipeline_err:
+            # =================================================================
+            # HOT-PATH CONSECUTIVE-ERROR CIRCUIT BREAKER (P1, runtime-safety
+            # mission). A systematically broken pipeline must not run
+            # LIVE-but-disabled forever: every failure feeds the
+            # HotPathErrorCircuit; tripping degrades the engine (survival
+            # mode = no NEW entries) while manage_active_positions keeps
+            # protecting existing positions. Explicit recovery only.
+            # =================================================================
+            now_t = time.time()
+            tripped = self._hot_path_circuit.record_error(now_t, pipeline_err)
             logger.error(
-                "Silent recovery: exception caught in hot-path tick processing pipeline",
-                error=str(pipeline_err),
+                "Hot-path tick pipeline exception "
+                "consecutive=%d/%d window=%.0fs total=%d error_type=%s",
+                self._hot_path_circuit.consecutive_error_count,
+                self._hot_path_circuit.max_consecutive_errors,
+                self._hot_path_circuit.error_window_sec,
+                self._hot_path_circuit.total_errors,
+                self._hot_path_circuit.last_error_type,
                 exc_info=True,
             )
-
-    # ---------------------------------------------------------------------
-    # PHASE 09: position lifecycle observation
-    # ---------------------------------------------------------------------
+            if tripped and not self._survival_mode_active:
+                self._survival_mode_active = True
+                self.emit_incident_telemetry(
+                    event_type="HOT_PATH_ERROR_CIRCUIT_TRIPPED",
+                    component="tick_pipeline",
+                    error_code="CONSECUTIVE_ERRORS",
+                    severity="HIGH",
+                    correlation_id="tick-pipeline",
+                )
+                logger.critical(
+                    "[SAFETY_STATE] HOT-PATH CIRCUIT TRIPPED: %d consecutive errors "
+                    "in %.0fs — new entries BLOCKED (DEGRADED); position protection "
+                    "continues; explicit recovery required",
+                    self._hot_path_circuit.consecutive_error_count,
+                    self._hot_path_circuit.error_window_sec,
+                )
+                with contextlib.suppress(Exception):
+                    self.notifier.notify_error(
+                        "Hot-Path Circuit Breaker",
+                        f"{self._hot_path_circuit.consecutive_error_count} consecutive "
+                        "tick-pipeline errors — new trades blocked (DEGRADED)",
+                    )
 
     def _observe_positions(
         self,
@@ -4951,365 +3203,49 @@ class LiveEngine:
                                 ),
                             )
 
+    def _validate_feature_vector(self, features, context: str) -> list:
+        """Delegate: schema-gated validation (InferenceService, L6); unbound
+        call keeps the harness/stand-in test contract on the real logic."""
+        from nexus_scalp.application.live.inference import InferenceService
+
+        return InferenceService.validate_feature_vector(self, features, context=context)
+
+    def _build_live_feature_vector(self, fv) -> tuple:
+        """Delegate: canonical live tensor assembly (InferenceService, L6)."""
+        from nexus_scalp.application.live.inference import InferenceService
+
+        return InferenceService.build_live_feature_vector(self, fv)
+
+    def _infer_probabilities(self, fv):
+        """Delegate: staged-latency inference (InferenceService, L6)."""
+        from nexus_scalp.application.live.inference import InferenceService
+
+        return InferenceService.infer_probabilities(self, fv)
+
+    def _inference_service(self):
+        """Lazily composed inference service (P1 seam L6)."""
+        eng = getattr(self, "_inference_service_instance", None)
+        if eng is None:
+            from nexus_scalp.application.live.inference import InferenceService
+
+            eng = InferenceService(self)
+            self._inference_service_instance = eng
+        return eng
+
     def _on_new_bar(self, tick: TickData, fv, last_bar) -> None:
-        # BUG-061: candle-close gate — feed the completed bar into the local
-        # candle-intelligence subsystem and capture its decision (entry/hold/
-        # fast-exit bias). Failure is isolated; never disturbs the tick path.
-        ci = getattr(self, "candle_intel", None)
-        if ci is not None:
-            try:
-                regime_name = getattr(self._last_regime_state, "regime_type", None)
-                regime_name = getattr(regime_name, "value", "UNKNOWN") if regime_name else "UNKNOWN"
-                regime_state = RegimeState(
-                    symbol=tick.symbol,
-                    timeframe="M1",
-                    timestamp=last_bar.timestamp,
-                    regime=str(regime_name),
-                    atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
-                    spread=float(max(0.0, tick.ask - tick.bid)),
-                )
-                out = ci.ingest_bar(
-                    symbol=tick.symbol,
-                    timeframe="M1",
-                    timestamp=last_bar.timestamp,
-                    open_=float(last_bar.open),
-                    high=float(last_bar.high),
-                    low=float(last_bar.low),
-                    close=float(last_bar.close),
-                    volume=float(getattr(last_bar, "tick_volume", 0.0) or 0.0),
-                    is_complete=True,
-                    regime_state=regime_state,
-                    holding_position=bool(self.order_manager._position_states),
-                )
-                self._last_candle_decision = out.to_dict() if out else None
-            except Exception as ci_err:
-                logger.error("[CANDLE_INTEL] bar feed failed (isolated)", error=str(ci_err))
+        """Delegate: completed-bar processing (owned by BarHandler, L5)."""
+        eng = self._bar_handler
+        eng.on_new_bar(tick=tick, fv=fv, last_bar=last_bar)
 
-        # ---------------------------------------------------------------------
-        # Build the canonical 50D feature record for THIS bar (always available,
-        # independent of MSLIE). Used by the Market Radar detector below and the
-        # rolling retrain buffer. NOTE: rec must be defined BEFORE the radar block
-        # (BUG-139: prior nesting inside the mslie_engine conditional left `rec`
-        # unbound when mslie_engine was None -> BAR_DETECT_FAILED).
-        # BUG-185 PART-3: the canonical per-bar retrain record is built by the
-        # shared builder — full scalp_v3 geometry when a 70D champion serves
-        # (Base 0..49 | News 50..59 | Liquidity 60..69), 50D base otherwise.
-        # The builder REFUSES (None) when the real liquidity snapshot is not
-        # VALID — never zero-fills — and its width guard turns any residual
-        # contract split into a structured FEATURE_CONTRACT_MISMATCH (SKIP),
-        # not a raw IndexError.
-        rec = self._build_retrain_record(
-            base50=fv.to_tensor_input(),
-            fv=fv,
-            bar=last_bar,
-            spread=(tick.ask - tick.bid),
-            context="new_bar_record",
-        )
-        if rec is None:
-            # 70D record refused (liquidity not VALID yet): keep the legacy
-            # 50D observability record so the radar/UI keep working; it is
-            # simply NOT appended to the retrain buffer by this path (the
-            # width guard below keeps starvation loud).
-            rec = {
-                f"feat_{i}": float(v)
-                for i, v in enumerate(
-                    self._validate_50d_tensor(
-                        fv.to_tensor_input(), context="new_bar_record_fallback_50d"
-                    )
-                )
-            }
-            rec.update(
-                close=last_bar.close,
-                high=last_bar.high,
-                low=last_bar.low,
-                open=last_bar.open,
-                spread=(tick.ask - tick.bid),
-                atr_m1=fv.atr_m1,
-            )
-        if self._governance_reference_vector is None:
-            _ref = self._validate_50d_tensor(fv.to_tensor_input(), context="governance_reference")
-            self._governance_reference_vector = [float(v) for v in _ref]
+    def _bar_handler(self):
+        """Lazily composed bar handler (P1 seam L5)."""
+        eng = getattr(self, "_bar_handler_instance", None)
+        if eng is None:
+            from nexus_scalp.application.live.bar_handler import BarHandler
 
-        # ---------------------------------------------------------------------
-        # Market Radar (Hunter SetupDetector) - live, bar-close cadence (BUG-138).
-        # Runs on the SAME completed-bar feature record as the sample-maker uses,
-        # but here for the LIVE path. Pure + causal; failure-isolated. Stores the
-        # ranked setup list as _last_market_radar for the Intel Hub / Web Panel.
-        try:
-            radar_rec = rec
-            if "feat_0" not in radar_rec:
-                radar_rec = (
-                    self._rolling_feature_records[-1] if self._rolling_feature_records else None
-                )
-            if radar_rec is not None:
-                detected = self.setup_detector.detect(radar_rec, timestamp=last_bar.timestamp)
-                ranked = sorted(detected, key=lambda s: s.quality, reverse=True)
-                best = ranked[0] if ranked else None
-                _regime_val = (
-                    getattr(getattr(self._last_regime_state, "regime_type", None), "value", None)
-                    or "UNKNOWN"
-                )
-                _news_state_val = None
-                try:
-                    if getattr(self, "news_engine", None) is not None:
-                        _nc = self.news_engine.current_context()
-                        if _nc is not None:
-                            _ns = getattr(_nc, "state", None)
-                            _news_state_val = getattr(_ns, "value", None) or str(_ns)
-                except Exception:
-                    _news_state_val = None
-                self._last_market_radar = {
-                    "symbol": tick.symbol,
-                    "timestamp": last_bar.timestamp.isoformat(),
-                    "bar_timestamp": last_bar.timestamp.isoformat(),
-                    "regime": str(_regime_val),
-                    "candidate_count": len(ranked),
-                    "best_setup": best.to_contract() if best else None,
-                    "setups": [s.to_contract() for s in ranked[:5]],
-                    "state": (
-                        "SETUP_READY"
-                        if best and best.quality >= self.setup_detector.min_quality
-                        else ("WATCHING" if ranked else "NO_SETUP")
-                    ),
-                    "news_state": _news_state_val,
-                    "decision_reason": self._last_proposal.reason_code
-                    if getattr(self, "_last_proposal", None)
-                    else None,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }
-        except Exception as radar_err:
-            logger.warning("[RADAR] event=BAR_DETECT_FAILED error=%s", radar_err)
-
-        # ---------------------------------------------------------------------
-        # MSLIE: market perception on the bar-close cadence (pure numpy, no
-        # I/O, no DB — INV-001). The engine produces the structured
-        # MarketIntelligenceFeatureVectorV1 for the debug UI / AI models.
-        # Failure is isolated: perception can never disturb the tick path.
-        # =====================================================================
-        ms = getattr(self, "mslie_engine", None)
-        if ms is not None:
-            try:
-                completed_bars = self.aggregator.get_completed_bars()
-                if completed_bars:
-                    vector = ms.analyze_market(
-                        completed_bars,
-                        decision_at=last_bar.timestamp,
-                        mid_price=float(tick.bid),
-                        atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
-                    )
-                    self._last_mslie_vector = vector
-            except Exception as ms_err:
-                logger.warning(
-                    "[MSLIE] event=BAR_FEED_FAILED error=%s (isolated; trading unaffected)",
-                    ms_err,
-                )
-
-        self._rolling_feature_records.append(rec)
-        self._bars_since_last_retrain += 1
-
-        # BUG-169: width guard for the online fine-tune path. The buffer
-        # records carry the 50D tensor (feat_0..feat_49, class contract);
-        # feeding them to a 70-input model head crashed with
-        # "mat1 and mat2 shapes cannot be multiplied (10x50 and 70x128)" on
-        # EVERY retrain window while the 70D champion was loaded (60
-        # failures on 2026-08-31) and each crash burned a scaler-save
-        # attempt against the artifact the engine holds (WinError 5).
-        # Gate: fine-tune only when the trainer's bound width matches the
-        # actual record width; the __init__ rebind covers the 70D case
-        # via FEATURE_COLS on the effective contract.
-        # BUG-185: a record width that disagrees with the rebound trainer
-        # width is a CONTRACT SPLIT (buffer built 50D vs trainer bound 70D),
-        # not a routine case - surface it loudly once per hour instead of
-        # silently starving the 70D online-learning loop.
-        if len(rec) - 6 != self.trainer.num_features or getattr(
-            self, "_online_train_disabled", False
-        ):
-            if self._bars_since_last_retrain >= self._retrain_interval_bars and (
-                not getattr(self, "_online_train_width_warn_at", 0.0)
-                or time.time() - self._online_train_width_warn_at >= 3600.0
-            ):
-                self._online_train_width_warn_at = time.time()
-                # BUG-185: CRITICAL, not WARNING - this split starves the
-                # online-learning loop for the loaded contract entirely.
-                logger.critical(
-                    "[ONLINE_TRAIN] SKIPPED width-contract split "
-                    "record_width=%s trainer_width=%s (BUG-169 guard, BUG-185 "
-                    "record-contract violation - buffer builder did not follow "
-                    "the loaded bundle contract)",
-                    len(rec) - 6,
-                    self.trainer.num_features,
-                )
-            return
-
-        # AGENT-8 BUG-243 (runtime forensics 2026-09-05): defensive row-width
-        # filter immediately before the DataFrame materialization boundary.
-        # The width guard above is check-then-use: the buffer is APPEND-ONLY
-        # and a restart with a DIFFERENT champion width (50D <-> 70D hot-swap)
-        # leaves mixed-width rows in the deque. polars unions heterogeneous
-        # dicts BY NAME, materializing the missing columns as None (proven:
-        # probe -> feat_50..feat_69 nulls), and neither _validate_training_frame
-        # (labels only) nor _filter_trainable_rows (label_evaluated/is_purged
-        # only) inspects feature nulls. The trainer's nan_to_num then silently
-        # trains on zero-fabricated rows - the exact "invalid record becomes
-        # zero-fill" class the record-builder invariant forbids, entering via
-        # the DATAFRAME boundary instead of the builder. Guard = keep only
-        # rows whose feat_* width matches the bound trainer contract.
-        if self._rolling_feature_records:
-            _widths = {
-                sum(1 for k in r if str(k).startswith("feat_"))
-                for r in self._rolling_feature_records
-            }
-            if len(_widths) > 1:
-                _expected = int(self.trainer.num_features)
-                _before = len(self._rolling_feature_records)
-                self._rolling_feature_records = deque(
-                    (
-                        r
-                        for r in self._rolling_feature_records
-                        if sum(1 for k in r if str(k).startswith("feat_")) == _expected
-                    ),
-                    maxlen=_before,
-                )
-                logger.warning(
-                    "[ONLINE_TRAIN] event=BUFFER_WIDTH_FILTER dropped=%s kept=%s "
-                    "expected_width=%s widths_seen=%s (mixed-width rows would "
-                    "have become None->0.0 fabrications in the training frame)",
-                    _before - len(self._rolling_feature_records),
-                    len(self._rolling_feature_records),
-                    _expected,
-                    sorted(_widths),
-                )
-
-        if (
-            self._bars_since_last_retrain
-            and len(self._rolling_feature_records) >= 300
-            and not self._retrain_inflight
-        ):
-            try:
-                loop = asyncio.get_running_loop()
-                self._retrain_task = loop.create_task(self._trigger_async_online_fine_tune())
-            except RuntimeError:
-                pass
-
-    def _validate_feature_vector(self, features: Sequence[float], context: str) -> list[float]:
-        """Schema-gated validation dispatching to 50D or 70D gate."""
-        eff = int(self.effective_feature_dim)
-        if eff == 70 and len(features) == 70:
-            from nexus_scalp.features.schema_contract import (
-                feature_schema_hash,
-                validate_70d_vector,
-            )
-
-            return validate_70d_vector(
-                list(features), schema_hash=feature_schema_hash(), context=context
-            )
-        return self.__class__._validate_50d_tensor(features, context=context)
-
-    def _build_live_feature_vector(self, fv) -> tuple[list[float], dict[str, float]]:
-        """Assembles the canonical live tensor (50D or 70D) for this tick.
-
-        50D CHAMPION (scalp_v1/50D): returns the 50D vector; liquidity is
-        never injected. 70D CHAMPION (validated 70D model): assembles
-        0..49 Base + 50..59 News + 60..69 Liquidity (causal, VALID only).
-        STALE/INVALID liquidity raises so the caller can degrade safely.
-        """
-        import time as _time
-
-        _t0 = _time.perf_counter()
-        base50 = fv.to_tensor_input()
-        base50 = self._validate_50d_tensor(base50, context="live_base50")
-        _t_base = _time.perf_counter()
-
-        eff_dim = int(self.effective_feature_dim)
-        if eff_dim != 70:
-            return base50, {
-                "feature_ms": round((_t_base - _t0) * 1e3, 3),
-                "liquidity_ms": 0.0,
-                "news_ms": 0.0,
-                "assembly_ms": 0.0,
-            }
-
-        # News 10D (indices 50..59): CANONICAL projection of the live context.
-        # BUG-190 (fidelity audit): a raw CurrentNewsContext.model_dump() has
-        # DIFFERENT key names than the canonical training-frame schema
-        # (active_event_count vs active_high_impact_events, bullish_score/
-        # bearish_score vs bullish/bearish_pressure, state-as-string vs
-        # news_state encoding, novelty absent) - feeding it straight into
-        # news_10d_from_context zeroes/loses 4 of 10 slots. The canonical
-        # named mapping (vectorize_news_context -> build_news_10, the same
-        # mapping shadow70 and the debug feature matrix already use) is the
-        # single projection for live inference.
-        news10: list[float]
-        try:
-            from nexus_scalp.shadow.shadow70.news_provider import build_news_10
-
-            news_ctx = None
-            if (
-                getattr(self, "_news_enabled", False)
-                and getattr(self, "news_engine", None) is not None
-            ):
-                try:
-                    news_ctx = self.news_engine.current_context()
-                except Exception:
-                    news_ctx = None
-            if news_ctx is None:
-                news10 = [0.0] * 10
-            else:
-                from nexus_scalp.governance.alignment import vectorize_news_context
-
-                news10, _ = build_news_10(vectorize_news_context(news_ctx))
-        except Exception:
-            news10 = [0.0] * 10
-        _t_news = _time.perf_counter()
-
-        # Liquidity 10D (indices 60..69): real, causal, causality-checked.
-        liq10: list[float] | None = None
-        gov = getattr(self, "liquidity_governor", None)
-        if gov is not None:
-            snap = getattr(gov, "last_snapshot", None)
-            causal = getattr(gov, "causal_state", lambda: "INVALID")()
-            if snap is not None and causal == "VALID":
-                try:
-                    vec = list(snap.features)
-                    if len(vec) == 10 and all(-3.0 <= float(v) <= 3.0 for v in vec):
-                        liq10 = [float(v) for v in vec]
-                except Exception:
-                    liq10 = None
-        _t_liq = _time.perf_counter()
-
-        if liq10 is None:
-            raise RuntimeError(
-                "70D inference requested but liquidity snapshot is not VALID "
-                "(stale/missing) - refusing to feed fabricated values into the 70D model"
-            )
-
-        try:
-            from nexus_scalp.features.liquidity_runtime import build_70d_vector
-
-            vec70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
-        except Exception as e:
-            raise RuntimeError(f"70D assembly failed: {e}") from e
-        _t_asm = _time.perf_counter()
-        try:
-            from nexus_scalp.features.schema_contract import (
-                feature_schema_hash,
-                validate_70d_vector,
-            )
-
-            validate_70d_vector(vec70, schema_hash=feature_schema_hash(), context="live_70d")
-        except Exception as e:
-            raise RuntimeError(f"70D contract validation failed: {e}") from e
-        return vec70, {
-            "feature_ms": round((_t_base - _t0) * 1e3, 3),
-            "news_ms": round((_t_news - _t_base) * 1e3, 3),
-            "liquidity_ms": round((_t_liq - _t_news) * 1e3, 3),
-            "assembly_ms": round((_t_asm - _t_liq) * 1e3, 3),
-        }
-
-    # ==================================================================
-    # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE-FRESHNESS TRUTH MODEL
-    # Delegates to LiveFreshnessService (Cluster 3 extraction).
-    # ==================================================================
+            eng = BarHandler(self)
+            self._bar_handler_instance = eng
+        return eng
 
     def _build_freshness_snapshot(self):  # type: ignore[no-untyped-def]
         from nexus_scalp.application.live_freshness import LiveFreshnessSnapshot
@@ -5389,165 +3325,47 @@ class LiveEngine:
             model = self._bundle.model
         return model(x)
 
-    def _infer_probabilities(self, fv) -> torch.Tensor:
-        import time as _time
+    def _decision_executor(self):
+        """Lazily composed decision executor (P1 seam L2)."""
+        eng = getattr(self, "_decision_executor_instance", None)
+        if eng is None:
+            from nexus_scalp.application.live.decision_executor import DecisionExecutor
 
-        # --- honest staged latency trace (monotonic, TASK: latency forensics) ---
-        from nexus_scalp.features.latency_tracer import LatencyStage, LatencyTracer
+            eng = DecisionExecutor(self)
+            self._decision_executor_instance = eng
+        return eng
 
-        _trace = LatencyTracer(prediction_id=f"inf_{_time.perf_counter_ns()}")
-        _trace.mark(LatencyStage.T0_MARKET_EVENT)
-        _trace.mark(LatencyStage.T1_FEATURE_START)
+    def _maintenance(self):
+        """Lazily composed maintenance cycle (P1 seam L3)."""
+        eng = getattr(self, "_maintenance_instance", None)
+        if eng is None:
+            from nexus_scalp.application.live.maintenance import MaintenanceCycle
 
-        # BUG-125: Canonical live tensor: 50D for the production Champion,
-        # 70D when a validated 70D model is hot-swapped. Assembly does
-        # per-family telemetry bookkeeping and validates the liquidity snapshot.
-        try:
-            x_vec, asm_timings = self._build_live_feature_vector(fv)
-            self._last_live_tensor_dim = len(x_vec)
-            self._last_live_tensor_schema = self.effective_feature_schema_id
-            self._last_70d_assembly_timings = asm_timings
-        except RuntimeError as asm_err:
-            if int(self.effective_feature_dim) == 70:
-                # OBS-PERF-RESILIENCE: a 70D assembly failure BLOCKS inference
-                # for this tick. That DEGRADED->BLOCKED transition must be
-                # visible in telemetry, not only in a log line: bump the
-                # failure gauge and emit an incident event (bounded by the
-                # incident pipeline's own rate limiting).
-                self._inference_failures_total = getattr(self, "_inference_failures_total", 0) + 1
-                self.emit_incident_telemetry(
-                    event_type="INFERENCE_BLOCKED_70D_ASSEMBLY",
-                    component="inference",
-                    error_code="FEATURE_UNAVAILABLE",
-                    severity="HIGH",
-                    correlation_id="tick-pipeline",
-                )
-                logger.warning(
-                    "[INFERENCE] 70D assembly failed - inference blocked for this tick",
-                    error=str(asm_err),
-                )
-                self._last_70d_assembly_timings = {}
-                self._last_live_tensor_dim = 70
-                self._last_live_tensor_schema = self.effective_feature_schema_id
-                raise
-            # Non-70D defensive fallback
-            logger.warning(
-                "[INFERENCE] feature assembly failed - falling back to 50D", error=str(asm_err)
-            )
-            x_vec = self._validate_50d_tensor(
-                fv.to_tensor_input(), context="live_inference_fallback_50d"
-            )
-            self._last_70d_assembly_timings = {}
-            self._last_live_tensor_dim = len(x_vec)
-            self._last_live_tensor_schema = "scalp_v1"
-        _trace.mark(LatencyStage.T2_FEATURE_DONE)
-        x_np = np.array(x_vec, dtype=np.float32).reshape(1, -1)
+            eng = MaintenanceCycle(self)
+            self._maintenance_instance = eng
+        return eng
 
-        with self._bundle_lock:
-            bundle = self._bundle
-        if bundle is None:
-            raise RuntimeError("Model bundle not initialized")
+    def _tick_pipeline(self):
+        """Lazily composed post-policy pipeline (P1 seam L7)."""
+        eng = getattr(self, "_tick_pipeline_instance", None)
+        if eng is None:
+            from nexus_scalp.application.live.tick_pipeline import TickPipeline
 
-        x_np = bundle.scaler.transform(x_np)
-        _trace.mark(LatencyStage.T3_SCALER_DONE)
-        seq_x = None
-        try:
-            seq_x = self._maybe_build_live_sequence_tensor(
-                x_scaled_now=x_np[0].tolist(), bar_ts=None
-            )
-        except Exception:
-            seq_x = None
-        if seq_x is not None:
-            x = seq_x
-        else:
-            x = torch.tensor(x_np, dtype=torch.float32)
-        x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
-        _trace.mark(LatencyStage.T4_TENSOR_DONE)
+            eng = TickPipeline(self)
+            self._tick_pipeline_instance = eng
+        return eng
 
-        # Debug/forensics: keep the exact model input the live path consumed
-        # (post-scaler, pre-softmax). Read-only observability (INV-018);
-        # never used for execution. SAMPLED (every 64th) to keep the hot
-        # path allocation-free; full capture available in debug mode.
-        # Debug/forensics input capture: sampled (every 64th) to keep
-        # the hot path allocation-free; full capture in debug mode.
-        _dbg_every = getattr(self, "_latency_dbg_every", 64) or 64
-        try:
-            if (self._inference_count % _dbg_every) == 0:
-                self._last_model_input_tensor = x.detach().cpu().numpy().reshape(-1).tolist()
-            else:
-                self._last_model_input_tensor = None
-        except Exception:
-            self._last_model_input_tensor = None
+    def apply_command_intent(self, intent: dict) -> dict:
+        """Authenticated operator intent boundary (Telegram command bus).
 
-        # HONEST Model Forward stage (T5..T6) — nothing else in between.
-        _trace.mark(LatencyStage.T5_MODEL_START)
-        bundle.model.eval()
-        # Latency fix: intra-op multithreading on a 267k-param net is pure
-        # overhead under host contention (~60ms vs 0.25ms single-threaded,
-        # same logits — verified). Pin to 1 thread for the forward and
-        # restore; safe under the bundle lock (no concurrent model call).
-        _prior_threads = torch.get_num_threads()
-        torch.set_num_threads(1)
-        try:
-            with torch.inference_mode():
-                logits = bundle.model(x, return_logits=True)
-                # MODEL_CLASS_CONTRACT v1 (Fix #3): WAIT (index 3) is a legacy
-                # policy bridge — it is MASKED before softmax so it cannot
-                # steal probability mass from the trained 3 classes.  3-wide
-                # logits pass through unchanged; 4-wide logits have WAIT
-                # forced to -1e4 (≈0 prob) while keeping the on-disk 4-head
-                # geometry intact.  No shape change, no calibration drift on
-                # the trained slice.
-                from nexus_scalp.model_lifecycle.model_class_contract import (
-                    masked_softmax,
-                )
+        INV-010: the Telegram layer never mutates canonical state itself;
+        intents route through the EXISTING authority layers here
+        (RiskEngine kill switch / governance rollback). Owned by
+        application/command_intent.py (seam extraction, keep-this-file-thin).
+        """
+        from nexus_scalp.application.command_intent import apply_command_intent as _apply
 
-                probs = masked_softmax(logits)
-        finally:
-            torch.set_num_threads(_prior_threads)
-        _trace.mark(LatencyStage.T6_MODEL_DONE)
-
-        self._inference_count = getattr(self, "_inference_count", 0) + 1
-        _trace.mark(LatencyStage.T7_DECODE_DONE)
-        _trace.mark(LatencyStage.T8_CONFIDENCE_DONE)
-        _trace.mark(LatencyStage.T10_PUBLISHED)
-        self._last_inference_latency_ms = _trace.model_ms()
-        # keep the honest staged breakdown for the API/UI
-        self._last_latency_breakdown = _trace.to_dict()
-        # OBS-PERF-RESILIENCE: feed the bounded rolling window and alert once
-        # per regression epoch. Fully exception-isolated — observability
-        # failures can never disturb inference (INV-018).
-        try:
-            detector = self._latency_regression
-            if detector is None:
-                from nexus_scalp.observability.latency_regression import (
-                    LatencyRegressionDetector,
-                )
-
-                detector = self._latency_regression = LatencyRegressionDetector()
-            detector.observe_breakdown(self._last_latency_breakdown)
-            if detector.should_alert():
-                p95 = detector.summary().get("e2e_ms", {}).get("p95_ms")
-                logger.warning(
-                    "[LATENCY_REGRESSION] event=E2E_P95_REGRESSED "
-                    "p95_ms=%s budget_p95_ms=%s epochs=%s",
-                    p95,
-                    detector.summary().get("budget_p95_ms"),
-                    detector.regression_epochs_total,
-                )
-                self.emit_incident_telemetry(
-                    event_type="INFERENCE_LATENCY_REGRESSION",
-                    component="inference",
-                    error_code="SLOW_INFERENCE",
-                    severity="MEDIUM",
-                    correlation_id="latency-watch",
-                )
-        except Exception as _lat_err:  # never disturb the hot path
-            logger.debug("[LATENCY_REGRESSION] observe failed", error=str(_lat_err))
-        self._last_model_forward_ms = _trace.model_ms()
-        self._last_feature_ms = _trace.feature_ms()
-        self._last_e2e_ms = _trace.e2e_ms()
-        return probs
+        return _apply(self, intent)
 
     def _record_shadow_decision(
         self,
@@ -5556,151 +3374,10 @@ class LiveEngine:
         regime_state: MarketRegimeState,
         proposal: TradeProposal,
     ) -> None:
-        """
-        Records one parallel Champion/Challenger decision on the SAME live
-        feature vector (spec 3 / 4). Bounded + failure-isolated: a Challenger
-        fault must never affect production execution (spec 17).
-        """
-        if self._shadow_challenger is None and self._governance_shadow is None:
-            return
-        try:
-            engine = self.shadow_engine
-            # CHG-0046 D1: the shadow compares against the model that
-            # ACTUALLY served this tick — the loaded bundle's authoritative
-            # contract (effective_*), never the class bootstrap constants
-            # (which lag at scalp_v1/50D while a 70D bundle serves).
-            live_schema_id = str(self.effective_feature_schema_id)
-            live_dim = int(self.effective_feature_dim)
-            x50 = fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else [0.0] * live_dim
-            # CHG-0046 D5: deterministic full-vector fingerprint (the salted
-            # 5-element python hash() was irreproducible across processes and
-            # insensitive to 90% of the vector — same-input proof impossible).
-            from nexus_scalp.shadow.compat import vector_fingerprint
+        """Delegate: 50D shadow recording (owned by ShadowRecorder, L1)."""
+        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
 
-            feature_hash = vector_fingerprint(x50)
-            regime_str = getattr(getattr(regime_state, "regime", None), "value", "UNKNOWN")
-            if isinstance(regime_str, str) is False and regime_str is not None:
-                regime_str = str(regime_str)
-            news_ctx: Any = None
-            if self._news_enabled and self.news_engine is not None:
-                try:
-                    news_ctx = self.news_engine.current_context()
-                except Exception:
-                    news_ctx = None
-            champion_action = (
-                proposal.action.value if hasattr(proposal.action, "value") else str(proposal.action)
-            )
-            champ_probs = [
-                float(v)
-                for v in (self._last_probs.tolist() if self._last_probs is not None else [])
-            ]
-            champ_ref_dict: dict[str, Any] = {
-                "model_id": self.champion_manager.model_id,
-                "model_version": self.champion_manager.model_version,
-                # CHG-0046 D1: bundle-authoritative identity, not class
-                # bootstrap constants (which say scalp_v1/50D while the
-                # loaded artifact serves scalp_v3/70D).
-                "feature_schema_id": live_schema_id,
-                "feature_dimension": live_dim,
-            }
-            with contextlib.suppress(Exception):
-                champ = self.champion_manager.champion_or_none()
-                if champ is not None:
-                    champ_ref_dict["model_id"] = champ.model_id
-                    champ_ref_dict["model_version"] = champ.model_version
-                    champ_ref_dict["artifact_hash"] = champ.artifact_hash
-            if self._governance_shadow is not None and engine.active_run_id:
-                # TASK-6: compute the 10 REAL scalp_v2 extras from the same
-                # causal bar window the Champion used (features/schema_augment,
-                # TASK-5 contract). A 60D Challenger must never receive
-                # zero-filled extras (INV-009 / no-silent-pad rule).
-                extras_60d = None
-                try:
-                    from nexus_scalp.features.schema_augment import compute_60d_extras
-
-                    bars = self.aggregator.get_completed_bars()
-                    if bars and len(bars) >= 5:
-                        opens = np.asarray([float(b.open) for b in bars[-60:]], dtype=np.float32)
-                        highs = np.asarray([float(b.high) for b in bars[-60:]], dtype=np.float32)
-                        lows = np.asarray([float(b.low) for b in bars[-60:]], dtype=np.float32)
-                        closes = np.asarray([float(b.close) for b in bars[-60:]], dtype=np.float32)
-                        vols = np.asarray(
-                            [float(getattr(b, "tick_volume", 0.0) or 0.0) for b in bars[-60:]],
-                            dtype=np.float32,
-                        )
-                        extras_60d = compute_60d_extras(
-                            opens=opens,
-                            highs=highs,
-                            lows=lows,
-                            closes=closes,
-                            volumes=vols,
-                        )
-                except Exception as e60:
-                    logger.debug("[MODEL_SHADOW] 60D extras unavailable (isolated)", error=str(e60))
-                self._governance_shadow.compare(
-                    champion_vector=x50,
-                    reference_vector=self._governance_reference_vector,
-                    news_context=(news_ctx.model_dump() if news_ctx is not None else None),
-                    champion_ref=champ_ref_dict,
-                    champion_action=champion_action,
-                    champion_confidence=float(getattr(proposal, "confidence", 0.0)),
-                    champion_probabilities=champ_probs,
-                    timestamp=tick.timestamp,
-                    symbol=tick.symbol,
-                    timeframe="M1",
-                    regime=regime_str,
-                    session=getattr(proposal, "session", "") or "ALL",
-                    run_id=engine.active_run_id,
-                    decision_id=getattr(proposal, "request_id", ""),
-                    champion_latency_ms=float(self._last_inference_latency_ms or 0.0),
-                    feature_context_id=feature_hash,
-                    extras_60d=extras_60d,
-                )
-            if self._shadow_challenger is not None:
-                from nexus_scalp.shadow.models import ShadowModelRef
-
-                champ_ref = ShadowModelRef(
-                    model_id=champ_ref_dict.get("model_id", ""),
-                    model_version=champ_ref_dict.get("model_version", ""),
-                    feature_schema_id=live_schema_id,
-                    feature_dimension=live_dim,
-                    artifact_hash=champ_ref_dict.get("artifact_hash", ""),
-                    is_champion=True,
-                )
-                engine.set_champion_ref(champ_ref)
-                engine.record_shadow_decision(
-                    timestamp=tick.timestamp,
-                    symbol=tick.symbol,
-                    timeframe="M1",
-                    feature_hash=feature_hash,
-                    feature_schema_id=live_schema_id,
-                    feature_dimension=live_dim,
-                    regime=regime_str,
-                    session=getattr(proposal, "session", "") or "ALL",
-                    configuration_version=str(
-                        getattr(self.config.model, "feature_schema_version", "")
-                    ),
-                    champion_ref=champ_ref,
-                    champion_action=champion_action,
-                    champion_confidence=float(getattr(proposal, "confidence", 0.0)),
-                    champion_probabilities=champ_probs,
-                    champion_strategy_id="",
-                    decision_id=getattr(proposal, "request_id", ""),
-                    feature_vector=x50,
-                    # CHG-0046 D3: capture BOTH sides' risk geometry at record
-                    # time. Champion geometry = the real proposal the policy
-                    # emitted; shadow geometry is filled by the engine from
-                    # the challenger action (side-neutral ATR geometry below
-                    # once RiskEngine-level sizing is mirrored — the shadow
-                    # NEVER consults RiskEngine itself).
-                    champion_entry=float(proposal.proposed_entry),
-                    champion_sl=float(proposal.stop_loss),
-                    champion_tp=float(proposal.take_profit),
-                    spread_usd=float(tick.spread_points),
-                )
-        except Exception as e:
-            # Shadow is observability only: a failure here NEVER disturbs live.
-            logger.error("[SHADOW] event=RECORD_FAILURE (isolated)", error=str(e))
+        ShadowRecorder(self).record_shadow_decision(tick, fv, regime_state, proposal)
 
     def _record_shadow70_observation(
         self,
@@ -5708,149 +3385,10 @@ class LiveEngine:
         fv: Any,
         proposal: TradeProposal,
     ) -> None:
-        """BUG-105: 70D shadow observation (observability ONLY, INV-018).
+        """Delegate: 70D shadow observation (owned by ShadowRecorder, L1)."""
+        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
 
-        Runs on EVERY tick (independent of the 50D shadow/Challenger gate —
-        the previous placement inside _record_shadow_decision's except block
-        made it dead code on the happy path). Builds the canonical 70D vector
-        (BASE 0..49 from the live 50D features, NEWS 50..59 from the same
-        news context the Champion consumed, LIQUIDITY 60..69 from the
-        liquidity producer) and records a SIMULATED observation. Fully
-        failure-isolated: any fault logs and returns; the Champion path is
-        never disturbed.
-        """
-        rt70 = getattr(self, "_shadow70_runtime", None)
-        if (
-            rt70 is None
-            or rt70.state.value != "READY"
-            or not getattr(self, "_shadow70_enabled", False)
-        ):
-            return
-        try:
-            from nexus_scalp.features.liquidity_runtime import (
-                build_70d_vector,
-            )
-            from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
-
-            # CHG-0046 D1b: the 70D observation inherits the bundle's
-            # AUTHORITATIVE base width, not the hard-coded 50 — a 0-filled
-            # fallback must match the ACTUAL base block the champion used.
-            _base_dim = int(self.effective_feature_dim) - 20
-            base50 = [0.0] * max(1, _base_dim)
-            if fv is not None:
-                v = fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else None
-                if v is not None and len(v) == _base_dim:
-                    base50 = list(v)
-            feature_hash = getattr(fv, "feature_hash", "") or ""
-            regime_str = getattr(getattr(self, "_last_regime_state", None), "regime", None)
-            regime_str = getattr(regime_str, "value", "UNKNOWN") or "UNKNOWN"
-
-            # news vector from the same context the Champion saw
-            news10 = [0.0] * 10
-            news_ctx: Any = None
-            if self._news_enabled and self.news_engine is not None:
-                try:
-                    news_ctx = self.news_engine.current_context()
-                except Exception:
-                    news_ctx = None
-            if news_ctx is not None:
-                try:
-                    from nexus_scalp.governance.alignment import (
-                        vectorize_news_context,
-                    )
-                    from nexus_scalp.shadow.shadow70.news_provider import (
-                        build_news_10,
-                    )
-
-                    news10, _ = build_news_10(vectorize_news_context(news_ctx))
-                except Exception:
-                    news10 = [0.0] * 10
-
-            # CHG-0046 D8: record the governor's CAUSAL state alongside the
-            # snapshot. The champion consumes a governor snapshot ONLY when
-            # causal_state == VALID (else inference is blocked); the shadow
-            # accepts a fresh-but-invalid snapshot and labels it. The
-            # liquidity_state column now carries that truth so an operator
-            # can distinguish a like-for-like comparison from an
-            # INPUT_MISMATCH (the champion saw no liquidity at all).
-            liquidity_calc_version = ""
-            liquidity_causal_state = ""
-            liq10 = [0.0] * 10
-            gov = getattr(self, "liquidity_governor", None)
-            if gov is not None:
-                try:
-                    liquidity_causal_state = str(
-                        gov.causal_state() if callable(getattr(gov, "causal_state", None)) else ""
-                    )
-                except Exception:
-                    liquidity_causal_state = ""
-            try:
-                liq10, liquidity_calc_version = build_liquidity_10(self, tick)
-            except Exception:
-                liq10, liquidity_calc_version = [0.0] * 10, ""
-
-            # canonical schema identity for THIS observation (the old hook
-            # passed "" which silently skipped schema verification)
-            from nexus_scalp.features.schema_contract import feature_schema_hash
-
-            schema_hash = feature_schema_hash()
-
-            vector70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
-
-            champion_action = (
-                proposal.action.value if hasattr(proposal.action, "value") else str(proposal.action)
-            )
-            champ_probs = [
-                float(v)
-                for v in (self._last_probs.tolist() if self._last_probs is not None else [])
-            ]
-            obs = rt70.observe(
-                vector70=vector70,
-                champion_action=champion_action,
-                champion_probabilities=champ_probs,
-                champion_confidence=float(getattr(proposal, "confidence", 0.0)),
-                snapshot_id=feature_hash or f"snap_{tick.timestamp.isoformat()}",
-                timestamp=tick.timestamp,
-                symbol=tick.symbol,
-                timeframe="M1",
-                regime=regime_str,
-                session=getattr(proposal, "session", "") or "ALL",
-                news_context=(news_ctx.model_dump() if news_ctx is not None else None),
-                news_state=str(getattr(news_ctx, "state", "") or "")
-                if isinstance(news_ctx, object)
-                else "",
-                # CHG-0046 D8: truthful liquidity provenance — the governor's
-                # causal state + how the 10 values were produced. An
-                # INVALID/stale state means the CHAMPION would have blocked
-                # inference this tick; the shadow row is labeled, not silent.
-                liquidity_state=liquidity_causal_state
-                or ("unavailable" if liquidity_calc_version == "unavailable" else "UNKNOWN"),
-                liquidity_calculation_version=liquidity_calc_version,
-                liquidity_features_10=liq10,
-                base_feature_hash=feature_hash,
-                feature_schema_hash=schema_hash,
-                sample_source="LIVE",
-                decision_id=getattr(proposal, "request_id", ""),
-            )
-            hm = getattr(self, "_shadow70_health", None)
-            if hm is not None and obs.valid:
-                hm.update(vector70, stale=False)
-            dm = getattr(self, "_shadow70_drift", None)
-            if dm is not None and obs.valid:
-                dm.update(vector70)
-            wk = getattr(self, "_shadow70_worker", None)
-            if wk is not None:
-                if not getattr(self, "_shadow70_worker_started", False):
-                    wk.start()
-                    self._shadow70_worker_started = True
-                if not wk.enqueue(obs):
-                    pass  # backpressure already telemetried by the worker
-        except Exception as e70:
-            logger.error("[SHADOW70] hook failed (isolated, Champion unaffected)", error=str(e70))
-
-    # -------------------------
-    # Async retraining worker
-    # -------------------------
+        ShadowRecorder(self).record_shadow70_observation(tick, fv, proposal)
 
     @staticmethod
     def _retrain_swap_decision(
@@ -5994,6 +3532,23 @@ class LiveEngine:
                 )
                 self._bars_since_last_retrain = 0
                 return
+            # P1 ARTIFACT TRUST: the accepted persist rewrote model.pt IN
+            # PLACE. Any integrity metadata beside it (manifest.json /
+            # model.meta.json declaring model_sha256) now describes the OLD
+            # bytes — the next cold load would fail closed with
+            # HASH_MISMATCH. Refresh the sidecar digests BEFORE the bundle
+            # swap so ACTIVE_ARTIFACT <=> ACTIVE_MANIFEST <=> ACTIVE_HASH
+            # always refer to the same version (atomic pair semantics; a
+            # sidecar refresh failure refuses the whole activation).
+            if not self._refresh_artifact_integrity_metadata(bundle.artifact_path):
+                logger.error(
+                    "[ASYNC_RETRAIN_REFUSED] event=MANIFEST_REFRESH_REFUSED "
+                    "reason=SIDECAR_DIGEST_UPDATE_FAILED (baseline kept on disk "
+                    "is the NEW weights, in-memory baseline still serving)",
+                    path=str(bundle.artifact_path),
+                )
+                self._bars_since_last_retrain = 0
+                return
 
             with self._bundle_lock:
                 self._bundle = ModelBundle(
@@ -6017,9 +3572,83 @@ class LiveEngine:
         finally:
             self._retrain_inflight = False
 
-    # -------------------------
-    # Diagnostics
-    # -------------------------
+    @staticmethod
+    def _refresh_artifact_integrity_metadata(model_path: Path) -> bool:
+        """P1: after an in-place accepted persist, re-bind every integrity
+        sidecar (manifest.json / model.meta.json) to the NEW weight digest.
+
+        Sidecars are updated ATOMICALLY (tmp+replace) and only ever gain a
+        fresh model_sha256 — provenance fields are preserved. Returns False
+        (refusing activation) when a declared sidecar cannot be refreshed,
+        so the engine never activates a pair whose manifest still describes
+        the previous artifact.
+        """
+        import hashlib as _hashlib
+        import json as _json
+
+        digest = ""
+        try:
+            h = _hashlib.sha256()
+            with open(model_path, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            digest = h.hexdigest()
+        except OSError as e:
+            logger.error("[ARTIFACT_META] event=DIGEST_COMPUTE_FAILED", error=str(e))
+            return False
+        refreshed_any = False
+        for sidecar_name in ("manifest.json", "model.meta.json"):
+            sidecar = model_path.parent / sidecar_name
+            if not sidecar.exists():
+                continue
+            try:
+                record = _json.loads(sidecar.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:
+                logger.error(
+                    "[ARTIFACT_META] event=SIDECAR_UNREADABLE sidecar=%s error=%s",
+                    sidecar_name,
+                    str(e),
+                )
+                return False
+            if not isinstance(record, dict):
+                logger.error("[ARTIFACT_META] event=SIDECAR_INVALID sidecar=%s", sidecar_name)
+                return False
+            if not (record.get("model_sha256") or record.get("artifact_hash")):
+                continue  # sidecar declares no weight digest: nothing to rebind
+            changed = False
+            for key in ("model_sha256", "artifact_hash"):
+                if key in record and str(record[key]).lower() != digest:
+                    record[key] = digest
+                    changed = True
+            if not changed:
+                refreshed_any = True
+                continue
+            tmp = sidecar.with_name(sidecar.name + ".tmp")
+            try:
+                tmp.write_text(_json.dumps(record, indent=2), encoding="utf-8")
+                tmp.replace(sidecar)
+            except OSError as e:
+                logger.error(
+                    "[ARTIFACT_META] event=SIDECAR_WRITE_FAILED sidecar=%s error=%s",
+                    sidecar_name,
+                    str(e),
+                )
+                with contextlib.suppress(Exception):
+                    tmp.unlink(missing_ok=True)
+                return False
+            refreshed_any = True
+            logger.info(
+                "[ARTIFACT_META] event=SIDECAR_REBOUND sidecar=%s sha256=%s",
+                sidecar_name,
+                digest[:12],
+            )
+        logger.info(
+            "[ARTIFACT_META] event=INTEGRITY_METADATA_REFRESHED artifact=%s sha256=%s sidecars=%s",
+            model_path.name,
+            digest[:12],
+            refreshed_any,
+        )
+        return True
 
     def _run_model_diagnostics_and_summary(
         self, df_labeled: pl.DataFrame, feature_cols: list[str]
@@ -6085,118 +3714,6 @@ class LiveEngine:
         )
         logger.info("=======================")
 
-    # -------------------------
-    # Model collapse detection & auto-recovery
-    # -------------------------
-
-    def _detect_model_collapse(
-        self, df_labeled: pl.DataFrame, feature_cols: list[str]
-    ) -> dict[str, float] | None:
-        """
-        Runs the model over a recent sample and returns the class distribution.
-
-        Returns None when no bundle is available. The caller decides whether the
-        distribution indicates a mono-class collapse and how to react.
-        """
-        with self._bundle_lock:
-            bundle = self._bundle
-        if bundle is None:
-            return None
-        try:
-            test_df = df_labeled.tail(100)
-            test_x_np = test_df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
-            test_x_np = bundle.scaler.transform(test_x_np)
-            tx = torch.tensor(test_x_np, dtype=torch.float32)
-            tx = torch.nan_to_num(tx, nan=0.0, posinf=1.0, neginf=-1.0)
-            with torch.inference_mode():
-                probs = bundle.model(tx).cpu().numpy()
-            buy_probs = probs[:, 1]
-            sell_probs = probs[:, 2]
-            threshold = float(self.config.model.confidence_threshold)
-            raw_preds = np.argmax(probs[:, :3], axis=1)
-            preds = np.zeros(len(probs), dtype=int)
-            for i in range(len(probs)):
-                c = raw_preds[i]
-                if c == 1 and buy_probs[i] >= threshold:
-                    preds[i] = 1
-                elif c == 2 and sell_probs[i] >= threshold:
-                    preds[i] = 2
-                else:
-                    preds[i] = 0
-            total = max(len(preds), 1)
-            return {
-                "buy_pct": float(np.sum(preds == 1) / total * 100.0),
-                "sell_pct": float(np.sum(preds == 2) / total * 100.0),
-                "no_trade_pct": float(np.sum(preds == 0) / total * 100.0),
-            }
-        except Exception as e:
-            logger.error("[MODEL] collapse detection failed (isolated)", error=str(e))
-            return None
-
-    def _reinitialize_collapsed_model(self) -> bool:
-        """
-        Detects a mono-class prediction collapse (>= 85% on a single active class)
-        and re-initializes the live model with fresh weights.
-
-        Previously a collapsed baseline (e.g. 100% SELL) was kept serving live
-        ticks: the fine-tuning quality gate rejected every update and rolled back
-        to the SAME collapsed baseline, so the engine never escaped the bad state.
-        Re-initialization is atomic under `_bundle_lock` and only touches the model
-        weights - the experience ledger and strategy memory are untouched.
-        """
-        try:
-            # Build a small sample from the rolling feature buffer.
-            if len(self._rolling_feature_records) < 32:
-                return False
-            df = pl.DataFrame(list(self._rolling_feature_records))
-            # BUG-182B: artifact-driven columns (see _trigger_async_online_fine_tune).
-            feature_cols = list(self.effective_feature_cols)
-            dist = self._detect_model_collapse(df, feature_cols)
-            if dist is None:
-                return False
-            buy_pct = dist["buy_pct"]
-            sell_pct = dist["sell_pct"]
-            # A healthy model must not be dominated by a single active class.
-            collapsed = buy_pct >= 85.0 or sell_pct >= 85.0
-            if not collapsed:
-                return False
-
-            logger.warning(
-                "[MODEL] MONO_CLASS_COLLAPSE_DETECTED - re-initializing weights",
-                buy_pct=round(buy_pct, 1),
-                sell_pct=round(sell_pct, 1),
-                no_trade_pct=round(dist["no_trade_pct"], 1),
-            )
-            model_path = Path(self.config.model.model_artifact_path)
-            fresh = ScalpNet(
-                num_features=self._declared_contract_dim_for_path(model_path) or self.FEATURE_DIM,
-                # BUG-243: declared head, not hardcoded 4.
-                num_classes=self._declared_head_classes_for_path(
-                    model_path.with_suffix(".meta.json")
-                ),
-            )
-            fresh.eval()
-            with self._bundle_lock:
-                self._bundle = ModelBundle(
-                    model=fresh,
-                    scaler=self._bundle.scaler if self._bundle else None,
-                    artifact_path=model_path,
-                )
-            # BUG-185: the fresh model was seeded at the PATH-declared
-            # contract width - rebind the trainer to it.
-            self._rebind_trainer_to_bundle()
-            self._save_model_weights_atomic(fresh, model_path)
-            self._register_active_model(model_path=model_path, replaced=True)
-            logger.warning("[MODEL] COLLAPSE_RECOVERY_COMPLETE - fresh weights serving live ticks")
-            return True
-        except Exception as e:
-            logger.error("[MODEL] collapse recovery failed (isolated)", error=str(e))
-            return False
-
-    # -------------------------
-    # Risk/survival tracking
-    # -------------------------
-
     def _restore_peak_equity(self, account: AccountInfo | None) -> None:
         last_snapshot = self.audit.get_last_account_snapshot()
         if last_snapshot and "peak_equity" in last_snapshot:
@@ -6259,9 +3776,6 @@ class LiveEngine:
                 mode,
             )
 
-    # ------------------------------------------------------------------
-    # BUG-212: boot-time adapter/mode alignment (hard simulation boundary).
-    # ------------------------------------------------------------------
     def align_adapter_to_boot_mode(
         self,
         adapter: IMT5Port,
@@ -6365,218 +3879,6 @@ class LiveEngine:
             return replacement
         return adapter
 
-    def set_execution_mode(self, mode: ExecutionMode, *, source: str = "WEB_UI") -> dict:
-        """BUG-148: HOT execution-mode switch (operator authority, UI + CLI).
-
-        Records the explicit operator choice (beats any persisted value for
-        this process lifetime), re-derives the runtime badge truthfully, and
-        swaps the execution adapter when the new mode requires a different
-        execution boundary (PAPER/SHADOW -> simulation; LIVE -> real broker).
-
-        Trading safety: swapping the adapter NEVER enables live order
-        dispatch by itself — order authority remains RiskEngine +
-        OrderLifecycleManager. In PAPER the adapter is a simulation, so no
-        real order can ever be placed regardless of what the UI shows.
-        """
-        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
-
-        if not isinstance(mode, ExecutionMode):
-            return {"success": False, "reason": "INVALID_MODE"}
-        old_mode = self.config.execution.mode
-        self._mode_override = mode
-        self.config.execution.mode = mode
-        logger.info(
-            "[MODE] HOT_SWAP_REQUESTED source=%s old=%s new=%s",
-            source,
-            old_mode.value,
-            mode.value,
-        )
-
-        # Adapter boundary swap: PAPER/SHADOW => simulation adapter (safe);
-        # LIVE => real MT5 adapter. The adapter is rebuilt only when its
-        # execution boundary actually changes (never mid-order: dispatch
-        # runs on this same loop thread, so the swap is sequential).
-        wants_simulation = mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW)
-        is_simulation = isinstance(self.adapter, PaperMT5Adapter)
-        swapped = False
-        try:
-            if wants_simulation and not is_simulation:
-                old_adapter = self.adapter
-                if hasattr(old_adapter, "disconnect"):
-                    old_adapter.disconnect()
-                new_adapter = PaperMT5Adapter(
-                    initial_balance=float(getattr(self, "_last_balance", 0.0) or 0.0) or 10000.0,
-                    # BUG-232: the simulation must track the ACTIVE symbol.
-                    # The old hot-swap built the paper adapter without a
-                    # symbol, so it fell back to EURUSD conventions while the
-                    # engine traded XAUUSD (wrong digits/spread/seed).
-                    symbol=self.config.execution.symbol,
-                )
-                self.adapter = new_adapter
-                self.order_manager.adapter = new_adapter
-                self.order_manager.mt5_adapter = new_adapter
-                # BUG-226: provenance follows the adapter so ledger rows and
-                # account snapshots written under simulation are tagged PAPER.
-                new_adapter.current_account_source = "PAPER"
-                new_adapter.connect()
-                swapped = True
-            elif not wants_simulation and is_simulation:
-                if hasattr(self.adapter, "disconnect"):
-                    self.adapter.disconnect()
-                from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
-
-                mt5_cfg = getattr(self.config, "mt5", None)
-                new_adapter_direct: IMT5Port = DirectMT5Adapter(
-                    account=getattr(mt5_cfg, "account", None),
-                    password=getattr(mt5_cfg, "password", None),
-                    server=getattr(mt5_cfg, "server", None),
-                    timeout=getattr(mt5_cfg, "timeout_ms", 5000),
-                    retries=getattr(mt5_cfg, "retries", 3),
-                )
-                self.adapter = new_adapter_direct
-                self.order_manager.adapter = new_adapter_direct
-                self.order_manager.mt5_adapter = new_adapter_direct
-                # BUG-226: back to the real broker — provenance returns to LIVE.
-                new_adapter_direct.current_account_source = "LIVE"
-                new_adapter_direct.connect()
-                swapped = True
-        except Exception as swap_err:
-            logger.error("[MODE] adapter swap failed (isolated): %s", swap_err)
-            return {
-                "success": False,
-                "reason": "ADAPTER_SWAP_FAILED",
-                "detail": str(swap_err),
-                "mode": mode.value,
-            }
-
-        # BUG-232: ATOMIC STATE TRANSITION — a hot-swap must invalidate every
-        # piece of state derived from the OLD adapter's market data before the
-        # new pipeline is allowed to act. The BUG-231 production incident
-        # (stale PAPER-geometry SELL_LIMIT at 2000.08 dispatched to the real
-        # 4442 broker) is exactly this hole: the adapter changed but the
-        # signal policy's cached price/last-order state, the aggregator's
-        # paper bars, and in-flight proposals survived the swap.
-        if swapped:
-            try:
-                self._invalidate_cross_mode_state(old_mode, mode)
-            except Exception as invalidation_err:
-                logger.error(
-                    "[MODE] cross-mode state invalidation failed (isolated): %s",
-                    invalidation_err,
-                )
-
-        self._update_runtime_mode()
-        return {
-            "success": True,
-            "mode": mode.value,
-            "previous_mode": old_mode.value,
-            "adapter_swapped": swapped,
-            "runtime_mode": self._runtime_mode,
-        }
-
-    def _invalidate_cross_mode_state(
-        self, old_mode: ExecutionMode, new_mode: ExecutionMode
-    ) -> None:
-        """BUG-232: drop PAPER-derived state when leaving simulation (and
-        vice versa) so no stale tick/price/proposal can cross the boundary.
-
-        Isolated by contract: never raises, never blocks the swap result.
-        """
-        import time as _time
-
-        now_iso = datetime.now(UTC).isoformat()
-        old_is_paper = old_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW)
-        new_is_paper = new_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW)
-        if old_is_paper == new_is_paper:
-            return  # same boundary class — nothing cross-mode to invalidate
-
-        # 1) Bump the session generation: every stale-tick / stale-proposal
-        #    check compares against this. Anything stamped with the previous
-        #    generation is rejected downstream.
-        old_gen = getattr(self, "_mode_session_generation", 0)
-        self._mode_session_generation = old_gen + 1
-        logger.warning(
-            "[MODE] BUG-232 state invalidation old=%s new=%s generation=%s->%s",
-            old_mode.value,
-            new_mode.value,
-            old_gen,
-            self._mode_session_generation,
-        )
-
-        # 2) Signal policy caches: last executed price/time and last active
-        #    direction are PAPER-geometry state. Clear them so the next
-        #    proposal can only be derived from the NEW adapter's tick.
-        policy = getattr(self, "signal_policy", None)
-        if policy is not None:
-            for attr in (
-                "last_order_price",
-                "last_order_time",
-                "_last_active_direction",
-                "_last_active_direction_time",
-            ):
-                with contextlib.suppress(Exception):
-                    setattr(policy, attr, None)
-            with contextlib.suppress(Exception):
-                policy._last_executed_price = 0.0
-
-        # 3) Drop any engine-staged pending proposals/ticks stamped before
-        #    the swap (defensive: their tick provenance is the old adapter).
-        for attr in ("_pending_proposals", "_latest_tick", "_last_tick"):
-            with contextlib.suppress(Exception):
-                if hasattr(self, attr):
-                    setattr(self, attr, None)
-
-        # 3b) BUG-231 continuation: the M1 bar aggregator still holds bars
-        #     minted from the OLD adapter's synthetic ticks (paper random-walk
-        #     @2000 for metals). Without a purge, the next completed-bar
-        #     window mixes stale paper bars with fresh live bars and the
-        #     feature/predictive-limit geometry stays 2000-relative (observed
-        #     live 2026-09-03 14:48-16:19 UTC, audit_signals 1069937..1076824).
-        #     A empty aggregator re-warms from the NEW adapter's history via
-        #     the existing BUG-054 reseed path in _cold_start_warmup /
-        #     _resync_from_broker.
-        aggregator = getattr(self, "aggregator", None)
-        if aggregator is not None:
-            try:
-                # reseed([]) atomically clears all history (BUG-054 contract);
-                # an empty aggregator re-warms from the NEW adapter's history
-                # via _cold_start_warmup / _resync_from_broker.
-                aggregator.reseed([])
-                logger.warning(
-                    "[MODE] BUG-231 aggregator history purged (paper bars "
-                    "must not cross the execution boundary)"
-                )
-            except Exception as agg_err:
-                logger.warning(
-                    "[MODE] aggregator purge failed (non-fatal, next reseed will realign): %s",
-                    agg_err,
-                )
-            with contextlib.suppress(Exception):
-                self.warmup_state = "WARMING_UP"
-                self._warmup_attempt = 0
-                logger.info(
-                    "[MODE] warmup state reset to WARMING_UP — HTF/feature "
-                    "chain will re-derive from the new adapter's bars via "
-                    "the 15s periodic readiness re-evaluation"
-                )
-
-        # 4) Reset the tick-stagnation clock so the watchdog does not
-        #    immediately "reconnect" while the new adapter warms up.
-        self._last_tick_processed_time = _time.time()
-
-        # 5) BUG-232: drop the cached account snapshot. It was captured from
-        #    the OLD adapter; serving it under the new mode made the UI show
-        #    a paper account (login 9990001 / 10000.0) after a PAPER->LIVE
-        #    swap. The next tick loop refreshes it from the new adapter.
-        self._account_snapshot = None
-
-        logger.info(
-            "[MODE] BUG-232 cross-mode state invalidated at=%s swap=%s->%s",
-            now_iso,
-            old_mode.value,
-            new_mode.value,
-        )
-
     def _notify_startup(self, account: AccountInfo | None) -> None:
         if not account:
             return
@@ -6587,6 +3889,192 @@ class LiveEngine:
                 balance=account.balance,
                 equity=account.equity,
             )
+
+    def _persist_runtime_risk_state(
+        self,
+        *,
+        state: str,
+        reason: str,
+        source: str,
+        account: AccountInfo | None = None,
+        release_required: bool = True,
+    ) -> bool:
+        """Persists the canonical safety decision through the audit store.
+
+        Crash-safe: the store performs one atomic single-row upsert (old
+        valid state or new valid state — never half-written). Returns False
+        on persistence failure; the in-memory state is still updated by the
+        caller so the running process fails safe even if persistence failed
+        (which is logged CRITICAL by the store).
+        """
+        try:
+            return bool(
+                self.audit.set_runtime_risk_state(
+                    state=state,
+                    reason=reason,
+                    source=source,
+                    balance=float(getattr(account, "balance", 0.0) or 0.0),
+                    equity=float(getattr(account, "equity", 0.0) or 0.0),
+                    peak_equity=float(getattr(self, "_peak_equity", 0.0) or 0.0),
+                    release_required=release_required,
+                    consecutive_losses=int(getattr(self, "_consecutive_losses", 0) or 0),
+                )
+            )
+        except Exception as persist_err:
+            logger.critical(
+                "RUNTIME SAFETY STATE PERSIST FAILED state=%s error=%s", state, persist_err
+            )
+            return False
+
+    def _apply_persisted_halt(self, decision: BootDecision) -> None:
+        """Adopts a resolved boot decision into the live engine (fail closed).
+
+        HALTED / KILL_SWITCH: trading is refused for the whole process
+        lifetime — the in-memory gate mirrors the persisted row and only
+        release_runtime_risk_state (operator CLI / audited API) may lift it.
+        """
+        self._runtime_risk_state = decision.state
+        self._runtime_risk_detail = decision.detail
+        if decision.state in ("HALTED", "KILL_SWITCH"):
+            # Do NOT start the trading loop: restore-first contract. The
+            # engine idles (run_loop returns before arming _running) and the
+            # operator sees the persisted safety state, not a silent start.
+            self._running = False
+            self._halt_reason = decision.detail
+            logger.critical(
+                "[SAFETY_STATE] persisted=%s trading=REFUSED detail=%s "
+                "(explicit release required: nexus risk release --confirm)",
+                decision.state,
+                decision.detail,
+            )
+            with contextlib.suppress(Exception):
+                self.notifier.notify_kill_switch_activated(
+                    f"Persisted {decision.state} restored at startup — "
+                    "trading disabled until explicit release"
+                )
+            self.emit_incident_telemetry(
+                event_type="PERSISTED_SAFETY_STATE_RESTORED",
+                component="runtime_safety",
+                error_code=decision.state,
+                severity="CRITICAL",
+                correlation_id="startup",
+            )
+
+    def _restore_runtime_risk_state(self) -> BootDecision:
+        """Boot resolution: restore persisted safety state BEFORE trading.
+
+        Called at the very start of run_loop. Never recalculates drawdown —
+        only the persisted decision decides.
+        """
+        decision = resolve_boot_decision(
+            PersistedRiskState.from_row(self.audit.get_runtime_risk_state())
+        )
+        self._apply_persisted_halt(decision)
+        if decision.state == "RUNNING":
+            # Mirror the RUNNING decision back durably (single canonical row,
+            # first boot writes it; later boots keep provenance fresh).
+            self._persist_runtime_risk_state(
+                state="RUNNING",
+                reason="",
+                source="BOOT",
+                release_required=False,
+            )
+            logger.info("[SAFETY_STATE] boot decision=RUNNING (trading permitted)")
+        return decision
+
+    def trigger_runtime_halt(
+        self,
+        *,
+        reason: str,
+        source: str,
+        state: str = "HALTED",
+        account: AccountInfo | None = None,
+    ) -> None:
+        """The ONE canonical halt entrypoint for real trading events.
+
+        Order matters (HALT INVARIANT):
+        1. persist the safety state durably (crash-safe atomic upsert),
+        2. stop new trading (in-memory gate + loop flag),
+        3. record an incident/audit event,
+        4. expose observable runtime state (attributes read by the UI),
+        5. the persisted row guarantees survival across restart.
+        """
+        # 1) PERSIST (first — a crash after this point still leaves the
+        #    decision durable).
+        persisted = self._persist_runtime_risk_state(
+            state=state, reason=reason, source=source, account=account
+        )
+        if not persisted:
+            logger.critical(
+                "SAFETY HALT persistence failed — halting in-memory anyway "
+                "(fail safe, operator MUST be notified)"
+            )
+        # 2) STOP NEW TRADING (in-memory gate mirrors the persisted decision).
+        self._runtime_risk_state = state
+        self._halt_reason = reason
+        self._halt_triggered_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        self._runtime_risk_detail = reason
+        self._running = False
+        # 3) RECORD INCIDENT (observability-only; never mutates risk).
+        self.emit_incident_telemetry(
+            event_type="RUNTIME_SAFETY_HALT",
+            component="runtime_safety",
+            error_code=state,
+            severity="CRITICAL",
+            correlation_id=str(source or "runtime"),
+        )
+        # 4) NOTIFY + OBSERVE.
+        logger.critical(
+            "[SAFETY_STATE] event=HALT state=%s reason=%s source=%s persisted=%s",
+            state,
+            reason,
+            source,
+            persisted,
+        )
+        with contextlib.suppress(Exception):
+            self.notifier.notify_kill_switch_activated(f"{state}: {reason}")
+
+    def runtime_risk_state(self) -> str:
+        """Observable canonical safety state (UI/health surface).
+
+        DEGRADED (session-local: hot-path circuit / stale account / loss
+        freeze) is derived on the fly and never overrides a persisted halt.
+        """
+        if self._runtime_risk_state in ("HALTED", "KILL_SWITCH"):
+            return self._runtime_risk_state
+        if (
+            self._loss_freeze_active
+            or self._hot_path_circuit.is_tripped(time.time())
+            or (self._account_freshness == AccountFreshness.STALE.value)
+        ):
+            return "DEGRADED"
+        return self._runtime_risk_state
+
+    def release_persisted_safety_state(self, *, actor: str, note: str = "") -> bool:
+        """In-process explicit release (audited, durable, observable).
+
+        Wraps AuditRepository.release_runtime_risk_state; used by the CLI
+        release command. A normal restart never reaches this method.
+        """
+        released = bool(self.audit.release_runtime_risk_state(actor=actor, note=note))
+        if released:
+            self._runtime_risk_state = "RUNNING"
+            self._halt_reason = ""
+            self._runtime_risk_detail = ""
+            self._hot_path_circuit.reset()
+            self._loss_freeze_active = False
+            logger.info("[SAFETY_STATE] event=RELEASED actor=%s note=%s", actor, note)
+            self.emit_incident_telemetry(
+                event_type="RUNTIME_SAFETY_RELEASED",
+                component="runtime_safety",
+                severity="HIGH",
+                correlation_id=str(actor or "operator"),
+            )
+        return released
+
+    def _trading_blocked_by_safety_state(self) -> bool:
+        """True when the persisted safety state refuses new trading."""
+        return self._runtime_risk_state in ("HALTED", "KILL_SWITCH")
 
     def _update_survival_state(self, account: AccountInfo, current_pos_count: int) -> None:
         # RUNTIME CONFIG (BUG-132): the survival guard must use the SAME
@@ -6643,12 +4131,18 @@ class LiveEngine:
                     self.notifier.notify_kill_switch_activated(
                         f"Max Drawdown Exceeded ({drawdown_pct:.2f}%)"
                     )
-                self._running = False
-
-    # -------------------------
-    # -------------------------
-    # Feature contract validation (schema-driven)
-    # -------------------------
+                # PERSISTED SAFETY HALT (P0): the old behavior only set
+                # self._running = False — a restart silently FORGOT the
+                # drawdown event and resumed trading. The canonical halt
+                # entrypoint persists the decision FIRST (crash-safe), then
+                # stops trading, records the incident and exposes state.
+                self.trigger_runtime_halt(
+                    reason=f"Max drawdown exceeded: {drawdown_pct:.2f}% > limit "
+                    f"{dd_limit_pct:.2f}%",
+                    source="SURVIVAL_DRAWDOWN_GUARD",
+                    state="HALTED",
+                    account=account,
+                )
 
     @classmethod
     def _validate_50d_tensor(cls, features: Sequence[float], context: str) -> list[float]:

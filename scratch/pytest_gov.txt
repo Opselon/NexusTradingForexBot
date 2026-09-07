@@ -1,2 +1,275 @@
-............................................................             [100%]
-60 passed in 41.52s
+...........................F..F.........F...................             [100%]
+================================== FAILURES ===================================
+____ TestPromotionLifecycle.test_lg23_rollback_restores_previous_champion _____
+
+self = <tests.unit.test_model_governance_phase16.TestPromotionLifecycle object at 0x0000024E84C5DC50>
+temp_audit_repo = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x0000024E854C13D0>
+
+    def test_lg23_rollback_restores_previous_champion(self, temp_audit_repo):
+>       eng = self._walk_to_approved(temp_audit_repo)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_model_governance_phase16.py:707: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\unit\test_model_governance_phase16.py:702: in _walk_to_approved
+    eng.promote_to_review(model_id="ch1", model_version="v1", actor="op", evidence=ok_evidence)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x0000024E854C3E50>
+model_id = 'ch1', model_version = 'v1', actor = 'op'
+evidence = {'artifact_valid': True, 'manifest_valid': True, 'schema_valid': True, 'scaler_valid': True, ...}
+source_commit = '', artifact_hash = ''
+
+    def promote_to_review(
+        self,
+        *,
+        model_id: str,
+        model_version: str,
+        actor: str,
+        evidence: dict[str, Any],
+        source_commit: str = "",
+        artifact_hash: str = "",
+    ) -> PromotionTransition:
+        """SHADOW -> READY_FOR_REVIEW. Blocks unless the FULL checklist passes.
+    
+        ECON v1: when ECONOMIC_INTEGRITY_REQUIRED, the economic-integrity
+        verdict must ALSO pass (either recorded directly in the evidence as
+        ``economic_integrity_pass: True`` — produced by economic_integrity()
+        — or evaluated here from the same evidence dict). A candidate whose
+        economic world is unknown/frictionless can never reach review.
+        """
+        check = self.promotion_checklist(evidence)
+        if check["ready_for_review"] and ECONOMIC_INTEGRITY_REQUIRED:
+            eco = self.economic_integrity(evidence)
+            check = dict(check)
+            check["ready_for_review"] = eco["ready_for_review"]
+            check["economic_failed"] = eco["failed"]
+        if not check["ready_for_review"]:
+            failed_keys = list(check.get("failed", [])) + list(check.get("economic_failed", []))
+            ev = GovernanceEvent(
+                event_id=f"ev_{uuid.uuid4().hex[:16]}",
+                event=GovernanceErrorCode.PROMOTION_BLOCKED.value,
+                stage=GovernanceStage.PROMOTION,
+                model_id=model_id,
+                model_version=model_version,
+                actor=actor,
+                previous_state=PromotionState.SHADOW.value,
+                new_state=PromotionState.READY_FOR_REVIEW.value,
+                reason="promotion checklist not satisfied",
+                payload={"failed": failed_keys},
+            )
+            self.store.record_event(ev)
+>           raise PromotionGateError(f"promotion checklist failed: {failed_keys}")
+E           nexus_scalp.governance.engine.PromotionGateError: promotion checklist failed: ['sizing_model_recorded', 'friction_assumptions_recorded', 'swap_assumptions_recorded', 'training_decay_profile_recorded', 'convergence_evidence_recorded', 'execution_profile_production_like', 'economic_pnl_basis_present']
+
+src\nexus_scalp\governance\engine.py:426: PromotionGateError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 06:54:36 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7576\test_lg23_rollback_restores_pr0\gov_test.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 06:54:36 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=ch1 new=VALIDATED previous=RESEARCH
+2026-09-07 06:54:36 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=ch1 new=CHALLENGER previous=VALIDATED
+2026-09-07 06:54:36 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=ch1 new=SHADOW previous=CHALLENGER
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 06:54:36 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 06:54:37 [info     ] Audit Database safely closed.
+____________ TestGovernance70.test_gov01_valid_candidate_lifecycle ____________
+
+self = <tests.unit.test_model_governance_phase16.TestGovernance70 object at 0x0000024E84C52490>
+gov_engine = (<nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x0000024E8561E750>, <nexus_scalp.governance.store.Gov... at 0x0000024E8561EB10>, <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x0000024E8561DC10>)
+
+    def test_gov01_valid_candidate_lifecycle(self, gov_engine):
+        """A candidate follows the explicit lifecycle RESEARCH->...->CHAMPION
+        with no shortcuts."""
+        eng, _, _ = gov_engine
+        from nexus_scalp.governance.models import PromotionState
+    
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
+        )
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.CHALLENGER, actor="op"
+        )
+        eng.transition(model_id="c1", model_version="v1", target=PromotionState.SHADOW, actor="op")
+        ok_ev = {
+            k: True
+            for k in (
+                "artifact_valid",
+                "manifest_valid",
+                "schema_valid",
+                "scaler_valid",
+                "oos_pass",
+                "robustness_pass",
+                "calibration_acceptable",
+                "no_class_collapse",
+                "no_severe_feature_drift",
+                "shadow_sample_floor",
+                "shadow_evidence_acceptable",
+                "latency_acceptable",
+                "no_critical_anomalies",
+                "rollback_target",
+            )
+        }
+>       eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=ok_ev)
+
+tests\unit\test_model_governance_phase16.py:889: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x0000024E8561E750>
+model_id = 'c1', model_version = 'v1', actor = 'op'
+evidence = {'artifact_valid': True, 'manifest_valid': True, 'schema_valid': True, 'scaler_valid': True, ...}
+source_commit = '', artifact_hash = ''
+
+    def promote_to_review(
+        self,
+        *,
+        model_id: str,
+        model_version: str,
+        actor: str,
+        evidence: dict[str, Any],
+        source_commit: str = "",
+        artifact_hash: str = "",
+    ) -> PromotionTransition:
+        """SHADOW -> READY_FOR_REVIEW. Blocks unless the FULL checklist passes.
+    
+        ECON v1: when ECONOMIC_INTEGRITY_REQUIRED, the economic-integrity
+        verdict must ALSO pass (either recorded directly in the evidence as
+        ``economic_integrity_pass: True`` — produced by economic_integrity()
+        — or evaluated here from the same evidence dict). A candidate whose
+        economic world is unknown/frictionless can never reach review.
+        """
+        check = self.promotion_checklist(evidence)
+        if check["ready_for_review"] and ECONOMIC_INTEGRITY_REQUIRED:
+            eco = self.economic_integrity(evidence)
+            check = dict(check)
+            check["ready_for_review"] = eco["ready_for_review"]
+            check["economic_failed"] = eco["failed"]
+        if not check["ready_for_review"]:
+            failed_keys = list(check.get("failed", [])) + list(check.get("economic_failed", []))
+            ev = GovernanceEvent(
+                event_id=f"ev_{uuid.uuid4().hex[:16]}",
+                event=GovernanceErrorCode.PROMOTION_BLOCKED.value,
+                stage=GovernanceStage.PROMOTION,
+                model_id=model_id,
+                model_version=model_version,
+                actor=actor,
+                previous_state=PromotionState.SHADOW.value,
+                new_state=PromotionState.READY_FOR_REVIEW.value,
+                reason="promotion checklist not satisfied",
+                payload={"failed": failed_keys},
+            )
+            self.store.record_event(ev)
+>           raise PromotionGateError(f"promotion checklist failed: {failed_keys}")
+E           nexus_scalp.governance.engine.PromotionGateError: promotion checklist failed: ['sizing_model_recorded', 'friction_assumptions_recorded', 'swap_assumptions_recorded', 'training_decay_profile_recorded', 'convergence_evidence_recorded', 'execution_profile_production_like', 'economic_pnl_basis_present']
+
+src\nexus_scalp\governance\engine.py:426: PromotionGateError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 06:54:38 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7576\test_gov01_valid_candidate_lif0\gov70.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 06:54:39 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=c1 new=VALIDATED previous=RESEARCH
+2026-09-07 06:54:39 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=c1 new=CHALLENGER previous=VALIDATED
+2026-09-07 06:54:39 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=c1 new=SHADOW previous=CHALLENGER
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 06:54:39 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 06:54:40 [info     ] Audit Database safely closed.
+_____________ TestGovernance70.test_gov11_human_approval_required _____________
+
+self = <tests.unit.test_model_governance_phase16.TestGovernance70 object at 0x0000024E84C68FD0>
+gov_engine = (<nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x0000024E8553C510>, <nexus_scalp.governance.store.Gov... at 0x0000024E8553DDD0>, <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x0000024E8553E110>)
+
+    def test_gov11_human_approval_required(self, gov_engine):
+        eng, _, _ = gov_engine
+        from nexus_scalp.governance.engine import PromotionGateError
+        from nexus_scalp.governance.models import PromotionState
+    
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
+        )
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.CHALLENGER, actor="op"
+        )
+        eng.transition(model_id="c1", model_version="v1", target=PromotionState.SHADOW, actor="op")
+        ok_ev = {
+            k: True
+            for k in (
+                "artifact_valid",
+                "manifest_valid",
+                "schema_valid",
+                "scaler_valid",
+                "oos_pass",
+                "robustness_pass",
+                "calibration_acceptable",
+                "no_class_collapse",
+                "no_severe_feature_drift",
+                "shadow_sample_floor",
+                "shadow_evidence_acceptable",
+                "latency_acceptable",
+                "no_critical_anomalies",
+                "rollback_target",
+            )
+        }
+>       eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=ok_ev)
+
+tests\unit\test_model_governance_phase16.py:1121: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.governance.engine.ModelGovernanceEngine object at 0x0000024E8553C510>
+model_id = 'c1', model_version = 'v1', actor = 'op'
+evidence = {'artifact_valid': True, 'manifest_valid': True, 'schema_valid': True, 'scaler_valid': True, ...}
+source_commit = '', artifact_hash = ''
+
+    def promote_to_review(
+        self,
+        *,
+        model_id: str,
+        model_version: str,
+        actor: str,
+        evidence: dict[str, Any],
+        source_commit: str = "",
+        artifact_hash: str = "",
+    ) -> PromotionTransition:
+        """SHADOW -> READY_FOR_REVIEW. Blocks unless the FULL checklist passes.
+    
+        ECON v1: when ECONOMIC_INTEGRITY_REQUIRED, the economic-integrity
+        verdict must ALSO pass (either recorded directly in the evidence as
+        ``economic_integrity_pass: True`` — produced by economic_integrity()
+        — or evaluated here from the same evidence dict). A candidate whose
+        economic world is unknown/frictionless can never reach review.
+        """
+        check = self.promotion_checklist(evidence)
+        if check["ready_for_review"] and ECONOMIC_INTEGRITY_REQUIRED:
+            eco = self.economic_integrity(evidence)
+            check = dict(check)
+            check["ready_for_review"] = eco["ready_for_review"]
+            check["economic_failed"] = eco["failed"]
+        if not check["ready_for_review"]:
+            failed_keys = list(check.get("failed", [])) + list(check.get("economic_failed", []))
+            ev = GovernanceEvent(
+                event_id=f"ev_{uuid.uuid4().hex[:16]}",
+                event=GovernanceErrorCode.PROMOTION_BLOCKED.value,
+                stage=GovernanceStage.PROMOTION,
+                model_id=model_id,
+                model_version=model_version,
+                actor=actor,
+                previous_state=PromotionState.SHADOW.value,
+                new_state=PromotionState.READY_FOR_REVIEW.value,
+                reason="promotion checklist not satisfied",
+                payload={"failed": failed_keys},
+            )
+            self.store.record_event(ev)
+>           raise PromotionGateError(f"promotion checklist failed: {failed_keys}")
+E           nexus_scalp.governance.engine.PromotionGateError: promotion checklist failed: ['sizing_model_recorded', 'friction_assumptions_recorded', 'swap_assumptions_recorded', 'training_decay_profile_recorded', 'convergence_evidence_recorded', 'execution_profile_production_like', 'economic_pnl_basis_present']
+
+src\nexus_scalp\governance\engine.py:426: PromotionGateError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 06:54:50 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7576\test_gov11_human_approval_requ0\gov70.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 06:54:50 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=c1 new=VALIDATED previous=RESEARCH
+2026-09-07 06:54:50 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=c1 new=CHALLENGER previous=VALIDATED
+2026-09-07 06:54:50 [info     ] [MODEL_GOVERNANCE] event=PROMOTION_TRANSITION actor=op model_id=c1 new=SHADOW previous=CHALLENGER
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 06:54:50 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 06:54:51 [info     ] Audit Database safely closed.
+=========================== short test summary info ===========================
+FAILED tests/unit/test_model_governance_phase16.py::TestPromotionLifecycle::test_lg23_rollback_restores_previous_champion
+FAILED tests/unit/test_model_governance_phase16.py::TestGovernance70::test_gov01_valid_candidate_lifecycle
+FAILED tests/unit/test_model_governance_phase16.py::TestGovernance70::test_gov11_human_approval_required
