@@ -401,6 +401,31 @@ def write_variants_index(reports: list[dict[str, Any]]) -> Path:
     return index
 
 
+def _prior_pass(variant: str) -> dict[str, Any] | None:
+    """Prior PASS evidence for a variant (benchmark report + artifact on disk).
+
+    Resumability (first-run GAP 3): a re-run of ``train_all`` must not redo a
+    variant that already completed with a PASS/READY/COMPLETED gate — a crash
+    mid-matrix previously restarted the failed variant fine but also REDID
+    every successful variant from scratch. Returns the prior report when the
+    variant can be skipped, else None.
+    """
+    report_path = Path("artifacts/model_generation/three_model") / f"benchmark_{variant}.json"
+    if not report_path.exists():
+        return None
+    try:
+        prior = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if str(prior.get("gate")) not in ("PASS", "READY", "COMPLETED"):
+        return None
+    artifact = variant_artifact_path(variant, base=MODEL_BASE_DIR)
+    if not artifact.exists():
+        return None
+    prior["skipped"] = True
+    return prior
+
+
 def train_all(
     bars_frame: pl.DataFrame,
     *,
@@ -409,11 +434,27 @@ def train_all(
     num_folds: int = 34,
     epochs: int = 10,
     smoke: bool = False,
+    resume: bool = False,
 ) -> list[dict[str, Any]]:
-    """Train the full matrix (default: all three variants) + write index."""
+    """Train the full matrix (default: all three variants) + write index.
+
+    ``resume=True``: variants with existing PASS evidence (benchmark report +
+    artifact on disk) are skipped so an interrupted matrix run continues where
+    it stopped instead of redoing successful variants. Default False keeps the
+    historical always-retrain behavior for explicit operator runs.
+    """
     chosen = variants or ["50d_main", "70d_news", "70d_liquidity"]
     reports: list[dict[str, Any]] = []
     for variant in chosen:
+        if resume and not smoke:
+            prior = _prior_pass(variant)
+            if prior is not None:
+                logger.info(
+                    "[THREE_MODEL] === skipping variant=%s (prior PASS evidence) ===",
+                    variant,
+                )
+                reports.append(prior)
+                continue
         logger.info("[THREE_MODEL] === training variant=%s ===", variant)
         reports.append(
             train_variant(
