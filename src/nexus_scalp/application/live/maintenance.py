@@ -19,10 +19,11 @@ Every stage is failure-isolated: a maintenance fault never disturbs ticks.
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import time
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.application.live_engine import _split_telegram_report
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.maintenance")
@@ -37,7 +38,7 @@ class MaintenanceCycle:
     async def run_cycle(self, *, now_t: float) -> None:
         """Runs one maintenance pass (all stages internally throttled)."""
 
-    # BUG-054: audit retention purge (throttled ~6h, bounded batched
+        # BUG-054: audit retention purge (throttled ~6h, bounded batched
         # deletes, NEVER on the tick path). Failure is isolated: a purge
         # error must never disturb trading.
         now_t = time.time()
@@ -47,7 +48,7 @@ class MaintenanceCycle:
                 await asyncio.to_thread(self.om.audit.purge_old_audit_data)
             except Exception:
                 logger.error("Audit retention purge failed (isolated)")
-    
+
         # TASK-11 + TASK-22: database hygiene cycle (config-driven
         # cadence; AUDIT_ONLY first run, off the tick path via
         # asyncio.to_thread; never deletes unless the operator enabled
@@ -58,21 +59,17 @@ class MaintenanceCycle:
                     RuntimeCleanupScheduler,
                     RuntimeHygieneSettings,
                 )
-    
+
                 hyg_cfg = getattr(self.om.config, "database_hygiene", None) or {}
                 hygs = RuntimeHygieneSettings.from_mapping(
-                    hyg_cfg.model_dump()
-                    if hasattr(hyg_cfg, "model_dump")
-                    else dict(hyg_cfg)
+                    hyg_cfg.model_dump() if hasattr(hyg_cfg, "model_dump") else dict(hyg_cfg)
                 )
                 base_dir = getattr(self.om.config, "base_dir", None) or Path.cwd()
                 self.om._hygiene_scheduler = RuntimeCleanupScheduler(
                     repo_root=base_dir,
                     settings=hygs,
                     execution_mode=self.om._runtime_mode
-                    or str(
-                        getattr(self.om.config, "execution_mode", "PAPER") or "PAPER"
-                    ).upper(),
+                    or str(getattr(self.om.config, "execution_mode", "PAPER") or "PAPER").upper(),
                 )
             except Exception as hyg_init_err:
                 logger.warning(
@@ -82,8 +79,7 @@ class MaintenanceCycle:
         if (
             self.om._hygiene_scheduler is not None
             and self.om._hygiene_scheduler.settings.enabled
-            and now_t - self.om._last_hygiene_time
-            >= self.om._hygiene_scheduler.light_interval_sec
+            and now_t - self.om._last_hygiene_time >= self.om._hygiene_scheduler.light_interval_sec
         ):
             self.om._last_hygiene_time = now_t
             try:
@@ -103,7 +99,7 @@ class MaintenanceCycle:
                         from nexus_scalp.hygiene.report import (
                             build_telegram_report_text,
                         )
-    
+
                         text = build_telegram_report_text(
                             tel, self.om._hygiene_scheduler._cycle_number
                         )
@@ -114,7 +110,7 @@ class MaintenanceCycle:
                     "[DB_HYGIENE] event=CYCLE_FAILED (isolated)",
                     error=str(hyg_err),
                 )
-    
+
         # TASK-13: incident response cycle (throttled ~60s, off the
         # tick path via to_thread; observability-only, INV-019). The
         # worker correlates structured telemetry into incidents and
@@ -131,7 +127,7 @@ class MaintenanceCycle:
                     "[INCIDENT_WORKER] event=CYCLE_FAILED (isolated)",
                     error=str(inc_err),
                 )
-    
+
         # Daily Telegram performance summary (BUG-057): throttled to
         # once per 24h; built from the canonical accounting core (never
         # synthetic numbers). Failure is isolated.
@@ -148,10 +144,8 @@ class MaintenanceCycle:
                     format_deep_report,
                     format_telegram_daily,
                 )
-    
-                engine = PerformanceReportEngine(
-                    core=self.om.accounting_core, kind=PeriodKind.DAY
-                )
+
+                engine = PerformanceReportEngine(core=self.om.accounting_core, kind=PeriodKind.DAY)
                 container = engine.generate()
                 compact = format_telegram_daily(container)
                 deep = format_deep_report(container)
@@ -173,7 +167,7 @@ class MaintenanceCycle:
                     "[TELEGRAM_REPORT] event=FAILURE error_type=GENERATION error=%s",
                     summary_err,
                 )
-    
+
         # ACCOUNT HISTORY: bounded background broker-history sync
         # (watermark + overlap, idempotent). Never on the tick path.
         if self.om._history_sync_started:
@@ -181,7 +175,7 @@ class MaintenanceCycle:
                 self.om._kick_worker("HISTORY_SYNC", self.om.history_sync_worker.tick)
             except Exception as wkr_err:
                 logger.warning("[HISTORY_SYNC_WORKER] event=KICK_FAILED error=%s", wkr_err)
-    
+
         # PHASE 09: intelligence worker kick (throttled internally). It
         # runs in a worker thread and is fully failure-isolated; a
         # failure can never disturb the tick loop.
@@ -190,7 +184,7 @@ class MaintenanceCycle:
                 self.om._kick_worker("INTELLIGENCE", self.om.intelligence_worker.tick)
             except Exception as wkr_err:
                 logger.warning("[INTELLIGENCE_WORKER] event=KICK_FAILED error=%s", wkr_err)
-    
+
         # PHASE 09B: research worker kick (throttled internally, runs in
         # a worker thread). Research NEVER runs inside the tick
         # pipeline; a failure here can never disturb trading.
@@ -199,7 +193,7 @@ class MaintenanceCycle:
                 self.om._kick_worker("RESEARCH", self.om.research_worker.tick)
             except Exception as wkr_err:
                 logger.warning("[RESEARCH_WORKER] event=KICK_FAILED error=%s", wkr_err)
-    
+
         # PHASE 10: controlled training worker kick (heavy CPU work is
         # bounded to worker threads; training can NEVER block ticks).
         if self.om._training_worker_started:
@@ -207,21 +201,21 @@ class MaintenanceCycle:
                 self.om._kick_worker("TRAINING", self.om.training_worker.tick)
             except Exception as wkr_err:
                 logger.warning("[TRAINING_WORKER] event=KICK_FAILED error=%s", wkr_err)
-    
+
         # PHASE 11: shadow-aggregation worker kick (bounded, isolated).
         if self.om._shadow_worker_started:
             try:
                 self.om._kick_worker("SHADOW", self.om.shadow_worker.tick)
             except Exception as wkr_err:
                 logger.warning("[SHADOW_WORKER] event=KICK_FAILED error=%s", wkr_err)
-    
+
         # PHASE 12: news intelligence worker kick (bounded, isolated).
         if self.om._news_enabled and self.om._news_worker_started:
             try:
                 self.om._kick_worker("NEWS", self.om.news_worker.tick)
             except Exception as wkr_err:
                 logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
-    
+
         # TASK-6: bounded governance health snapshot (~5 min cadence,
         # queued write, failure-isolated — never blocks ticks).
         try:
