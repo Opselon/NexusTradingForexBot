@@ -1,46 +1,19 @@
-"""GitHub-driven update engine for installed Nexus users (TASK-9).
+"""Update-engine package (extracted from release/updater.py).
 
-DECOMPOSED: the implementation now lives in the ``release/update/``
-package (constants/discovery/downloader/backup_migrate/health/
-rollback_state/pidfile_lock/safety_guards/orchestrator); this module
-is a compatibility facade re-exporting the full historical surface.
-
-Implements the end-user UPDATE PATH:
-
-    nexus update
-      -> discover current GitHub release (GitHub Releases API, never main.zip)
-      -> semantic version comparison + channel policy (stable/beta/nightly)
-      -> compatibility gate (OS, architecture, disk, migration path)
-      -> download to a STAGING area (never the install dir), resume-safe
-      -> verify SHA-256 + release manifest before anything is touched
-      -> LIVE-safety gate + explicit quiesce protocol
-      -> atomic backup of user data (config/db/models/logs, NEVER secrets
-         moved, credentials stay in the OS-protected secure store)
-      -> migration transaction (config/db), install, post-update health
-      -> rollback on failure, crash recovery via persisted state
-      -> single-instance lock + update history + JSON output
-
-Safety invariants (TASK-9 section 47):
-    1. Unverified artifact cannot install.
-    2. Failed backup blocks update.
-    3. LIVE engine update requires explicit safety handling.
-    4. User data is never deleted by a normal update.
-    5. Credentials never move to plaintext.
-    6. Failed migration triggers rollback.
-    7. Current application remains intact until target is verified.
-    8. Update is single-instance.
-    9. Version comparison is deterministic (semantic, never lexicographic).
-    10. GitHub unavailable does not fabricate update status.
-    11. New model is never silently activated during an app update.
-    12. Database migration is version-aware.
-    13. Rollback remains possible.
-    14. --yes cannot bypass security/compatibility checks.
-    15. Update cannot silently downgrade.
+Responsibility map:
+    constants      status/state vocabulary + detection regexes
+    discovery      release discovery, digests, manifests, plan builder
+    downloader     resume-safe staged download
+    backup_migrate backup/migration/install machinery
+    health         post-update health checks
+    rollback_state rollback engine + persisted update state/history
+    pidfile_lock   single-instance lock, pid liveness, install-mode detection
+    safety_guards  LIVE-engine guard + quiesce protocol
+    orchestrator   full update flow (check/dry_run/download/verify/install/run/rollback)
 """
 
 from __future__ import annotations
 
-from nexus_scalp.release import packaging
 from nexus_scalp.release.update_engine.backup_migrate import (
     ApplicationInstaller,
     BackupEngine,
@@ -216,6 +189,5 @@ __all__ = [
     "_machine_arch",
     "_pid_alive",
     "compare_versions",
-    "packaging",
     "upd_default_user_root",
 ]
