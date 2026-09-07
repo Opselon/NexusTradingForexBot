@@ -259,6 +259,18 @@ def _run_stage(
             scope_files=scope_files or [],
             detail=f"tool not available in {sys.executable}",
         )
+    # WINERROR-206 guard (Windows CreateProcess limit is 32767 chars): a
+    # whole-tree --all scope (900+ files) overflows the command line and the
+    # stage would CRASH with an empty stdout instead of reporting. When the
+    # argv would exceed a safe budget, fall back to the tool's own scope
+    # (pyproject [tool.ruff] exclude already excludes the same tree noise the
+    # file list was pinning), and mark the fallback in the result detail so
+    # the scope contract stays visible.
+    argv_len = sum(len(a) + 1 for a in args)
+    scope_fallback = False
+    if scope_files and argv_len > 30000:
+        args = args[: len(args) - len(scope_files)]
+        scope_fallback = True
     r = subprocess.run(
         args,
         cwd=REPO_ROOT,
@@ -269,6 +281,24 @@ def _run_stage(
         check=False,
         timeout=timeout,
     )
+    if scope_fallback and r.returncode == 0:
+        # The tool's own scope found nothing the file list would have found
+        # (same pyproject excludes) — record the fallback honestly.
+        detail_note = (
+            f"scope fallback: {len(scope_files or [])} files omitted from argv "
+            "(WinError-206 guard); tool ran on its pyproject-defined scope"
+        )
+        dur = time.perf_counter() - t0
+        return StageResult(
+            name=name,
+            command=args,
+            exit_code=r.returncode,
+            status="passed" if r.returncode == 0 else "failed",
+            duration_sec=dur,
+            scope_files=scope_files or [],
+            detail=detail_note,
+            output=(r.stdout or "")[-4000:],
+        )
     dur = time.perf_counter() - t0
     detail = (r.stdout or r.stderr).strip().splitlines()
     detail_line = detail[0][:200] if detail else ""
