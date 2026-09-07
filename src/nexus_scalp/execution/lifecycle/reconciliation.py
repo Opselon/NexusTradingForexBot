@@ -48,7 +48,6 @@ class ReconciliationEngine:
         # per-ticket dicts (single source of truth, S5 discipline).
         self.om = om
 
-
     def reconcile_missed_closes(
         self,
         symbol: str,

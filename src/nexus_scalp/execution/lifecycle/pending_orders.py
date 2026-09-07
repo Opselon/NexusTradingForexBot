@@ -212,7 +212,9 @@ class PendingOrderLifecycle:
         if ctx is None:
             ctx = self._pending_context_registry.get("")
         if ctx is None:
-            for oid in sorted(self._pending_context_ts, key=self._pending_context_ts.get, reverse=True):
+            for oid in sorted(
+                self._pending_context_ts, key=self._pending_context_ts.get, reverse=True
+            ):
                 family = self._context_bound_tickets.get(oid, set())
                 live = self._tickets_view()
                 # A family still open (tickets live) is the current dispatch.
@@ -753,8 +755,7 @@ class PendingOrderLifecycle:
                                 self.pending_field(pending, "sl", "stop_loss", default=0.0) or 0.0
                             ),
                             take_profit=float(
-                                self.pending_field(pending, "tp", "take_profit", default=0.0)
-                                or 0.0
+                                self.pending_field(pending, "tp", "take_profit", default=0.0) or 0.0
                             ),
                             volume=float(
                                 self.pending_field(pending, "volume", default=0.01) or 0.01

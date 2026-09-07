@@ -110,7 +110,8 @@ class ScalpNet(nn.Module):
     def __init__(
         self,
         num_features: int = 50,  # 50D Master FeatureVector alignment
-        num_classes: int | None = None,  # default: TRAINED_CLASS_COUNT (3) — see model_class_contract
+        num_classes: int
+        | None = None,  # default: TRAINED_CLASS_COUNT (3) — see model_class_contract
         hidden_dim: int = 128,  # Latent channel capacity
         num_heads: int = 4,  # Attention heads
         dropout_rate: float = 0.25,

@@ -44,6 +44,8 @@ from nexus_scalp.execution.lifecycle import (
     TicketState,
     TicketStateStore,
 )
+from nexus_scalp.execution.lifecycle.dispatch import DispatchEngine
+from nexus_scalp.execution.lifecycle.protection import ProtectionEngine
 from nexus_scalp.execution.lifecycle.reconciliation import ReconciliationEngine
 from nexus_scalp.execution.lifecycle.scoring import PositionScoringEngine
 from nexus_scalp.execution.position_intelligence import (
@@ -60,7 +62,6 @@ from nexus_scalp.execution.protection_ledger import (
 )
 from nexus_scalp.execution.recovery_budget import RecoveryBudgetLedger
 from nexus_scalp.execution.telemetry_throttle import TelemetryThrottle
-from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.execution.tickets_cache import TicketsCache
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
 from nexus_scalp.features.scalp_features import FeatureVector
@@ -675,7 +676,6 @@ class OrderLifecycleManager:
             setup_snapshot=setup_snapshot,
         )
 
-
     @staticmethod
     def _pending_field(pending: Any, *names: str, default: Any = None) -> Any:
         """Delegate: dict/object pending field probe (PendingOrderLifecycle)."""
@@ -715,9 +715,7 @@ class OrderLifecycleManager:
         self, ticket: int, symbol: str | None = None, max_attempts: int = 3
     ) -> int:
         """Delegate: bounded cancel retry (owned by PendingOrderLifecycle)."""
-        return self._pending_lifecycle.cancel_pending_order_with_retry(
-            ticket, symbol, max_attempts
-        )
+        return self._pending_lifecycle.cancel_pending_order_with_retry(ticket, symbol, max_attempts)
 
     def reconcile_pending_state(
         self, symbol: str | None = None, current_tick: TickData | None = None
@@ -745,126 +743,106 @@ class OrderLifecycleManager:
             audit=self.audit,
         )
 
-# --- P0 seam S5: dict views over TicketStateStore (generated) ---
+    # --- P0 seam S5: dict views over TicketStateStore (generated) ---
     @property
     def _entry_prices(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_price (S5)."""
         return _TicketStateDictView(self._states, "entry_price")
-
 
     @property
     def _entry_sls(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_sl (S5)."""
         return _TicketStateDictView(self._states, "entry_sl")
 
-
     @property
     def _entry_tps(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_tp (S5)."""
         return _TicketStateDictView(self._states, "entry_tp")
-
 
     @property
     def _last_known_volume(self) -> _TicketStateDictView:
         """Live dict view over TicketState.last_known_volume (S5)."""
         return _TicketStateDictView(self._states, "last_known_volume")
 
-
     @property
     def _initial_risks(self) -> _TicketStateDictView:
         """Live dict view over TicketState.initial_risk (S5)."""
         return _TicketStateDictView(self._states, "initial_risk")
-
 
     @property
     def _entry_expected_price(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_expected_price (S5)."""
         return _TicketStateDictView(self._states, "entry_expected_price")
 
-
     @property
     def _entry_atr(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_atr (S5)."""
         return _TicketStateDictView(self._states, "entry_atr")
-
 
     @property
     def _entry_spread(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_spread (S5)."""
         return _TicketStateDictView(self._states, "entry_spread")
 
-
     @property
     def _entry_fill_latency_ms(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_fill_latency_ms (S5)."""
         return _TicketStateDictView(self._states, "entry_fill_latency_ms")
-
 
     @property
     def _last_modify_sl(self) -> _TicketStateDictView:
         """Live dict view over TicketState.last_modify_sl (S5)."""
         return _TicketStateDictView(self._states, "last_modify_sl")
 
-
     @property
     def _entry_reasons(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_reason (S5)."""
         return _TicketStateDictView(self._states, "entry_reason")
-
 
     @property
     def _entry_confidences(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_confidence (S5)."""
         return _TicketStateDictView(self._states, "entry_confidence")
 
-
     @property
     def _entry_regimes(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_regime (S5)."""
         return _TicketStateDictView(self._states, "entry_regime")
-
 
     @property
     def _entry_directions(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_direction (S5)."""
         return _TicketStateDictView(self._states, "entry_direction")
 
-
     @property
     def _entry_order_ids(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_order_id (S5)."""
         return _TicketStateDictView(self._states, "entry_order_id")
-
 
     @property
     def _sl_modified_flags(self) -> _TicketStateDictView:
         """Live dict view over TicketState.sl_modified (S5)."""
         return _TicketStateDictView(self._states, "sl_modified")
 
-
     @property
     def _partial_closed_tickets(self) -> _TicketStateDictView:
         """Live dict view over TicketState.partial_closed (S5)."""
         return _TicketStateDictView(self._states, "partial_closed")
-
 
     @property
     def _rescue_registered_tickets(self) -> _TicketStateDictView:
         """Live dict view over TicketState.rescue_registered (S5)."""
         return _TicketStateDictView(self._states, "rescue_registered")
 
-
     @property
     def _closed_tickets(self) -> _TicketStateDictView:
         """Live dict view over TicketState.is_closed (S5)."""
         return _TicketStateDictView(self._states, "is_closed")
 
-
     @property
     def _entry_timestamps(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_timestamp (S5)."""
         return _TicketStateDictView(self._states, "entry_timestamp")
-
 
     @property
     def _forced_exit_mechanisms(self) -> _TicketStateDictView:
@@ -886,12 +864,9 @@ class OrderLifecycleManager:
         """Live dict view over TicketState.exit_pending_final (S5)."""
         return _TicketStateDictView(self._states, "exit_pending_final")
 
-
     # =========================================================================
     # MODULE A: LEDGER AUTOPSY CONTEXT INGESTION
     # =========================================================================
-
-
 
     def update_account_snapshot(self, account: Any, peak_equity: float | None = None) -> None:
         """
@@ -950,79 +925,48 @@ class OrderLifecycleManager:
         """Delegate: 30s churn lock (owned by PendingOrderLifecycle)."""
         return self._pending_lifecycle.should_modify_pending_order(ticket, price, atr, now)
 
-
     def get_active_live_tickets(self) -> list[dict[str, Any]]:
         """Returns a list of currently live active positions and pending orders matching symbol and magic number."""
         with self._live_tickets_lock:
             return list(self._live_tickets_cache.values())
 
+    # -----------------------------------------------------------------
+    # P0 seam S10: broker dispatch composition. execute_order (hedge
+    # path), dispatch_order (primary entry path), the dispatch volume
+    # clamp and the entry-reason resolver are owned by DispatchEngine
+    # (execution/lifecycle/dispatch.py). The engine reads/writes the
+    # manager's canonical state surface through `om`; the
+    # `_processed_orders` duplicate-dispatch guard stays manager-owned
+    # (tests and the debug snapshot read it directly). The manager keeps
+    # only these delegation shims under the historical names.
+    # -----------------------------------------------------------------
+
+    @property
+    def _dispatch(self) -> DispatchEngine:
+        """Lazily composed dispatch engine (S10)."""
+        eng: DispatchEngine | None = getattr(self, "_dispatch_instance", None)
+        if eng is None:
+            eng = DispatchEngine(self)
+            self._dispatch_instance = eng
+        return eng
+
     def execute_order(self, order: TradeOrder) -> bool:
-        """Submits trade deal to broker adapter with duplicate submission prevention."""
-        if self.global_state == "SAFE_MODE":
-            logger.warning("Order blocked: Safety State is SAFE_MODE.")
-            return False
+        """Delegate: hedge-path broker submission (owned by DispatchEngine, S10)."""
+        return self._dispatch.execute_order(order)
 
-        if order.order_id in self._processed_orders:
-            logger.warning(
-                "Duplicate order submission blocked by idempotency check", order_id=order.order_id
-            )
-            return False
+    def _clamp_dispatch_volume(self, volume: float, symbol: str | None = None) -> float:
+        """Delegate: risk-engine + HARD_MAX_LOTS clamp (owned by DispatchEngine, S10)."""
+        return self._dispatch._clamp_dispatch_volume(volume, symbol=symbol)
 
-        # BUG-247 (RESIDUAL P2): hedge entry (execute_order) must carry the same
-        # HARD_MAX_LOTS last-defense clamp as the primary dispatch path; the
-        # normal RiskEngine-sized hedge volume is unchanged (byte-identical).
-        clamped_vol = self._clamp_dispatch_volume(order.volume, symbol=order.symbol)
-        if clamped_vol <= 0.0:
-            logger.warning("Hedge entry blocked: clamped volume is zero", requested=order.volume)
-            return False
-        if abs(clamped_vol - float(order.volume)) > 1e-9:
-            try:
-                order = order.model_copy(update={"volume": float(clamped_vol)})
-            except Exception:
-                logger.error(
-                    "Hedge volume clamp copy failed (isolated)",
-                    requested=order.volume,
-                    clamped=clamped_vol,
-                )
-                return False
+    def dispatch_order(
+        self, decision: Any, volume: float, setup_snapshot: dict[str, Any] | None = None
+    ) -> bool:
+        """Delegate: unified entry dispatch router (owned by DispatchEngine, S10)."""
+        return self._dispatch.dispatch_order(decision, volume, setup_snapshot)
 
-        logger.info(
-            "Dispatching trade order to broker adapter",
-            order_id=order.order_id,
-            symbol=order.symbol,
-            volume=order.volume,
-        )
-
-        success = self.adapter.send_order(order)
-
-        if not success:
-            self._consecutive_failures += 1
-            if self._consecutive_failures >= 3:
-                self.global_state = "SAFE_MODE"
-                logger.critical("TRANSITIONED TO SAFE_MODE: 3 consecutive rejections detected!")
-        else:
-            self._consecutive_failures = 0
-
-        status_str = "FILLED" if success else "REJECTED"
-
-        self._processed_orders[order.order_id] = success
-        self.audit.log_execution(order, status_str)
-
-        self.audit.log_order(
-            ticket=0,
-            order_id=order.order_id,
-            symbol=order.symbol,
-            action="Executed order",
-            price=order.price,
-            stop_loss=order.stop_loss,
-            take_profit=order.take_profit,
-            volume=order.volume,
-            reason="execute_order executed",
-            latency=0.015,
-            execution_mode="STANDARD",
-        )
-
-        return success
+    def _resolve_entry_reason(self, decision: Any) -> str:
+        """Delegate: canonical ledger entry reason (owned by DispatchEngine, S10)."""
+        return self._dispatch._resolve_entry_reason(decision)
 
     def count_total_exposure(self, symbol: str | None = None) -> tuple[int, int]:
         """
@@ -1059,330 +1003,6 @@ class OrderLifecycleManager:
         positions, pendings = self.count_total_exposure(symbol=None)
         return (positions + pendings) < MAX_TOTAL_EXPOSURE
 
-    def _clamp_dispatch_volume(self, volume: float, symbol: str | None = None) -> float:
-        """
-        Routes every dispatch volume through the risk engine clamp when available and
-        applies the absolute HARD_MAX_LOTS ceiling unconditionally.
-        """
-        try:
-            vol = float(volume)
-        except (TypeError, ValueError):
-            return 0.0
-
-        # BUG-248: NaN/inf must not propagate past the clamp
-        # (nan <= 0.0 is False; min(nan, 10) is nan). A NaN volume reaching the
-        # broker request would be an unexplainable order divergence.
-        if not math.isfinite(vol) or vol <= 0.0:
-            return 0.0
-
-        if self.risk_engine is not None and hasattr(self.risk_engine, "get_clamped_position_size"):
-            account = None
-            symbol_info = None
-            try:
-                account = self.adapter.get_account_info()
-            except Exception:
-                account = None
-            try:
-                if symbol:
-                    symbol_info = self.adapter.get_symbol_info(symbol)
-            except Exception:
-                symbol_info = None
-
-            try:
-                vol = float(
-                    self.risk_engine.get_clamped_position_size(
-                        volume=vol,
-                        account=account,
-                        symbol_info=symbol_info,
-                    )
-                )
-            except Exception as clamp_err:
-                logger.error(
-                    "Risk engine clamp failed; falling back to hard cap", error=str(clamp_err)
-                )
-
-        # Defense-in-depth: a misbehaving clamp implementation must not leak
-        # NaN/inf into the broker request (nan survives min() and round()).
-        if not math.isfinite(vol) or vol <= 0.0:
-            return 0.0
-
-        clamped = min(vol, HARD_MAX_LOTS)
-        if clamped < vol:
-            logger.warning(
-                "LOT SIZE CLAMPED to HARD_MAX_LOTS",
-                requested=round(vol, 2),
-                clamped=round(clamped, 2),
-                hard_max=HARD_MAX_LOTS,
-            )
-        return round(clamped, 2)
-
-    def dispatch_order(
-        self, decision: Any, volume: float, setup_snapshot: dict[str, Any] | None = None
-    ) -> bool:
-        """
-        Unified dispatch router for new entry signals (BUY, SELL, BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP).
-
-        Enforces, in order: MAX_TOTAL_EXPOSURE, the HARD_MAX_LOTS clamp via the risk
-        engine, and entry-context capture for the ledger autopsy.
-
-        `setup_snapshot` (2026-08-18): the full chart-state fingerprint (HTF/SMC/ICT
-        structure, displacement, sessions, guardian) captured at dispatch by the
-        caller, attached to the entry context and persisted in the closed-trade
-        autopsy row for post-hoc strategy/setup attribution.
-        """
-        # BUG-241: the primary dispatch path now honors the engine safety
-        # state machine. Previously only execute_order (hedge path) checked
-        # SAFE_MODE, so the main entry path kept dispatching through a
-        # 3-rejection circuit breaker it never fed and never read.
-        if self.global_state == "SAFE_MODE":
-            logger.warning(
-                "[ENTRY_BLOCKED] layer=SAFE_MODE reason=CIRCUIT_OPEN action=%s symbol=%s",
-                getattr(decision.action, "value", str(decision.action)),
-                getattr(decision, "symbol", ""),
-            )
-            emit_terminal_pending_outcome(
-                experience_engine=self.experience_engine,
-                request_id=str(getattr(decision, "request_id", "") or ""),
-                state=DecisionLifecycle.NOT_DISPATCHED,
-                detail="SAFE_MODE circuit open at dispatch",
-            )
-            return False
-
-        action = decision.action
-        symbol = decision.symbol
-        price = decision.proposed_entry
-        sl = decision.stop_loss
-        tp = decision.take_profit
-
-        # --- ENGINE-LEVEL DUPLICATE DISPATCH GUARD (EXEC-QUALITY) ---
-        # `execute_order` (hedge path) has had an idempotency guard via
-        # `_processed_orders` since inception, but the PRIMARY market/pending
-        # dispatch path never recorded its request_ids. A policy re-fire, a
-        # duplicated decision object, or an AI-reversal double-intercept could
-        # reach the broker twice under one request_id (silent order
-        # duplication, INV-005/006 surface). Every request_id that has been
-        # SENT to the broker once (filled or refused) is now terminal here.
-        dispatch_request_id = str(getattr(decision, "request_id", "") or "")
-        if dispatch_request_id and dispatch_request_id in self._processed_orders:
-            logger.warning(
-                "Duplicate dispatch blocked by idempotency check",
-                request_id=dispatch_request_id,
-                prior_result=self._processed_orders[dispatch_request_id],
-            )
-            return False
-
-        # --- MAX EXPOSURE ENFORCEMENT (1 position OR 1 pending, engine-wide) ---
-        if not self._is_exposure_available(symbol=symbol):
-            positions, pendings = self.count_total_exposure(symbol=symbol)
-            # BUG-072/073: the internal view is broker-reconciled every tick
-            # (manage_active_positions + reconcile_pending_state) and after
-            # every verified cancel, so this block reflects real broker state.
-            logger.warning(
-                "[ENTRY_BLOCKED] layer=EXPOSURE reason=MAX_EXPOSURE_REACHED "
-                "open_positions=%s pending_internal=%s max_total_exposure=%s stale_state=false",
-                positions,
-                pendings,
-                MAX_TOTAL_EXPOSURE,
-                action=getattr(action, "value", str(action)),
-            )
-            # P0-A (BUG-140): the decision is terminal — it will never become a
-            # trade. Record NOT_DISPATCHED so the experience ledger cannot hang.
-            emit_terminal_pending_outcome(
-                experience_engine=self.experience_engine,
-                request_id=str(getattr(decision, "request_id", "") or ""),
-                state=DecisionLifecycle.NOT_DISPATCHED,
-                detail="MAX_EXPOSURE_REACHED at dispatch",
-            )
-            return False
-
-        # --- STRICT LOT SIZING CLAMP (HARD_MAX_LOTS + free margin pre-check) ---
-        volume = self._clamp_dispatch_volume(volume, symbol=symbol)
-        if volume <= 0.0:
-            logger.warning(
-                "LOT_SIZE_REJECTED: clamped volume is zero (insufficient free margin or invalid size)",
-                action=getattr(action, "value", str(action)),
-                symbol=symbol,
-            )
-            # P0-A (BUG-140): terminal NOT_DISPATCHED (never sent to broker).
-            emit_terminal_pending_outcome(
-                experience_engine=self.experience_engine,
-                request_id=str(getattr(decision, "request_id", "") or ""),
-                state=DecisionLifecycle.NOT_DISPATCHED,
-                detail="LOT_SIZE_REJECTED (zero volume after clamp)",
-            )
-            return False
-
-        # Stage the entry context so the ledger autopsy row carries WHY we entered,
-        # plus the Phase 08 execution-quality baseline (expected fill + dispatch clock).
-        self.register_entry_context(
-            order_id=getattr(decision, "request_id", "") or "",
-            entry_reason=self._resolve_entry_reason(decision),
-            ai_confidence=float(getattr(decision, "confidence", 0.0) or 0.0),
-            market_regime=str(getattr(decision, "regime", "") or ""),
-            expected_entry=float(getattr(decision, "proposed_entry", 0.0) or 0.0),
-            dispatch_monotonic=time.monotonic(),
-            setup_snapshot=setup_snapshot,
-        )
-
-        logger.info(
-            "dispatch_order mapping action to MT5 command",
-            action=action,
-            symbol=symbol,
-            volume=volume,
-            execution_id=getattr(decision, "execution_id", None),
-        )
-
-        if action in (
-            ActionType.BUY,
-            ActionType.BUY_MARKET,
-            ActionType.SELL,
-            ActionType.SELL_MARKET,
-        ):
-            order_type = OrderType.BUY if "BUY" in action.value else OrderType.SELL
-            ticket = self.mt5_adapter.execute_market_order(
-                symbol=symbol,
-                order_type=order_type,
-                volume=volume,
-                price=price,
-                stop_loss=sl,
-                take_profit=tp,
-            )
-            # Log broker confirmation exactly as required
-            logger.info(
-                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}"
-            )
-            if ticket > 0:
-                self.audit.log_order(
-                    ticket=ticket,
-                    order_id=decision.request_id,
-                    symbol=symbol,
-                    action="Executed order",
-                    price=price,
-                    stop_loss=sl,
-                    take_profit=tp,
-                    volume=volume,
-                    reason=f"dispatch_order {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
-                    latency=0.012,
-                    execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
-                    execution_id=getattr(decision, "execution_id", None),
-                )
-            else:
-                # P0-A (BUG-140): market dispatch refused (retcode/ticket=0) —
-                # the decision can never fill; record the terminal state.
-                emit_terminal_pending_outcome(
-                    experience_engine=self.experience_engine,
-                    request_id=str(getattr(decision, "request_id", "") or ""),
-                    state=DecisionLifecycle.REJECTED_UNFILLED,
-                    detail="broker refused market order at dispatch (ticket=0)",
-                )
-            # BUG-241: consecutive broker refusals feed the SAFE_MODE breaker
-            # (same 3-rejection rule the hedge path has always enforced); a
-            # success resets the counter.
-            if ticket > 0:
-                self._consecutive_failures = 0
-            else:
-                self._consecutive_failures += 1
-                if self._consecutive_failures >= 3:
-                    self.global_state = "SAFE_MODE"
-                    logger.critical(
-                        "TRANSITIONED TO SAFE_MODE: 3 consecutive dispatch refusals detected!"
-                    )
-
-            # EXEC-QUALITY: record the request_id AFTER the broker call so a
-            # repeat of the same request (re-fire/replay) is refused by the
-            # duplicate-dispatch guard above regardless of fill outcome.
-            if dispatch_request_id:
-                self._processed_orders[dispatch_request_id] = ticket > 0
-            return ticket > 0
-
-        elif action in (
-            ActionType.BUY_LIMIT,
-            ActionType.SELL_LIMIT,
-            ActionType.BUY_STOP,
-            ActionType.SELL_STOP,
-        ):
-            if action == ActionType.BUY_LIMIT:
-                order_type = OrderType.BUY_LIMIT
-            elif action == ActionType.SELL_LIMIT:
-                order_type = OrderType.SELL_LIMIT
-            elif action == ActionType.BUY_STOP:
-                order_type = OrderType.BUY_STOP
-            else:
-                order_type = OrderType.SELL_STOP
-
-            ticket = self.mt5_adapter.place_pending_order(
-                symbol=symbol,
-                order_type=order_type,
-                volume=volume,
-                price=price,
-                stop_loss=sl,
-                take_profit=tp,
-            )
-            if ticket > 0:
-                logger.info(
-                    f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}"
-                )
-                self.audit.log_order(
-                    ticket=ticket,
-                    order_id=decision.request_id,
-                    symbol=symbol,
-                    action="Generated candidate",
-                    price=price,
-                    stop_loss=sl,
-                    take_profit=tp,
-                    volume=volume,
-                    reason=f"dispatch_order pending {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
-                    latency=0.011,
-                    execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
-                    execution_id=getattr(decision, "execution_id", None),
-                )
-            else:
-                logger.error(
-                    f"Pending order dispatch rejected by broker server | Action: {action.value} | Lots: {volume}"
-                )
-                # P0-A (BUG-140): broker refused the pending order at dispatch —
-                # the decision can never fill; record the terminal state.
-                emit_terminal_pending_outcome(
-                    experience_engine=self.experience_engine,
-                    request_id=str(getattr(decision, "request_id", "") or ""),
-                    state=DecisionLifecycle.REJECTED_UNFILLED,
-                    detail="broker rejected pending order at dispatch (ticket=0)",
-                )
-            # BUG-241: pending dispatch refusals feed the same breaker.
-            if ticket > 0:
-                self._consecutive_failures = 0
-            else:
-                self._consecutive_failures += 1
-                if self._consecutive_failures >= 3:
-                    self.global_state = "SAFE_MODE"
-                    logger.critical(
-                        "TRANSITIONED TO SAFE_MODE: 3 consecutive pending refusals detected!"
-                    )
-
-            # EXEC-QUALITY: same duplicate-dispatch bookkeeping as the market
-            # path — every sent request_id is terminal (filled or refused).
-            if dispatch_request_id:
-                self._processed_orders[dispatch_request_id] = ticket > 0
-            return ticket > 0
-
-        return False
-
-    def _resolve_entry_reason(self, decision: Any) -> str:
-        """
-        Normalizes the policy decision into one of the canonical ledger entry reasons:
-        SMC_GOD_MODE, FAST_LIQUIDITY_SWEEP, or PURE_AI.
-        """
-        execution_mode = str(getattr(decision, "execution_mode", "") or "")
-        reason_code = str(getattr(decision, "reason_code", "") or "")
-
-        if "SMC_GOD_MODE" in execution_mode or "SMC_GOD_MODE" in reason_code:
-            return "SMC_GOD_MODE"
-        if "SWEEP" in reason_code.upper() or "TICK_SWEEP" in execution_mode:
-            return "FAST_LIQUIDITY_SWEEP"
-        return "PURE_AI"
-
-
-
     # =========================================================================
     # P0-A (BUG-140): TERMINAL PENDING-ORDER EXPERIENCE OUTCOMES
     # -------------------------------------------------------------------------
@@ -1390,7 +1010,6 @@ class OrderLifecycleManager:
     # experience ledger with an explicit lifecycle state, otherwise the
     # research dataset permanently reports MISSING_OUTCOME for it.
     # =========================================================================
-
 
     # =========================================================================
     # MODULE B: AI POSITION REVERSAL PROTOCOL
@@ -1701,8 +1320,6 @@ class OrderLifecycleManager:
     # history_orders_get() before declaring success.
     # =========================================================================
 
-
-
     def refresh_live_tickets_cache(
         self, symbol: str | None = None, current_tick: TickData | None = None
     ) -> None:
@@ -1809,7 +1426,6 @@ class OrderLifecycleManager:
             # property name — it would shadow the @property).
             self._tickets_cache.swap(new_cache)
 
-
     def _is_closed_ticket(self, ticket: int) -> bool:
         """
         TASK-7 invariant guard: True when the ticket is positively closed or a close
@@ -1841,11 +1457,158 @@ class OrderLifecycleManager:
         return not any(int(getattr(p, "ticket", 0) or 0) == int(ticket) for p in live)
 
     def _should_modify_sl(self, ticket: int, new_sl: float) -> bool:
-        """Determines if the proposed new stop loss step is significantly different from last sent modification."""
-        last_sl = self._last_modify_sl.get(ticket, 0.0)
-        if abs(new_sl - last_sl) >= self.min_step:
-            return True
-        return False
+        """Delegate: SL step gate (owned by ProtectionEngine, S10)."""
+        return self._protection._should_modify_sl(ticket, new_sl)
+
+    # -----------------------------------------------------------------
+    # P0 seam S10: deterministic position protection composition. The
+    # breakeven lock, ATR trailing stop, profit-giveback evaluation and
+    # enforcement, and their pip/digits/contract resolvers are owned by
+    # ProtectionEngine (execution/lifecycle/protection.py). Per-ticket
+    # protection state stays in the manager's protection ledger; the
+    # engine reads/writes it through `om`. The manager keeps only these
+    # delegation shims under the historical names.
+    # -----------------------------------------------------------------
+
+    @property
+    def _protection(self) -> ProtectionEngine:
+        """Lazily composed protection engine (S10)."""
+        eng: ProtectionEngine | None = getattr(self, "_protection_instance", None)
+        if eng is None:
+            eng = ProtectionEngine(self)
+            self._protection_instance = eng
+        return eng
+
+    def _resolve_pip_size(self, symbol_info: SymbolInfo | None) -> float:
+        """Delegate: canonical pip size (owned by ProtectionEngine, S10)."""
+        return self._protection._resolve_pip_size(symbol_info)
+
+    def _resolve_price_digits(self, symbol_info: SymbolInfo | None) -> int:
+        """Delegate: broker price precision (owned by ProtectionEngine, S10)."""
+        return self._protection._resolve_price_digits(symbol_info)
+
+    def _atr_profit_threshold_usd(
+        self,
+        volume: float,
+        symbol_info: SymbolInfo | None,
+        atr: float,
+    ) -> float:
+        """Delegate: ATR trigger in USD PnL (owned by ProtectionEngine, S10)."""
+        return self._protection._atr_profit_threshold_usd(volume, symbol_info, atr)
+
+    def calculate_breakeven_sl(
+        self,
+        pos: Position,
+        symbol_info: SymbolInfo | None = None,
+    ) -> float:
+        """Delegate: breakeven stop price (owned by ProtectionEngine, S10)."""
+        return self._protection.calculate_breakeven_sl(pos, symbol_info)
+
+    @staticmethod
+    def _is_sl_at_or_beyond(pos: Position, sl_value: float, reference_sl: float) -> bool:
+        """Delegate: protective-direction check (owned by ProtectionEngine, S10)."""
+        return ProtectionEngine._is_sl_at_or_beyond(pos, sl_value, reference_sl)
+
+    def refresh_protection_state(
+        self,
+        pos: Position,
+        symbol_info: SymbolInfo | None = None,
+    ) -> PositionProtectionState:
+        """Delegate: broker-state protection reconciliation (owned by ProtectionEngine, S10)."""
+        return self._protection.refresh_protection_state(pos, symbol_info)
+
+    def _protective_sl_floor(self, ticket: int) -> float:
+        """Delegate: confirmed breakeven lock floor (owned by ProtectionEngine, S10)."""
+        return self._protection._protective_sl_floor(ticket)
+
+    def is_sl_improvement(self, pos: Position, new_sl: float) -> bool:
+        """Delegate: SL-tightening guard (owned by ProtectionEngine, S10)."""
+        return self._protection.is_sl_improvement(pos, new_sl)
+
+    def _log_protection_audit(
+        self,
+        pos: Position,
+        action: str,
+        reason: str,
+        stop_loss: float = 0.0,
+    ) -> None:
+        """Delegate: protection audit row (owned by ProtectionEngine, S10)."""
+        self._protection._log_protection_audit(pos, action, reason, stop_loss)
+
+    def apply_breakeven_lock(
+        self,
+        pos: Position,
+        symbol_info: SymbolInfo | None = None,
+        atr: float = 0.0,
+        min_stop_gap: float = 0.0,
+        current_tick: TickData | None = None,
+    ) -> bool:
+        """Delegate: priority-4 breakeven lock (owned by ProtectionEngine, S10)."""
+        return self._protection.apply_breakeven_lock(
+            pos, symbol_info, atr, min_stop_gap, current_tick
+        )
+
+    def _maybe_tighten_protective_sl(
+        self,
+        pos: Position,
+        state: "PositionProtectionState",
+        symbol_info: SymbolInfo | None = None,
+    ) -> bool:
+        """Delegate: dynamic protective-SL tighten (owned by ProtectionEngine, S10)."""
+        return self._protection._maybe_tighten_protective_sl(pos, state, symbol_info)
+
+    def _resolve_contract_size(self, symbol_info: SymbolInfo | None) -> float:
+        """Delegate: contract size resolver (owned by ProtectionEngine, S10)."""
+        return self._protection._resolve_contract_size(symbol_info)
+
+    def _log_throttled_be_failure(
+        self,
+        state: PositionProtectionState,
+        pos: Position,
+        message: str,
+        breakeven_sl: float,
+    ) -> None:
+        """Delegate: throttled breakeven failure log (owned by ProtectionEngine, S10)."""
+        self._protection._log_throttled_be_failure(state, pos, message, breakeven_sl)
+
+    def _tiered_giveback_floor(self, ticket: int, peak: float) -> tuple[float, bool]:
+        """Delegate: tiered retention floor (owned by ProtectionEngine, S10)."""
+        return self._protection._tiered_giveback_floor(ticket, peak)
+
+    def evaluate_profit_giveback(
+        self,
+        ticket: int,
+        current_pnl_usd: float,
+        base_hold_score: int,
+    ) -> tuple[int, bool, str]:
+        """Delegate: giveback evaluation + score override (owned by ProtectionEngine, S10)."""
+        return self._protection.evaluate_profit_giveback(ticket, current_pnl_usd, base_hold_score)
+
+    def enforce_profit_giveback_protection(
+        self,
+        pos: Position,
+        hold_score: int,
+        symbol_info: SymbolInfo | None = None,
+        regime: str | None = None,
+    ) -> tuple[int, bool]:
+        """Delegate: giveback protection enforcement (owned by ProtectionEngine, S10)."""
+        return self._protection.enforce_profit_giveback_protection(
+            pos, hold_score, symbol_info, regime
+        )
+
+    def apply_atr_trailing_stop(
+        self,
+        pos: Position,
+        price_current: float,
+        atr: float,
+        symbol_info: SymbolInfo | None = None,
+        min_stop_gap: float = 0.0,
+        current_tick: TickData | None = None,
+    ) -> bool:
+        """Delegate: priority-5 ATR trailing stop (owned by ProtectionEngine, S10)."""
+        return self._protection.apply_atr_trailing_stop(
+            pos, price_current, atr, symbol_info, min_stop_gap, current_tick
+        )
 
     # =========================================================================
     # DETERMINISTIC POSITION PROTECTION LAYER
@@ -1867,785 +1630,6 @@ class OrderLifecycleManager:
         lazy-creation semantics unchanged.
         """
         return self._protection_ledger.get(ticket)
-
-    def _resolve_pip_size(self, symbol_info: SymbolInfo | None) -> float:
-        """
-        Canonical pip size resolver.
-
-        A pip is 10 broker points, derived from `SymbolInfo.point` whenever the broker
-        specification is available. Falls back to the project-wide gold pip constant
-        (`DEFAULT_PIP_SIZE`, also used by `rule_matrix.py`) when it is not, so no
-        XAUUSD point conversion is hard-coded at the call sites.
-        """
-        if symbol_info is not None:
-            try:
-                point = float(symbol_info.point)
-                if point > 0.0 and not math.isnan(point) and not math.isinf(point):
-                    return point * 10.0
-            except (TypeError, ValueError):
-                pass
-        return DEFAULT_PIP_SIZE
-
-    def _resolve_price_digits(self, symbol_info: SymbolInfo | None) -> int:
-        """Broker price precision, defaulting to 2 decimals (XAUUSD convention)."""
-        if symbol_info is not None:
-            try:
-                digits = int(symbol_info.digits)
-                if 0 <= digits <= 10:
-                    return digits
-            except (TypeError, ValueError):
-                pass
-        return 2
-
-    def _atr_profit_threshold_usd(
-        self,
-        volume: float,
-        symbol_info: SymbolInfo | None,
-        atr: float,
-    ) -> float:
-        """
-        Converts `BREAKEVEN_ATR_MULTIPLIER` x ATR (price units) into this position's
-        USD PnL using the same contract-size arithmetic the risk engine uses.
-
-        Raw ATR price units are never compared against USD PnL directly.
-        """
-        try:
-            atr_price_delta = max(float(atr), 0.0) * BREAKEVEN_ATR_MULTIPLIER
-        except (TypeError, ValueError):
-            return math.inf
-        usd = self._price_delta_to_usd(atr_price_delta, volume, symbol_info)
-        if usd <= 0.0 or math.isnan(usd) or math.isinf(usd):
-            # A non-positive/invalid conversion must never create a free trigger.
-            return math.inf
-        return usd
-
-    def calculate_breakeven_sl(
-        self,
-        pos: Position,
-        symbol_info: SymbolInfo | None = None,
-    ) -> float:
-        """
-        Breakeven stop price locking `BREAKEVEN_LOCK_PIPS` of profit beyond entry.
-
-        BUY : entry + 0.20 pips
-        SELL: entry - 0.20 pips
-        """
-        pip = self._resolve_pip_size(symbol_info)
-        offset = BREAKEVEN_LOCK_PIPS * pip
-        raw = pos.price_open + offset if pos.type == OrderType.BUY else pos.price_open - offset
-        return round(raw, self._resolve_price_digits(symbol_info))
-
-    @staticmethod
-    def _is_sl_at_or_beyond(pos: Position, sl_value: float, reference_sl: float) -> bool:
-        """
-        True when `sl_value` is at or beyond `reference_sl` in the position's favourable
-        direction. Used both for the restart-safe breakeven check and to guarantee an
-        existing protective stop is never moved backwards.
-        """
-        if sl_value <= 0.0:
-            return False
-        if pos.type == OrderType.BUY:
-            return sl_value >= (reference_sl - 1e-9)
-        return sl_value <= (reference_sl + 1e-9)
-
-    def refresh_protection_state(
-        self,
-        pos: Position,
-        symbol_info: SymbolInfo | None = None,
-    ) -> PositionProtectionState:
-        """
-        Reconciles per-ticket protection state with the position as the broker reports it.
-
-        Performed on EVERY refresh so that:
-          - `peak_win_usd` advances monotonically with floating PnL,
-          - the breakeven level is always current, and
-          - a position whose real SL already sits at/beyond breakeven is treated as
-            protected even if this process just restarted and has no memory of it
-            (prevents duplicate SL modifications after state reconstruction).
-        """
-        state = self.get_protection_state(pos.ticket)
-        state.update_peak(pos.profit)
-
-        breakeven_sl = self.calculate_breakeven_sl(pos, symbol_info)
-        state.breakeven_sl_price = breakeven_sl
-
-        # Real MT5 state wins over the in-memory flag: the flag is never the only
-        # source of truth. Note this can only ever mark the position as MORE
-        # protected, never less.
-        if self._is_sl_at_or_beyond(pos, pos.sl, breakeven_sl):
-            if not state.was_sl_modified:
-                logger.debug(
-                    "BREAKEVEN ALREADY PRESENT ON BROKER: reconstructing protected state",
-                    ticket=pos.ticket,
-                    actual_sl=pos.sl,
-                    breakeven_sl=breakeven_sl,
-                )
-            state.was_sl_modified = True
-            self._sl_modified_flags[pos.ticket] = True
-
-        return state
-
-    def _protective_sl_floor(self, ticket: int) -> float:
-        """
-        Lowest (BUY) / highest (SELL) stop price any later mechanism is allowed to set,
-        i.e. the confirmed breakeven lock. Returns 0.0 when no lock is active.
-        """
-        state = self._protection_ledger.get(ticket)
-        if state is None or not state.was_sl_modified:
-            return 0.0
-        return state.breakeven_sl_price
-
-    def is_sl_improvement(self, pos: Position, new_sl: float) -> bool:
-        """
-        Guard shared by breakeven, ATR trailing and rule-driven SL moves.
-
-        Returns True only when `new_sl` tightens protection: it must advance past the
-        current broker SL in the profitable direction AND must never regress behind an
-        already-confirmed breakeven lock.
-        """
-        if new_sl <= 0.0:
-            return False
-
-        is_buy = pos.type == OrderType.BUY
-
-        # 1. Never loosen the stop the broker already holds.
-        if pos.sl > 0.0:
-            if is_buy and new_sl <= pos.sl:
-                return False
-            if not is_buy and new_sl >= pos.sl:
-                return False
-
-        # 2. Never move behind a confirmed breakeven lock.
-        floor_sl = self._protective_sl_floor(pos.ticket)
-        if floor_sl > 0.0:
-            if is_buy and new_sl < (floor_sl - 1e-9):
-                return False
-            if not is_buy and new_sl > (floor_sl + 1e-9):
-                return False
-
-        return True
-
-    def _log_protection_audit(
-        self,
-        pos: Position,
-        action: str,
-        reason: str,
-        stop_loss: float = 0.0,
-    ) -> None:
-        """
-        Writes a protection event to the SQLite audit ledger.
-
-        Deliberately isolated and fully exception-guarded: an audit/telemetry failure
-        must never prevent (or disable) a breakeven or close action.
-        """
-        try:
-            self.audit.log_order(
-                ticket=pos.ticket,
-                order_id=f"protect_{pos.ticket}_{action.lower()}",
-                symbol=pos.symbol,
-                action=action,
-                price=pos.price_open,
-                stop_loss=stop_loss,
-                take_profit=pos.tp,
-                volume=pos.volume,
-                reason=reason,
-                latency=0.0,
-                execution_mode="PROTECTION",
-            )
-        except Exception as err:
-            logger.error(
-                "Protection audit write failed (protection continues)",
-                ticket=pos.ticket,
-                error=str(err),
-            )
-
-    def apply_breakeven_lock(
-        self,
-        pos: Position,
-        symbol_info: SymbolInfo | None = None,
-        atr: float = 0.0,
-        min_stop_gap: float = 0.0,
-        current_tick: TickData | None = None,
-    ) -> bool:
-        """
-        Priority-4 protection: locks a breakeven(+0.20 pip) stop once the position has
-        earned meaningful profit.
-
-        Activation (either trigger is sufficient):
-            current_pnl_usd >= BREAKEVEN_PROFIT_USD            ($15.00)
-            current_pnl_usd >= 1.5 ATR expressed in USD PnL
-
-        Guarded by `was_sl_modified` so the modification is issued at most once per
-        ticket, and by the broker-state reconciliation in `refresh_protection_state`
-        so a restart cannot duplicate it.
-
-        Returns True only when the adapter CONFIRMED the modification.
-        """
-        state = self.get_protection_state(pos.ticket)
-
-        if state.was_sl_modified or state.close_requested:
-            return False
-
-        # Retry cooldown (BUG-085/086): a broker-rejected or deferred breakeven
-        # modification must not be re-attempted every management tick. The failure
-        # storm on the live path produced 6,674 BREAKEVEN_FAILED audit rows from a
-        # handful of tickets; the cooldown bounds retries to one per
-        # BREAKEVEN_ATTEMPT_COOLDOWN_SEC while keeping the retry possible.
-        now_mono = time.monotonic()
-        if (now_mono - state.last_be_attempt_time) < BREAKEVEN_ATTEMPT_COOLDOWN_SEC:
-            return False
-        state.last_be_attempt_time = now_mono
-
-        current_pnl_usd = float(pos.profit)
-        atr_threshold_usd = self._atr_profit_threshold_usd(pos.volume, symbol_info, atr)
-        # AGENT4-SPRINT: R-anchored trigger floor — the flat $15 threshold alone
-        # fires at ~0.09R and locks an entry-level stop before the move develops.
-        initial_risk_usd = self._initial_risks.get(pos.ticket, 0.0)
-        r_trigger_usd = BREAKEVEN_TRIGGER_R * initial_risk_usd if initial_risk_usd > 0.0 else 0.0
-        be_trigger_usd = max(BREAKEVEN_PROFIT_USD, r_trigger_usd)
-        if current_pnl_usd < be_trigger_usd and current_pnl_usd < atr_threshold_usd:
-            return False
-
-        breakeven_sl = state.breakeven_sl_price or self.calculate_breakeven_sl(pos, symbol_info)
-        state.breakeven_sl_price = breakeven_sl
-
-        # Already at/beyond breakeven on the broker side: nothing to send.
-        if self._is_sl_at_or_beyond(pos, pos.sl, breakeven_sl):
-            state.was_sl_modified = True
-            self._sl_modified_flags[pos.ticket] = True
-            return False
-
-        # Respect the broker's minimum stop distance PLUS the live spread so a
-        # breakeven modification can never cross into the opposing book. The broker
-        # STOP_LEVEL alone is insufficient: on a 2-digit XAUUSD symbol the stops
-        # level can be ~0.10-0.35, smaller than the 0.20-0.25 live spread, so a
-        # breakeven SL placed exactly at STOP_LEVEL distance would still be rejected
-        # (or worse, crossed by the fill). Retry on a later pass instead of burning a
-        # guaranteed-reject modification request.
-        live_spread = (
-            float(current_tick.ask - current_tick.bid) if current_tick is not None else 0.0
-        )
-        effective_freeze_gap = max(min_stop_gap, 0.35) + max(live_spread, 0.0)
-        if current_tick is not None:
-            is_buy = pos.type == OrderType.BUY
-            current_market_price = current_tick.bid if is_buy else current_tick.ask
-
-            # Verify SL sits on valid side of current market price to prevent MT5 10016 Retcode
-            if is_buy and breakeven_sl >= (current_market_price - effective_freeze_gap):
-                # Market pulled back before modification dispatched; defer or cap SL safely below market bid
-                breakeven_sl = round(
-                    current_market_price - effective_freeze_gap,
-                    self._resolve_price_digits(symbol_info),
-                )
-                if breakeven_sl <= pos.price_open:
-                    self._log_throttled_be_failure(
-                        state,
-                        pos,
-                        f"BREAKEVEN DEFERRED: market pulled back (Bid: ${current_market_price:.2f}), SL would cross market price",
-                        breakeven_sl,
-                    )
-                    return False
-
-            elif not is_buy and breakeven_sl <= (current_market_price + effective_freeze_gap):
-                # Market pulled back before modification dispatched; defer or cap SL safely above market ask
-                breakeven_sl = round(
-                    current_market_price + effective_freeze_gap,
-                    self._resolve_price_digits(symbol_info),
-                )
-                if breakeven_sl >= pos.price_open:
-                    self._log_throttled_be_failure(
-                        state,
-                        pos,
-                        f"BREAKEVEN DEFERRED: market pulled back (Ask: ${current_market_price:.2f}), SL would cross market price",
-                        breakeven_sl,
-                    )
-                    return False
-
-        take_profit = pos.tp  # Existing take-profit is preserved verbatim.
-
-        try:
-            success = bool(
-                self.mt5_adapter.modify_position(
-                    ticket=pos.ticket,
-                    stop_loss=breakeven_sl,
-                    take_profit=take_profit,
-                )
-            )
-        except Exception as err:
-            success = False
-            logger.error(
-                "BREAKEVEN LOCK ERROR: modify_position raised",
-                ticket=pos.ticket,
-                error=str(err),
-            )
-
-        if not success:
-            # Explicitly do NOT set was_sl_modified: the retry stays possible on the
-            # next tracking cycle. Failure logging is throttled, the retry is not.
-            self._log_throttled_be_failure(
-                state,
-                pos,
-                "BREAKEVEN LOCK FAILED: broker rejected modification, retry pending",
-                breakeven_sl,
-            )
-            return False
-
-        # Only a CONFIRMED modification advances the tracked final SL. A failed
-        # attempt must never pollute `_last_modify_sl` (BUG-085): doing so made the
-        # autopsy record final_sl != initial_sl with was_sl_modified=False and could
-        # suppress the retry via `_should_modify_sl` step comparison.
-        self._last_modify_sl[pos.ticket] = breakeven_sl
-        state.was_sl_modified = True
-        self._sl_modified_flags[pos.ticket] = True
-
-        logger.info(
-            "BREAKEVEN LOCK ACTIVATED",
-            ticket=f"#{pos.ticket}",
-            pnl=f"${current_pnl_usd:.2f}",
-            peak=f"${state.peak_win_usd:.2f}",
-            entry=pos.price_open,
-            sl=breakeven_sl,
-        )
-        self._log_protection_audit(
-            pos,
-            action="BREAKEVEN_LOCK",
-            reason=f"BREAKEVEN_LOCK_ACTIVATED pnl=${current_pnl_usd:.2f} peak=${state.peak_win_usd:.2f}",
-            stop_loss=breakeven_sl,
-        )
-
-        if self.notifier:
-            try:
-                contract_size = self._resolve_contract_size(symbol_info)
-                self.notifier.notify_break_even_applied_extended(
-                    ticket=pos.ticket,
-                    new_sl=breakeven_sl,
-                    original_risk_usd=self._initial_risks.get(pos.ticket, 0.0),
-                    protected_amount_usd=abs(breakeven_sl - pos.price_open)
-                    * pos.volume
-                    * contract_size,
-                    reply_to_message_id=self._order_message_ids.get(pos.ticket),
-                )
-            except Exception as err:
-                logger.error("Breakeven notification failed", ticket=pos.ticket, error=str(err))
-
-        return True
-
-    def _maybe_tighten_protective_sl(
-        self,
-        pos: Position,
-        state: "PositionProtectionState",
-        symbol_info: SymbolInfo | None = None,
-    ) -> bool:
-        """
-        TASK 3 helper: dynamically tightens an already-locked protective stop towards the
-        current profit floor (never loosening it). Used in VOLATILITY_EXPANSION when a
-        market close is suppressed so the position is still actively defended without
-        crossing the spread. Returns True if a modification was issued and confirmed.
-        """
-        if not state.was_sl_modified:
-            return False
-        peak = state.peak_win_usd
-        # Only meaningful once a meaningful peak profit exists.
-        if peak <= 0.0 or pos.profit <= 0.0:
-            return False
-
-        contract_sz = self._resolve_contract_size(symbol_info)
-        # Target = lock in a portion of current profit, but never below the breakeven level.
-        target_profit_lock = pos.profit * 0.85
-        if pos.type == OrderType.BUY:
-            candidate_sl = pos.price_open + (
-                target_profit_lock / max(pos.volume * contract_sz, 1.0)
-            )
-        else:
-            candidate_sl = pos.price_open - (
-                target_profit_lock / max(pos.volume * contract_sz, 1.0)
-            )
-        candidate_sl = round(candidate_sl, self._resolve_price_digits(symbol_info))
-
-        if not self.is_sl_improvement(pos, candidate_sl):
-            return False
-        if not self._should_modify_sl(pos.ticket, candidate_sl):
-            return False
-
-        try:
-            success = bool(
-                self.mt5_adapter.modify_position(
-                    ticket=pos.ticket,
-                    stop_loss=candidate_sl,
-                    take_profit=pos.tp,
-                )
-            )
-        except Exception:
-            return False
-        if success:
-            self._sl_modified_flags[pos.ticket] = True
-            self._last_modify_sl[pos.ticket] = candidate_sl
-            logger.info(
-                "PROFIT GIVEBACK: dynamic SL tighten in VOLATILITY_EXPANSION",
-                ticket=f"#{pos.ticket}",
-                new_sl=candidate_sl,
-                old_sl=pos.sl,
-            )
-        return success
-
-    def _resolve_contract_size(self, symbol_info: SymbolInfo | None) -> float:
-        """Contract size with the project-wide 100.0 (gold) fallback."""
-        if symbol_info is not None and symbol_info.trade_contract_size > 0:
-            return float(symbol_info.trade_contract_size)
-        return 100.0
-
-    def _log_throttled_be_failure(
-        self,
-        state: PositionProtectionState,
-        pos: Position,
-        message: str,
-        breakeven_sl: float,
-    ) -> None:
-        """
-        Emits a breakeven-failure warning at most once every
-        `TELEMETRY_CONSOLE_INTERVAL_SEC` per ticket so a persistent broker rejection
-        cannot flood the console. The audit record is written every time.
-        """
-        now = time.monotonic()
-        if (now - state.last_be_failure_log_time) >= TELEMETRY_CONSOLE_INTERVAL_SEC:
-            logger.warning(
-                message,
-                ticket=pos.ticket,
-                breakeven_sl=breakeven_sl,
-                actual_sl=pos.sl,
-                pnl=f"${pos.profit:+.2f}",
-            )
-            state.last_be_failure_log_time = now
-
-        self._log_protection_audit(
-            pos,
-            action="BREAKEVEN_FAILED",
-            reason=message,
-            stop_loss=breakeven_sl,
-        )
-
-    def _tiered_giveback_floor(self, ticket: int, peak: float) -> tuple[float, bool]:
-        """
-        Returns (retention_floor, armed) for a peak profit.
-
-        The floor is derived from the PEAK expressed in R (peak USD / initial risk
-        USD). Tiers let small scalps tolerate normal noise while locking in a
-        meaningful share of larger runners. `armed=False` means the giveback
-        protection stays DISARMED (micro-profit noise zone).
-        """
-        risk_usd = self._initial_risks.get(ticket, 0.0)
-        if risk_usd <= 0.0 or peak <= 0.0:
-            # Without a known planned risk we fall back to the absolute floor so
-            # protection is never silently disabled.
-            return PROFIT_GIVEBACK_MIN_RETENTION, True
-        peak_r = peak / risk_usd
-        if peak_r < TIERED_GIVEBACK_ARM_R:
-            return PROFIT_GIVEBACK_MIN_RETENTION, False
-        floor = PROFIT_GIVEBACK_MIN_RETENTION
-        for tier_r, tier_floor in TIERED_GIVEBACK_RETENTION_FLOOR:
-            if peak_r >= tier_r:
-                floor = tier_floor
-            else:
-                break
-        return floor, True
-
-    def evaluate_profit_giveback(
-        self,
-        ticket: int,
-        current_pnl_usd: float,
-        base_hold_score: int,
-    ) -> tuple[int, bool, str]:
-        """
-        Deterministic profit-erosion evaluation and hold-score safety override.
-
-        Runs AFTER the base score has been computed but BEFORE the score is used for
-        any execution decision, so normal scoring can never overwrite a safety verdict.
-
-        Returns (final_hold_score, protection_required, reason).
-        """
-        state = self.get_protection_state(ticket)
-        score = int(base_hold_score)
-        peak = state.peak_win_usd
-
-        if peak < PROFIT_GIVEBACK_PEAK_USD:
-            return max(0, min(100, score)), False, ""
-
-        retention_floor, armed = self._tiered_giveback_floor(ticket, peak)
-        if not armed:
-            return max(0, min(100, score)), False, ""
-
-        retention = state.retention_ratio(current_pnl_usd)
-
-        # --- Priority 3: negative PnL after a meaningful profit -----------------
-        # Evaluated before anything can raise the score again: a trade that banked
-        # >= $20 and is now red must never look attractive to hold.
-        if current_pnl_usd < 0.0:
-            return (
-                NEGATIVE_AFTER_PROFIT_HOLD_SCORE,
-                True,
-                f"NEGATIVE_PNL_AFTER_PEAK peak=${peak:.2f} current=${current_pnl_usd:.2f}",
-            )
-
-        # --- Priority 2: tiered profit retention floor breached -----------------
-        if retention < retention_floor:
-            score -= PROFIT_GIVEBACK_HOLD_SCORE_PENALTY
-            score = max(0, min(100, score))
-            return (
-                score,
-                True,
-                f"PROFIT_RETENTION_BREACH peak=${peak:.2f} current=${current_pnl_usd:.2f} "
-                f"retention={retention:.2%} floor={retention_floor:.2%}",
-            )
-
-        return max(0, min(100, score)), False, ""
-
-    def enforce_profit_giveback_protection(
-        self,
-        pos: Position,
-        hold_score: int,
-        symbol_info: SymbolInfo | None = None,
-        regime: str | None = None,
-    ) -> tuple[int, bool]:
-        """
-        Priority-2/3 protection: arms PROFIT_GIVEBACK_PROTECTION and submits exactly one
-        market close for a winner that has eroded past the retention floor or turned
-        negative after banking >= PROFIT_GIVEBACK_PEAK_USD.
-
-        Returns (effective_hold_score, protection_active). When protection_active is
-        True the caller MUST NOT let any lower-priority mechanism act on the ticket.
-
-        TASK 3 HARDENING: when the close is being triggered inside a high-spread
-        VOLATILITY_EXPANSION regime AND a breakeven (or better) stop is ALREADY locked
-        on the broker terminal, we must NOT fire a live market close that crosses the
-        spread (which would destroy the protected profit). Instead we trust the locked
-        SL to do the job and, if possible, tighten it dynamically via modify_position.
-        A market close is only permitted if price has crossed below the breakeven SL or
-        the SL modification itself fails.
-        """
-        state = self.get_protection_state(pos.ticket)
-        current_pnl_usd = float(pos.profit)
-
-        final_score, protection_required, reason = self.evaluate_profit_giveback(
-            ticket=pos.ticket,
-            current_pnl_usd=current_pnl_usd,
-            base_hold_score=hold_score,
-        )
-
-        if not protection_required:
-            return final_score, False
-
-        retention = state.retention_ratio(current_pnl_usd)
-        state.profit_giveback_triggered = True
-
-        # --- TASK 3: Breakeven-aware exit suppression during VOLATILITY_EXPANSION ---
-        is_vol_expansion = regime == "VOLATILITY_EXPANSION"
-        breakeven_locked = state.was_sl_modified and self._is_sl_at_or_beyond(
-            pos, pos.sl, state.breakeven_sl_price
-        )
-        if is_vol_expansion and breakeven_locked and not state.close_requested:
-            # Reference for the "price crossed below breakeven" check.
-            ref = getattr(self, "_last_tick_for_ticket", {}).get(pos.ticket)
-            # Determine whether price has already breached the locked protective stop.
-            price_below_be = False
-            if pos.type == OrderType.BUY:
-                price_below_be = ref is not None and getattr(ref, "bid", 1e18) <= pos.sl
-            else:
-                price_below_be = ref is not None and getattr(ref, "ask", 0.0) >= pos.sl
-
-            if not price_below_be:
-                # Do NOT cross the spread with a market close. Keep the locked SL and
-                # attempt a dynamic tighten (trailing) via native MT5 modification.
-                logger.info(
-                    "PROFIT GIVEBACK: breakeven SL already locked in VOLATILITY_EXPANSION; "
-                    "suppressing market close, relying on protective SL",
-                    ticket=f"#{pos.ticket}",
-                    peak=f"${state.peak_win_usd:.2f}",
-                    current=f"${current_pnl_usd:.2f}",
-                    retention=f"{retention:.2%}",
-                    locked_sl=pos.sl,
-                )
-                logger.info(
-                    "[POSITION_EXIT_BLOCKED]",
-                    ticket=pos.ticket,
-                    intended_action="CLOSE",
-                    blocker="VOLATILITY_EXPANSION_BREAKEVEN_SUPPRESSION",
-                    reason=(
-                        "breakeven SL locked on broker; market close would cross the "
-                        "spread and destroy protected profit"
-                    ),
-                    pnl=round(float(current_pnl_usd), 2),
-                    locked_sl=pos.sl,
-                )
-                # Try to tighten the SL to the current retention floor (still >= breakeven).
-                tightened = self._maybe_tighten_protective_sl(pos, state, symbol_info)
-                if not tightened:
-                    logger.debug(
-                        "PROFIT GIVEBACK: SL tighten skipped (already optimal or broker rejected)",
-                        ticket=pos.ticket,
-                    )
-                # Protection is considered active (lower-priority mechanisms must not act),
-                # but no market close is dispatched.
-                return max(0, min(100, final_score)), True
-        # when the previous request was reported as failed (close_requested stays
-        # False in that case).
-        if state.close_requested:
-            logger.debug(
-                "PROFIT GIVEBACK PROTECTION: close already requested, suppressing duplicate",
-                ticket=pos.ticket,
-            )
-            return final_score, True
-
-        logger.warning(
-            "[EXIT TRACE] PROFIT GIVEBACK PROTECTION TRIGGERED",
-            ticket=f"#{pos.ticket}",
-            peak=f"${state.peak_win_usd:.2f}",
-            current=f"${current_pnl_usd:.2f}",
-            retention=f"{retention:.2%}",
-            hold_score=final_score,
-            reason=reason,
-            exit_mechanism=ExitMechanism.PROFIT_GIVEBACK_PROTECTION,
-        )
-        self._log_protection_audit(
-            pos,
-            action="PROFIT_GIVEBACK_PROTECTION",
-            reason=f"{reason} hold_score={final_score} exit_mechanism={ExitMechanism.PROFIT_GIVEBACK_PROTECTION}",
-            stop_loss=pos.sl,
-        )
-
-        # Propagate the exit metadata through the EXISTING forced-exit mechanism so the
-        # ledger autopsy attributes the close correctly. No parallel interface is added.
-        self._forced_exit_mechanisms[pos.ticket] = ExitMechanism.PROFIT_GIVEBACK_PROTECTION
-
-        try:
-            closed = bool(self.adapter.close_position(ticket=pos.ticket))
-        except Exception as err:
-            closed = False
-            logger.error(
-                "PROFIT GIVEBACK PROTECTION: close_position raised",
-                ticket=pos.ticket,
-                error=str(err),
-            )
-
-        if closed:
-            state.close_requested = True
-            self._hold_score_tracker[pos.ticket] = final_score
-            with self._live_tickets_lock:
-                self._live_tickets_cache.pop(pos.ticket, None)
-            if self.notifier:
-                try:
-                    self.notifier.notify_early_emergency_cut(
-                        ticket=pos.ticket,
-                        score=final_score,
-                        reasons=f"{ExitMechanism.PROFIT_GIVEBACK_PROTECTION}: {reason}",
-                        saved_usd=current_pnl_usd,
-                        reply_to_message_id=self._order_message_ids.get(pos.ticket),
-                    )
-                except Exception as err:
-                    logger.error(
-                        "Profit giveback notification failed", ticket=pos.ticket, error=str(err)
-                    )
-        else:
-            # Close failed: clear the forced tag (so an organic exit is not mislabelled)
-            # and leave close_requested False so the next cycle retries.
-            self._forced_exit_mechanisms.pop(pos.ticket, None)
-            self._log_protection_audit(
-                pos,
-                action="PROFIT_GIVEBACK_CLOSE_FAILED",
-                reason=f"{reason} close_position returned falsy, retry pending",
-                stop_loss=pos.sl,
-            )
-
-        return final_score, True
-
-    def apply_atr_trailing_stop(
-        self,
-        pos: Position,
-        price_current: float,
-        atr: float,
-        symbol_info: SymbolInfo | None = None,
-        min_stop_gap: float = 0.0,
-        current_tick: TickData | None = None,
-    ) -> bool:
-        """
-        Priority-5 protection: ATR trailing stop built on the ATR already produced by
-        the feature pipeline (`FeatureVector.atr_m1`); no second ATR implementation is
-        introduced.
-
-        BUY : trailing_sl = price - ATR * ATR_TRAILING_MULTIPLIER
-        SELL: trailing_sl = price + ATR * ATR_TRAILING_MULTIPLIER
-
-        The stop is only ever tightened: `is_sl_improvement` rejects any candidate that
-        would loosen the broker SL or regress behind a confirmed breakeven lock.
-        """
-        state = self.get_protection_state(pos.ticket)
-        if state.close_requested or state.profit_giveback_triggered:
-            # A higher-priority protection decision is in force; trailing must not
-            # replace or cancel it.
-            return False
-
-        try:
-            distance = max(float(min_stop_gap), round(float(atr) * ATR_TRAILING_MULTIPLIER, 2))
-        except (TypeError, ValueError):
-            logger.error("ATR trailing skipped: invalid ATR input", ticket=pos.ticket, atr=atr)
-            return False
-
-        if distance <= 0.0:
-            return False
-
-        target_sl = (
-            price_current - distance if pos.type == OrderType.BUY else price_current + distance
-        )
-        target_sl = round(target_sl, self._resolve_price_digits(symbol_info))
-
-        if not self.is_sl_improvement(pos, target_sl):
-            return False
-
-        if current_tick is not None and min_stop_gap > 0.0:
-            reference = current_tick.bid if pos.type == OrderType.BUY else current_tick.ask
-            gap = (reference - target_sl) if pos.type == OrderType.BUY else (target_sl - reference)
-            if gap < min_stop_gap:
-                return False
-
-        if not self._should_modify_sl(pos.ticket, target_sl):
-            return False
-
-        old_sl = pos.sl
-        try:
-            success = bool(
-                self.adapter.modify_position(
-                    ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp
-                )
-            )
-        except Exception as err:
-            success = False
-            logger.error("ATR TRAILING: modify_position raised", ticket=pos.ticket, error=str(err))
-
-        if not success:
-            return False
-
-        # Only a CONFIRMED modification advances the tracked final SL (BUG-085).
-        self._last_modify_sl[pos.ticket] = target_sl
-        self._sl_modified_flags[pos.ticket] = True
-        self._log_protection_audit(
-            pos,
-            action="ATR_TRAILING_STOP",
-            reason=f"ATR_TRAILING atr={atr:.5f} multiplier={ATR_TRAILING_MULTIPLIER}",
-            stop_loss=target_sl,
-        )
-
-        if self.notifier:
-            try:
-                self.notifier.notify_trailing_stop_advanced_extended(
-                    ticket=pos.ticket,
-                    old_sl=old_sl,
-                    new_sl=target_sl,
-                    current_price=price_current,
-                    reply_to_message_id=self._order_message_ids.get(pos.ticket),
-                )
-            except Exception as err:
-                logger.error("Trailing notification failed", ticket=pos.ticket, error=str(err))
-
-        return True
 
     def should_emit_console_telemetry(self, ticket: int, now: float | None = None) -> bool:
         """
@@ -2943,7 +1927,6 @@ class OrderLifecycleManager:
             )
         )
 
-
     def _recalculate_hold_score_with_position_state(
         self,
         ticket: int,
@@ -3077,9 +2060,6 @@ class OrderLifecycleManager:
             pass
         return "LIVE"
 
-
-
-
     # ------------------------------------------------------------------
     # P0 seam S3 compatibility surface: the historical attribute names
     # now resolve to the ledger's LIVE dicts (same objects — tests and
@@ -3159,7 +2139,6 @@ class OrderLifecycleManager:
         Returns (is_exhausted, reason).
         """
         return self._recovery_ledger.evaluate_exhaustion(ticket, current_pnl_usd, now)
-
 
     # ------------------------------------------------------------------
     # P0 seam S2 compatibility surface: the historical attribute names
@@ -3376,10 +2355,6 @@ class OrderLifecycleManager:
 
         # Otherwise, default to HOLD
         return "HOLD", "S60_DEFAULT_CONTROLLED_HOLD"
-
-
-
-
 
     def evaluate_falling_knife_protection(
         self,
@@ -4689,7 +3664,6 @@ class OrderLifecycleManager:
 
         return False
 
-
     # -----------------------------------------------------------------
     # P0 seam S8: reconciliation + autopsy + experience attribution
     # delegate to ReconciliationEngine (execution/lifecycle/reconciliation.py).
@@ -4787,8 +3761,6 @@ class OrderLifecycleManager:
             atr,
             hours_back,
         )
-
-
 
     # -----------------------------------------------------------------
     # P0 seam S9: scoring engine composition (hold-value / protection /
@@ -4913,8 +3885,6 @@ class OrderLifecycleManager:
                         reply_to_message_id=self._order_message_ids.get(ticket),
                     )
                 self._last_known_volume[ticket] = pos.volume
-
-
 
     def _update_mfe_mae(
         self,

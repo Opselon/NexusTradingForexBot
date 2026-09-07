@@ -62,7 +62,6 @@ class PositionScoringEngine:
         #: ticket -> bounded trajectory observation window (100 steps).
         self._trajectory_history: dict[int, deque[Any]] = {}
 
-
     def _calculate_protection_score(
         self,
         ticket: int,
@@ -84,7 +83,7 @@ class PositionScoringEngine:
         w_rev = getattr(self.om.algo_config, "w_market_reversal", 0.20)
         w_rec = getattr(self.om.algo_config, "w_recovery_probability", 0.10)
         w_hscore = getattr(self.om.algo_config, "w_hold_score", 0.10)
-    
+
         # Scale weights continuously based on position state (context-dependent weights)
         is_profitable = pos.profit >= 0.0
         if is_profitable:
@@ -97,7 +96,7 @@ class PositionScoringEngine:
             w_rev *= 1.3
             w_rec *= 1.2
             w_prof *= 0.1
-    
+
         # Normalize weights
         total_w = w_prof + w_pnl + w_dd_vel + w_rev + w_rec + w_hscore
         if total_w > 0.0:
@@ -107,35 +106,37 @@ class PositionScoringEngine:
             w_rev /= total_w
             w_rec /= total_w
             w_hscore /= total_w
-    
+
         # Scaled continuous input variables [0.0, 1.0]
-        profit_giveback_severity = self.om._calculate_continuous_giveback_severity(ticket, pos.profit)
-    
+        profit_giveback_severity = self.om._calculate_continuous_giveback_severity(
+            ticket, pos.profit
+        )
+
         # PnL deterioration: 1.0 when PnL slope is highly negative
         pnl_slope = pnl_features.get("pnl_slope", 0.0)
         pnl_deterioration = max(0.0, min(1.0, -pnl_slope * 2.0))
-    
+
         # Drawdown velocity (scaled)
         dd_vel = pnl_features.get("drawdown_velocity", 0.0)
         drawdown_velocity = max(0.0, min(1.0, dd_vel * 3.0))
-    
+
         # Reversal probability (scaled by AI confidence factor continuously)
         effective_ai_weight = confidence_factor
         adverse_prob = evidence.get("adverse_score", 0.0)
         reversal_probability = adverse_prob * effective_ai_weight
-    
+
         # Recovery probability
         rec_prob = evidence.get("recovery_score", 0.0)
         # We weigh (1 - recovery_probability) as protection pressure
         recovery_probability_pressure = (1.0 - rec_prob) * effective_ai_weight
-    
+
         # Hold score deterioration
         hold_score_deterioration = max(0.0, min(1.0, (100.0 - base_hold_score) / 100.0))
-    
+
         # Time risk: increases as time underwater grows
         time_below_be = pnl_features.get("time_below_breakeven", 0.0)
         time_risk = max(0.0, min(1.0, time_below_be / self.om.max_holding_seconds))
-    
+
         # Combine variables
         protection_score = (
             w_prof * profit_giveback_severity
@@ -145,7 +146,7 @@ class PositionScoringEngine:
             + w_rec * recovery_probability_pressure
             + w_hscore * hold_score_deterioration
         )
-    
+
         # Apply escalation multiplier as risk deteriorates (near hard SL or high time risk)
         escalation_factor = 1.0
         if not is_profitable:
@@ -153,10 +154,9 @@ class PositionScoringEngine:
             escalation_factor += 0.5 * time_risk
             if pnl_slope < 0.0:
                 escalation_factor += 0.3 * min(1.0, abs(pnl_slope))
-    
+
         protection_score *= escalation_factor
         return float(max(0.0, min(100.0, protection_score * 100.0)))
-
 
     def _calculate_continuous_giveback_severity(self, ticket: int, current_pnl_usd: float) -> float:
         """
@@ -169,15 +169,14 @@ class PositionScoringEngine:
         _MIN_RETENTION, _PEAK_USD, _ = _om_symbols()
         if peak < _PEAK_USD:
             return 0.0
-    
+
         catastrophic_floor = peak * _MIN_RETENTION
         giveback_range = peak - catastrophic_floor
         if giveback_range <= 0.0:
             return 0.0
-    
+
         severity = (peak - current_pnl_usd) / giveback_range
         return float(max(0.0, min(1.0, severity)))
-
 
     def _calculate_adaptive_evidence_scores(
         self,
@@ -193,45 +192,45 @@ class PositionScoringEngine:
         is_buy = pos.type == OrderType.BUY
         pnl_features = self.om._calculate_trajectory_features(ticket)
         pnl_slope = pnl_features.get("pnl_slope", 0.0)
-    
+
         # 1. Base model predictions if available
         if probs is not None:
             try:
                 probs_list = probs.squeeze().tolist()
                 if not isinstance(probs_list, list):
                     probs_list = [probs_list]
-    
+
                 # Model predicts: 0=NO_TRADE, 1=BUY, 2=SELL
                 p_no_trade = float(probs_list[0]) if len(probs_list) > 0 else 0.4
                 p_buy = float(probs_list[1]) if len(probs_list) > 1 else 0.3
                 p_sell = float(probs_list[2]) if len(probs_list) > 2 else 0.3
-    
+
                 # Ensure internally consistent normalization
                 total_prob = p_no_trade + p_buy + p_sell + 1e-9
                 p_no_trade /= total_prob
                 p_buy /= total_prob
                 p_sell /= total_prob
-    
+
                 if is_buy:
                     continuation_score = p_buy
                     adverse_score = p_sell
                 else:
                     continuation_score = p_sell
                     adverse_score = p_buy
-    
+
             except Exception as err:
                 logger.error(
                     "Error parsing neural network probabilities; falling back to heuristic",
                     error=str(err),
                 )
                 probs = None
-    
+
         if probs is None:
             # Bounded evidence fallback model (Requirement 1 & 2)
             # Baseline is 0.40
             continuation_score = 0.40
             adverse_score = 0.40
-    
+
             # Dynamic indicators from feature vector
             if features is not None:
                 # Ichimoku trend alignment
@@ -243,7 +242,7 @@ class PositionScoringEngine:
                     continuation_score += 0.15
                 elif not is_buy and features.is_above_kumo:
                     adverse_score += 0.15
-    
+
                 # Choch alignment
                 choch_bull = getattr(features, "choch_bullish", False)
                 choch_bear = getattr(features, "choch_bearish", False)
@@ -255,7 +254,7 @@ class PositionScoringEngine:
                     continuation_score += 0.10
                 elif not is_buy and choch_bull:
                     adverse_score += 0.10
-    
+
             # Slope adjustments
             if pnl_slope > 0.0:
                 continuation_score += 0.10
@@ -263,25 +262,24 @@ class PositionScoringEngine:
             elif pnl_slope < 0.0:
                 adverse_score += 0.10
                 continuation_score -= 0.05
-    
+
             # Strictly normalize
             total = continuation_score + adverse_score + 0.20  # 0.20 represents 'no_trade'
             continuation_score /= total
             adverse_score /= total
-    
+
         # Compute recovery score
         # Mixture of continuation score and actual recovery trajectory velocity
         rec_vel = pnl_features.get("recovery_velocity", 0.0)
         # Scaled recovery velocity (USD/sec)
         rec_vel_scaled = min(1.0, max(0.0, rec_vel * 5.0))
         recovery_score = 0.70 * continuation_score + 0.30 * rec_vel_scaled
-    
+
         return {
             "continuation_score": max(0.0, min(1.0, continuation_score)),
             "adverse_score": max(0.0, min(1.0, adverse_score)),
             "recovery_score": max(0.0, min(1.0, recovery_score)),
         }
-
 
     def _calculate_trajectory_features(self, ticket: int) -> dict[str, float]:
         """
@@ -301,24 +299,24 @@ class PositionScoringEngine:
                 "time_below_breakeven": 0.0,
                 "distance_to_be_velocity": 0.0,
             }
-    
+
         window = list(history)[-10:]
         first = window[0]
         last = window[-1]
         dt = (last.timestamp - first.timestamp).total_seconds()
         if dt <= 0.0:
             dt = 0.1
-    
+
         pnl_slope = (last.pnl - first.pnl) / dt
         price_slope = (last.price - first.price) / dt
-    
+
         prev = window[-2]
         dt_last = (last.timestamp - prev.timestamp).total_seconds()
         if dt_last <= 0.0:
             dt_last = 0.1
-    
+
         last_dd_vel = (last.drawdown - prev.drawdown) / dt_last
-    
+
         if len(window) >= 3:
             prev_prev = window[-3]
             dt_prev = (prev.timestamp - prev_prev.timestamp).total_seconds()
@@ -328,13 +326,13 @@ class PositionScoringEngine:
             drawdown_acceleration = (last_dd_vel - prev_dd_vel) / dt_last
         else:
             drawdown_acceleration = 0.0
-    
+
         drawdown_velocity = last_dd_vel
         recovery_velocity = pnl_slope if pnl_slope > 0.0 else 0.0
-    
+
         peak_step = max(history, key=lambda s: s.pnl)
         time_since_peak = (last.timestamp - peak_step.timestamp).total_seconds()
-    
+
         time_below_entry = 0.0
         time_below_breakeven = 0.0
         for i in range(1, len(history)):
@@ -345,12 +343,12 @@ class PositionScoringEngine:
                 time_below_entry += s_dt
             if s_curr.pnl < 0.20:
                 time_below_breakeven += s_dt
-    
+
         if last.pnl < 0.0 and prev.pnl < 0.0:
             distance_to_be_velocity = (abs(last.pnl) - abs(prev.pnl)) / dt_last
         else:
             distance_to_be_velocity = 0.0
-    
+
         return {
             "pnl_slope": pnl_slope,
             "price_slope": price_slope,
@@ -362,7 +360,6 @@ class PositionScoringEngine:
             "time_below_breakeven": max(0.0, time_below_breakeven),
             "distance_to_be_velocity": distance_to_be_velocity,
         }
-
 
     def _calculate_hold_value_score(
         self,
@@ -384,7 +381,7 @@ class PositionScoringEngine:
         score = 100
         reasons: list[str] = []
         ticket = pos.ticket
-    
+
         # --- Penalty 1: Drawdown vs Initial Risk/ATR (convex, up to -80) ---
         # Non-linear: as drawdown deepens relative to the planned risk, the penalty
         # accelerates so the engine de-risks gracefully LONG before the emergency
@@ -394,14 +391,14 @@ class PositionScoringEngine:
         is_buy = pos.type == OrderType.BUY
         current_loss = 0.0
         initial_risk = 0.0
-    
+
         if is_buy:
             current_loss = max(0.0, pos.price_open - price_current)
             initial_risk = pos.price_open - initial_sl if initial_sl > 0.0 else (atr * 1.5)
         else:
             current_loss = max(0.0, price_current - pos.price_open)
             initial_risk = initial_sl - pos.price_open if initial_sl > 0.0 else (atr * 1.5)
-    
+
         if current_loss > 0.0:
             ratio = current_loss / max(0.01, initial_risk)
             # Convex curve: ratio=0.2 -> ~9, ratio=0.5 -> ~36, ratio=0.8 -> ~72,
@@ -411,7 +408,7 @@ class PositionScoringEngine:
             if penalty1 > 0:
                 score -= penalty1
                 reasons.append(f"DRAWDOWN_PENALTY (-{penalty1}, ratio={ratio:.2f})")
-    
+
         # --- Penalty 2: Time-in-Loss Decay (up to -30) ---
         entry_time = self.om._entry_timestamps.get(ticket)
         if entry_time:
@@ -422,11 +419,11 @@ class PositionScoringEngine:
         else:
             holding_duration = 1.0
         time_loss = self.om._time_in_drawdown_sec.get(ticket, 0.0)
-    
+
         if holding_duration > 0.0 and (time_loss / holding_duration) > 0.70:
             score -= 30
             reasons.append("TIME_IN_LOSS_DECAY_PENALTY (-30)")
-    
+
         # --- Penalty 3: Real-time Spread Expansion (up to -20) ---
         if self.om._rolling_spreads:
             current_spread = self.om._rolling_spreads[-1]
@@ -434,7 +431,7 @@ class PositionScoringEngine:
             if avg_spread > 0.0 and current_spread > 1.5 * avg_spread:
                 score -= 20
                 reasons.append("SPREAD_EXPANSION_PENALTY (-20)")
-    
+
         # --- Bonus: AI/Trend alignment (+10), suppressed while meaningfully underwater ---
         # A positive trend signal must never mask a deep drawdown: bonuses are only
         # worth considering when the position is not materially adverse.
@@ -446,13 +443,13 @@ class PositionScoringEngine:
                 aligned = True
             elif not is_buy and features.is_below_kumo:
                 aligned = True
-    
+
             if aligned and not underwater:
                 score += 10
                 reasons.append("TREND_ALIGNMENT_BONUS (+10)")
             elif aligned and underwater:
                 reasons.append("TREND_BONUS_SUPPRESSED_UNDERWATER")
-    
+
         # PROFIT SHIELD GUARD: Winning trades get guaranteed high floor score of 85.
         # The guard is based on ACTUAL floating PnL, not price-vs-open (which can be
         # fooled by spread/whipsaw), and it is disabled once the position is under
@@ -461,9 +458,8 @@ class PositionScoringEngine:
         if is_in_profit and not underwater:
             score = max(85, score)
             reasons.append("PROFIT_SHIELD_SCORE_FLOOR_ACTIVE")
-    
-        return max(0, min(100, score)), reasons
 
+        return max(0, min(100, score)), reasons
 
     def _evaluate_minimum_loss_optimization(
         self,
@@ -479,7 +475,7 @@ class PositionScoringEngine:
         """
         if current_pnl_usd >= 0.0:
             return False, ""
-    
+
         # Calculate time in trade for Spread Overcome Grace Period
         # NOTE: `now` is the CURRENT TICK timestamp threaded from the management
         # loop. Never derive age from the host wall clock: the broker/server clock
@@ -494,14 +490,14 @@ class PositionScoringEngine:
                 duration_sec = (now_ref - entry_time).total_seconds()
         else:
             duration_sec = 0.0
-    
+
         # 60-Second Spread Overcome Grace Period (Prevent instant exit due to spread costs at open)
         if duration_sec < 60.0:
             return False, ""
-    
+
         recovery_score = evidence.get("recovery_score", 0.50)
         adverse_score = evidence.get("adverse_score", 0.50)
-    
+
         # Expected Outcomes (payoff magnitudes)
         # Phase 15 audit finding #4 fix (BUG-056): the recovery value MUST be
         # anchored to the PLANNED reward objective (initial risk x minimum
@@ -520,12 +516,12 @@ class PositionScoringEngine:
         planned_rr = float(getattr(self.om.algo_config, "min_risk_reward_ratio", 1.8) or 1.8)
         expected_recovery_value = max(15.0, initial_risk_usd * planned_rr)
         expected_additional_loss = max(1.0, initial_risk_usd - abs(current_pnl_usd))
-    
+
         # Expected Value (EV) calculation
         ev_hold = (
             recovery_score * expected_recovery_value - adverse_score * expected_additional_loss
         )
-    
+
         # Minimum-loss exit condition: if the EV of holding is severely negative, or if recovery evidence is weak
         if ev_hold < -0.15 * initial_risk_usd:
             logger.info(
@@ -535,7 +531,7 @@ class PositionScoringEngine:
                 True,
                 f"MIN_LOSS_OPTIMIZATION_EV_BREACH (EV=${ev_hold:.2f}, rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})",
             )
-    
+
         # Deep-drawdown guard (BUG-056): when the position has consumed most of
         # its planned risk (>60%) and the model sees weak recovery (<30%), the
         # remaining SL distance is small so EV alone can look positive; the
@@ -550,7 +546,7 @@ class PositionScoringEngine:
                 True,
                 f"MIN_LOSS_OPTIMIZATION_DEEP_DRAWDOWN (rec_prob={recovery_score:.2%}, drawdown={drawdown_fraction:.1%})",
             )
-    
+
         if recovery_score < 0.25 and adverse_score > 0.60:
             logger.info(
                 f"[EXIT TRACE] MIN_LOSS_OPTIMIZATION_WEAK_RECOVERY triggered. Ticket: {ticket}, RecProb: {recovery_score:.2%}, AdvProb: {adverse_score:.2%}, Duration: {duration_sec:.1f}s"
@@ -559,9 +555,8 @@ class PositionScoringEngine:
                 True,
                 f"MIN_LOSS_OPTIMIZATION_WEAK_RECOVERY (rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})",
             )
-    
-        return False, ""
 
+        return False, ""
 
     def _add_trajectory_step(
         self,
@@ -578,7 +573,7 @@ class PositionScoringEngine:
         """Appends a new observation step to the ticket's bounded trajectory history."""
         if ticket not in self._trajectory_history:
             self._trajectory_history[ticket] = deque(maxlen=100)
-    
+
         _, _, _Step = _om_symbols()
         step = _Step(
             timestamp=timestamp,
@@ -591,4 +586,3 @@ class PositionScoringEngine:
             volatility=float(volatility),
         )
         self._trajectory_history[ticket].append(step)
-

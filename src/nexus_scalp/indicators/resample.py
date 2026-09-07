@@ -20,7 +20,7 @@ _TF_MINUTES: dict[str, int | None] = {
     "H2": 120,
     "H4": 240,
     "D1": 1440,
-    "W1": None,   # ISO week bucketing
+    "W1": None,  # ISO week bucketing
     "MN1": None,  # calendar month bucketing
 }
 

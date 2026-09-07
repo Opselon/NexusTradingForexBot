@@ -470,11 +470,43 @@ class RiskEngine:
                     f"Drawdown Penalty Active: Scaling trade risk % by {drawdown_penalty:.2f}x due to {drawdown_pct:.2f}% drawdown."
                 )
 
-        # Confidence scaled risk sizing
+        # Confidence scaled risk sizing (P0 phase 3 — CALIBRATED CONFIDENCE):
+        # the OLD path multiplied risk by the RAW model softmax confidence
+        # (max(0.5, min(1.2, confidence / 0.85))) — a raw softmax is not a
+        # calibrated probability, so this levered money-at-risk on an
+        # unvalidated number (and allowed up to 1.2x scaling). The contract
+        # now is:
+        #   model -> DIRECTIONAL_NORMALIZED confidence (policy) ->
+        #   [calibration artifact when present] -> bounded multiplier in
+        #   [MIN_CONFIDENCE_RISK_MULTIPLIER, 1.0] -> risk engine.
+        # Until a validated calibration artifact is wired into the engine the
+        # multiplier is EXACTLY 1.0 (flat sizing): unsafe calibration falls
+        # back conservative, never aggressive. The raw-confidence scaling
+        # path is removed, not bypassed.
         if hasattr(proposal, "confidence"):
-            confidence_scalar = max(0.5, min(1.2, proposal.confidence / 0.85))
-            risk_pct *= confidence_scalar
-            logger.info(f"Confidence Scaling Active: Scaling risk % by {confidence_scalar:.2f}x.")
+            from nexus_scalp.model_lifecycle.confidence_calibration import (
+                ConfidenceCalibrator,
+                confidence_to_risk_multiplier,
+            )
+
+            calibrator: ConfidenceCalibrator | None = getattr(self, "_confidence_calibrator", None)
+            if calibrator is None:
+                from pathlib import Path as _Path
+
+                calibrator = ConfidenceCalibrator.from_artifact(
+                    _Path("artifacts/models/scalp/XAUUSD/70d_liquidity/confidence_calibration.json")
+                )
+                self._confidence_calibrator = calibrator
+            calibrated_conf, cal_state = calibrator.calibrate(float(proposal.confidence))
+            risk_multiplier = confidence_to_risk_multiplier(calibrated_conf, cal_state)
+            risk_pct *= risk_multiplier
+            logger.info(
+                "Calibrated Confidence Sizing Active",
+                raw_confidence=round(float(proposal.confidence), 4),
+                calibrated_confidence=round(calibrated_conf, 4),
+                calibration_state=cal_state,
+                risk_multiplier=round(risk_multiplier, 3),
+            )
 
         risk_amount_usd = account.equity * (risk_pct / 100.0)
 
