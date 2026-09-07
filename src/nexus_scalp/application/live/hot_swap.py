@@ -13,6 +13,8 @@ State ownership: ``_bundle`` / ``_bundle_lock`` stay at the composition root
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
