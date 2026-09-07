@@ -135,6 +135,25 @@ class ModelLifecycleOrchestrator:
             random_seed=int((hyperparameters or {}).get("random_seed", 42)),
             build_identity=build_identity,
         )
+        # Persist the RUNNING row BEFORE training begins (restart-safety):
+        # a crash mid-training must leave a durable RUNNING trace that the
+        # worker's _restore_inflight_state can mark INCOMPLETE on restart —
+        # previously save_run happened only after gates, so a crash left zero
+        # rows and restart-safety was nominal.
+        from nexus_scalp.model_lifecycle.models import TrainingRun as _TrainingRun
+
+        _pre_run = _TrainingRun(
+            run_id=run_id,
+            dataset_id=dataset.dataset_id,
+            feature_schema_id=dataset.feature_schema_id,
+            feature_dimension=dataset.feature_dimension,
+            hyperparameters=dict(hyperparameters or {}),
+            random_seed=int((hyperparameters or {}).get("random_seed", 42)),
+            status=TrainingRunStatus.RUNNING,
+            build_identity=build_identity,
+        )
+        self.run_store.save_run(_pre_run)
+
         run = trainer.train(run_id=run_id)
 
         # ---- 2. GATES --------------------------------------------------------
@@ -189,8 +208,14 @@ class ModelLifecycleOrchestrator:
         # metrics are unavailable the comparison records eligible=False with
         # the reason — promotion eligibility is never asserted from missing
         # evidence (fail-closed).
+        # ---- 4. CHAMPION COMPARISON (learning-loop closure) -------------------
+        # The challenger-vs-champion comparison is part of EVERY gated
+        # training pass that produced an artifact (it was dead code before).
+        # When the champion's own metrics are unavailable the comparison
+        # records eligible=False with the reason — promotion eligibility is
+        # never asserted from missing evidence (fail-closed).
         comparison_summary: dict[str, Any] | None = None
-        if all_passed and champ is not None and run.artifacts:
+        if run.artifacts:
             try:
                 comparison = self.compare_against_champion(run, champ)
                 if comparison is not None:
@@ -200,9 +225,7 @@ class ModelLifecycleOrchestrator:
                         "reasons": list(comparison.reasons),
                     }
             except Exception as exc:
-                logger.error(
-                    "[MODEL] champion comparison failed (non-fatal)", error=str(exc)
-                )
+                logger.error("[MODEL] champion comparison failed (non-fatal)", error=str(exc))
 
         return {
             "run_id": run_id,
@@ -279,10 +302,7 @@ class ModelLifecycleOrchestrator:
                         prior_metrics = _json.loads(prior_metrics)
                     except Exception:
                         prior_metrics = {}
-                if (
-                    prior_metrics
-                    and float(prior_metrics.get("expectancy_r", 0.0) or 0.0) != 0.0
-                ):
+                if prior_metrics and float(prior_metrics.get("expectancy_r", 0.0) or 0.0) != 0.0:
                     champ_metrics = dict(prior_metrics)
                     break
 
