@@ -343,17 +343,47 @@ class _EmptyAggregator:
 
 @pytest.fixture
 def live_client():
-    return TestClient(create_app(engine_ref=_FakeEngine()))
+    import os as _os
+
+    _tok = _os.environ.get("NSE_WEB_AUTH_TOKEN")
+    _os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
+    client = TestClient(create_app(engine_ref=_FakeEngine()))
+    client.headers.update({"Authorization": "Bearer web-contract-test-token"})
+    yield client
+    if _tok is None:
+        _os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+    else:
+        _os.environ["NSE_WEB_AUTH_TOKEN"] = _tok
 
 
 @pytest.fixture
 def empty_client():
-    return TestClient(create_app(engine_ref=_EmptyEngine()))
+    import os as _os
+
+    _tok = _os.environ.get("NSE_WEB_AUTH_TOKEN")
+    _os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
+    client = TestClient(create_app(engine_ref=_EmptyEngine()))
+    client.headers.update({"Authorization": "Bearer web-contract-test-token"})
+    yield client
+    if _tok is None:
+        _os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+    else:
+        _os.environ["NSE_WEB_AUTH_TOKEN"] = _tok
 
 
 @pytest.fixture
 def no_engine_client():
-    return TestClient(create_app(engine_ref=None))
+    import os as _os
+
+    _tok = _os.environ.get("NSE_WEB_AUTH_TOKEN")
+    _os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
+    client = TestClient(create_app(engine_ref=None))
+    client.headers.update({"Authorization": "Bearer web-contract-test-token"})
+    yield client
+    if _tok is None:
+        _os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+    else:
+        _os.environ["NSE_WEB_AUTH_TOKEN"] = _tok
 
 
 def test_no_fake_defaults_when_engine_offline(no_engine_client):

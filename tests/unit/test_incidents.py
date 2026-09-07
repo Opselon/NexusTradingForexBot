@@ -1569,10 +1569,22 @@ class TestOffTickPath:
                     pytest.fail(f"worker imports execution/risk: {node.module}")
 
     def test_engine_uses_to_thread(self) -> None:
-        """live_engine must invoke the incident worker via asyncio.to_thread."""
-        src = Path("src/nexus_scalp/application/live_engine.py").read_text(encoding="utf-8")
-        assert "asyncio.to_thread(self._incident_worker.tick)" in src
-        assert "emit_incident_telemetry" in src
+        """Incident worker must be invoked via asyncio.to_thread.
+
+        WEB-AUTH era note (2026-09-07): the incident tick moved from
+        live_engine.py into the extraction module
+        application/live/maintenance.py (seam L-series) — it now reads
+        `self.om._incident_worker`. The contract (to_thread + emit
+        telemetry) is unchanged; this test follows the seam.
+        """
+        seam = Path("src/nexus_scalp/application/live/maintenance.py").read_text(
+            encoding="utf-8"
+        )
+        assert "asyncio.to_thread(self.om._incident_worker.tick)" in seam
+        engine = Path("src/nexus_scalp/application/live_engine.py").read_text(
+            encoding="utf-8"
+        )
+        assert "emit_incident_telemetry" in engine
 
 
 # ---------------------------------------------------------------------------
@@ -1946,6 +1958,10 @@ class TestUiWorkerState:
         monkeypatch.setattr(server_mod, "db_path_for_audit", fake_db_path)
         app = create_app(None)
         client = TestClient(app)
+        # WEB-AUTH-P0: control-plane now requires a bearer token; the test
+        # client must authenticate like any other API consumer.
+        client.headers.update({"Authorization": "Bearer incident-test-token"})
+        monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "incident-test-token")
         r = client.get("/api/diagnostics/health")
         d = r.json()
         assert d["available"] is True
