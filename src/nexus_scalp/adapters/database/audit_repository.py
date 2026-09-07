@@ -24,6 +24,7 @@ from typing import Any
 
 from nexus_scalp.adapters.database.broker_history import (
     create_history_tables,
+    create_paper_executions_table,
     last_sync_window,
     sync_broker_history,
 )
@@ -485,6 +486,10 @@ class AuditRepository:
         # Broker-history normalized copy: audit_broker_orders / _deals / _trades
         # + sync watermark (created idempotently; identity = broker tickets).
         create_history_tables(conn)
+        # PAPER execution-ledger durable copy (paper-demo parity, P0-1):
+        # mirrors the in-memory PaperMT5Adapter ledger so paper fills and
+        # rejections survive restarts and parity can be measured from data.
+        create_paper_executions_table(conn)
 
     # ---------------------------------------------------------------------
     # Broker history sync (MT5 = broker truth, DB = durable normalized copy)
@@ -1921,6 +1926,145 @@ class AuditRepository:
                 exc_info=True,
             )
             return -1
+
+    # ------------------------------------------------------------------
+    # PAPER execution-parity persistence + stats (mission P0-1)
+    # ------------------------------------------------------------------
+
+    def record_paper_execution(
+        self,
+        *,
+        ts: str,
+        symbol: str,
+        order_type: str,
+        volume: float,
+        requested_price: float,
+        bid_at_request: float,
+        ask_at_request: float,
+        spread: float,
+        fill_price: float | None,
+        slippage: float | None,
+        rejection_reason: str | None,
+        ticket: int = 0,
+        latency_ticks: int = 0,
+        status: str = "",
+        source: str = "PAPER_ADAPTER_LEDGER",
+    ) -> bool:
+        """Durably stores one PAPER execution-ledger row (idempotent).
+
+        The unique identity index (ts, ticket, order_type, requested_price)
+        makes re-exporting the same adapter rows a no-op. Failure returns
+        False (never raises — parity persistence must not disturb trading).
+        """
+        if not self._is_sqlite:
+            return False
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                create_paper_executions_table(conn)
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO audit_paper_executions
+                        (ts, symbol, order_type, volume, requested_price,
+                         bid_at_request, ask_at_request, spread, fill_price,
+                         slippage, rejection_reason, ticket, latency_ticks,
+                         status, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        ts,
+                        symbol,
+                        order_type,
+                        float(volume or 0.0),
+                        float(requested_price or 0.0),
+                        float(bid_at_request or 0.0),
+                        float(ask_at_request or 0.0),
+                        float(spread or 0.0),
+                        fill_price,
+                        slippage,
+                        rejection_reason,
+                        int(ticket or 0),
+                        int(latency_ticks or 0),
+                        status,
+                        source,
+                    ),
+                )
+            return True
+        except Exception as e:
+            logger.error("record_paper_execution failed: %s", e)
+            return False
+
+    def paper_execution_stats(self, days: int = 7) -> dict[str, Any]:
+        """Aggregated PAPER execution stats over the trailing window.
+
+        Honest None when there is no data — never a fabricated 0/0.
+        """
+        if not self._is_sqlite:
+            return {"fills": 0}
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                row = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS attempts,
+                        SUM(CASE WHEN status = 'FILLED' THEN 1 ELSE 0 END) AS fills,
+                        AVG(spread) AS mean_spread,
+                        AVG(CASE WHEN status = 'FILLED' THEN ABS(slippage) END) AS mean_slippage
+                    FROM audit_paper_executions WHERE ts >= ?
+                    """,
+                    (cutoff,),
+                ).fetchone()
+        except Exception as e:
+            logger.error("paper_execution_stats failed: %s", e)
+            return {"fills": 0}
+        attempts = int(row[0] or 0)
+        fills = int(row[1] or 0)
+        return {
+            "attempts": attempts,
+            "fills": fills,
+            "fill_rate": (fills / attempts) if attempts > 0 else None,
+            "mean_spread": row[2],
+            "mean_slippage": row[3],
+        }
+
+    def broker_execution_stats(self, days: int = 7) -> dict[str, Any]:
+        """Aggregated DEMO/LIVE broker-truth stats over the trailing window.
+
+        Consumes the canonical audit_broker_trades copy (synced from MT5 by
+        BrokerHistorySyncWorker). Honest zeros when nothing synced.
+        """
+        if not self._is_sqlite:
+            return {"trades": 0}
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                row = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS trades,
+                        SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END) AS winners,
+                        AVG(duration_sec) AS mean_duration_sec,
+                        SUM(net_pnl) AS net_pnl_total
+                    FROM audit_broker_trades
+                    WHERE COALESCE(exit_time, entry_time) >= ?
+                    """,
+                    (cutoff,),
+                ).fetchone()
+        except Exception as e:
+            logger.error("broker_execution_stats failed: %s", e)
+            return {"trades": 0}
+        trades = int(row[0] or 0)
+        winners = int(row[1] or 0)
+        return {
+            "trades": trades,
+            "win_rate": (winners / trades) if trades > 0 else None,
+            "mean_duration_sec": row[2],
+            "net_pnl_total": row[3],
+        }
 
     def get_broker_deals_for_position(self, position_id: int) -> list[dict[str, Any]]:
         """

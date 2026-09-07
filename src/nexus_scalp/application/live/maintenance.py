@@ -34,6 +34,13 @@ class MaintenanceCycle:
 
     def __init__(self, om: Any) -> None:
         self.om = om
+        #: Paper-parity ledger export + weekly snapshot cadence (mission P0-1).
+        #: Export is cheap (bounded insert-or-ignore of the adapter ledger);
+        #: the parity snapshot runs weekly on its own throttle.
+        self._parity_export_interval_sec: float = 6 * 3600.0
+        self._parity_snapshot_interval_sec: float = 7 * 86400.0
+        self._last_parity_export_time: float = 0.0
+        self._last_parity_snapshot_time: float = 0.0
 
     async def run_cycle(self, *, now_t: float) -> None:
         """Runs one maintenance pass (all stages internally throttled)."""
@@ -48,6 +55,48 @@ class MaintenanceCycle:
                 await asyncio.to_thread(self.om.audit.purge_old_audit_data)
             except Exception:
                 logger.error("Audit retention purge failed (isolated)")
+
+        # PAPER→DEMO parity evidence (mission P0-1, observational only):
+        # (a) export the paper adapter's execution ledger into the durable
+        #     audit_paper_executions copy (insert-or-ignore, bounded); (b)
+        #     once a week, build the versioned parity snapshot from the same
+        #     canonical store. Both stages fail-isolated and off the tick path.
+        adapter = getattr(self.om, "adapter", None)
+        is_paper = bool(
+            getattr(self.om, "audit", None)
+            and str(getattr(adapter, "current_account_source", "") or "").upper() == "PAPER"
+        )
+        if is_paper and now_t - self._last_parity_export_time >= self._parity_export_interval_sec:
+            self._last_parity_export_time = now_t
+            try:
+                from nexus_scalp.risk.paper_parity import export_paper_ledger
+
+                export = await asyncio.to_thread(
+                    export_paper_ledger, adapter=adapter, audit=self.om.audit
+                )
+                if export.get("exported"):
+                    logger.info(
+                        "[PARITY] event=PAPER_LEDGER_EXPORT_OK exported=%s",
+                        export.get("exported"),
+                    )
+            except Exception as parity_err:
+                logger.warning("[PARITY] event=EXPORT_FAILED (isolated)", error=str(parity_err))
+        if now_t - self._last_parity_snapshot_time >= self._parity_snapshot_interval_sec:
+            self._last_parity_snapshot_time = now_t
+            try:
+                from nexus_scalp.risk.paper_parity import build_parity_snapshot
+
+                snapshot = await asyncio.to_thread(
+                    build_parity_snapshot, audit=self.om.audit, lookback_days=7
+                )
+                logger.info(
+                    "[PARITY] event=SNAPSHOT_BUILT status=%s paper=%s demo=%s",
+                    snapshot.get("status"),
+                    (snapshot.get("paper") or {}).get("fills"),
+                    (snapshot.get("demo") or {}).get("trades"),
+                )
+            except Exception as snap_err:
+                logger.warning("[PARITY] event=SNAPSHOT_FAILED (isolated)", error=str(snap_err))
 
         # TASK-11 + TASK-22: database hygiene cycle (config-driven
         # cadence; AUDIT_ONLY first run, off the tick path via
