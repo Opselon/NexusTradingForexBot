@@ -35,6 +35,7 @@ POST /api/factory/llm-config).
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -350,6 +351,15 @@ _SYSTEM_PROMPT = (
     "  insufficient_evidence: boolean (true if the article lacks detail for a confident read)\n"
 )
 
+#: Versioned prompt identity (market-context P0 2A): the sha256 of the EXACT
+#: system-prompt bytes. The factory provider's coarse ``prompt_version`` label
+#: (its own DSL prompt) does NOT identify THIS news prompt; every AI row now
+#: records a news-specific, deterministic identity so drift can be segmented
+#: by prompt generation. Format: news-v2:<16 hex>.
+NEWS_PROMPT_VERSION: str = "news-v2:" + hashlib.sha256(
+    _SYSTEM_PROMPT.encode("utf-8")
+).hexdigest()[:16]
+
 
 def _build_user_prompt(article: NewsArticle, local: dict[str, Any]) -> str:
     """Build a grounded, fact-delimited user prompt.
@@ -596,7 +606,10 @@ def analyze_article_with_ai(
     result.provider = getattr(provider, "provider_name", "openai-compatible")
     result.model = provider.model
     result.analysis_version = NEWS_AI_ANALYSIS_VERSION
-    result.prompt_version = getattr(provider, "prompt_version", "")
+    # MARKET-CONTEXT P0 2A: news-specific hashed prompt identity (NOT the
+    # factory provider's own DSL prompt label, which was unrelated to the
+    # news prompt and left the audit column empty for every row).
+    result.prompt_version = NEWS_PROMPT_VERSION
 
     # Persist (separate AI-interpretation table — deterministic engine untouched).
     result.ai_analysis_id = f"nai_{uuid.uuid4().hex[:12]}"
