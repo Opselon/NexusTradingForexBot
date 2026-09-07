@@ -15,6 +15,7 @@ owns the INFERENCE LOGIC only. Never blocks the tick loop.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Sequence
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
