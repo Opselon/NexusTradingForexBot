@@ -28,7 +28,6 @@ import contextlib
 import dataclasses
 import math
 import time
-from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
