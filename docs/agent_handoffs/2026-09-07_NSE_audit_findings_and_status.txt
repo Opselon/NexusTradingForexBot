@@ -1,0 +1,321 @@
+# NSE (Nexus Scalp Engine) — Independent Code Audit & Fix Status
+# Generated: 2026-09-07 | Repo HEAD: 302ffdca | Branch: main
+# Scope: 10 audit waves (~60 findings) across architecture, security, ML pipeline,
+#        training integrity, runtime safety, testing infra, time/timezone handling.
+# Each finding below: [STATUS] + file:line evidence + fix guidance.
+# Agents: pick any OPEN item, claim a TASK-ID in agents/taskboard.md first.
+
+============================================================
+VERIFIED LEGEND
+  [FIXED-VERIFIED]   = change found in code at HEAD, evidence below
+  [PARTIAL]          = started/exists but incomplete or still risky
+  [OPEN]             = not fixed, evidence at HEAD
+  [ACCEPTED-RISK]    = intentionally deferred (documented decision required)
+============================================================
+
+------------------------------------------------------------
+A. ARCHITECTURE (god files)
+------------------------------------------------------------
+A1 [PARTIAL] live_engine.py 6683 -> 4313 lines. Extraction into
+    src/nexus_scalp/application/live/ DONE (14 modules: tick_pipeline,
+    inference, model_bundle_store, champion_sync, runtime_mode,
+    shadow_recorder, bar_handler, hot_swap, decision_executor,
+    maintenance, model_health, runtime_loop, warmup).
+    RESIDUE: extraction broke the tick path twice already (commits
+    76713f18, 466e1533, 549e9806, 8fcf6cbe = import/decorator residue
+    fixes). MANDATORY for any further extraction: engine-launch gate
+    (test_engine_runtime_launch.py) per CHG-0032-A1.
+A2 [PARTIAL] order_manager.py 6393 -> 4026 lines.
+    src/nexus_scalp/execution/lifecycle/ created (dispatch, pending_orders,
+    protection, reconciliation, scoring, ticket_state).
+    REMAINING: ~4000 lines still hold manage_active_positions,
+    arbitration, hold-score. TicketStateStore (ticket_state.py) exists —
+    verify all 30 legacy per-ticket dict getters now route through it.
+A3 [FIXED-VERIFIED] release/updater.py 2659 -> 221 lines (facade);
+    logic moved to release/ modules.
+A4 [PARTIAL] audit_repository.py 2732 -> 3406 lines (GREW, not shrunk —
+    absorbed dead-letter runtime-safety code A9). Consider splitting
+    dead-letter store from repository facade.
+A5 [OPEN] Two entrypoints remain: main.py + NexusTradingForexBot.py.
+A6 [OPEN] beforePush.sh still invokes Windows path .venv/Scripts/python.exe
+    on Linux (dead gate). Either fix to .venv/bin/python or delete.
+
+------------------------------------------------------------
+B. SECURITY (block before first real DEMO/LIVE money)
+------------------------------------------------------------
+B1 [OPEN] Web control server has NO authentication.
+    Evidence: src/nexus_scalp/web/server.py:422 allow_origins=["*"],
+    allow_methods=["*"]; no auth middleware/token anywhere.
+    docker-compose maps NSE_WEB_PORT 9090 to 0.0.0.0.
+    IMPACT: anyone reaching the port can flip execution mode to LIVE,
+    close positions, edit runtime config.
+    FIX: token/bearer middleware + bind default 127.0.0.1 outside
+    docker; reject boot with default token in LIVE mode.
+B2 [PARTIAL] Gateway HMAC secrets still default to well-known strings:
+    gateway/server.py:44-45 DEFAULT_API_KEY="default_local_key",
+    DEFAULT_SECRET="default_local_secret"; same fallbacks in
+    cli/gateway_commands.py:151-152 and remote_gateway.py:47-48.
+    GOOD: live-account guard exists (refuses LIVE without --allow-live).
+    FIX: refuse boot when env NSE_GATEWAY_SECRET unset AND account
+    config != PAPER; generate random secret on first run.
+B3 [OPEN] docker-compose.yml:111 publishes postgres 5432 to host with
+    default password nse_password_dev. Bind to internal network only
+    (remove ports mapping) or require NSE_PG_PASSWORD with no default.
+B4 [OPEN] No code-signing for Windows installer (SmartScreen/AV friction
+    = top UX killer for "easy install" goal). EV cert or Store
+    distribution needed before external users.
+B5 [ACCEPTED-RISK] IANA tzdata pinned in deps; acceptable.
+
+------------------------------------------------------------
+C. SIGNALS / POLICY (money path decisions)
+------------------------------------------------------------
+C1 [FIXED-VERIFIED] high_confidence_threshold inconsistency resolved:
+    policy.py now single source algo_config.high_confidence_threshold
+    (lines 519, 719, 1120 — no more 0.95/0.70/0.95 fallback split).
+C2 [PARTIAL] Confidence used raw for position sizing
+    (risk_engine.py ~line 466: confidence_scalar from raw softmax).
+    Calibration gate exists in training (calibration-degradation gate,
+    commit d8581e12) and GET /api/operator/calibration monitor added
+    (56fce1e8), but live sizing still multiplies by uncalibrated
+    confidence. NEXT: isotonic/Platt on OOS ledger data -> feed
+    calibrated probs into sizing, or flat sizing until Brier OK.
+C3 [OPEN] Spread gate still ATR-based only
+    (policy.py:60 max_spread_atr_ratio=0.18). Missing:
+    spread percent-of-TP cap + session-percentile spread gate from
+    broker_history_sync distribution. Cheapest real P&L win listed.
+C4 [OPEN] XAUUSD + magic 888101 hardcoded in policy.py
+    (lines 984, 1009, 1537, 1639). Blocks multi-symbol. Read
+    symbol/magic from config context. ~half-day work.
+C5 [OPEN] Policy thresholds (confidence_threshold=0.20 etc.) not tuned
+    by the learning loop. Thresholds are static; ledger has the data
+    to auto-tune per-regime. Wire runtime-config injection.
+C6 [PARTIAL] WAIT logit legacy: ScalpNet still constructs 4-wide heads
+    for legacy serving (mask at inference, TRAINED_CLASS_COUNT=3 for
+    fresh). Suggest: new exporter emits 3-logit; keep 4-logit only as
+    read-compat. Risk: every fine-tune can grow mass on dead logit.
+
+------------------------------------------------------------
+D. TRAINING / ML INTEGRITY
+------------------------------------------------------------
+D1 [FIXED-VERIFIED] Walk-forward expanding (anchored) mode added
+    (walk_forward_trainer.py:220,301,629; tests/unit/test_wft_expanding_mode.py).
+D2 [FIXED-VERIFIED] Time-based purge replaces row-count purge
+    (test_wft_time_based_purge.py); purge/embargo semantics aligned
+    with research/splitting.py.
+D3 [FIXED-VERIFIED] Deterministic oversampling: np.random.default_rng(seed)
+    (walk_forward_trainer.py:2641-2652) replaced global RNG.
+D4 [FIXED-VERIFIED] Economic objective in folds: net expectancy in R
+    recorded in TrainingRun.metrics (commit 1d101bbb; fold_economics test).
+D5 [FIXED-VERIFIED] Final-replica variance: final training replicated,
+    median artifact selected (commit 64d1840e).
+D6 [FIXED-VERIFIED] Calibration-degradation gate contract tests
+    (commit d8581e12); emission gate extended.
+D7 [FIXED-VERIFIED] Session features DST-corrected via IANA tz
+    (features/scalp_features.py ~655; features/session_time.py;
+    SESSION_SEMANTICS_VERSION travels in metadata; pre-correction
+    artifacts identifiable).
+D8 [FIXED-VERIFIED] Artifact integrity verified at load path:
+    application/live/model_bundle_store.py:68 calls
+    verify_artifact_integrity(model_path, allow_legacy_unverified=...).
+D9 [OPEN] epochs_per_fold=3 still low; convergence curve not persisted
+    per artifact. Make configurable + early-stop evidence in manifest.
+D10 [OPEN] Benchmark substrate: streaming_replay (causal, deterministic,
+    no side effects) exists but A/B/C model benchmark (TASK-04) should
+    run ON streaming_replay instead of ledger-only samples
+    (ledger = champion's own decisions only = no counterfactual).
+    This is the single most important unfinished ML wiring.
+D11 [FIXED-VERIFIED] Drift detection exists: model_lifecycle/feature_drift.py,
+    risk/drift_breaker.py, shadow70/health.py.
+D12 [OPEN] Learning-loop promotion: LearningCycleOrchestrator wired into
+    LiveEngine behind config (49916d57); candidates honestly rejected
+    (TASK-LOOP-VALIDATION-20260907) = loop RUNS but no edge promoted
+    yet. Statistical gate on promotion (bootstrap CI on delta-R,
+    min N=100) still REQUIRED before any auto-promotion in DEMO.
+    Current shadow compare min_samples=30 with no significance test
+    (shadow/comparison.py) — TOO WEAK for automated swaps.
+
+------------------------------------------------------------
+E. FRICTION / EXECUTION ASSUMPTIONS (backtest-vs-live gap)
+------------------------------------------------------------
+E1 [PARTIAL] ExecutionAssumptions defaults spread/slippage/latency=0.0
+    (research/models.py:81-83). Marketplace measurement migrated off
+    zero-friction legacy default (264ff265). STILL: labeling + backtest
+    default paths allow 0 friction silently. Make pessimistic defaults
+    (spread_ticks>0) or fail-loud flag.
+E2 [OPEN] No per-source execution_assumptions.json: labeling
+    (triple_barrier), backtest (ExecutionAssumptions), paper adapter
+    (_METAL_SPREAD_RANGE 0.08-0.18) each hardcode own numbers. One
+    source of truth derived from broker_history_sync real fills.
+E3 [OPEN] Swap/rollover absent from friction model; no 22:55-23:10 UTC
+    no-entry maintenance window wired into dispatch for ALL paths
+    (f1c2c14e added canonical maintenance-window guard on live entry —
+    verify coverage in paper/replay parity).
+E4 [OPEN] Backtest equity curve = cumsum(R) with NO position sizing
+    model; live sizes dynamically (confidence/regime/drawdown).
+    Promotion decisions compare two different P&L distributions.
+    FIX: reproduce live sizing formula in backtest metrics.
+
+------------------------------------------------------------
+F. RUNTIME SAFETY (survivability) — BEST EXECUTED WAVE
+------------------------------------------------------------
+F1 [FIXED-VERIFIED] Persisted runtime risk states: risk/runtime_safety.py
+    RUNNING/HALTED/KILL_SWITCH persisted in audit DB; restart does NOT
+    clear; DEGRADED derived per-tick. LiveEngine boot decision consumes
+    it (live_engine.py:104,662-664,4067-4092,4178).
+F2 [FIXED-VERIFIED] Operator release surface: CLI nexus risk status|release
+    (commit 35726a1b) — explicit, smallest-possible release path.
+F3 [FIXED-VERIFIED] Audit dead-letter table + retry_count + counters
+    (audit_repository.py:139-152,518-568,735). Batch failure no longer
+    silently drops everything.
+F4 [FIXED-VERIFIED] Daily/weekly circuit breakers:
+    risk/circuit_breakers.py (daily 2% / weekly 5% budgets).
+F5 [FIXED-VERIFIED] Hot-path consecutive-error circuit breaker re-applied
+    on L14 pipeline seam (f8ef51a3) — degrades instead of silent zero-trade.
+F6 [FIXED-VERIFIED] Account freshness: account age tracked in debug
+    snapshot data-integrity counters (dc5ccebe). Verify it gates sizing,
+    not only dashboards.
+F7 [FIXED-VERIFIED] CalendarWorker composed into live maintenance cycle
+    (3f8f6206) — economic event gate reachable in production path.
+F8 [OPEN] _consecutive_losses in live_engine (line 652) — verify now
+    consumed by a throttle/cooldown; previously write-only decoration.
+F9 [OPEN] Kill-switch/halt does not force-close open positions by
+    design (stops new entries only). Document explicitly or add
+    optional flatten-on-halt for DEMO.
+
+------------------------------------------------------------
+G. TIME / BROKER ASSUMPTIONS
+------------------------------------------------------------
+G1 [OPEN] BROKER_SERVER_UTC_OFFSET_MINUTES=180 hardcoded
+    (adapters/mt5/providers.py:42). Most brokers GMT+2 winter / GMT+3
+    summer (EET DST). ALL historical timestamps, accounting day
+    boundaries, market_calendar weekend logic shift one hour half the
+    year. FIX: detect offset from broker live (tick time vs server) +
+    per-broker config profile + mismatch alert.
+G2 [FIXED-VERIFIED] Sessions DST-aware (see D7).
+G3 [OPEN] order_manager.py:3072 uses naive datetime.now() for
+    holding_duration (time-in-loss decay penalty). Wall-clock jumps
+    (DST) corrupt hold-time penalties. Use monotonic or broker-aware
+    timestamps.
+G4 [PARTIAL] market_calendar.py exists & computed correctly but only
+    debug routes consume it. Wire: no-entry first 10 min after weekly
+    open, no-entry after Fri 21:40 UTC (before close).
+
+------------------------------------------------------------
+H. NEWS / INFO PIPELINE
+------------------------------------------------------------
+H1 [FIXED-VERIFIED] Reuters feed marked dead (seed.py:136 verified
+    2026-09-07). Verify replacement sources are LIVE feeds (forexlive
+    403 from datacenter IPs; BLS 403) — add per-source liveness
+    metric (last_success_age) + weekly report.
+H2 [FIXED-VERIFIED] Economic calendar module exists (src/nexus_scalp/calendar/
+    + worker). Verify upstream source + hard no-entry window around
+    high-impact events (15 min before/after) — currently gate exists?
+H3 [OPEN] News AI sentiment (LLM) unversioned: bullish/bearish scores
+    enter 10 of 70 feature dims; any LLM/prompt change silently shifts
+    distribution. FIX: pin model+prompt version into news_context_hash
+    + include news dims in PSI monitor.
+H4 [OPEN] LLM budget: factory has cost ledger; news ai_service has no
+    independent daily USD cap. Add Tier-1 keyword fast-path (CPI/NFP
+    in headline = HIGH_IMPACT deterministic, no LLM call).
+H5 [OPEN] candle_intelligence island: engine builds it (live_engine
+    ~854 "feeds decisions") but zero consumers in policy/order_manager/
+    features. Either wire into policy or disable flag — dead cost now.
+
+------------------------------------------------------------
+I. TESTING / CI INFRASTRUCTURE
+------------------------------------------------------------
+I1 [FIXED-VERIFIED] Mutation runner no longer hardcodes Windows path;
+    scopes added (--ids/--target/--changed); weekly scheduled lane
+    (qa-deep-assurance.yml cron '30 3 * * 0').
+I2 [OPEN] No coverage floor: CI runs --cov but no --cov-fail-under.
+    Add per-critical-file floors (live_engine, order_manager,
+    risk_engine, signals/policy) rather than global.
+I3 [PARTIAL] critical_suite.txt (95 files): contains lifecycle/risk/
+    liquidity but ZERO direct live_engine entries. Hot-path regression
+    protection still relies on tangential files. Generate manifest
+    from hot-path dependency graph.
+I4 [OPEN] slow_suite.txt (56 files) referenced by no scheduled job —
+    nightly cron needed (only qa-deep-assurance weekly exists).
+I5 [OPEN] e2e_client Playwright journeys (j1-j7) run manually only
+    ("engine must be reachable"). Nightly docker-up + run + artifacts
+    job required for the "easy install / auto everything" goal.
+I6 [OPEN] scratch/ tracked in git: 764 files (git ls-files | grep -c
+    '^scratch/' = 764). Move out of repo or split package.
+I7 [OPEN] Duplicate decision IDs: DEC-0002 exists twice with different
+    subjects (agents/decisions). Renumber to keep provenance honest.
+I8 [OPEN] requirements.txt vs pyproject.toml dual source; open ranges
+    (torch>=2.2,<3, polars, numpy) vs determinism contract. Lock file
+    (uv/pip-tools) + CI on lock.
+
+------------------------------------------------------------
+J. UPDATE / SUPPLY CHAIN
+------------------------------------------------------------
+J1 [FIXED-VERIFIED] Updater facade split (221 lines; release/ modules);
+    backup/rollback verified-blocks-update retained.
+J2 [OPEN] SHA256SUMS.txt self-attested: payload and checksum from same
+    GitHub release = compromised token -> RCE to all auto-update
+    clients. FIX: ed25519/minisign signature; pubkey embedded in
+    binary; private key in Actions secret. ~1 day work, highest
+    security ROI remaining.
+J3 [OPEN] torch bundled in onedir build (huge installer). ONNX Runtime
+    migration (~10MB) or CPU-only slim build for client UX.
+J4 [FIXED-VERIFIED] torch.load weights_only=True used in coherence
+    checks (keep; add CI scan forbidding torch.load without it).
+J5 [OPEN] redis:7 service in docker-compose has zero consumers in src.
+    Remove or move to optional profile.
+
+------------------------------------------------------------
+K. PAPER / DEMO REALISM
+------------------------------------------------------------
+K1 [FIXED-VERIFIED] Paper adapter: direction-aware fills (BUY@ask/SELL@bid),
+    slippage, auto SL/TP, durable persistence (paper-reality P2 commits).
+K2 [OPEN] Paper seed baselines hardcoded (_SEED_BASELINES XAUUSD=4400.00;
+    _METAL_SPREAD_RANGE (0.08,0.18)) — synthetic distribution trains
+    the loop on a fictional world. Wire paper to streaming_replay over
+    REAL recorded data (see D10) for training-grade paper mode.
+K3 [OPEN] No paper-vs-demo bias measurement job: weekly compare paper
+    results vs real demo on same signals; feed bias factor into
+    calibration. Gate for LIVE promotion.
+
+------------------------------------------------------------
+PRIORITY ORDER (remaining OPEN/PARTIAL, risk-per-effort)
+------------------------------------------------------------
+P0 (before any real-money DEMO/LIVE):
+  1. B1 web auth middleware + B2 secret boot gate (same day)
+  2. B3 postgres port removal (1 line)
+  3. D12 promotion statistical gate (bootstrap CI) — before any
+     auto-promotion in DEMO
+  4. J2 update signing — before enabling silent auto-update for users
+P1 (this week):
+  5. G1 broker offset detection (time truth)
+  6. C3 spread percent-of-TP gate + session-percentile gate
+  7. E1/E2 single execution_assumptions source (pessimistic default)
+  8. I2/I4 coverage floors + nightly slow cron
+P2 (next):
+  9. D10 streaming_replay as benchmark substrate (counterfactual A/B/C)
+  10. K2/K3 paper replay mode + paper-vs-demo bias job
+  11. C4 XAUUSD hardcode removal (multi-symbol unlock)
+  12. A1/A2 finish facade extraction; A6 beforePush.sh fix
+  13. I6 scratch/ cleanup; I8 lock file
+P3 (polish):
+  14. C5 threshold auto-tune loop; C6 3-logit exporter
+  15. H3/H4 news AI versioning + budget; H5 candle_intel decision
+  16. E4 sizing-aware backtest; E3 rollover friction
+  17. B4 code signing cert; J3 ONNX slim build; J5 redis removal
+  18. I5 e2e nightly; I7 DEC renumber
+
+------------------------------------------------------------
+NOTES FOR AGENTS
+------------------------------------------------------------
+- Repo contract: read agents/skill.md + multi-agent-git-contract.md
+  before any change. scalp_v3=70D canonical; never hardcode 50/60/70.
+- Never block _process_tick_pipeline; INV-001 (no sync DB on tick).
+- Domain models frozen -> .model_copy(update=...). IMT5Port changes ->
+  update ALL adapters.
+- Any live_engine/order_manager extraction: engine-launch gate
+  mandatory; expect import-residue bugs (four residue-fix commits on
+  2026-09-07 prove it).
+- Windows-only MT5: real execution path untestable on Linux CI;
+  use recorded golden fixtures / streaming_replay.
+- Honest-status rule: promotion/evidence claims must carry artifact
+  hashes; no fabricated metrics (BUG-175 precedent).
