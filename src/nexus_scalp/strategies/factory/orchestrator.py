@@ -1448,11 +1448,22 @@ class StrategyFactory:
         ]
 
         raw_config = gen.get("config") or {}
-        if isinstance(raw_config, str):
+        # Double-encoded JSON guard (integration-recovery validation): the
+        # legacy audit-queue path can persist config as a JSON string of a
+        # JSON string ('"{\"k\": ...}"'), so a single json.loads yields a STR
+        # and the {**raw_config} spread crashed the generation completion.
+        # Parse repeatedly while the value is still textual (bounded at 3
+        # levels); unparsable text falls back to an empty config rather than
+        # killing the whole completion.
+        for _ in range(3):
+            if not isinstance(raw_config, str):
+                break
             try:
                 raw_config = _json.loads(raw_config) if raw_config.strip() else {}
             except Exception:
                 raw_config = {}
+        if not isinstance(raw_config, dict):
+            raw_config = {}
         upsert_generation(
             self._research_backend,
             {
