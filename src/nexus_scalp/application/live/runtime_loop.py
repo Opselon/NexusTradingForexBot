@@ -87,7 +87,31 @@ async def run(self) -> None:
                     "MT5 connect() failed after retries. Engine shutting down.",
                 )
             return
-    
+
+        # =====================================================================
+        # PERSISTED SAFETY STATE RESTORE-FIRST (P0, runtime-safety mission).
+        # The persisted safety decision (HALTED / KILL_SWITCH / RUNNING) is
+        # resolved BEFORE the engine arms _running or touches any trading
+        # authority. A persisted halt keeps trading REFUSED for this whole
+        # process: only `nexus risk release` can clear it. Restart,
+        # reconnect, reload and Windows updates can never release it.
+        # =====================================================================
+        boot_decision = self.om._restore_runtime_risk_state()
+        if not boot_decision.trading_allowed:
+            # Fail closed: never enter the trading loop. The engine stays
+            # observable (web/UI reflect the persisted state) and the
+            # operator must explicitly release before LIVE resumes.
+            logger.critical(
+                "[SAFETY_STATE] startup trading REFUSED state=%s detail=%s — "
+                "engine idle until explicit release (nexus risk release --confirm)",
+                boot_decision.state,
+                boot_decision.detail,
+            )
+            while self.om._runtime_risk_state in ("HALTED", "KILL_SWITCH"):
+                await asyncio.sleep(1.0)
+            await self.om._shutdown_async()
+            return
+
         self.om._running = True
         symbol = self.om.config.execution.symbol
     
