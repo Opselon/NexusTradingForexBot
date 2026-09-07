@@ -27,6 +27,11 @@ from nexus_scalp.domain.models import (
 )
 from nexus_scalp.features.regime_classifier import MarketRegimeState, RegimeType
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.risk.circuit_breakers import (
+    BreakerSnapshot,
+    CircuitBreakerConfig,
+    CircuitBreakerEngine,
+)
 
 logger = get_logger("nexus_scalp.risk.risk_engine")
 
@@ -64,6 +69,13 @@ class RiskEngine:
         self.min_rr_high_confidence = min_rr_high_confidence
         self.high_confidence_threshold = high_confidence_threshold
         self._kill_switch_active = False
+        # Profit-protection circuit breakers (mission P0 7B/7C/7D). State
+        # lives in ONE canonical owner (CircuitBreakerEngine); RiskEngine
+        # consults it as an additional NEW-ENTRY gate. Semantics: budgets
+        # and cooldown block entries only — protective management of open
+        # positions and the kill-switch path are untouched.
+        self.breakers = CircuitBreakerEngine(CircuitBreakerConfig())
+        self._last_breaker: BreakerSnapshot | None = None
 
     def get_clamped_position_size(
         self,
@@ -291,6 +303,23 @@ class RiskEngine:
         """
         if self._kill_switch_active:
             logger.warning("Proposal rejected: Emergency kill switch active.")
+            return None
+
+        # ------------------------------------------------------------------
+        # PROFIT-PROTECTION CIRCUIT BREAKERS (mission 7B/7C/7D)
+        # Daily/weekly loss budgets + consecutive-loss cooldown gate NEW
+        # ENTRIES only. Open-position protective management (SL/TP/trailing)
+        # continues uninterrupted: a budget breach must not force liquidation
+        # at the worst tick, it must stop the bleeding from new risk.
+        # ------------------------------------------------------------------
+        breaker = self.breakers.evaluate(equity=float(account.equity), now=proposal.generated_at)
+        self._last_breaker = breaker
+        if not breaker.allowed:
+            logger.warning(
+                "[ENTRY_BLOCKED] layer=CIRCUIT_BREAKER level=%s reason=%s",
+                breaker.level,
+                breaker.reason,
+            )
             return None
 
         if proposal.action in (ActionType.NO_TRADE, ActionType.WAIT):
