@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -314,8 +315,8 @@ def _friction_sensitivity(
 
 def compute_sized_economic_pnl(
     ordered: Sequence[ResearchSample],
-    assumptions: "EconomicAssumptions",
-) -> "SizedEconomicResult":
+    assumptions: Any,
+) -> SizedEconomicResult:
     """Re-prices a trade sequence under canonical live sizing economics.
 
     Per trade (in decision order):
@@ -332,10 +333,7 @@ def compute_sized_economic_pnl(
 
     Deterministic; no future information enters sizing.
     """
-    from nexus_scalp.research.economics import (
-        compute_sizing,
-        rollover_crossings,
-    )
+    from nexus_scalp.research.economics import compute_sizing
 
     sized_r: list[float] = []
     sized_pnl: list[float] = []
@@ -426,15 +424,11 @@ class SizedEconomicResult(BaseModel):
     @property
     def max_drawdown_usd(self) -> float:
         peak = 0.0
-        cum = 0.0
         max_dd = 0.0
         for v in self.equity_curve_usd:
             cum = float(v)
-            if cum > peak:
-                peak = cum
-            dd = peak - cum
-            if dd > max_dd:
-                max_dd = dd
+            peak = max(peak, cum)
+            max_dd = max(max_dd, peak - cum)
         return max_dd
 
     @property

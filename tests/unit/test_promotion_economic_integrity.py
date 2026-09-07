@@ -26,7 +26,6 @@ from nexus_scalp.governance.engine import (
 from nexus_scalp.governance.models import PromotionState
 from nexus_scalp.governance.store import GovernanceStore
 
-
 TECH_OK = {k: True for k in CHECKLIST_EVIDENCE_KEYS}
 ECON_OK = {k: True for k in ECONOMIC_EVIDENCE_KEYS}
 

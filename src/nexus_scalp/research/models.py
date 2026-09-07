@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -24,9 +24,8 @@ from nexus_scalp.experience.models import CANONICAL_FEATURE_DIMENSION, CANONICAL
 
 #: ECON v1: SizedEconomicResult lives in metrics (it is produced by the
 #: backtest statistics) but metrics imports models for BacktestResult, so the
-#: sized-view model is defined LAZILY-compatible: metrics defines it in its
-#: own module scope and models resolves it via model_rebuild at first use.
-from nexus_scalp.research.economics import EconomicAssumptions  # noqa: E402
+#: sized-view model is resolved via model_rebuild (see rebuild_economic_refs).
+from nexus_scalp.research.economics import EconomicAssumptions
 
 #: Minimum samples before a candidate may be scored with any confidence.
 MIN_EVIDENCE_SAMPLES: int = 20
@@ -213,7 +212,7 @@ class BacktestResult(BaseModel):
     #: ECON v1: optional explicit economic world. Present (production-like or
     #: labelled frictionless) whenever the caller supplied EconomicAssumptions;
     #: promotion requires it. `sized` below is the causally re-priced view.
-    economic: "EconomicAssumptions | None" = Field(default=None)
+    economic: EconomicAssumptions | None = Field(default=None)
     #: BUG-140 Phase 5: explicit evaluation semantics. EMPIRICAL_REPLAY
     #: = expectancy recomputed over RECORDED experiences (what the engine
     #: does today); HISTORICAL_SIMULATION = strategy logic executed against
@@ -250,7 +249,9 @@ class BacktestResult(BaseModel):
     latency_sensitivity_r: float = Field(default=0.0)
     equity_curve_r: list[float] = Field(default_factory=list)
     #: ECON v1 sized economic view (None = no economic world was supplied).
-    sized: "SizedEconomicResult | None" = Field(default=None)
+    #: String annotation: SizedEconomicResult is defined in research.metrics
+    #: and resolved via rebuild_economic_refs() below (import-cycle contract).
+    sized: Any = Field(default=None)
 
     @property
     def has_positive_expectancy(self) -> bool:
