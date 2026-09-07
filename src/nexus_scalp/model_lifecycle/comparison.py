@@ -32,6 +32,8 @@ MAX_DRAWDOWN_WORSE_R: float = 3.0  # challenger may be at most 3R worse
 MAX_TAIL_WORSE_ABS: float = 1.0
 #: Minimum improvement in expectancy R to count as "better".
 MIN_EXPECTANCY_IMPROVEMENT_R: float = 0.05
+#: Minimum paired trades for the bootstrap statistical gate to be decisive.
+MIN_STAT_SAMPLES: int = 30
 
 
 class ChampionChallengerComparator:
@@ -100,6 +102,32 @@ class ChampionChallengerComparator:
             eligible = False
             reasons.append(f"challenger stability {stab_t:.2f} degraded vs champion {stab_c:.2f}")
 
+        # STATISTICAL GATE (PHASE 7B): paired moving-block bootstrap CI on the
+        # per-trade R differential. When both sides supply their per-trade R
+        # lists (key "r_list") with >= MIN_STAT_SAMPLES trades, the challenger
+        # is eligible ONLY if the 95% CI lower bound of the mean delta is > 0
+        # — a point estimate alone is never evidence of improvement.
+        stat: dict[str, float] | None = None
+        ch_r = challenger.get("r_list")
+        cm_r = champion.get("r_list")
+        if isinstance(ch_r, list) and isinstance(cm_r, list):
+            stat = _paired_bootstrap_mean_delta_ci(list(ch_r), list(cm_r))
+            if stat["sufficient"]:
+                if stat["ci_low"] <= 0.0:
+                    eligible = False
+                    reasons.append(
+                        f"statistical gate FAILED: bootstrap 95% CI for mean R delta "
+                        f"[{stat['ci_low']:.3f}, {stat['ci_high']:.3f}] includes 0 "
+                        f"(n={int(stat['n'])})"
+                    )
+            else:
+                reasons.append(
+                    f"statistical gate INCONCLUSIVE: only {int(stat['n'])} paired trades "
+                    f"(need >= {MIN_STAT_SAMPLES})"
+                )
+                if exp_delta <= 0:
+                    eligible = False
+
         # Multi-dimension improvement score (explainable, not a pass gate).
         score = _improvement_score(exp_delta, dd_delta, oos_t, stab_t)
 
@@ -129,8 +157,63 @@ class ChampionChallengerComparator:
             expectancy_delta=round(exp_delta, 4),
             drawdown_delta=round(dd_delta, 4),
             score=round(score, 4),
+            stat_ci_low=round(stat["ci_low"], 4) if stat else None,
+            stat_ci_high=round(stat["ci_high"], 4) if stat else None,
         )
         return comparison
+
+
+def _paired_bootstrap_mean_delta_ci(
+    challenger_r: list[float],
+    champion_r: list[float],
+    *,
+    n_boot: int = 2000,
+    block: int = 20,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> dict[str, float]:
+    """Moving-block bootstrap CI for the mean R differential (challenger - champion).
+
+    Trade outcomes are time-dependent (streaky), so a MOVING-BLOCK bootstrap
+    (block of ``block`` consecutive trades, circular wrap) is used instead of
+    iid resampling. Deterministic via ``seed``. Returns the mean delta and
+    the CI bounds; callers decide the eligibility rule.
+    """
+    import random as _random
+
+    n = min(len(challenger_r), len(champion_r))
+    if n < 30:
+        return {
+            "mean_delta": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "n": float(n),
+            "sufficient": 0.0,
+        }
+    c_arr = [float(x) for x in challenger_r[:n]]
+    t_arr = [float(x) for x in champion_r[:n]]
+    deltas = [a - b for a, b in zip(c_arr, t_arr, strict=True)]
+    mean_delta = sum(deltas) / n
+    rng = _random.Random(seed)
+    boot_means: list[float] = []
+    n_blocks = (n + block - 1) // block
+    for _ in range(n_boot):
+        sample: list[float] = []
+        for _b in range(n_blocks):
+            start = rng.randrange(n)
+            for k in range(block):
+                sample.append(deltas[(start + k) % n])
+        boot_means.append(sum(sample[:n]) / n)
+    boot_means.sort()
+    lo_idx = int(alpha / 2 * n_boot)
+    hi_idx = int((1 - alpha / 2) * n_boot) - 1
+    return {
+        "mean_delta": mean_delta,
+        "ci_low": boot_means[max(0, lo_idx)],
+        "ci_high": boot_means[min(n_boot - 1, hi_idx)],
+        "n": float(n),
+        "sufficient": 1.0,
+    }
 
 
 def _improvement_score(exp_delta: float, dd_delta: float, oos_t: float, stab_t: float) -> float:
