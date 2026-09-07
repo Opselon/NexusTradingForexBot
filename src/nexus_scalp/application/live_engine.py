@@ -20,7 +20,6 @@ import os
 import signal
 import threading
 import time
-import uuid
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -68,9 +67,7 @@ from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, Marke
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
 from nexus_scalp.governance import (
-    GovernanceEvent,
     GovernanceShadowRuntime,
-    GovernanceStage,
     GovernanceStore,
     ModelGovernanceEngine,
 )
@@ -90,7 +87,6 @@ from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
-from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
 from nexus_scalp.model_lifecycle.persist_decision import decision_of
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
@@ -1613,7 +1609,6 @@ class LiveEngine:
 
         return ChampionSync.sync_champion_registry_state(self, *args, **kwargs)
 
-
     def _detect_model_collapse(self, *args, **kwargs):
         """Delegate: collapse detection (owned by ModelHealth, L12)."""
         from nexus_scalp.application.live.model_health import ModelHealth
@@ -1626,7 +1621,6 @@ class LiveEngine:
 
         return await ModelHealth.reinitialize_collapsed_model(self, *args, **kwargs)
 
-
     def set_execution_mode(self, *args, **kwargs) -> dict:
         """Delegate: operator mode switch (owned by RuntimeModeService, L13)."""
         from nexus_scalp.application.live.runtime_mode import RuntimeModeService
@@ -1638,7 +1632,6 @@ class LiveEngine:
         from nexus_scalp.application.live.runtime_mode import RuntimeModeService
 
         return RuntimeModeService.invalidate_cross_mode_state(self, *args, **kwargs)
-
 
     async def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
         """Delegate: atomic serving-artifact swap (owned by HotSwapService, L4)."""
@@ -1881,8 +1874,6 @@ class LiveEngine:
     # ------------------------------------------------------------------
 
     @staticmethod
-
-
     async def stop(self) -> None:
         self._running = False
 
@@ -3927,8 +3918,6 @@ class LiveEngine:
     # Model collapse detection & auto-recovery
     # -------------------------
 
-
-
     # -------------------------
     # Risk/survival tracking
     # -------------------------
@@ -4100,8 +4089,6 @@ class LiveEngine:
             )
             return replacement
         return adapter
-
-
 
     def _notify_startup(self, account: AccountInfo | None) -> None:
         if not account:
