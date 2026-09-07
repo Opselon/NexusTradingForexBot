@@ -171,15 +171,60 @@ class ChallengerTrainer:
                 feature_dimension=self.dataset.feature_dimension,
             )
 
+            # REAL METRICS (learning-loop P1): thread the walk-forward trainer's
+            # genuine convergence + OOS economic evidence into TrainingRun.
+            # metrics. Never invent values: any metric the trainer did not
+            # legitimately produce is recorded as the explicit string
+            # "NOT_AVAILABLE" (machine-readable, distinct from a None that
+            # historically meant "forgot to wire it").
+            convergence = getattr(trainer, "last_convergence_metadata", None) or {}
+            folds = convergence.get("folds") or []
+            fold_economics = convergence.get("fold_economics") or []
+
+            def _real(value: Any) -> Any:
+                return value if value is not None else "NOT_AVAILABLE"
+
             metrics: dict[str, Any] = {
                 "train_seconds": round(elapsed, 3),
-                "final_loss": None,
-                "validation_accuracy": None,
+                # Convergence evidence (from last_convergence_metadata).
+                "final_loss": _real(convergence.get("mean_best_val_loss")),
+                "validation_loss": _real(convergence.get("mean_best_val_loss")),
+                "validation_accuracy": _real(convergence.get("oos_accuracy")),
+                "best_epoch": _real(
+                    max(
+                        (f.get("best_epoch") for f in folds if f.get("best_epoch") is not None),
+                        default=None,
+                    )
+                )
+                if folds
+                else "NOT_AVAILABLE",
+                "convergence_status": (
+                    "CONVERGED"
+                    if convergence.get("mean_best_val_loss") is not None
+                    else "NOT_AVAILABLE"
+                ),
+                "any_fold_early_stopped": convergence.get("any_fold_early_stopped"),
+                "epochs_requested": convergence.get("epochs_requested"),
+                "num_folds": convergence.get("num_folds"),
+                "seed": convergence.get("seed"),
+                "walk_forward_mode": convergence.get("walk_forward_mode"),
+                # OOS economic evidence (from fold_economics aggregates).
+                "net_expectancy_r": _real(convergence.get("net_expectancy_r")),
+                "sum_net_expectancy_r": _real(convergence.get("sum_net_expectancy_r")),
+                "max_fold_drawdown_r": _real(convergence.get("max_fold_drawdown_r")),
+                "fold_trades": int(sum(int(f.get("trades", 0)) for f in fold_economics)),
+                "trade_count": int(sum(int(f.get("trades", 0)) for f in fold_economics)),
+                "friction_r": convergence.get("friction_r"),
+                "oos_samples": _real(convergence.get("oos_samples")),
+                # Pooled OOS prediction class distribution (collapse evidence).
+                "prediction_class_counts": (
+                    convergence.get("oos_prediction_class_counts")
+                    if convergence.get("oos_prediction_class_counts") is not None
+                    else "NOT_AVAILABLE"
+                ),
+                "fold_economics": fold_economics,
+                "folds": folds,
             }
-            # Pull whatever metrics the trainer exposed after training.
-            for attr in ("last_val_loss", "last_validation_accuracy", "final_loss"):
-                if hasattr(trainer, attr):
-                    metrics[attr] = getattr(trainer, attr)
 
             run = run.model_copy(
                 update={

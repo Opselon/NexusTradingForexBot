@@ -18,8 +18,10 @@ production authority remains with the existing controlled process.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.experience.ledger import ExperienceLedger
@@ -27,10 +29,12 @@ from nexus_scalp.model_lifecycle.champion import ChampionManager, ChampionModel
 from nexus_scalp.model_lifecycle.comparison import ChampionChallengerComparator
 from nexus_scalp.model_lifecycle.dataset import TrainingDatasetBuilder
 from nexus_scalp.model_lifecycle.gates import (
+    check_model_collapse,
     gate_artifact_integrity,
     gate_dataset_integrity,
     gate_label_integrity,
     gate_oos,
+    gate_production_eligible,
     gate_reproducibility,
     gate_risk_drawdown,
     gate_robustness,
@@ -38,8 +42,6 @@ from nexus_scalp.model_lifecycle.gates import (
     gate_training_stability,
     gate_validation_performance,
     gate_walkforward,
-    gate_production_eligible,
-    check_model_collapse,
 )
 from nexus_scalp.model_lifecycle.models import (
     GateResult,
