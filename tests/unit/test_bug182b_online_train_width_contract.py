@@ -67,12 +67,16 @@ def test_bug182b_rebind_runs_after_bundle_load() -> None:
 
 
 def test_bug182b_retrain_paths_use_effective_cols() -> None:
-    """No retrain call site may pass the class-level 50-col FEATURE_COLS."""
+    """No retrain call site may pass the class-level 50-col FEATURE_COLS.
+
+    P1 seam L12: ``_reinitialize_collapsed_model`` moved to
+    application/live/model_health.py; the contract FOLLOWS the code — the
+    effective-cols invariant is now asserted on the extracted module source.
+    """
     src = _engine_source()
     fn_names = (
         "_trigger_async_online_fine_tune",
         "_bootstrap_train_if_ready",
-        "_reinitialize_collapsed_model",
     )
     tree = ast.parse(src)
     engine = next(
@@ -88,6 +92,22 @@ def test_bug182b_retrain_paths_use_effective_cols() -> None:
             assert "effective_feature_cols" in seg, f"{f.name} missing effective cols"
             found += 1
     assert found == len(fn_names)
+
+    # Migrated contract (L12): the collapsed-model recovery path lives in
+    # ModelHealth and must satisfy the SAME effective-cols invariant.
+    health_path = (
+        REPO / "src" / "nexus_scalp" / "application" / "live" / "model_health.py"
+    )
+    health_src = health_path.read_text(encoding="utf-8")
+    assert "def reinitialize_collapsed_model(" in health_src, (
+        "collapsed-model recovery moved but ModelHealth.reinitialize_collapsed_model missing"
+    )
+    assert "list(self.om.FEATURE_COLS)" not in health_src, (
+        "reinitialize_collapsed_model still passes class-level FEATURE_COLS"
+    )
+    assert "effective_feature_cols" in health_src, (
+        "reinitialize_collapsed_model missing effective cols (BUG-182B regression)"
+    )
 
 
 def test_bug182b_trainer_fails_loud_on_width_mismatch(tmp_path) -> None:
