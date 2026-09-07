@@ -130,10 +130,35 @@ class ResearchPipeline:
     ) -> None:
         self.dataset_builder = dataset_builder
         self.registry = registry
-        self.backtest = backtest or BacktestEngine()
-        self.walkforward = walkforward or WalkForwardEngine()
-        self.oos_gate = oos_gate or OOSGate()
-        self.robustness = robustness or RobustnessEngine()
+        # PHASE-2 canonical execution costs: engines defaulted WITHOUT explicit
+        # assumptions ran ZERO-COST (spread_ticks=0, slippage_ticks=0) — every
+        # candidate looked better than reality. All four engines now default to
+        # the calibrated canonical artifact
+        # (configs/execution_assumptions.json); explicit args still win. Load
+        # failure degrades loudly for the DEFAULT path only (an engine passed
+        # explicitly keeps full control).
+        from nexus_scalp.research.models import ExecutionAssumptions
+
+        default_costs: ExecutionAssumptions | None = None
+        _cal_version: str | None = None
+        try:
+            from nexus_scalp.configuration.execution_costs import (
+                get_execution_assumptions,
+                to_research_assumptions,
+            )
+
+            default_costs, _cal_version = to_research_assumptions(get_execution_assumptions())
+        except Exception as exc:
+            get_logger("nexus_scalp.research.pipeline").warning(
+                "[RESEARCH_PIPELINE] canonical execution costs unavailable; "
+                "engines fall back to their own defaults: %s",
+                exc,
+            )
+        self.execution_cost_calibration_version: str | None = _cal_version
+        self.backtest = backtest or BacktestEngine(assumptions=default_costs)
+        self.walkforward = walkforward or WalkForwardEngine(assumptions=default_costs)
+        self.oos_gate = oos_gate or OOSGate(assumptions=default_costs)
+        self.robustness = robustness or RobustnessEngine(baseline=default_costs)
         # TASK-21: optional observability facade; when absent the pipeline
         # behaves exactly as before (legacy mode).
         self.observability = observability
