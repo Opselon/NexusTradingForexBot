@@ -23,7 +23,7 @@ import time
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -47,10 +47,9 @@ from nexus_scalp.candle_intelligence import (
 # Consumers read the current immutable snapshot; live.yaml is bootstrap-only.
 from nexus_scalp.configuration import RuntimeConfigStore
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
+from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.domain.models import (
     AccountInfo,
-    Position,
     SymbolInfo,
     TickData,
     TradeProposal,
@@ -73,12 +72,8 @@ from nexus_scalp.governance import (
 )
 from nexus_scalp.intelligence import (
     BehaviorDetectionEngine,
-    DecisionContext,
     IntelligenceWorker,
-    MarketContext,
     PositionLifecycleTracker,
-    PositionPerformance,
-    PositionSnapshot,
     PreTradeIntelligenceGate,
     StrategyEvolutionEngine,
     TradeAutopsyEngine,
@@ -88,7 +83,6 @@ from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
-from nexus_scalp.model_lifecycle.persist_decision import decision_of
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
 from nexus_scalp.model_lifecycle.worker import TrainingWorker
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -101,11 +95,7 @@ from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.risk.runtime_safety import (
-    AccountFreshness,
-    BootDecision,
     HotPathErrorCircuit,
-    PersistedRiskState,
-    resolve_boot_decision,
 )
 from nexus_scalp.settings import (
     load_settings_service,
@@ -1873,7 +1863,6 @@ class LiveEngine:
     # promotion: no artifact is written, no gate is bypassed (INV-015).
     # ------------------------------------------------------------------
 
-    @staticmethod
     async def stop(self) -> None:
         self._running = False
 
@@ -2847,201 +2836,27 @@ class LiveEngine:
 
     def _process_tick_pipeline(self, tick: TickData, account: AccountInfo) -> None:
         try:
-            # RUNTIME CONFIGURATION: re-sync services each tick. This is
-            # cheap (two attribute assignments from an immutable snapshot)
-            # and guarantees a UI save is reflected on the very next
-            # evaluation without restarting or reading the DB per tick.
-            self._sync_runtime_config()
+            # P1 seam L14: pre-policy stage (runtime-config sync, liquidity
+            # warmup, regime classification + freshness stamps, position
+            # management, lifecycle timeline, warmup gate) moved to
+            # application/live/tick_pipeline.py (TickPipeline).
             is_new_bar = self.aggregator.process_tick(tick)
-
-            # cap bars (O(1) amortized)
-            if len(self.aggregator._completed_bars) > 4000:
-                self.aggregator._completed_bars = self.aggregator._completed_bars[-4000:]
-
             completed_bars = self.aggregator.get_completed_bars()
-            fv = self.feature_engine.compute_from_bars(
-                completed_bars=completed_bars, current_tick=tick
-            )
-            # TASK-02-70D-INTEGRATION: liquidity snapshot from COMPLETED bars.
-            # BUG-169 (2026-08-31, live latency forensics): the governor is
-            # IDEMPOTENT per completed-bar series — its only inputs are the
-            # bars + their last close + the bar ATR, none of which change
-            # between new bars. Recomputing it on EVERY tick burned
-            # p50=67ms / p95=655ms / p99=982ms (max 5.0s) of the LOOP THREAD
-            # per call (~12.5k calls/day), which was the dominant source of
-            # the slow/sticky live decision loop (measured 2026-08-31 log).
-            # Now: compute only on a new M1 bar (or first availability), and
-            # else reuse the last snapshot. Information-freshness is
-            # unchanged (the inputs literally cannot change between bars);
-            # INV-020 (information-only, failure-isolated) still holds.
-            if completed_bars:
-                _liq_new_bar = is_new_bar or (
-                    self.liquidity_governor is not None
-                    and self.liquidity_governor.last_snapshot is None
+            (_continue, proposal, probs, regime_state, active_positions, current_pos_count) = (
+                self._tick_pipeline.run_pre_policy_stages(
+                    tick=tick,
+                    account=account,
+                    fv=None,
+                    is_new_bar=is_new_bar,
+                    completed_bars=completed_bars,
                 )
-                if _liq_new_bar:
-                    self._warm_liquidity_from_bars(
-                        completed_bars,
-                        atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
-                    )
-
-            if is_new_bar and completed_bars:
-                self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
-
-            # Regime state (Module 1)
-            # BUG-169: skip RE-EVALUATION for a duplicate tick (identical
-            # bid/ask + timestamp). The metrics are functionally idempotent,
-            # but classify_tick() PUSHES the duplicate into its rolling
-            # rings (_ts/_log_ret/_ofi), double-counting it and skewing
-            # tick_velocity + rv_5m + norm_ofi. This duplicates the dedup
-            # predicate from SignalPolicy._evaluate_duplicate_tick on
-            # purpose: the classifier must stay a pure per-tick consumer.
-            _tick_dupe = tick.timestamp == getattr(self, "_regime_last_ts", None) or (
-                float(tick.bid) == getattr(self, "_regime_last_bid", 0.0)
-                and float(tick.ask) == getattr(self, "_regime_last_ask", 0.0)
-                and float(tick.bid) > 0.0
             )
-            if _tick_dupe:
-                regime_state: MarketRegimeState = getattr(
-                    self, "_regime_last_state", None
-                ) or self.regime_classifier.classify_tick(
-                    current_tick=tick,
-                    is_macro_news_window=False,
-                )
-                # BUG-TDF-Q2 (TDF-R2 Q2/Q2b): a frozen/duplicate quote
-                # stream can keep the reused state alive indefinitely.
-                # Alarm-only freshness guard (BUG-169 dedup contract
-                # preserved: duplicates are never re-pushed into the
-                # classifier's rolling rings).
-                self._assert_regime_state_freshness(tick=tick)
-            else:
-                regime_state = self.regime_classifier.classify_tick(
-                    current_tick=tick,
-                    is_macro_news_window=False,
-                )
-                self._regime_last_ts = tick.timestamp
-                self._regime_last_bid = float(tick.bid)
-                self._regime_last_ask = float(tick.ask)
-                self._regime_last_state = regime_state
-                # BUG-TDF-Q2: stamp when the cached state was last
-                # PROVEN fresh by a successful classify_tick() call.
-                self._regime_state_classified_at = time.time()
-
-            # Manage open positions
-            # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded
-            # into position management so the in-trade exit evaluation sees the
-            # CURRENT model state and CURRENT regime. Previously the call omitted
-            # both, which (a) disabled the AI direction-flip exit and (b) degraded
-            # the adaptive evidence scores to static heuristics on the live path.
-            # When inference is blocked by the warmup gate we still manage
-            # positions (protective stops must never pause) but with probs=None.
-            probs_for_mgmt = None
-            if self._inference_enabled and self.warmup_state == "READY":
-                try:
-                    probs_for_mgmt = self._infer_probabilities(fv=fv)
-                except Exception as infer_err:
-                    logger.error(
-                        "[INFERENCE] in-trade inference failed (isolated, positions still managed)",
-                        error=str(infer_err),
-                    )
-                    probs_for_mgmt = None
-            active_positions = self.order_manager.manage_active_positions(
-                symbol=tick.symbol,
-                current_tick=tick,
-                feature_vector=fv,
-                symbol_info=self._symbol_info,
-                account=account,
-                probs=probs_for_mgmt,
-                regime_state=regime_state,
-            )
-            current_pos_count = len(active_positions)
-
-            # PHASE 09: feed the immutable position-lifecycle timeline. This is
-            # a pure classification + queued write; it never executes anything
-            # and can never block the tick path.
-            self._observe_positions(
-                positions=active_positions,
-                tick=tick,
-                fv=fv,
-                regime_state=regime_state,
-            )
-
-            # Check Warmup Readiness Gate before Inference
-            if not self._inference_enabled or self.warmup_state != "READY":
-                curr_t = time.time()
-
-                # On new bar or every 15 seconds, attempt to re-evaluate warmup readiness
-                if is_new_bar or (curr_t - getattr(self, "_last_warmup_check_time", 0.0)) >= 15.0:
-                    self._last_warmup_check_time = curr_t
-                    h1_bars = (
-                        self.adapter.get_historical_bars(tick.symbol, "H1", self.H1_REQUIRED_BARS)
-                        or []
-                    )
-                    h4_bars = (
-                        self.adapter.get_historical_bars(tick.symbol, "H4", self.H4_REQUIRED_BARS)
-                        or []
-                    )
-                    if self.evaluate_warmup_readiness(tick.symbol, h1_bars, h4_bars):
-                        logger.info("[WARMUP] RE-EVALUATION PASSED -> Engine transition to READY")
-
-                if not self._inference_enabled or self.warmup_state != "READY":
-                    if curr_t - self._last_inference_blocked_log >= 10.0:
-                        logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
-                        self._last_inference_blocked_log = curr_t
-
-                    # Fail closed: with no inference (cold warmup or disabled)
-                    # there must never be a trade decision, so a NO_TRADE proposal
-                    # keeps the downstream pipeline contracts satisfied.
-                    proposal = TradeProposal(
-                        request_id=f"blocked_{int(curr_t)}",
-                        symbol=tick.symbol,
-                        generated_at=tick.timestamp,
-                        action=ActionType.NO_TRADE,
-                        confidence=0.0,
-                        proposed_entry=tick.bid,
-                        stop_loss=tick.bid * 0.99,
-                        take_profit=tick.bid * 1.01,
-                        risk_reward_ratio=1.0,
-                        reason_code="HTF_WARMUP_INCOMPLETE",
-                    )
-                    self.audit.log_signal(proposal)
-                    self._last_tick = tick
-                    self._last_fv = fv
-                    self._last_regime_state = regime_state
-                    self._last_proposal = proposal
-                    return
-
-            # Inference (already computed for position management above; reuse it so the
-            # model runs once per tick)
-            if probs_for_mgmt is None and self._inference_enabled and self.warmup_state == "READY":
-                probs = self._infer_probabilities(fv=fv)
-            else:
-                probs = probs_for_mgmt
-
-            # Heartbeat radar logging: On EVERY M1 Bar completion or every 10 seconds of active ticks, force log.
-            current_time = time.time()
-            force_log = False
-            if is_new_bar or (current_time - self._last_radar_log_time) >= 10.0:
-                force_log = True
-                self._last_radar_log_time = current_time
-
-            # Policy
-            proposal = self.signal_policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv,
-                regime_state=regime_state,
-                survival_mode=self._survival_mode_active,
-                force_log=force_log,
-                order_manager=self.order_manager,
-            )
-
-            # =================================================================
+            if not _continue:
+                return
             # P1 seam L7: post-policy stages (PHASE 08/09 gates, PHASE 12 news
             # gate, BUG-169 terminal outcome, G29 freshness gate + instrumentation,
             # PHASE 11 shadow recording, BUG-105 70D hook, chart overlays) moved
             # to application/live/tick_pipeline.py (TickPipeline).
-            # =================================================================
             proposal = self._tick_pipeline.run_post_policy_stages(
                 tick=tick,
                 account=account,
@@ -3055,12 +2870,9 @@ class LiveEngine:
                 is_new_bar=is_new_bar,
             )
             policy_decision = proposal
-            # =================================================================
-            # =================================================================
             # P1 seam L2: decision execution stage (BUG-212 shadow boundary,
             # reversal/entry dispatch, lifecycle actions, hedging, survival
             # audit) — implementation moved to application/live/decision_executor.py.
-            # =================================================================
             self._decision_executor.execute_decision_stage(
                 tick=tick,
                 account=account,
@@ -3072,18 +2884,14 @@ class LiveEngine:
                 active_positions=active_positions,
                 current_pos_count=current_pos_count,
             )
-
         except Exception as pipeline_err:
             # =================================================================
             # HOT-PATH CONSECUTIVE-ERROR CIRCUIT BREAKER (P1, runtime-safety
-            # mission). The old handler was pure log-and-continue: a
-            # systematically broken pipeline ran LIVE-but-disabled forever.
-            # Now every failure feeds HotPathErrorCircuit; when the
-            # consecutive-error threshold trips inside the error window the
-            # engine DEGRADES: no NEW entries (survival mode tightens policy)
-            # while manage_active_positions keeps protecting existing
-            # positions (never closed by the breaker itself). Recovery:
-            # explicit via the persisted safety-state release path.
+            # mission). A systematically broken pipeline must not run
+            # LIVE-but-disabled forever: every failure feeds the
+            # HotPathErrorCircuit; tripping degrades the engine (survival
+            # mode = no NEW entries) while manage_active_positions keeps
+            # protecting existing positions. Explicit recovery only.
             # =================================================================
             now_t = time.time()
             tripped = self._hot_path_circuit.record_error(now_t, pipeline_err)
@@ -3119,10 +2927,6 @@ class LiveEngine:
                         f"{self._hot_path_circuit.consecutive_error_count} consecutive "
                         "tick-pipeline errors — new trades blocked (DEGRADED)",
                     )
-
-    # ---------------------------------------------------------------------
-    # PHASE 09: position lifecycle observation
-    # ---------------------------------------------------------------------
 
     def _observe_positions(
         self,
@@ -3409,7 +3213,6 @@ class LiveEngine:
 
         return InferenceService.infer_probabilities(self, fv)
 
-    @property
     def _inference_service(self):
         """Lazily composed inference service (P1 seam L6)."""
         eng = getattr(self, "_inference_service_instance", None)
@@ -3425,7 +3228,6 @@ class LiveEngine:
         eng = self._bar_handler
         eng.on_new_bar(tick=tick, fv=fv, last_bar=last_bar)
 
-    @property
     def _bar_handler(self):
         """Lazily composed bar handler (P1 seam L5)."""
         eng = getattr(self, "_bar_handler_instance", None)
@@ -3514,7 +3316,6 @@ class LiveEngine:
             model = self._bundle.model
         return model(x)
 
-    @property
     def _decision_executor(self):
         """Lazily composed decision executor (P1 seam L2)."""
         eng = getattr(self, "_decision_executor_instance", None)
@@ -3525,7 +3326,6 @@ class LiveEngine:
             self._decision_executor_instance = eng
         return eng
 
-    @property
     def _maintenance(self):
         """Lazily composed maintenance cycle (P1 seam L3)."""
         eng = getattr(self, "_maintenance_instance", None)
@@ -3536,7 +3336,6 @@ class LiveEngine:
             self._maintenance_instance = eng
         return eng
 
-    @property
     def _tick_pipeline(self):
         """Lazily composed post-policy pipeline (P1 seam L7)."""
         eng = getattr(self, "_tick_pipeline_instance", None)
@@ -3582,11 +3381,6 @@ class LiveEngine:
 
         ShadowRecorder(self).record_shadow70_observation(tick, fv, proposal)
 
-    # -------------------------
-    # Async retraining worker
-    # -------------------------
-
-    @staticmethod
     def _retrain_swap_decision(
         _self: LiveEngine | None,
         *,
@@ -3768,11 +3562,6 @@ class LiveEngine:
         finally:
             self._retrain_inflight = False
 
-    # -------------------------
-    # Diagnostics
-    # -------------------------
-
-    @staticmethod
     def _refresh_artifact_integrity_metadata(model_path: Path) -> bool:
         """P1: after an in-place accepted persist, re-bind every integrity
         sidecar (manifest.json / model.meta.json) to the NEW weight digest.
@@ -3914,14 +3703,6 @@ class LiveEngine:
         )
         logger.info("=======================")
 
-    # -------------------------
-    # Model collapse detection & auto-recovery
-    # -------------------------
-
-    # -------------------------
-    # Risk/survival tracking
-    # -------------------------
-
     def _restore_peak_equity(self, account: AccountInfo | None) -> None:
         last_snapshot = self.audit.get_last_account_snapshot()
         if last_snapshot and "peak_equity" in last_snapshot:
@@ -3984,9 +3765,6 @@ class LiveEngine:
                 mode,
             )
 
-    # ------------------------------------------------------------------
-    # BUG-212: boot-time adapter/mode alignment (hard simulation boundary).
-    # ------------------------------------------------------------------
     def align_adapter_to_boot_mode(
         self,
         adapter: IMT5Port,
@@ -4100,16 +3878,6 @@ class LiveEngine:
                 balance=account.balance,
                 equity=account.equity,
             )
-
-    # =====================================================================
-    # PERSISTED RUNTIME SAFETY STATE (P0, runtime-safety mission)
-    # ---------------------------------------------------------------------
-    # Canonical durable safety state: persist -> stop trading -> audit ->
-    # observe -> survive restart. HALT INVARIANT: a safety state triggered by
-    # a real trading event MUST survive process restart until explicitly
-    # released. Resolution happens at boot BEFORE any trading is enabled;
-    # restart / reconnect / reload can NEVER clear HALTED or KILL_SWITCH.
-    # =====================================================================
 
     def _persist_runtime_risk_state(
         self,
@@ -4255,7 +4023,6 @@ class LiveEngine:
         with contextlib.suppress(Exception):
             self.notifier.notify_kill_switch_activated(f"{state}: {reason}")
 
-    @property
     def runtime_risk_state(self) -> str:
         """Observable canonical safety state (UI/health surface).
 
@@ -4366,12 +4133,6 @@ class LiveEngine:
                     account=account,
                 )
 
-    # -------------------------
-    # -------------------------
-    # Feature contract validation (schema-driven)
-    # -------------------------
-
-    @classmethod
     def _validate_50d_tensor(cls, features: Sequence[float], context: str) -> list[float]:
         """
         Validates and sanitizes a feature vector against the ACTIVE schema.
