@@ -85,7 +85,7 @@ def status_cmd() -> None:
         raise typer.Exit(xc.EXIT_RUNTIME) from None
 
 
-def _repo_handle() -> "AuditRepository":
+def _repo_handle():
     """Opens an AuditRepository against the engine's audit DB.
 
     Resolution mirrors the engine exactly:
