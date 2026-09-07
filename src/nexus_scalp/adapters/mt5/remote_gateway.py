@@ -238,6 +238,77 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         res = self._send_request("CLOSE_POSITION", payload)
         return bool(res.get("status") == "SUCCESS")
 
+    def write_market_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> Any:
+        """Typed tri-state market write over the gateway RPC.
+
+        UNKNOWN != FAILED: a communication exception (timeout, connection
+        loss, non-JSON body) leaves the broker state UNOBSERVED -- the order
+        may have executed. The result carries UNKNOWN evidence + the
+        idempotency fingerprint; the caller must reconcile before any retry.
+        Never blind-retries. (Legacy ``execute_market_order`` keeps its
+        int contract; this is the typed surface.)
+        """
+        from nexus_scalp.execution.order_write import (
+            idempotency_fingerprint as _fingerprint,
+        )
+        from nexus_scalp.execution.order_write import (
+            rejected as _rejected,
+        )
+        from nexus_scalp.execution.order_write import (
+            success as _success,
+        )
+        from nexus_scalp.execution.order_write import (
+            unknown as _unknown,
+        )
+
+        fingerprint = _fingerprint(
+            symbol=symbol,
+            order_type=order_type.value,
+            volume=volume,
+            price=price,
+        )
+        payload: dict[str, Any] = {
+            "symbol": symbol,
+            "order_type": order_type.value,
+            "volume": float(volume),
+            "price": float(price),
+            "stop_loss": float(stop_loss),
+            "take_profit": float(take_profit),
+            "idempotency_fingerprint": fingerprint,
+        }
+        try:
+            res = self._send_request("EXECUTE_MARKET_ORDER", payload)
+        except Exception as e:
+            logger.error(
+                "[ORDER_WRITE] event=UNKNOWN outcome=UNKNOWN op=EXECUTE_MARKET_ORDER "
+                "fingerprint=%s error=%s -- broker state unverified; reconcile before any retry",
+                fingerprint,
+                e,
+            )
+            return _unknown(detail=f"{type(e).__name__}: {e}")
+        if res.get("status") == "SUCCESS":
+            try:
+                ticket = int(res.get("ticket") or res.get("order") or 0)
+            except Exception:
+                ticket = 0
+            if ticket > 0:
+                return _success(ticket)
+            # Status SUCCESS without a ticket: the broker state is not
+            # identified -- ambiguity, not success.
+            return _unknown(detail="SUCCESS without ticket")
+        return _rejected(
+            retcode=res.get("retcode") if isinstance(res.get("retcode"), int) else None,
+            detail=str(res.get("message") or "gateway rejected"),
+        )
+
     def execute_market_order(
         self,
         symbol: str,

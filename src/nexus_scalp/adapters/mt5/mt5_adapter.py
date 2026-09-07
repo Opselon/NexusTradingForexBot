@@ -1219,6 +1219,241 @@ class DirectMT5Adapter(IMT5Port):
 
         return result.order
 
+    # ------------------------------------------------------------------
+    # ORDER-WRITE UNCERTAINTY SEMANTICS (mission P0): UNKNOWN != FAILED.
+    # ------------------------------------------------------------------
+    # The legacy ``execute_market_order`` / ``place_pending_order`` collapse
+    # every outcome into ticket>0 / ticket==0. A communication exception is
+    # qualitatively different from a broker rejection: the request may have
+    # never arrived, been rejected, been accepted, or been accepted with a
+    # lost response. ``write_market_order`` / ``write_pending_order`` expose
+    # the typed tri-state (WriteResult) without changing any legacy
+    # signature; reconciliation helpers resolve an ambiguous send against
+    # broker truth using the SAME fingerprint equivalence the retry guard
+    # uses, so UNKNOWN never silently becomes FAILED and never blind-retries.
+    # ------------------------------------------------------------------
+
+    def _write_unknown_evidence(self, op: str, exc: Exception, fingerprint: str) -> None:
+        """Make a communication failure during a broker write OBSERVABLE.
+
+        The structured evidence carries the idempotency fingerprint so the
+        post-incident reconciliation can identify exactly what the write
+        would have created.
+        """
+        logger.error(
+            "[ORDER_WRITE] event=UNKNOWN outcome=UNKNOWN op=%s fingerprint=%s "
+            "error=%s -- broker state unverified; reconcile before any retry",
+            op,
+            fingerprint,
+            exc,
+        )
+
+    def write_market_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> Any:
+        """Typed tri-state market write (SUCCESS / REJECTED / UNKNOWN).
+
+        UNKNOWN = the request outcome could not be observed (communication
+        failure). Callers MUST reconcile (``reconcile_market_write``) before
+        considering a retry -- a retry after UNKNOWN can duplicate the order.
+        """
+        from nexus_scalp.execution.order_write import (
+            idempotency_fingerprint as _fingerprint,
+        )
+        from nexus_scalp.execution.order_write import (
+            rejected as _rejected,
+        )
+        from nexus_scalp.execution.order_write import (
+            success as _success,
+        )
+        from nexus_scalp.execution.order_write import (
+            unknown as _unknown,
+        )
+
+        fingerprint = _fingerprint(
+            symbol=symbol,
+            order_type=order_type.value,
+            volume=volume,
+            price=price,
+        )
+        self._assert_connected()
+        if mt5 is None:
+            return _rejected(detail="native driver unavailable")
+        mt5_order_type = mt5.ORDER_TYPE_BUY if order_type == OrderType.BUY else mt5.ORDER_TYPE_SELL
+        filling_mode = self._resolve_filling_mode(symbol)
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": mt5_order_type,
+            "price": price,
+            "sl": stop_loss,
+            "tp": take_profit,
+            "magic": 888101,
+            "comment": "NSE_MARKET",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling_mode,
+            "idempotency_fingerprint": fingerprint,
+        }
+        try:
+            result = mt5.order_send(request)
+        except Exception as exc:
+            self._write_unknown_evidence("EXECUTE_MARKET_ORDER", exc, fingerprint)
+            return _unknown(detail=f"{type(exc).__name__}: {exc}")
+        if result is None:
+            # No response object at all: the request outcome is unobserved.
+            self._write_unknown_evidence(
+                "EXECUTE_MARKET_ORDER", RuntimeError("order_send returned None"), fingerprint
+            )
+            return _unknown(detail="order_send returned None")
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            # In-band non-DONE retcode: the broker DID answer.
+            return _rejected(
+                retcode=int(result.retcode),
+                detail=self._translate_retcode(result.retcode),
+            )
+        return _success(int(result.order))
+
+    def reconcile_market_write(
+        self,
+        *,
+        symbol: str,
+        order_type: OrderType,
+    ) -> Any:
+        """Resolve an ambiguous MARKET write against broker truth.
+
+        Looks for a live position under the bot magic on the requested side
+        that appeared after an ambiguous send. Found -> SUCCESS (no resend);
+        nothing found with no rejection evidence -> UNKNOWN STAYS UNKNOWN.
+        """
+        from nexus_scalp.execution.order_write import success as _success
+        from nexus_scalp.execution.order_write import unknown as _unknown
+
+        if mt5 is None:
+            return _unknown(detail="native driver unavailable")
+        want = mt5.ORDER_TYPE_BUY if order_type == OrderType.BUY else mt5.ORDER_TYPE_SELL
+        try:
+            live = mt5.positions_get(symbol=symbol)
+        except Exception as exc:
+            return _unknown(detail=f"positions_get failed: {exc}")
+        if live:
+            matched = [p for p in live if p.magic == 888101 and p.type == want]
+            if matched:
+                return _success(int(matched[0].ticket), detail="reconciled via live position")
+        return _unknown(detail="no live position matched; outcome remains unobserved")
+
+    def write_pending_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> Any:
+        """Typed tri-state pending write (SUCCESS / REJECTED / UNKNOWN).
+
+        Does NOT retry: after an ambiguous send the caller reconciles via
+        ``reconcile_pending_write`` (fingerprint equivalence with the
+        existing ``_find_equivalent_pending`` guard).
+        """
+        from nexus_scalp.execution.order_write import (
+            idempotency_fingerprint as _fingerprint,
+        )
+        from nexus_scalp.execution.order_write import (
+            rejected as _rejected,
+        )
+        from nexus_scalp.execution.order_write import (
+            success as _success,
+        )
+        from nexus_scalp.execution.order_write import (
+            unknown as _unknown,
+        )
+
+        fingerprint = _fingerprint(
+            symbol=symbol,
+            order_type=order_type.value,
+            volume=volume,
+            price=price,
+        )
+        self._assert_connected()
+        if mt5 is None:
+            return _rejected(detail="native driver unavailable")
+        mt5_type = self._order_type_to_mt5(order_type)
+        filling_mode = self._resolve_filling_mode(symbol)
+        request = {
+            "action": mt5.TRADE_ACTION_PENDING,
+            "symbol": symbol,
+            "volume": volume,
+            "type": mt5_type,
+            "price": price,
+            "sl": stop_loss,
+            "tp": take_profit,
+            "magic": 888101,
+            "comment": "NSE_PENDING",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling_mode,
+            "idempotency_fingerprint": fingerprint,
+        }
+        try:
+            result = mt5.order_send(request)
+        except Exception as exc:
+            self._write_unknown_evidence("PLACE_PENDING_ORDER", exc, fingerprint)
+            return _unknown(detail=f"{type(exc).__name__}: {exc}")
+        if result is None:
+            self._write_unknown_evidence(
+                "PLACE_PENDING_ORDER", RuntimeError("order_send returned None"), fingerprint
+            )
+            return _unknown(detail="order_send returned None")
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            return _rejected(
+                retcode=int(result.retcode),
+                detail=self._translate_retcode(result.retcode),
+            )
+        return _success(int(result.order))
+
+    def reconcile_pending_write(
+        self,
+        *,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        authoritatively_rejected: bool = False,
+    ) -> Any:
+        """Resolve an ambiguous PENDING write against broker truth.
+
+        Reuses the established fingerprint equivalence guard
+        (``_find_equivalent_pending``: symbol + type + volume + price under
+        the bot magic). Found -> SUCCESS (the order exists; no resend).
+        ``authoritatively_rejected`` (e.g. the history sweep proved the order
+        never existed) -> REJECTED. Otherwise -> UNKNOWN STAYS UNKNOWN.
+        """
+        from nexus_scalp.execution.order_write import (
+            rejected as _rejected,
+        )
+        from nexus_scalp.execution.order_write import (
+            success as _success,
+        )
+        from nexus_scalp.execution.order_write import (
+            unknown as _unknown,
+        )
+
+        if authoritatively_rejected:
+            return _rejected(retcode=None, detail="reconciliation: order never existed")
+        existing = self._find_equivalent_pending(
+            symbol=symbol, order_type=order_type, volume=volume, price=price
+        )
+        if existing is not None:
+            return _success(existing, detail="reconciled via equivalent pending order")
+        return _unknown(detail="no equivalent pending found; outcome remains unobserved")
+
     def _find_equivalent_pending(
         self,
         symbol: str,
