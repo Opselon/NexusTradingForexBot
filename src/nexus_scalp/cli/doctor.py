@@ -1677,6 +1677,11 @@ def _late_block() -> None:
         ),
         folds: int = typer.Option(34, "--folds", help="Walk-forward folds (full run)."),
         epochs: int = typer.Option(10, "--epochs", help="Epochs per fold (full run)."),
+        resume: bool = typer.Option(
+            False,
+            "--resume",
+            help="Skip variants with existing PASS evidence (benchmark + artifact).",
+        ),
         json_mode: bool = typer.Option(False, "--json", help="JSON output."),
     ) -> None:
         """Train the 3-model matrix (50D-main / 70D+news / 70D+liquidity).
@@ -1721,6 +1726,7 @@ def _late_block() -> None:
                     num_folds=folds,
                     epochs=epochs,
                     smoke=smoke,
+                    resume=resume,
                 )
                 by_variant = {r["variant"]: r for r in reports}
                 result = {
