@@ -132,7 +132,7 @@ def test_flip_penalty_raises_required_confidence_within_window() -> None:
     candidate must be flip-blocked when its confidence sits in
     [base_threshold, base_threshold + flip_confidence_penalty) — the penalty
     is additive on top of the base gate."""
-    policy = SignalPolicy()  # defaults: base 0.20, flip penalty 0.10, memory 8s
+    policy = SignalPolicy(confidence_threshold=0.20)  # base 0.20, flip penalty 0.10, memory 8s
     now = datetime.now(UTC)
     fv = _feature_vector()  # ichimoku_bearish standard channel, zone-neutral
 

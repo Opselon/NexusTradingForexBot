@@ -52,7 +52,7 @@ class SignalPolicy:
 
     def __init__(
         self,
-        confidence_threshold: float = 0.20,  # Calibrated to 0.20 for fast HFT response
+        confidence_threshold: float | None = None,
         cooldown_seconds: float = 3.0,  # Fast 3s cooldown for micro-scalping
         telemetry_interval_sec: float = 4.0,  # Throttles console logging output every 4 seconds max
         range_min_displacement: float = 0.15,  # Reduced displacement threshold for Gold ($0.15)
@@ -64,6 +64,16 @@ class SignalPolicy:
         rule_matrix: RuleMatrixEngine | None = None,
         algo_config: AlgoConfig | None = None,
     ) -> None:
+        # THRESHOLD OWNERSHIP (P0 policy-governance): the base confidence
+        # threshold has ONE canonical default — ModelConfig.confidence_threshold
+        # (the same value the runtime snapshot syncs from). A literal default
+        # here (the old 0.20) was a divergent second source of truth labeled
+        # "calibrated" without any calibration evidence; it is gone. Explicit
+        # overrides remain possible for replay/research freezes.
+        if confidence_threshold is None:
+            from nexus_scalp.configuration.config import ModelConfig
+
+            confidence_threshold = ModelConfig().confidence_threshold
         self.confidence_threshold = confidence_threshold
         self.cooldown_seconds = cooldown_seconds
         self.telemetry_interval = telemetry_interval_sec
@@ -272,6 +282,10 @@ class SignalPolicy:
 
         z_score = self._sanitize_float(getattr(feature_vector, "cross_asset_z_score", 0.0), 0.0)
         abs_z = abs(z_score)
+        # THRESHOLD OWNERSHIP: the stat-arb pseudo-confidence is a deterministic
+        # mapping of |z| into [0.40, 0.95] — kept inline because it is a formula,
+        # not a policy threshold, and it is capped below the canonical
+        # high_confidence_threshold semantics by construction.
         z_score_confidence = min(0.95, round(0.40 + (abs_z / 4.0) * 0.55, 2))
 
         trend_strength = self._sanitize_float(getattr(feature_vector, "trend_strength", 0.0), 0.0)
@@ -502,7 +516,7 @@ class SignalPolicy:
             # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
             risk_amount = max(abs(target_entry_price - cand_stop_loss), 1e-5)
             active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
-            if cand_confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
+            if cand_confidence >= self.algo_config.high_confidence_threshold:
                 min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
                 active_min_rr = min(active_min_rr, min_rr_hc)
 
@@ -702,7 +716,7 @@ class SignalPolicy:
             )
 
             act_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
-            if active_conf >= getattr(self.algo_config, "high_confidence_threshold", 0.70):
+            if active_conf >= self.algo_config.high_confidence_threshold:
                 act_rr = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
 
             base_thr = self.confidence_threshold
@@ -1103,7 +1117,7 @@ class SignalPolicy:
 
             # Determine active min required RR based on confidence (normal vs high confidence)
             active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
-            if confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
+            if confidence >= self.algo_config.high_confidence_threshold:
                 min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
                 active_min_rr = min(active_min_rr, min_rr_hc)
 
