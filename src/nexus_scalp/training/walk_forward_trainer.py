@@ -206,6 +206,16 @@ class WalkForwardTrainer:
         use_oversampling: bool = True,  # Enables Random Oversampling on BUY/SELL in buffer
         feature_schema_id: str | None = None,
         embargo_bars: int | None = None,
+        # WALK-FORWARD GEOMETRY (research/training-parity P0): "blocked" keeps
+        # the historical per-fold train/test geometry (each fold trains only
+        # within its own slice). "expanding" is the anchored walk-forward:
+        # fold k trains on ALL rows from the dataset start through the end of
+        # fold k's train region — production candidates are therefore
+        # evaluated with all historical information available before their
+        # evaluation period (TRAIN [A] -> [A+B] -> [A+B+C] ...). Purge and
+        # embargo semantics are IDENTICAL in both modes; the default is
+        # "blocked" so existing experiments are never silently re-geometried.
+        walk_forward_mode: str = "blocked",
         # MODEL_CLASS_CONTRACT v1 (Fix #3): the neural class contract is
         # derived from the LABEL SCHEMA (triple_barrier_3class_v1), not
         # hard-coded. Passing class_count=4 with labels that never contain
@@ -269,6 +279,14 @@ class WalkForwardTrainer:
         self.focal_gamma = float(focal_gamma)
         self.label_smoothing = float(label_smoothing)
         self.use_oversampling = bool(use_oversampling)
+        # WALK-FORWARD GEOMETRY: validate the mode explicitly (fail-loud, no
+        # silent fallback to a guessed geometry).
+        if walk_forward_mode not in ("blocked", "expanding"):
+            raise ValueError(
+                f"walk_forward_mode must be 'blocked' or 'expanding', got "
+                f"{walk_forward_mode!r}"
+            )
+        self.walk_forward_mode = str(walk_forward_mode)
         # ---------------------------------------------------------------------
         # FEATURE SCHEMA BINDING
         # ---------------------------------------------------------------------
@@ -548,6 +566,10 @@ class WalkForwardTrainer:
         else:
             full_train_half_life = float(min(max(fold_size, 60.0), 7 * 24 * 60.0))
         fold_decay_meta: list[dict[str, Any]] = []
+        # WALK-FORWARD GEOMETRY AUDIT (research/training-parity P0): every
+        # fold records its exact geometry so fold construction is auditable
+        # from the persisted convergence metadata and the bundle manifest.
+        fold_geometry_meta: list[dict[str, Any]] = []
         oos_predictions: list[int] = []
         oos_targets: list[int] = []
         for fold in range(self.num_folds):
@@ -563,10 +585,42 @@ class WalkForwardTrainer:
             train_end_point, test_start_point, test_end_point = self._split_fold_with_embargo(
                 len(fold_X)
             )
-            X_train_raw = fold_X[:train_end_point]
-            y_train = fold_y[:train_end_point]
+            # GEOMETRY SELECTION: "blocked" keeps the historical behavior
+            # (train strictly inside the fold slice). "expanding" anchors the
+            # training window at the dataset start — fold k trains on
+            # [0, start_idx + train_end_point): ALL rows from the very
+            # beginning through this fold's purged train tail
+            # (TRAIN [A] -> [A+B] -> [A+B+C]). The validation window and the
+            # purge/embargo widths are IDENTICAL in both modes, so the wider
+            # training window introduces no new leakage — it only adds PRIOR
+            # (strictly older) data, which is the definition of anchored
+            # walk-forward.
+            if self.walk_forward_mode == "expanding":
+                X_train_raw = X_raw[: start_idx + train_end_point]
+                y_train = y[: start_idx + train_end_point]
+                train_start_idx = 0
+                train_end_idx = start_idx + train_end_point
+            else:
+                X_train_raw = fold_X[:train_end_point]
+                y_train = fold_y[:train_end_point]
+                train_start_idx = start_idx
+                train_end_idx = start_idx + train_end_point
             X_test_raw = fold_X[test_start_point:test_end_point]
             y_test = fold_y[test_start_point:test_end_point]
+            fold_geometry_meta.append(
+                {
+                    "fold": fold + 1,
+                    "walk_forward_mode": self.walk_forward_mode,
+                    "train_start_idx": train_start_idx,
+                    "train_end_idx": train_end_idx,
+                    "test_start_idx": start_idx + test_start_point,
+                    "test_end_idx": start_idx + test_end_point,
+                    "train_count": len(X_train_raw),
+                    "test_count": len(X_test_raw),
+                    "purge_rows": int(test_start_point - train_end_point),
+                    "embargo_rows": int(len(fold_X) - test_end_point),
+                }
+            )
             if (
                 len(X_train_raw) < self.min_rows_per_train_split
                 or len(X_test_raw) < self.min_rows_per_test_split
@@ -716,6 +770,8 @@ class WalkForwardTrainer:
                 else None
             ),
             "seed": int(self.seed),
+            "walk_forward_mode": self.walk_forward_mode,
+            "fold_geometry": fold_geometry_meta,
         }
         # Model diagnostics verification post final training
         final_model.eval()
@@ -826,6 +882,10 @@ class WalkForwardTrainer:
                     "learning_rate": float(self.learning_rate),
                     "purge_gap_bars": int(self.purge_gap),
                     "embargo_bars": int(self.embargo_bars),
+                    "walk_forward_mode": self.walk_forward_mode,
+                    "fold_geometry": getattr(self, "last_convergence_metadata", {}).get(
+                        "fold_geometry"
+                    ),
                     # ECON v1 provenance: decay profile + convergence evidence
                     "time_decay_full_train_half_life_bars": getattr(
                         self, "_last_full_train_half_life", None
