@@ -270,8 +270,14 @@ def test_current_70d_10_bug105_shadow_hook():
     import inspect
 
     from nexus_scalp.application.live_engine import LiveEngine
+    from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
 
-    src = inspect.getsource(LiveEngine._record_shadow70_observation)
+    # L1 extraction: the hook's IMPLEMENTATION is owned by ShadowRecorder;
+    # LiveEngine must delegate (registration contract) and the owner must
+    # carry the guard logic (BUG-105 contract).
+    facade_src = inspect.getsource(LiveEngine._record_shadow70_observation)
+    assert "ShadowRecorder(self).record_shadow70_observation" in facade_src
+    src = inspect.getsource(ShadowRecorder.record_shadow70_observation)
     # runs on every tick when the runtime is READY + enabled (no 50D shadow
     # dependency in the guard)
     assert 'rt70.state.value != "READY"' in src
