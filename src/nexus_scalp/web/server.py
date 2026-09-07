@@ -2575,6 +2575,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_operator_routes(app, get_system_state, _err, _log_err, serialize_enums)
 
+    # CALIBRATION EVIDENCE MONITOR (P0 collection mission): read-only
+    # /api/operator/calibration — serving fingerprint, eligible/excluded
+    # outcome counts, collector status, and the identity-bound risk
+    # multiplier. Purely additive; never mutates state.
+    from nexus_scalp.web.calibration_monitor import register_calibration_route
+
+    register_calibration_route(app, _err, _log_err)
+
     # REPLAY-ON-CHART session routes (CHG-0043, REPLAY_API v1): the chart's
     # operator surface for the REAL historical decision pipeline. Records
     # loader serves the LOCAL dataset cache only (no network, no MT5 on this
