@@ -58,6 +58,55 @@ from nexus_scalp.release.metadata import parse_version
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# P0 signed-manifest test helpers: every synthetic release that reaches the
+# digest-resolution stage is signed with a REAL Ed25519 key registered in the
+# embedded trust root for the duration of the test (monkeypatched), so the
+# production verification path is exercised end-to-end — not bypassed.
+# ---------------------------------------------------------------------------
+def _sign_release_manifest(release: dict[str, Any], monkeypatch, payload: bytes | None = None) -> dict[str, Any]:
+    """Attach a VALIDLY SIGNED update_manifest to a synthetic release dict."""
+    import nacl.encoding
+    import nacl.signing
+
+    from nexus_scalp.release.signing import trusted_keys
+    from nexus_scalp.release.signing.update_manifest import (
+        MANIFEST_SCHEMA_VERSION,
+        sign_manifest,
+    )
+
+    signing_key = nacl.signing.SigningKey.generate()
+    test_key_id = "test-root-ephemeral"
+    monkeypatch.setattr(
+        trusted_keys,
+        "TRUSTED_UPDATE_KEYS",
+        {test_key_id: signing_key.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()},
+    )
+    asset = release["assets"][0]
+    digest = str(asset.get("digest_sha256") or asset.get("sha256") or "")
+    if not digest:
+        import hashlib as _hl
+
+        digest = _hl.sha256(payload or b"synthetic").hexdigest()
+        asset["digest_sha256"] = digest
+    size = int(asset.get("size") or (len(payload) if payload is not None else 0))
+    manifest = {
+        "schema": MANIFEST_SCHEMA_VERSION,
+        "key_id": test_key_id,
+        "version": str(release.get("tag_name", "v9.1.0")).lstrip("v"),
+        "platform": "windows",
+        "architecture": "x64",
+        "artifact_name": str(asset.get("name", "payload.zip")),
+        "artifact_sha256": digest.lower(),
+        "artifact_size": size,
+        "release_id": 1,
+    }
+    release["update_manifest"] = sign_manifest(
+        manifest, signing_key.encode(encoder=nacl.encoding.HexEncoder).decode()
+    )
+    return release
+
+
 def _release_dict(
     tag: str = "v9.1.0",
     *,
@@ -137,9 +186,9 @@ def test_semver_compare_function() -> None:
     assert upd.compare_versions("invalid", "9.0.0") is None
 
 
-def test_semver_blocked_downgrade() -> None:
+def test_semver_blocked_downgrade(monkeypatch) -> None:
     plan = upd.UpdatePlanBuilder(installed_version="9.2.0", channel="stable").build(
-        _release_dict(tag="v9.1.0")
+        _sign_release_manifest(_release_dict(tag="v9.1.0"), monkeypatch)
     )
     assert plan["status"] == "NO_UPDATE"
     assert plan["downgrade_blocked"] is True
@@ -148,17 +197,17 @@ def test_semver_blocked_downgrade() -> None:
 # ---------------------------------------------------------------------------
 # TEST-UP-03  stable channel selection / TEST-UP-31/32 GitHub failure policy
 # ---------------------------------------------------------------------------
-def test_stable_channel_skips_prerelease() -> None:
+def test_stable_channel_skips_prerelease(monkeypatch) -> None:
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(
-        _release_dict(tag="v9.1.0-beta.1", prerelease=True)
+        _sign_release_manifest(_release_dict(tag="v9.1.0-beta.1", prerelease=True), monkeypatch)
     )
     assert plan["status"] == "NO_UPDATE"
     assert any("pre-release" in d for d in plan["decisions"])
 
 
-def test_beta_channel_accepts_prerelease() -> None:
+def test_beta_channel_accepts_prerelease(monkeypatch) -> None:
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="beta").build(
-        _release_dict(tag="v9.1.0-beta.1", prerelease=True)
+        _sign_release_manifest(_release_dict(tag="v9.1.0-beta.1", prerelease=True), monkeypatch)
     )
     assert plan["status"] == "UPDATE_AVAILABLE"
 
@@ -200,10 +249,12 @@ def test_invalid_release_asset_blocked() -> None:
     assert any("source" in d or "artifact" in d for d in plan["decisions"])
 
 
-def test_unsupported_architecture_blocked() -> None:
+def test_unsupported_architecture_blocked(monkeypatch) -> None:
     plan = upd.UpdatePlanBuilder(
         installed_version="9.0.0", channel="stable", architecture="ARM64"
-    ).build(_release_dict())
+    ).build(
+        _sign_release_manifest(_release_dict(), monkeypatch)
+    )
     assert plan["status"] == "INCOMPATIBLE"
     assert any("ARM64" in d for d in plan["decisions"])
 
@@ -541,10 +592,12 @@ def test_update_history_persisted(update_home: Path) -> None:
 # ---------------------------------------------------------------------------
 # TEST-UP-27  dry-run purity
 # ---------------------------------------------------------------------------
-def test_dry_run_makes_no_mutation(app_root: Path, user_root: Path, tmp_path: Path) -> None:
+def test_dry_run_makes_no_mutation(app_root: Path, user_root: Path, tmp_path: Path, monkeypatch) -> None:
     before = {p: p.read_bytes() for p in app_root.rglob("*") if p.is_file()}
     user_before = {p: p.read_bytes() for p in user_root.rglob("*") if p.is_file()}
-    plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(_release_dict())
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(
+        _sign_release_manifest(_release_dict(), monkeypatch)
+    )
     assert plan["status"] == "UPDATE_AVAILABLE"
     after = {p: p.read_bytes() for p in app_root.rglob("*") if p.is_file()}
     user_after = {p: p.read_bytes() for p in user_root.rglob("*") if p.is_file()}
@@ -619,9 +672,11 @@ def test_direct_unsupported_migration_rejected() -> None:
 # ---------------------------------------------------------------------------
 # TEST-UP-35  model stays separate from app update
 # ---------------------------------------------------------------------------
-def test_no_automatic_model_promotion_app_update(app_root: Path, user_root: Path) -> None:
+def test_no_automatic_model_promotion_app_update(app_root: Path, user_root: Path, monkeypatch) -> None:
     rel = _release_dict(tag="v9.1.0")
-    plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(rel)
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert plan["status"] == "UPDATE_AVAILABLE"
     # The plan must state model policy explicitly: app update never promotes models.
     assert "model" in json.dumps(plan).lower()
@@ -632,7 +687,7 @@ def test_no_automatic_model_promotion_app_update(app_root: Path, user_root: Path
 # include-prerelease, allow-downgrade, checksum-asset digest resolution,
 # retries, resume-hash, offline status, model/client matrix
 # ---------------------------------------------------------------------------
-def test_up36_release_identity_locked() -> None:
+def test_up36_release_identity_locked(monkeypatch) -> None:
     rel = _release_dict(tag="v9.1.0")
     rel.update(
         {
@@ -642,7 +697,9 @@ def test_up36_release_identity_locked() -> None:
             "upload_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/releases/4242/assets{?name,label}",
         }
     )
-    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert plan["status"] == "UPDATE_AVAILABLE"
     assert plan["release_id"] == 4242
     assert plan["commit_sha"] == "deadbeef1234"
@@ -678,10 +735,12 @@ def test_up39_selection_skips_draft_and_revoked() -> None:
     assert sel["tag_name"] == "v9.1.0"
 
 
-def test_up40_include_prerelease_flag() -> None:
+def test_up40_include_prerelease_flag(monkeypatch) -> None:
     rel = _release_dict(tag="v9.1.0-rc.1", prerelease=True)
     assert upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)["status"] == "NO_UPDATE"
-    withpr = upd.UpdatePlanBuilder(installed_version="9.0.0", include_prerelease=True).build(rel)
+    withpr = upd.UpdatePlanBuilder(installed_version="9.0.0", include_prerelease=True).build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert withpr["status"] == "UPDATE_AVAILABLE"
     sel = upd.UpdateDiscovery._select_release(
         [_release_dict(tag="v9.1.0-rc.1", prerelease=True), _release_dict(tag="v9.0.0")],
@@ -691,11 +750,13 @@ def test_up40_include_prerelease_flag() -> None:
     assert sel is not None and sel["tag_name"] == "v9.1.0-rc.1"
 
 
-def test_up41_allow_downgrade_gate() -> None:
+def test_up41_allow_downgrade_gate(monkeypatch) -> None:
     rel = _release_dict(tag="v8.5.0")
     blocked = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
     assert blocked["status"] == "NO_UPDATE" and blocked["downgrade_blocked"] is True
-    allowed = upd.UpdatePlanBuilder(installed_version="9.0.0", allow_downgrade=True).build(rel)
+    allowed = upd.UpdatePlanBuilder(installed_version="9.0.0", allow_downgrade=True).build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert allowed["status"] == "UPDATE_AVAILABLE"
     assert any("OLD" in d for d in allowed["decisions"])
 
@@ -707,15 +768,21 @@ def test_up42_offline_status_never_no_update() -> None:
     assert upd.UpdateDiscovery.status_for_exception(err2) == "NETWORK_UNAVAILABLE"
 
 
-def test_up43_minimum_client_version_matrix() -> None:
+def test_up43_minimum_client_version_matrix(monkeypatch) -> None:
     rel = _release_dict(tag="v9.1.0")
     rel["minimum_client_version"] = "9.2.0"
-    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert plan["status"] == "INCOMPATIBLE"
     assert any("matrix" in d or "client" in d for d in plan["decisions"])
-    ok = upd.UpdatePlanBuilder(installed_version="9.1.0").build(rel)
+    ok = upd.UpdatePlanBuilder(installed_version="9.1.0").build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert ok["status"] == "NO_UPDATE"  # same version — not an upgrade
-    ok2 = upd.UpdatePlanBuilder(installed_version="9.0.5").build(rel)
+    ok2 = upd.UpdatePlanBuilder(installed_version="9.0.5").build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert ok2["status"] == "INCOMPATIBLE"
 
 
@@ -760,6 +827,8 @@ def test_up44_checksum_asset_digest_resolution(monkeypatch) -> None:
         return _FakeResp(f"{digest}  NexusScalpEngine-9.1.0-win-x64.zip\n")
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    rel["assets"][0]["digest_sha256"] = digest  # bind manifest to resolved digest
+    _sign_release_manifest(rel, monkeypatch)
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
     assert plan["status"] == "UPDATE_AVAILABLE"
     assert plan["artifact_sha256"] == digest
@@ -922,7 +991,7 @@ def test_up49_resume_hash_full_partial(tmp_path: Path) -> None:
     assert hashlib.sha256(final.read_bytes()).hexdigest() == digest
 
 
-def test_up50_model_matrix_fields_in_plan() -> None:
+def test_up50_model_matrix_fields_in_plan(monkeypatch) -> None:
     rel = _release_dict(tag="v9.1.0")
     rel["assets"][0]["release_manifest"] = {
         "model_version": "3.1.0",
@@ -931,7 +1000,9 @@ def test_up50_model_matrix_fields_in_plan() -> None:
         "feature_dimension": 70,
         "minimum_model_version": "3.0.0",
     }
-    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(
+        _sign_release_manifest(rel, monkeypatch)
+    )
     assert plan["status"] == "UPDATE_AVAILABLE"
     assert plan["model_version"] == "3.1.0"
     assert plan["schema_version"] == "scalp_v3"
@@ -1071,7 +1142,9 @@ class _FakeReleaseServer:
             def do_GET(self) -> None:
                 st = self.server.server_state  # type: ignore[attr-defined]
                 if self.path.startswith("/releases"):
-                    body = st._releases_json().encode()
+                    body = (
+                        getattr(st, "_signed_for_test", None) or st._releases_json()
+                    ).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(body)))
@@ -1159,7 +1232,7 @@ class _FakeReleaseServer:
             self._httpd.server_close()
 
 
-def test_up55_e2e_check_download_verify_install(tmp_path: Path) -> None:
+def test_up55_e2e_check_download_verify_install(tmp_path: Path, monkeypatch) -> None:
     """Spec 61: current=old, latest=new; check -> download -> hash verify ->
     install -> verify version -> READY.  Exercises the REAL update service."""
     import nexus_scalp.release.updater as upd_mod
@@ -1182,6 +1255,12 @@ def test_up55_e2e_check_download_verify_install(tmp_path: Path) -> None:
             architecture="x64",
         )
         api = f"http://127.0.0.1:{server.port}/releases"
+
+        # Sign the served release against the EXACT payload the fake server
+        # serves (real Ed25519 trust path with an ephemeral trusted key).
+        served = json.loads(server._releases_json())
+        _sign_release_manifest(served[1], monkeypatch, payload=server.payload)
+        server._signed_for_test = json.dumps(served)
 
         plan = orch.check(api_url=api)
         assert plan["status"] == "UPDATE_AVAILABLE"
