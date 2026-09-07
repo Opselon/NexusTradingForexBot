@@ -225,6 +225,11 @@ class WalkForwardTrainer:
         # embargo semantics are IDENTICAL in both modes; the default is
         # "blocked" so existing experiments are never silently re-geometried.
         walk_forward_mode: str = "blocked",
+        # CALIBRATION SAFETY POLICY (P1): maximum allowed RELATIVE Brier
+        # degradation vs baseline (default 0.10 = +10% worse Brier than the
+        # champion weights; 0.0 strictest; None disables — recorded in
+        # provenance). See the calibration-shift evaluation below.
+        max_calibration_degradation_r: float | None = None,
         # MODEL_CLASS_CONTRACT v1 (Fix #3): the neural class contract is
         # derived from the LABEL SCHEMA (triple_barrier_3class_v1), not
         # hard-coded. Passing class_count=4 with labels that never contain
@@ -298,7 +303,20 @@ class WalkForwardTrainer:
                 f"walk_forward_mode must be 'blocked' or 'expanding', got "
                 f"{walk_forward_mode!r}"
             )
-        self.walk_forward_mode = str(walk_forward_mode)
+        self.walk_forward_mode: str = str(walk_forward_mode)
+        # CALIBRATION SAFETY POLICY (P1): maximum allowed RELATIVE
+        # degradation of the candidate's Brier score versus the
+        # baseline/champion weights on the same validation buffer.
+        # Relative (not absolute) so the gate adapts to the model's own
+        # calibration scale — a champion at Brier 0.60 is not held to the
+        # same absolute budget as one at 0.10. 0.0 = candidate may be no
+        # worse than baseline at all (strictest); None disables the gate
+        # (not recommended; recorded in provenance).
+        self.max_calibration_degradation_r = (
+            float(max_calibration_degradation_r)
+            if max_calibration_degradation_r is not None
+            else 0.10
+        )
         # ---------------------------------------------------------------------
         # FEATURE SCHEMA BINDING
         # ---------------------------------------------------------------------
@@ -747,6 +765,22 @@ class WalkForwardTrainer:
         )
         overall_metrics = self._evaluate_global_performance(oos_predictions, oos_targets)
         logger.info("Out-of-sample global metrics", **overall_metrics)
+        # OOS classification evidence (learning-loop P1): threaded into
+        # last_convergence_metadata so the lifecycle's TrainingRun.metrics
+        # carries REAL out-of-sample accuracy / trade counts — the gates then
+        # consume genuine evidence instead of placeholder None values.
+        oos_accuracy = (
+            float(
+                np.sum(np.array(oos_predictions) == np.array(oos_targets))
+                / len(oos_predictions)
+            )
+            if oos_predictions
+            else None
+        )
+        oos_class_counts: dict[str, int] = {}
+        for _p in oos_predictions:
+            key = str(int(_p))
+            oos_class_counts[key] = oos_class_counts.get(key, 0) + 1
         logger.info("Initiating final production training on full trainable dataset")
         full_scaler = self._fit_scaler(X_raw)
         X_full = self._transform_features(X_raw, full_scaler)
@@ -816,6 +850,12 @@ class WalkForwardTrainer:
             "max_fold_drawdown_r": (
                 max((f["max_drawdown_r"] for f in fold_economics_history), default=None)
             ),
+            # OOS classification evidence (learning-loop P1) — computed from
+            # the SAME pooled OOS predictions; None only when the walk
+            # produced no scored rows (then NOT_AVAILABLE downstream).
+            "oos_accuracy": oos_accuracy,
+            "oos_samples": len(oos_predictions),
+            "oos_prediction_class_counts": oos_class_counts,
         }
         # Model diagnostics verification post final training
         final_model.eval()
@@ -1405,7 +1445,35 @@ class WalkForwardTrainer:
             final_val_loss < baseline_val_loss
         )
         early_stopping_ok = (not early_stopping_triggered) or metrics_superior
-        accepted = bool(quality_gate_passed and loss_improved and early_stopping_ok)
+        # CALIBRATION SAFETY (P1, research/training-parity): downstream risk
+        # consumes confidence, so a fine-tune that materially DEGRADES
+        # calibration must be flagged and rejected per the configurable
+        # policy. Measured as the degradation of the candidate relative to
+        # the BASELINE (prior/champion) weights on the identical validation
+        # buffer — Brier + ECE. NO absolute magic-threshold style cut: the
+        # allowed degradation is a
+        # policy parameter (max_calibration_degradation_r) and the metrics
+        # travel on the persist decision for audit either way.
+        calibration = self._evaluate_calibration_shift(
+            working_model,
+            baseline_state,
+            val_loader,
+            probs_arr,
+        )
+        # Gate: the only Brier comparison is the RELATIVE degradation vs the
+        # policy limit; no absolute threshold exists.
+        calibration_ok = bool(
+            calibration["brier_degradation"] <= self.max_calibration_degradation_r
+        )
+        if not calibration_ok:
+            rejection_reasons.append(
+                f"Calibration degraded beyond policy: Brier worsened by "
+                f"{calibration['brier_degradation']:.4f} (allowed "
+                f"{self.max_calibration_degradation_r:.4f}); "
+                f"baseline={calibration['baseline_brier']:.4f} "
+                f"candidate={calibration['candidate_brier']:.4f}"
+            )
+        accepted = bool(quality_gate_passed and loss_improved and early_stopping_ok and calibration_ok)
         logger.info(
             "Model fine-tuning quality & health diagnostics",
             class_distribution_pct=[f"{c:.1%}" for c in class_dist[:3]],
@@ -1415,6 +1483,12 @@ class WalkForwardTrainer:
             validation_accuracy=round(val_acc, 3),
             accuracy_delta=round(val_acc - baseline_acc, 3),
             sell_dominance_pct=f"{sell_dist_ratio:.1%}",
+            brier_baseline=calibration["baseline_brier"],
+            brier_candidate=calibration["candidate_brier"],
+            brier_degradation=calibration["brier_degradation"],
+            ece_baseline=calibration["baseline_ece"],
+            ece_candidate=calibration["candidate_ece"],
+            calibration_ok=calibration_ok,
             accepted=accepted,
             rejection_reasons=rejection_reasons if not accepted else None,
         )
@@ -1502,6 +1576,102 @@ class WalkForwardTrainer:
         if a.keys() != b.keys():
             return False
         return all(torch.equal(a[k], b[k]) for k in a)
+
+    def _evaluate_calibration_shift(
+        self,
+        candidate_model: ScalpNet,
+        baseline_state: dict,
+        val_loader: DataLoader,
+        candidate_probs: np.ndarray,
+    ) -> dict[str, Any]:
+        """Measures the candidate's calibration shift vs the BASELINE
+        (prior/champion) weights on the IDENTICAL validation buffer.
+
+        Metrics (confidence-safety evidence, P1):
+          * baseline_brier / candidate_brier — Brier score of the confidence
+            as a win-probability proxy against the resolved outcome
+            (trade = 1 if the argmax action was BUY/SELL AND correct, else 0;
+            NO_TRADE rows are excluded from a *trade* Brier but kept with a
+            neutral target so miscalibrated NO_TRADE confidence is still
+            visible).
+          * baseline_ece / candidate_ece — expected calibration error on
+            10 equal-width confidence bins.
+          * brier_degradation — RELATIVE worsening of candidate vs baseline
+            ((candidate - baseline) / max(baseline, eps)); the promotion gate
+            compares this against max_calibration_degradation_r. A NEGATIVE
+            value means the fine-tune IMPROVED calibration.
+
+        Pure evaluation: the candidate model is scored in-place (it already
+        holds the best candidate weights); the baseline is scored from a
+        temporary state swap and restored. No RNG, no training.
+        """
+        candidate_probs_list: list[np.ndarray] = []
+        baseline_probs_list: list[np.ndarray] = []
+        baseline_targets: list[int] = []
+        candidate_model.eval()
+        saved_state = copy.deepcopy(candidate_model.state_dict())
+        try:
+            with torch.inference_mode():
+                for item in val_loader:
+                    bx = item[0]
+                    by = item[1] if len(item) > 1 else None
+                    cprobs = candidate_model(bx, return_logits=False)
+                    candidate_probs_list.append(cprobs.cpu().numpy())
+                    if by is not None:
+                        baseline_targets.extend(by.cpu().numpy().tolist())
+            candidate_model.load_state_dict(baseline_state)
+            with torch.inference_mode():
+                for item in val_loader:
+                    bx = item[0]
+                    bprobs = candidate_model(bx, return_logits=False)
+                    baseline_probs_list.append(bprobs.cpu().numpy())
+        finally:
+            candidate_model.load_state_dict(saved_state)
+
+        candidate_probs = (
+            np.concatenate(candidate_probs_list, axis=0)
+            if candidate_probs_list
+            else np.asarray(candidate_probs)
+        )
+        baseline_probs = (
+            np.concatenate(baseline_probs_list, axis=0)
+            if baseline_probs_list
+            else np.asarray(candidate_probs)
+        )
+        targets_arr = np.asarray(baseline_targets, dtype=np.int64)
+
+        def _score(probs: np.ndarray) -> tuple[float, float]:
+            conf = np.max(probs, axis=1)
+            pred = np.argmax(probs, axis=1)
+            # Outcome proxy: a trade wins only when the action was BUY/SELL
+            # AND correct; NO_TRADE is a "no position taken" outcome.
+            outcome = ((pred == targets_arr) & (pred != 0)).astype(np.float64)
+            brier = float(np.mean((conf - outcome) ** 2))
+            # ECE over 10 equal-width bins.
+            n = len(conf)
+            ece = 0.0
+            for b in range(10):
+                lo, hi = b / 10.0, (b + 1) / 10.0
+                mask = (conf > lo) & (conf <= hi) if b else (conf <= hi)
+                nb = int(np.sum(mask))
+                if nb:
+                    ece += (nb / n) * abs(float(np.mean(conf[mask])) - float(np.mean(outcome[mask])))
+            return brier, ece
+
+        baseline_brier, baseline_ece = _score(baseline_probs)
+        candidate_brier, candidate_ece = _score(candidate_probs)
+        eps = 1e-6
+        brier_degradation = (candidate_brier - baseline_brier) / max(baseline_brier, eps)
+        return {
+            "baseline_brier": baseline_brier,
+            "candidate_brier": candidate_brier,
+            "brier_degradation": brier_degradation,
+            "baseline_ece": baseline_ece,
+            "candidate_ece": candidate_ece,
+            "ece_degradation": (candidate_ece - baseline_ece) / max(baseline_ece, eps),
+            "policy_limit": self.max_calibration_degradation_r,
+            "samples": len(baseline_probs),
+        }
 
     def _validate_training_frame(self, df: pl.DataFrame, feature_cols: list[str]) -> None:
         """
