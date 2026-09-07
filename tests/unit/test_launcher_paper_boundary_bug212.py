@@ -15,16 +15,62 @@ Contract pinned here (2026-09-02, Hermes-EngineGuard):
   3. SHADOW is observation-only: any non-NO_TRADE proposal is downgraded
      to a logged NO_TRADE (SHADOW_OBSERVATION_ONLY) BEFORE dispatch, and
      intelligent hedges are suppressed. Live prediction data flow is kept.
+
+Fixture note (2026-09-07, integration-recovery): constructing a LiveEngine
+runs the P1 artifact-trust gate (verify_artifact_integrity) on the configured
+artifact path. The tests below that build a REAL engine therefore point the
+config at a HERMETIC bundle (weights + manifest.json generated together with
+the same production verification contract) instead of the machine-state
+production champion — the integrity gate itself is exercised for real (a
+tampered artifact is rejected in test_artifact_integrity_gate_rejects_tampered_weights).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
+
+
+def _write_verified_bundle(directory, num_features: int = 50):
+    """Create model.pt + manifest.json as a coherent trust-chain pair.
+
+    The manifest digest is computed FROM the emitted weights — the exact
+    production contract (load_integrity.verify_artifact_integrity): what is
+    on disk must equal what the manifest declares. Returns (path, digest).
+    """
+    import torch
+
+    from nexus_scalp.models.scalp_net import ScalpNet
+
+    directory.mkdir(parents=True, exist_ok=True)
+    model_path = directory / "model.pt"
+    model = ScalpNet(num_features=num_features)
+    model.eval()
+    torch.save(model.state_dict(), model_path)
+
+    digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    manifest = {
+        "manifest_version": "1.0.0",
+        "bundle_id": f"bundle_{digest[:12]}",
+        "model_sha256": digest,
+        "feature_schema_id": "scalp_v1" if num_features == 50 else "scalp_v3",
+        "input_dim": num_features,
+        "architecture": "ScalpNet",
+        "architecture_version": "1.0.0",
+        "lineage": "CLEAN_HISTORICAL",
+        "production_eligible": True,
+        "smoke": True,
+        "dataset_id": "test",
+        "dataset_sha256": "0" * 64,
+    }
+    (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return model_path, digest
 
 
 class _FakeAdapter:
@@ -37,12 +83,29 @@ class _FakeAdapter:
         return self.connected
 
 
-def _make_engine(mode: ExecutionMode, adapter: object) -> LiveEngine:
+def _make_engine(mode: ExecutionMode, adapter: object, tmp_path=None) -> LiveEngine:
     from nexus_scalp.configuration.config import AppConfig
 
     cfg = AppConfig()
     cfg.execution.mode = mode
+    if tmp_path is not None:
+        # Hermetic artifact: a self-paired (weights, manifest) bundle under
+        # tmp_path so the boot-time integrity gate passes deterministically.
+        model_path, _digest = _write_verified_bundle(tmp_path / "bundle")
+        cfg.model.model_artifact_path = str(model_path)
     return LiveEngine(config=cfg, adapter=adapter, audit_repo=MagicMock())
+
+
+@pytest.fixture()
+def _hermetic_artifact(tmp_path):
+    """Default the engine fixture path to a verified tmp bundle.
+
+    Test isolation: the artifact-trust gate must never depend on the state
+    of the production champion on this machine (the weights can be swapped
+    by any runtime process at any time; the manifest only matches right
+    after a coherent publish).
+    """
+    return tmp_path
 
 
 # ---------------------------------------------------------------------------
@@ -50,13 +113,13 @@ def _make_engine(mode: ExecutionMode, adapter: object) -> LiveEngine:
 # ---------------------------------------------------------------------------
 
 
-def test_boot_alignment_paper_replaces_real_adapter() -> None:
+def test_boot_alignment_paper_replaces_real_adapter(tmp_path) -> None:
     """BUG-212 core regression: a PAPER boot must never keep DirectMT5Adapter."""
     from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 
     real = DirectMT5Adapter()
-    engine = _make_engine(ExecutionMode.PAPER, real)
+    engine = _make_engine(ExecutionMode.PAPER, real, tmp_path=tmp_path)
     aligned = engine.align_adapter_to_boot_mode(engine.adapter, ExecutionMode.PAPER)
     assert isinstance(aligned, PaperMT5Adapter), (
         f"PAPER boot must bind the simulation adapter, got {type(aligned).__name__}"
@@ -64,17 +127,17 @@ def test_boot_alignment_paper_replaces_real_adapter() -> None:
     assert aligned is not real
 
 
-def test_boot_alignment_paper_keeps_paper_adapter() -> None:
+def test_boot_alignment_paper_keeps_paper_adapter(tmp_path) -> None:
     """A PaperMT5Adapter on a PAPER boot is returned unchanged (no churn)."""
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 
     paper = PaperMT5Adapter(symbol="XAUUSD")
-    engine = _make_engine(ExecutionMode.PAPER, paper)
+    engine = _make_engine(ExecutionMode.PAPER, paper, tmp_path=tmp_path)
     aligned = engine.align_adapter_to_boot_mode(paper, ExecutionMode.PAPER)
     assert aligned is paper
 
 
-def test_boot_alignment_shadow_keeps_live_data_adapter() -> None:
+def test_boot_alignment_shadow_keeps_live_data_adapter(tmp_path) -> None:
     """SHADOW keeps its live-data adapter (observation contract, not identity).
 
     The shadow-observation contract needs the REAL feed/positions to record
@@ -84,22 +147,22 @@ def test_boot_alignment_shadow_keeps_live_data_adapter() -> None:
     from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
 
     real = DirectMT5Adapter()
-    engine = _make_engine(ExecutionMode.SHADOW, real)
+    engine = _make_engine(ExecutionMode.SHADOW, real, tmp_path=tmp_path)
     aligned = engine.align_adapter_to_boot_mode(real, ExecutionMode.SHADOW)
     assert aligned is real
 
 
-def test_boot_alignment_live_keeps_real_adapter() -> None:
+def test_boot_alignment_live_keeps_real_adapter(tmp_path) -> None:
     """LIVE boots are untouched by the alignment (no LIVE behavior change)."""
     from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
 
     real = DirectMT5Adapter()
-    engine = _make_engine(ExecutionMode.LIVE, real)
+    engine = _make_engine(ExecutionMode.LIVE, real, tmp_path=tmp_path)
     aligned = engine.align_adapter_to_boot_mode(real, ExecutionMode.LIVE)
     assert aligned is real
 
 
-def test_engine_constructor_aligns_adapter_at_boot() -> None:
+def test_engine_constructor_aligns_adapter_at_boot(tmp_path) -> None:
     """The __init__ defense-in-depth: constructing LiveEngine with a real
     adapter under PAPER must leave engine.adapter as the simulation adapter
     BEFORE any downstream wiring (OrderLifecycleManager sees the boundary)."""
@@ -107,7 +170,7 @@ def test_engine_constructor_aligns_adapter_at_boot() -> None:
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 
     real = DirectMT5Adapter()
-    engine = _make_engine(ExecutionMode.PAPER, real)
+    engine = _make_engine(ExecutionMode.PAPER, real, tmp_path=tmp_path)
     assert isinstance(engine.adapter, PaperMT5Adapter)
     assert engine.adapter is not real
 
@@ -161,12 +224,12 @@ def test_launcher_source_binds_paper_adapter_for_paper_boot() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _shadow_engine() -> LiveEngine:
+def _shadow_engine(tmp_path) -> LiveEngine:
     from nexus_scalp.domain.models import (
         TradeProposal,
     )
 
-    engine = _make_engine(ExecutionMode.SHADOW, _FakeAdapter())
+    engine = _make_engine(ExecutionMode.SHADOW, _FakeAdapter(), tmp_path=tmp_path)
     return engine
 
 
@@ -254,7 +317,7 @@ def test_shadow_suppresses_intelligent_hedge_dispatch() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_hot_mode_switch_contract_unchanged() -> None:
+def test_hot_mode_switch_contract_unchanged(tmp_path) -> None:
     """set_execution_mode keeps its BUG-148 hot-swap behavior (PAPER+SHADOW
     swap to simulation on a mode CHANGE) — the boot alignment must not have
     altered the hot path."""
@@ -262,8 +325,41 @@ def test_hot_mode_switch_contract_unchanged() -> None:
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 
     real = DirectMT5Adapter()
-    engine = _make_engine(ExecutionMode.LIVE, real)
+    engine = _make_engine(ExecutionMode.LIVE, real, tmp_path=tmp_path)
     result = engine.set_execution_mode(ExecutionMode.PAPER, source="TEST")
     assert result["success"] is True
     assert isinstance(engine.adapter, PaperMT5Adapter)
     assert engine.order_manager.adapter is engine.adapter
+
+
+# ---------------------------------------------------------------------------
+# 5. The artifact-integrity gate itself stays REAL (negative coverage)
+# ---------------------------------------------------------------------------
+
+
+def test_artifact_integrity_gate_rejects_tampered_weights(tmp_path) -> None:
+    """The gate must fail closed when weights are mutated AFTER the manifest
+    was written (the exact production trap this fixture guards against):
+    constructing LiveEngine on a tampered bundle must raise, never silently
+    serve unverified weights."""
+    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+    from nexus_scalp.model_lifecycle.load_integrity import ArtifactIntegrityError
+
+    bundle_dir = tmp_path / "tampered_bundle"
+    model_path, _digest = _write_verified_bundle(bundle_dir)
+    # Mutate the weights AFTER the manifest was created (in-place flip).
+    import torch
+
+    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    first_key = next(iter(state))
+    state[first_key] = state[first_key] + 1.0
+    torch.save(state, model_path)
+
+    from nexus_scalp.configuration.config import AppConfig
+
+    cfg = AppConfig()
+    cfg.execution.mode = ExecutionMode.PAPER
+    cfg.model.model_artifact_path = str(model_path)
+    with pytest.raises(ArtifactIntegrityError) as excinfo:
+        LiveEngine(config=cfg, adapter=PaperMT5Adapter(), audit_repo=MagicMock())
+    assert excinfo.value.verdict.status.value == "HASH_MISMATCH"
