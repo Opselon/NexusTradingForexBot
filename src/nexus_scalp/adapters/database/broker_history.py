@@ -408,6 +408,48 @@ CREATE TABLE IF NOT EXISTS audit_broker_history_meta (
 );
 """
 
+# ---------------------------------------------------------------------------
+# PAPER execution ledger durable copy (paper-demo parity, mission P0-1)
+# ---------------------------------------------------------------------------
+# The PaperMT5Adapter execution ledger is in-memory only; a restart loses
+# every fill/rejection record, so PAPER vs DEMO execution parity had no
+# durable paper-side evidence. This table mirrors the adapter ledger shape
+# (ts, requested vs fill price, bid/ask at request, spread, slippage,
+# rejection_reason). Identity = ts + ticket (the adapter stamps one row per
+# order attempt; ts is ISO-8601 microsecond-precision so re-exporting the
+# same rows is a no-op via insert-or-ignore).
+_PAPER_EXECUTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS audit_paper_executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    symbol TEXT DEFAULT '',
+    order_type TEXT DEFAULT '',
+    volume REAL DEFAULT 0.0,
+    requested_price REAL DEFAULT 0.0,
+    bid_at_request REAL DEFAULT 0.0,
+    ask_at_request REAL DEFAULT 0.0,
+    spread REAL DEFAULT 0.0,
+    fill_price REAL,
+    slippage REAL,
+    rejection_reason TEXT,
+    ticket INTEGER DEFAULT 0,
+    latency_ticks INTEGER DEFAULT 0,
+    status TEXT DEFAULT '',
+    source TEXT DEFAULT 'PAPER_ADAPTER_LEDGER'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_exec_identity
+    ON audit_paper_executions(ts, ticket, order_type, requested_price);
+CREATE INDEX IF NOT EXISTS idx_paper_exec_ts ON audit_paper_executions(ts);
+"""
+
+
+def create_paper_executions_table(conn: sqlite3.Connection) -> None:
+    """Idempotent creation of the durable paper execution-ledger copy."""
+    for raw_stmt in _PAPER_EXECUTIONS_DDL.strip().split(";\n"):
+        trimmed = raw_stmt.strip()
+        if trimmed:
+            conn.execute(trimmed)
+
 
 def create_history_tables(conn: sqlite3.Connection) -> None:
     """Idempotent table creation for the broker-history normalized copy."""
