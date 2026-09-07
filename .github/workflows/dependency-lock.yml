@@ -1,0 +1,83 @@
+name: Dependency Lock & Migration Safety
+
+# Dependency SSOT + migration-safety drift gates (task: DEPENDENCY /
+# DATABASE-MIGRATION hardening). Both checks are deterministic, offline
+# and self-contained; they FAIL (non-zero) on drift or a violation, so a
+# hand-edited generated artifact or a silent migration swallow turns CI red.
+#
+#   check_dependency_drift.py : requirements.lock / requirements.txt must
+#     match a fresh `uv pip compile pyproject.toml --all-extras` resolution.
+#     The repo venv builds through the lock (see ci.yml "Install via lock").
+#   check_migration_safety.py : migration registry chain valid, no silent
+#     except-swallow in the migration apply path, every domain reaches
+#     expected_version + verify() on disposable DBs.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deplock-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-drift:
+    name: Dependency drift (lock vs pyproject)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+
+      - name: Drift check (regenerates nothing; fails on stale artifacts)
+        run: |
+          python scripts/ci/check_dependency_drift.py
+
+  migration-safety:
+    name: Migration safety (fail-loud + version postconditions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install minimal check deps
+        run: python -m pip install --upgrade pip structlog
+
+      - name: Migration safety check (disposable DBs only)
+        run: |
+          python scripts/ci/check_migration_safety.py
+
+      - name: Mutation fast scope (changed targets only)
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        run: |
+          # PR-fast mutation path: only mutations whose target file appears
+          # in the current git diff. Exit 1 = surviving mutant (test blind
+          # spot), exit 2 = broken battery/anchor (runner untrustworthy).
+          python scripts/qa/run_mutations.py --changed --out mutation-scope.json
+          cat mutation-scope.json
+
+      - name: Upload mutation scope report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-scope-${{ github.run_number }}-${{ github.sha }}
+          path: mutation-scope.json
+          if-no-files-found: ignore
+          retention-days: 90
