@@ -4349,19 +4349,23 @@ class LiveEngine:
                             )
 
     def _validate_feature_vector(self, features, context: str) -> list:
-        """Delegate: schema-gated validation (owned by InferenceService, L6)."""
-        eng = self._inference_service
-        return eng.validate_feature_vector(features, context=context)
+        """Delegate: schema-gated validation (InferenceService, L6); unbound
+        call keeps the harness/stand-in test contract on the real logic."""
+        from nexus_scalp.application.live.inference import InferenceService
+
+        return InferenceService.validate_feature_vector(self, features, context=context)
 
     def _build_live_feature_vector(self, fv) -> tuple:
-        """Delegate: canonical live tensor assembly (owned by InferenceService, L6)."""
-        eng = self._inference_service
-        return eng.build_live_feature_vector(fv)
+        """Delegate: canonical live tensor assembly (InferenceService, L6)."""
+        from nexus_scalp.application.live.inference import InferenceService
+
+        return InferenceService.build_live_feature_vector(self, fv)
 
     def _infer_probabilities(self, fv):
-        """Delegate: staged-latency model inference (owned by InferenceService, L6)."""
-        eng = self._inference_service
-        return eng.infer_probabilities(fv)
+        """Delegate: staged-latency inference (InferenceService, L6)."""
+        from nexus_scalp.application.live.inference import InferenceService
+
+        return InferenceService.infer_probabilities(self, fv)
 
     @property
     def _inference_service(self):
