@@ -17,8 +17,12 @@ the engine as the state surface.
 
 from __future__ import annotations
 
+import contextlib
+import uuid
 from typing import Any
 
+from nexus_scalp.governance.models import GovernanceEvent, GovernanceStage
+from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.champion_sync")
