@@ -26,11 +26,22 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field
 
-#: Live RiskEngine confidence scaling, reused verbatim (single source):
-#: scalar = clip(confidence / 0.85, 0.5, 1.2).
-LIVE_CONFIDENCE_DIVISOR: float = 0.85
-LIVE_CONFIDENCE_MIN: float = 0.5
-LIVE_CONFIDENCE_MAX: float = 1.2
+#: LIVE CONFIDENCE FACTOR (ECON v1, updated to the P0 phase-3 contract):
+#: the RiskEngine no longer levers on RAW model confidence — confidence now
+#: routes through the CALIBRATED multiplier
+#: (model_lifecycle.confidence_calibration.confidence_to_risk_multiplier):
+#:   state != CALIBRATED  -> 1.0 exactly (flat sizing)
+#:   CALIBRATED           -> linear in [0.25, 1.0]
+#: i.e. confidence can only DE-RISK, never lever up. The historical
+#: raw-softmax constants (divisor 0.85, clip [0.5, 1.2]) are retired; they
+#: remain defined ONLY for regression references in old artifacts.
+LIVE_CONFIDENCE_DIVISOR: float = 0.85  # retired raw path (kept for provenance)
+LIVE_CONFIDENCE_MIN: float = 0.5  # retired raw path (kept for provenance)
+LIVE_CONFIDENCE_MAX: float = 1.2  # retired raw path (kept for provenance)
+#: Canonical calibrated-confidence multiplier bounds (single source:
+#: model_lifecycle.confidence_calibration; mirrored here for the pure policy).
+LIVE_CONF_MULTIPLIER_MIN: float = 0.25
+LIVE_CONF_MULTIPLIER_MAX: float = 1.0
 
 #: Live RiskEngine drawdown penalty, reused verbatim:
 #: dd>1% -> penalty = max(0.2, 1.0 - dd_pct * 0.2).
@@ -55,11 +66,21 @@ class SizingPolicy(BaseModel):
 
     @staticmethod
     def confidence_scalar(confidence: float) -> float:
-        """Live semantics: clip(confidence / 0.85, 0.5, 1.2)."""
+        """Canonical confidence factor (calibrated-confidence contract).
+
+        The live RiskEngine now consumes the CALIBRATED multiplier bounded
+        [0.25, 1.0] — confidence can only de-risk, never lever. When no
+        calibrated state is supplied the factor is the flat 1.0 (the same
+        NOT_CALIBRATED fallback the live engine applies). The historical
+        raw-softmax clip(conf/0.85, 0.5, 1.2) is RETIRED: a raw softmax must
+        not lever money-at-risk.
+        """
         c = float(confidence)
-        if not math.isfinite(c):
-            return 1.0
-        return max(LIVE_CONFIDENCE_MIN, min(LIVE_CONFIDENCE_MAX, c / LIVE_CONFIDENCE_DIVISOR))
+        if not math.isfinite(c) or c < 0.0:
+            return 1.0  # unknown/degraded confidence -> flat sizing
+        c = min(1.0, c)
+        span = LIVE_CONF_MULTIPLIER_MAX - LIVE_CONF_MULTIPLIER_MIN
+        return LIVE_CONF_MULTIPLIER_MIN + span * c
 
     @staticmethod
     def drawdown_penalty(equity: float, peak_equity: float) -> float:
