@@ -255,9 +255,83 @@ class OfficialSourceAdapter(RSSNewsSourceAdapter):
         return result
 
 
+class JSONManifestSourceAdapter(NewsSourceAdapter):
+    """JSON manifest adapter (kind=API) — e.g. Treasury news-data shards.
+
+    Contract (verified 2026-09-07): a JSON document that is either a bare
+    array of items or an object with an ``items`` array; each item carries
+    at least {title, url} and typically an ISO datetime (``datetime`` /
+    ``date`` / ``published_at``). Any deviation is a typed failure (never
+    silently trusted — mirrors OfficialSourceAdapter strictness).
+    """
+
+    source_id = "json_manifest"
+    kind = "API"
+
+    def fetch(self, limit: int = 100) -> SourceFetchResult:
+        if not self.feed_url:
+            return SourceFetchResult(ok=False, error="no feed_url configured")
+        resp_status: int | None = None
+        try:
+            import httpx
+
+            with httpx.Client(timeout=self.timeout_sec, follow_redirects=True) as client:
+                resp = client.get(
+                    self.feed_url,
+                    headers={"User-Agent": "NexusScalpEngine/1.0 (news intelligence)"},
+                )
+                resp_status = resp.status_code
+                if resp.status_code != 200:
+                    return SourceFetchResult(
+                        ok=False, status=resp.status_code, error=f"HTTP {resp.status_code}"
+                    )
+                payload = resp.json()
+        except Exception as e:
+            return SourceFetchResult(ok=False, error=f"fetch error: {e}")
+        items_raw = payload.get("items") if isinstance(payload, dict) else payload
+        if not isinstance(items_raw, list):
+            return SourceFetchResult(
+                ok=False, status=resp_status, error="JSON manifest has no items array"
+            )
+        items: list[dict[str, Any]] = []
+        for row in items_raw[:limit]:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").strip()
+            if not title:
+                continue
+            base = row.get("url") or ""
+            if base.startswith("/"):
+                base = f"https://{self._host()}{base}"
+            published = row.get("datetime") or row.get("date") or row.get("published_at") or ""
+            items.append(
+                {
+                    "title": title,
+                    "url": str(base),
+                    "summary": str(row.get("description") or row.get("excerpt") or ""),
+                    "body": "",
+                    "published_at": self._parse_dt(published) if published else _utc_now(),
+                    "updated_at": self._parse_dt(published) if published else _utc_now(),
+                    "categories": [],
+                }
+            )
+        if not items:
+            return SourceFetchResult(
+                ok=False, status=resp_status, error="JSON manifest returned no usable items"
+            )
+        return SourceFetchResult(ok=True, items=items, status=resp_status)
+
+    def _host(self) -> str:
+        from urllib.parse import urlparse
+
+        return urlparse(self.feed_url).netloc or "home.treasury.gov"
+
+
 def build_adapter(source_config: dict[str, Any]) -> NewsSourceAdapter:
     """Factory: returns the right adapter for a source config row."""
     kind = str(source_config.get("kind", "RSS")).upper()
     if kind in ("OFFICIAL", "CALENDAR"):
         return OfficialSourceAdapter(source_config)
+    if kind == "API":
+        return JSONManifestSourceAdapter(source_config)
     return RSSNewsSourceAdapter(source_config)
