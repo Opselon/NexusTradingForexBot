@@ -23,7 +23,6 @@ from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.signals.policy import SignalPolicy
 
-
 # --------------------------------------------------------------------------
 # Canonical defaults
 # --------------------------------------------------------------------------
@@ -37,7 +36,9 @@ def test_policy_base_threshold_defaults_to_config() -> None:
 
 
 def test_risk_high_confidence_threshold_defaults_to_config() -> None:
-    engine = RiskEngine(config=__import__("nexus_scalp.configuration.config", fromlist=["RiskConfig"]).RiskConfig())
+    engine = RiskEngine(
+        config=__import__("nexus_scalp.configuration.config", fromlist=["RiskConfig"]).RiskConfig()
+    )
     assert engine.high_confidence_threshold == AlgoConfig().high_confidence_threshold
 
 
@@ -132,5 +133,7 @@ def test_high_confidence_rr_relaxation_uses_single_threshold() -> None:
     hc = AlgoConfig().high_confidence_threshold
     policy = SignalPolicy()
     assert policy.algo_config.high_confidence_threshold == hc
-    engine = RiskEngine(config=__import__("nexus_scalp.configuration.config", fromlist=["RiskConfig"]).RiskConfig())
+    engine = RiskEngine(
+        config=__import__("nexus_scalp.configuration.config", fromlist=["RiskConfig"]).RiskConfig()
+    )
     assert engine.high_confidence_threshold == hc
