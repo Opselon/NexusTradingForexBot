@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "key_id": "2026-09-root",
+  "version": "9.1.0",
+  "platform": "windows",
+  "architecture": "x64",
+  "artifact_name": "NexusScalpEngine-9.1.0-win-x64.zip",
+  "artifact_sha256": "a6d899d9579fec1fa5eb70e056112b89fe8690b0a010e90c53d282b5f39d4876",
+  "artifact_size": 88,
+  "signature": "7a86611bebbf7fd9e76003129b0d457e7919f6a41576451de808dc6d72c778757a54fac1c3699d9edee2de2c74e993f72660e70f4f55e940176e6b00778b6308"
+}

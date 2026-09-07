@@ -132,7 +132,7 @@ def load_model_artifacts(model_path: str | Path) -> ModelArtifacts:
         data = np.load(scaler_path)
         mean = np.asarray(data["mean"], dtype=np.float64)
         std = np.asarray(data["std"], dtype=np.float64)
-    probe = torch.load(p, map_location="cpu")
+    probe = torch.load(p, map_location="cpu", weights_only=True)
     w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
     if w is None or not hasattr(w, "shape") or len(w.shape) != 2:
         raise ValueError(f"model artifact has no input_projection.weight: {p}")

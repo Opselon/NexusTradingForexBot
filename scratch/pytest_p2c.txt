@@ -1,0 +1,197 @@
+sssss..FF.........sssssss...sFs..F...................................... [ 31%]
+.......................F................................................ [ 63%]
+........................................................................ [ 95%]
+...........                                                              [100%]
+================================== FAILURES ===================================
+__________________ test_70d_model_07_70d_model_forward_pass ___________________
+
+    def test_70d_model_07_70d_model_forward_pass() -> None:
+        if not _has_real_70d_schema():
+            pytest.skip("no 70D schema registered yet (TASK-2/3 pending)")
+        from nexus_scalp.features.schema import FEATURE_SCHEMAS
+        from nexus_scalp.model_generation.model_factory import ModelFactory
+    
+        s = next(s for s in FEATURE_SCHEMAS.list_schemas() if s.dimension == 70)
+        m = ModelFactory(feature_schema_id=s.schema_id).build(
+            "LEGACY_SCALPNET_V1", parameters={"input_dim": 70}
+        )
+        m.eval()
+        with torch.inference_mode():
+            out = m(torch.randn(4, 70))
+>       assert out.shape == (4, 4)  # ScalpNet 4-head (WAIT policy bridge)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert torch.Size([4, 3]) == (4, 4)
+E         
+E         At index 1 diff: 3 != 4
+E         Use -v to get more diff
+
+tests\unit\test_70d_model_validation_task4.py:303: AssertionError
+_________________ test_70d_model_08_60d_baseline_forward_pass _________________
+
+    def test_70d_model_08_60d_baseline_forward_pass() -> None:
+        from nexus_scalp.model_generation.model_factory import ModelFactory
+    
+        m = ModelFactory(feature_schema_id="scalp_v2").build(
+            "LEGACY_SCALPNET_V1", parameters={"input_dim": 60}
+        )
+        m.eval()
+        with torch.inference_mode():
+            out = m(torch.randn(4, 60))
+>       assert out.shape == (4, 4)
+E       assert torch.Size([4, 3]) == (4, 4)
+E         
+E         At index 1 diff: 3 != 4
+E         Use -v to get more diff
+
+tests\unit\test_70d_model_validation_task4.py:316: AssertionError
+___________ test_70d_model_29_parameter_count_and_latency_reported ____________
+
+    def test_70d_model_29_parameter_count_and_latency_reported() -> None:
+        """60D vs 70D parameter delta and inference latency are measured and
+        bounded (brief 41/42/43): the 70D input layer adds ~10 weights per neuron
+        but must not add unacceptable runtime latency."""
+        from nexus_scalp.model_generation.model_factory import ModelFactory
+    
+        m60 = ModelFactory(feature_schema_id="scalp_v2").build(
+            "LEGACY_SCALPNET_V1", parameters={"input_dim": 60}
+        )
+        m70 = ModelFactory(feature_schema_id="scalp_v4").build(
+            "LEGACY_SCALPNET_V1", parameters={"input_dim": 70}
+        )
+        p60 = sum(p.numel() for p in m60.parameters())
+        p70 = sum(p.numel() for p in m70.parameters())
+>       assert p60 == 266_212  # frozen evidence
+        ^^^^^^^^^^^^^^^^^^^^^
+E       assert 266179 == 266212
+
+tests\unit\test_70d_model_validation_task4.py:823: AssertionError
+_________ test_70d_model_33_manifest_input_dimension_no_double_count __________
+
+    def test_70d_model_33_manifest_input_dimension_no_double_count() -> None:
+        from nexus_scalp.model_generation.experiment_factory import ExperimentFactory
+        from nexus_scalp.model_generation.training import CandidateTrainer
+    
+        rng = np.random.default_rng(3)
+        n = 400
+        cols: dict[str, object] = {
+            "sample_id": [f"s{i}" for i in range(n)],
+            "timestamp": list(range(n)),
+            "feature_schema_id": ["scalp_v2"] * n,
+            "label": list(
+                np.concatenate(
+                    [
+                        np.zeros(280),
+                        np.ones(60),
+                        np.full(60, 2),
+                    ]
+                ).astype(int)
+            ),
+        }
+        for i in range(60):
+            cols[f"feat_{i}"] = rng.normal(0, 1, n)
+        # 12 numeric news fields
+        for _j, name in enumerate(
+            [
+                "active_high_impact_events",
+                "xauusd_relevance",
+                "usd_relevance",
+                "bullish_pressure",
+                "bearish_pressure",
+                "conflict_score",
+                "novelty",
+                "freshness",
+                "confidence",
+                "source_consensus",
+                "news_state",
+                "time_since_event_sec",
+            ]
+        ):
+            cols[f"news_{name}"] = rng.normal(0, 1, n)
+        df = pl.DataFrame(cols)
+        exp = ExperimentFactory().create(
+            "ds_test", template="baseline_scalpnet_v1_news", experiment_id="exp_liq33"
+        )
+        feat_cols = [c for c in df.columns if c.startswith("feat_")] + [
+            c for c in df.columns if c.startswith("news_")
+        ]
+        res = CandidateTrainer().train_candidate(exp, df, feature_cols=feat_cols, epochs=2)
+        assert res["status"] == "COMPLETED", res
+        from nexus_scalp.model_generation.artifact_store import ArtifactStore
+    
+        man = ArtifactStore().read_model_manifest(res["model_id"])
+        assert man is not None
+        fdim = man.get("feature_dimension")
+        input_dim = man.get("build_metadata", {}).get("input_dimension")
+        # BUG-114 contract: feature_dimension = base only (60); input_dimension =
+        # base + news (72); they must NEVER be 84 (double count).
+        assert fdim == 60
+        assert input_dim == 72, f"BUG-114: input_dimension double-counts news: {input_dim}"
+        # runtime must accept its own width
+        from nexus_scalp.model_generation.runtime import validate_and_load
+    
+        rt = validate_and_load(res["model_id"], root=str(REPO_ROOT / "artifacts/model_generation"))
+        pred = rt.predict(np.random.default_rng(1).normal(0, 1, 72))
+        # LEGACY baseline geometry is INTENTIONALLY 4-wide (NO_TRADE/BUY/SELL +
+        # WAIT policy bridge): ModelFactory preserves the legacy ScalpNet head for
+        # LEGACY_SCALPNET_V1 even under the canonical-3 contract, and the runtime
+        # maps index 3 -> WAIT policy state (never a label). The manifest still
+        # declares class_count=3; the extra logit is compat-only.
+>       assert len(pred["probabilities"]) == 4
+E       assert 3 == 4
+E        +  where 3 = len([0.3265356719493866, 0.3671875, 0.306276798248291])
+
+tests\unit\test_70d_model_validation_task4.py:1061: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:16:13 [info     ] [EXPERIMENT] event=CREATED experiment_id=exp_liq33 template=baseline_scalpnet_v1_news
+2026-09-07 05:16:13 [info     ] [TRAIN] event=CANDIDATE_READY model_id=cand_298a28df308874db val_acc=0.2500
+2026-09-07 05:16:13 [info     ] [MODEL] event=LOADED model_id=cand_298a28df308874db device=cpu
+_______________ TestRuntime.test_35_prediction_works_without_db _______________
+
+self = <tests.unit.test_model_generation_phase13.TestRuntime object at 0x00000265057D3E90>
+store = <nexus_scalp.model_generation.artifact_store.ArtifactStore object at 0x0000026509F52650>
+built_dataset = {'path': 'C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7085\\test_35_prediction_works_witho0\...fb20ad4', 'dataset_id': 'ds_354298a2eb40e85f', 'counts': {'total': 200, 'train': 125, 'val': 15, 'test': 30, ...}, ...}
+
+    def test_35_prediction_works_without_db(self, store: ArtifactStore, built_dataset):
+        store, built_dataset = built_dataset
+        exp = ExperimentFactory(store=store).create(
+            built_dataset["dataset_id"], experiment_id="exp_pred"
+        )
+        frame = store.read_dataset(built_dataset["dataset_id"])
+        CandidateTrainer(store=store).train_candidate(exp, frame, model_id="cand_pred")
+        rt = LocalModelRuntime(store=store).load("cand_pred")
+        pred = rt.predict([0.1] * 50)
+        assert "probabilities" in pred
+>       assert len(pred["probabilities"]) == 4  # legacy 4-head geometry
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert 3 == 4
+E        +  where 3 = len([0.2662050724029541, 0.26244574785232544, 0.4713491201400757])
+
+tests\unit\test_model_generation_phase13.py:542: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 05:16:49 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=0 embargo_bars=3 evaluated_samples=54 friction_usd=$0.35 no_trade_labels=164 sell_labels=36 skipped_invalid_atr=0 total_samples=200
+2026-09-07 05:16:49 [info     ] [DATASET] event=BUILT dataset_id=ds_354298a2eb40e85f rows=200
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:16:49 [info     ] [EXPERIMENT] event=CREATED experiment_id=exp_pred template=baseline_scalpnet_v1
+2026-09-07 05:16:49 [info     ] [TRAIN] event=CANDIDATE_READY model_id=cand_pred val_acc=0.2500
+2026-09-07 05:16:49 [info     ] [MODEL] event=LOADED model_id=cand_pred device=cpu
+=========================== short test summary info ===========================
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:163: existing 50D/60D artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:180: existing 50D/60D artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:206: 70D artifact not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:230: artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:242: artifacts not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:577: 70D dataset not built
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:594: TASK-5 70D candidate not trained
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:617: TASK-5 benchmark report not yet written
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:643: 70D dataset not built
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:670: 70D candidate not trained
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:684: TASK-5 70D candidate not trained
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:702: TASK-5 70D candidate not trained (benchmark pending)
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:799: 50D artifact not present
+SKIPPED [1] tests\unit\test_70d_model_validation_task4.py:874: 50D artifact not present
+FAILED tests/unit/test_70d_model_validation_task4.py::test_70d_model_07_70d_model_forward_pass
+FAILED tests/unit/test_70d_model_validation_task4.py::test_70d_model_08_60d_baseline_forward_pass
+FAILED tests/unit/test_70d_model_validation_task4.py::test_70d_model_29_parameter_count_and_latency_reported
+FAILED tests/unit/test_70d_model_validation_task4.py::test_70d_model_33_manifest_input_dimension_no_double_count
+FAILED tests/unit/test_model_generation_phase13.py::TestRuntime::test_35_prediction_works_without_db
+5 failed, 208 passed, 14 skipped in 113.95s (0:01:53)

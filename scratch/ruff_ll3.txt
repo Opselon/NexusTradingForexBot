@@ -1,0 +1,14 @@
+RUF005 Consider iterable unpacking instead of concatenation
+   --> src\nexus_scalp\research\baseline_eval.py:117:14
+    |
+115 | def load_frame(parquet_path: Path, dim: int) -> pl.DataFrame:
+116 |     feat_cols = [f"feat_{i}" for i in range(dim)]
+117 |     needed = feat_cols + ["label", "timestamp", "regime", "session"]
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+118 |     lf = pl.scan_parquet(parquet_path)
+119 |     cols = set(lf.collect_schema().names())
+    |
+help: Replace with iterable unpacking
+
+Found 1 error.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

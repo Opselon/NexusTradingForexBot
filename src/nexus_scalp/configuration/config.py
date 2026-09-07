@@ -29,6 +29,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from nexus_scalp.candle_intelligence.config import CandleIntelligenceConfig
 from nexus_scalp.domain.enums import ExecutionMode
+from nexus_scalp.model_lifecycle.learning_config import LearningConfig
 from nexus_scalp.news.config import NewsConfig
 
 
@@ -203,6 +204,9 @@ class AppConfig(BaseSettings):
     database_hygiene: DatabaseHygieneConfig | None = None
     # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: live-freshness truth model
     freshness: FreshnessConfig = FreshnessConfig()
+    # LEARNING-LOOP: config-driven retrain/shadow/promotion triggers — ALL
+    # disabled by default (fail-closed; see model_lifecycle.learning_config).
+    learning: LearningConfig | None = None
 
     @classmethod
     def load_from_yaml(cls, yaml_path: Path) -> "AppConfig":

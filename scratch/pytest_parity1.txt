@@ -1,0 +1,268 @@
+EEEEEE                                                                   [100%]
+=================================== ERRORS ====================================
+____ ERROR at setup of TestPaperParity.test_table_created_and_rows_persist ____
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7356/test_table_created_and_rows_pe0')
+
+    @pytest.fixture()
+    def audit_repo(tmp_path):
+        os.environ["NEXUS_AUDIT_DB"] = f"sqlite:///{tmp_path / 'parity_test.db'}"
+>       repo = AuditRepository()
+               ^^^^^^^^^^^^^^^^^
+
+tests\unit\test_paper_parity.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\adapters\database\audit_repository.py:176: in __init__
+    self._setup_storage()
+src\nexus_scalp\adapters\database\audit_repository.py:182: in _setup_storage
+    os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+mode = 511, exist_ok = True
+
+>   ???
+E   OSError: [WinError 123] The filename, directory name, or volume label syntax is incorrect: 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+
+<frozen os>:225: OSError
+________ ERROR at setup of TestPaperParity.test_reexport_is_idempotent ________
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7356/test_reexport_is_idempotent0')
+
+    @pytest.fixture()
+    def audit_repo(tmp_path):
+        os.environ["NEXUS_AUDIT_DB"] = f"sqlite:///{tmp_path / 'parity_test.db'}"
+>       repo = AuditRepository()
+               ^^^^^^^^^^^^^^^^^
+
+tests\unit\test_paper_parity.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\adapters\database\audit_repository.py:176: in __init__
+    self._setup_storage()
+src\nexus_scalp\adapters\database\audit_repository.py:182: in _setup_storage
+    os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+mode = 511, exist_ok = True
+
+>   ???
+E   OSError: [WinError 123] The filename, directory name, or volume label syntax is incorrect: 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+
+<frozen os>:225: OSError
+___________ ERROR at setup of TestPaperParity.test_stats_are_honest ___________
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7356/test_stats_are_honest0')
+
+    @pytest.fixture()
+    def audit_repo(tmp_path):
+        os.environ["NEXUS_AUDIT_DB"] = f"sqlite:///{tmp_path / 'parity_test.db'}"
+>       repo = AuditRepository()
+               ^^^^^^^^^^^^^^^^^
+
+tests\unit\test_paper_parity.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\adapters\database\audit_repository.py:176: in __init__
+    self._setup_storage()
+src\nexus_scalp\adapters\database\audit_repository.py:182: in _setup_storage
+    os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+mode = 511, exist_ok = True
+
+>   ???
+E   OSError: [WinError 123] The filename, directory name, or volume label syntax is incorrect: 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+
+<frozen os>:225: OSError
+_ ERROR at setup of TestPaperParity.test_snapshot_insufficient_data_without_evidence _
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7356/test_snapshot_insufficient_dat0')
+
+    @pytest.fixture()
+    def audit_repo(tmp_path):
+        os.environ["NEXUS_AUDIT_DB"] = f"sqlite:///{tmp_path / 'parity_test.db'}"
+>       repo = AuditRepository()
+               ^^^^^^^^^^^^^^^^^
+
+tests\unit\test_paper_parity.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\adapters\database\audit_repository.py:176: in __init__
+    self._setup_storage()
+src\nexus_scalp\adapters\database\audit_repository.py:182: in _setup_storage
+    os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+mode = 511, exist_ok = True
+
+>   ???
+E   OSError: [WinError 123] The filename, directory name, or volume label syntax is incorrect: 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+
+<frozen os>:225: OSError
+__ ERROR at setup of TestPaperParity.test_snapshot_measured_with_both_sides ___
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7356/test_snapshot_measured_with_bo0')
+
+    @pytest.fixture()
+    def audit_repo(tmp_path):
+        os.environ["NEXUS_AUDIT_DB"] = f"sqlite:///{tmp_path / 'parity_test.db'}"
+>       repo = AuditRepository()
+               ^^^^^^^^^^^^^^^^^
+
+tests\unit\test_paper_parity.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\adapters\database\audit_repository.py:176: in __init__
+    self._setup_storage()
+src\nexus_scalp\adapters\database\audit_repository.py:182: in _setup_storage
+    os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+mode = 511, exist_ok = True
+
+>   ???
+E   OSError: [WinError 123] The filename, directory name, or volume label syntax is incorrect: 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+
+<frozen os>:225: OSError
+_____ ERROR at setup of TestPaperParity.test_ledger_unavailable_is_honest _____
+
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7356/test_ledger_unavailable_is_hon0')
+
+    @pytest.fixture()
+    def audit_repo(tmp_path):
+        os.environ["NEXUS_AUDIT_DB"] = f"sqlite:///{tmp_path / 'parity_test.db'}"
+>       repo = AuditRepository()
+               ^^^^^^^^^^^^^^^^^
+
+tests\unit\test_paper_parity.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\adapters\database\audit_repository.py:176: in __init__
+    self._setup_storage()
+src\nexus_scalp\adapters\database\audit_repository.py:182: in _setup_storage
+    os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+<frozen os>:215: in makedirs
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+mode = 511, exist_ok = True
+
+>   ???
+E   OSError: [WinError 123] The filename, directory name, or volume label syntax is incorrect: 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\sqlite:'
+
+<frozen os>:225: OSError
+=========================== short test summary info ===========================
+ERROR tests/unit/test_paper_parity.py::TestPaperParity::test_table_created_and_rows_persist
+ERROR tests/unit/test_paper_parity.py::TestPaperParity::test_reexport_is_idempotent
+ERROR tests/unit/test_paper_parity.py::TestPaperParity::test_stats_are_honest
+ERROR tests/unit/test_paper_parity.py::TestPaperParity::test_snapshot_insufficient_data_without_evidence
+ERROR tests/unit/test_paper_parity.py::TestPaperParity::test_snapshot_measured_with_both_sides
+ERROR tests/unit/test_paper_parity.py::TestPaperParity::test_ledger_unavailable_is_honest
+6 errors in 0.84s

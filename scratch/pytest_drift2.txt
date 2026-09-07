@@ -1,0 +1,76 @@
+..FF..F..                                                                [100%]
+================================== FAILURES ===================================
+__________ TestDriftBreakerStates.test_normal_state_within_reference __________
+
+self = <tests.unit.test_drift_breaker.TestDriftBreakerStates object at 0x000001A637B864D0>
+
+    def test_normal_state_within_reference(self) -> None:
+        # 400 samples: measured identical-distribution PSI p90 = 0.053
+        # (see docs/psi_small_sample_note.md) — far below WATCH 0.10, so a
+        # stable window must read NORMAL without small-n noise trips.
+        mon = Shadow70DriftMonitor(min_samples=20)
+        br = FeatureDriftBreaker(mon)
+        _seed_reference(mon, mean=0.5, std=0.2)
+        rng = random.Random(2026)
+        for _ in range(400):
+            br.update(_vec(rng.gauss(0.5, 0.2)))
+>       assert br.state() == STATE_NORMAL
+E       AssertionError: assert 'INSUFFICIENT_DATA' == 'NORMAL'
+E         
+E         - NORMAL
+E         + INSUFFICIENT_DATA
+
+tests\unit\test_drift_breaker.py:69: AssertionError
+________ TestDriftBreakerStates.test_critical_drift_on_huge_mean_shift ________
+
+self = <tests.unit.test_drift_breaker.TestDriftBreakerStates object at 0x000001A637B86B10>
+
+    def test_critical_drift_on_huge_mean_shift(self) -> None:
+        mon = Shadow70DriftMonitor(min_samples=20)
+        br = FeatureDriftBreaker(mon)
+        _seed_reference(mon, mean=0.0, std=0.1)
+        rng = random.Random(99)
+        for _ in range(400):
+            br.update(_vec(rng.gauss(5.0, 0.1)))  # 50 sigma shift
+        assert br.state() in (STATE_DRIFT_CRITICAL, STATE_DRIFT_WARNING)
+        snap = br.snapshot()
+>       assert snap["reference_set"] is True
+E       assert False is True
+
+tests\unit\test_drift_breaker.py:80: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 06:32:56 [warning  ] [SHADOW70] event=SHADOW_DRIFT_WARNING alert_count=20 severities=['CRITICAL']
+2026-09-07 06:32:56 [warning  ] [SHADOW70] event=SHADOW_DRIFT_WARNING alert_count=20 severities=['CRITICAL']
+2026-09-07 06:32:56 [warning  ] [SHADOW70] event=SHADOW_DRIFT_WARNING alert_count=20 severities=['CRITICAL']
+______ TestScalerReferenceWiring.test_reference_from_real_shaped_scaler _______
+
+self = <tests.unit.test_drift_breaker.TestScalerReferenceWiring object at 0x000001A637B84890>
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7454/test_reference_from_real_shape0')
+
+    def test_reference_from_real_shaped_scaler(self, tmp_path) -> None:
+        n = 70
+        mean = np.full(n, 0.5)
+        std = np.full(n, 0.2)
+        p = tmp_path / "model.scaler.npz"
+        np.savez(p, mean=mean, std=std)
+        mon = Shadow70DriftMonitor(min_samples=20)
+        br = FeatureDriftBreaker(mon)
+        ok = br.set_reference_from_scaler(p)
+        assert ok is True
+        for _ in range(40):
+            br.update(_vec(0.5))
+>       assert br.state() == STATE_NORMAL
+E       AssertionError: assert 'DRIFT_CRITICAL' == 'NORMAL'
+E         
+E         - NORMAL
+E         + DRIFT_CRITICAL
+
+tests\unit\test_drift_breaker.py:122: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 06:32:56 [info     ] [DRIFT] reference distribution set from scaler features=10 path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7454\test_reference_from_real_shape0\model.scaler.npz
+2026-09-07 06:32:56 [warning  ] [SHADOW70] event=SHADOW_DRIFT_WARNING alert_count=10 severities=['CRITICAL']
+=========================== short test summary info ===========================
+FAILED tests/unit/test_drift_breaker.py::TestDriftBreakerStates::test_normal_state_within_reference
+FAILED tests/unit/test_drift_breaker.py::TestDriftBreakerStates::test_critical_drift_on_huge_mean_shift
+FAILED tests/unit/test_drift_breaker.py::TestScalerReferenceWiring::test_reference_from_real_shaped_scaler
+3 failed, 6 passed in 0.40s

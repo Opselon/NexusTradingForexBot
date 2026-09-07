@@ -1,0 +1,46 @@
+..F.........F                                                            [100%]
+================================== FAILURES ===================================
+___________________________ test_ece_brier_measured ___________________________
+
+    def test_ece_brier_measured() -> None:
+        metrics = evaluate_calibration([0.9, 0.9, 0.1, 0.1], [1, 1, 0, 0])
+        assert metrics["n"] == 4
+>       assert metrics["ece"] < 0.05  # perfectly aligned
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert 0.1 < 0.05
+
+tests\unit\test_confidence_calibration.py:107: AssertionError
+____________ test_risk_engine_without_calibration_uses_flat_sizing ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001D653E41610>
+
+    def test_risk_engine_without_calibration_uses_flat_sizing(monkeypatch) -> None:
+        """With NO calibration artifact the confidence multiplier must be exactly
+        1.0 — the old raw-softmax lever (up to 1.2x) is gone."""
+        from nexus_scalp.domain.enums import ActionType
+        from nexus_scalp.domain.models import (
+            AccountInfo,
+            Position,
+            SymbolInfo,
+            TickData,
+            TradeProposal,
+        )
+        from datetime import UTC, datetime
+    
+        engine = _risk_engine()
+        monkeypatch.setattr(engine, "_confidence_calibrator", ConfidenceCalibrator(), raising=False)
+    
+>       account = AccountInfo(
+            login=1, balance=10000.0, equity=10000.0, margin=0.0, margin_free=10000.0,
+            leverage=100,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AccountInfo
+E       trade_mode
+E         Field required [type=missing, input_value={'login': 1, 'balance': 1...0000.0, 'leverage': 100}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests\unit\test_confidence_calibration.py:265: ValidationError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_confidence_calibration.py::test_ece_brier_measured - a...
+FAILED tests/unit/test_confidence_calibration.py::test_risk_engine_without_calibration_uses_flat_sizing
+2 failed, 11 passed in 0.81s

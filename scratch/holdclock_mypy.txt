@@ -1,0 +1,2 @@
+pyproject.toml: note: unused section(s): module = ['MetaTrader5.*', 'fastapi.*', 'numpy.*', 'polars.*', 'pyarrow.*', 'scripts.*', 'starlette.*', 'structlog.*', 'torch.*']
+Success: no issues found in 1 source file

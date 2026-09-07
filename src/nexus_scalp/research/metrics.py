@@ -13,6 +13,7 @@ import math
 from collections.abc import Sequence
 
 import numpy as np
+from pydantic import BaseModel, Field
 
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.models import BacktestResult, ExecutionAssumptions, ResearchSample
@@ -229,6 +230,18 @@ def compute_backtest(
 
     equity_curve = list(np.cumsum(r_arr))
 
+    # ECON v1 sized economic view: re-price the same trades under the
+    # canonical live sizing economics. The RAW metrics above stay the
+    # analytical view; this adds the economically relevant valuation
+    # (sized exposure, equity path, drawdown in USD, turnover) that
+    # promotion must consult. A legacy-only assumptions object (no
+    # EconomicAssumptions supplied) yields an EMPTY sized view rather than
+    # a fabricated one — the caller chooses the economic world explicitly.
+    sized: SizedEconomicResult | None = None
+    economic = getattr(assumptions, "economic", None)
+    if economic is not None:
+        sized = compute_sized_economic_pnl(ordered, economic)
+
     return BacktestResult(
         strategy_id=strategy_id,
         strategy_version=strategy_version,
@@ -259,6 +272,7 @@ def compute_backtest(
         slippage_sensitivity_r=round(slippage_sens, 6),
         latency_sensitivity_r=round(latency_sens, 6),
         equity_curve_r=[round(float(x), 6) for x in equity_curve],
+        sized=sized,
     )
 
 
@@ -286,7 +300,171 @@ def _friction_sensitivity(
     return float(np.mean(adj)) if adj else 0.0
 
 
+# ---------------------------------------------------------------------------
+# SIZED ECONOMIC P&L (ECON v1: backtest models live sizing economics)
+# ---------------------------------------------------------------------------
+# The raw recorded ledger R/PnL is what the engine ACTUALLY traded (fixed
+# historical account state). Promotion needs the counterfactual: what the SAME
+# trades would have produced under the CANONICAL sizing policy (the live
+# RiskEngine factor pipeline: regime x drawdown x confidence, risk% of the
+# RUNNING equity path). This is computed causally — the equity/peak state at
+# trade t is built only from trades with decision timestamps <= t. It is a
+# valuation view, never a mutation of recorded evidence.
+
+
+def compute_sized_economic_pnl(
+    ordered: Sequence[ResearchSample],
+    assumptions: "EconomicAssumptions",
+) -> "SizedEconomicResult":
+    """Re-prices a trade sequence under canonical live sizing economics.
+
+    Per trade (in decision order):
+      1. effective risk% = SizingPolicy.live pipeline on the RUNNING
+         equity/peak path (causal: strictly prior closed trades),
+      2. broker volume = RiskEngine.calculate_dynamic_volume(equity, entry,
+         stop, risk%) — identical call to live sizing,
+      3. gross PnL = recorded R * planned risk USD of the sized trade,
+         where planned risk USD = volume * contract_size * risk_distance
+         (falls back to the recorded PnL's implied risk when the risk
+         distance is unavailable and volume is broker-minimum),
+      4. execution friction (spread/slippage R + commission) deducted,
+      5. swap charged per server-time rollover crossing.
+
+    Deterministic; no future information enters sizing.
+    """
+    from nexus_scalp.research.economics import (
+        compute_sizing,
+        rollover_crossings,
+    )
+
+    sized_r: list[float] = []
+    sized_pnl: list[float] = []
+    volumes: list[float] = []
+    exec_cost: list[float] = []
+    swap_cost: list[float] = []
+    gross_pnl: list[float] = []
+
+    equity = float(assumptions.starting_equity_usd)
+    peak = equity
+    for s in ordered:
+        risk_distance = float(s.risk_distance)
+        decision = compute_sizing(
+            policy=assumptions.sizing,
+            instrument=assumptions.instrument,
+            equity=equity,
+            peak_equity=peak,
+            entry=float(s.entry_price) if s.entry_price > 0 else 1.0,
+            stop_loss=float(s.stop_loss) if s.stop_loss > 0 else 0.0,
+            confidence=float(getattr(s, "signal_confidence", 0.0) or 0.0),
+            regime=str(s.regime or ""),
+        )
+        volume = decision.volume
+        volumes.append(volume)
+
+        # Risk anchor for the sized trade. Prefer the planned risk distance;
+        # when it is unavailable, anchor 1R at the recorded trade's own
+        # realized risk so relative semantics survive data gaps (explicit
+        # modeling of the missing input, never silent fixed-size).
+        if risk_distance > 1e-9 and assumptions.instrument.contract_size > 0:
+            risk_usd = volume * assumptions.instrument.contract_size * risk_distance
+        elif abs(float(s.realized_r)) > 1e-9 and volume > 0:
+            risk_usd = abs(float(s.realized_pnl_usd) / float(s.realized_r))
+        else:
+            risk_usd = 0.0
+
+        gross = float(s.realized_r) * risk_usd
+        friction_r = assumptions.friction.friction_r(risk_distance)
+        f_cost = friction_r * risk_usd
+        commission = assumptions.friction.commission_per_lot_usd * volume
+        swap = 0.0
+        if assumptions.swap.is_complete() and volume > 0:
+            swap = assumptions.swap.swap_usd(
+                s.direction,
+                volume,
+                s.decision_timestamp,
+                s.outcome_timestamp,
+            )
+        net = gross - f_cost - commission + swap
+        swap_signed = swap  # long debit / short credit already signed by rates
+
+        sized_r.append(net / risk_usd if risk_usd > 1e-9 else 0.0)
+        sized_pnl.append(net)
+        gross_pnl.append(gross)
+        exec_cost.append(f_cost + commission)
+        swap_cost.append(swap_signed)
+
+        equity += net
+        peak = max(peak, equity)
+
+    return SizedEconomicResult(
+        sized_r=sized_r,
+        sized_pnl_usd=sized_pnl,
+        gross_pnl_usd=gross_pnl,
+        execution_cost_usd=exec_cost,
+        swap_cost_usd=swap_cost,
+        volumes=volumes,
+        equity_curve_usd=[float(assumptions.starting_equity_usd)]
+        + [float(assumptions.starting_equity_usd) + sum(sized_pnl[: i + 1]) for i in range(len(sized_pnl))],
+    )
+
+
+class SizedEconomicResult(BaseModel):
+    """Causal sized-P&L re-valuation of a trade sequence (ECON v1)."""
+
+    sized_r: list[float] = Field(default_factory=list)
+    sized_pnl_usd: list[float] = Field(default_factory=list)
+    gross_pnl_usd: list[float] = Field(default_factory=list)
+    execution_cost_usd: list[float] = Field(default_factory=list)
+    swap_cost_usd: list[float] = Field(default_factory=list)
+    volumes: list[float] = Field(default_factory=list)
+    equity_curve_usd: list[float] = Field(default_factory=list)
+
+    @property
+    def net_pnl_usd(self) -> float:
+        return float(sum(self.sized_pnl_usd))
+
+    @property
+    def max_drawdown_usd(self) -> float:
+        peak = 0.0
+        cum = 0.0
+        max_dd = 0.0
+        for v in self.equity_curve_usd:
+            cum = float(v)
+            if cum > peak:
+                peak = cum
+            dd = peak - cum
+            if dd > max_dd:
+                max_dd = dd
+        return max_dd
+
+    @property
+    def expectancy_r(self) -> float:
+        return float(np.mean(self.sized_r)) if self.sized_r else 0.0
+
+    @property
+    def turnover_lots(self) -> float:
+        return float(sum(self.volumes))
+
+
+
 def variance_preserving_mean(values: Sequence[float]) -> float:
     """Mean ignoring NaN; robust for downstream scoring."""
     arr = np.asarray([float(v) for v in values if not np.isnan(v)], dtype=float)
     return float(np.mean(arr)) if len(arr) else 0.0
+
+
+# ECON v1: BacktestResult (in models) carries a forward reference to
+# SizedEconomicResult (defined above). Now that this module has fully
+# imported, the reference is resolvable — rebuild the model so the
+# forward ref evaluates against THIS module's namespace.
+from nexus_scalp.research import models as _models  # noqa: E402
+
+
+def _rebuild_backtest_result() -> None:
+    BacktestResult.model_rebuild(_types_namespace={"SizedEconomicResult": SizedEconomicResult})
+
+
+_rebuild_backtest_result()
+_models.BacktestResult.model_rebuild(
+    _types_namespace={"SizedEconomicResult": SizedEconomicResult}
+)

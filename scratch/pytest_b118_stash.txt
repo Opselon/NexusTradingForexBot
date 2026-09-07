@@ -1,0 +1,23 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______ TestCompatibility.test_bug118_force_reload_performs_fresh_verify _______
+
+self = <tests.unit.test_model_lifecycle_phase10.TestCompatibility object at 0x0000020F027443D0>
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7251/test_bug118_force_reload_perfo0')
+
+    def test_bug118_force_reload_performs_fresh_verify(self, tmp_path):
+        """force_reload=True bypasses the memo (startup/hot-swap contract)."""
+        mgr = self._make_bug118_champion(tmp_path)
+        first = mgr.champion_or_none()
+        second = mgr.champion_or_none(force_reload=True)
+>       assert second is not None
+E       assert None is not None
+
+tests\unit\test_model_lifecycle_phase10.py:689: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:50:08 [error    ] [MODEL] event=INTEGRITY_FAILURE (compatibility) actual_classes=4 actual_dim=50 expected_classes=3 expected_dim=50 head_key=classifier.weight model_id=primary_scalp reason=CLASS_COUNT_MISMATCH scaler_dimension=50
+2026-09-07 05:50:08 [warning  ] [MODEL] Champion unavailable   error='Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7251\\test_bug118_force_reload_perfo0\\model.pt is missing or invalid (hash=8fdcd149023af17a)'
+2026-09-07 05:50:08 [error    ] [MODEL] event=INTEGRITY_FAILURE (compatibility) actual_classes=4 actual_dim=50 expected_classes=3 expected_dim=50 head_key=classifier.weight model_id=primary_scalp reason=CLASS_COUNT_MISMATCH scaler_dimension=50
+2026-09-07 05:50:08 [warning  ] [MODEL] Champion unavailable   error='Champion artifact C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-7251\\test_bug118_force_reload_perfo0\\model.pt is missing or invalid (hash=8fdcd149023af17a)'
+=========================== short test summary info ===========================
+FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_force_reload_performs_fresh_verify

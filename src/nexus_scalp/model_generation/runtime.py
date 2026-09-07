@@ -107,7 +107,7 @@ class LocalModelRuntime:
             },
         )
         try:
-            state = torch.load(weights_path, map_location=self._device, weights_only=False)
+            state = torch.load(weights_path, map_location=self._device, weights_only=True)
             model.load_state_dict(state)
         except Exception as e:
             raise ManifestValidationError(f"model {model_id}: state_dict load failed: {e}") from e

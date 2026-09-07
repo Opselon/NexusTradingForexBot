@@ -1,0 +1,32 @@
+{
+  "tool": "scripts/qa/run_mutations.py",
+  "contract": "honesty-v2: KILLED requires pristine battery rc==0; INVALID_* never counts as KILLED",
+  "git_commit": "90a6c0b0",
+  "timestamp": "2026-09-07T00:35:17Z",
+  "scope": "filtered",
+  "mutations_total": 1,
+  "killed": 1,
+  "survived": 0,
+  "survivor_ids": [],
+  "accepted_survivor_ids": [],
+  "invalid_ids": [],
+  "mutation_score": 1.0,
+  "duration_sec": 8.5,
+  "note": "SURVIVED = test blind spot (a critical mutation no test catches); file in agents/bugs.md",
+  "results": [
+    {
+      "id": "MUT-CF-01",
+      "desc": "confidence semantics: threshold comparison flipped (< -> >)",
+      "target": "src/nexus_scalp/signals/policy.py",
+      "battery": "tests/unit/test_qa_deep_confidence_adversarial.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_qa_deep_confidence_adversarial.py::test_base_threshold_freeze_under_perturbation",
+        "FAILED tests/unit/test_qa_deep_confidence_adversarial.py::test_survival_mode_freeze_decision_level"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+RUF023 [*] `_PoolEvidenceRun.__slots__` is not sorted
+   --> src\nexus_scalp\model_generation\schema_v2_incremental.py:158:17
+    |
+156 |     """
+157 |
+158 |     __slots__ = ("price", "side", "confirmed_at", "k_done", "touches", "swept", "reclaimed", "last_touched")
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+159 |
+160 |     def __init__(self, price: float, side: Any, confirmed_at: datetime) -> None:
+    |
+help: Apply a natural sort to `_PoolEvidenceRun.__slots__`
+    |
+157 |
+    -     __slots__ = ("price", "side", "confirmed_at", "k_done", "touches", "swept", "reclaimed", "last_touched")
+158 +     __slots__ = ("confirmed_at", "k_done", "last_touched", "price", "reclaimed", "side", "swept", "touches")
+159 |
+    |
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+unformatted: File would be reformatted
+   --> src\nexus_scalp\model_generation\schema_v2_incremental.py:158:18
+    |
+157 |
+    -     __slots__ = ("price", "side", "confirmed_at", "k_done", "touches", "swept", "reclaimed", "last_touched")
+158 +     __slots__ = (
+159 +         "price",
+160 +         "side",
+161 +         "confirmed_at",
+162 +         "k_done",
+163 +         "touches",
+164 +         "swept",
+165 +         "reclaimed",
+166 +         "last_touched",
+167 +     )
+168 |
+    |
+
+unformatted: File would be reformatted
+   --> tests\unit\test_bug106_phase2_optimization.py:70:81
+    |
+69  |     return sorted(
+    -         (round(p.price, 9), p.side.value, p.state.value, str(p.last_touched_at))
+    -         for p in pools
+70  +         (round(p.price, 9), p.side.value, p.state.value, str(p.last_touched_at)) for p in pools
+71  |     )
+72  |
+73  |
+    - @pytest.mark.skipif(
+    -     not Path(DATA_PATH).exists(), reason="real data file absent"
+    - )
+74  + @pytest.mark.skipif(not Path(DATA_PATH).exists(), reason="real data file absent")
+75  | def test_bug106_p2_pool_cursor_matches_full_rescan() -> None:
+--------------------------------------------------------------------------------
+89  |
+    - @pytest.mark.skipif(
+    -     not Path(DATA_PATH).exists(), reason="real data file absent"
+    - )
+90  + @pytest.mark.skipif(not Path(DATA_PATH).exists(), reason="real data file absent")
+91  | def test_bug106_p2_htf_windows_match_canonical_aggregation() -> None:
+--------------------------------------------------------------------------------
+116 |
+    - @pytest.mark.skipif(
+    -     not Path(DATA_PATH).exists(), reason="real data file absent"
+    - )
+117 + @pytest.mark.skipif(not Path(DATA_PATH).exists(), reason="real data file absent")
+118 | def test_bug106_p2_builder_output_unchanged_vs_pre_optimization_reference() -> None:
+--------------------------------------------------------------------------------
+131 |
+    - @pytest.mark.skipif(
+    -     not Path(DATA_PATH).exists(), reason="real data file absent"
+    - )
+132 + @pytest.mark.skipif(not Path(DATA_PATH).exists(), reason="real data file absent")
+133 | def test_bug106_p2_compute_from_bars_htf_lists_path_matches_canonical() -> None:
+    |
+
+2 files would be reformatted, 1 file already formatted

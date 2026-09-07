@@ -15,6 +15,7 @@ DETERMINISTIC: same dataset + strategy version + config + execution assumptions
 from __future__ import annotations
 
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.research.economics import EconomicAssumptions, normalize_assumptions
 from nexus_scalp.research.metrics import compute_backtest
 from nexus_scalp.research.models import (
     BacktestResult,
@@ -31,10 +32,41 @@ logger = get_logger("nexus_scalp.research.backtest")
 
 
 class BacktestEngine:
-    """Runs deterministic backtests over research datasets."""
+    """Runs deterministic backtests over research datasets.
 
-    def __init__(self, assumptions: ExecutionAssumptions | None = None) -> None:
-        self.assumptions = assumptions or ExecutionAssumptions()
+    ECON v1: the engine carries an explicit economic world. By default
+    (``assumptions=None``) it runs PRODUCTION-LIKE economics (conservative
+    evidence-derived friction + required-swap validation contract + sized
+    economic re-valuation). Passing a legacy ``ExecutionAssumptions`` keeps
+    the legacy friction semantics but LABELS the run FRICTIONLESS_RESEARCH
+    (explicit construction = explicit analytical opt-in) and produces no
+    fabricated sized view unless an EconomicAssumptions is supplied.
+    """
+
+    def __init__(
+        self,
+        assumptions: ExecutionAssumptions | None = None,
+        economic: EconomicAssumptions | None = None,
+    ) -> None:
+        if economic is not None:
+            self.economic = economic
+            self.assumptions = self._to_legacy(economic)
+        else:
+            self.economic = normalize_assumptions(assumptions)
+            self.assumptions = self._to_legacy(self.economic)
+
+    @staticmethod
+    def _to_legacy(economic: EconomicAssumptions) -> ExecutionAssumptions:
+        """The friction view the deterministic core consumes (R semantics)."""
+        f = economic.friction
+        return ExecutionAssumptions(
+            spread_ticks=f.spread_ticks,
+            slippage_ticks=f.slippage_ticks,
+            latency_ms=f.latency_ms,
+            price_tick=f.price_tick,
+            pay_spread=f.pay_spread,
+            max_slippage_ticks=f.max_slippage_ticks,
+        )
 
     def run(
         self,
@@ -78,6 +110,14 @@ class BacktestEngine:
             strategy_version=strategy_version,
             dataset_id=dataset.dataset_id,
             assumptions=self.assumptions,
+        )
+        # ECON v1: attach the explicit economic world + the sized view so the
+        # result is self-describing (profile, friction, swap, sizing policy).
+        result = result.model_copy(
+            update={
+                "economic": self.economic,
+                "sized": compute_sized_economic_pnl(samples, self.economic),
+            }
         )
         logger.info(
             "[BACKTEST] event=COMPLETE",

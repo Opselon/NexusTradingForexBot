@@ -1,0 +1,39 @@
+...............F....                                                     [100%]
+================================== FAILURES ===================================
+_ TestChampionMetrics.test_real_champion_metrics_from_baseline_eval_artifact __
+
+self = <tests.unit.test_learning_loop_closure.TestChampionMetrics object at 0x000001FD91C794D0>
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7139/test_real_champion_metrics_fro0')
+
+    def test_real_champion_metrics_from_baseline_eval_artifact(self, tmp_path: Path) -> None:
+        """With the repo-produced baseline artifact present, the provider
+        returns REAL metrics for the live champion (production-path check)."""
+        from nexus_scalp.model_lifecycle.champion import ChampionManager
+        from nexus_scalp.model_lifecycle.champion_metrics import ChampionMetricsProvider
+    
+        artifact = Path(
+            "artifacts/forensics/baseline_eval/"
+            "bb1f0afe30f746da0aff38ef530c5229df6044c6688c79fdb77feb4e8aee683d.json"
+        )
+        if not artifact.exists():
+            pytest.skip("baseline_eval artifact not produced in this environment")
+        cm = ChampionManager(
+            artifact_path="artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+            model_id="primary_scalp",
+            model_version="v3.0",
+            feature_schema_id="scalp_v3",
+            feature_dimension=70,
+            num_classes=3,
+        )
+        champ = cm.load_champion()
+        metrics = ChampionMetricsProvider(baseline_dir=tmp_path).load(champ)
+>       assert metrics is not None
+E       assert None is not None
+
+tests\unit\test_learning_loop_closure.py:287: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:23:56 [info     ] [MODEL] CHAMPION VERIFIED      hash=bb1f0afe30f746da model_id=primary_scalp version=v3.0
+2026-09-07 05:23:56 [warning  ] [CHAMPION_METRICS] event=CHAMPION_METRICS_UNAVAILABLE model_hash=bb1f0afe30f7 (run research.baseline_eval to produce evidence)
+=========================== short test summary info ===========================
+FAILED tests/unit/test_learning_loop_closure.py::TestChampionMetrics::test_real_champion_metrics_from_baseline_eval_artifact
+1 failed, 19 passed in 2.83s

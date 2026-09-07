@@ -1,0 +1,73 @@
+N818 Exception name `ChampionMetricsUnavailable` should be named with an Error suffix
+  --> src\nexus_scalp\model_lifecycle\champion_metrics.py:49:7
+   |
+49 | class ChampionMetricsUnavailable(RuntimeError):
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+50 |     """Raised when no real champion metrics exist (never substitute zeros)."""
+   |
+
+N818 Exception name `DatasetSnapshotMissing` should be named with an Error suffix
+  --> src\nexus_scalp\model_lifecycle\dataset_snapshot.py:47:7
+   |
+47 | class DatasetSnapshotMissing(DatasetSnapshotError):
+   |       ^^^^^^^^^^^^^^^^^^^^^^
+48 |     """Raised when a referenced snapshot does not exist (fail-closed)."""
+   |
+
+N818 Exception name `HandoffBlocked` should be named with an Error suffix
+  --> src\nexus_scalp\model_lifecycle\learning_loop.py:47:7
+   |
+47 | class HandoffBlocked(RuntimeError):
+   |       ^^^^^^^^^^^^^^
+48 |     """Raised when a handoff safeguard fails (reason carried)."""
+   |
+
+F841 Local variable `candidate_status` is assigned to but never used
+   --> src\nexus_scalp\model_lifecycle\learning_loop.py:302:9
+    |
+301 |     def _candidate_model_id(self, result: dict[str, Any], run_id: str) -> str:
+302 |         candidate_status = str(result.get("candidate_status", ""))
+    |         ^^^^^^^^^^^^^^^^
+303 |         run = result.get("run", {})
+304 |         artifacts = run.get("artifacts") or []
+    |
+help: Remove assignment to unused variable `candidate_status`
+
+RUF005 Consider iterable unpacking instead of concatenation
+   --> src\nexus_scalp\research\baseline_eval.py:117:14
+    |
+115 | def load_frame(parquet_path: Path, dim: int) -> pl.DataFrame:
+116 |     feat_cols = [f"feat_{i}" for i in range(dim)]
+117 |     needed = feat_cols + ["label", "timestamp", "regime", "session"]
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+118 |     lf = pl.scan_parquet(parquet_path)
+119 |     cols = set(lf.collect_schema().names())
+    |
+help: Replace with iterable unpacking
+
+F841 Local variable `r_head` is assigned to but never used
+   --> src\nexus_scalp\research\baseline_eval.py:309:5
+    |
+307 |     regime_arr = np.array(regimes)
+308 |     session_arr = np.array(sessions)
+309 |     r_head = _r_from_predictions(y, pred_argmax, trade, friction_r)
+    |     ^^^^^^
+310 |     for reg in sorted(set(regimes)):
+311 |         m = (regime_arr == reg) & trade
+    |
+help: Remove assignment to unused variable `r_head`
+
+B007 Loop control variable `i` not used within loop body
+   --> src\nexus_scalp\research\baseline_eval.py:325:9
+    |
+323 |     folds: list[dict[str, Any]] = []
+324 |     fold_exps: list[float] = []
+325 |     for i, w in enumerate(windows):
+    |         ^
+326 |         ts, te = w["test_start"], w["test_end"]
+327 |         wf_trade = (pred_argmax != 0) & (conf >= conf_thresholds[0])
+    |
+help: Rename unused `i` to `_i`
+
+Found 18 errors (11 fixed, 7 remaining).
+No fixes available (4 hidden fixes can be enabled with the `--unsafe-fixes` option).

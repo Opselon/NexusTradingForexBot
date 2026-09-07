@@ -651,7 +651,7 @@ class SmokeRunner:
                 if dim != 70:
                     raise RuntimeError(f"SCALER_MISMATCH scaler dim {dim} != 70")
             # model width
-            state = torch.load(art, map_location="cpu")
+            state = torch.load(art, map_location="cpu", weights_only=True)
             w = state.get("input_projection.weight") if isinstance(state, dict) else None
             if w is not None and hasattr(w, "shape") and int(w.shape[1]) != 70:
                 raise RuntimeError(
@@ -1669,7 +1669,7 @@ class SmokeRunner:
                 raise RuntimeError(f"MISSING_ARTIFACT: {art} absent")
             import torch
 
-            state = torch.load(art, map_location="cpu")
+            state = torch.load(art, map_location="cpu", weights_only=True)
             w = state.get("input_projection.weight") if isinstance(state, dict) else None
             dim = int(w.shape[1]) if w is not None and hasattr(w, "shape") else None
             if dim not in (50, 70):

@@ -1,0 +1,19 @@
+F........                                                                [100%]
+================================== FAILURES ===================================
+_________________________ test_gate_passes_clean_tree _________________________
+
+own_tree = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7102/test_gate_passes_clean_tree0/head_tree')
+
+    def test_gate_passes_clean_tree(own_tree: Path) -> None:
+        rc, data = _run_gate(own_tree, "--fast", "--all")
+>       assert data["overall"] == "passed", [r for r in data["results"] if r["status"] == "failed"]
+E       AssertionError: [{'name': 'ruff_lint', 'command': ['C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\.venv\\Scripts\\python.e...ingForexBot\\.venv\\Scripts\\python.exe', '-m', 'ruff', 'format', '--check'], 'exit_code': 1, 'status': 'failed', ...}]
+E       assert 'failed' == 'passed'
+E         
+E         - passed
+E         + failed
+
+tests\unit\test_check_local_gate.py:110: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/unit/test_check_local_gate.py::test_gate_passes_clean_tree - Ass...
+exit=1

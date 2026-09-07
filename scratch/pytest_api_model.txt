@@ -1,0 +1,46 @@
+....F
+================================== FAILURES ===================================
+_____________ TestModelLifecycleAPI.test_worker_start_stop_cancel _____________
+
+self = <test_model_lifecycle_api.TestModelLifecycleAPI object at 0x000001AED47D21D0>
+wired_engine = (<nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x000001AED8B02110>, <nexus_scalp.application.live_engine.LiveEngine object at 0x000001AED8C37190>)
+
+    def test_worker_start_stop_cancel(self, wired_engine):
+        _repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        assert client.post("/api/models/worker/start").json()["available"] is True
+>       assert engine._training_worker_started is True
+E       assert False is True
+E        +  where False = <nexus_scalp.application.live_engine.LiveEngine object at 0x000001AED8C37190>._training_worker_started
+
+tests\integration\test_model_lifecycle_api.py:162: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 05:41:00 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7214\test_worker_start_stop_cancel0\models_api.db
+2026-09-07 05:41:00 [info     ] [TELEGRAM_CONFIG] enabled=True configured=True token_present=True admin_id_present=True source=SECURE_SETTINGS
+2026-09-07 05:41:00 [info     ] Candle intelligence store initialized (RAM ring + async worker) db_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\candle_intel.db
+2026-09-07 05:41:00 [info     ] [STRATEGY_FACTORY] isolated research store ready provider=sqlite
+2026-09-07 05:41:00 [info     ] [NEWS] event=CONSTRUCTED status=ENABLED
+2026-09-07 05:41:00 [info     ] Initializing fresh model weights expected_dim=50 path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7214\test_worker_start_stop_cancel0\model.pt
+2026-09-07 05:41:00 [info     ] Saved PyTorch model weights artifact atomically to disk path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7214\test_worker_start_stop_cancel0\model.pt tensor_layers=31
+2026-09-07 05:41:00 [info     ] Scaler artifact missing (cold-start acceptable) path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7214\test_worker_start_stop_cancel0\model.scaler.npz
+2026-09-07 05:41:00 [info     ] [MODEL] REGISTERED             artifact_fingerprint=03157501848ac5b4 feature_dimension=50 feature_schema=scalp_v1 model_id=primary_scalp_scalp_v1_50d model_version=v1.0
+2026-09-07 05:41:00 [info     ] [MODEL] SCHEMA_VERSION         feature_dimension=50 feature_schema=scalp_v1 model_id=primary_scalp_scalp_v1_50d model_version=v1.0
+2026-09-07 05:41:00 [warning  ] [MODEL] Champion scaler missing/mismatched (cold-start acceptable) path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-7214\test_worker_start_stop_cancel0\model.scaler.npz
+2026-09-07 05:41:00 [info     ] [MODEL] CHAMPION VERIFIED      hash=03157501848ac5b4 model_id=primary_scalp version=v1.0
+2026-09-07 05:41:00 [info     ] [MODEL] REGISTERED             artifact_fingerprint=03157501848ac5b4 feature_dimension=50 feature_schema=scalp_v1 model_id=primary_scalp_scalp_v1_50d model_version=v1.0
+2026-09-07 05:41:00 [info     ] [MODEL] event=STATUS           model_id=primary_scalp_scalp_v1_50d reason='registry truthfulness sync: live Champion row' status=CHAMPION version=v1.0
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 05:41:00 [info     ] [TRAINING_WORKER] event=START status=RUNNING
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 05:41:00 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 05:41:01 [info     ] Audit Database safely closed.
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/integration/test_model_lifecycle_api.py::TestModelLifecycleAPI::test_worker_start_stop_cancel
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!

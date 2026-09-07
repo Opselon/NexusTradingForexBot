@@ -1,0 +1,26 @@
+tests/unit/test_agent18_replay_forensics.py: 1
+tests/unit/test_command_center_adversarial.py: 6
+tests/unit/test_forensic_monitoring_task11.py: 2
+tests/unit/test_forensics.py: 2
+tests/unit/test_hardening_p1_p2.py: 1
+tests/unit/test_launcher_paper_boundary_bug212.py: 4
+tests/unit/test_lifecycle_e2e_v3.py: 1
+tests/unit/test_model_generation_phase13.py: 1
+tests/unit/test_model_governance_phase16.py: 7
+tests/unit/test_post70d_monitoring_activation.py: 1
+tests/unit/test_schema_70d_reconciliation.py: 3
+tests/unit/test_shadow70_health_drift.py: 11
+tests/unit/test_shadow70_news_family.py: 5
+tests/unit/test_shadow70_runtime.py: 42
+tests/unit/test_shadow70_safety.py: 5
+tests/unit/test_shadow_hardening_chg0046.py: 22
+tests/unit/test_shadow_phase11.py: 31
+tests/unit/test_shadow_replay_evidence_chg0047.py: 10
+tests/unit/test_strategy_lifecycle_snapshot.py: 2
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

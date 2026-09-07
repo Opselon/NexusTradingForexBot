@@ -1,0 +1,20 @@
+...F..                                                                   [100%]
+================================== FAILURES ===================================
+______ TestPaperParity.test_snapshot_insufficient_data_without_evidence _______
+
+self = <tests.unit.test_paper_parity.TestPaperParity object at 0x000001E7CD0FE950>
+audit_repo = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x000001E7D08C1490>
+
+    def test_snapshot_insufficient_data_without_evidence(self, audit_repo) -> None:
+        snap = build_parity_snapshot(audit=audit_repo, lookback_days=7)
+        assert snap["status"] == "INSUFFICIENT_DATA"
+>       assert snap["comparison"] is None or "comparison" not in snap
+               ^^^^^^^^^^^^^^^^^^
+E       KeyError: 'comparison'
+
+tests\unit\test_paper_parity.py:124: KeyError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 06:20:36 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-7360/test_snapshot_insufficient_dat0/parity_test.db
+=========================== short test summary info ===========================
+FAILED tests/unit/test_paper_parity.py::TestPaperParity::test_snapshot_insufficient_data_without_evidence
+1 failed, 5 passed in 3.58s

@@ -1,0 +1,144 @@
+{
+  "tool": "scripts/qa/run_mutations.py",
+  "contract": "honesty-v2: KILLED requires pristine battery rc==0; INVALID_* never counts as KILLED",
+  "git_commit": "90a6c0b0",
+  "timestamp": "2026-09-07T00:38:05Z",
+  "scope": "full",
+  "mutations_total": 9,
+  "killed": 9,
+  "survived": 0,
+  "survivor_ids": [],
+  "accepted_survivor_ids": [],
+  "invalid_ids": [],
+  "mutation_score": 1.0,
+  "duration_sec": 156.9,
+  "note": "SURVIVED = test blind spot (a critical mutation no test catches); file in agents/bugs.md",
+  "results": [
+    {
+      "id": "MUT-SM-01",
+      "desc": "state machine: drop count-based hysteresis half (>= -> >)",
+      "target": "src/nexus_scalp/execution/position_state_machine.py",
+      "battery": "tests/unit/test_qa_deep_state_machines.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "tests\\unit\\test_qa_deep_state_machines.py:154: AssertionError",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_qa_deep_state_machines.py::test_sm_debounce_count_gate_blocks_burst"
+      ]
+    },
+    {
+      "id": "MUT-RB-01",
+      "desc": "recovery budget: horizon clamp lower bound removed (max -> min)",
+      "target": "src/nexus_scalp/execution/recovery_budget.py",
+      "battery": "tests/unit/test_qa_deep_state_machines.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_qa_deep_state_machines.py::test_sm_debounce_count_gate_blocks_burst",
+        "FAILED tests/unit/test_qa_deep_state_machines.py::test_rb_horizon_clamped_property_over_random_configs"
+      ]
+    },
+    {
+      "id": "MUT-70D-01",
+      "desc": "70D contract: clip window widened [-3,+3] -> [-5,+5]",
+      "target": "src/nexus_scalp/features/schema_contract.py",
+      "battery": "tests/unit/test_qa_deep_70d_contract_properties.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_inference_validator_structured_rejection_for_non_numeric - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)",
+        "FAILED tests/unit/test_qa_deep_70d_contract_properties.py::test_property_single_mutation_rejected_at_same_index[oob_high]",
+        "FAILED tests/unit/test_qa_deep_70d_contract_properties.py::test_property_single_mutation_rejected_at_same_index[oob_low]"
+      ]
+    },
+    {
+      "id": "MUT-70D-02",
+      "desc": "70D contract: dimension check dropped (70 -> sentinel)",
+      "target": "src/nexus_scalp/features/schema_contract.py",
+      "battery": "tests/unit/test_qa_deep_70d_contract_properties.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_inference_validator_structured_rejection_for_non_numeric - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)",
+        "FAILED tests/unit/test_qa_deep_70d_contract_properties.py::test_property_dimension_mutation_rejected_everywhere",
+        "FAILED tests/unit/test_qa_deep_70d_contract_properties.py::test_legacy_widths_pass_forensics_check_but_fail_70d_contract"
+      ]
+    },
+    {
+      "id": "MUT-GATE-01",
+      "desc": "provider gate: single-flight follower broadcast disabled",
+      "target": "src/nexus_scalp/strategies/factory/provider_gate.py",
+      "battery": "tests/unit/test_provider_gate_hardening.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "tests\\unit\\test_provider_gate_hardening.py:320: AssertionError",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_provider_gate_hardening.py::TestConcurrencyAndDedup::test_single_flight_dedupes_identical_requests"
+      ]
+    },
+    {
+      "id": "MUT-CF-01",
+      "desc": "confidence semantics: threshold comparison flipped (< -> >)",
+      "target": "src/nexus_scalp/signals/policy.py",
+      "battery": "tests/unit/test_qa_deep_confidence_adversarial.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_qa_deep_confidence_adversarial.py::test_base_threshold_freeze_under_perturbation",
+        "FAILED tests/unit/test_qa_deep_confidence_adversarial.py::test_survival_mode_freeze_decision_level"
+      ]
+    },
+    {
+      "id": "MUT-AGG-01",
+      "desc": "observability: evidence counter under-reports (+= -> =)",
+      "target": "src/nexus_scalp/observability/event_aggregator.py",
+      "battery": "tests/unit/test_qa_deep_observability_evidence.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_qa_deep_observability_evidence.py::test_obs_signature_flood_dropped_accounting_exact",
+        "FAILED tests/unit/test_qa_deep_observability_evidence.py::test_obs_concurrent_adds_lose_nothing"
+      ]
+    },
+    {
+      "id": "MUT-REPLAY-01",
+      "desc": "replay causality: causal filter flips to future-only (<= -> >=)",
+      "target": "src/nexus_scalp/model_generation/replay.py",
+      "battery": "tests/unit/test_qa_deep_metamorphic_replay.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "FAILED tests/unit/test_qa_deep_metamorphic_replay.py::test_met_naive_timestamp_normalized_as_utc",
+        "FAILED tests/unit/test_qa_deep_metamorphic_replay.py::test_met_shuffled_input_sorted_by_contract_matches",
+        "FAILED tests/unit/test_qa_deep_metamorphic_replay.py::test_met_end_of_data_boundary_exactly_min_bars"
+      ]
+    },
+    {
+      "id": "MUT-DB-01",
+      "desc": "migration: downgrade protection disabled",
+      "target": "src/nexus_scalp/database/engine.py",
+      "battery": "tests/unit/test_qa_deep_db_migration_adversarial.py",
+      "pristine_rc": 0,
+      "verdict": "KILLED",
+      "pytest_rc": 1,
+      "evidence_tail": [
+        "2026-09-07 04:08:03 [info     ] [DB_MIGRATION] event=COMPLETE  current_version=7 database=audit duration_ms=398.97 expected_version=7 integrity=ok",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/unit/test_qa_deep_db_migration_adversarial.py::test_adv_db_downgrade_blocked"
+      ]
+    }
+  ]
+}

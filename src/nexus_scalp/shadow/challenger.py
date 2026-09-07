@@ -124,7 +124,7 @@ class ChallengerRuntime:
             import numpy as np
             import torch
 
-            state = torch.load(self.artifact_path, map_location="cpu", weights_only=False)
+            state = torch.load(self.artifact_path, map_location="cpu", weights_only=True)
             model = ScalpNet(num_features=self.live_dimension, num_classes=self.num_classes)
             model.load_state_dict(state)
             model.eval()
