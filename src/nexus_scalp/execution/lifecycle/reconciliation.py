@@ -367,6 +367,20 @@ class ReconciliationEngine:
                 time_to_mfe_sec=self.om._time_to_mfe_sec.get(dead_ticket, 0.0),
                 broker_outcome=broker_payload,
             )
+            # PROFIT-PROTECTION BREAKER FEED (mission 7D): every confirmed
+            # close outcome feeds the consecutive-loss counter in the risk
+            # engine's canonical CircuitBreakerEngine. Fail-inert: a breaker
+            # fault must never disturb the experience path.
+            try:
+                risk_engine = getattr(self.om, "risk_engine", None)
+                if risk_engine is not None and hasattr(risk_engine, "breakers"):
+                    risk_engine.breakers.record_trade_result(net_pnl_usd=net_pnl_usd, closed_at=now)
+            except Exception as br_err:
+                logger.warning(
+                    "[BREAKER] outcome feed failed (isolated)",
+                    ticket=dead_ticket,
+                    error=str(br_err),
+                )
         except Exception as exp_err:
             logger.error(
                 "[EXPERIENCE] outcome forwarding failed (isolated)",
