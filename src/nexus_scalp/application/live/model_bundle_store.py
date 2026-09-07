@@ -21,20 +21,33 @@ hot_swap_governance / debug_snapshot tests) keep working unchanged.
 
 from __future__ import annotations
 
+import contextlib
 import os
+from nexus_scalp.models.scalp_net import ScalpNet
 from pathlib import Path
 from typing import Any
+
+import numpy as np
+import torch
 
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.model_bundle_store")
 
 
+
+def _engine_types():
+    """Late-bind engine value types (import-cycle breaker)."""
+    from nexus_scalp.application.live_engine import ModelBundle, ScalerBundle
+
+    return ModelBundle, ScalerBundle
+
+
 class ModelBundleStore:
     """Bundle load/verify/persist operations (composition root: LiveEngine)."""
 
     def __init__(self, om: Any) -> None:
-        self.om = om
+        self = om
 
     def _load_or_create_bundle(self, model_path: Path, force_fresh: bool) -> ModelBundle:
         # P1 ARTIFACT TRUST: verify the EXACT on-disk artifact against its
@@ -46,7 +59,7 @@ class ModelBundleStore:
                 verify_artifact_integrity,
             )
 
-            allow_legacy = bool(getattr(self.om, "allow_legacy_unverified_artifacts", False))
+            allow_legacy = bool(getattr(self, "allow_legacy_unverified_artifacts", False))
             try:
                 verify_artifact_integrity(model_path, allow_legacy_unverified=allow_legacy)
             except ArtifactIntegrityError as integ_err:
@@ -58,11 +71,12 @@ class ModelBundleStore:
                     integ_err.verdict.artifact,
                 )
                 raise
-        model = self.om._load_or_initialize_model_weights(
+        model = self._load_or_initialize_model_weights(
             model_path=model_path, force_fresh=force_fresh
         )
-        scaler = self.om._load_scaler_artifacts(model_path=model_path)
-        return ModelBundle(model=model, scaler=scaler, artifact_path=model_path)
+        scaler = self._load_scaler_artifacts(model_path=model_path)
+        _MB, _ = _engine_types()
+        return _MB(model=model, scaler=scaler, artifact_path=model_path)
 
     @staticmethod
     def _artifact_meta_coherence(model_path: Path) -> dict[str, Any]:
@@ -152,7 +166,7 @@ class ModelBundleStore:
         # (unbound with self=None on macOS). Handle None gracefully.
         if self is None:
             return int(LiveEngine.FEATURE_DIM)
-        return int(self.om.__class__.FEATURE_DIM)
+        return int(self.__class__.FEATURE_DIM)
 
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
         """Loads model.pt if present, validating against the artifact's own declared width.
@@ -165,13 +179,13 @@ class ModelBundleStore:
             # BUG-141: seed the width the PATH's declared contract demands
             # (meta/scaler/checkpoint), not the process-wide class default -
             # force_fresh must never mint a 50D file into a declared-70D path.
-            expected_dim = self.om._declared_contract_dim_for_path(model_path) or int(
-                self.om.__class__.FEATURE_DIM
+            expected_dim = self._declared_contract_dim_for_path(model_path) or int(
+                self.__class__.FEATURE_DIM
             )
         else:
-            expected_dim = self.om._expected_num_features_for_artifact(model_path)
+            expected_dim = self._expected_num_features_for_artifact(model_path)
         # BUG-243: mint at the bundle's DECLARED head width, not hardcoded 4.
-        declared_head = self.om._declared_head_classes_for_path(
+        declared_head = self._declared_head_classes_for_path(
             model_path.with_suffix(".meta.json")
         )
         model = ScalpNet(num_features=expected_dim, num_classes=declared_head)
@@ -205,14 +219,15 @@ class ModelBundleStore:
         logger.info(
             "Initializing fresh model weights", path=str(model_path), expected_dim=expected_dim
         )
-        self.om._save_model_weights_atomic(model, model_path)
+        self._save_model_weights_atomic(model, model_path)
         return model
 
     def _load_scaler_artifacts(self, model_path: Path) -> ScalerBundle:
         scaler_path = model_path.with_suffix(".scaler.npz")
         if not scaler_path.exists():
             logger.info("Scaler artifact missing (cold-start acceptable)", path=str(scaler_path))
-            return ScalerBundle(mean=None, std=None)
+            _, _SB = _engine_types()
+            return _SB(mean=None, std=None)
 
         try:
             data = np.load(scaler_path)
@@ -220,7 +235,7 @@ class ModelBundleStore:
             std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
 
             # BUG-125: scaler width must match the MODEL's declared width
-            expected_dim = self.om._expected_num_features_for_artifact(model_path)
+            expected_dim = self._expected_num_features_for_artifact(model_path)
             if mean.shape[0] != expected_dim or std.shape[0] != expected_dim:
                 raise RuntimeError(
                     f"Scaler dim invalid: mean{mean.shape} std{std.shape} "
@@ -245,7 +260,8 @@ class ModelBundleStore:
                     degenerate_columns=degenerate,
                     total_columns=int(std.shape[0]),
                 )
-            return ScalerBundle(mean=mean, std=std)
+            _, _SB = _engine_types()
+            return _SB(mean=mean, std=std)
 
         except Exception as err:
             logger.warning(
@@ -253,7 +269,8 @@ class ModelBundleStore:
                 error=str(err),
                 path=str(scaler_path),
             )
-            return ScalerBundle(mean=None, std=None)
+            _, _SB = _engine_types()
+            return _SB(mean=None, std=None)
 
     def _save_model_weights_atomic(self, model: ScalpNet, model_path: Path) -> bool:
         """Saves current PyTorch model weights state_dict atomically to disk with thread lock and logging.
@@ -271,7 +288,7 @@ class ModelBundleStore:
         """
         try:
             model_width = int(model.input_projection.weight.shape[1])
-            declared = self.om._declared_contract_dim_for_path(model_path)
+            declared = self._declared_contract_dim_for_path(model_path)
             if declared is not None and declared != model_width:
                 logger.critical(
                     "[BUG141_GUARD] event=ARTIFACT_WIDTH_CONTRACT_REFUSED",
@@ -286,7 +303,7 @@ class ModelBundleStore:
                 error=str(guard_err),
                 path=str(model_path),
             )
-        with self.om._bundle_lock:
+        with self._bundle_lock:
             try:
                 model_path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = model_path.with_suffix(".pt.tmp")
