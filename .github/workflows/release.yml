@@ -389,6 +389,29 @@ jobs:
           $Out = $env:NSE_OUT
 
           python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import verify as v; r=v.verify_release(Path(r'$Out\portable')); print('OVERALL', r['overall']); [print(c['status'], c['check']) for c in r['checks']]; sys.exit(0 if r['valid'] else 1)"
+      # P3 CODE-SIGNING READINESS: when NSE_REQUIRE_CODE_SIGNING=true the
+      # release must PROVE Authenticode signing (signtool verify /pa) on
+      # every production EXE before upload. Default (unset/other) keeps the
+      # documented unsigned status — nothing claims signed that is not
+      # verified. No certificate material ever enters the repository.
+      - name: Code-signing requirement gate (P3)
+        shell: pwsh
+        env:
+          NSE_REQUIRE_CODE_SIGNING: ${{ vars.NSE_REQUIRE_CODE_SIGNING }}
+        run: |
+          if ("$env:NSE_REQUIRE_CODE_SIGNING" -ieq "true") {
+            $Out = $env:NSE_OUT
+            $exes = @("$Out\portable\NexusScalpEngine.exe", "$Out\cli\NexusScalpEngine-CLI.exe", "$Out\NexusScalpEngine-$env:NSE_VERSION-win-x64-setup.exe")
+            foreach ($exe in $exes) {
+              if (-not (Test-Path $exe)) { throw "SIGNING_GATE: missing artifact $exe" }
+              $v = & signtool verify /pa /q $exe 2>&1
+              if ($LASTEXITCODE -ne 0) { throw "SIGNING_GATE: Authenticode verification FAILED for $exe : $v" }
+              Write-Host "Authenticode OK: $exe"
+            }
+          } else {
+            Write-Host "Code-signing not required (NSE_REQUIRE_CODE_SIGNING unset) - binaries remain documented-unsigned (docs/ARTIFACT_TRUST_CHAIN.md section 7)."
+          }
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
