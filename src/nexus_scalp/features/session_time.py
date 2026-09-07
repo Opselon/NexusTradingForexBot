@@ -36,11 +36,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 __all__ = [
-    "SESSION_SEMANTICS_VERSION",
     "SESSION_DEFINITIONS",
+    "SESSION_SEMANTICS_VERSION",
     "session_flags_for_utc",
-    "session_semantics_metadata",
     "session_phase_encoding_for_utc",
+    "session_semantics_metadata",
 ]
 
 #: Provenance version of the corrected session time semantics.
@@ -89,9 +89,15 @@ def session_flags_for_utc(ts_utc: datetime) -> dict[str, bool]:
         ts_utc = ts_utc.replace(tzinfo=UTC)
     else:
         ts_utc = ts_utc.astimezone(UTC)
-    london_open = _in_session(ts_utc.astimezone(SESSION_DEFINITIONS["london"]["tz"]), SESSION_DEFINITIONS["london"])
-    ny_open = _in_session(ts_utc.astimezone(SESSION_DEFINITIONS["new_york"]["tz"]), SESSION_DEFINITIONS["new_york"])
-    tokyo_open = _in_session(ts_utc.astimezone(SESSION_DEFINITIONS["tokyo"]["tz"]), SESSION_DEFINITIONS["tokyo"])
+    london_open = _in_session(
+        ts_utc.astimezone(SESSION_DEFINITIONS["london"]["tz"]), SESSION_DEFINITIONS["london"]
+    )
+    ny_open = _in_session(
+        ts_utc.astimezone(SESSION_DEFINITIONS["new_york"]["tz"]), SESSION_DEFINITIONS["new_york"]
+    )
+    tokyo_open = _in_session(
+        ts_utc.astimezone(SESSION_DEFINITIONS["tokyo"]["tz"]), SESSION_DEFINITIONS["tokyo"]
+    )
     return {
         "session_tokyo": tokyo_open,
         "session_london": london_open,
@@ -120,7 +126,6 @@ def session_phase_encoding_for_utc(ts_utc: datetime) -> float:
 
 def session_semantics_metadata() -> dict[str, Any]:
     """Provenance block for training metadata / promotion evidence."""
-    import zoneinfo as _zi
 
     return {
         "session_semantics_version": SESSION_SEMANTICS_VERSION,
