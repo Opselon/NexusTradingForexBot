@@ -1,12 +1,21 @@
-"""Order lifecycle decomposition package (P0 seam S5).
+"""Order lifecycle decomposition package (P0 seam S5/S7).
 
-Thin re-export surface for the canonical per-ticket state owner. The
+Thin re-export surface for extracted lifecycle owners. The
 ``OrderLifecycleManager`` facade in ``execution/order_manager.py`` composes
-``TicketStateStore`` from here; further lifecycle responsibilities
-(dispatch, protection, state machine, reconciliation, ...) land in this
-package as they are extracted.
+these components; further lifecycle responsibilities (dispatch, protection,
+state machine, reconciliation, ...) land in this package as they are
+extracted.
 """
 
+from nexus_scalp.execution.lifecycle.pending_orders import (
+    PENDING_ORDER_LOCK_SECONDS,
+    PendingOrderLifecycle,
+)
 from nexus_scalp.execution.lifecycle.ticket_state import TicketState, TicketStateStore
 
-__all__ = ["TicketState", "TicketStateStore"]
+__all__ = [
+    "PENDING_ORDER_LOCK_SECONDS",
+    "PendingOrderLifecycle",
+    "TicketState",
+    "TicketStateStore",
+]

@@ -41,7 +41,12 @@ from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
-from nexus_scalp.execution.lifecycle import TicketState, TicketStateStore
+from nexus_scalp.execution.lifecycle import (
+    PENDING_ORDER_LOCK_SECONDS,
+    PendingOrderLifecycle,
+    TicketState,
+    TicketStateStore,
+)
 from nexus_scalp.execution.position_intelligence import (
     SmartMetricsInputs,
     _estimate_liquidation_impact,
@@ -82,9 +87,8 @@ HARD_MAX_LOTS: float = 10.0
 #: Maximum simultaneous exposure: 1 active position OR 1 pending order, engine-wide.
 MAX_TOTAL_EXPOSURE: int = 1
 
-#: Pending limit orders are locked (immune to cancel/recreate churn) for this long.
-PENDING_ORDER_LOCK_SECONDS: float = 30.0
-
+#: Re-export: the churn-lock constant is owned by PendingOrderLifecycle (S7)
+#: and imported at the top of this module (facade compatibility).
 #: Reason marker emitted by SignalPolicy to request an AI position reversal.
 AI_REVERSAL_REASON: str = "AI_REVERSAL_SIGNAL"
 
@@ -444,13 +448,11 @@ class OrderLifecycleManager:
         experience_engine: Any = None,
         lifecycle_tracker: Any = None,
     ) -> None:
-        self._last_mod_price: dict[int, float] = {}
         #: TASK-3: optional immutable position-timeline tracker. When present,
         #: the close path finalizes the position timeline (POSITION_EXITED
         #: event) with the canonical realized PnL / R / exit mechanism so the
         #: lifecycle chain is complete (BUG-086). Never blocks on failure.
         self.lifecycle_tracker = lifecycle_tracker
-        self._last_mod_time: dict[int, datetime] = {}
         self.adapter = adapter
         self.mt5_adapter = adapter
         self.audit = audit_repo or AuditRepository()
@@ -521,8 +523,9 @@ class OrderLifecycleManager:
         # Throttling & spread tracking for dynamic hold score
         self._rolling_spreads: list[float] = []
 
-        # Part 4: Pending Order Lifecycle Management tracking
-        self._pending_orders_setup_time: dict[int, datetime] = {}
+        # Part 4 (P0 seam S7): pending lifecycle state is OWNED by
+        # PendingOrderLifecycle (execution/lifecycle/pending_orders.py);
+        # the manager delegates (see _pending_lifecycle property).
 
         # P0 seam S5: canonical per-ticket position state store (dict views
         # over TicketState records, defined as properties after __init__).
@@ -582,28 +585,9 @@ class OrderLifecycleManager:
         self._peak_equity: float = 0.0
         #: Entry context staged by the policy/engine before the ticket exists
         #: (BUG-081). Bounded registry keyed by the originating order/request id
-        #: so EVERY sibling ticket of a broker split-fill resolves the SAME
-        #: immutable entry context (order_id, reason, confidence, regime,
-        #: expected entry, dispatch clock, setup snapshot). Entries are removed
-        #: once the fill family has been bound (idempotent) or after a stale TTL.
-        self._pending_context_registry: dict[str, dict[str, Any]] = {}
-        #: monotonic dispatch clock per order_id -> fractional-hours age used by
-        #: the stale-entry sweep (bounded memory).
-        self._pending_context_ts: dict[str, float] = {}
-        #: order_id -> set of tickets already bound (idempotent family tracking).
-        self._context_bound_tickets: dict[str, set[int]] = {}
-        #: tickets with NO staging context ever registered (provenance gap,
-        #: BUG-081 error-path observability; entries are distinct from legit 0.0).
-        self._unbound_ticket_contexts: dict[int, str] = {}
-        self._PENDING_CONTEXT_TTL_SEC: float = 3600.0
-        self._PENDING_CONTEXT_MAX_ENTRIES: int = 64
         #: Phase 14: tickets already reconciled from broker history (dedup guard
         #: for the reconciliation close-loop across repeated passes/restarts).
         self._reconcile_seen: dict[int, bool] = {}
-        #: P0-A (BUG-140): the most recent cancel reason per pending ticket so
-        #: the terminal outcome can distinguish CANCELED_UNFILLED from
-        #: EXPIRED_UNFILLED (AGE_EXPIRATION path).
-        self._pending_cancel_reasons: dict[int, str] = {}
         #: TASK-7: tickets the engine has positively closed or that the broker no
         #: longer reports. Once closed, NO protective modification may be issued for
         #: the ticket (invariant: a CLOSED position cannot receive further protective
@@ -627,6 +611,147 @@ class OrderLifecycleManager:
     def _ticket_state_store(self) -> TicketStateStore:
         """Composition seam for tests and extracted lifecycle modules."""
         return self._states
+
+    # -----------------------------------------------------------------
+    # P0 seam S7: pending-order lifecycle owner (composition root).
+    # State (churn lock, placement/age, cancel reasons, entry-context
+    # lineage registry) lives in PendingOrderLifecycle; the manager only
+    # composes and delegates.
+    # -----------------------------------------------------------------
+
+    @property
+    def _pending_lifecycle(self) -> PendingOrderLifecycle:
+        """Lazily composed pending-order lifecycle owner (S7)."""
+        pl: PendingOrderLifecycle | None = getattr(self, "_pending_lifecycle_instance", None)
+        if pl is None:
+            pl = PendingOrderLifecycle(
+                adapter=self.adapter,
+                tickets_view=lambda: self._live_tickets_cache,
+                refresh_cache=self.refresh_live_tickets_cache,
+                experience_engine=self.experience_engine,
+                audit=self.audit,
+            )
+            pl.set_entry_order_ids_probe(
+                lambda ticket: str(self._entry_order_ids.get(ticket, "") or "")
+            )
+            self._pending_lifecycle_instance = pl
+        return pl
+
+    @property
+    def _pending_context_registry(self) -> dict[str, dict[str, Any]]:
+        """Live lineage-registry view (owned by PendingOrderLifecycle, S7)."""
+        return self._pending_lifecycle._pending_context_registry
+
+    @property
+    def _context_bound_tickets(self) -> dict[str, set[int]]:
+        """Live bound-families view (owned by PendingOrderLifecycle, S7)."""
+        return self._pending_lifecycle._context_bound_tickets
+
+    @property
+    def _unbound_ticket_contexts(self) -> dict[int, str]:
+        """Live provenance-gap view (owned by PendingOrderLifecycle, S7)."""
+        return self._pending_lifecycle._unbound_ticket_contexts
+
+    @property
+    def _pending_orders_setup_time(self) -> dict[int, datetime]:
+        """Live placement-time dict view (owned by PendingOrderLifecycle, S7).
+
+        Kept as a live-identity property so tests/sweeps that seed or read
+        placement ages directly keep working without owning the state.
+        """
+        return self._pending_lifecycle._pending_orders_setup_time
+
+    def register_entry_context(
+        self,
+        order_id: str = "",
+        entry_reason: str = "",
+        ai_confidence: float = 0.0,
+        market_regime: str = "",
+        expected_entry: float = 0.0,
+        dispatch_monotonic: float = 0.0,
+        setup_snapshot: dict[str, Any] | None = None,
+    ) -> None:
+        """Delegate: stages dispatch lineage (owned by PendingOrderLifecycle)."""
+        self._pending_lifecycle.register_entry_context(
+            order_id=order_id,
+            entry_reason=entry_reason,
+            ai_confidence=ai_confidence,
+            market_regime=market_regime,
+            expected_entry=expected_entry,
+            dispatch_monotonic=dispatch_monotonic,
+            setup_snapshot=setup_snapshot,
+        )
+
+
+    def _pending_field(pending: Any, *names: str, default: Any = None) -> Any:
+        """Delegate: dict/object pending field probe (PendingOrderLifecycle)."""
+        return PendingOrderLifecycle.pending_field(pending, *names, default=default)
+
+    _pending_field = staticmethod(_pending_field)
+
+    def _bind_pending_entry_context(self, ticket: int, decision_order_id: str = "") -> None:
+        """Delegate: BUG-081 lineage binding (owned by PendingOrderLifecycle)."""
+        self._pending_lifecycle.bind_pending_entry_context(
+            ticket,
+            decision_order_id,
+            entry_reasons=self._entry_reasons,
+            entry_confidences=self._entry_confidences,
+            entry_regimes=self._entry_regimes,
+            entry_order_ids=self._entry_order_ids,
+            entry_expected_price=self._entry_expected_price,
+            entry_fill_latency_ms=self._entry_fill_latency_ms,
+            entry_setup_snapshots=self._entry_setup_snapshots,
+        )
+
+    def _prune_bound_context(self, order_id: str) -> None:
+        """Delegate: lineage registry pruning (owned by PendingOrderLifecycle)."""
+        self._pending_lifecycle.prune_bound_context(order_id)
+
+    def _emit_terminal_for_pending(self, ticket: int, state: Any, detail: str = "") -> bool:
+        """Delegate: terminal pending outcome (owned by PendingOrderLifecycle)."""
+        return self._pending_lifecycle.emit_terminal_for_pending(ticket, state, detail)
+
+    def _pending_broker_state(self, ticket: int, symbol: str | None = None) -> str:
+        """Delegate: broker truth probe (owned by PendingOrderLifecycle)."""
+        return self._pending_lifecycle.broker_state(ticket, symbol)
+
+    def cancel_pending_order_verified(self, ticket: int, symbol: str | None = None) -> bool:
+        """Delegate: broker-verified cancellation (owned by PendingOrderLifecycle)."""
+        return self._pending_lifecycle.cancel_pending_order_verified(ticket, symbol)
+
+    def cancel_pending_order_with_retry(
+        self, ticket: int, symbol: str | None = None, max_attempts: int = 3
+    ) -> int:
+        """Delegate: bounded cancel retry (owned by PendingOrderLifecycle)."""
+        return self._pending_lifecycle.cancel_pending_order_with_retry(
+            ticket, symbol, max_attempts
+        )
+
+    def reconcile_pending_state(
+        self, symbol: str | None = None, current_tick: TickData | None = None
+    ) -> dict[str, Any]:
+        """Delegate: pending reconciliation report (owned by PendingOrderLifecycle)."""
+        return self._pending_lifecycle.reconcile_pending_state(
+            symbol, current_tick, live_tickets=self._live_tickets_cache
+        )
+
+    def manage_pending_orders(
+        self,
+        symbol: str,
+        current_tick: TickData,
+        symbol_info: SymbolInfo | None = None,
+        atr: float = 1.50,
+        max_pending_dist_atr_mult: float = 2.50,
+    ) -> None:
+        """Delegate: pending lifecycle guard (owned by PendingOrderLifecycle)."""
+        self._pending_lifecycle.manage_pending_orders(
+            symbol,
+            current_tick,
+            symbol_info,
+            atr,
+            max_pending_dist_atr_mult,
+            audit=self.audit,
+        )
 
 # --- P0 seam S5: dict views over TicketStateStore (generated) ---
     @property
@@ -774,72 +899,7 @@ class OrderLifecycleManager:
     # MODULE A: LEDGER AUTOPSY CONTEXT INGESTION
     # =========================================================================
 
-    def register_entry_context(
-        self,
-        order_id: str = "",
-        entry_reason: str = "",
-        ai_confidence: float = 0.0,
-        market_regime: str = "",
-        expected_entry: float = 0.0,
-        dispatch_monotonic: float = 0.0,
-        setup_snapshot: dict[str, Any] | None = None,
-    ) -> None:
-        """
-        Stages the entry context of the order that is about to be dispatched.
 
-        (BUG-081) The context is held in a BOUNDED registry keyed by the
-        originating order/request id so that EVERY sibling ticket of a broker
-        split-fill resolves the SAME immutable context -- not just the first
-        ticket. A later `register_entry_context` for a NEW order id naturally
-        replaces the previous entry (one dispatch at a time), but a multi-ticket
-        fill family keeps its context until the family has been fully bound or
-        the stale TTL expires.
-
-        `expected_entry` and `dispatch_monotonic` are Phase 08 execution-quality
-        evidence: they let the closing autopsy compute real slippage and fill
-        latency instead of guessing.
-        """
-        ctx = {
-            "order_id": order_id,
-            "entry_reason": entry_reason,
-            "ai_confidence": float(ai_confidence or 0.0),
-            "market_regime": market_regime,
-            "expected_entry": float(expected_entry or 0.0),
-            "dispatch_monotonic": float(dispatch_monotonic or 0.0),
-            "setup_snapshot": dict(setup_snapshot or {}),
-        }
-        key = order_id or ""
-        self._pending_context_registry[key] = ctx
-        self._pending_context_ts[key] = time.monotonic()
-        self._sweep_stale_pending_contexts()
-
-    def _sweep_stale_pending_contexts(self) -> None:
-        """Evicts stale / over-capacity pending-context registry entries.
-
-        Bounded memory guard: entries older than `_PENDING_CONTEXT_TTL_SEC`
-        or beyond `_PENDING_CONTEXT_MAX_ENTRIES` (oldest first) are dropped.
-        A dropped context is an explicit provenance gap for tickets that
-        arrive after the TTL -- handled by the caller's error path, never
-        silently as legitimate zero confidence.
-        """
-        now = time.monotonic()
-        stale = [
-            k
-            for k, ts in self._pending_context_ts.items()
-            if now - ts > self._PENDING_CONTEXT_TTL_SEC
-        ]
-        for k in stale:
-            self._pending_context_registry.pop(k, None)
-            self._pending_context_ts.pop(k, None)
-            self._context_bound_tickets.pop(k, None)
-        if len(self._pending_context_registry) > self._PENDING_CONTEXT_MAX_ENTRIES:
-            oldest = sorted(self._pending_context_ts.items(), key=lambda kv: kv[1])[
-                : len(self._pending_context_registry) - self._PENDING_CONTEXT_MAX_ENTRIES
-            ]
-            for k, _ in oldest:
-                self._pending_context_registry.pop(k, None)
-                self._pending_context_ts.pop(k, None)
-                self._context_bound_tickets.pop(k, None)
 
     def update_account_snapshot(self, account: Any, peak_equity: float | None = None) -> None:
         """
@@ -895,42 +955,9 @@ class OrderLifecycleManager:
         atr: float,
         now: datetime,
     ) -> bool:
-        """
-        Gates modification of a live pending order.
+        """Delegate: 30s churn lock (owned by PendingOrderLifecycle)."""
+        return self._pending_lifecycle.should_modify_pending_order(ticket, price, atr, now)
 
-        A re-quote is permitted only when BOTH conditions hold:
-          - time_since_placement > PENDING_ORDER_LOCK_SECONDS (30s), AND
-          - price drift >= 1.0 x ATR.
-
-        This is the 30-second pending lock that prevents cancel/recreate churn.
-        """
-        last_price = self._last_mod_price.get(ticket)
-        last_time = self._last_mod_time.get(ticket)
-
-        if last_price is not None and last_time is not None:
-            price_drift = abs(price - last_price)
-            time_delta = (now - last_time).total_seconds()
-
-            if time_delta <= PENDING_ORDER_LOCK_SECONDS:
-                logger.debug(
-                    "PENDING_ORDER_LOCKED: modification suppressed inside 30s lock",
-                    ticket=ticket,
-                    age_sec=round(time_delta, 1),
-                )
-                return False
-
-            if price_drift < (1.0 * atr):
-                logger.debug(
-                    "PENDING_ORDER_HELD: drift below 1.0x ATR",
-                    ticket=ticket,
-                    drift=round(price_drift, 2),
-                    required=round(atr, 2),
-                )
-                return False
-
-        self._last_mod_price[ticket] = price
-        self._last_mod_time[ticket] = now
-        return True
 
     def get_active_live_tickets(self) -> list[dict[str, Any]]:
         """Returns a list of currently live active positions and pending orders matching symbol and magic number."""
@@ -1362,114 +1389,7 @@ class OrderLifecycleManager:
             return "FAST_LIQUIDITY_SWEEP"
         return "PURE_AI"
 
-    def _bind_pending_entry_context(self, ticket: int, decision_order_id: str = "") -> None:
-        """Binds the staged entry context to a freshly observed ticket.
 
-        (BUG-081) Resolves the context from the bounded registry keyed by the
-        originating order/request id. Every ticket of a broker split-fill
-        resolves the SAME immutable context (order_id, reason, confidence,
-        regime, expected entry, dispatch clock, setup snapshot). The registry
-        entry is removed only when the WHOLE fill family has been bound
-        (idempotent family tracking via `_context_bound_tickets`), so a
-        delayed sibling ticket never loses its provenance.
-
-        When NO context was ever staged for the order, the ticket is marked in
-        `_unbound_ticket_contexts` (distinct from a legitimate 0.0 confidence)
-        with the reason -- never silently treated as a zero-confidence entry.
-        """
-        bound = False
-        reason_gap = ""
-        # Resolve the staging context, in order:
-        #   1. explicit decision_order_id (caller-provided parent link)
-        #   2. the "" legacy slot (order without an explicit id)
-        #   3. the SINGLE most recent not-fully-bound dispatch family (the
-        #      current in-flight order; broker tickets arrive without a parent
-        #      id at bind time, BUG-081). This is the split-fill fix: every
-        #      sibling of the same fill still resolves the same context.
-        ctx = None
-        if decision_order_id:
-            ctx = self._pending_context_registry.get(decision_order_id)
-        if ctx is None:
-            ctx = self._pending_context_registry.get("")
-        if ctx is None:
-            for oid in sorted(
-                self._pending_context_ts, key=self._pending_context_ts.get, reverse=True
-            ):
-                family = self._context_bound_tickets.get(oid, set())
-                # A family still open (tickets live) is the current dispatch.
-                if any(t in self._live_tickets_cache for t in family):
-                    ctx = self._pending_context_registry.get(oid)
-                    if ctx is not None:
-                        break
-            # Fallback: the newest registered context (front-of-line dispatch).
-            if ctx is None and self._pending_context_ts:
-                newest = max(self._pending_context_ts, key=self._pending_context_ts.get)
-                ctx = self._pending_context_registry.get(newest)
-        if ctx is None:
-            reason_gap = "NO_STAGED_CONTEXT"
-        else:
-            self._entry_reasons[ticket] = ctx.get("entry_reason", "PURE_AI") or "PURE_AI"
-            self._entry_confidences[ticket] = float(ctx.get("ai_confidence", 0.0) or 0.0)
-            self._entry_regimes[ticket] = str(ctx.get("market_regime", "") or "")
-            self._entry_order_ids[ticket] = str(ctx.get("order_id", "") or decision_order_id)
-            # PHASE 08 execution-quality evidence.
-            self._entry_expected_price[ticket] = float(ctx.get("expected_entry", 0.0) or 0.0)
-            # SETUP SNAPSHOT (2026-08-18): full chart-state fingerprint captured at
-            # dispatch, carried to the closed-trade autopsy for setup attribution.
-            self._entry_setup_snapshots[ticket] = dict(ctx.get("setup_snapshot", {}) or {})
-            dispatch_mono = float(ctx.get("dispatch_monotonic", 0.0) or 0.0)
-            if dispatch_mono > 0.0:
-                self._entry_fill_latency_ms[ticket] = max(
-                    0.0, (time.monotonic() - dispatch_mono) * 1000.0
-                )
-            bound = True
-            # Idempotent family tracking: keep the context until EVERY ticket of
-            # the fill family has been bound. The family is defined by the set of
-            # tickets that ever resolved this order id; when this ticket is the
-            # first of the family it stays registered so delayed siblings bind.
-            oid = self._entry_order_ids.get(ticket) or decision_order_id or ""
-            family = self._context_bound_tickets.setdefault(oid, set())
-            family.add(ticket)
-            logger.info(
-                "[TRADE_LINEAGE] context_bound=true",
-                parent_execution_id=oid,
-                child_ticket=ticket,
-                family_size=len(family),
-            )
-        if not bound:
-            # Provenance gap: never silence missing context as legitimate 0.0.
-            self._unbound_ticket_contexts[ticket] = reason_gap
-            self._entry_reasons.setdefault(ticket, "PURE_AI")
-            self._entry_order_ids.setdefault(ticket, decision_order_id)
-            logger.warning(
-                "[TRADE_LINEAGE] context_bound=false",
-                child_ticket=ticket,
-                reason=reason_gap,
-                decision_order_id=decision_order_id,
-            )
-
-    def _prune_bound_context(self, order_id: str) -> None:
-        """Removes a fully-bound context family from the registry.
-
-        Called from the close path after the FINAL sibling of the fill family
-        has closed, so the registry cannot grow without bound. Idempotent.
-        """
-        if not order_id:
-            return
-        family = self._context_bound_tickets.get(order_id, set())
-        if not family:
-            return
-        # Only prune when every bound ticket has been cleaned up (closed).
-        if any(t in self._live_tickets_cache for t in family):
-            return
-        self._pending_context_registry.pop(order_id, None)
-        self._pending_context_ts.pop(order_id, None)
-        self._context_bound_tickets.pop(order_id, None)
-        logger.info(
-            "[TRADE_LINEAGE] context_pruned",
-            parent_execution_id=order_id,
-            family_size=len(family),
-        )
 
     # =========================================================================
     # P0-A (BUG-140): TERMINAL PENDING-ORDER EXPERIENCE OUTCOMES
@@ -1479,31 +1399,6 @@ class OrderLifecycleManager:
     # research dataset permanently reports MISSING_OUTCOME for it.
     # =========================================================================
 
-    def _emit_terminal_for_pending(self, ticket: int, state: Any, detail: str = "") -> bool:
-        """Emits the terminal outcome for the decision that placed `ticket`.
-
-        The request_id is resolved from the staged entry context registry
-        (`_entry_order_ids[ticket]` is bound to the originating
-        decision.request_id at context-bind time). Idempotent: the ledger
-        refuses a second outcome for the same key, so repeated sweeps,
-        retries or restart replays cannot duplicate the row.
-        """
-        request_id = str(self._entry_order_ids.get(ticket, "") or "")
-        if not request_id:
-            # Nothing to attribute: the order was never bound to a tracked
-            # decision (e.g. manual order) — nothing to record, no fabrication.
-            return False
-        written = emit_terminal_pending_outcome(
-            experience_engine=self.experience_engine,
-            request_id=request_id,
-            state=state,
-            detail=detail or f"broker ticket {ticket} terminal",
-            broker_order_id=str(ticket),
-        )
-        if written:
-            # The lifecycle is closed: drop the ephemeral cancel-reason note.
-            self._pending_cancel_reasons.pop(ticket, None)
-        return written
 
     # =========================================================================
     # MODULE B: AI POSITION REVERSAL PROTOCOL
@@ -1813,177 +1708,8 @@ class OrderLifecycleManager:
     # helper below sends the cancel, then verifies with orders_get() and
     # history_orders_get() before declaring success.
     # =========================================================================
-    def _pending_broker_state(self, ticket: int, symbol: str | None = None) -> str:
-        """Returns broker truth for a pending ticket.
 
-        ACTIVE  - the ticket is still listed as an active pending order.
-        GONE    - the ticket is provably gone: absent from the active list AND
-                  the send already succeeded, OR history shows a terminal state.
-        UNKNOWN - neither can be positively established (query error, failed
-                  send with empty/ambiguous active list, no history record).
-        """
-        query_error = False
-        active_result: str | None = None  # None = query unavailable
-        try:
-            get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
-            if get_pending_fn:
-                pendings = get_pending_fn(symbol=symbol)
-                if pendings is None:
-                    query_error = True
-                else:
-                    active_result = "ACTIVE"
-                    for p in pendings:
-                        if int(self._pending_field(p, "ticket", "order_id") or 0) == int(ticket):
-                            return "ACTIVE"
-                    active_result = "GONE"
-        except Exception as verify_err:
-            query_error = True
-            logger.warning(
-                "[PENDING_ORDER] event=CANCEL_VERIFY error=orders_get_failed context=fallback_to_history",
-                ticket=ticket,
-                error=str(verify_err),
-            )
-        # Active-order query unavailable/errored: check history_orders_get for a
-        # terminal state (CANCELED=2, PARTIAL=3, FILLED=4, REJECTED=5, EXPIRED=6)
-        # which positively proves the order is done.
-        hist_terminal = None  # None = no history evidence, True/False = terminal/active
-        try:
-            hist_fn = getattr(self.adapter, "get_history_orders", None)
-            if hist_fn:
-                from datetime import UTC as _UTC
-                from datetime import datetime as _dt
-                from datetime import timedelta as _td
 
-                now = _dt.now(_UTC)
-                hist = hist_fn(now - _td(hours=1), now, symbol=symbol)
-                for h in hist or []:
-                    if int(getattr(h, "ticket", 0) or 0) == int(ticket):
-                        st = int(getattr(h, "state", 0) or 0)
-                        if st in (0, 1, 7, 8, 9):  # STARTED/PLACED/REQUEST_*
-                            hist_terminal = False
-                        else:
-                            hist_terminal = True  # canceled/filled/rejected/expired
-                        break
-        except Exception as hist_err:
-            query_error = True
-            logger.warning(
-                "[PENDING_ORDER] event=CANCEL_VERIFY error=history_query_failed",
-                ticket=ticket,
-                error=str(hist_err),
-            )
-        if active_result == "ACTIVE" or hist_terminal is False:
-            return "ACTIVE"
-        if active_result == "GONE" or hist_terminal is True:
-            return "GONE"
-        if query_error:
-            return "UNKNOWN"
-        return "UNKNOWN"
-
-    def cancel_pending_order_verified(self, ticket: int, symbol: str | None = None) -> bool:
-        """Sends the cancel request, THEN verifies broker state.
-
-        Returns True ONLY when broker truth confirms the order is no longer
-        active (ACTIVE->GONE, or a DONE send followed by an absent active
-        listing). Returns False while the order is still active OR the state
-        is UNKNOWN — the exposure slot stays occupied. On confirmation the
-        internal live-tickets cache is refreshed from the broker view so a
-        stale internal pending can never hold the slot.
-        """
-        cancel_fn = getattr(self.adapter, "cancel_pending_order", None)
-        if cancel_fn is None:
-            logger.warning(
-                "[PENDING_ORDER] event=CANCEL_REQUEST error=no_cancel_api ticket=%s",
-                ticket,
-            )
-            return False
-        logger.info("[PENDING_ORDER] event=CANCEL_REQUEST ticket=%s", ticket)
-        try:
-            sent = bool(cancel_fn(ticket=ticket))
-        except Exception as cancel_err:
-            logger.error(
-                "[PENDING_ORDER] event=CANCEL_REQUEST error=cancel_raised ticket=%s",
-                ticket,
-                error=str(cancel_err),
-            )
-            sent = False
-
-        # Broker truth decides, not the send result.
-        state = self._pending_broker_state(ticket=ticket, symbol=symbol)
-        if state == "ACTIVE":
-            logger.warning(
-                "[PENDING_ORDER] event=CANCEL_FAILED ticket=%s broker_state=STILL_ACTIVE send_result=%s",
-                ticket,
-                sent,
-            )
-            return False
-        if state == "GONE":
-            logger.info(
-                "[PENDING_ORDER] event=CANCEL_CONFIRMED ticket=%s send_result=%s",
-                ticket,
-                sent,
-            )
-            # P0-A (BUG-140): the pending order is terminal at the broker. Emit
-            # the terminal experience outcome so the originating decision can
-            # never hang without classification (CANCELED vs EXPIRED by reason).
-            state_lifecycle = (
-                DecisionLifecycle.EXPIRED_UNFILLED
-                if "AGE" in self._pending_cancel_reasons.get(ticket, "")
-                else DecisionLifecycle.CANCELED_UNFILLED
-            )
-            self._emit_terminal_for_pending(ticket=ticket, state=state_lifecycle)
-            self._pending_orders_setup_time.pop(ticket, None)
-            try:
-                self.refresh_live_tickets_cache(symbol=symbol)
-            except Exception as refresh_err:
-                logger.error(
-                    "[PENDING_ORDER] event=CANCEL_CONFIRMED error=cache_refresh_failed",
-                    ticket=ticket,
-                    error=str(refresh_err),
-                )
-            return True
-        # UNKNOWN: a DONE send with a (possibly stale) empty active list is
-        # still broker-positive enough to confirm; anything else keeps the lock.
-        if sent and state == "UNKNOWN":
-            logger.info(
-                "[PENDING_ORDER] event=CANCEL_CONFIRMED ticket=%s state=UNKNOWN_but_done_send",
-                ticket,
-            )
-            self._pending_orders_setup_time.pop(ticket, None)
-            try:
-                self.refresh_live_tickets_cache(symbol=symbol)
-            except Exception as refresh_err:
-                logger.error(
-                    "[PENDING_ORDER] event=CANCEL_CONFIRMED error=cache_refresh_failed",
-                    ticket=ticket,
-                    error=str(refresh_err),
-                )
-            return True
-        logger.warning(
-            "[PENDING_ORDER] event=CANCEL_UNRESOLVED ticket=%s state=%s send_result=%s "
-            "-> exposure slot remains occupied",
-            ticket,
-            state,
-            sent,
-        )
-        return False
-
-    def cancel_pending_order_with_retry(
-        self, ticket: int, symbol: str | None = None, max_attempts: int = 3
-    ) -> int:
-        """Bounded, idempotent cancellation retry.
-
-        Returns the number of cancel attempts used (0 <= n <= max_attempts).
-        Each attempt sends the cancel request and verifies broker state;
-        stops as soon as the broker confirms the order is gone. Never creates
-        a cancellation storm and never releases the exposure slot early.
-        """
-        attempts = 0
-        for _ in range(max(1, int(max_attempts))):
-            attempts += 1
-            if self.cancel_pending_order_verified(ticket=ticket, symbol=symbol):
-                break
-            time.sleep(0.05)  # tiny backoff between bounded retries
-        return attempts
 
     def refresh_live_tickets_cache(
         self, symbol: str | None = None, current_tick: TickData | None = None
@@ -2069,7 +1795,7 @@ class OrderLifecycleManager:
                 current_pendings = set(new_cache)
                 vanished = previous_pendings - current_pendings
                 for gone_ticket in sorted(vanished):
-                    reason = self._pending_cancel_reasons.get(gone_ticket, "")
+                    reason = self._pending_lifecycle.cancel_reason(gone_ticket)
                     if "AGE" in reason:
                         gone_state = DecisionLifecycle.EXPIRED_UNFILLED
                     elif reason:
@@ -2091,55 +1817,6 @@ class OrderLifecycleManager:
             # property name — it would shadow the @property).
             self._tickets_cache.swap(new_cache)
 
-    def reconcile_pending_state(
-        self, symbol: str | None = None, current_tick: TickData | None = None
-    ) -> dict[str, Any]:
-        """Compares internal vs broker pending state and repairs the internal
-        view so it reflects broker truth (broker wins).
-
-        Returns a structured report:
-          {"pending_internal": n, "pending_broker": m, "mismatch": bool,
-           "repaired": bool, "broker_error": bool}
-        """
-        internal_pendings = 0
-        with self._live_tickets_lock:
-            for info in self._live_tickets_cache.values():
-                if info.get("type") == "PENDING":
-                    internal_pendings += 1
-        broker_pendings = 0
-        broker_error = False
-        try:
-            get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
-            if get_pending_fn:
-                pendings = get_pending_fn(symbol=symbol)
-                if pendings is None:
-                    broker_error = True
-                else:
-                    broker_pendings = len(pendings)
-        except Exception as rec_err:
-            broker_error = True
-            logger.error(
-                "[EXECUTION_RECONCILIATION] event=MISMATCH error=broker_query_failed",
-                error=str(rec_err),
-            )
-        mismatch = not broker_error and internal_pendings != broker_pendings
-        repaired = False
-        if mismatch:
-            logger.warning(
-                "[EXECUTION_RECONCILIATION] event=MISMATCH "
-                "pending_internal=%s pending_broker=%s -> repairing internal view",
-                internal_pendings,
-                broker_pendings,
-            )
-            self.refresh_live_tickets_cache(symbol=symbol, current_tick=current_tick)
-            repaired = True
-        return {
-            "pending_internal": internal_pendings,
-            "pending_broker": broker_pendings,
-            "mismatch": bool(mismatch),
-            "repaired": repaired,
-            "broker_error": broker_error,
-        }
 
     def _is_closed_ticket(self, ticket: int) -> bool:
         """
@@ -3507,25 +3184,6 @@ class OrderLifecycleManager:
             pass
         return "LIVE"
 
-    @staticmethod
-    def _pending_field(pending: Any, *names: str, default: Any = None) -> Any:
-        """
-        Reads a field from a pending order that may be either a dict (as returned by the
-        live MT5 adapter via `orders_get`) or an object with attributes (as used by
-        simulated/paper adapters).
-
-        Without this, dict-shaped pending orders silently resolve every field to the
-        default, which previously made the pending-order guard a no-op in production.
-        """
-        for name in names:
-            if isinstance(pending, dict):
-                if name in pending and pending[name] is not None:
-                    return pending[name]
-            else:
-                value = getattr(pending, name, None)
-                if value is not None:
-                    return value
-        return default
 
     def _add_trajectory_step(
         self,
@@ -4244,136 +3902,6 @@ class OrderLifecycleManager:
             "distance_to_be_velocity": distance_to_be_velocity,
         }
 
-    def manage_pending_orders(
-        self,
-        symbol: str,
-        current_tick: TickData,
-        symbol_info: SymbolInfo | None = None,
-        atr: float = 1.50,
-        max_pending_dist_atr_mult: float = 2.50,  # Increased from 1.20 to give limit orders breathing room
-    ) -> None:
-        """
-        Pending order lifecycle guard with a hard 30-second churn lock.
-
-        A pending limit order is NEVER cancelled/recreated unless BOTH hold:
-          - time_since_placement > PENDING_ORDER_LOCK_SECONDS (30s), AND
-          - price drift >= 1.0 x ATR.
-
-        Stale-age expiry (>120s) still applies after the lock window, so an order that
-        the market has walked away from is not left hanging forever.
-        """
-        try:
-            get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
-            if not get_pending_fn:
-                return
-
-            pending_orders = get_pending_fn(symbol=symbol)
-            if not pending_orders:
-                return
-
-            now = current_tick.timestamp
-            max_allowed_dist = round(atr * max_pending_dist_atr_mult, 2)
-            #: Minimum price drift (in price units) required to justify a re-quote.
-            required_drift = round(atr * 1.0, 2)
-
-            for pending in pending_orders:
-                order_type = self._pending_field(pending, "type", "order_type")
-                price_open = float(
-                    self._pending_field(pending, "price_open", "price", default=0.0) or 0.0
-                )
-                ticket = self._pending_field(pending, "ticket", "order_id")
-
-                if not ticket or price_open <= 0.0:
-                    continue
-
-                if ticket not in self._pending_orders_setup_time:
-                    self._pending_orders_setup_time[ticket] = now
-
-                type_str = str(getattr(order_type, "value", order_type) or "").upper()
-                is_buy_side = "BUY" in type_str
-                dist = (
-                    abs(current_tick.ask - price_open)
-                    if is_buy_side
-                    else abs(current_tick.bid - price_open)
-                )
-                age = (now - self._pending_orders_setup_time[ticket]).total_seconds()
-
-                # ---------------------------------------------------------------
-                # 30-SECOND PENDING LOCK (anti-churn)
-                # ---------------------------------------------------------------
-                # Inside the lock window the order is untouchable, full stop. This is
-                # what stops the high-frequency cancel/recreate loop that previously
-                # burned broker request quota and produced order-churn rejections.
-                if age <= PENDING_ORDER_LOCK_SECONDS:
-                    logger.debug(
-                        "PENDING_ORDER_LOCKED: within 30s placement lock, no modification allowed",
-                        ticket=ticket,
-                        age_sec=round(age, 1),
-                        lock_sec=PENDING_ORDER_LOCK_SECONDS,
-                    )
-                    continue
-
-                # Past the lock window, a re-quote additionally requires real drift.
-                if dist < required_drift:
-                    logger.debug(
-                        "PENDING_ORDER_HELD: price drift below 1.0x ATR threshold",
-                        ticket=ticket,
-                        drift=round(dist, 2),
-                        required_drift=required_drift,
-                    )
-                    continue
-
-                # Statistically weak criteria for cancellation (evaluated only after the
-                # 30s lock has expired AND drift >= 1.0 x ATR):
-                # 1. Dist exceeds max allowed dist
-                # 2. Stale limit (age > 120s)
-                # 3. Market momentum expanding opposite (handled by Falling Knife Protection)
-                should_cancel = False
-                cancel_reason = ""
-
-                if dist > max_allowed_dist:
-                    should_cancel = True
-                    cancel_reason = f"DISTANCE_BREACH (${dist:.2f} > ${max_allowed_dist:.2f})"
-                elif age > 120.0:
-                    should_cancel = True
-                    cancel_reason = f"AGE_EXPIRATION ({age:.1f}s > 120.0s)"
-
-                if should_cancel:
-                    # BUG-072/073: broker-verified cancellation — the slot is
-                    # released only after broker state confirms the removal.
-                    # P0-A (BUG-140): remember WHY so the terminal outcome can
-                    # distinguish CANCELED_UNFILLED from EXPIRED_UNFILLED.
-                    self._pending_cancel_reasons[ticket] = cancel_reason
-                    cancelled_ok = self.cancel_pending_order_verified(ticket=ticket, symbol=symbol)
-                    if cancelled_ok:
-                        logger.info(
-                            f"[CANCEL TRACE] PENDING ORDER CANCELLED: Ticket {ticket}. Reason: {cancel_reason}. Max Allowed Dist: ${max_allowed_dist:.2f}"
-                        )
-                        # Audit cancellation
-                        self.audit.log_order(
-                            ticket=ticket,
-                            order_id=f"cancel_{ticket}",
-                            symbol=symbol,
-                            action="Expired pending order"
-                            if "AGE" in cancel_reason
-                            else "Cancelled order",
-                            price=price_open,
-                            stop_loss=float(
-                                self._pending_field(pending, "sl", "stop_loss", default=0.0) or 0.0
-                            ),
-                            take_profit=float(
-                                self._pending_field(pending, "tp", "take_profit", default=0.0)
-                                or 0.0
-                            ),
-                            volume=float(
-                                self._pending_field(pending, "volume", default=0.01) or 0.01
-                            ),
-                            reason=cancel_reason,
-                            latency=0.01,
-                            execution_mode="PREDICTIVE_LIMIT",
-                        )
-        except Exception as err:
-            logger.error("Failed to manage dynamic pending orders", error=str(err))
 
     def evaluate_falling_knife_protection(
         self,
@@ -4423,14 +3951,14 @@ class OrderLifecycleManager:
                             # BUG-140/BUG-164: remember WHY so the verified-cancel
                             # terminal outcome classifies CANCELED_UNFILLED (not
                             # the reconcile-sweep default EXPIRED_UNFILLED).
-                            self._pending_cancel_reasons[pending_ticket] = (
-                                "FALLING_KNIFE_PROTECTION"
+                            self._pending_lifecycle.note_cancel_reason(
+                                pending_ticket, "FALLING_KNIFE_PROTECTION"
                             )
                             # BUG-072/073: broker-verified cancellation.
                             if self.cancel_pending_order_verified(
                                 ticket=pending_ticket, symbol=symbol
                             ):
-                                self._pending_orders_setup_time.pop(pending_ticket, None)
+                                self._pending_lifecycle.drop_ticket(pending_ticket)
                                 logger.info(
                                     f"FALLING_KNIFE_PROTECTION: Cancelled counter pending order {pending_ticket} due to strong opposite momentum."
                                 )
@@ -6624,7 +6152,6 @@ class OrderLifecycleManager:
             self._last_known_volume,
             self._initial_risks,
             self._entry_directions,
-            self._pending_orders_setup_time,
             # Ledger autopsy context
             self._entry_reasons,
             self._entry_confidences,
@@ -6647,6 +6174,7 @@ class OrderLifecycleManager:
         # P0 seam S5: one atomic teardown for the whole canonical record —
         # replaces the per-field pops above and eliminates partial-cleanup drift.
         self._states.remove(ticket)
+        self._pending_lifecycle.drop_ticket(ticket)
         self._recovery_ledger.drop_ticket(ticket)
         self._state_machine.drop_ticket(ticket)
         with self._live_tickets_lock:
