@@ -887,7 +887,13 @@ class WalkForwardTrainer:
         # Apply Random Oversampling on minority active classes (BUY=1, SELL=2) to balance gradient updates
         if self.use_oversampling:
             X_train_res, y_train_res = _balance_oversample_dataset(
-                X_train, y_train, active_boost_ratio=0.85
+                X_train,
+                y_train,
+                active_boost_ratio=0.85,
+                # Determinism contract: the canonical training seed drives the
+                # local RNG — same (dataset, seed) => identical oversampled
+                # buffer; global numpy RNG state is never consulted.
+                seed=self.seed,
             )
             # Recompute time weights for resampled array size
             w_train_res = _compute_time_decay_weights(
@@ -2162,15 +2168,28 @@ class FocalLossWithSmoothing(nn.Module):
 
 
 def _balance_oversample_dataset(
-    X: np.ndarray, y: np.ndarray, active_boost_ratio: float = 0.85
+    X: np.ndarray,
+    y: np.ndarray,
+    active_boost_ratio: float = 0.85,
+    seed: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Oversamples minority active classes (BUY=1, SELL=2) so their representation
     in the online buffer approaches the majority class, preventing BUY class disappearance.
+
+    DETERMINISM CONTRACT (research/training-parity P1): the local
+    ``np.random.default_rng(seed)`` Generator is used — the GLOBAL numpy RNG
+    state is never read or mutated (the old ``np.random.choice``/``shuffle``
+    calls coupled every caller's reproducibility to whatever had consumed the
+    global stream before). Same (dataset, seed) => identical oversampled
+    indices and class balance; a different seed yields a different valid
+    sample. ``seed=None`` keeps a valid-but-unseeded sample (test-only
+    convenience) WITHOUT touching global state.
     """
     classes, counts = np.unique(y, return_counts=True)
     if len(classes) < 2:
         return X, y
+    rng = np.random.default_rng(seed)
     max_count = int(np.max(counts) * active_boost_ratio)
     indices = []
     for c in classes:
@@ -2183,7 +2202,7 @@ def _balance_oversample_dataset(
             selected = np.concatenate(
                 [
                     np.tile(c_idx, repeat_count),
-                    np.random.choice(
+                    rng.choice(
                         c_idx, remainder, replace=False if len(c_idx) >= remainder else True
                     ),
                 ]
@@ -2192,5 +2211,5 @@ def _balance_oversample_dataset(
             selected = c_idx
         indices.append(selected)
     all_indices = np.concatenate(indices)
-    np.random.shuffle(all_indices)
+    rng.shuffle(all_indices)
     return X[all_indices], y[all_indices]

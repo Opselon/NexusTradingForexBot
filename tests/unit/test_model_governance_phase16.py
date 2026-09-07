@@ -42,6 +42,7 @@ from nexus_scalp.governance.models import (
     PromotionState,
 )
 from nexus_scalp.governance.reporting import model_shadow_update_text
+from nexus_scalp.features.session_time import session_semantics_metadata
 
 GOLDEN = Path(__file__).resolve().parents[2] / "tests" / "golden"
 
@@ -828,6 +829,9 @@ def _full_manifest(**overrides):
         "label_schema_id": "triple_barrier_3class_v1",
         "architecture_id": "LEGACY_SCALPNET_V1",
         "news_enabled": False,
+        # P1: candidates in this suite are trained under the CURRENT session
+        # semantics (the corrected DST-aware time basis).
+        "session_semantics": session_semantics_metadata(),
     }
     m.update(overrides)
     return m

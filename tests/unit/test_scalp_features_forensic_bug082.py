@@ -27,6 +27,7 @@ import pytest
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FEATURE_NAMES, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_dimension, active_schema
+from nexus_scalp.features.session_time import session_flags_for_utc
 from nexus_scalp.market_data.bar_aggregator import BarData
 
 # =============================================================================
@@ -233,11 +234,15 @@ def independent_50d(bars: list[BarData], tick: TickData) -> list[float]:
 
     dt = tick.timestamp
     dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
-    hour = dt.hour
-    s_tokyo = 1.0 if 0 <= hour < 8 else 0.0
-    s_london = 1.0 if 7 <= hour < 15 else 0.0
-    s_ny = 1.0 if 13 <= hour < 21 else 0.0
-    s_overlap = 1.0 if 13 <= hour < 15 else 0.0
+    # P1 SESSION-TIME CORRECTION: the independent recomputation uses the SAME
+    # DST-aware market-local session semantics as the runtime engine
+    # (features/session_time) — the historical fixed-UTC hour windows
+    # silently drifted across DST transitions.
+    _flags = session_flags_for_utc(dt)
+    s_tokyo = 1.0 if _flags["session_tokyo"] else 0.0
+    s_london = 1.0 if _flags["session_london"] else 0.0
+    s_ny = 1.0 if _flags["session_ny"] else 0.0
+    s_overlap = 1.0 if _flags["session_overlap_london_ny"] else 0.0
 
     lag1 = math.log(C[-2] / C[-3]) if C[-3] > 0 else 0.0
     lag2 = math.log(C[-3] / C[-4]) if C[-4] > 0 else 0.0
