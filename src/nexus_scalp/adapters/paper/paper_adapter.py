@@ -38,6 +38,7 @@ from nexus_scalp.adapters.mt5.providers import (
     TickHistorySnapshot,
     build_position_snapshot,
 )
+from nexus_scalp.adapters.paper.replay_source import ReplayDataUnavailableError
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
@@ -103,7 +104,12 @@ class PaperMT5Adapter(IMT5Port):
     _METAL_SPREAD_RANGE: ClassVar[tuple[float, float]] = (0.08, 0.18)
     _FX_SPREAD: ClassVar[float] = 0.00012  # 1.2 pips
 
-    def __init__(self, initial_balance: float = 10000.0, symbol: str = "EURUSD") -> None:
+    def __init__(
+        self,
+        initial_balance: float = 10000.0,
+        symbol: str = "EURUSD",
+        replay_source: Any | None = None,
+    ) -> None:
         self.symbol = symbol
         self.balance = initial_balance
         self.equity = initial_balance
@@ -118,6 +124,34 @@ class PaperMT5Adapter(IMT5Port):
         #: resolved per tick in _effective_spread_scale().
         self._stress_spread_scale: float | None = None
         self._stress_spread_profile: Any | None = None
+        # PAPER DATA INTEGRITY (P0 phase 4): the market-data mode of this
+        # adapter is EXPLICIT. SYNTHETIC (default) = AR(1) simulated walk for
+        # CI/determinism; REPLAY = real historical chronology served by the
+        # replay_source (paper experience then carries real-market stats).
+        # A replay construction with an unusable source raises at __init__
+        # (fail-closed) — it can never silently degrade to synthetic ticks.
+        if replay_source is not None:
+            if getattr(replay_source, "source_mode", "") != "REPLAY":
+                raise ValueError(
+                    "replay_source must be a ReplayTickSource (source_mode='REPLAY')"
+                )
+            self._replay_source: Any | None = replay_source
+            self.market_data_mode = "REPLAY"
+            self.replay_provenance: dict[str, Any] = replay_source.identity()
+            logger.info(
+                "[PAPER] event=REPLAY_MODE_ATTACHED",
+                symbol=symbol,
+                provenance=self.replay_provenance,
+            )
+        else:
+            self._replay_source = None
+            self.market_data_mode = "SYNTHETIC"
+            self.replay_provenance = {
+                "market_data_mode": "SYNTHETIC",
+                "symbol": symbol,
+                "spread_model": "SIMULATED_8_18C_METAL_BAND",
+                "slippage_model": "PAPER_ADAPTER_DETERMINISTIC",
+            }
         # Evidence guards E-H
         self._last_tick: Any | None = None
         self._last_tick_time: Any | None = None
@@ -774,6 +808,58 @@ class PaperMT5Adapter(IMT5Port):
             if _seed_now is not None and _seed_now != getattr(self, "_seed", None):
                 self._seed = _seed_now
                 self._rng = random.Random(_seed_now)
+        # PAPER REPLAY MODE: serve the REAL historical chronology while it
+        # lasts. The replay source owns pricing (recorded bid/ask, or the
+        # dataset-builder close+spread convention for bar records) and the
+        # HISTORICAL timestamp — wall-clock is never substituted in replay.
+        # Auto SL/TP execution and persistence still run on every replayed
+        # tick, so paper positions behave exactly as in synthetic mode.
+        if getattr(self, "market_data_mode", "SYNTHETIC") == "REPLAY":
+            digits = self._quote_digits(symbol)
+            src = getattr(self, "_replay_source", None)
+            nxt = src.next_tick() if src is not None else None
+            if nxt is not None:
+                tick = TickData(
+                    symbol=symbol,
+                    timestamp=nxt["timestamp"],
+                    bid=round(float(nxt["bid"]), digits),
+                    ask=round(float(nxt["ask"]), digits),
+                    last=round(float(nxt["bid"]), digits),
+                    volume=float(nxt.get("volume", 0.0) or 0.0),
+                    flags=6,
+                )
+                self._current_price = tick.bid
+                self._last_tick = tick
+                self._last_tick_time = tick.timestamp
+                try:
+                    self._last_tick_iso = tick.timestamp.isoformat()
+                except Exception:
+                    self._last_tick_iso = None
+                try:
+                    self.process_tick_execution(tick)
+                except Exception as exc:  # defensive: tick feed must never break
+                    logger.error(
+                        "PAPER_SLTP_PROCESSING_FAILED",
+                        error=repr(exc),
+                        symbol=symbol,
+                    )
+                with contextlib.suppress(Exception):
+                    self._persist_state()
+                return tick
+            # End of historical data: REPLAY is fail-closed for market data —
+            # an exhausted replay source must NOT silently flip to a synthetic
+            # random walk (that would fabricate "market" experience). Surface
+            # the stall honestly: freeze on the last historical tick.
+            if self._last_tick is not None:
+                logger.warning(
+                    "[PAPER] event=REPLAY_EXHAUSTED — market data frozen at last "
+                    "historical tick (no synthetic fallback)"
+                )
+                return self._last_tick
+            raise ReplayDataUnavailableError(
+                "Paper REPLAY mode: no historical records available and no "
+                "seed tick — cannot serve market data."
+            )
         if _seed_now is not None:
             with contextlib.suppress(Exception):
                 from nexus_scalp.market_data.paper_stress import PaperStressMarket  # type: ignore
@@ -1051,7 +1137,32 @@ class PaperMT5Adapter(IMT5Port):
         price so warmup paths (feature engine, HTF aggregation) can be exercised
         offline. Timestamps are contiguous and ascending, matching the live
         contract that `get_historical_bars` returns completed bars only.
+
+        PAPER REPLAY MODE: when a replay source is attached, history comes from
+        the REAL historical record UP TO the replay cursor (causal: only the
+        past, never ahead of the served tick). If the cursor has not passed the
+        first `count` bars yet, the earliest available prefix is returned —
+        matching live semantics where history is bounded by session start.
         """
+        if getattr(self, "market_data_mode", "SYNTHETIC") == "REPLAY":
+            src = getattr(self, "_replay_source", None)
+            hist = src.history_bars(timeframe, count) if src is not None else []
+            out: list[BarData] = []
+            for h in hist:
+                out.append(
+                    BarData(
+                        symbol=symbol,
+                        timeframe=str(timeframe).upper(),
+                        timestamp=h["timestamp"],
+                        open=float(h["open"]),
+                        high=float(h["high"]),
+                        low=float(h["low"]),
+                        close=float(h["close"]),
+                        tick_volume=int(h.get("tick_volume", 0) or 0),
+                        is_complete=True,
+                    )
+                )
+            return out
         # Delegation: seeded bar history via paper_stress when available.
         _seed_now = getattr(self, "_seed", None)
         if _seed_now is None:
@@ -1282,6 +1393,12 @@ class PaperMT5Adapter(IMT5Port):
         if self._last_tick_time is None:
             return False
         try:
+            # PAPER REPLAY MODE: historical tick timestamps are ALWAYS older
+            # than 30s of wall-clock — the stale-tick guard is a LIVE-feed
+            # protection and must not reject fills in replay. Replay data
+            # freshness is governed by the source chronology itself.
+            if getattr(self, "market_data_mode", "SYNTHETIC") == "REPLAY":
+                return False
             age = (datetime.now(UTC) - self._last_tick_time).total_seconds()
             return age > 30.0
         except Exception:
