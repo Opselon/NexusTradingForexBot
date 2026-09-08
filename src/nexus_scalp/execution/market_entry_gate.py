@@ -105,7 +105,9 @@ class MarketEntryGateConfig:
                 f"friday_cutoff_minutes must be >= 0, got {self.friday_cutoff_minutes!r}"
             )
         if self.tick_stale_after_sec < 0.0:
-            raise ValueError(f"tick_stale_after_sec must be >= 0, got {self.tick_stale_after_sec!r}")
+            raise ValueError(
+                f"tick_stale_after_sec must be >= 0, got {self.tick_stale_after_sec!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -256,7 +258,9 @@ def _in_session_verdict(
             )
 
     detail["state"] = _STATE_OPEN
-    return MarketEntryVerdict(allowed=True, state=_STATE_OPEN, reason=_REASON_ALLOWED, detail=detail)
+    return MarketEntryVerdict(
+        allowed=True, state=_STATE_OPEN, reason=_REASON_ALLOWED, detail=detail
+    )
 
 
 class MarketEntryGate:

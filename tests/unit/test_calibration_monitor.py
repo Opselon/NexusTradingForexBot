@@ -45,8 +45,10 @@ def _db(tmp_path, rows: list[dict]) -> str:
         payload = json.dumps(
             {
                 "idempotency_key": r["key"],
-                "provenance": {"model_id": "primary_scalp_scalp_v3_70d",
-                               "artifact_fingerprint": r["fp"]},
+                "provenance": {
+                    "model_id": "primary_scalp_scalp_v3_70d",
+                    "artifact_fingerprint": r["fp"],
+                },
             }
         )
         con.execute(
@@ -86,15 +88,13 @@ def test_monitor_reports_excluded_reasons_and_deficit(tmp_path, monkeypatch) -> 
         # 60 eligible rows for the CURRENT fingerprint
         *[_row(i, fp, 0.2 + (i % 40) * 0.01, "2026-09-10T00:00:00+00:00") for i in range(60)],
         # exclusions:
-        _row(100, "deadbeefdeadbeef", 0.5, "2026-09-10T00:00:00+00:00"),   # foreign fp
-        _row(101, fp, 0.0, "2026-09-10T00:00:00+00:00"),                   # zero conf
-        _row(102, fp, 0.5, "2026-09-10T00:00:00+00:00", pnl=0.0),          # zero pnl
-        _row(103, fp, 0.5, "2026-08-01T00:00:00+00:00"),                   # pre-cutoff
+        _row(100, "deadbeefdeadbeef", 0.5, "2026-09-10T00:00:00+00:00"),  # foreign fp
+        _row(101, fp, 0.0, "2026-09-10T00:00:00+00:00"),  # zero conf
+        _row(102, fp, 0.5, "2026-09-10T00:00:00+00:00", pnl=0.0),  # zero pnl
+        _row(103, fp, 0.5, "2026-08-01T00:00:00+00:00"),  # pre-cutoff
     ]
     db = _db(tmp_path, rows)
-    snap = calibration_monitor_snapshot(
-        oos_cutoff="2026-09-06T00:00:00+00:00", audit_db_path=db
-    )
+    snap = calibration_monitor_snapshot(oos_cutoff="2026-09-06T00:00:00+00:00", audit_db_path=db)
     assert snap["serving_fingerprint"] == fp
     assert snap["artifact_status"] == "ABSENT"
     assert snap["total_eligible"] == 60
@@ -115,15 +115,17 @@ def test_monitor_reports_excluded_reasons_and_deficit(tmp_path, monkeypatch) -> 
 def test_monitor_fingerprint_stability_field_changes_with_artifact(tmp_path, monkeypatch) -> None:
     art, fp = _serving_artifact(tmp_path)
     monkeypatch.setattr(cm, "SERVING_ARTIFACT_PATH", art)
-    s1 = calibration_monitor_snapshot(oos_cutoff="2026-09-01T00:00:00+00:00",
-                                      audit_db_path=str(tmp_path / "none.db"))
+    s1 = calibration_monitor_snapshot(
+        oos_cutoff="2026-09-01T00:00:00+00:00", audit_db_path=str(tmp_path / "none.db")
+    )
     assert s1["serving_fingerprint"] == fp
     assert s1["serving_artifact_mtime"] is not None
     # artifact bytes change => fingerprint changes (the stability evidence)
     p = tmp_path / "model.pt"
     p.write_bytes(b"CHANGED")
-    s2 = calibration_monitor_snapshot(oos_cutoff="2026-09-01T00:00:00+00:00",
-                                      audit_db_path=str(tmp_path / "none.db"))
+    s2 = calibration_monitor_snapshot(
+        oos_cutoff="2026-09-01T00:00:00+00:00", audit_db_path=str(tmp_path / "none.db")
+    )
     assert s2["serving_fingerprint"] != fp
 
 
@@ -142,19 +144,25 @@ def test_monitor_multiplier_stays_flat_with_foreign_artifact_present(tmp_path, m
         model_version="foreign",
         calibration_dataset_id="ds",
         artifact_fingerprint=foreign_fp,
-        calibration_period_start="s", calibration_period_end="e",
+        calibration_period_start="s",
+        calibration_period_end="e",
         validation_dataset_id="ds2",
-        validation_period_start="s", validation_period_end="e",
-        method="platt_logistic", created_at="now",
+        validation_period_start="s",
+        validation_period_end="e",
+        method="platt_logistic",
+        created_at="now",
         feature_schema_version="scalp_v3",
-        sample_count=60, validation_sample_count=40,
+        sample_count=60,
+        validation_sample_count=40,
     )
-    assert persist_calibration_artifact(cal_path, {"a": 3.0, "b": -1.0}, prov,
-                                        {"ece": 0.05, "brier": 0.2})
+    assert persist_calibration_artifact(
+        cal_path, {"a": 3.0, "b": -1.0}, prov, {"ece": 0.05, "brier": 0.2}
+    )
     monkeypatch.setattr(cm, "SERVING_ARTIFACT_PATH", art)
     monkeypatch.setattr(cm, "SERVING_CALIBRATION_PATH", cal_path)
-    snap = calibration_monitor_snapshot(oos_cutoff="2026-09-01T00:00:00+00:00",
-                                        audit_db_path=str(tmp_path / "none.db"))
+    snap = calibration_monitor_snapshot(
+        oos_cutoff="2026-09-01T00:00:00+00:00", audit_db_path=str(tmp_path / "none.db")
+    )
     assert snap["artifact_status"] == "PRESENT"
     assert snap["matches_serving"] is False
     assert snap["calibration_status"] == "NOT_CALIBRATED"

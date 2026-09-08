@@ -104,9 +104,7 @@ def test_economics_travel_on_run_metadata(tmp_path) -> None:
     assert len(folds) == 3
     for f in folds:
         # Per-fold: net == gross - friction (both sign-consistent).
-        assert f["net_expectancy_r"] == pytest.approx(
-            f["gross_expectancy_r"] - f["friction_r"]
-        )
+        assert f["net_expectancy_r"] == pytest.approx(f["gross_expectancy_r"] - f["friction_r"])
         assert 0.0 <= f["win_rate"] <= 1.0
         assert f["max_drawdown_r"] >= 0.0
     assert meta["net_expectancy_r"] == pytest.approx(

@@ -39,6 +39,7 @@ logger = get_logger("nexus_scalp.model_lifecycle.final_replicas")
 #: the previously suggested "3" is a candidate default, NOT a mandate.
 DEFAULT_REPLICAS: int = 3
 
+
 #: Feature columns are the canonical feat_i sequence for the schema dim.
 def _feat_cols(dim: int) -> list[str]:
     return [f"feat_{i}" for i in range(dim)]
@@ -109,9 +110,7 @@ class FinalReplicaTrainer:
         trainer_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if num_replicas < 2:
-            raise ValueError(
-                f"num_replicas must be >= 2 to measure variance, got {num_replicas}"
-            )
+            raise ValueError(f"num_replicas must be >= 2 to measure variance, got {num_replicas}")
         self.num_replicas = int(num_replicas)
         self.base_seed = int(base_seed)
         self.num_folds = int(num_folds)
@@ -273,7 +272,10 @@ class FinalReplicaTrainer:
             net_expectancy_min_r=min(nets),
             net_expectancy_max_r=max(nets),
             drawdown_max_r=(
-                max((r.max_fold_drawdown_r for r in results if r.max_fold_drawdown_r is not None), default=None)
+                max(
+                    (r.max_fold_drawdown_r for r in results if r.max_fold_drawdown_r is not None),
+                    default=None,
+                )
             ),
             selected_replica=selected.replica,
             selected_seed=selected.seed,

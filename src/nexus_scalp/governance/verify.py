@@ -264,9 +264,7 @@ def verify_candidate(
     #     retraining/revalidation; never silently equivalent.
     _sess = mf.get("session_semantics") or {}
     _sess_ver = (
-        str(_sess.get("session_semantics_version", "") or "")
-        if isinstance(_sess, dict)
-        else ""
+        str(_sess.get("session_semantics_version", "") or "") if isinstance(_sess, dict) else ""
     )
     _gate(
         "session_semantics_revalidated",

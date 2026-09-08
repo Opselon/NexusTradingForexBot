@@ -25,15 +25,14 @@ from nexus_scalp.web import auth as web_auth
 def auth_env(tmp_path, monkeypatch):
     """Isolated env: token via env var; secret store pointed at tmp dir."""
     monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "test-token-12345")
-    monkeypatch.setattr(
-        web_auth, "app_data_root", lambda: tmp_path, raising=False
-    )
+    monkeypatch.setattr(web_auth, "app_data_root", lambda: tmp_path, raising=False)
     yield tmp_path
     monkeypatch.delenv("NSE_WEB_AUTH_TOKEN", raising=False)
 
 
-def _asgi_scope(path: str, headers: list[tuple[bytes, bytes]] | None = None,
-                query: bytes = b"") -> dict:
+def _asgi_scope(
+    path: str, headers: list[tuple[bytes, bytes]] | None = None, query: bytes = b""
+) -> dict:
     return {
         "type": "http",
         "path": path,
@@ -117,11 +116,13 @@ async def test_bearer_and_header_and_query_accepted(auth_env):
 
     await mw(
         _asgi_scope("/api/x", [(b"authorization", b"Bearer test-token-12345")]),
-        receive, send,
+        receive,
+        send,
     )
     await mw(
         _asgi_scope("/api/x", [(b"x-nse-token", b"test-token-12345")]),
-        receive, send,
+        receive,
+        send,
     )
     await mw(_asgi_scope("/api/x", query=b"token=test-token-12345"), receive, send)
     assert calls == ["/api/x", "/api/x", "/api/x"]
@@ -142,7 +143,8 @@ async def test_wrong_token_rejected(auth_env):
 
     await mw(
         _asgi_scope("/api/x", [(b"authorization", b"Bearer wrong-token")]),
-        receive, send,
+        receive,
+        send,
     )
     assert sent[0]["status"] == 401
     assert calls == []
@@ -154,9 +156,7 @@ async def test_generated_token_persisted(tmp_path, monkeypatch):
     # Point BOTH the module-level import used by _resolve_token AND the
     # underlying paths helper at the tmp dir (secret_store imports
     # app_data_root directly at module import time).
-    monkeypatch.setattr(
-        web_auth, "app_data_root", lambda: tmp_path, raising=False
-    )
+    monkeypatch.setattr(web_auth, "app_data_root", lambda: tmp_path, raising=False)
     from nexus_scalp.release import paths as release_paths
 
     monkeypatch.setattr(release_paths, "app_data_root", lambda: tmp_path)

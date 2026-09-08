@@ -82,15 +82,13 @@ def test_missing_fingerprint_is_never_a_match() -> None:
 
 def test_missing_serving_artifact_fails_closed(tmp_path) -> None:
     fp = _tmp_model(tmp_path, "a")
-    ok = artifact_matches_serving(
-        _prov(fp), serving_artifact_path=tmp_path / "does_not_exist.bin"
-    )
+    ok = artifact_matches_serving(_prov(fp), serving_artifact_path=tmp_path / "does_not_exist.bin")
     assert ok is False
 
 
 def test_load_bound_calibrator_rejects_foreign_model(tmp_path) -> None:
     fp_cal = _tmp_model(tmp_path, "calibrated")
-    fp_now = _tmp_model(tmp_path, "replaced")
+    _tmp_model(tmp_path, "replaced")  # side effect: second model file must exist
     art = tmp_path / "cal.json"
     assert persist_calibration_artifact(
         art,
@@ -123,9 +121,7 @@ def test_load_bound_calibrator_accepts_explicit_fingerprint(tmp_path) -> None:
     the file is not re-read but the binding check still applies."""
     fp = _tmp_model(tmp_path, "verified")
     art = tmp_path / "cal.json"
-    assert persist_calibration_artifact(
-        art, {"a": 3.0, "b": -1.0}, _prov(fp), {"ece": 0.05}
-    )
+    assert persist_calibration_artifact(art, {"a": 3.0, "b": -1.0}, _prov(fp), {"ece": 0.05})
     cal = load_bound_calibrator(
         calibration_path=art,
         serving_artifact_path=tmp_path / "does_not_matter.bin",
@@ -248,8 +244,11 @@ def test_tampered_params_rejected_on_reload(tmp_path) -> None:
 
 def test_observability_block_is_secret_free_and_bounded(tmp_path) -> None:
     fp = _tmp_model(tmp_path, "obs")
-    cal = ConfidenceCalibrator(params={"a": 3.0, "b": -1.0}, provenance=_prov(fp),
-                               validation_metrics={"ece": 0.07, "brier": 0.21})
+    cal = ConfidenceCalibrator(
+        params={"a": 3.0, "b": -1.0},
+        provenance=_prov(fp),
+        validation_metrics={"ece": 0.07, "brier": 0.21},
+    )
     block = observability_block(cal)
     assert block["calibration_status"] == "CALIBRATED"
     assert block["required_sample_count"] == 30
@@ -257,7 +256,13 @@ def test_observability_block_is_secret_free_and_bounded(tmp_path) -> None:
     assert block["calibration_artifact_fingerprint"] == fp
     # only whitelisted keys — no raw confidence/outcome data
     assert set(block) == {
-        "calibration_status", "required_sample_count", "eligible_sample_count",
-        "calibration_model_version", "calibration_artifact_fingerprint",
-        "calibration_method", "ece", "brier", "matches_serving",
+        "calibration_status",
+        "required_sample_count",
+        "eligible_sample_count",
+        "calibration_model_version",
+        "calibration_artifact_fingerprint",
+        "calibration_method",
+        "ece",
+        "brier",
+        "matches_serving",
     }

@@ -30,7 +30,6 @@ from __future__ import annotations
 import hmac
 import os
 import secrets
-import sys
 
 from nexus_scalp.observability.logging import get_logger
 
@@ -82,6 +81,7 @@ def is_public_path(path: str) -> bool:
     if path in PUBLIC_PATHS or name in PUBLIC_JS_ASSETS:
         return True
     return any(path.startswith(p) for p in PUBLIC_PREFIXES)
+
 
 WEB_AUTH_TOKEN_SECRET_NAME = "web_auth_token"
 _TOKEN_BYTES = 32
@@ -164,8 +164,10 @@ class WebAuthMiddleware:
             return
 
         supplied = self._extract_token(scope)
-        if supplied and self._token is not None and hmac.compare_digest(
-            supplied.encode("utf-8"), self._token.encode("utf-8")
+        if (
+            supplied
+            and self._token is not None
+            and hmac.compare_digest(supplied.encode("utf-8"), self._token.encode("utf-8"))
         ):
             await self.app(scope, receive, send)
             return
@@ -198,8 +200,7 @@ class WebAuthMiddleware:
     @staticmethod
     def _extract_token(scope) -> str | None:
         headers = {
-            k.decode("latin-1").lower(): v.decode("latin-1")
-            for k, v in scope.get("headers", [])
+            k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])
         }
         auth = headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
@@ -265,8 +266,13 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
             if self._token is None:
                 return JSONResponse(
                     status_code=500,
-                    content={"ok": False, "error": {"code": "AUTH_CONFIG_ERROR",
-                             "message": "web auth token unresolvable (fail-closed)"}},
+                    content={
+                        "ok": False,
+                        "error": {
+                            "code": "AUTH_CONFIG_ERROR",
+                            "message": "web auth token unresolvable (fail-closed)",
+                        },
+                    },
                 )
             supplied = self._extract(request)
             if supplied and hmac.compare_digest(
@@ -275,8 +281,13 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
                 return await call_next(request)
             return JSONResponse(
                 status_code=401,
-                content={"ok": False, "error": {"code": "UNAUTHORIZED",
-                         "message": "missing or invalid web auth token"}},
+                content={
+                    "ok": False,
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "missing or invalid web auth token",
+                    },
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
 

@@ -402,7 +402,10 @@ def compute_sized_economic_pnl(
         swap_cost_usd=swap_cost,
         volumes=volumes,
         equity_curve_usd=[float(assumptions.starting_equity_usd)]
-        + [float(assumptions.starting_equity_usd) + sum(sized_pnl[: i + 1]) for i in range(len(sized_pnl))],
+        + [
+            float(assumptions.starting_equity_usd) + sum(sized_pnl[: i + 1])
+            for i in range(len(sized_pnl))
+        ],
     )
 
 
@@ -440,7 +443,6 @@ class SizedEconomicResult(BaseModel):
         return float(sum(self.volumes))
 
 
-
 def variance_preserving_mean(values: Sequence[float]) -> float:
     """Mean ignoring NaN; robust for downstream scoring."""
     arr = np.asarray([float(v) for v in values if not np.isnan(v)], dtype=float)
@@ -459,6 +461,4 @@ def _rebuild_backtest_result() -> None:
 
 
 _rebuild_backtest_result()
-_models.BacktestResult.model_rebuild(
-    _types_namespace={"SizedEconomicResult": SizedEconomicResult}
-)
+_models.BacktestResult.model_rebuild(_types_namespace={"SizedEconomicResult": SizedEconomicResult})

@@ -64,7 +64,9 @@ from nexus_scalp.release.metadata import parse_version
 # embedded trust root for the duration of the test (monkeypatched), so the
 # production verification path is exercised end-to-end — not bypassed.
 # ---------------------------------------------------------------------------
-def _sign_release_manifest(release: dict[str, Any], monkeypatch, payload: bytes | None = None) -> dict[str, Any]:
+def _sign_release_manifest(
+    release: dict[str, Any], monkeypatch, payload: bytes | None = None
+) -> dict[str, Any]:
     """Attach a VALIDLY SIGNED update_manifest to a synthetic release dict."""
     import nacl.encoding
     import nacl.signing
@@ -252,9 +254,7 @@ def test_invalid_release_asset_blocked() -> None:
 def test_unsupported_architecture_blocked(monkeypatch) -> None:
     plan = upd.UpdatePlanBuilder(
         installed_version="9.0.0", channel="stable", architecture="ARM64"
-    ).build(
-        _sign_release_manifest(_release_dict(), monkeypatch)
-    )
+    ).build(_sign_release_manifest(_release_dict(), monkeypatch))
     assert plan["status"] == "INCOMPATIBLE"
     assert any("ARM64" in d for d in plan["decisions"])
 
@@ -592,7 +592,9 @@ def test_update_history_persisted(update_home: Path) -> None:
 # ---------------------------------------------------------------------------
 # TEST-UP-27  dry-run purity
 # ---------------------------------------------------------------------------
-def test_dry_run_makes_no_mutation(app_root: Path, user_root: Path, tmp_path: Path, monkeypatch) -> None:
+def test_dry_run_makes_no_mutation(
+    app_root: Path, user_root: Path, tmp_path: Path, monkeypatch
+) -> None:
     before = {p: p.read_bytes() for p in app_root.rglob("*") if p.is_file()}
     user_before = {p: p.read_bytes() for p in user_root.rglob("*") if p.is_file()}
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(
@@ -672,7 +674,9 @@ def test_direct_unsupported_migration_rejected() -> None:
 # ---------------------------------------------------------------------------
 # TEST-UP-35  model stays separate from app update
 # ---------------------------------------------------------------------------
-def test_no_automatic_model_promotion_app_update(app_root: Path, user_root: Path, monkeypatch) -> None:
+def test_no_automatic_model_promotion_app_update(
+    app_root: Path, user_root: Path, monkeypatch
+) -> None:
     rel = _release_dict(tag="v9.1.0")
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(
         _sign_release_manifest(rel, monkeypatch)
@@ -1142,9 +1146,7 @@ class _FakeReleaseServer:
             def do_GET(self) -> None:
                 st = self.server.server_state  # type: ignore[attr-defined]
                 if self.path.startswith("/releases"):
-                    body = (
-                        getattr(st, "_signed_for_test", None) or st._releases_json()
-                    ).encode()
+                    body = (getattr(st, "_signed_for_test", None) or st._releases_json()).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(body)))

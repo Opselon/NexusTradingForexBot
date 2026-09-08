@@ -1577,13 +1577,9 @@ class TestOffTickPath:
         `self.om._incident_worker`. The contract (to_thread + emit
         telemetry) is unchanged; this test follows the seam.
         """
-        seam = Path("src/nexus_scalp/application/live/maintenance.py").read_text(
-            encoding="utf-8"
-        )
+        seam = Path("src/nexus_scalp/application/live/maintenance.py").read_text(encoding="utf-8")
         assert "asyncio.to_thread(self.om._incident_worker.tick)" in seam
-        engine = Path("src/nexus_scalp/application/live_engine.py").read_text(
-            encoding="utf-8"
-        )
+        engine = Path("src/nexus_scalp/application/live_engine.py").read_text(encoding="utf-8")
         assert "emit_incident_telemetry" in engine
 
 

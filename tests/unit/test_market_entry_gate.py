@@ -290,7 +290,9 @@ def test_config_is_frozen_dataclass_with_spec_defaults() -> None:
 def test_now_utc_is_forensic_only() -> None:
     tue = _utc(2026, 8, 18, 12, 0)
     without = _gate().evaluate(server_now=tue, last_tick_age_sec=3.0)
-    with_host = _gate().evaluate(server_now=tue, last_tick_age_sec=3.0, now_utc=_utc(2026, 8, 22, 3, 0))
+    with_host = _gate().evaluate(
+        server_now=tue, last_tick_age_sec=3.0, now_utc=_utc(2026, 8, 22, 3, 0)
+    )
     assert without.allowed == with_host.allowed is True
     assert without.state == with_host.state == "OPEN"
     assert with_host.detail["now_utc_iso"] == "2026-08-22T03:00:00+00:00"

@@ -72,12 +72,7 @@ def test_rollover_inclusive_boundary_and_multiples() -> None:
     assert rollover_crossings(e, datetime(2026, 9, 2, 0, 0)) == 1  # at-instant counts
     assert rollover_crossings(e, datetime(2026, 9, 1, 23, 59)) == 0
     # five full server days held -> five crossings
-    assert (
-        rollover_crossings(
-            datetime(2026, 9, 1, 6, 0), datetime(2026, 9, 6, 6, 0)
-        )
-        == 5
-    )
+    assert rollover_crossings(datetime(2026, 9, 1, 6, 0), datetime(2026, 9, 6, 6, 0)) == 5
 
 
 def test_swap_long_debit_short_credit_with_volume_and_crossings() -> None:

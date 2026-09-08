@@ -85,9 +85,7 @@ class LearningCycleOrchestrator:
         self.audit_repo = audit_repo
         self.ledger = ledger
         self.orchestrator = orchestrator
-        self.cycles = cycle_store or LearningCycleStore(
-            _resolve_cycle_store_db_path(audit_repo)
-        )
+        self.cycles = cycle_store or LearningCycleStore(_resolve_cycle_store_db_path(audit_repo))
         self.snapshots = snapshot_store or TrainingDatasetSnapshotStore()
         # Restart safety: mark in-flight cycles from a dead process as FAILED.
         self.cycles.recover_interrupted()
@@ -159,10 +157,12 @@ class LearningCycleOrchestrator:
                 return out
             handle = self.snapshots.save_snapshot(
                 dataset,
-                training_config={"include_no_trade": include_no_trade,
-                                  "weight_no_trade": weight_no_trade,
-                                  "num_epochs": num_epochs,
-                                  **(hyperparameters or {})},
+                training_config={
+                    "include_no_trade": include_no_trade,
+                    "weight_no_trade": weight_no_trade,
+                    "num_epochs": num_epochs,
+                    **(hyperparameters or {}),
+                },
                 build_identity="learning_cycle",
             )
             self.cycles.transition(
@@ -179,9 +179,8 @@ class LearningCycleOrchestrator:
             self.cycles.transition(cycle_id, "TRAINING", reason="controlled training")
             result = self.orchestrator.run_controlled_training(
                 dataset,
-                hyperparameters=hyperparameters or {
-                    "num_folds": 5, "epochs_per_fold": 3, "batch_size": 64
-                },
+                hyperparameters=hyperparameters
+                or {"num_folds": 5, "epochs_per_fold": 3, "batch_size": 64},
                 num_epochs=num_epochs,
                 build_identity=f"learning_cycle:{cycle_id}",
             )
@@ -257,9 +256,7 @@ class LearningCycleOrchestrator:
             return out
 
         except HandoffBlockedError as e:
-            self.cycles.transition(
-                cycle_id, "BLOCKED", reason=str(e), decision="BLOCKED"
-            )
+            self.cycles.transition(cycle_id, "BLOCKED", reason=str(e), decision="BLOCKED")
             out["blocked"] = str(e)
             return out
         except DatasetSnapshotError as e:

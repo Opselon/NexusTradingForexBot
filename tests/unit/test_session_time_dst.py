@@ -153,10 +153,11 @@ class TestContracts:
 
     def test_feature_engine_uses_dst_semantics(self):
         """Mutation resistance: the 50D engine must NOT use fixed-UTC hours."""
+        from datetime import timedelta
+
+        from nexus_scalp.domain.models import TickData
         from nexus_scalp.features.scalp_features import ScalpFeatureEngine
         from nexus_scalp.market_data.bar_aggregator import BarData
-        from nexus_scalp.domain.models import TickData
-        from datetime import timedelta
 
         bars = [
             BarData(

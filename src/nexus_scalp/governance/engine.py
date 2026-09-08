@@ -68,13 +68,13 @@ CHECKLIST_EVIDENCE_KEYS: tuple[str, ...] = (
 #: satisfy the technical checklist above and still be NON-PROMOTABLE when
 #: its economic world is unknown or frictionless.
 ECONOMIC_EVIDENCE_KEYS: tuple[str, ...] = (
-    "sizing_model_recorded",          # sizing policy identity present (ECON_V1)
+    "sizing_model_recorded",  # sizing policy identity present (ECON_V1)
     "friction_assumptions_recorded",  # explicit friction, not silent zeros
-    "swap_assumptions_recorded",      # swap rates explicit (or evidence=none)
+    "swap_assumptions_recorded",  # swap rates explicit (or evidence=none)
     "training_decay_profile_recorded",  # full_train vs online decay identity
     "convergence_evidence_recorded",  # epochs/best-epoch/early-stop metadata
     "execution_profile_production_like",  # NOT frictionless research
-    "economic_pnl_basis_present",     # sized economic P&L view attached
+    "economic_pnl_basis_present",  # sized economic P&L view attached
 )
 
 #: Keys in CHECKLIST_EVIDENCE_KEYS whose evidence producer must ALSO record

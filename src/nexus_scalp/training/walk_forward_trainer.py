@@ -300,8 +300,7 @@ class WalkForwardTrainer:
         # silent fallback to a guessed geometry).
         if walk_forward_mode not in ("blocked", "expanding"):
             raise ValueError(
-                f"walk_forward_mode must be 'blocked' or 'expanding', got "
-                f"{walk_forward_mode!r}"
+                f"walk_forward_mode must be 'blocked' or 'expanding', got {walk_forward_mode!r}"
             )
         self.walk_forward_mode: str = str(walk_forward_mode)
         # CALIBRATION SAFETY POLICY (P1): maximum allowed RELATIVE
@@ -731,9 +730,7 @@ class WalkForwardTrainer:
             # ECONOMIC FOLD METRIC (P1): genuine money-side evidence per fold,
             # reported ALONGSIDE the classification diagnostics (never
             # replacing them, never conflated with them).
-            fold_economics = self._calculate_fold_economics(
-                fold_preds, y_test[: len(fold_preds)]
-            )
+            fold_economics = self._calculate_fold_economics(fold_preds, y_test[: len(fold_preds)])
             fold_econ_meta: dict[str, Any] = dict(fold_economics)
             fold_economics_history.append(fold_econ_meta)
             logger.info(
@@ -770,10 +767,7 @@ class WalkForwardTrainer:
         # carries REAL out-of-sample accuracy / trade counts — the gates then
         # consume genuine evidence instead of placeholder None values.
         oos_accuracy = (
-            float(
-                np.sum(np.array(oos_predictions) == np.array(oos_targets))
-                / len(oos_predictions)
-            )
+            float(np.sum(np.array(oos_predictions) == np.array(oos_targets)) / len(oos_predictions))
             if oos_predictions
             else None
         )
@@ -1473,7 +1467,9 @@ class WalkForwardTrainer:
                 f"baseline={calibration['baseline_brier']:.4f} "
                 f"candidate={calibration['candidate_brier']:.4f}"
             )
-        accepted = bool(quality_gate_passed and loss_improved and early_stopping_ok and calibration_ok)
+        accepted = bool(
+            quality_gate_passed and loss_improved and early_stopping_ok and calibration_ok
+        )
         logger.info(
             "Model fine-tuning quality & health diagnostics",
             class_distribution_pct=[f"{c:.1%}" for c in class_dist[:3]],
@@ -1655,7 +1651,9 @@ class WalkForwardTrainer:
                 mask = (conf > lo) & (conf <= hi) if b else (conf <= hi)
                 nb = int(np.sum(mask))
                 if nb:
-                    ece += (nb / n) * abs(float(np.mean(conf[mask])) - float(np.mean(outcome[mask])))
+                    ece += (nb / n) * abs(
+                        float(np.mean(conf[mask])) - float(np.mean(outcome[mask]))
+                    )
             return brier, ece
 
         baseline_brier, baseline_ece = _score(baseline_probs)

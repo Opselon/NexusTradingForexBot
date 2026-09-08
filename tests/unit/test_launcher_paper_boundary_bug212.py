@@ -262,6 +262,7 @@ def test_shadow_boundary_source_contains_no_mutation_downgrade() -> None:
     # the owner must carry the contract markers in the right order.
     from nexus_scalp.application.live.decision_executor import DecisionExecutor
     from nexus_scalp.application.live_engine import LiveEngine
+
     facade_src = inspect.getsource(LiveEngine._process_tick_pipeline)
     assert "_decision_executor.execute_decision_stage(" in facade_src, (
         "LiveEngine tick pipeline must delegate the decision stage to DecisionExecutor"

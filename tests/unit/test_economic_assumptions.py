@@ -91,9 +91,7 @@ def test_provenance_reconstructs_the_economic_world() -> None:
     for key in ("friction", "swap", "instrument", "sizing"):
         assert key in p
     # round-trips through model validation
-    rebuilt = EconomicAssumptions.model_validate(
-        {**a.model_dump(), "profile": a.profile}
-    )
+    rebuilt = EconomicAssumptions.model_validate({**a.model_dump(), "profile": a.profile})
     assert rebuilt.provenance() == p
 
 
@@ -185,7 +183,9 @@ def _live_sizing_volume(equity: float, entry: float, sl: float, risk_pct: float)
         (100000.0, 3300.0, 3297.0, 0.5),
     ],
 )
-def test_sizing_matches_live_risk_engine(equity: float, entry: float, sl: float, risk_pct: float) -> None:
+def test_sizing_matches_live_risk_engine(
+    equity: float, entry: float, sl: float, risk_pct: float
+) -> None:
     """Same inputs -> same sizing decision as the live engine (no drift).
 
     The confidence factor feeds the canonical CALIBRATED multiplier bounded
@@ -350,7 +350,5 @@ def test_friction_r_semantics_match_metrics_contract() -> None:
 
 def test_execution_cost_usd_decomposition() -> None:
     a = EconomicAssumptions.production_like()
-    cost = a.execution_cost_usd(
-        direction="BUY", volume=0.5, risk_distance=2.0, entry=2000.0
-    )
+    cost = a.execution_cost_usd(direction="BUY", volume=0.5, risk_distance=2.0, entry=2000.0)
     assert cost == pytest.approx((22.2 * 0.01 / 2.0) * 0.5 * 100.0 * 2.0)

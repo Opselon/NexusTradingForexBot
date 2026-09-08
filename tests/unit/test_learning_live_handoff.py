@@ -6,6 +6,7 @@ Covers the wiring contract on a real LiveEngine instance:
   * retrain in flight -> refused (no stacking);
   * handoff callback exists and requires learning.shadow.enabled.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -95,9 +96,16 @@ class TestDisabledByDefault:
 
 class TestGuards:
     def test_cycle_in_flight_refused(self, tmp_db: str, monkeypatch) -> None:
-        engine = _MiniEngine(LearningConfig(enabled=True, retrain=None or __import__(
-            "nexus_scalp.model_lifecycle.learning_config", fromlist=["RetrainConfig"]
-        ).RetrainConfig(enabled=True)), tmp_db)
+        engine = _MiniEngine(
+            LearningConfig(
+                enabled=True,
+                retrain=None
+                or __import__(
+                    "nexus_scalp.model_lifecycle.learning_config", fromlist=["RetrainConfig"]
+                ).RetrainConfig(enabled=True),
+            ),
+            tmp_db,
+        )
         # simulate a training already in flight
         engine._retrain_inflight = True
         out = engine.request_learning_cycle()
@@ -110,7 +118,9 @@ class TestGuards:
         skipped — and exactly one active cycle exists."""
         from nexus_scalp.model_lifecycle.learning_config import RetrainConfig
 
-        cfg = LearningConfig(enabled=True, retrain=RetrainConfig(enabled=True, min_new_experiences=1))
+        cfg = LearningConfig(
+            enabled=True, retrain=RetrainConfig(enabled=True, min_new_experiences=1)
+        )
         engine = _MiniEngine(cfg, tmp_db)
         out = engine.request_learning_cycle(num_epochs=1)
         # Zero experiences: builder produces an empty dataset -> BLOCKED

@@ -62,8 +62,7 @@ def _gate_outputs_from_metrics(
     ok = calibration["brier_degradation"] <= policy_limit
     if not ok:
         reasons.append(
-            f"Calibration degraded beyond policy: "
-            f"{calibration['brier_degradation']:.4f}"
+            f"Calibration degraded beyond policy: {calibration['brier_degradation']:.4f}"
         )
     return bool(accepted and ok), reasons
 
@@ -149,7 +148,9 @@ def test_default_policy_value_is_documented() -> None:
     """The default relative-degradation policy is an explicit, documented
     constant (0.10 = +10% worse Brier than the champion weights) — not a
     bare magic number: it is configurable per run."""
-    tr = WalkForwardTrainer(artifact_save_path=None or __import__("pathlib").Path("/tmp/nse_t/x.pt"))
+    tr = WalkForwardTrainer(
+        artifact_save_path=None or __import__("pathlib").Path("/tmp/nse_t/x.pt")
+    )
     assert tr.max_calibration_degradation_r == 0.10
     strict = WalkForwardTrainer(
         artifact_save_path=__import__("pathlib").Path("/tmp/nse_t/y.pt"),

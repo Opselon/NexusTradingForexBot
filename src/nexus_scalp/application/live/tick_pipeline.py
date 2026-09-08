@@ -446,7 +446,6 @@ class TickPipeline:
             # PROVEN fresh by a successful classify_tick() call.
             self.om._regime_state_classified_at = time.time()
 
-
         # Manage open positions
         # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded
         # into position management so the in-trade exit evaluation sees the
@@ -532,7 +531,11 @@ class TickPipeline:
                 return False, fv, proposal, None, regime_state, active_positions, current_pos_count
         # Inference (already computed for position management above; reuse it so the
         # model runs once per tick)
-        if probs_for_mgmt is None and self.om._inference_enabled and self.om.warmup_state == "READY":
+        if (
+            probs_for_mgmt is None
+            and self.om._inference_enabled
+            and self.om.warmup_state == "READY"
+        ):
             probs = self.om._infer_probabilities(fv=fv)
         else:
             probs = probs_for_mgmt

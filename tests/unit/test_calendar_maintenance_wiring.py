@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from nexus_scalp.calendar.gate import EventGatePolicy
-from nexus_scalp.calendar.models import CalendarEnvelope, CalendarHealth, EconomicEvent, EventImportance
+from nexus_scalp.calendar.models import (
+    CalendarEnvelope,
+    CalendarHealth,
+    EconomicEvent,
+    EventImportance,
+)
 from nexus_scalp.calendar.worker import CalendarWorker
 
 
@@ -32,7 +37,7 @@ class _Engine:
         ne.db = self._news_engine_db
         return ne
 
-    def _kick_worker(self, name: str, fn) -> None:  # noqa: N802 (test stand-in)
+    def _kick_worker(self, name: str, fn) -> None:
         self._kick_log.append(name)
 
 
@@ -54,7 +59,9 @@ def _envelope(now: datetime) -> CalendarEnvelope:
         source="stub",
         retrieved_at=now,
     )
-    return CalendarEnvelope(provider="stub", health=CalendarHealth.GOOD, last_success_at=now, events=(ev,))
+    return CalendarEnvelope(
+        provider="stub", health=CalendarHealth.GOOD, last_success_at=now, events=(ev,)
+    )
 
 
 def test_maintenance_composes_and_kicks_calendar_worker(tmp_path: Path) -> None:
@@ -64,7 +71,6 @@ def test_maintenance_composes_and_kicks_calendar_worker(tmp_path: Path) -> None:
     # lazy compose happens on first maintenance pass via the kick path;
     # here we verify the composition contract directly (the async cycle is
     # covered by live_workers characterization tests).
-    from nexus_scalp.calendar.worker import CalendarWorker
 
     engine.calendar_worker = CalendarWorker(engine.news_engine.db, refresh_interval_sec=900.0)
     assert engine.calendar_worker.latest_envelope() is None  # cache-only read is safe pre-fetch

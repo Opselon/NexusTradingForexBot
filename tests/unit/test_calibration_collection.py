@@ -41,7 +41,7 @@ def _setup_db(tmp_path, rows: list[dict]) -> str:
         "CREATE TABLE audit_experience_outcomes (idempotency_key TEXT PRIMARY KEY, "
         "realized_pnl_usd REAL, outcome_timestamp TEXT, is_executed INTEGER, is_closed INTEGER)"
     )
-    for i, r in enumerate(rows):
+    for r in rows:
         payload = json.dumps(
             {
                 "idempotency_key": r["key"],
@@ -118,9 +118,11 @@ def test_full_pipeline_fit_persist_reload(tmp_path, monkeypatch) -> None:
 def test_identity_binding_excludes_foreign_artifacts(tmp_path, monkeypatch) -> None:
     art_path, fp = _serving_artifact(tmp_path)
     _persist_patch(tmp_path, monkeypatch)
-    rows = [_row(i, fp, 0.3, f"2026-09-10T00:00:00+00:00") for i in range(70)]
+    rows = [_row(i, fp, 0.3, "2026-09-10T00:00:00+00:00") for i in range(70)]
     # 500 outcomes from a DIFFERENT artifact — plentiful but NOT eligible
-    rows += [_row(1000 + i, "deadbeefdeadbeef", 0.5, "2026-09-10T00:00:00+00:00") for i in range(500)]
+    rows += [
+        _row(1000 + i, "deadbeefdeadbeef", 0.5, "2026-09-10T00:00:00+00:00") for i in range(500)
+    ]
     db = _setup_db(tmp_path, rows)
     res = collect_calibration_evidence(
         oos_cutoff="2026-09-01T00:00:00+00:00",

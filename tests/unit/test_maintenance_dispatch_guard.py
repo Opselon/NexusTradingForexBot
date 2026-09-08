@@ -53,10 +53,10 @@ def _engine() -> tuple[DispatchEngine, dict[str, Any]]:
     calls: dict[str, Any] = {"terminal": []}
     experience_engine = SimpleNamespace(
         ledger=SimpleNamespace(
-            record_terminal_outcome=lambda outcome: calls["terminal"].append(
-                {"state": outcome.decision_lifecycle, "outcome": outcome}
+            record_terminal_outcome=lambda outcome: (
+                calls["terminal"].append({"state": outcome.decision_lifecycle, "outcome": outcome})
+                or True
             )
-            or True
         )
     )
     om = SimpleNamespace(

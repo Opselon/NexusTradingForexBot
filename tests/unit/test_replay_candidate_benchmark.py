@@ -41,12 +41,17 @@ def _make_bundle(tmp_path: Path, seed: int) -> Path:
     net.eval()
     out = tmp_path / f"model_{seed}.pt"
     torch.save(net.state_dict(), out)
-    np.savez(out.with_suffix(".scaler.npz").with_name(out.stem + ".scaler.npz"), mean=np.zeros(70), std=np.ones(70))
+    np.savez(
+        out.with_suffix(".scaler.npz").with_name(out.stem + ".scaler.npz"),
+        mean=np.zeros(70),
+        std=np.ones(70),
+    )
     return out
 
 
 def _bar_records(n: int = 320) -> list[dict[str, Any]]:
     """Deterministic zig-zag bar stream (no RNG)."""
+
     def price(i: int) -> float:
         return 2650.0 + 0.05 * (i % 13) + 0.5 * ((i // 13) % 7) + 0.01 * i
 
@@ -177,8 +182,12 @@ def test_benchmark_candidate_blocks_are_comparable(tmp_path: Path) -> None:
         _bar_records(320),
         [
             ReplayCandidate("champion", "CHAMPION", str(bundle_a), {"confidence_threshold": 0.35}),
-            ReplayCandidate("challenger", "CHALLENGER", str(bundle_b), {"confidence_threshold": 0.35}),
-            ReplayCandidate("always_low_conf", "CONTROL", str(bundle_b), {"confidence_threshold": 0.99}),
+            ReplayCandidate(
+                "challenger", "CHALLENGER", str(bundle_b), {"confidence_threshold": 0.35}
+            ),
+            ReplayCandidate(
+                "always_low_conf", "CONTROL", str(bundle_b), {"confidence_threshold": 0.99}
+            ),
         ],
         run_id="RBM-CMP",
     )

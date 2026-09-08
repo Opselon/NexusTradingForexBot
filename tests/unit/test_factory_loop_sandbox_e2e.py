@@ -24,15 +24,14 @@ import time
 
 import pytest
 
-from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.strategies.factory.worker import AutonomousLoopWorker
-
 import tests.unit.test_strategy_factory_phase22 as p22
+from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.strategies.factory.store import (
     list_candidates,
     list_events,
     list_generations,
 )
+from nexus_scalp.strategies.factory.worker import AutonomousLoopWorker
 
 
 @pytest.fixture()
@@ -111,7 +110,7 @@ def test_phase4_failure_recorded_and_recoverable(sandbox, audit_repo, monkeypatc
 
     # Inject failure INSIDE the generation (population build).
     calls = {"n": 0}
-    orig_generate = factory.generate_population
+    _ = factory.generate_population  # reference kept: monkeypatch replaces it below
 
     def failing_generate(*args, **kwargs):
         calls["n"] += 1
