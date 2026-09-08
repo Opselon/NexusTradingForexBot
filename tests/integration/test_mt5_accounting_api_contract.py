@@ -46,11 +46,15 @@ def _make_app(tmp_path):
 
 
 @pytest.fixture()
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
+    # WEB-AUTH-P0: the control plane requires a bearer token; integration
+    # clients authenticate exactly like production consumers.
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "integration-test-token")
     app, audit = _make_app(tmp_path)
     from fastapi.testclient import TestClient
 
     with TestClient(app) as c:
+        c.headers.update({"Authorization": "Bearer integration-test-token"})
         yield c
     audit.close()
     gc.collect()

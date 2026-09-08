@@ -639,13 +639,22 @@ def test_smoke_full_chain(tmp_path) -> None:
     from nexus_scalp.web.api_v1_wiring import create_v1_app
     from nexus_scalp.web.server import create_app
 
+    # WEB-AUTH-P0: set a known token BEFORE create_app so the middleware
+    # resolves it from env (deterministic; no log-side generation).
+    os.environ.setdefault("NSE_WEB_AUTH_TOKEN", "smoke-chain-token")
+
     # legacy dashboard app mounts v1 as well — both must expose the contract
     dash_app = create_app(engine_ref=None)
     v1_app = create_v1_app()
     # pick the standalone v1 app for hermetic checks (no engine needed for system/*)
     client = TestClient(v1_app, raise_server_exceptions=False)
     # dashboard app health
+    # WEB-AUTH-P0: the legacy dashboard requires the control-plane token;
+    # this smoke client is a first-party consumer, so it authenticates.
     dash_client = TestClient(dash_app, raise_server_exceptions=False)
+    dash_client.headers.update(
+        {"Authorization": f"Bearer {os.environ.get('NSE_WEB_AUTH_TOKEN', '')}"}
+    )
 
     checks: list[tuple[str, str, int]] = [
         ("GET /api/v1/system/status", "/api/v1/system/status", 200),

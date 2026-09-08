@@ -31,6 +31,7 @@ dependencies = [
     "feedparser>=6.0.0,<7.0.0; python_version >= '3.11'",
     "tzdata>=2024.1",
     "Pygments>=2.20.0",
+    "PyNaCl>=1.5.0,<2.0.0",
 ]
 
 [project.optional-dependencies]
