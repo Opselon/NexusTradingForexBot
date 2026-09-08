@@ -45,6 +45,11 @@ services:
       # Containerized engine always binds the API to all interfaces.
       NSE_WEB_HOST: 0.0.0.0
       NSE_WEB_PORT: ${NSE_WEB_PORT:-9090}
+      # AUDIT-B1: the control-plane web server requires a bearer token.
+      # Operator MUST set NSE_WEB_AUTH_TOKEN in .env (fail-closed: without
+      # it the server 500s every protected route instead of running open).
+      # UI/API clients send: Authorization: Bearer <token> (or X-NSE-Token).
+      NSE_WEB_AUTH_TOKEN: ${NSE_WEB_AUTH_TOKEN:?set NSE_WEB_AUTH_TOKEN in .env}
     volumes:
       - nexus-artifacts:/app/artifacts
       - nexus-data:/app/data
