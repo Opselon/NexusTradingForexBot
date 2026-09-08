@@ -304,10 +304,12 @@ def _epoch_utc(epoch_sec: int) -> datetime | None:
         return None
     try:
         from nexus_scalp.adapters.mt5.providers import (
-            BROKER_SERVER_UTC_OFFSET_MINUTES,
+            get_broker_server_utc_offset_minutes,
         )
 
-        return datetime.fromtimestamp(epoch_sec - BROKER_SERVER_UTC_OFFSET_MINUTES * 60, tz=UTC)
+        return datetime.fromtimestamp(
+            epoch_sec - get_broker_server_utc_offset_minutes() * 60, tz=UTC
+        )
     except (OverflowError, OSError, ValueError):
         return None
 

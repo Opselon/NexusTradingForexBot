@@ -236,8 +236,10 @@ def timebase_event_chain(
                        written before the fix (3h future shift).
     """
     from nexus_scalp.adapters.mt5.providers import (
-        BROKER_SERVER_UTC_OFFSET_MINUTES,
+        get_broker_server_utc_offset_minutes,
     )
+
+    broker_offset_minutes = get_broker_server_utc_offset_minutes()
 
     chain: dict[str, Any] = {
         "source_component": None,
@@ -247,7 +249,7 @@ def timebase_event_chain(
         "normalized_utc": None,
         "expected_time": None,
         "difference_ms": None,
-        "normalization_rule": f"subtract {BROKER_SERVER_UTC_OFFSET_MINUTES} min at sync (BUG-070)",
+        "normalization_rule": f"subtract {broker_offset_minutes} min at sync (BUG-070)",
     }
     if broker and (broker.get("entry_time") or broker.get("exit_time")):
         raw_t = str(broker.get("exit_time") or broker.get("entry_time") or "")
@@ -259,7 +261,7 @@ def timebase_event_chain(
             from datetime import timedelta
 
             naive = datetime.fromisoformat(raw_parts)
-            shifted = (naive - timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)).isoformat()
+            shifted = (naive - timedelta(minutes=broker_offset_minutes)).isoformat()
             chain["pre_fix_raw_value"] = shifted + "+00:00"
             chain["normalization_note"] = (
                 "stored +00:00 row: pre-fix naive fromtimestamp(epoch, UTC) wrote "
