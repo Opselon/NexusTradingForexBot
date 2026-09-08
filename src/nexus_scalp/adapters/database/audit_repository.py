@@ -28,6 +28,7 @@ from nexus_scalp.adapters.database.broker_history import (
     last_sync_window,
     sync_broker_history,
 )
+from nexus_scalp.adapters.database.dead_letter_store import DeadLetterStore
 from nexus_scalp.domain.models import AccountInfo, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.risk.runtime_safety import (
@@ -128,6 +129,15 @@ class AuditRepository:
         # shared cache is dropped when the last connection closes, so the
         # worker must reuse THIS connection (2026-08-18 full-suite fix).
         self._shared_conn: sqlite3.Connection | None = None
+        # A4 dead-letter split: compose the durable dead-letter store over
+        # THIS repository's connection accessor (sqlite3.connect on the same
+        # _db_path — never a second handle) and delegate the dead-letter
+        # surface to it (record / list / counters).
+        self.dead_letter_store = DeadLetterStore(
+            conn_factory=sqlite3.connect,
+            is_sqlite=self._is_sqlite,
+            db_path=self._db_path,
+        )
 
         self._flush_interval = flush_interval_sec
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
@@ -140,16 +150,19 @@ class AuditRepository:
         # debug_snapshot + the safety tests. Financial producers use bounded
         # backpressure + durable overflow (never silent drops); telemetry
         # producers remain dropable by design.
+        #
+        # A4 dead-letter split: audit_dead_letter_rows and _dead_letter_seq
+        # are OWNED by DeadLetterStore now — the public attribute reads
+        # delegate to it (see the property definitions below), so the
+        # runtime-safety tests + debug_snapshot keep working unchanged.
         # =====================================================================
         self.audit_batch_failures: int = 0
-        self.audit_dead_letter_rows: int = 0
         self.audit_dropped_rows: int = 0
         self.audit_salvaged_rows: int = 0
         self.financial_queue_backpressure: int = 0
         self.financial_events_overflowed: int = 0
         self.financial_events_failed: int = 0
         self.telemetry_dropped: int = 0
-        self._dead_letter_seq: int = 0
         # BUG-226: execution provenance of the account feeding this audit
         # stream ('LIVE' / 'PAPER' / 'SHADOW'). The engine sets this from the
         # effective mode; ledger + snapshot writes read it at write time so a
@@ -515,9 +528,11 @@ class AuditRepository:
         # =====================================================================
         # RUNTIME SAFETY STATE (P0, runtime-safety mission): ONE canonical
         # single-row store for durable safety decisions (HALT / KILL_SWITCH /
-        # RUNNING) + the durable audit dead-letter table. Atomic upserts;
-        # versioned for future migrations. See risk/runtime_safety.py for the
-        # pure policy contract; AuditRepository owns the ONLY persistence.
+        # RUNNING) + the durable audit dead-letter table (A4: schema owned by
+        # DeadLetterStore.create_table, still applied on THIS connection).
+        # Atomic upserts; versioned for future migrations. See
+        # risk/runtime_safety.py for the pure policy contract; AuditRepository
+        # owns the ONLY persistence.
         # =====================================================================
         conn.execute(
             """
@@ -538,22 +553,35 @@ class AuditRepository:
             );
             """
         )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS audit_dead_letter (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                failed_at TEXT NOT NULL,
-                table_name TEXT NOT NULL DEFAULT '',
-                query TEXT NOT NULL DEFAULT '',
-                args_json TEXT NOT NULL DEFAULT '',
-                error_type TEXT NOT NULL DEFAULT '',
-                error_message TEXT NOT NULL DEFAULT '',
-                retry_count INTEGER NOT NULL DEFAULT 0,
-                sequence_no INTEGER NOT NULL DEFAULT 0,
-                payload_note TEXT NOT NULL DEFAULT ''
-            );
-            """
-        )
+        # A4 dead-letter split: the audit_dead_letter DDL now lives on
+        # DeadLetterStore (same table, VERBATIM move) — created here on the
+        # setup connection so schema timing is unchanged.
+        self.dead_letter_store.create_table(conn)
+
+    # ---------------------------------------------------------------------
+    # DEAD-LETTER COUNTER DELEGATION (A4). audit_dead_letter_rows and
+    # _dead_letter_seq are owned by DeadLetterStore; these keep the
+    # pre-split attribute surface byte-compatible for readers
+    # (debug_snapshot, runtime-safety tests, overflow-file naming).
+    # ---------------------------------------------------------------------
+
+    @property
+    def audit_dead_letter_rows(self) -> int:
+        """Dead-letter metric (canonical value on DeadLetterStore)."""
+        return self.dead_letter_store.audit_dead_letter_rows
+
+    @audit_dead_letter_rows.setter
+    def audit_dead_letter_rows(self, value: int) -> None:
+        self.dead_letter_store.audit_dead_letter_rows = int(value)
+
+    @property
+    def _dead_letter_seq(self) -> int:
+        """Dead-letter sequence (canonical value on DeadLetterStore)."""
+        return self.dead_letter_store._dead_letter_seq
+
+    @_dead_letter_seq.setter
+    def _dead_letter_seq(self, value: int) -> None:
+        self.dead_letter_store._dead_letter_seq = int(value)
 
     # ---------------------------------------------------------------------
     # RUNTIME SAFETY STATE (P0) — canonical durable store.
@@ -565,27 +593,11 @@ class AuditRepository:
 
     @staticmethod
     def _json_safe_args(args: tuple[Any, ...]) -> str:
-        """Durable JSON encoding of a failed row's SQL args (dead-letter).
-
-        Never raises and never silently discards: a value that cannot be
-        serialized (binary blob, open handle, exotic object) is replaced by
-        a safe diagnostic envelope describing it, so the failing row is
-        still recoverable/replayable in identity.
-        """
-        safe: list[Any] = []
-        for value in args:
-            try:
-                json.dumps(value)
-                safe.append(value)
-            except Exception:
-                safe.append(
-                    {
-                        "__unserializable__": True,
-                        "type": type(value).__name__,
-                        "repr": repr(value)[:500],
-                    }
-                )
-        return json.dumps(safe, ensure_ascii=False, default=str)
+        """Durable JSON encoding of failed-row SQL args (A4: the canonical
+        implementation lives on DeadLetterStore._json_safe_args; this
+        delegating shim keeps the overflow-file writer and any external
+        callers working unchanged)."""
+        return DeadLetterStore._json_safe_args(args)
 
     def set_runtime_risk_state(
         self,
@@ -744,86 +756,24 @@ class AuditRepository:
     ) -> bool:
         """Durably stores one failed audit row (dead-letter path).
 
-        Enough information to recover/replay: the SQL + safely-encoded args,
-        failure classification, timestamps and a producer note. Never raises;
-        on catastrophic failure the loss is still counted in metrics and
-        logged CRITICAL.
+        A4: delegate to the composed DeadLetterStore (public signature
+        unchanged — callers stay byte-compatible).
         """
-        if not self._is_sqlite:
-            self.audit_dead_letter_rows += 1
-            return False
-        self._dead_letter_seq += 1
-        from datetime import UTC, datetime
-
-        err_type = type(error).__name__ if error is not None else "UnknownError"
-        err_msg = str(error)[:2000] if error is not None else ""
-        sql = """
-            INSERT INTO audit_dead_letter
-                (failed_at, table_name, query, args_json, error_type,
-                 error_message, retry_count, sequence_no, payload_note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        try:
-            # Derive table_name from the INSERT target when not provided.
-            derived = table_name
-            if not derived:
-                q = (query or "").strip().upper()
-                if q.startswith("INSERT INTO") or q.startswith("REPLACE INTO"):
-                    rest = (
-                        query.strip()[len("INSERT INTO ") :].split()[0]
-                        if q.startswith("INSERT INTO")
-                        else query.strip()[len("REPLACE INTO ") :].split()[0]
-                    )
-                    derived = rest.strip('"`[]')
-            with sqlite3.connect(
-                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
-            ) as conn:
-                conn.execute(
-                    sql,
-                    (
-                        datetime.now(UTC).isoformat(),
-                        derived,
-                        str(query or "")[:8000],
-                        self._json_safe_args(args or ()),
-                        err_type,
-                        err_msg,
-                        int(retry_count),
-                        self._dead_letter_seq,
-                        str(payload_note or "")[:1000],
-                    ),
-                )
-                conn.commit()
-            self.audit_dead_letter_rows += 1
-            return True
-        except Exception as dl_err:
-            # Dead-letter persistence itself failed: the loss MUST be loud.
-            self.audit_dead_letter_rows += 1
-            logger.critical(
-                "DEAD-LETTER WRITE FAILED — financial record unrecoverable. "
-                "query=%s error_type=%s dl_error=%s",
-                (query or "")[:200],
-                err_type,
-                dl_err,
-            )
-            return False
+        return self.dead_letter_store.record(
+            query=query,
+            args=args,
+            error=error,
+            table_name=table_name,
+            retry_count=retry_count,
+            payload_note=payload_note,
+        )
 
     def get_dead_letter_rows(self, limit: int = 200) -> list[dict[str, Any]]:
-        """Reads dead-letter rows for inspection/tests (newest first)."""
-        if not self._is_sqlite:
-            return []
-        try:
-            with sqlite3.connect(
-                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
-            ) as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute(
-                    "SELECT * FROM audit_dead_letter ORDER BY id DESC LIMIT ?",
-                    (int(limit),),
-                ).fetchall()
-                return [dict(r) for r in rows]
-        except Exception as e:
-            logger.error("get_dead_letter_rows failed: %s", e)
-            return []
+        """Reads dead-letter rows for inspection/tests (newest first).
+
+        A4: delegate to the composed DeadLetterStore.
+        """
+        return self.dead_letter_store.list_recent(limit=limit)
 
     def get_consecutive_losses(self, limit: int = 100) -> tuple[int, str]:
         """Canonical consecutive-loss chain from FINALIZED ledger outcomes.
