@@ -1,9 +1,23 @@
 # NSE (Nexus Scalp Engine) — Independent Code Audit & Fix Status
-# Generated: 2026-09-07 | Repo HEAD: 302ffdca | Branch: main
-# Scope: 10 audit waves (~60 findings) across architecture, security, ML pipeline,
-#        training integrity, runtime safety, testing infra, time/timezone handling.
-# Each finding below: [STATUS] + file:line evidence + fix guidance.
+# Updated: 2026-09-07 (rev 2, post-fix re-verification) | Repo HEAD: 4ab19dc2 | Branch: main
+# Scope: 10 audit waves (~60 findings) + re-verification of agent fix waves.
+# Each finding: [STATUS] + file:line evidence + fix guidance.
 # Agents: pick any OPEN item, claim a TASK-ID in agents/taskboard.md first.
+#
+# REVISION 2 CHANGELOG (this update):
+#   * Verified agent fix waves absorbed into main (185+ commits since rev 1).
+#   * SECURITY P0 CLOSED: web auth middleware shipped (7c14451a), gateway
+#     fail-closed secrets (fec8e63c), postgres unexposed (166fac19), compose
+#     token wiring (4ab19dc2). B-section status rewritten accordingly.
+#   * TESTING: nightly-qa.yml + nightly-e2e.yml now exist (slow suite,
+#     mutation campaign, Playwright journeys, chaos) -> I2/I4/I5 rewritten.
+#   * COVERAGE: per-critical-file floors are LIVE in ci.yml
+#     (scripts/ci/critical_manifest.py COVERAGE_THRESHOLDS) -> I3/I2 rewritten.
+#   * RUNTIME SAFETY F8/F9 re-verified: consecutive-loss cooldown EXISTS
+#     (circuit_breakers.py, default streak 8) and is persisted through
+#     runtime_risk_state rows. Status corrected from OPEN to FIXED-VERIFIED.
+#   * NEW finding N1: HIST-SIM v1 (research/historical/, untracked at rev-1
+#     time, now committed upstream) — tracked as a real code review target.
 
 ============================================================
 VERIFIED LEGEND
@@ -11,6 +25,7 @@ VERIFIED LEGEND
   [PARTIAL]          = started/exists but incomplete or still risky
   [OPEN]             = not fixed, evidence at HEAD
   [ACCEPTED-RISK]    = intentionally deferred (documented decision required)
+  [NEW]              = finding introduced/discovered in rev 2
 ============================================================
 
 ------------------------------------------------------------
@@ -23,286 +38,381 @@ A1 [PARTIAL] live_engine.py 6683 -> 4313 lines. Extraction into
     maintenance, model_health, runtime_loop, warmup).
     RESIDUE: extraction broke the tick path twice already (commits
     76713f18, 466e1533, 549e9806, 8fcf6cbe = import/decorator residue
-    fixes). MANDATORY for any further extraction: engine-launch gate
-    (test_engine_runtime_launch.py) per CHG-0032-A1.
+    fixes). Incident-worker call now lives in live/maintenance.py:197
+    (verified) and its contract test follows the seam (test_incidents
+    TestOffTickPath). MANDATORY for further extraction: engine-launch
+    gate (test_engine_runtime_launch.py) per CHG-0032-A1.
 A2 [PARTIAL] order_manager.py 6393 -> 4026 lines.
     src/nexus_scalp/execution/lifecycle/ created (dispatch, pending_orders,
     protection, reconciliation, scoring, ticket_state).
     REMAINING: ~4000 lines still hold manage_active_positions,
-    arbitration, hold-score. TicketStateStore (ticket_state.py) exists —
-    verify all 30 legacy per-ticket dict getters now route through it.
+    arbitration, hold-score. Next candidate slices: scoring.py (hold
+    score + adaptive evidence), state machine extraction.
 A3 [FIXED-VERIFIED] release/updater.py 2659 -> 221 lines (facade);
     logic moved to release/ modules.
-A4 [PARTIAL] audit_repository.py 2732 -> 3406 lines (GREW, not shrunk —
-    absorbed dead-letter runtime-safety code A9). Consider splitting
-    dead-letter store from repository facade.
+A4 [PARTIAL] audit_repository.py 2732 -> 3406 lines (GREW: absorbed
+    dead-letter runtime-safety code, which was the right call for the
+    P0). Follow-up: split dead-letter store (tables audit_dead_letter,
+    counter block, record_dead_letter) into its own module; the
+    repository facade should shrink below ~2500.
 A5 [OPEN] Two entrypoints remain: main.py + NexusTradingForexBot.py.
+    Consolidate to one launcher; keep the other as a 5-line shim.
 A6 [OPEN] beforePush.sh still invokes Windows path .venv/Scripts/python.exe
-    on Linux (dead gate). Either fix to .venv/bin/python or delete.
+    on Linux (dead gate — the Linux copy of the pre-push gate never
+    actually ran). Either fix PYTHON_BIN detection (.venv/bin/python with
+    fallback to .venv/Scripts/python.exe on Windows) or delete the file
+    and let CI be the single gate.
 
 ------------------------------------------------------------
-B. SECURITY (block before first real DEMO/LIVE money)
+B. SECURITY  —— P0 WAVE CLOSED 2026-09-07
 ------------------------------------------------------------
-B1 [OPEN] Web control server has NO authentication.
-    Evidence: src/nexus_scalp/web/server.py:422 allow_origins=["*"],
-    allow_methods=["*"]; no auth middleware/token anywhere.
-    docker-compose maps NSE_WEB_PORT 9090 to 0.0.0.0.
-    IMPACT: anyone reaching the port can flip execution mode to LIVE,
-    close positions, edit runtime config.
-    FIX: token/bearer middleware + bind default 127.0.0.1 outside
-    docker; reject boot with default token in LIVE mode.
-B2 [PARTIAL] Gateway HMAC secrets still default to well-known strings:
-    gateway/server.py:44-45 DEFAULT_API_KEY="default_local_key",
-    DEFAULT_SECRET="default_local_secret"; same fallbacks in
-    cli/gateway_commands.py:151-152 and remote_gateway.py:47-48.
-    GOOD: live-account guard exists (refuses LIVE without --allow-live).
-    FIX: refuse boot when env NSE_GATEWAY_SECRET unset AND account
-    config != PAPER; generate random secret on first run.
-B3 [OPEN] docker-compose.yml:111 publishes postgres 5432 to host with
-    default password nse_password_dev. Bind to internal network only
-    (remove ports mapping) or require NSE_PG_PASSWORD with no default.
-B4 [OPEN] No code-signing for Windows installer (SmartScreen/AV friction
-    = top UX killer for "easy install" goal). EV cert or Store
-    distribution needed before external users.
-B5 [ACCEPTED-RISK] IANA tzdata pinned in deps; acceptable.
+B1 [FIXED-VERIFIED] Web control plane now requires a bearer token.
+    src/nexus_scalp/web/auth.py (new): Starlette middleware installed as
+    the LAST step of create_app (server.py:2767-2775) -> every route
+    protected. Fail-closed: unresolvable token => 500 AUTH_CONFIG_ERROR,
+    never open. Token chain: NSE_WEB_AUTH_TOKEN env > SecureSecretStore
+    ('web_auth_token', DPAPI on Windows) > generated once + persisted +
+    logged WARNING exactly once. Accepts Bearer / X-NSE-Token / ?token=
+    (SSE). Constant-time compare. Public allowlist (is_public_path):
+    /api/health, /health, /healthz, /favicon.ico, static UI bundle
+    assets (app.js, ux_*.js, css, /static/*, /assets/*) — never an API
+    state/mutation route. Escape hatch NSE_WEB_AUTH_DISABLE=1 logs loud.
+    compose (4ab19dc2): core requires NSE_WEB_AUTH_TOKEN (:? fail-fast)
+    so containerized deploys cannot boot unauthenticated.
+    Tests: tests/unit/test_web_auth.py (6: fail-closed 401, public
+    paths, 3 transports, wrong token, generated-token persistence,
+    idempotent install) + fixtures authenticated in
+    test_live_state_contract.py / test_incidents.py.
+    RESIDUAL RISK (operators): the first generated token lands in logs —
+    retrieve and rotate it. SSE clients using ?token= leak tokens into
+    proxy logs; prefer header auth in production.
+B2 [FIXED-VERIFIED] Gateway secrets fail-closed (fec8e63c).
+    gateway/server.py _expected_keys(): env NSE_GATEWAY_API_KEY/SECRET >
+    SecureSecretStore ('gateway_api_key'/'gateway_secret') > well-known
+    defaults ONLY with NSE_GATEWAY_ALLOW_DEFAULTS=1 AND allow_live=False;
+    otherwise RuntimeError "GATEWAY SECRETS REQUIRED". A LIVE-allowed
+    gateway with publicly-known HMAC secrets was an unauthenticated
+    broker-order endpoint — now impossible by construction.
+    cli/gateway_commands.py status: PING probe SKIPPED (reports the
+    skip) when secrets are not provisioned — the CLI no longer guesses
+    default credentials.
+    Tests: test_gateway_secrets_contract.py (5: refused-when-live,
+    optin-refused-when-live, demo-optin-ok, env-accepted-for-live,
+    half-provisioned-refused); test_gateway_e2e.py sets DEMO opt-in.
+B3 [FIXED-VERIFIED] Postgres no longer exposed (166fac19).
+    docker-compose.yml: ports mapping 5432:5432 REMOVED (expose-only,
+    internal nexus-scalp-net); POSTGRES_PASSWORD=${NSE_PG_PASSWORD:?}
+    fail-fast — no silent nse_password_dev default. Service remains
+    profile-gated (off by default; SQLite default DB).
+B4 [OPEN] No code-signing for the Windows installer (SmartScreen/AV
+    friction = top UX killer for the "easy install" goal). PyInstaller +
+    torch binaries are high-false-positive territory. FIX PATH: (a) EV
+    Code Signing cert (~$200-400/yr, removes SmartScreen warning after
+    reputation builds), (b) or MS Store distribution. Until then, ship
+    SHA256SUMS + document the expected SmartScreen flow in README.
+B5 [OPEN] ed25519/minisign update signing STILL ABSENT (updater accepts
+    self-attested SHA256SUMS.txt from the same GitHub release). HIGHEST
+    remaining security ROI: one compromised release token = RCE on all
+    auto-updating clients. FIX: sign SHA256SUMS.txt with ed25519
+    (private key in Actions secret, pubkey embedded in the binary),
+    updater verifies before apply. ~1 day. Do this BEFORE enabling
+    silent auto-update for external users.
+B6 [ACCEPTED-RISK] DPAPI on Windows / chmod-600 ACL file on Linux for
+    secrets-at-rest (settings/secret_store.py). Documented weaker
+    fallback; acceptable for the supported Windows deployment.
 
 ------------------------------------------------------------
 C. SIGNALS / POLICY (money path decisions)
 ------------------------------------------------------------
 C1 [FIXED-VERIFIED] high_confidence_threshold inconsistency resolved:
-    policy.py now single source algo_config.high_confidence_threshold
-    (lines 519, 719, 1120 — no more 0.95/0.70/0.95 fallback split).
+    policy.py reads algo_config.high_confidence_threshold (lines 519,
+    719, 1120) — the 0.95/0.70/0.95 fallback split is gone.
 C2 [PARTIAL] Confidence used raw for position sizing
-    (risk_engine.py ~line 466: confidence_scalar from raw softmax).
-    Calibration gate exists in training (calibration-degradation gate,
-    commit d8581e12) and GET /api/operator/calibration monitor added
-    (56fce1e8), but live sizing still multiplies by uncalibrated
-    confidence. NEXT: isotonic/Platt on OOS ledger data -> feed
-    calibrated probs into sizing, or flat sizing until Brier OK.
+    (risk_engine.py ~466: confidence_scalar from raw softmax).
+    Calibration evidence pipeline EXISTS (calibration-degradation gate
+    in training, GET /api/operator/calibration read-only monitor) but
+    live sizing still multiplies by uncalibrated confidence.
+    NEXT: isotonic/Platt on OOS ledger data -> calibrated probs into
+    sizing; or flat sizing until Brier gate passes.
 C3 [OPEN] Spread gate still ATR-based only
     (policy.py:60 max_spread_atr_ratio=0.18). Missing:
-    spread percent-of-TP cap + session-percentile spread gate from
-    broker_history_sync distribution. Cheapest real P&L win listed.
+    * spread percent-of-TP cap (scalp edge lives in spread/TP, not
+      spread/ATR — wide-spread + high-ATR regimes pass the current gate
+      while the scalp edge is gone),
+    * session-percentile spread gate from broker_history_sync real
+      distribution (skip entries when live spread > 60th-80th percentile
+      of the current session).
+    Cheapest remaining real-P&L win on this list.
 C4 [OPEN] XAUUSD + magic 888101 hardcoded in policy.py
-    (lines 984, 1009, 1537, 1639). Blocks multi-symbol. Read
-    symbol/magic from config context. ~half-day work.
-C5 [OPEN] Policy thresholds (confidence_threshold=0.20 etc.) not tuned
-    by the learning loop. Thresholds are static; ledger has the data
-    to auto-tune per-regime. Wire runtime-config injection.
+    (lines 984, 1009, 1537, 1639). Blocks multi-symbol (EURUSD second
+    symbol goal). Read symbol/magic from runtime context/config.
+    ~half-day. NOTE: nse-cli dataset tooling already symbols-parameterized;
+    the lock is purely in the policy layer.
+C5 [OPEN] Policy thresholds (confidence_threshold=0.20 etc.) are static.
+    The learning loop (D12) exists but does not write thresholds.
+    Wire per-regime threshold tuning into runtime config, gated by the
+    same statistical bar as model promotion.
 C6 [PARTIAL] WAIT logit legacy: ScalpNet still constructs 4-wide heads
-    for legacy serving (mask at inference, TRAINED_CLASS_COUNT=3 for
-    fresh). Suggest: new exporter emits 3-logit; keep 4-logit only as
-    read-compat. Risk: every fine-tune can grow mass on dead logit.
+    for legacy serving (mask at inference; TRAINED_CLASS_COUNT=3 for
+    fresh builds; class-weights never allocate WAIT). NEXT: new
+    exporter emits 3-logit artifacts; keep 4-logit read-compat only.
+    Motivation: every fine-tune can grow mass on the dead logit; the
+    mask suppresses it but the geometry stays wrong.
 
 ------------------------------------------------------------
 D. TRAINING / ML INTEGRITY
 ------------------------------------------------------------
-D1 [FIXED-VERIFIED] Walk-forward expanding (anchored) mode added
-    (walk_forward_trainer.py:220,301,629; tests/unit/test_wft_expanding_mode.py).
+D1 [FIXED-VERIFIED] Walk-forward expanding (anchored) mode alongside
+    blocked mode (walk_forward_trainer.py:220-227,301,629;
+    tests/unit/test_wft_expanding_mode.py).
 D2 [FIXED-VERIFIED] Time-based purge replaces row-count purge
-    (test_wft_time_based_purge.py); purge/embargo semantics aligned
-    with research/splitting.py.
-D3 [FIXED-VERIFIED] Deterministic oversampling: np.random.default_rng(seed)
-    (walk_forward_trainer.py:2641-2652) replaced global RNG.
+    (test_wft_time_based_purge.py); semantics aligned with
+    research/splitting.py split_temporal.
+D3 [FIXED-VERIFIED] Deterministic oversampling:
+    np.random.default_rng(seed) (walk_forward_trainer.py:2641-2652) —
+    global RNG no longer touched.
 D4 [FIXED-VERIFIED] Economic objective in folds: net expectancy in R
-    recorded in TrainingRun.metrics (commit 1d101bbb; fold_economics test).
+    recorded in TrainingRun.metrics (1d101bbb;
+    test_wft_fold_economics.py).
 D5 [FIXED-VERIFIED] Final-replica variance: final training replicated,
-    median artifact selected (commit 64d1840e).
-D6 [FIXED-VERIFIED] Calibration-degradation gate contract tests
-    (commit d8581e12); emission gate extended.
+    median artifact selected (64d1840e).
+D6 [FIXED-VERIFIED] Calibration-degradation gate (d8581e12) + emission
+    gate extension; GET /api/operator/calibration evidence monitor.
 D7 [FIXED-VERIFIED] Session features DST-corrected via IANA tz
-    (features/scalp_features.py ~655; features/session_time.py;
-    SESSION_SEMANTICS_VERSION travels in metadata; pre-correction
-    artifacts identifiable).
-D8 [FIXED-VERIFIED] Artifact integrity verified at load path:
+    (features/session_time.py; scalp_features.py ~655 calls
+    session_flags_for_utc; SESSION_SEMANTICS_VERSION travels in
+    metadata so pre-correction artifacts are identifiable).
+D8 [FIXED-VERIFIED] Artifact integrity verified at load:
     application/live/model_bundle_store.py:68 calls
     verify_artifact_integrity(model_path, allow_legacy_unverified=...).
 D9 [OPEN] epochs_per_fold=3 still low; convergence curve not persisted
     per artifact. Make configurable + early-stop evidence in manifest.
-D10 [OPEN] Benchmark substrate: streaming_replay (causal, deterministic,
-    no side effects) exists but A/B/C model benchmark (TASK-04) should
-    run ON streaming_replay instead of ledger-only samples
-    (ledger = champion's own decisions only = no counterfactual).
-    This is the single most important unfinished ML wiring.
-D11 [FIXED-VERIFIED] Drift detection exists: model_lifecycle/feature_drift.py,
-    risk/drift_breaker.py, shadow70/health.py.
-D12 [OPEN] Learning-loop promotion: LearningCycleOrchestrator wired into
-    LiveEngine behind config (49916d57); candidates honestly rejected
-    (TASK-LOOP-VALIDATION-20260907) = loop RUNS but no edge promoted
-    yet. Statistical gate on promotion (bootstrap CI on delta-R,
-    min N=100) still REQUIRED before any auto-promotion in DEMO.
-    Current shadow compare min_samples=30 with no significance test
-    (shadow/comparison.py) — TOO WEAK for automated swaps.
+D10 [PARTIAL] Benchmark substrate: HIST-SIM v1 landed
+    (research/historical/ bars.py/seed.py + docs/historical_backtest_contract.md —
+    deterministic M1->M5 derivation, raw-bars evaluation, honest gaps).
+    REMAINING: A/B/C model benchmark (TASK-04) should run on a
+    causal-replay substrate (streaming_replay) rather than
+    ledger-only samples (ledger = champion's own decisions = no
+    counterfactual). HIST-SIM covers raw-bars genome evaluation; wire
+    the model benchmark to it or to streaming_replay.
+D11 [FIXED-VERIFIED] Drift detection exists:
+    model_lifecycle/feature_drift.py, risk/drift_breaker.py,
+    shadow/shadow70/health.py.
+D12 [PARTIAL] Learning loop: LearningCycleOrchestrator wired into
+    LiveEngine behind config (live_engine.py:1162-1176); loop runs,
+    candidates honestly rejected (TASK-LOOP-VALIDATION-20260907).
+    REMAINING before ANY auto-promotion in DEMO: statistical promotion
+    gate — bootstrap CI on delta-R (10k resamples, CI-low > 0, min
+    N=100). shadow/comparison.py still min_samples=30 with NO
+    significance test = coin-flip swaps. This is the #1 remaining ML
+    safety gap.
 
 ------------------------------------------------------------
 E. FRICTION / EXECUTION ASSUMPTIONS (backtest-vs-live gap)
 ------------------------------------------------------------
 E1 [PARTIAL] ExecutionAssumptions defaults spread/slippage/latency=0.0
     (research/models.py:81-83). Marketplace measurement migrated off
-    zero-friction legacy default (264ff265). STILL: labeling + backtest
-    default paths allow 0 friction silently. Make pessimistic defaults
-    (spread_ticks>0) or fail-loud flag.
-E2 [OPEN] No per-source execution_assumptions.json: labeling
+    zero-friction defaults (264ff265). STILL: labeling + backtest
+    default paths allow silent zero friction. Make pessimistic defaults
+    or a loud --allow-zero-friction flag (BUG-183 precedent: purge=0.0
+    burned the project once already).
+E2 [OPEN] No single execution_assumptions source: labeling
     (triple_barrier), backtest (ExecutionAssumptions), paper adapter
-    (_METAL_SPREAD_RANGE 0.08-0.18) each hardcode own numbers. One
-    source of truth derived from broker_history_sync real fills.
-E3 [OPEN] Swap/rollover absent from friction model; no 22:55-23:10 UTC
-    no-entry maintenance window wired into dispatch for ALL paths
-    (f1c2c14e added canonical maintenance-window guard on live entry —
-    verify coverage in paper/replay parity).
+    (_METAL_SPREAD_RANGE 0.08-0.18 hardcoded) each carry their own
+    numbers. Derive one profile from broker_history_sync real fills;
+    all three read it.
+E3 [PARTIAL] Maintenance-window guard on live entry dispatch
+    (f1c2c14e) + CalendarWorker composed into the live maintenance
+    cycle (3f8f6206). VERIFY parity: paper adapter + replay paths must
+    honor the same window; swap cost still absent from friction model.
 E4 [OPEN] Backtest equity curve = cumsum(R) with NO position sizing
     model; live sizes dynamically (confidence/regime/drawdown).
-    Promotion decisions compare two different P&L distributions.
-    FIX: reproduce live sizing formula in backtest metrics.
+    Promotion compares two different P&L distributions. Reproduce the
+    live sizing formula in backtest metrics (or freeze live sizing to
+    R-units until the gap closes).
 
 ------------------------------------------------------------
-F. RUNTIME SAFETY (survivability) — BEST EXECUTED WAVE
+F. RUNTIME SAFETY — CLOSED WAVE (best executed)
 ------------------------------------------------------------
 F1 [FIXED-VERIFIED] Persisted runtime risk states: risk/runtime_safety.py
     RUNNING/HALTED/KILL_SWITCH persisted in audit DB; restart does NOT
-    clear; DEGRADED derived per-tick. LiveEngine boot decision consumes
-    it (live_engine.py:104,662-664,4067-4092,4178).
+    clear; DEGRADED derived per-tick. LiveEngine consumes boot decision
+    (live_engine.py:104,662-664,4067-4092,4178) — fail-closed.
 F2 [FIXED-VERIFIED] Operator release surface: CLI nexus risk status|release
-    (commit 35726a1b) — explicit, smallest-possible release path.
+    (35726a1b) — explicit, audited, smallest-possible release path.
 F3 [FIXED-VERIFIED] Audit dead-letter table + retry_count + counters
     (audit_repository.py:139-152,518-568,735). Batch failure no longer
-    silently drops everything.
-F4 [FIXED-VERIFIED] Daily/weekly circuit breakers:
-    risk/circuit_breakers.py (daily 2% / weekly 5% budgets).
-F5 [FIXED-VERIFIED] Hot-path consecutive-error circuit breaker re-applied
-    on L14 pipeline seam (f8ef51a3) — degrades instead of silent zero-trade.
-F6 [FIXED-VERIFIED] Account freshness: account age tracked in debug
-    snapshot data-integrity counters (dc5ccebe). Verify it gates sizing,
-    not only dashboards.
-F7 [FIXED-VERIFIED] CalendarWorker composed into live maintenance cycle
-    (3f8f6206) — economic event gate reachable in production path.
-F8 [OPEN] _consecutive_losses in live_engine (line 652) — verify now
-    consumed by a throttle/cooldown; previously write-only decoration.
-F9 [OPEN] Kill-switch/halt does not force-close open positions by
-    design (stops new entries only). Document explicitly or add
-    optional flatten-on-halt for DEMO.
+    silently drops everything; counters surface in debug snapshot.
+F4 [FIXED-VERIFIED] Daily/weekly circuit breakers
+    (risk/circuit_breakers.py: daily 2% / weekly 5% budgets).
+F5 [FIXED-VERIFIED] Hot-path consecutive-error circuit breaker on the
+    L14 pipeline seam (f8ef51a3) — degrades instead of silent
+    zero-trade.
+F6 [FIXED-VERIFIED] Account freshness + data-integrity counters in the
+    debug snapshot risk section (dc5ccebe). FOLLOW-UP: verify account
+    age GATES sizing (not just dashboards).
+F7 [FIXED-VERIFIED] CalendarWorker composed into the live maintenance
+    cycle (3f8f6206) — economic event gate reachable in production.
+F8 [FIXED-VERIFIED] (rev-2 correction of earlier OPEN) Consecutive-loss
+    handling is REAL now: risk/circuit_breakers.py arms a timed cooldown
+    after config.consecutive_loss_cooldown (default 8) adverse outcomes
+    (lines 160-190); the engine forwards the streak into the persisted
+    runtime_risk_state row (live_engine.py:4055). Verify the breaker is
+    fed from the close-trade path in all execution modes (paper parity).
+F9 [ACCEPTED-RISK] Halt/kill-switch stops new entries only; open
+    positions are NOT force-closed. Defensible for a scalp system
+    (stops are already on every position). DOCUMENT the decision in
+    runtime_invariants; optionally add flatten-on-halt as a DEMO-only
+    config flag.
 
 ------------------------------------------------------------
 G. TIME / BROKER ASSUMPTIONS
 ------------------------------------------------------------
 G1 [OPEN] BROKER_SERVER_UTC_OFFSET_MINUTES=180 hardcoded
-    (adapters/mt5/providers.py:42). Most brokers GMT+2 winter / GMT+3
-    summer (EET DST). ALL historical timestamps, accounting day
+    (adapters/mt5/providers.py:42). Most MT5 brokers run GMT+2 winter /
+    GMT+3 summer (EET DST). ALL historical timestamps, accounting day
     boundaries, market_calendar weekend logic shift one hour half the
-    year. FIX: detect offset from broker live (tick time vs server) +
-    per-broker config profile + mismatch alert.
+    year — a coherent-but-wrong world for the learning loop.
+    FIX: detect offset live (tick epoch vs server clock or two known
+    points), per-broker config profile, alert on mismatch. ~1 day,
+    high data-integrity value.
 G2 [FIXED-VERIFIED] Sessions DST-aware (see D7).
 G3 [OPEN] order_manager.py:3072 uses naive datetime.now() for
-    holding_duration (time-in-loss decay penalty). Wall-clock jumps
-    (DST) corrupt hold-time penalties. Use monotonic or broker-aware
-    timestamps.
-G4 [PARTIAL] market_calendar.py exists & computed correctly but only
-    debug routes consume it. Wire: no-entry first 10 min after weekly
-    open, no-entry after Fri 21:40 UTC (before close).
+    holding_duration (time-in-loss decay). Wall-clock jumps (DST) corrupt
+    hold-time penalties for open tickets. Use monotonic or broker-aware
+    timestamps. Small fix, real correctness value.
+G4 [PARTIAL] market_calendar.py computed correctly + CalendarWorker live
+    (F7). REMAINING: policy-level no-entry windows — first 10 min after
+    weekly open, after Fri 21:40 UTC, hard block during the calendar
+    high-impact window (calendar gate exists; verify entry path honors
+    it in PAPER too).
 
 ------------------------------------------------------------
 H. NEWS / INFO PIPELINE
 ------------------------------------------------------------
 H1 [FIXED-VERIFIED] Reuters feed marked dead (seed.py:136 verified
-    2026-09-07). Verify replacement sources are LIVE feeds (forexlive
-    403 from datacenter IPs; BLS 403) — add per-source liveness
-    metric (last_success_age) + weekly report.
-H2 [FIXED-VERIFIED] Economic calendar module exists (src/nexus_scalp/calendar/
-    + worker). Verify upstream source + hard no-entry window around
-    high-impact events (15 min before/after) — currently gate exists?
+    2026-09-07). FOLLOW-UP: per-source liveness metric
+    (last_success_age) + weekly report; forexlive/BLS return 403 to
+    datacenter IPs — validate from the deployment network, not CI.
+H2 [FIXED-VERIFIED] Economic calendar: src/nexus_scalp/calendar/ +
+    CalendarWorker composed into the live maintenance cycle (3f8f6206).
+    VERIFY upstream source freshness + that the entry gate honors the
+    high-impact window end-to-end.
 H3 [OPEN] News AI sentiment (LLM) unversioned: bullish/bearish scores
     enter 10 of 70 feature dims; any LLM/prompt change silently shifts
-    distribution. FIX: pin model+prompt version into news_context_hash
-    + include news dims in PSI monitor.
-H4 [OPEN] LLM budget: factory has cost ledger; news ai_service has no
-    independent daily USD cap. Add Tier-1 keyword fast-path (CPI/NFP
-    in headline = HIGH_IMPACT deterministic, no LLM call).
+    the input distribution of a trained champion. FIX: pin
+    model+prompt version into news_context_hash; include news dims in
+    the PSI/drift monitor (drift infra exists, D11).
+H4 [OPEN] LLM budget: factory has a cost ledger; news ai_service has no
+    independent daily USD cap. Add Tier-1 keyword fast-path (CPI/NFP in
+    headline => HIGH_IMPACT deterministic, no LLM call) — cuts API cost
+    ~80% on event days.
 H5 [OPEN] candle_intelligence island: engine builds it (live_engine
     ~854 "feeds decisions") but zero consumers in policy/order_manager/
-    features. Either wire into policy or disable flag — dead cost now.
+    features. Either wire its signals into the policy gates or ship it
+    disabled — dead CPU/IO cost right now.
 
 ------------------------------------------------------------
-I. TESTING / CI INFRASTRUCTURE
+I. TESTING / CI INFRASTRUCTURE  —— MOSTLY CLOSED IN REV 2
 ------------------------------------------------------------
-I1 [FIXED-VERIFIED] Mutation runner no longer hardcodes Windows path;
-    scopes added (--ids/--target/--changed); weekly scheduled lane
-    (qa-deep-assurance.yml cron '30 3 * * 0').
-I2 [OPEN] No coverage floor: CI runs --cov but no --cov-fail-under.
-    Add per-critical-file floors (live_engine, order_manager,
-    risk_engine, signals/policy) rather than global.
-I3 [PARTIAL] critical_suite.txt (95 files): contains lifecycle/risk/
-    liquidity but ZERO direct live_engine entries. Hot-path regression
-    protection still relies on tangential files. Generate manifest
-    from hot-path dependency graph.
-I4 [OPEN] slow_suite.txt (56 files) referenced by no scheduled job —
-    nightly cron needed (only qa-deep-assurance weekly exists).
-I5 [OPEN] e2e_client Playwright journeys (j1-j7) run manually only
-    ("engine must be reachable"). Nightly docker-up + run + artifacts
-    job required for the "easy install / auto everything" goal.
-I6 [OPEN] scratch/ tracked in git: 764 files (git ls-files | grep -c
-    '^scratch/' = 764). Move out of repo or split package.
+I1 [FIXED-VERIFIED] Mutation runner portable (no hardcoded Windows path;
+    --ids/--target/--changed scopes; recursion-safe import hook).
+I2 [FIXED-VERIFIED] Per-critical-file coverage floors LIVE in ci.yml
+    (Critical-file coverage gate; scripts/ci/critical_manifest.py
+    COVERAGE_THRESHOLDS): live_engine 20%, order_manager 55%,
+    risk_engine 55%, policy 65%, position_state_machine 55%,
+    schema_contract 80%, live_freshness 40%, splitting 80%. NO_DATA
+    fails. Ratchet thresholds upward over time; add live_engine floor
+    growth as A1 completes.
+I3 [PARTIAL] critical_suite.txt (95 files) covers lifecycle/risk/
+    liquidity; live_engine is covered only indirectly (via its floor +
+    smoke chain). NEXT: generate the manifest from the hot-path
+    dependency graph instead of hand-maintenance.
+I4 [FIXED-VERIFIED] Nightly deep QA: .github/workflows/nightly-qa.yml
+    (cron 01:17 UTC) runs slow suite + lifecycle chaos + mutation
+    campaign + Telegram failure notify.
+I5 [FIXED-VERIFIED] Nightly client E2E: .github/workflows/nightly-e2e.yml
+    (cron 02:33 UTC) boots compose core (PAPER), polls /health until
+    READY/DEGRADED, runs Playwright journeys j1-j7, preserves evidence.
+I6 [OPEN] scratch/ tracked in git: 764 files. Move out of repo or split
+    into a scratch-only branch/package; ruff already excludes it, but
+    clone size + agent confusion costs remain.
 I7 [OPEN] Duplicate decision IDs: DEC-0002 exists twice with different
-    subjects (agents/decisions). Renumber to keep provenance honest.
+    subjects (agents/decisions). Renumber for provenance honesty.
 I8 [OPEN] requirements.txt vs pyproject.toml dual source; open ranges
-    (torch>=2.2,<3, polars, numpy) vs determinism contract. Lock file
-    (uv/pip-tools) + CI on lock.
+    (torch>=2.2,<3 etc.) vs determinism contract. Lock file (uv /
+    pip-tools) + CI-on-lock. dependency-lock.yml + lockfile-diff.yml
+    workflows exist — verify they produce/enforce a real lockfile.
+I9 [NEW] HIST-SIM v1 landed as UNTRACKED files in rev 1 and was absorbed
+    upstream after this audit opened the tree state. Review
+    research/historical/bars.py M5 derivation against the contract doc
+    (gap-skip semantics, no forward fill) — contract and code were
+    written together; keep them in lockstep (golden test on a fixed
+    bars fixture).
 
 ------------------------------------------------------------
 J. UPDATE / SUPPLY CHAIN
 ------------------------------------------------------------
 J1 [FIXED-VERIFIED] Updater facade split (221 lines; release/ modules);
-    backup/rollback verified-blocks-update retained.
-J2 [OPEN] SHA256SUMS.txt self-attested: payload and checksum from same
-    GitHub release = compromised token -> RCE to all auto-update
-    clients. FIX: ed25519/minisign signature; pubkey embedded in
-    binary; private key in Actions secret. ~1 day work, highest
-    security ROI remaining.
-J3 [OPEN] torch bundled in onedir build (huge installer). ONNX Runtime
-    migration (~10MB) or CPU-only slim build for client UX.
-J4 [FIXED-VERIFIED] torch.load weights_only=True used in coherence
-    checks (keep; add CI scan forbidding torch.load without it).
-J5 [OPEN] redis:7 service in docker-compose has zero consumers in src.
-    Remove or move to optional profile.
+    backup/rollback verified-blocks-update retained; BUG-170/171/172/173
+    hardening present.
+J2 [OPEN] = B5. ed25519 update signing. Do before silent auto-update.
+J3 [OPEN] torch bundled in the onedir build (huge installer, AV bait).
+    ONNX Runtime migration (~10MB) or CPU-only slim build for the
+    client UX. Pairs with B4 (unsigned binaries) as the install-UX duo.
+J4 [FIXED-VERIFIED] torch.load weights_only=True in coherence checks;
+    keep + CI scan forbidding bare torch.load.
+J5 [PARTIAL] redis:7 still in docker-compose with zero src consumers
+    (grep: only release/environment doctor mentions). Move to an
+    optional profile or remove; it is a running service nobody talks to.
 
 ------------------------------------------------------------
 K. PAPER / DEMO REALISM
 ------------------------------------------------------------
 K1 [FIXED-VERIFIED] Paper adapter: direction-aware fills (BUY@ask/SELL@bid),
-    slippage, auto SL/TP, durable persistence (paper-reality P2 commits).
+    slippage, auto SL/TP, durable persistence (paper-reality P2).
 K2 [OPEN] Paper seed baselines hardcoded (_SEED_BASELINES XAUUSD=4400.00;
-    _METAL_SPREAD_RANGE (0.08,0.18)) — synthetic distribution trains
-    the loop on a fictional world. Wire paper to streaming_replay over
-    REAL recorded data (see D10) for training-grade paper mode.
+    _METAL_SPREAD_RANGE (0.08,0.18)) — synthetic-distribution paper mode
+    trains the loop on a fictional world. Wire paper to streaming_replay
+    over REAL recorded data for training-grade paper (K3's substrate).
 K3 [OPEN] No paper-vs-demo bias measurement job: weekly compare paper
-    results vs real demo on same signals; feed bias factor into
-    calibration. Gate for LIVE promotion.
+    results vs real demo on the same signals; feed the bias factor into
+    calibration; gate for LIVE promotion. This is the LAST gap before
+    the loop can be trusted on paper results.
 
 ------------------------------------------------------------
 PRIORITY ORDER (remaining OPEN/PARTIAL, risk-per-effort)
 ------------------------------------------------------------
-P0 (before any real-money DEMO/LIVE):
-  1. B1 web auth middleware + B2 secret boot gate (same day)
-  2. B3 postgres port removal (1 line)
-  3. D12 promotion statistical gate (bootstrap CI) — before any
-     auto-promotion in DEMO
-  4. J2 update signing — before enabling silent auto-update for users
-P1 (this week):
-  5. G1 broker offset detection (time truth)
-  6. C3 spread percent-of-TP gate + session-percentile gate
-  7. E1/E2 single execution_assumptions source (pessimistic default)
-  8. I2/I4 coverage floors + nightly slow cron
+P0 (before enabling silent auto-update / external users):
+  1. J2/B5 ed25519 update signing (~1 day, closes the release-RCE hole)
+  2. D12 bootstrap-CI promotion gate (~tens of lines; before ANY
+     auto-promotion in DEMO)
+  3. B4 code-signing cert decision (purchase or Store; UX blocker)
+P1 (this week — data truth + edge):
+  4. G1 broker UTC-offset detection (time truth for the whole stack)
+  5. C3 spread percent-of-TP + session-percentile gates
+  6. E1/E2 single pessimistic execution_assumptions profile
+  7. G3 monotonic hold-time; E4 sizing-aware backtest metrics
 P2 (next):
-  9. D10 streaming_replay as benchmark substrate (counterfactual A/B/C)
-  10. K2/K3 paper replay mode + paper-vs-demo bias job
-  11. C4 XAUUSD hardcode removal (multi-symbol unlock)
-  12. A1/A2 finish facade extraction; A6 beforePush.sh fix
-  13. I6 scratch/ cleanup; I8 lock file
+  8. D10 model benchmark on causal-replay substrate (counterfactual A/B/C)
+  9. K2/K3 paper replay mode + paper-vs-demo bias job
+  10. C4 XAUUSD hardcode removal (multi-symbol unlock)
+  11. A1/A2 finish facades; A4 dead-letter split; A6 beforePush.sh
+  12. I6 scratch/ cleanup; I8 lockfile enforcement
 P3 (polish):
-  14. C5 threshold auto-tune loop; C6 3-logit exporter
-  15. H3/H4 news AI versioning + budget; H5 candle_intel decision
-  16. E4 sizing-aware backtest; E3 rollover friction
-  17. B4 code signing cert; J3 ONNX slim build; J5 redis removal
-  18. I5 e2e nightly; I7 DEC renumber
+  13. C5 threshold auto-tune loop; C6 3-logit exporter
+  14. H3 news AI versioning; H4 news LLM budget; H5 candle_intel decision
+  15. J3 ONNX slim build; J5 redis profile; A5 entrypoint consolidation
+  16. I7 DEC renumber; I9 HIST-SIM golden fixture test
+
+------------------------------------------------------------
+COMMIT TRAIL (this audit's fixes on main)
+------------------------------------------------------------
+  f2a5b8c5 docs: audit findings matrix rev 1
+  7c14451a feat(web): WEB-AUTH-P0 token auth (B1)
+  166fac19 fix(compose): postgres no host bind + mandatory password (B3)
+  fec8e63c fix(gateway): fail-closed credential resolution (B2)
+  4ab19dc2 chore(compose): NSE_WEB_AUTH_TOKEN required for core (B1 close-out)
 
 ------------------------------------------------------------
 NOTES FOR AGENTS
@@ -315,7 +425,14 @@ NOTES FOR AGENTS
 - Any live_engine/order_manager extraction: engine-launch gate
   mandatory; expect import-residue bugs (four residue-fix commits on
   2026-09-07 prove it).
-- Windows-only MT5: real execution path untestable on Linux CI;
-  use recorded golden fixtures / streaming_replay.
+- Windows-only MT5: the real execution path is untestable on Linux CI;
+  use recorded golden fixtures / streaming_replay / HIST-SIM.
 - Honest-status rule: promotion/evidence claims must carry artifact
   hashes; no fabricated metrics (BUG-175 precedent).
+- Web API consumers (UI, scripts, curl): send
+  "Authorization: Bearer $NSE_WEB_AUTH_TOKEN". Public routes: /health,
+  /api/health, /favicon.ico, static assets only.
+- Gateway operators: set NSE_GATEWAY_API_KEY/NSE_GATEWAY_SECRET before
+  `gateway serve --allow-live`; defaults are DEMO-only opt-in.
+- Compose operators: NSE_WEB_AUTH_TOKEN is now mandatory for `core`;
+  NSE_PG_PASSWORD only when starting the postgres profile.
