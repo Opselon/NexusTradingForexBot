@@ -35,7 +35,29 @@ logger = get_logger("nexus_scalp.application.live.model_health")
 
 
 class ModelHealth:
-    """Collapse detection + recovery (composition root: LiveEngine)."""
+    """Collapse detection + recovery (composition root: LiveEngine).
+
+    UNBOUND-DELEGATION CONTRACT: ``self`` IS the LiveEngine.
+    """
+
+    if TYPE_CHECKING:
+        config: Any
+        _rolling_feature_records: list
+        _bundle_lock: Any
+        _bundle: Any
+        effective_feature_cols: Any
+        model_registry: Any
+        audit: Any
+        FEATURE_DIM: int
+        _declared_contract_dim_for_path: Any
+        _declared_head_classes_for_path: Any
+        _detect_model_collapse: Any
+        _rebind_trainer_to_bundle: Any
+        _save_model_weights_atomic: Any
+        _refresh_artifact_integrity_metadata: Any
+        _register_active_model: Any
+        trainer: Any
+        _build_retrain_record: Any
 
     def __init__(self, om: Any) -> None:
         self.om = om

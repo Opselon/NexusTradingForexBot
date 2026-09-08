@@ -45,7 +45,18 @@ def _engine_types():
 
 
 class ModelBundleStore:
-    """Bundle load/verify/persist operations (composition root: LiveEngine)."""
+    """Bundle load/verify/persist operations (composition root: LiveEngine).
+
+    UNBOUND-DELEGATION CONTRACT: methods are invoked as
+    ``ModelBundleStore.method(engine, ...)`` — ``self`` IS the LiveEngine.
+    Structural declaration below (mypy only).
+    """
+
+    if TYPE_CHECKING:
+        FEATURE_DIM: int
+        _declared_contract_dim_for_path: Any
+        _declared_head_classes_for_path: Any
+        _bundle_lock: Any
 
     def __init__(self, om: Any) -> None:
         # Composition root pattern: the engine IS the state surface; the

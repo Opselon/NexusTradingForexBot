@@ -23,9 +23,11 @@ from __future__ import annotations
 import typer
 from rich.panel import Panel
 
-from nexus_scalp.cli.app_factory import app
+from nexus_scalp.cli import app_factory
 from nexus_scalp.cli.styling import console
 from nexus_scalp.release import exit_codes as xc
+
+app_factory_app = app_factory.app
 
 risk_app = typer.Typer(
     name="risk", help="Runtime safety state: inspect and explicitly release persisted halts."
@@ -175,4 +177,5 @@ def _refusal_panel(message: str) -> Panel:
     return Panel(f"[red]{message}[/red]", title="Release Refused", border_style="red")
 
 
+app = app_factory_app
 app.add_typer(risk_app)

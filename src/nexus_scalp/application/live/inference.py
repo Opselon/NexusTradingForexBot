@@ -15,7 +15,7 @@ owns the INFERENCE LOGIC only. Never blocks the tick loop.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -26,12 +26,30 @@ logger = get_logger("nexus_scalp.application.live.inference")
 
 
 class InferenceService:
-    """Feature assembly + validation + model inference (composition root)."""
+    """Feature assembly + validation + model inference (composition root).
+
+    UNBOUND-DELEGATION CONTRACT: methods are invoked as
+    ``InferenceService.method(engine, ...)`` — ``self`` IS the LiveEngine.
+    Structural declaration of the engine surface below (mypy only).
+    """
+
+    if TYPE_CHECKING:
+        effective_feature_dim: int
+        effective_feature_schema_id: str
+        news_engine: Any
+        _validate_50d_tensor: Any  # classmethod on the engine
+        _build_live_feature_vector: Any
+        emit_incident_telemetry: Any
+        _maybe_build_live_sequence_tensor: Any
+        _bundle_lock: Any
+        _bundle: Any
+        _inference_count: int
+        _latency_regression: Any
 
     def __init__(self, om: Any) -> None:
         self.om = om
 
-    def validate_feature_vector(self, features: Sequence[float], context: str) -> list[float]:
+    def validate_feature_vector(self: Any, features: Sequence[float], context: str) -> list[float]:
         """Schema-gated validation dispatching to 50D or 70D gate."""
         eff = int(self.effective_feature_dim)
         if eff == 70 and len(features) == 70:
@@ -45,7 +63,7 @@ class InferenceService:
             )
         return self.__class__._validate_50d_tensor(features, context=context)
 
-    def build_live_feature_vector(self, fv) -> tuple[list[float], dict[str, float]]:
+    def build_live_feature_vector(self: Any, fv) -> tuple[list[float], dict[str, float]]:
         """Assembles the canonical live tensor (50D or 70D) for this tick.
 
         50D CHAMPION (scalp_v1/50D): returns the 50D vector; liquidity is

@@ -63,7 +63,7 @@ def bootstrap_mean_ci(
     resamples: int,
     confidence_level: float,
     seed: int,
-) -> dict[str, float | int]:
+) -> dict[str, float | int | str]:
     """Percentile bootstrap CI for the mean of paired deltas.
 
     Args:

@@ -20,6 +20,7 @@ seed / method) is returned for persistence on the PromotionEvaluation.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from nexus_scalp.model_lifecycle.statistical_promotion_policy import (
     StatisticalPromotionPolicy,
@@ -36,7 +37,7 @@ def evaluate_statistical_gate(
     *,
     policy: StatisticalPromotionPolicy | None = None,
     cfg: object | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Runs the uncertainty-aware statistical gate on a shadow comparison.
 
     Returns the evidence dict:
@@ -155,15 +156,18 @@ def _extract_paired_deltas(comparison: ShadowComparison) -> list[float] | None:
     return out
 
 
-def statistical_evidence_summary(evidence: dict[str, object]) -> dict[str, object]:
+def statistical_evidence_summary(evidence: dict[str, Any]) -> dict[str, Any]:
     """Compact summary for logs/UI (no fabricated numbers)."""
     prov = evidence.get("provenance") or {}
+    assert isinstance(prov, dict)
+    vetoes = evidence.get("vetoes") or []
+    assert isinstance(vetoes, list)
     return {
         "passed": bool(evidence.get("passed")),
         "sample_count": prov.get("sample_count"),
         "ci_lower": prov.get("ci_lower"),
         "ci_upper": prov.get("ci_upper"),
-        "vetoes": list(evidence.get("vetoes") or []),
+        "vetoes": list(vetoes),
     }
 
 
