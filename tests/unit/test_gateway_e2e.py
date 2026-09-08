@@ -26,6 +26,11 @@ from fastapi.testclient import TestClient
 from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
 from nexus_scalp.gateway.server import app, reset_adapter_for_tests
 
+# AUDIT-B2: tests run in DEMO mode with the explicit defaults opt-in.
+import os as _os
+
+_os.environ.setdefault("NSE_GATEWAY_ALLOW_DEFAULTS", "1")
+
 DEFAULT_KEY = "default_local_key"
 DEFAULT_SECRET = "default_local_secret"
 

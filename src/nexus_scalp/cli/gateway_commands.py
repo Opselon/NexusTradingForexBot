@@ -148,8 +148,11 @@ def gateway_status(
     import urllib.error
     import urllib.request
 
-    api_key = os.environ.get("NSE_GATEWAY_API_KEY", "default_local_key")
-    secret = os.environ.get("NSE_GATEWAY_SECRET", "default_local_secret")
+    # AUDIT-B2: the status probe never invents default credentials. If the
+    # operator has not provisioned secrets we probe the public /health only
+    # and report the HMAC status as SKIPPED instead of guessing.
+    api_key = os.environ.get("NSE_GATEWAY_API_KEY", "").strip()
+    secret = os.environ.get("NSE_GATEWAY_SECRET", "").strip()
     # Probe via the same HMAC contract the client uses (PING) + fallback to /health
     base = url.rstrip("/")
 
@@ -173,30 +176,34 @@ def gateway_status(
     except Exception:
         health = None
 
-    # 2) Try authenticated PING
+    # 2) Try authenticated PING (skipped when secrets are not provisioned —
+    # AUDIT-B2: no default-credential guessing from the CLI).
     ping_ok = False
     ping_body = json.dumps({"action": "PING", "payload": {}}).encode()
     ping_err: str | None = None
-    try:
-        req = urllib.request.Request(
-            f"{base}/api/v1/execute",
-            data=ping_body,
-            headers=_hmac_headers(ping_body),
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8") or "{}")
-            ping_ok = data.get("status") == "OK"
-            if not ping_ok:
-                ping_err = str(data.get("message") or data)
-    except urllib.error.HTTPError as exc:
+    if not api_key or not secret:
+        ping_err = "SKIPPED: NSE_GATEWAY_API_KEY/NSE_GATEWAY_SECRET not set"
+    else:
         try:
-            body = exc.read().decode("utf-8")
-            ping_err = f"HTTP {exc.code}: {body[:200]}"
-        except Exception:
-            ping_err = f"HTTP {exc.code}"
-    except Exception as exc:
-        ping_err = str(exc)[:300]
+            req = urllib.request.Request(
+                f"{base}/api/v1/execute",
+                data=ping_body,
+                headers=_hmac_headers(ping_body),
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+                ping_ok = data.get("status") == "OK"
+                if not ping_ok:
+                    ping_err = str(data.get("message") or data)
+        except urllib.error.HTTPError as exc:
+            try:
+                body = exc.read().decode("utf-8")
+                ping_err = f"HTTP {exc.code}: {body[:200]}"
+            except Exception:
+                ping_err = f"HTTP {exc.code}"
+        except Exception as exc:
+            ping_err = str(exc)[:300]
 
     ok = bool(ping_ok)
     result: dict[str, Any] = {
