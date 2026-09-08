@@ -25,6 +25,10 @@ for display, not a secret.
 from __future__ import annotations
 
 import contextlib
+import logging
+import math
+import os
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -41,6 +45,88 @@ from typing import Any
 # is configurable and defaults to the verified +3h (180 min) of this broker.
 BROKER_SERVER_UTC_OFFSET_MINUTES: int = 180
 
+# Runtime override (audit G1): env var read on EVERY accessor call, so ops can
+# re-point the offset without touching code. Validated int 0..1440 inclusive;
+# an invalid value keeps the default and logs ONE WARNING per bad read.
+BROKER_SERVER_UTC_OFFSET_MINUTES_ENV = "NSE_BROKER_SERVER_UTC_OFFSET_MINUTES"
+_BROKER_OFFSET_RE = re.compile(r"^[+-]?\d+$")
+
+_logger = logging.getLogger(__name__)
+
+
+def get_broker_server_utc_offset_minutes() -> int:
+    """Effective broker server-UTC offset in minutes (runtime configurable).
+
+    Precedence: env NSE_BROKER_SERVER_UTC_OFFSET_MINUTES (validated int in
+    0..1440) > module default BROKER_SERVER_UTC_OFFSET_MINUTES (180). An
+    invalid env value (non-integer, or out of range) is ignored: the default
+    applies and one WARNING is logged per offending read. With no env set the
+    result is byte-identical to the pre-G1 constant read.
+    """
+    raw = os.environ.get(BROKER_SERVER_UTC_OFFSET_MINUTES_ENV)
+    if raw is None:
+        return BROKER_SERVER_UTC_OFFSET_MINUTES
+    if not _BROKER_OFFSET_RE.match(raw):
+        _logger.warning(
+            "BROKER_OFFSET_INVALID_ENV %s=%r is not an integer; "
+            "keeping default %d min",
+            BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
+            raw,
+            BROKER_SERVER_UTC_OFFSET_MINUTES,
+        )
+        return BROKER_SERVER_UTC_OFFSET_MINUTES
+    value = int(raw)
+    if not 0 <= value <= 1440:
+        _logger.warning(
+            "BROKER_OFFSET_OUT_OF_RANGE %s=%d outside 0..1440; "
+            "keeping default %d min",
+            BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
+            value,
+            BROKER_SERVER_UTC_OFFSET_MINUTES,
+        )
+        return BROKER_SERVER_UTC_OFFSET_MINUTES
+    return value
+
+
+def detect_server_utc_offset_minutes(
+    terminal_now_utc: datetime, server_epoch_now: float | int
+) -> int:
+    """Derive the broker server-UTC offset from two known points (PURE).
+
+    Contract (audit G1 detection helper; NOT wired into the live engine):
+      * terminal_now_utc  - the terminal-reported server wall clock rendered
+        as if it were UTC, e.g. from a terminal_info()/server-clock read
+        (naive or UTC-tagged; naive is treated as UTC).
+      * server_epoch_now  - the numeric tick/bar epoch observed at (about)
+        the same instant, i.e. MT5's server-local seconds-since-epoch.
+    Returns the offset in minutes such that ``server_epoch - offset*60``
+    reconstructs real UTC; clamped to 0..1440 to match the env-override
+    validation range. No MT5 imports, no I/O.
+    """
+    if terminal_now_utc.tzinfo is None:
+        ref_epoch = terminal_now_utc.replace(tzinfo=UTC).timestamp()
+    else:
+        ref_epoch = terminal_now_utc.timestamp()
+    # MT5 server-local epoch = real-UTC epoch + offset seconds.
+    offset_sec = float(server_epoch_now) - ref_epoch
+    return max(0, min(1440, round(offset_sec / 60.0)))
+
+
+def classify_offset_mismatch(
+    expected_minutes: int, detected_minutes: int, tolerance_minutes: int = 60
+) -> str:
+    """Compare an expected vs detected server offset (PURE, alert helper).
+
+    Returns 'OK' when |expected - detected| <= tolerance_minutes (inclusive),
+    else 'MISMATCH'. Operators/engine may call this post-detection; not wired
+    into the tick path.
+    """
+    return (
+        "OK"
+        if abs(int(expected_minutes) - int(detected_minutes)) <= int(tolerance_minutes)
+        else "MISMATCH"
+    )
+
 
 def broker_epoch_to_utc(epoch: float | int | None) -> datetime | None:
     """Broker terminal epoch (server-local seconds) -> real UTC datetime.
@@ -49,7 +135,9 @@ def broker_epoch_to_utc(epoch: float | int | None) -> datetime | None:
     Converting them straight as UTC is the single biggest timestamp bug on
     this stack (charts 3h in the future, staleness detection permanently
     blind, news windows skewed). Subtract the configured server offset before
-    stamping as UTC. Returns None for None / garbage.
+    stamping as UTC. Returns None for None / garbage. The offset comes from
+    get_broker_server_utc_offset_minutes() (env-overridable, audit G1);
+    with no env set this is byte-identical to the old constant read.
     """
     if epoch is None:
         return None
@@ -57,12 +145,12 @@ def broker_epoch_to_utc(epoch: float | int | None) -> datetime | None:
         epoch = float(epoch)
     except (TypeError, ValueError):
         return None
-    import math
-
     if math.isnan(epoch) or math.isinf(epoch):
         return None
     try:
-        return datetime.fromtimestamp(epoch - BROKER_SERVER_UTC_OFFSET_MINUTES * 60, tz=UTC)
+        return datetime.fromtimestamp(
+            epoch - get_broker_server_utc_offset_minutes() * 60, tz=UTC
+        )
     except (OverflowError, OSError, ValueError):
         return None
 
