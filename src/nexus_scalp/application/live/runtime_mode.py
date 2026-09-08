@@ -38,12 +38,29 @@ logger = get_logger("nexus_scalp.application.live.runtime_mode")
 
 
 class RuntimeModeService:
-    """Operator mode transitions (composition root: LiveEngine)."""
+    """Operator mode transitions (composition root: LiveEngine).
+
+    UNBOUND-DELEGATION CONTRACT (seam L13): methods are invoked as
+    ``RuntimeModeService.method(engine, ...)`` — ``self`` IS the
+    LiveEngine instance; attribute access resolves against the engine.
+    The structural declaration below gives mypy the engine surface these
+    methods touch (no circular import at runtime).
+    """
+
+    if TYPE_CHECKING:
+        config: Any  # AppConfig (engine.config)
+        adapter: Any  # IMT5Port (engine.adapter)
+        order_manager: Any  # OrderLifecycleManager (engine.order_manager)
+        _mode_override: ExecutionMode | None
+        _runtime_mode: ExecutionMode | None
+
+        def _invalidate_cross_mode_state(self, *args: Any, **kwargs: Any) -> None: ...
+        def _update_runtime_mode(self, *args: Any, **kwargs: Any) -> None: ...
 
     def __init__(self, om: Any) -> None:
         self.om = om
 
-    def set_execution_mode(self, mode: ExecutionMode, *, source: str = "WEB_UI") -> dict:
+    def set_execution_mode(self: Any, mode: ExecutionMode, *, source: str = "WEB_UI") -> dict:
         """BUG-148: HOT execution-mode switch (operator authority, UI + CLI).
 
         Records the explicit operator choice (beats any persisted value for
@@ -152,7 +169,9 @@ class RuntimeModeService:
             "runtime_mode": self._runtime_mode,
         }
 
-    def invalidate_cross_mode_state(self, old_mode: ExecutionMode, new_mode: ExecutionMode) -> None:
+    def invalidate_cross_mode_state(
+        self: Any, old_mode: ExecutionMode, new_mode: ExecutionMode
+    ) -> None:
         """BUG-232: drop PAPER-derived state when leaving simulation (and
         vice versa) so no stale tick/price/proposal can cross the boundary.
 

@@ -30,7 +30,7 @@ from nexus_scalp.cli.dependency_commands import register_dependency_commands
 from nexus_scalp.cli.incident_commands import incidents_app
 from nexus_scalp.release.metadata import PRODUCT_DISPLAY
 
-app = typer.Typer(
+app: typer.Typer = typer.Typer(
     name="nexus",
     help=(
         f"{PRODUCT_DISPLAY} — your trading desk in one command.\n\n"

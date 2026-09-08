@@ -361,7 +361,9 @@ class ShadowComparer:
             policy=statistical_policy,
             cfg=statistical_cfg,
         )
-        statistical_provenance = dict(stat.get("provenance") or {})
+        _prov = stat.get("provenance") or {}
+        assert isinstance(_prov, dict)
+        statistical_provenance = dict(_prov)
         if not stat["passed"]:
             vetoes.extend(str(v) for v in stat["vetoes"])
         else:

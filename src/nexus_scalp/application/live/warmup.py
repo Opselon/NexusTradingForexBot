@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import math
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.observability.logging import get_logger
@@ -34,10 +34,34 @@ logger = get_logger("nexus_scalp.application.live.warmup")
 
 
 class WarmupService:
-    """HTF warmup evaluation + cold-start bootstrap (composition root)."""
+    """HTF warmup evaluation + cold-start bootstrap (composition root).
 
-    def __init__(self, om: Any) -> None:
-        self.om = om
+    UNBOUND-DELEGATION CONTRACT (seam L10): methods here are invoked as
+    ``WarmupService.method(engine, ...)`` — ``self`` IS the LiveEngine
+    instance, not a standalone service. All attribute access therefore
+    resolves against LiveEngine (H1_REQUIRED_BARS, aggregator,
+    feature_engine, warmup_state, ...). The class holds no state of its
+    own.
+    """
+
+    if TYPE_CHECKING:
+        # Structural declaration of the LiveEngine surface these methods
+        # touch, so mypy can type the unbound-delegation seam without a
+        # circular import. Runtime never uses this class object.
+        H1_REQUIRED_BARS: int
+        H4_REQUIRED_BARS: int
+        aggregator: Any
+        feature_engine: Any
+        adapter: Any
+        warmup_state: str
+        _warmup_attempt: int
+        _inference_enabled: bool
+        effective_feature_dim: int
+        effective_feature_schema_id: str
+        _rolling_feature_records: list
+        _warm_liquidity_from_bars: Any
+        _build_retrain_record: Any
+        signal_policy: Any
 
     def evaluate_warmup_readiness(self, symbol: str, h1_bars: list, h4_bars: list) -> bool:
         """

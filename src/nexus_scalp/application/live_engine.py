@@ -1627,11 +1627,11 @@ class LiveEngine:
 
         return ChampionSync.evaluate_champion_registry_sync(self, *args, **kwargs)
 
-    def _sync_champion_registry_state(self, *args, **kwargs) -> dict:
+    def _sync_champion_registry_state(self, *args, **kwargs) -> None:
         """Delegate: registry truth sync (owned by ChampionSync, L11)."""
         from nexus_scalp.application.live.champion_sync import ChampionSync
 
-        return ChampionSync.sync_champion_registry_state(self, *args, **kwargs)
+        ChampionSync.sync_champion_registry_state(self, *args, **kwargs)
 
     def _detect_model_collapse(self, *args, **kwargs):
         """Delegate: collapse detection (owned by ModelHealth, L12)."""
@@ -2710,8 +2710,12 @@ class LiveEngine:
         # PHASE 09 HARDENING: if the (possibly rolled-back) model is now in a
         # mono-class collapse, re-initialize it rather than serving the broken
         # baseline until the next rejected fine-tune.
+        # NOTE: the delegate is async (ModelHealth.reinitialize_collapsed_model
+        # performs atomic bundle IO); this caller is async (_bootstrap_train_if_ready)
+        # so we await it directly. A dropped coroutine here would silently skip
+        # collapse recovery while the log claimed the hardening ran.
         if self._bundle is not None:
-            self._reinitialize_collapsed_model()
+            await self._reinitialize_collapsed_model()
 
     # -------------------------
     # Runtime configuration (hot reload)

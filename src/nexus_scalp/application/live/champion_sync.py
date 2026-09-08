@@ -32,7 +32,27 @@ logger = get_logger("nexus_scalp.application.live.champion_sync")
 
 
 class ChampionSync:
-    """Champion-registry truth sync (composition root: LiveEngine)."""
+    """Champion-registry truth sync (composition root: LiveEngine).
+
+    UNBOUND-DELEGATION CONTRACT: methods are invoked as
+    ``ChampionSync.method(engine, ...)`` — ``self`` IS the LiveEngine.
+    The structural declaration below declares the engine surface these
+    methods touch so mypy can type the seam (no runtime import cycle).
+    """
+
+    if TYPE_CHECKING:
+        governance_store: Any
+        champion_manager: Any
+        audit: Any
+        model_registry: Any
+        config: Any
+        FEATURE_SCHEMA_ID: str
+        FEATURE_DIM: int
+        runtime_config: Any
+        _bundle_lock: Any
+        _active_model_registered: bool
+        trainer: Any
+        _rolling_feature_records: list
 
     # Stateless mixin (caller contract): this class is never constructed.
     # LiveEngine invokes these methods UNBOUND with itself as the state
@@ -95,7 +115,7 @@ class ChampionSync:
             "demote_stale_to": ModelStatus.ARCHIVED.value,
         }
 
-    def sync_champion_registry_state(self) -> None:
+    def sync_champion_registry_state(self: Any) -> None:
         """Makes the registry truthful about the CURRENT Champion (spec 3)."""
         try:
             if self.governance_store is None:
