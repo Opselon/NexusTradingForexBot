@@ -216,8 +216,24 @@ CONTRACT_MUTATIONS: list[dict[str, str]] = [
         "id": "MUT-SHADOW-BOUNDARY",
         "desc": "SHADOW observation-only boundary removed (shadow may execute)",
         "target": "src/nexus_scalp/application/live/decision_executor.py",
-        "anchor": "            self.om.om.config.execution.mode == ExecutionMode.SHADOW\n            and policy_decision.action != ActionType.NO_TRADE\n        ):",
-        "replacement": "            False\n            and policy_decision.action != ActionType.NO_TRADE\n        ):",
+        # Anchor must match the file EXACTLY (ruff format moves indent).
+        # Current file (decision_executor.py:59-62):
+        #   if (
+        #       self.om.config.execution.mode == ExecutionMode.SHADOW
+        #       and policy_decision.action != ActionType.NO_TRADE
+        #   ):
+        "anchor": (
+            "        if (\n"
+            "            self.om.config.execution.mode == ExecutionMode.SHADOW\n"
+            "            and policy_decision.action != ActionType.NO_TRADE\n"
+            "        ):"
+        ),
+        "replacement": (
+            "        if (\n"
+            "            False\n"
+            "            and policy_decision.action != ActionType.NO_TRADE\n"
+            "        ):"
+        ),
         "battery": "tests/unit/test_mutation_contract_guard.py",
     },
     {
