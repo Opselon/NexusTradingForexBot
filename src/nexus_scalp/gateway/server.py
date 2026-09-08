@@ -54,9 +54,47 @@ _allow_live: bool = False
 
 
 def _expected_keys() -> tuple[str, str]:
-    return (
-        os.environ.get(SECRET_ENV_API_KEY, DEFAULT_API_KEY),
-        os.environ.get(SECRET_ENV_SECRET, DEFAULT_SECRET),
+    """Resolves gateway credentials.
+
+    AUDIT-B2: the well-known defaults ("default_local_key" /
+    "default_local_secret") are now ONLY accepted when the engine is
+    explicitly running against a Demo/Paper account
+    (NSE_GATEWAY_ALLOW_DEFAULTS=1 set by the operator, or allow_live=False
+    via set_allow_live). For a LIVE-allowed gateway the operator MUST
+    provision real secrets via env or the secure secret store — a gateway
+    whose HMAC secret is publicly known is an unauthenticated order
+    execution endpoint on the broker.
+    """
+    env_key = os.environ.get(SECRET_ENV_API_KEY, "").strip()
+    env_secret = os.environ.get(SECRET_ENV_SECRET, "").strip()
+
+    if env_key and env_secret:
+        return env_key, env_secret
+
+    # No env secrets: consult the secure secret store (DPAPI-backed on
+    # Windows) before falling back to defaults.
+    try:
+        from nexus_scalp.settings.secret_store import SecureSecretStore
+
+        store = SecureSecretStore()
+        s_key = store.get_secret("gateway_api_key")
+        s_secret = store.get_secret("gateway_secret")
+        if s_key and s_secret:
+            return s_key.strip(), s_secret.strip()
+    except Exception:
+        pass
+
+    allow_defaults = (
+        os.environ.get("NSE_GATEWAY_ALLOW_DEFAULTS", "").strip() == "1"
+        and not _allow_live
+    )
+    if allow_defaults:
+        return DEFAULT_API_KEY, DEFAULT_SECRET
+
+    raise RuntimeError(
+        "GATEWAY SECRETS REQUIRED: set NSE_GATEWAY_API_KEY and "
+        "NSE_GATEWAY_SECRET (env or secure secret store). Defaults are "
+        "refused for LIVE-allowed gateways (audit B2, fail-closed)."
     )
 
 
