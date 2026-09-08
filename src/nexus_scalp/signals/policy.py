@@ -209,6 +209,12 @@ class SignalPolicy:
         target_entry_price = current_tick.ask
         proposed_action = ActionType.NO_TRADE
 
+        # TASK-AUDREV-C4 (audit rev2): resolve the expected live-ticket identity
+        # ONCE per evaluate call from the runtime context — symbol from the tick
+        # being evaluated, magic from the configured execution magic. Feeds every
+        # live-ticket match site below and the decision-evidence dicts.
+        expected_symbol, expected_magic = self._expected_live_ticket_identity(current_tick)
+
         raw_atr = getattr(feature_vector, "atr_m1", 1.50)
         atr = max(self._sanitize_float(raw_atr, 1.50), 0.50)
         current_spread = round(max(0.0, current_tick.ask - current_tick.bid), 2)
@@ -225,6 +231,11 @@ class SignalPolicy:
             live_tickets,
             held_position_dirs,
         ) = self._get_active_tickets_info(order_manager)
+
+        # TASK-AUDREV-C4 (audit rev2): remember the tick this evaluation is
+        # running for so direct calls to the ticket-info helper (replay/
+        # diagnostics) resolve the same identity as the hot path.
+        self._c4_last_identity_tick = current_tick
 
         # Guard against construction paths that bypass __init__: these
         # attributes must exist before the pending-order lock below reads them.
@@ -300,6 +311,8 @@ class SignalPolicy:
             atr,
             completed_bars,
             now,
+            expected_symbol,
+            expected_magic,
         )
         if exposure_proposal is not None:
             return exposure_proposal
@@ -827,6 +840,11 @@ class SignalPolicy:
                     else None
                 ),
                 "spread_session_percentile": float(self.spread_session_percentile),
+                # TASK-AUDREV-C4 (audit rev2) evidence: the live-ticket
+                # identity this decision matched against — tick symbol +
+                # configured execution magic (observability only, INV-018).
+                "expected_symbol": expected_symbol,
+                "expected_magic": int(expected_magic),
             }
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
@@ -1065,7 +1083,9 @@ class SignalPolicy:
             for ticket_info in live_tickets:
                 t_symbol = ticket_info.get("symbol")
                 t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
-                if t_symbol == "XAUUSD" and t_magic == 888101:
+                # TASK-AUDREV-C4: match the runtime-resolved expected identity
+                # (tick symbol + configured execution magic), not a hardcode.
+                if t_symbol == expected_symbol and t_magic == expected_magic:
                     has_any_live_order = True
                     break
 
@@ -1090,7 +1110,9 @@ class SignalPolicy:
                     t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
                     t_price = ticket_info.get("price")
 
-                    if t_symbol == "XAUUSD" and t_magic == 888101 and t_price is not None:
+                    # TASK-AUDREV-C4: runtime-resolved expected identity
+                    # (tick symbol + configured execution magic).
+                    if t_symbol == expected_symbol and t_magic == expected_magic and t_price is not None:
                         price_dist = abs(target_entry_price - t_price)
                         threshold = 0.50  # minimum distance threshold is $0.50
                         if price_dist < threshold:
@@ -1281,6 +1303,11 @@ class SignalPolicy:
                         else None
                     ),
                     "spread_session_percentile": float(self.spread_session_percentile),
+                    # TASK-AUDREV-C4 (audit rev2) evidence: the live-ticket
+                    # identity this decision matched against — tick symbol +
+                    # configured execution magic (observability only, INV-018).
+                    "expected_symbol": expected_symbol,
+                    "expected_magic": int(expected_magic),
                 }
 
                 final_proposal = TradeProposal(
@@ -1633,7 +1660,15 @@ class SignalPolicy:
         atr: float,
         completed_bars: list[Any] | None,
         now: datetime,
+        expected_symbol: str | None = None,
+        expected_magic: int = 888101,
     ) -> TradeProposal | None:
+        # TASK-AUDREV-C4: the exposure gate matches live tickets against the
+        # runtime-resolved expected identity (tick symbol + configured
+        # execution magic). A caller omitting the identity (direct-call
+        # path) re-resolves from the tick being evaluated.
+        if expected_symbol is None:
+            expected_symbol, expected_magic = self._expected_live_ticket_identity(current_tick)
         # 2. Strict Single-Position Exposure Gate (MAX_TOTAL_EXPOSURE = 1)
         # Total of Active Open Positions + Active Pending Orders MUST NOT exceed 1.
         if total_exposure >= MAX_TOTAL_EXPOSURE:
@@ -1644,7 +1679,9 @@ class SignalPolicy:
                     t_symbol = ticket_info.get("symbol")
                     t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
                     t_price = ticket_info.get("price")
-                    if t_symbol == "XAUUSD" and t_magic == 888101 and t_price is not None:
+                    # TASK-AUDREV-C4: runtime-resolved expected identity
+                    # (tick symbol + configured execution magic).
+                    if t_symbol == expected_symbol and t_magic == expected_magic and t_price is not None:
                         if abs(target_entry_price - t_price) < 0.50:
                             is_same_level = True
                             break
@@ -1730,8 +1767,47 @@ class SignalPolicy:
                 )
         return None
 
+    def _expected_live_ticket_identity(self, current_tick: TickData) -> tuple[str | None, int]:
+        """Resolve the live-ticket identity this evaluation must match.
+
+        TASK-AUDREV-C4 (audit rev2): the previous implementation hardcoded
+        ``t_symbol == "XAUUSD" and t_magic == 888101`` at every live-ticket
+        match site, which made the policy structurally blind to any live
+        ticket on a second symbol (multi-symbol unlock goal) and to any
+        reconfigured execution magic. The lock is purely in the policy layer
+        (nse-cli dataset tooling is already symbol-parameterized).
+
+        Resolution (evaluated once per evaluate call):
+          * symbol  = the symbol of the tick being evaluated
+            (``current_tick.symbol``) — with the historical ``"XAUUSD"``
+            literal as the documented fallback so legacy/stub ticks without
+            a symbol behave exactly as before;
+          * magic   = the configured execution magic, read via robust
+            getattr chains over ``self.algo_config`` /
+            ``self.algo_config.execution`` (AlgoConfig carries no execution
+            section of its own; AppConfig does) with the ExecutionConfig
+            default ``888101`` as the documented fallback.
+
+        With the default configuration (tick symbol ``XAUUSD``, magic
+        ``888101``) the resolved pair is identical to the old literals, so
+        matching semantics are byte-identical for the configured path.
+        """
+        symbol = getattr(current_tick, "symbol", None) or "XAUUSD"
+        magic = int(
+            getattr(
+                getattr(getattr(self, "algo_config", None), "execution", None),
+                "magic_number",
+                888101,
+            )
+            or 888101
+        )
+        return symbol, magic
+
     def _get_active_tickets_info(
-        self, order_manager: Any
+        self,
+        order_manager: Any,
+        expected_symbol: str | None = None,
+        expected_magic: int = 888101,
     ) -> tuple[int, int, float | None, int | None, list[Any], dict[int, str]]:
         active_positions_count = 0
         active_pending_count = 0
@@ -1746,7 +1822,20 @@ class SignalPolicy:
                 t_symbol = ticket_info.get("symbol")
                 t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
                 t_type = ticket_info.get("type")
-                if t_symbol == "XAUUSD" and t_magic == 888101:
+                # TASK-AUDREV-C4: expected identity is passed by evaluate_probabilities
+                # (resolved once per call — see _expected_live_ticket_identity). When a
+                # caller omits it (historical direct-call path, e.g. replay harnesses),
+                # resolve from the LAST evaluation's tick when known; otherwise fall
+                # back to the configured-symbol defaults (XAUUSD/888101), which keeps
+                # direct-call behavior equivalent to the pre-C4 hardcode for the
+                # default configuration.
+                if expected_symbol is None:
+                    last_tick = getattr(self, "_c4_last_identity_tick", None)
+                    if last_tick is not None:
+                        expected_symbol, expected_magic = self._expected_live_ticket_identity(last_tick)
+                    else:
+                        expected_symbol = "XAUUSD"
+                if t_symbol == expected_symbol and t_magic == expected_magic:
                     if t_type == "POSITION":
                         active_positions_count += 1
                         t_ticket = ticket_info.get("ticket")
