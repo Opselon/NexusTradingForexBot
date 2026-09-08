@@ -38,10 +38,7 @@ import torch
 
 from nexus_scalp.accounting import AccountingCore, AccountingWorker
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.candle_intelligence import (
-    CandleIntelligenceConfig,
-    CandleIntelligenceEngine,
-)
+from nexus_scalp.candle_intelligence import CandleIntelligenceEngine
 
 # RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
 # Consumers read the current immutable snapshot; live.yaml is bootstrap-only.
@@ -916,12 +913,25 @@ class LiveEngine:
             )
 
         # BUG-061: local candle-intelligence subsystem (candle-close gate).
-        # Isolated DB (candle_intel.db); feeds decisions for entry/hold/fast-exit.
-        try:
-            self.candle_intel = CandleIntelligenceEngine(CandleIntelligenceConfig(enabled=True))
-        except Exception as ci_err:
+        # Isolated DB (candle_intel.db); H5 (audit rev2): the construction now
+        # HONORS AppConfig.candle_intel — the 2026-09-07 Phase-3 decision doc
+        # disabled this subsystem (enabled=False default, zero consumers,
+        # 33.5k orphan rows/21d), but this site hardcoded enabled=True and
+        # defeated the ruling. With no explicit config the subsystem stays
+        # OFF; re-enable via candle_intel.enabled=true.
+        _ci_cfg = getattr(self.config, "candle_intel", None)
+        if _ci_cfg is not None and getattr(_ci_cfg, "enabled", False):
+            try:
+                self.candle_intel = CandleIntelligenceEngine(_ci_cfg)
+            except Exception as ci_err:
+                self.candle_intel = None
+                logger.error("[CANDLE_INTEL] init failed (isolated)", error=str(ci_err))
+        else:
             self.candle_intel = None
-            logger.error("[CANDLE_INTEL] init failed (isolated)", error=str(ci_err))
+            logger.info(
+                "[CANDLE_INTEL] disabled (config.candle_intel absent or enabled=false; "
+                "H5 audit rev2)"
+            )
         self._last_candle_decision: Any = None
 
         # Module 1: Rule Matrix Engine
