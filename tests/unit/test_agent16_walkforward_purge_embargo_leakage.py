@@ -55,6 +55,11 @@ _BASE = dict(
     feature_schema_id="scalp_v3",
     feature_dimension=70,
     realized_r=0.12,
+    # E1-fix aid: no risk_distance -> assess_friction_r falls back to an
+    # absolute per-tick floor (0.01/tick); canonical spread 15 + slip 5
+    # ticks consumes 0.2R per trade, erasing the +0.12R edge and breaking
+    # the test's PRE-baseline-vs-stressed contrast.
+    risk_distance=50.0,
 )
 
 _T0 = datetime(2026, 9, 1, 10, 0, tzinfo=UTC)

@@ -958,6 +958,17 @@ class ResearchPipeline:
                 "n_folds": 3,
                 "purge_seconds": purge_seconds,
                 "embargo_seconds": embargo_seconds,
+                # E1/E2 provenance: WHERE the engine friction bundles came
+                # from (CANONICAL_COSTS / EXPLICIT / PRODUCTION_LIKE_DEFAULT /
+                # FALLBACK_ZERO) — artifact-comparability across calibrations.
+                # getattr: test doubles may substitute engines without the
+                # attribute.
+                "execution_cost_calibration_version": (
+                    self.execution_cost_calibration_version
+                ),
+                "assumptions_provenance": getattr(
+                    self.backtest, "assumptions_provenance", None
+                ),
             },
             result_summary=summary,
             status=status,

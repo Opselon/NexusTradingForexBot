@@ -19,6 +19,8 @@ from nexus_scalp.research.models import (
     ExecutionAssumptions,
     ResearchDataset,
     RobustnessResult,
+    default_research_assumptions,
+    ensure_not_zero_friction,
 )
 
 logger = get_logger("nexus_scalp.research.robustness")
@@ -45,7 +47,12 @@ class RobustnessEngine:
         max_acceptable_deg_r: float = MAX_ACCEPTABLE_DEGRADATION_R,
         scenarios: list[tuple[str, dict[str, float]]] | None = None,
     ) -> None:
-        self.baseline = baseline or ExecutionAssumptions()
+        # E1/E2: canonical-cost default (see walkforward for the contract).
+        if baseline is not None:
+            self.baseline = baseline
+            self.assumptions_provenance = "EXPLICIT"
+        else:
+            self.baseline, self.assumptions_provenance = default_research_assumptions()
         self.max_acceptable_deg_r = float(max_acceptable_deg_r)
         self.scenarios = scenarios if scenarios is not None else STRESS_SCENARIOS
 
@@ -54,7 +61,14 @@ class RobustnessEngine:
         dataset: ResearchDataset,
         strategy_id: str,
         strategy_version: str,
+        allow_zero_friction: bool = False,
     ) -> RobustnessResult:
+        # E1 loud guard: refuse a zero-cost run unless explicitly allowed.
+        ensure_not_zero_friction(
+            self.baseline,
+            allow=allow_zero_friction,
+            context="RobustnessEngine.evaluate",
+        )
         base_bt = compute_backtest(
             dataset.samples,
             strategy_id=strategy_id,

@@ -78,6 +78,88 @@ _INELIGIBLE: frozenset[CandidateLifecycle] = frozenset(
 )
 
 
+class ZeroFrictionError(RuntimeError):
+    """E1 guard: an engine entrypoint was invoked with ZERO-FRICTION assumptions.
+
+    Raised by :func:`ensure_not_zero_friction` when spread_ticks == 0 AND
+    slippage_ticks == 0 (i.e. the run would silently price every fill at zero
+    transaction cost — the audit-E1 defect) and the caller did not pass
+    ``allow=True`` (or the entrypoint's ``allow_zero_friction=True``).
+    """
+
+
+#: Provenance stamps for engine assumptions (E1/E2): 'CANONICAL_COSTS' means
+#: the bundle was derived from configs/execution_assumptions.json;
+#: 'FALLBACK_ZERO' means canonical loading failed and the frozen zero-default
+#: bundle was used (loud WARNING emitted; engine entrypoints then REFUSE to
+#: run it unless explicitly allowed).
+CANONICAL_COSTS_PROVENANCE = "CANONICAL_COSTS"
+FALLBACK_ZERO_PROVENANCE = "FALLBACK_ZERO"
+
+
+def default_research_assumptions() -> tuple[ExecutionAssumptions, str]:
+    """E1/E2: canonical default assumptions for standalone research engines.
+
+    Returns ``(assumptions, provenance)``. Provenance is 'CANONICAL_COSTS'
+    when the canonical artifact (configs/execution_assumptions.json) loads and
+    bridges successfully; otherwise a LOUD warning is emitted and the frozen
+    zero-default ExecutionAssumptions is returned with provenance
+    'FALLBACK_ZERO' — engine entrypoints will refuse to run that bundle
+    (ZeroFrictionError) unless explicitly allowed.
+    """
+    assumptions = ExecutionAssumptions()
+    provenance = FALLBACK_ZERO_PROVENANCE
+    try:
+        from nexus_scalp.configuration.execution_costs import (
+            get_execution_assumptions,
+            to_research_assumptions,
+        )
+
+        assumptions, _cal_version = to_research_assumptions(get_execution_assumptions())
+        provenance = CANONICAL_COSTS_PROVENANCE
+    except Exception as exc:
+        from nexus_scalp.observability.logging import get_logger
+
+        get_logger("nexus_scalp.research.models").warning(
+            "[RESEARCH_ASSUMPTIONS] event=CANONICAL_COSTS_UNAVAILABLE "
+            "provenance=FALLBACK_ZERO engines will refuse zero-friction runs "
+            "unless allow_zero_friction=True; error=%r",
+            exc,
+        )
+    return assumptions, provenance
+
+
+def ensure_not_zero_friction(
+    assumptions: ExecutionAssumptions, *, allow: bool = False, context: str = ""
+) -> None:
+    """E1 loud guard: refuse to RUN a zero-friction backtest unless allowed.
+
+    Zero friction means spread_ticks == 0 AND slippage_ticks == 0 (every fill
+    priced at zero transaction cost). latency_ms is deliberately NOT part of
+    the trigger (latency alone does not change fill prices). ``allow=True``
+    (or an entrypoint's ``allow_zero_friction=True``) is the explicit opt-out
+    for analytical frictionless comparisons.
+    """
+    if assumptions.spread_ticks == 0.0 and assumptions.slippage_ticks == 0.0:
+        if allow:
+            from nexus_scalp.observability.logging import get_logger
+
+            get_logger("nexus_scalp.research.models").warning(
+                "[RESEARCH_ASSUMPTIONS] event=ZERO_FRICTION_ALLOWED %s",
+                context or "(no context)",
+            )
+            return
+        raise ZeroFrictionError(
+            "ZERO-FRICTION run refused (E1 guard): spread_ticks=0 and "
+            "slippage_ticks=0 would silently overstate performance. Pass "
+            "allow=True (engine entrypoint: allow_zero_friction=True) for "
+            "explicit frictionless analytics, or derive assumptions from "
+            "configs/execution_assumptions.json via "
+            "default_research_assumptions()."
+            + (f" Context: {context}" if context else "")
+        )
+
+
 class ExecutionAssumptions(BaseModel):
     """Friction assumptions used by the backtest (spec 12 / 13)."""
 

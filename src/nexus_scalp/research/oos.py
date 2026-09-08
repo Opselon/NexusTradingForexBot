@@ -16,6 +16,8 @@ from nexus_scalp.research.models import (
     ExecutionAssumptions,
     OOSResult,
     ResearchDataset,
+    default_research_assumptions,
+    ensure_not_zero_friction,
 )
 from nexus_scalp.research.splitting import (
     DEFAULT_EMBARGO_SECONDS,
@@ -42,7 +44,12 @@ class OOSGate:
     ) -> None:
         self.min_oos_expectancy_r = float(min_oos_expectancy_r)
         self.max_degradation = float(max_degradation)
-        self.assumptions = assumptions or ExecutionAssumptions()
+        # E1/E2: canonical-cost default (see walkforward for the contract).
+        if assumptions is not None:
+            self.assumptions = assumptions
+            self.assumptions_provenance = "EXPLICIT"
+        else:
+            self.assumptions, self.assumptions_provenance = default_research_assumptions()
 
     def evaluate(
         self,
@@ -54,7 +61,14 @@ class OOSGate:
         purge_seconds: float = DEFAULT_PURGE_SECONDS,
         embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         context_contract: dict | None = None,
+        allow_zero_friction: bool = False,
     ) -> OOSResult:
+        # E1 loud guard: refuse a zero-cost run unless explicitly allowed.
+        ensure_not_zero_friction(
+            self.assumptions,
+            allow=allow_zero_friction,
+            context="OOSGate.evaluate",
+        )
         # PHASE 26 (strategy-aware validation): scope the evaluation
         # population to the strategy's declared market conditions when a
         # contract is supplied. Thresholds are untouched; only the sample
