@@ -371,7 +371,15 @@ class TickPipeline:
         # and guarantees a UI save is reflected on the very next
         # evaluation without restarting or reading the DB per tick.
         self.om._sync_runtime_config()
-        is_new_bar = self.om.aggregator.process_tick(tick)
+        # BUG-253 (2026-09-08 live forensics): the tick was ALREADY processed by
+        # the caller (_process_tick_pipeline -> self.aggregator.process_tick).
+        # This second call consumed the SAME tick inside the already-advanced
+        # forming bar, so it always returned None and OVERWROTE the caller's
+        # is_new_bar parameter: _on_new_bar (radar / retrain records / MSLIE)
+        # never fired on bar close and the liquidity governor never re-warmed
+        # on new bars, so its snapshot aged past the causal window (STALE at
+        # 6 min) -> permanent 70D inference block. The caller's is_new_bar
+        # parameter is authoritative; do not re-process the tick here.
 
         # cap bars (O(1) amortized)
         if len(self.om.aggregator._completed_bars) > 4000:
@@ -403,6 +411,24 @@ class TickPipeline:
                     completed_bars,
                     atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
                 )
+            else:
+                # BUG-253 safety net: if the retained snapshot aged into STALE
+                # (compute kept failing while bars were unhealthy), retry the
+                # compute on a bounded 15s cadence — NEVER per tick (compute
+                # is ~1.6-2.3s on the full 20k window; per-tick retry would
+                # stall the loop, the exact BUG-169 regression class).
+                _gov_stale = (
+                    self.om.liquidity_governor is not None
+                    and self.om.liquidity_governor.causal_state() == "STALE"
+                )
+                if _gov_stale and (
+                    time.time() - getattr(self.om, "_liq_stale_retry_at", 0.0)
+                ) >= 15.0:
+                    self.om._liq_stale_retry_at = time.time()
+                    self.om._warm_liquidity_from_bars(
+                        completed_bars,
+                        atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                    )
 
         if is_new_bar and completed_bars:
             self.om._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
@@ -455,7 +481,16 @@ class TickPipeline:
         # When inference is blocked by the warmup gate we still manage
         # positions (protective stops must never pause) but with probs=None.
         probs_for_mgmt = None
-        if self.om._inference_enabled and self.om.warmup_state == "READY":
+        # BUG-253: gate inference on a VALID liquidity snapshot when serving a
+        # 70D contract, so a stale/missing snapshot degrades to probs=None
+        # (positions still managed, protective stops never pause) instead of
+        # raising every tick and feeding the hot-path circuit breaker. 50D
+        # contracts are unaffected (assembly never touches the governor).
+        _liq_ok = True
+        if int(getattr(self.om, "effective_feature_dim", 50) or 50) == 70:
+            _gov = getattr(self.om, "liquidity_governor", None)
+            _liq_ok = _gov is not None and _gov.causal_state() == "VALID"
+        if self.om._inference_enabled and self.om.warmup_state == "READY" and _liq_ok:
             try:
                 probs_for_mgmt = self.om._infer_probabilities(fv=fv)
             except Exception as infer_err:
@@ -531,10 +566,19 @@ class TickPipeline:
                 return False, fv, proposal, None, regime_state, active_positions, current_pos_count
         # Inference (already computed for position management above; reuse it so the
         # model runs once per tick)
+        # BUG-253: the same _liq_ok gate applies here. This is the second call
+        # site that re-fired inference unguarded when probs_for_mgmt was None
+        # (production 2026-09-08 19:15:25: the .941 warning is the gated
+        # in-trade attempt, the .943 warning is THIS block raising again one
+        # tick-slot later and aborting the pipeline into the hot-path
+        # circuit breaker). Expected degraded states (liquidity STALE) must
+        # yield probs=None, never a raise; genuine model defects still
+        # propagate and feed the breaker (fail-loud preserved).
         if (
             probs_for_mgmt is None
             and self.om._inference_enabled
             and self.om.warmup_state == "READY"
+            and _liq_ok
         ):
             probs = self.om._infer_probabilities(fv=fv)
         else:
