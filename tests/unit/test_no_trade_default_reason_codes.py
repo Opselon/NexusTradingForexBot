@@ -278,7 +278,13 @@ def test_zone_quality_gate_rule_code_unchanged() -> None:
     rule-path codes are not touched by the default-branch rename."""
     policy = SignalPolicy()
     proposal = policy.evaluate_probabilities(
-        probabilities=torch.tensor([[0.10, 0.30, 0.55, 0.05]]),
+        # FIXTURE DRIFT FIX (audit wave 2026-09-08): the old weak-sweep masses
+        # ([0.10, 0.30, 0.55, 0.05]) die at the CONFIDENCE gate (0.32 < 0.35)
+        # before the zone-quality gate is reachable, so the assertion could
+        # never see ZONE_QUALITY_BELOW_THRESHOLD. Mirror the neighbor fixture
+        # strength (:266) on the SELL side so the candidate reaches the zone
+        # gate this test exists to pin.
+        probabilities=torch.tensor([[0.05, 0.30, 0.45, 0.20]]),
         current_tick=_tick(),
         feature_vector=_feature_vector(liquidity_sweep_signal=1),
         regime_state=None,
