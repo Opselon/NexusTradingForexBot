@@ -2254,8 +2254,24 @@ class OrderLifecycleManager:
             if now is not None:
                 duration_sec = (now - entry_time).total_seconds()
             else:
-                now_ref = datetime.now(UTC) if entry_time.tzinfo else datetime.now()
-                duration_sec = (now_ref - entry_time).total_seconds()
+                # G3 (audit rev2): no tick timestamp threaded in — deriving the
+                # age from the host wall clock is what produced corrupted
+                # hold-time penalties on DST/NTP jumps (e.g. "Age: -10781.6s").
+                # Rate-limited loud WARNING + conservative 0.0 (inside the
+                # 60s grace window) instead of a wall-clock-derived age.
+                now_mono = time.monotonic()
+                if (now_mono - getattr(self, "_hold_age_fallback_warned_at", 0.0)) >= 300.0:
+                    self._hold_age_fallback_warned_at = now_mono
+                    logger.warning(
+                        "[POSITION] event=HOLD_AGE_FALLBACK "
+                        "mode=no_tick_timestamp_conservative_zero "
+                        "ticket=%s entry_time_present=%s "
+                        "(tick timestamp missing in management loop; "
+                        "wall-clock age suppressed — G3 audit rev2)",
+                        ticket,
+                        True,
+                    )
+                duration_sec = 0.0
         else:
             duration_sec = 0.0
 
