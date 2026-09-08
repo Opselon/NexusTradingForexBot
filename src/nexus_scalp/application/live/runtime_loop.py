@@ -35,7 +35,6 @@ class RuntimeLoop:
     def __init__(self, om: Any) -> None:
         self.om = om
 
-
     async def run(self) -> None:
         """
         Main tick ingestion loop.

@@ -146,7 +146,9 @@ def infer_dimension(parquet_path: Path, model_meta_path: Path | None = None) -> 
 # ---------------------------------------------------------------------------
 
 
-def _r_from_predictions(y: np.ndarray, pred: np.ndarray, trade_mask: np.ndarray, friction_r: float) -> np.ndarray:
+def _r_from_predictions(
+    y: np.ndarray, pred: np.ndarray, trade_mask: np.ndarray, friction_r: float
+) -> np.ndarray:
     """Triple-barrier 3-class proxy: directional prediction resolved by label.
 
     Correct direction +1R, wrong direction -1R, minus friction. NO_TRADE
@@ -204,10 +206,24 @@ def temporal_windows(n: int, k_folds: int, frac: float) -> list[dict[str, int]]:
     for k in range(1, k_folds + 1):
         train_end = fold_size * k
         test_end = min(n, fold_size * (k + 1))
-        windows.append({"train_start": 0, "train_end": train_end, "test_start": train_end, "test_end": test_end})
+        windows.append(
+            {
+                "train_start": 0,
+                "train_end": train_end,
+                "test_start": train_end,
+                "test_end": test_end,
+            }
+        )
     tail = windows[-1] if windows else {"test_end": n}
     if tail.get("test_end", n) < n:
-        windows.append({"train_start": 0, "train_end": int(n * (1 - frac)), "test_start": int(n * (1 - frac)), "test_end": n})
+        windows.append(
+            {
+                "train_start": 0,
+                "train_end": int(n * (1 - frac)),
+                "test_start": int(n * (1 - frac)),
+                "test_end": n,
+            }
+        )
     return windows
 
 
@@ -236,7 +252,9 @@ def evaluate(
     parquet_path, dataset_id = resolve_dataset(dataset)
     dataset_hash = _sha256_path(parquet_path)
 
-    meta_path = model_path.with_suffix("").with_suffix(".meta.json") if model_path.suffix == ".pt" else None
+    meta_path = (
+        model_path.with_suffix("").with_suffix(".meta.json") if model_path.suffix == ".pt" else None
+    )
     if meta_path is None:
         meta_path = model_path.parent / "model.meta.json"
     dim = infer_dimension(parquet_path, meta_path)
@@ -310,12 +328,16 @@ def evaluate(
         m = (regime_arr == reg) & trade
         m[:holdout_start] = False
         if m.any():
-            per_regime[str(reg)] = _metrics_from_r(_r_from_predictions(y, pred_argmax, m, friction_r))
+            per_regime[str(reg)] = _metrics_from_r(
+                _r_from_predictions(y, pred_argmax, m, friction_r)
+            )
     for ses in sorted(set(sessions)):
         m = (session_arr == ses) & trade
         m[:holdout_start] = False
         if m.any():
-            per_session[str(ses)] = _metrics_from_r(_r_from_predictions(y, pred_argmax, m, friction_r))
+            per_session[str(ses)] = _metrics_from_r(
+                _r_from_predictions(y, pred_argmax, m, friction_r)
+            )
 
     # ---- temporal walk-forward (expanding window, same policy) ------------
     windows = temporal_windows(n, k_folds, TAIL_HOLDOUT_FRACTION)
@@ -384,13 +406,14 @@ def evaluate(
         "walk_forward": {
             "fold_count": len(folds),
             "avg_oos_expectancy_r": round(float(np.mean(fold_exps)) if fold_exps else 0.0, 6),
-            "degradation": round(
-                float(folds[0]["expectancy_r"] - folds[-1]["expectancy_r"]), 6
-            )
+            "degradation": round(float(folds[0]["expectancy_r"] - folds[-1]["expectancy_r"]), 6)
             if len(folds) >= 2 and folds[0]["trades"] and folds[-1]["trades"]
             else 0.0,
         },
-        "stability": {"score": _stability_score(fold_exps), "fold_expectancies": [round(e, 6) for e in fold_exps]},
+        "stability": {
+            "score": _stability_score(fold_exps),
+            "fold_expectancies": [round(e, 6) for e in fold_exps],
+        },
         "cost_assumptions": {"friction_r": friction_r, "sweep": friction_sweep_out},
         "confidence_grid": conf_grid,
         "metrics": headline,

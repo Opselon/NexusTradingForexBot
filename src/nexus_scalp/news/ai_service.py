@@ -356,9 +356,9 @@ _SYSTEM_PROMPT = (
 #: (its own DSL prompt) does NOT identify THIS news prompt; every AI row now
 #: records a news-specific, deterministic identity so drift can be segmented
 #: by prompt generation. Format: news-v2:<16 hex>.
-NEWS_PROMPT_VERSION: str = "news-v2:" + hashlib.sha256(
-    _SYSTEM_PROMPT.encode("utf-8")
-).hexdigest()[:16]
+NEWS_PROMPT_VERSION: str = (
+    "news-v2:" + hashlib.sha256(_SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:16]
+)
 
 
 def _build_user_prompt(article: NewsArticle, local: dict[str, Any]) -> str:

@@ -56,7 +56,9 @@ def _payload_bytes() -> bytes:
     return b"PK\x03\x04 NSE fake payload " * 64
 
 
-def _signed_manifest(signing_key: nacl.signing.SigningKey, payload: bytes, **over: Any) -> dict[str, Any]:
+def _signed_manifest(
+    signing_key: nacl.signing.SigningKey, payload: bytes, **over: Any
+) -> dict[str, Any]:
     manifest = build_manifest(
         version="9.1.0",
         platform="windows",
@@ -191,9 +193,7 @@ def test_sig07_unknown_key_id_rejected(signing_key) -> None:
     # Sign RAW (bypassing sign_manifest's embedded-root round-trip check) to
     # simulate an out-of-repo signer whose key the client does not trust.
     signed = dict(manifest)
-    signed["signature"] = (
-        stranger.sign(canonical_manifest_bytes(manifest)).signature.hex()
-    )
+    signed["signature"] = stranger.sign(canonical_manifest_bytes(manifest)).signature.hex()
     with pytest.raises(UpdateManifestRejectedError) as err:
         verify_manifest_signature(signed)
     assert err.value.reason == "UNKNOWN_KEY"
@@ -288,7 +288,11 @@ def test_sig13_plan_builder_blocks_release_without_signed_manifest(monkeypatch) 
     }
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(release)
     assert plan["status"] == "SECURITY_BLOCKED"
-    assert plan.get("signature_status") in ("MISSING_SIGNATURE", "MANIFEST_MALFORMED", "SIGNATURE_INVALID")
+    assert plan.get("signature_status") in (
+        "MISSING_SIGNATURE",
+        "MANIFEST_MALFORMED",
+        "SIGNATURE_INVALID",
+    )
 
 
 def test_sig14_plan_builder_blocks_tampered_digest(signing_key, monkeypatch) -> None:

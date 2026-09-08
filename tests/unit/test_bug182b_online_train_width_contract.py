@@ -95,9 +95,7 @@ def test_bug182b_retrain_paths_use_effective_cols() -> None:
 
     # Migrated contract (L12): the collapsed-model recovery path lives in
     # ModelHealth and must satisfy the SAME effective-cols invariant.
-    health_path = (
-        REPO / "src" / "nexus_scalp" / "application" / "live" / "model_health.py"
-    )
+    health_path = REPO / "src" / "nexus_scalp" / "application" / "live" / "model_health.py"
     health_src = health_path.read_text(encoding="utf-8")
     assert "def reinitialize_collapsed_model(" in health_src, (
         "collapsed-model recovery moved but ModelHealth.reinitialize_collapsed_model missing"

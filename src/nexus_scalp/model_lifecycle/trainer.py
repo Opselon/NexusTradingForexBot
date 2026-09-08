@@ -149,9 +149,7 @@ class ChallengerTrainer:
                 # quarantines the artifact (production_eligible=False), and
                 # the promotion transaction re-verifies provenance fresh —
                 # this path can never mint a CHAMPION.
-                governance_override=bool(
-                    self.hyperparameters.get("governance_override", True)
-                ),
+                governance_override=bool(self.hyperparameters.get("governance_override", True)),
                 smoke=bool(self.hyperparameters.get("smoke", True)),
             )
             # Staging scaler path: point the trainer's scaler at the candidate

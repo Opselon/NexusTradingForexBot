@@ -9,6 +9,7 @@ Proves the artifact-trust chain end-to-end on the serving path:
   3. a PARTIAL publication (weights replaced, manifest stale / missing) can
      never become the serving bundle — engine construction refuses.
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -74,8 +74,7 @@ def _trade(
 
 def _dataset(n: int = 12) -> ResearchDataset:
     rs = [
-        _trade(i, r=[2.0, -1.0, 0.6, -1.0, 1.4][i % 5], conf=0.6 + (i % 4) * 0.1)
-        for i in range(n)
+        _trade(i, r=[2.0, -1.0, 0.6, -1.0, 1.4][i % 5], conf=0.6 + (i % 4) * 0.1) for i in range(n)
     ]
     return ResearchDataset(dataset_id="ds_parity", samples=rs)
 
@@ -132,9 +131,7 @@ def test_sizing_is_causal_future_trades_cannot_change_earlier_size() -> None:
     early = _trade(0, r=2.0, conf=0.9)
     late_win = _trade(1, r=3.0, conf=0.9)
     late_big_win = _trade(2, r=10.0, conf=0.95)
-    econ = EconomicAssumptions.production_like(
-        swap=SWAP, starting_equity_usd=1_000.0
-    )
+    econ = EconomicAssumptions.production_like(swap=SWAP, starting_equity_usd=1_000.0)
 
     base = compute_sized_economic_pnl([early], econ)
     with_late = compute_sized_economic_pnl([early, late_win], econ)
@@ -213,15 +210,11 @@ def test_mutation_constant_size_backtest_detected() -> None:
     """If sized volumes stop depending on the equity path (constant-size
     regression), the sized P&L can no longer track the equity trajectory."""
     ds = _dataset(12)
-    view = compute_sized_economic_pnl(
-        sorted(ds.samples, key=lambda s: s.decision_timestamp), ECON
-    )
+    view = compute_sized_economic_pnl(sorted(ds.samples, key=lambda s: s.decision_timestamp), ECON)
     # With a 10k account the risk-percent sizing rounds to a stable lot size;
     # the equity-path coupling is proven by scale: 10x the account must move
     # the sized volumes (a constant-size backtest would keep them fixed).
-    big = EconomicAssumptions.production_like(
-        swap=SWAP, starting_equity_usd=START_EQ * 10.0
-    )
+    big = EconomicAssumptions.production_like(swap=SWAP, starting_equity_usd=START_EQ * 10.0)
     view_big = compute_sized_economic_pnl(
         sorted(ds.samples, key=lambda s: s.decision_timestamp), big
     )

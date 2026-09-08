@@ -441,11 +441,7 @@ class LearningCycleStore:
                 "SELECT status, COUNT(*) FROM learning_cycles GROUP BY status;"
             ).fetchall():
                 out["by_status"][str(r[0])] = int(r[1])
-            out["active"] = sum(
-                c
-                for s, c in out["by_status"].items()
-                if s not in TERMINAL_STATES
-            )
+            out["active"] = sum(c for s, c in out["by_status"].items() if s not in TERMINAL_STATES)
             return out
         finally:
             conn.close()

@@ -39,7 +39,6 @@ class WarmupService:
     def __init__(self, om: Any) -> None:
         self.om = om
 
-
     def evaluate_warmup_readiness(self, symbol: str, h1_bars: list, h4_bars: list) -> bool:
         """
         Evaluates HTF bar counts and feature vector validation state to determine if warmup is complete.
@@ -48,18 +47,18 @@ class WarmupService:
         logger.info(
             f"[WARMUP] H1\nrequired_bars={self.H1_REQUIRED_BARS}\navailable_bars={len(h1_bars)}\nstatus={h1_status}"
         )
-    
+
         h4_status = "READY" if len(h4_bars) >= self.H4_REQUIRED_BARS else "INSUFFICIENT"
         logger.info(
             f"[WARMUP] H4\nrequired_bars={self.H4_REQUIRED_BARS}\navailable_bars={len(h4_bars)}\nstatus={h4_status}"
         )
-    
+
         completed_bars = self.aggregator.get_completed_bars()
         htf_fallbacks = 0
         valid_count = 0
         fallback_count = 0
         invalid_count = 0
-    
+
         if completed_bars:
             last_b = completed_bars[-1]
             last_tick = TickData(
@@ -70,7 +69,7 @@ class WarmupService:
                 volume=last_b.tick_volume,
             )
             sample_fv = self.feature_engine.compute_from_bars(completed_bars, last_tick)
-    
+
             # 0.0 is the documented HTF cold-start fallback value (not a real
             # reading); counting fallbacks here quantifies warmup progress.
             if sample_fv.htf_h4_trend == 0.0:
@@ -85,7 +84,7 @@ class WarmupService:
                     "[FEATURE_FALLBACK]\ntimeframe=H1\nfeature=htf_h1_momentum\nreason=INSUFFICIENT_H1_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
                     + self.warmup_state
                 )
-    
+
             x50 = sample_fv.to_tensor_input()
             for val in x50:
                 if math.isnan(val) or math.isinf(val):
@@ -94,9 +93,9 @@ class WarmupService:
                     fallback_count += 1
                 else:
                     valid_count += 1
-    
+
         is_ready = (h1_status == "READY") and (h4_status == "READY") and (htf_fallbacks == 0)
-    
+
         if not is_ready:
             missing_h1 = max(0, self.H1_REQUIRED_BARS - len(h1_bars))
             missing_h4 = max(0, self.H4_REQUIRED_BARS - len(h4_bars))
@@ -104,7 +103,7 @@ class WarmupService:
             missing_cnt = missing_h1 if missing_h1 > 0 else missing_h4
             req_cnt = self.H1_REQUIRED_BARS if missing_h1 > 0 else self.H4_REQUIRED_BARS
             avail_cnt = len(h1_bars) if missing_h1 > 0 else len(h4_bars)
-    
+
             logger.info(
                 f"[WARMUP] WAITING\ntimeframe={missing_tf}\nrequired={req_cnt}\navailable={avail_cnt}\nmissing={missing_cnt}\nattempt={self._warmup_attempt}"
             )
@@ -129,14 +128,13 @@ class WarmupService:
                 f"[WARMUP] COMPLETE\nsymbol={symbol}\nH1={len(h1_bars)}/{self.H1_REQUIRED_BARS}\nH4={len(h4_bars)}/{self.H4_REQUIRED_BARS}\nhtf_fallbacks={htf_fallbacks}\nbase_fallbacks={fallback_count}\nstatus=READY"
             )
             logger.info("[INFERENCE] ENABLED\nreason=HTF_WARMUP_COMPLETE")
-    
-        return is_ready
 
+        return is_ready
 
     async def cold_start_warmup(self, symbol: str) -> None:
         self._warmup_attempt += 1
         logger.info(f"[WARMUP] START\nsymbol={symbol}\nrequired_timeframes=[H1,H4]")
-    
+
         # Non-blocking async fetch of HTF historical bars
         h1_bars = (
             await asyncio.to_thread(
@@ -150,14 +148,14 @@ class WarmupService:
             )
             or []
         )
-    
+
         # Fetch 20000 M1 bars (~14 days) to populate full M1..MN1 aggregations.
         # 20000 covers SMA200 on M1 and gives H1/H4/D1/W1 real resampled history
         # so the technicals card shows values (not Neutral-gaps) on every TF.
         hist_m1_bars = (
             await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", 20000) or []
         )
-    
+
         # RESYNC (BUG-054): reseed the aggregator with the broker-authoritative
         # M1 history instead of blind-appending. After 5-6h downtime the first
         # live tick must CONTINUE the broker's current minute, not mint a
@@ -166,7 +164,7 @@ class WarmupService:
         completed_init = self.aggregator.get_completed_bars()
         if completed_init:
             self._warm_liquidity_from_bars(completed_init, atr=1.5)
-    
+
         completed = self.aggregator.get_completed_bars()
         if len(completed) >= 55:
             last_300 = completed[-300:] if len(completed) > 300 else completed
@@ -197,9 +195,9 @@ class WarmupService:
                 if record is None:
                     continue
                 self._rolling_feature_records.append(record)
-    
+
         self.evaluate_warmup_readiness(symbol, h1_bars, h4_bars)
-    
+
         # Immediately extract and update real SMC overlays to prevent cold-start blank canvas in MT5 mode
         completed_bars = self.aggregator.get_completed_bars()
         if completed_bars and hasattr(self, "server_state") and self.server_state is not None:
@@ -232,4 +230,3 @@ class WarmupService:
                 bars=len(bars_list),
                 last_seeded=last_seeded.timestamp.isoformat() if last_seeded else None,
             )
-

@@ -3660,9 +3660,7 @@ class LiveEngine:
 
         path = Path(artifact_path)
         scaler = Path(str(path) + ".scaler.npz")
-        registry = ModelLifecycleRegistry(
-            audit_repo=self.audit, model_registry=self.model_registry
-        )
+        registry = ModelLifecycleRegistry(audit_repo=self.audit, model_registry=self.model_registry)
         row = registry.get_status(candidate_model_id, candidate_model_id)
         status = str((row or {}).get("lifecycle_status", ""))
         if status not in ("CHALLENGER", "CANDIDATE"):

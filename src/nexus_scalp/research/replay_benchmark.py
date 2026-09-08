@@ -157,9 +157,7 @@ def _metrics_from_run(
     # Confidence statistics from the bounded decision trace (observability).
     trace = result.decision_trace
     all_confs = [float(r.get("confidence", 0.0) or 0.0) for r in trace]
-    trade_confs = [
-        float(r.get("confidence", 0.0) or 0.0) for r in trace if r.get("is_trade")
-    ]
+    trade_confs = [float(r.get("confidence", 0.0) or 0.0) for r in trace if r.get("is_trade")]
     mean_conf_all = sum(all_confs) / len(all_confs) if all_confs else 0.0
     mean_conf_trades = sum(trade_confs) / len(trade_confs) if trade_confs else 0.0
 
@@ -295,9 +293,7 @@ class ReplayCandidateBenchmark:
             raise ValueError(f"ReplayCandidateBenchmark: duplicate candidate names {names}")
         for c in candidates:
             if c.role not in VALID_ROLES:
-                raise ValueError(
-                    f"candidate {c.name!r}: role {c.role!r} not in {VALID_ROLES}"
-                )
+                raise ValueError(f"candidate {c.name!r}: role {c.role!r} not in {VALID_ROLES}")
 
         rid = run_id or f"RBM-{datetime.now(UTC):%Y%m%d%H%M%S}"
         ordered = sorted(events, key=lambda r: r["timestamp"])

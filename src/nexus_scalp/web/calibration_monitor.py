@@ -70,9 +70,7 @@ def calibration_monitor_snapshot(
     serving_fp = _sha16(SERVING_ARTIFACT_PATH)
     artifact_exists = os.path.exists(SERVING_CALIBRATION_PATH)
     artifact_mtime = (
-        datetime.fromtimestamp(
-            os.path.getmtime(SERVING_ARTIFACT_PATH), UTC
-        ).isoformat()
+        datetime.fromtimestamp(os.path.getmtime(SERVING_ARTIFACT_PATH), UTC).isoformat()
         if os.path.exists(SERVING_ARTIFACT_PATH)
         else None
     )
@@ -140,7 +138,11 @@ def calibration_monitor_snapshot(
     }
     collector_status = (
         "COLLECTED"
-        if (artifact_exists and cal_n >= MIN_CALIBRATION_SAMPLES and val_n >= MIN_CALIBRATION_SAMPLES)
+        if (
+            artifact_exists
+            and cal_n >= MIN_CALIBRATION_SAMPLES
+            and val_n >= MIN_CALIBRATION_SAMPLES
+        )
         else "INSUFFICIENT_EVIDENCE"
     )
 

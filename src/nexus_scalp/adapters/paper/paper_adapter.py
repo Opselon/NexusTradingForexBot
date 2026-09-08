@@ -132,9 +132,7 @@ class PaperMT5Adapter(IMT5Port):
         # (fail-closed) — it can never silently degrade to synthetic ticks.
         if replay_source is not None:
             if getattr(replay_source, "source_mode", "") != "REPLAY":
-                raise ValueError(
-                    "replay_source must be a ReplayTickSource (source_mode='REPLAY')"
-                )
+                raise ValueError("replay_source must be a ReplayTickSource (source_mode='REPLAY')")
             self._replay_source: Any | None = replay_source
             self.market_data_mode = "REPLAY"
             self.replay_provenance: dict[str, Any] = replay_source.identity()

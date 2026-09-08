@@ -209,9 +209,7 @@ class DecisionExecutor:
                     )
 
                     if success:
-                        risk_usd = account.equity * (
-                            self.om.config.risk.risk_per_trade_pct / 100.0
-                        )
+                        risk_usd = account.equity * (self.om.config.risk.risk_per_trade_pct / 100.0)
                         with contextlib.suppress(Exception):
                             mapped_order_type = self.om.risk_engine._map_action_to_order_type(
                                 policy_decision.action

@@ -85,8 +85,7 @@ def _expected_keys() -> tuple[str, str]:
         pass
 
     allow_defaults = (
-        os.environ.get("NSE_GATEWAY_ALLOW_DEFAULTS", "").strip() == "1"
-        and not _allow_live
+        os.environ.get("NSE_GATEWAY_ALLOW_DEFAULTS", "").strip() == "1" and not _allow_live
     )
     if allow_defaults:
         return DEFAULT_API_KEY, DEFAULT_SECRET

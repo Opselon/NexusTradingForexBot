@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from nexus_scalp.features.session_time import session_semantics_metadata
 from nexus_scalp.governance.alignment import (
     challenger_input_for,
     news_context_hash,
@@ -42,7 +43,6 @@ from nexus_scalp.governance.models import (
     PromotionState,
 )
 from nexus_scalp.governance.reporting import model_shadow_update_text
-from nexus_scalp.features.session_time import session_semantics_metadata
 
 GOLDEN = Path(__file__).resolve().parents[2] / "tests" / "golden"
 

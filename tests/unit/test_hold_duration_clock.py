@@ -194,7 +194,7 @@ def test_sanity_monotonic_regression_clamped_not_suspect_by_sign(
 
 def test_rejects_naive_datetimes(monkeypatch: pytest.MonkeyPatch) -> None:
     clk, _fake = make_clock(monkeypatch)
-    naive = datetime(2026, 9, 7, 12, 0, 0)  # noqa: DTZ001 - deliberate
+    naive = datetime(2026, 9, 7, 12, 0, 0)
     with pytest.raises(ValueError, match="timezone-aware"):
         clk.register(777, broker_entry_utc=naive)
     with pytest.raises(ValueError, match="timezone-aware"):
@@ -252,4 +252,4 @@ def test_broker_now_requires_aware_datetime(monkeypatch: pytest.MonkeyPatch) -> 
     clk, _fake = make_clock(monkeypatch)
     clk.register(1212, broker_entry_utc=BROKER_ENTRY)
     with pytest.raises(ValueError, match="timezone-aware"):
-        clk.sanity(1212, broker_now_utc=datetime(2026, 9, 7, 12, 0, 0))  # noqa: DTZ001
+        clk.sanity(1212, broker_now_utc=datetime(2026, 9, 7, 12, 0, 0))

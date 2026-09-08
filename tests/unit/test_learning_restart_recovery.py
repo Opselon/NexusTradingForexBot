@@ -7,6 +7,7 @@ after a crash starts a NEW cycle (retry) rather than resurrecting partial
 work; and no code path here can promote (LearningCycleOrchestrator has no
 promotion authority).
 """
+
 from __future__ import annotations
 
 import os
@@ -103,7 +104,14 @@ class TestRestartRecovery:
 
         running = {s for s, targets in ALLOWED_TRANSITIONS.items() if targets}
         running.discard("IDLE")
-        assert running == set(IN_FLIGHT_STATES) | {"TRIGGERED", "DATASET_READY", "TRAINED", "VALIDATED", "PROMOTION_EVALUATION", "PROMOTION_APPROVED"}
+        assert running == set(IN_FLIGHT_STATES) | {
+            "TRIGGERED",
+            "DATASET_READY",
+            "TRAINED",
+            "VALIDATED",
+            "PROMOTION_EVALUATION",
+            "PROMOTION_APPROVED",
+        }
 
     def test_interrupted_cycle_is_never_interpreted_as_success(self, cycle_db: str) -> None:
         s1 = LearningCycleStore(cycle_db)

@@ -170,9 +170,10 @@ class TrainingDatasetSnapshotStore:
         except ArtifactConflictError as e:
             existing = self.store.read_dataset_manifest(dataset_id) or {}
             existing_hash = str(existing.get("dataset_hash", "") or "")
-            same_rows = existing.get("row_count") == dataset.sample_count and existing.get(
-                "config_hash"
-            ) == dataset.config_hash
+            same_rows = (
+                existing.get("row_count") == dataset.sample_count
+                and existing.get("config_hash") == dataset.config_hash
+            )
             if same_rows and existing_hash:
                 # Same content re-persisted (restart-during-cycle replay):
                 # idempotent success, return the existing identity.
@@ -201,7 +202,12 @@ class TrainingDatasetSnapshotStore:
             dataset.sample_count,
             str(handle["hash"])[:12],
         )
-        return {"path": handle["path"], "hash": handle["hash"], "manifest": manifest, "reused": False}
+        return {
+            "path": handle["path"],
+            "hash": handle["hash"],
+            "manifest": manifest,
+            "reused": False,
+        }
 
     # ------------------------------------------------------------------
     # Verify / load

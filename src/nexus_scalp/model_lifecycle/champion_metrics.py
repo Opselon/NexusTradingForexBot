@@ -186,14 +186,14 @@ class ChampionMetricsProvider:
         metrics = baseline_artifact_to_champion_metrics(payload)
         missing = [k for k in REQUIRED_CHAMPION_METRIC_KEYS if k not in metrics]
         if missing:
-            logger.error(
-                "[CHAMPION_METRICS] baseline artifact missing keys: %s", ",".join(missing)
-            )
+            logger.error("[CHAMPION_METRICS] baseline artifact missing keys: %s", ",".join(missing))
             return None
         return metrics
 
 
-def blocked_comparison(champion: ChampionModel, reason: str = "CHAMPION_METRICS_UNAVAILABLE") -> dict[str, Any]:
+def blocked_comparison(
+    champion: ChampionModel, reason: str = "CHAMPION_METRICS_UNAVAILABLE"
+) -> dict[str, Any]:
     """The contractually required BLOCKED verdict when metrics are absent."""
     return {
         "promotion_evaluation": "BLOCKED",

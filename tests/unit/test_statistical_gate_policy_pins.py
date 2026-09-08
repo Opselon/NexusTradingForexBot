@@ -33,9 +33,7 @@ class TestPolicyIsSingleSourceOfTruth:
         )
         assert "statistical_provenance" in src, "provenance not persisted on evaluation"
         # the gate runs unconditionally (no skip/optional branch)
-        assert "if False" not in src and "skip" not in src.lower().replace(
-            "skipped_dry_run", ""
-        )
+        assert "if False" not in src and "skip" not in src.lower().replace("skipped_dry_run", "")
 
     def test_policy_defaults_are_explicit(self):
         pol = StatisticalPromotionPolicy()
@@ -106,6 +104,4 @@ class TestPolicyIsSingleSourceOfTruth:
         ):
             assert key in prov, f"provenance missing {key}"
         # deterministic seed derived from run identity
-        assert prov["random_seed"] == evaluate_statistical_gate(comp)["provenance"][
-            "random_seed"
-        ]
+        assert prov["random_seed"] == evaluate_statistical_gate(comp)["provenance"]["random_seed"]

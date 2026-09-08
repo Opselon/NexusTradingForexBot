@@ -79,9 +79,7 @@ def test_technical_checklist_alone_cannot_promote(gov_engine) -> None:
     eng, _, _ = gov_engine
     _walk_to_shadow(eng)
     with pytest.raises(PromotionGateError) as exc:
-        eng.promote_to_review(
-            model_id="c1", model_version="v1", actor="op", evidence=dict(TECH_OK)
-        )
+        eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=dict(TECH_OK))
     # the failure names the economic keys, not the technical ones
     assert "sizing_model_recorded" in str(exc.value)
 
@@ -127,9 +125,7 @@ def test_blocked_transition_records_economic_keys_in_ledger(gov_engine) -> None:
     eng, store, _ = gov_engine
     _walk_to_shadow(eng)
     with pytest.raises(PromotionGateError):
-        eng.promote_to_review(
-            model_id="c1", model_version="v1", actor="op", evidence=dict(TECH_OK)
-        )
+        eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=dict(TECH_OK))
     events = [e for e in store.list_events() if e.get("event") == "PROMOTION_BLOCKED"]
     assert events, "blocked promotion must be auditable"
     raw_payload = events[-1].get("payload") or "{}"

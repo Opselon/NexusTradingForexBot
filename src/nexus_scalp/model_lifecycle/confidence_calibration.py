@@ -225,8 +225,12 @@ def evaluate_calibration(
         frac_win = float(y[mask].mean())
         ece += (nb / n) * abs(mean_conf - frac_win)
         bins.append(
-            {"bin": f"{lo:.1f}-{hi:.1f}", "n": nb, "mean_conf": round(mean_conf, 4),
-             "win_rate": round(frac_win, 4)}
+            {
+                "bin": f"{lo:.1f}-{hi:.1f}",
+                "n": nb,
+                "mean_conf": round(mean_conf, 4),
+                "win_rate": round(frac_win, 4),
+            }
         )
     brier = float(np.mean((x - y) ** 2))
     return {
@@ -435,21 +439,24 @@ def build_calibration_artifact(
             f"{MIN_CALIBRATION_SAMPLES}"
         )
     params = fit_platt_calibration(cal_confidences, cal_outcomes)
-    calibrator = ConfidenceCalibrator(params=params, provenance=CalibrationProvenance(
-        model_version=model_version,
-        calibration_dataset_id=calibration_dataset_id,
-        artifact_fingerprint=artifact_fingerprint,
-        calibration_period_start=cal_start,
-        calibration_period_end=cal_end,
-        validation_dataset_id=validation_dataset_id,
-        validation_period_start=val_start,
-        validation_period_end=val_end,
-        method="platt_logistic",
-        created_at=datetime.now(UTC).isoformat(),
-        feature_schema_version=feature_schema_version,
-        sample_count=len(cal_confidences),
-        validation_sample_count=len(val_confidences),
-    ))
+    calibrator = ConfidenceCalibrator(
+        params=params,
+        provenance=CalibrationProvenance(
+            model_version=model_version,
+            calibration_dataset_id=calibration_dataset_id,
+            artifact_fingerprint=artifact_fingerprint,
+            calibration_period_start=cal_start,
+            calibration_period_end=cal_end,
+            validation_dataset_id=validation_dataset_id,
+            validation_period_start=val_start,
+            validation_period_end=val_end,
+            method="platt_logistic",
+            created_at=datetime.now(UTC).isoformat(),
+            feature_schema_version=feature_schema_version,
+            sample_count=len(cal_confidences),
+            validation_sample_count=len(val_confidences),
+        ),
+    )
     # validation-side calibrated scores
     val_cal = [calibrator.calibrate(c)[0] for c in val_confidences]
     raw_metrics = evaluate_calibration(val_confidences, val_outcomes)

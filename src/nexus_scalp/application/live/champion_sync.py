@@ -153,9 +153,7 @@ class ChampionSync:
             try:
                 lifecycle.set_status(
                     model_id=iid,
-                    model_version=str(
-                        getattr(self.config.model, "feature_schema_version", "v1.0")
-                    ),
+                    model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
                     status=ModelStatus.CHAMPION,
                     reason="registry truthfulness sync: live Champion row",
                 )
@@ -167,9 +165,7 @@ class ChampionSync:
                     event="REGISTRY_RECONCILED",
                     stage=GovernanceStage.REGISTRY,
                     model_id=self.champion_manager.model_id,
-                    model_version=str(
-                        getattr(self.config.model, "feature_schema_version", "v1.0")
-                    ),
+                    model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
                     schema_id=self.FEATURE_SCHEMA_ID,
                     reason="live Champion registry truthfulness correction",
                     payload={"artifact_path": self.config.model.model_artifact_path},

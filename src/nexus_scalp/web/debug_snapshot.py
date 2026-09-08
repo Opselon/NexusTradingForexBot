@@ -962,15 +962,9 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         out["halt_reason"] = str(getattr(engine, "_halt_reason", "") or "")
         out["halt_triggered_at"] = str(getattr(engine, "_halt_triggered_at", "") or "")
         circuit = getattr(engine, "_hot_path_circuit", None)
-        out["consecutive_tick_errors"] = int(
-            getattr(circuit, "consecutive_error_count", 0) or 0
-        )
-        out["consecutive_tick_errors_max"] = int(
-            getattr(circuit, "max_consecutive_errors", 0) or 0
-        )
-        out["tick_error_window_sec"] = float(
-            getattr(circuit, "error_window_sec", 0.0) or 0.0
-        )
+        out["consecutive_tick_errors"] = int(getattr(circuit, "consecutive_error_count", 0) or 0)
+        out["consecutive_tick_errors_max"] = int(getattr(circuit, "max_consecutive_errors", 0) or 0)
+        out["tick_error_window_sec"] = float(getattr(circuit, "error_window_sec", 0.0) or 0.0)
         out["account_freshness"] = str(getattr(engine, "_account_freshness", "MISSING"))
         audit = getattr(engine, "audit", None)
         out["audit_batch_failures"] = int(getattr(audit, "audit_batch_failures", 0) or 0)
@@ -983,12 +977,8 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         out["financial_events_overflowed"] = int(
             getattr(audit, "financial_events_overflowed", 0) or 0
         )
-        out["financial_events_failed"] = int(
-            getattr(audit, "financial_events_failed", 0) or 0
-        )
-        out["consecutive_losses"] = int(
-            getattr(engine, "_consecutive_losses", 0) or 0
-        )
+        out["financial_events_failed"] = int(getattr(audit, "financial_events_failed", 0) or 0)
+        out["consecutive_losses"] = int(getattr(engine, "_consecutive_losses", 0) or 0)
         cfg = engine.config
         out["risk_per_trade_pct"] = float(cfg.risk.risk_per_trade_pct)
         out["max_concurrent_positions"] = int(cfg.risk.max_concurrent_positions)

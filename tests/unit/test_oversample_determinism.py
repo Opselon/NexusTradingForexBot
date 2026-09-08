@@ -45,9 +45,7 @@ def test_different_seed_yields_different_valid_sample() -> None:
     # output across seeds astronomically unlikely but not impossible, so the
     # assertion is on the determinism of EACH seed (reproducible per seed),
     # plus at least the shuffle order differing across a 6-run poll.
-    outputs = [
-        _balance_oversample_dataset(X, y, seed=s)[1].tobytes() for s in range(6)
-    ]
+    outputs = [_balance_oversample_dataset(X, y, seed=s)[1].tobytes() for s in range(6)]
     assert len(set(outputs)) >= 2, "different seeds produced byte-identical buffers"
 
 

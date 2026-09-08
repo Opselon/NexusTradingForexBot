@@ -36,9 +36,7 @@ FINGERPRINT_WIDTH: int = 16
 
 #: The canonical serving artifact — single definition, reused by RiskEngine's
 #: lazy default and by the identity check (no divergent path literals).
-SERVING_ARTIFACT_PATH: str = (
-    "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
-)
+SERVING_ARTIFACT_PATH: str = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
 SERVING_CALIBRATION_PATH: str = (
     "artifacts/models/scalp/XAUUSD/70d_liquidity/confidence_calibration.json"
 )
@@ -126,9 +124,7 @@ def load_bound_calibrator(
     ):
         logger.warning(
             "[CALIBRATION] identity mismatch -> NOT_CALIBRATED",
-            calibrated_fingerprint=(
-                getattr(prov, "artifact_fingerprint", "") if prov else ""
-            ),
+            calibrated_fingerprint=(getattr(prov, "artifact_fingerprint", "") if prov else ""),
             serving_fingerprint=(
                 serving_fingerprint
                 if serving_fingerprint is not None

@@ -23,8 +23,9 @@ _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
 
 
 def _run() -> subprocess.CompletedProcess[str]:
+    # check=False is intentional: the test asserts on returncode itself.
     return subprocess.run(
-        [sys.executable, str(CHECK)], capture_output=True, text=True, timeout=30
+        [sys.executable, str(CHECK)], capture_output=True, text=True, timeout=30, check=False
     )
 
 

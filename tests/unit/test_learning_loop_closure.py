@@ -336,9 +336,7 @@ class TestOnlineFinetuneGate:
             OnlineFinetuneConfig,
         )
 
-        cfg = LearningConfig(
-            enabled=True, online_finetune=OnlineFinetuneConfig(enabled=True)
-        )
+        cfg = LearningConfig(enabled=True, online_finetune=OnlineFinetuneConfig(enabled=True))
         enabled = bool(
             getattr(cfg, "online_finetune", None)
             and cfg

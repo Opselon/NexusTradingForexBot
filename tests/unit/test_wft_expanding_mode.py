@@ -59,6 +59,7 @@ def _capture_train_slices(monkeypatch: pytest.MonkeyPatch):
         # _fit_scaler is a @staticmethod: the stored attribute on the class
         # is a staticmethod wrapper whose __func__ is the plain function.
         target = current.__func__ if hasattr(current, "__func__") else current
+
         # Wrap as a plain function taking (self, X_raw); assigning a plain
         # function to the class makes it a bound method on instances.
         def spy(self, X_raw):  # type: ignore[no-untyped-def]
@@ -92,9 +93,7 @@ def test_unknown_mode_fails_loud(tmp_path) -> None:
 def test_blocked_mode_default_is_explicit(tmp_path) -> None:
     tr = WalkForwardTrainer(artifact_save_path=tmp_path / "m.pt")
     assert tr.walk_forward_mode == "blocked"
-    tr2 = WalkForwardTrainer(
-        artifact_save_path=tmp_path / "m2.pt", walk_forward_mode="blocked"
-    )
+    tr2 = WalkForwardTrainer(artifact_save_path=tmp_path / "m2.pt", walk_forward_mode="blocked")
     assert tr2.walk_forward_mode == "blocked"
 
 
@@ -196,7 +195,6 @@ def test_no_future_samples_enter_training_in_either_mode(
         geom = tr.last_convergence_metadata["fold_geometry"]
         for g in geom:
             assert g["train_end_idx"] + tr.purge_gap <= g["test_start_idx"], (
-                f"mode={mode} fold={g['fold']}: training window reaches "
-                "past the purged boundary"
+                f"mode={mode} fold={g['fold']}: training window reaches past the purged boundary"
             )
         monkeypatch.undo()

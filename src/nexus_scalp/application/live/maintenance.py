@@ -272,9 +272,11 @@ class MaintenanceCycle:
         # SAME real research pipeline — but only when the operator explicitly
         # started the autonomous loop (/api/factory/loop/start primes the
         # worker pump). Bounded, thread-isolated, never touches execution.
-        if getattr(self.om, "_factory_worker_started", False) and getattr(
-            self.om, "strategy_factory_worker", None
-        ) is not None and self.om.strategy_factory_worker.running:
+        if (
+            getattr(self.om, "_factory_worker_started", False)
+            and getattr(self.om, "strategy_factory_worker", None) is not None
+            and self.om.strategy_factory_worker.running
+        ):
             try:
                 self.om._kick_worker("FACTORY", self.om.strategy_factory_worker.tick)
             except Exception as wkr_err:
@@ -322,9 +324,7 @@ class MaintenanceCycle:
                     self.om.calendar_worker = cal
                     logger.info("[CALENDAR] event=COMPOSED (lazy, off tick path)")
                 except Exception as cal_err:
-                    logger.warning(
-                        "[CALENDAR] event=COMPOSE_FAILED (isolated) error=%s", cal_err
-                    )
+                    logger.warning("[CALENDAR] event=COMPOSE_FAILED (isolated) error=%s", cal_err)
                     cal = None
             if cal is not None:
                 try:

@@ -34,7 +34,6 @@ from nexus_scalp.model_lifecycle.confidence_calibration import (
 )
 from nexus_scalp.risk.risk_engine import RiskEngine
 
-
 # --------------------------------------------------------------------------
 # Platt fit
 # --------------------------------------------------------------------------
@@ -134,7 +133,10 @@ def test_build_artifact_requires_sufficient_samples() -> None:
             val_outcomes=outs,
             calibration_dataset_id="a",
             validation_dataset_id="b",
-            cal_start="t1", cal_end="t2", val_start="t3", val_end="t4",
+            cal_start="t1",
+            cal_end="t2",
+            val_start="t3",
+            val_end="t4",
             calibration_is_oos=True,
             validation_is_oos=True,
         )
@@ -185,10 +187,13 @@ def test_incomplete_provenance_is_not_calibrated() -> None:
         model_version="",  # missing model identity
         calibration_dataset_id="ds",
         artifact_fingerprint="",  # missing binding — also alone would suffice
-        calibration_period_start="s", calibration_period_end="e",
+        calibration_period_start="s",
+        calibration_period_end="e",
         validation_dataset_id="ds2",
-        validation_period_start="s", validation_period_end="e",
-        method="platt_logistic", created_at="now",
+        validation_period_start="s",
+        validation_period_end="e",
+        method="platt_logistic",
+        created_at="now",
         feature_schema_version="scalp_v3",
         sample_count=10,  # below floor
         validation_sample_count=10,
@@ -198,12 +203,16 @@ def test_incomplete_provenance_is_not_calibrated() -> None:
     # Identity binding alone is mandatory: complete fields EXCEPT the
     # artifact fingerprint must still be NOT_CALIBRATED (mission phase 7).
     prov_nofp = CalibrationProvenance(
-        model_version="m", calibration_dataset_id="ds",
+        model_version="m",
+        calibration_dataset_id="ds",
         artifact_fingerprint="",
-        calibration_period_start="s", calibration_period_end="e",
+        calibration_period_start="s",
+        calibration_period_end="e",
         validation_dataset_id="ds2",
-        validation_period_start="s", validation_period_end="e",
-        method="platt_logistic", created_at="now",
+        validation_period_start="s",
+        validation_period_end="e",
+        method="platt_logistic",
+        created_at="now",
         feature_schema_version="scalp_v3",
         sample_count=MIN_CALIBRATION_SAMPLES,
         validation_sample_count=MIN_CALIBRATION_SAMPLES,
@@ -213,7 +222,7 @@ def test_incomplete_provenance_is_not_calibrated() -> None:
 
 
 def test_invalid_calibration_falls_back_flat() -> None:
-    cal = ConfidenceCalibrator()  # nothing loaded
+    ConfidenceCalibrator()  # nothing loaded — falls back flat
     assert confidence_to_risk_multiplier(0.95, "NOT_CALIBRATED") == 1.0
     assert confidence_to_risk_multiplier(0.30, "DEGRADED") == 1.0
 
@@ -272,6 +281,8 @@ def _risk_engine() -> RiskEngine:
 def test_risk_engine_without_calibration_uses_flat_sizing(monkeypatch) -> None:
     """With NO calibration artifact the confidence multiplier must be exactly
     1.0 — the old raw-softmax lever (up to 1.2x) is gone."""
+    from datetime import UTC, datetime
+
     from nexus_scalp.domain.enums import ActionType
     from nexus_scalp.domain.models import (
         AccountInfo,
@@ -280,23 +291,38 @@ def test_risk_engine_without_calibration_uses_flat_sizing(monkeypatch) -> None:
         TickData,
         TradeProposal,
     )
-    from datetime import UTC, datetime
 
     engine = _risk_engine()
     monkeypatch.setattr(engine, "_confidence_calibrator", ConfidenceCalibrator(), raising=False)
 
     account = AccountInfo(
-        login=1, trade_mode=0, balance=10000.0, equity=10000.0, margin=0.0,
+        login=1,
+        trade_mode=0,
+        balance=10000.0,
+        equity=10000.0,
+        margin=0.0,
         margin_free=10000.0,
         leverage=100,
     )
     symbol_info = SymbolInfo(
-        symbol="XAUUSD", point=0.01, digits=2, trade_contract_size=100.0,
-        tick_value=0.1, tick_size=0.01, volume_min=0.01, volume_max=10.0, volume_step=0.01,
-        stops_level=0, freeze_level=0,
+        symbol="XAUUSD",
+        point=0.01,
+        digits=2,
+        trade_contract_size=100.0,
+        tick_value=0.1,
+        tick_size=0.01,
+        volume_min=0.01,
+        volume_max=10.0,
+        volume_step=0.01,
+        stops_level=0,
+        freeze_level=0,
     )
     tick = TickData(
-        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.20, volume=1.0,
+        symbol="XAUUSD",
+        timestamp=datetime.now(UTC),
+        bid=2000.0,
+        ask=2000.20,
+        volume=1.0,
     )
     proposal = TradeProposal(
         request_id="r-test",
