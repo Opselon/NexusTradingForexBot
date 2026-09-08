@@ -1,8 +1,0 @@
-..............................................                           [100%]
-============================== warnings summary ===============================
-.venv\Lib\site-packages\_pytest\pathlib.py:95
-  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\_pytest\pathlib.py:95: PytestWarning: (rm_rf) error removing \\?\C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\garbage-5c9dd48f-0560-4f46-bbb9-05d9bbd972e0
-  <class 'OSError'>: [WinError 145] The directory is not empty: '\\\\?\\C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\garbage-5c9dd48f-0560-4f46-bbb9-05d9bbd972e0'
-    warnings.warn(
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

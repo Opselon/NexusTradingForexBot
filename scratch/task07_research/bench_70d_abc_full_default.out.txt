@@ -1,2 +1,0 @@
-raw bars: 6000
-news rows: 500

@@ -1,2 +1,0 @@
-raw bars: 20000 rows (bounded 20K — statistically meaningful, session-bounded)
-EXIT=1

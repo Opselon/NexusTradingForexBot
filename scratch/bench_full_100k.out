@@ -1,2 +1,0 @@
-2026-09-07 05:35:28 [info     ] [BARS_NORMALIZE] in=100000 out=100000 dropped=0 span=2026-05-01 17:15:00+00:00..2026-08-17 19:24:00+00:00 id=nbr_85d0170baeda
-FULL 100k: 1133.9s (11.35 ms/row) rows=99946

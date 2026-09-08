@@ -1,9 +1,0 @@
-...........xxxxxx...                                                     [100%]
-=========================== short test summary info ===========================
-XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_non_numeric_elements_rejected_structured[True] - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)
-XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_non_numeric_elements_rejected_structured[False] - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)
-XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_non_numeric_elements_rejected_structured[0.1] - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)
-XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_non_numeric_elements_rejected_structured[None] - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)
-XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_bool_true_is_rejected_not_int_coerced - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)
-XFAIL tests/unit/test_qa_deep_70d_contract_properties.py::test_inference_validator_structured_rejection_for_non_numeric - BUG-184 extension: type guard pending feature-contract owner (BUG-208 addendum)
-exit=0

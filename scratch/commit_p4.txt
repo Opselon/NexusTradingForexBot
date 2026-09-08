@@ -1,4 +1,0 @@
-[main a5f38467] feat(paper): REPLAY mode — real historical chronology as an explicit, fail-closed paper data source (P0 phase 4)
- 3 files changed, 532 insertions(+), 1 deletion(-)
- create mode 100644 src/nexus_scalp/adapters/paper/replay_source.py
- create mode 100644 tests/unit/test_paper_replay_mode.py

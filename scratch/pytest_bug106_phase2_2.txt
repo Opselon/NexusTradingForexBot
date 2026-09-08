@@ -1,4 +1,0 @@
-.....s......                                                             [100%]
-=========================== short test summary info ===========================
-SKIPPED [1] tests\unit\test_htf_train_live_parity.py:190: documented: HTF_HISTORY_BARS is the only knob; 55-bar window would zero feat_41/42
-11 passed, 1 skipped in 18.41s

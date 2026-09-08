@@ -1,4 +1,0 @@
-[main cfcb8cb6] feat(risk): calibrated confidence before risk scaling — raw softmax no longer levers money-at-risk (P0 phase 3)
- 2 files changed, 740 insertions(+)
- create mode 100644 src/nexus_scalp/model_lifecycle/confidence_calibration.py
- create mode 100644 tests/unit/test_confidence_calibration.py

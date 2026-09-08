@@ -1,1 +1,0 @@
-rows=4946 elapsed=83.1s rate=60 rows/s

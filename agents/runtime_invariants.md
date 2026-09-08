@@ -300,3 +300,20 @@ or disable EXTERNAL requests only. It MUST NEVER: block or slow the market-data,
 provider failure; or expose provider secrets. Provider failure degrades ONLY the
 optional external-intelligence feature (deterministic/local fallbacks continue).
 Proven by tests/unit/test_provider_gate_hardening.py (trading-isolation class).
+
+
+## INV-025 - Halt/kill-switch stops NEW entries only; open positions are never force-closed (F9, audit rev2)
+
+Documented decision (audit finding F9, ACCEPTED-RISK): the halt/kill-switch
+blocks NEW entry proposals only. Open positions are NOT force-closed on
+halt - every position already carries its own stop-loss, so an immediate
+hard flatten would be an arbitrary exit outside the strategy's own exit
+geometry; this is defensible for a scalp system whose intended holding
+period is minutes. Existing positions keep being managed by their standing
+SL/TP and the normal OrderManager lifecycle until they close naturally.
+
+Optional future (NOT implemented): a DEMO-only `flatten-on-halt` config
+flag could force-close everything on halt for demo/paper realism
+experiments. If ever added it MUST be default-off, impossible to enable in
+LIVE mode, and go through a DEC-XXXX decision record before touching the
+halt path.
