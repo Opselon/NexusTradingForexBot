@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import queue
 import sqlite3
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -73,7 +74,16 @@ class TestOutcomeFlushRace:
         ledger.record_experience(_record("req_flush_a"))
         assert ledger.get_experience_by_key("exp_req_flush_a") is None  # still queued
         assert repo.flush(timeout_sec=5.0) is True
-        assert ledger.get_experience_by_key("exp_req_flush_a") is not None
+        # flush() guarantees durability (worker committed). The ledger reads
+        # through a SEPARATE WAL connection; poll briefly for the reader to
+        # observe the committed tx (CI run #985: single-shot read raced the
+        # WAL visibility window on a fresh db file).
+        deadline = time.monotonic() + 5.0
+        row = ledger.get_experience_by_key("exp_req_flush_a")
+        while row is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+            row = ledger.get_experience_by_key("exp_req_flush_a")
+        assert row is not None
 
     def test_outcome_immediately_after_pretrade_write_succeeds(self, repo):
         """The exact E2E failure: outcome arrives before any queue.join()."""
