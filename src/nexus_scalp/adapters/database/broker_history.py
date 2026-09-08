@@ -28,9 +28,10 @@ once (UNIQUE(ticket)); a logical trade exactly once per position_id
 
 from __future__ import annotations
 
+import math
 import sqlite3
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
@@ -451,6 +452,98 @@ def create_paper_executions_table(conn: sqlite3.Connection) -> None:
         trimmed = raw_stmt.strip()
         if trimmed:
             conn.execute(trimmed)
+
+
+# ---------------------------------------------------------------------------
+# TASK-AUDREV-C3 (audit rev2): session spread-percentile provider
+# ---------------------------------------------------------------------------
+# Session window used for gate (b): the TRAILING 4 HOURS restricted to the
+# SAME UTC calendar day as ``now_utc``. Same-day keeps the distribution
+# inside one trading session-day (no stale overnight regime leaking in);
+# the 4h trailing cap keeps it reactive to the current session while still
+# supplying enough fills for a meaningful percentile. Fills only
+# (status='FILLED', real fill price, spread > 0) — quote-less defensive
+# rows (spread=0.0) would drag the percentile toward zero and fail-open.
+def session_spread_percentile(
+    conn: sqlite3.Connection,
+    symbol: str,
+    now_utc: datetime,
+    percentile: float,
+    *,
+    window_hours: float = 4.0,
+    min_samples: int = 5,
+) -> float | None:
+    """Read-only Nth percentile of this session's realized paper-fill spreads.
+
+    Pure SELECT over ``audit_paper_executions`` (created by
+    :func:`create_paper_executions_table`) — NO writes, no schema changes,
+    no side effects; safe to call from the signal hot path via an injected
+    callable (INV-001: the policy itself never performs I/O).
+
+    Args:
+        conn: Open sqlite3 connection (read-only usage).
+        symbol: Instrument symbol, matched exactly.
+        now_utc: Reference "now" (UTC). Injection-friendly for tests.
+        percentile: Percentile to extract, 50..99.
+        window_hours: Trailing window length (default 4h, same UTC day).
+        min_samples: Minimum FILLED rows required; below this returns None
+            (honest unknown -> caller must treat as no-gate, never 0.0,
+            which would fail-open on an empty distribution).
+
+    Returns:
+        The percentile spread in quote currency (USD for XAUUSD), or None
+        when the session sample is too thin.
+
+    WIRING NOTE (ownership): the engine/maintenance hook that binds this
+    function into ``SignalPolicy(session_spread_percentile_fn=...)`` is
+    owned by the runtime hook owner (separate task) — this module only
+    provides the read-only provider contract:
+    ``fn(symbol, now_utc, percentile) -> float | None``.
+    """
+    if not 50.0 <= float(percentile) <= 99.0:
+        raise ValueError(f"percentile out of contract range 50..99: {percentile!r}")
+
+    # Same-UTC-day trailing window: window start clamped to local midnight
+    # so the distribution never crosses the day boundary.
+    day_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    window_start = max(day_start, now_utc - timedelta(hours=float(window_hours)))
+    cutoff = window_start.isoformat()
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT spread
+            FROM audit_paper_executions
+            WHERE symbol = ?
+              AND ts >= ?
+              AND ts <= ?
+              AND status = 'FILLED'
+              AND spread IS NOT NULL
+              AND spread > 0.0
+            ORDER BY spread ASC
+            """,
+            (str(symbol), cutoff, now_utc.isoformat()),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        logger.warning(
+            "[BROKER_HISTORY] event=SESSION_SPREAD_PCT_QUERY_FAILED error=%r",
+            exc,
+        )
+        return None
+
+    spreads = [float(r[0]) for r in rows]
+    if len(spreads) < int(min_samples):
+        return None
+
+    # Nearest-rank style interpolation (numpy 'linear' semantics) without a
+    # numpy dependency: rank = p/100 * (n-1).
+    rank = (float(percentile) / 100.0) * (len(spreads) - 1)
+    lo_i = math.floor(rank)
+    hi_i = math.ceil(rank)
+    if lo_i == hi_i:
+        return spreads[lo_i]
+    frac = rank - lo_i
+    return spreads[lo_i] + (spreads[hi_i] - spreads[lo_i]) * frac
 
 
 def create_history_tables(conn: sqlite3.Connection) -> None:
