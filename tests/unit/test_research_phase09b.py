@@ -355,7 +355,10 @@ class TestBacktest:
         ledger = ExperienceLedger(audit_repo=temp_audit_repo)
         seed_experiences(ledger, temp_audit_repo, 40, r_values=[0.5] * 40)
         ds = ResearchDatasetBuilder(ledger=ledger).build()
-        clean = BacktestEngine(assumptions=ExecutionAssumptions()).run(ds, "s1", "v1")
+        # E1 adaptation: explicit zero-friction must now be ALLOWED loudly.
+        clean = BacktestEngine(assumptions=ExecutionAssumptions()).run(
+            ds, "s1", "v1", allow_zero_friction=True
+        )
         stressed = BacktestEngine(
             assumptions=ExecutionAssumptions(spread_ticks=3, slippage_ticks=2)
         ).run(ds, "s1", "v1")
@@ -551,7 +554,9 @@ class TestRobustness:
         flush(temp_audit_repo)
         ds = ResearchDatasetBuilder(ledger=ledger).build()
         # A 2-tick stress = 0.0667R per trade; 0.05R ceiling flags it FRAGILE.
-        rob = RobustnessEngine(max_acceptable_deg_r=0.05).evaluate(ds, "s1", "v1")
+        rob = RobustnessEngine(
+            baseline=ExecutionAssumptions(), max_acceptable_deg_r=0.05
+        ).evaluate(ds, "s1", "v1", allow_zero_friction=True)
         assert rob.status == "FAIL", "fragile thin-edge strategy must fail robustness"
 
 
@@ -664,7 +669,9 @@ class TestScoring:
         ds = _score_dataset([0.08] * 60, [0.08] * 10)
         bt = BacktestEngine().run(ds, "s1", "v1")
         # Thin edge: robustness must reflect the fragility penalty.
-        rob = RobustnessEngine(max_acceptable_deg_r=0.10).evaluate(ds, "s1", "v1")
+        rob = RobustnessEngine(
+            baseline=ExecutionAssumptions(), max_acceptable_deg_r=0.10
+        ).evaluate(ds, "s1", "v1", allow_zero_friction=True)
         score = compute_strategy_score(ds, bt, None, None, rob)
         assert score.robustness_score < 1.0
 

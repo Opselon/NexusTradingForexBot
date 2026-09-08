@@ -101,6 +101,10 @@ class PaperMT5Adapter(IMT5Port):
     #: blocked 100% of fills), so baseline is now tight enough to trade while
     #: stress runs widen it explicitly via PaperStressSpread /
     #: NEXUS_PAPER_SPREAD_SCALE (see _effective_spread_scale).
+    #: E1/E2: this constant is now the FINAL FALLBACK only — the live range is
+    #: resolved from the canonical artifact (configs/execution_assumptions.json,
+    #: paper_model.spread_band_usd) per instance in __init__; a loud WARNING is
+    #: emitted when the canonical block is unavailable and the constant is used.
     _METAL_SPREAD_RANGE: ClassVar[tuple[float, float]] = (0.08, 0.18)
     _FX_SPREAD: ClassVar[float] = 0.00012  # 1.2 pips
 
@@ -115,6 +119,9 @@ class PaperMT5Adapter(IMT5Port):
         self.equity = initial_balance
         self._connected = False
         self._is_metal = self._symbol_is_metal(symbol)
+        #: E1/E2: spread band resolved from canonical costs (final fallback:
+        #: the _METAL_SPREAD_RANGE class constant above).
+        self._metal_spread_range = self._resolve_canonical_metal_spread_range()
         #: Starting mid price, chosen to match the instrument's quote convention.
         self._current_price = self._seed_price(symbol)
         self._positions: list[Position] = []
@@ -219,6 +226,41 @@ class PaperMT5Adapter(IMT5Port):
 
     def _quote_digits(self, symbol: str) -> int:
         return 2 if self._symbol_is_metal(symbol) else 5
+
+    # ------------------------------------------------------------------
+    # E1/E2: canonical spread-band resolution
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _resolve_canonical_metal_spread_range(cls) -> tuple[float, float]:
+        """Resolve the metal (gold-class) spread band from CANONICAL costs.
+
+        Reads ``paper_model.spread_band_usd`` from the canonical artifact
+        (configs/execution_assumptions.json). On ANY failure (missing file,
+        missing block, malformed values) falls back to the class constant
+        ``_METAL_SPREAD_RANGE`` and emits a loud WARNING — the synthetic
+        market-data band is a simulation parameter, so it degrades loudly
+        instead of fail-closed (unlike cost-carrying consumers).
+        """
+        try:
+            from nexus_scalp.configuration.execution_costs import get_execution_assumptions
+
+            paper_model = get_execution_assumptions().paper_model
+            if paper_model is None:
+                raise RuntimeError("canonical artifact has no paper_model block")
+            lo, hi = paper_model.spread_band_usd
+            lo_f, hi_f = float(lo), float(hi)
+            if not (lo_f > 0.0 and hi_f > lo_f):
+                raise ValueError(f"degenerate spread band {(lo_f, hi_f)!r}")
+            return (lo_f, hi_f)
+        except Exception as exc:
+            get_logger("nexus_scalp.adapters.paper").warning(
+                "[PAPER_ADAPTER] event=CANONICAL_SPREAD_BAND_UNAVAILABLE "
+                "fallback=_METAL_SPREAD_RANGE using=%s error=%r",
+                cls._METAL_SPREAD_RANGE,
+                exc,
+            )
+            return cls._METAL_SPREAD_RANGE
 
     # ------------------------------------------------------------------
     # Spread profile (Task C)
@@ -907,7 +949,7 @@ class PaperMT5Adapter(IMT5Port):
 
         phi = 0.6
         if digits == 2:
-            lo, hi = self._METAL_SPREAD_RANGE
+            lo, hi = self._metal_spread_range
             lo *= scale
             hi *= scale
             lo = max(0.02, min(lo, 2.0))

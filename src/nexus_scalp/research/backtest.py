@@ -18,9 +18,11 @@ from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.economics import EconomicAssumptions, normalize_assumptions
 from nexus_scalp.research.metrics import compute_backtest, compute_sized_economic_pnl
 from nexus_scalp.research.models import (
+    FALLBACK_ZERO_PROVENANCE,
     BacktestResult,
     ExecutionAssumptions,
     ResearchDataset,
+    ensure_not_zero_friction,
 )
 from nexus_scalp.research.splitting import (
     DEFAULT_EMBARGO_SECONDS,
@@ -48,12 +50,26 @@ class BacktestEngine:
         assumptions: ExecutionAssumptions | None = None,
         economic: EconomicAssumptions | None = None,
     ) -> None:
+        # E1/E2: record WHERE the friction bundle came from. The engine's
+        # None-default stays PRODUCTION-LIKE (conservative, NON-zero friction —
+        # never zero-cost). An explicit legacy ExecutionAssumptions travels
+        # unchanged, but when it is the zero-cost bundle it is stamped
+        # FALLBACK_ZERO so callers can detect the audit-E1 defect.
         if economic is not None:
             self.economic = economic
             self.assumptions = self._to_legacy(economic)
-        else:
+            self.assumptions_provenance = "EXPLICIT"
+        elif assumptions is not None:
             self.economic = normalize_assumptions(assumptions)
             self.assumptions = self._to_legacy(self.economic)
+            if assumptions.spread_ticks == 0.0 and assumptions.slippage_ticks == 0.0:
+                self.assumptions_provenance = FALLBACK_ZERO_PROVENANCE
+            else:
+                self.assumptions_provenance = "EXPLICIT"
+        else:
+            self.economic = normalize_assumptions(None)
+            self.assumptions = self._to_legacy(self.economic)
+            self.assumptions_provenance = "PRODUCTION_LIKE_DEFAULT"
 
     @staticmethod
     def _to_legacy(economic: EconomicAssumptions) -> ExecutionAssumptions:
@@ -79,6 +95,7 @@ class BacktestEngine:
         purge_seconds: float = DEFAULT_PURGE_SECONDS,
         embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         split: object | None = None,
+        allow_zero_friction: bool = False,
     ) -> BacktestResult:
         """
         Runs a deterministic backtest.
@@ -87,6 +104,12 @@ class BacktestEngine:
         OOS), which is the correct in-sample measurement for walk-forward/OOS
         gates. Otherwise backtests the whole dataset.
         """
+        # E1 loud guard: refuse a zero-cost run unless explicitly allowed.
+        ensure_not_zero_friction(
+            self.assumptions,
+            allow=allow_zero_friction,
+            context="BacktestEngine.run",
+        )
         samples = dataset.samples
         if use_split:
             tsplit = split_temporal(

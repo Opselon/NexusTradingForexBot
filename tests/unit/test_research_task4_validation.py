@@ -127,7 +127,9 @@ def test_rs17_nan_inf_score_rejected():
         )
     ]
     ds = ResearchDataset(samples=samples, dataset_id="d")
-    bt = BacktestEngine(assumptions=ExecutionAssumptions()).run(ds, "s", "v")
+    bt = BacktestEngine(assumptions=ExecutionAssumptions()).run(
+            ds, "s", "v", allow_zero_friction=True
+        )
     # Non-finite realized values are excluded at the statistics boundary: the
     # backtest is EMPTY (total_trades=0), never NaN metrics and never a
     # fabricated validation from garbage input.

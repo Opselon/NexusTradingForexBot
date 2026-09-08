@@ -173,7 +173,9 @@ def test_zero_friction_backtest_never_looks_production_like() -> None:
 def test_frictionless_result_is_labelled_non_promotable() -> None:
     econ = EconomicAssumptions.frictionless_research(starting_equity_usd=START_EQ)
     eng = BacktestEngine(economic=econ)
-    result = eng.run(_dataset(8), "parity", "1")
+    # E1 adaptation: the analytical frictionless profile is zero-cost by
+    # design; the run must now carry the explicit allow flag.
+    result = eng.run(_dataset(8), "parity", "1", allow_zero_friction=True)
     assert result.economic.profile == ExecutionProfile.FRICTIONLESS_RESEARCH
     assert result.economic.is_promotable_economics() is False
 

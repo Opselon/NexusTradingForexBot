@@ -18,6 +18,8 @@ from nexus_scalp.research.models import (
     ResearchDataset,
     WalkForwardFold,
     WalkForwardResult,
+    default_research_assumptions,
+    ensure_not_zero_friction,
 )
 from nexus_scalp.research.splitting import (
     DEFAULT_EMBARGO_SECONDS,
@@ -42,7 +44,15 @@ class WalkForwardEngine:
         assumptions: ExecutionAssumptions | None = None,
     ) -> None:
         self.min_pass_fraction = float(min_pass_fraction)
-        self.assumptions = assumptions or ExecutionAssumptions()
+        # E1/E2: standalone engines no longer default to silent ZERO friction.
+        # When no explicit assumptions are passed, derive the bundle from the
+        # canonical artifact (configs/execution_assumptions.json) with a loud
+        # FALLBACK_ZERO degradation (entrypoints then refuse zero friction).
+        if assumptions is not None:
+            self.assumptions = assumptions
+            self.assumptions_provenance = "EXPLICIT"
+        else:
+            self.assumptions, self.assumptions_provenance = default_research_assumptions()
 
     def validate(
         self,
@@ -54,7 +64,14 @@ class WalkForwardEngine:
         purge_seconds: float = DEFAULT_PURGE_SECONDS,
         embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         context_contract: dict | None = None,
+        allow_zero_friction: bool = False,
     ) -> WalkForwardResult:
+        # E1 loud guard: refuse a zero-cost run unless explicitly allowed.
+        ensure_not_zero_friction(
+            self.assumptions,
+            allow=allow_zero_friction,
+            context="WalkForwardEngine.validate",
+        )
         # PHASE 26: strategy-aware sample filtering (reconstructed after
         # accidental working-tree loss; mirrors restored oos.py contract).
         dataset_for_folds = dataset
