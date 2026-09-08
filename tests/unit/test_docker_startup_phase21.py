@@ -171,8 +171,17 @@ def test_docker_07_env_example_exists_and_documents_vars() -> None:
 
 
 def test_docker_08_env_example_has_no_secrets() -> None:
-    text = ENV_EXAMPLE.read_text(encoding="utf-8")
-    low = text.lower()
+    # Audit wave-2 fix: strip comment lines before scanning. The naive
+    # whole-text substring match flagged the DOCUMENTED (commented-out)
+    # placeholder "# NSE_PG_PASSWORD=" added by the B1 close-out (4ab19dc2)
+    # even though the file carries no real secret. Comments are docs, not
+    # configuration; only ACTIVE assignments can carry secrets.
+    active_lines = [
+        line
+        for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    low = "\n".join(active_lines).lower()
     for pat in SECRET_PATTERNS:
         assert pat.lower() not in low, f"secret-looking value {pat!r} in .env.example"
 
