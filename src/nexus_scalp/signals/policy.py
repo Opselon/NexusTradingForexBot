@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -58,6 +59,11 @@ class SignalPolicy:
         range_min_displacement: float = 0.15,  # Reduced displacement threshold for Gold ($0.15)
         range_confidence_penalty: float = 0.10,  # Reduced range penalty to encourage micro-scalps
         max_spread_atr_ratio: float = 0.18,  # Maximum allowed spread as 18% of current M1 ATR
+        # TASK-AUDREV-C3 (audit rev2) spread gates:
+        max_spread_pct_of_tp: float | None = None,  # Max spread as fraction of candidate TP distance
+        spread_session_percentile: float | None = None,  # Session spread percentile threshold
+        spread_session_gate_enabled: bool = True,  # Runtime on/off for gate (b)
+        session_spread_percentile_fn: Callable[[str, datetime, float], float] | None = None,
         flip_confidence_penalty: float = 0.10,  # Hysteresis penalty when flipping BUY/SELL
         flip_memory_seconds: float = 8.0,  # Reduced hysteresis memory window
         min_allowed_rr: float = 1.10,  # Absolute minimum Risk-to-Reward ratio required
@@ -85,6 +91,31 @@ class SignalPolicy:
         self.min_allowed_rr = min_allowed_rr
         self.rule_matrix = rule_matrix
         self.algo_config = algo_config or AlgoConfig()
+
+        # TASK-AUDREV-C3 (audit rev2) spread gates. Threshold ownership follows
+        # the confidence_threshold pattern: AlgoConfig is the canonical default
+        # source; explicit constructor overrides remain possible for
+        # replay/research freezes. Placed after self.algo_config assignment so
+        # the None sentinel resolves from AlgoConfig (getattr fallback keeps
+        # this robust against frozen/replayed AlgoConfig shapes).
+        if max_spread_pct_of_tp is None:
+            max_spread_pct_of_tp = float(
+                getattr(self.algo_config, "max_spread_pct_of_tp", 0.15)
+            )
+        self.max_spread_pct_of_tp = float(max_spread_pct_of_tp)
+        if spread_session_percentile is None:
+            spread_session_percentile = float(
+                getattr(self.algo_config, "spread_session_percentile", 70.0)
+            )
+        self.spread_session_percentile = float(spread_session_percentile)
+        self.spread_session_gate_enabled = bool(spread_session_gate_enabled)
+        # Gate (b) percentile provider (INV-001: the policy never performs
+        # I/O itself). Signature: (symbol, now_utc, percentile) -> float.
+        # None => the session-percentile gate is a no-op. The engine/
+        # maintenance wiring is owned by the runtime hook owner — do NOT
+        # instantiate DB connections here (see broker_history.
+        # session_spread_percentile for the read-only provider contract).
+        self.session_spread_percentile_fn = session_spread_percentile_fn
 
         self._last_signal_time: datetime | None = None
         self._last_telemetry_time: datetime | None = None
@@ -624,6 +655,48 @@ class SignalPolicy:
         spread_atr_ratio = (current_spread / atr) if atr > 0 else 0.0
         spread_atr_exceeded = current_spread > 0.0 and spread_atr_ratio > self.max_spread_atr_ratio
 
+        # TASK-AUDREV-C3 gate (a): spread percent-of-TP cap. The M1 scalp edge
+        # lives in spread/TP, not spread/ATR: a wide quote can pass the ATR
+        # gate in volatile regimes yet still eat a third of the reward leg.
+        # Computed here where the candidate TP distance is known;
+        # fail-closed on a non-positive TP distance when a TP exists (the
+        # gate does not apply when the action type has no TP — NO_TRADE
+        # proposals never carry one). Evidence stamps mirror BUG-249 (INV-018).
+        tp_distance = 0.0
+        spread_tp_ratio = 0.0
+        spread_tp_exceeded = False
+        if (is_buy_cand or is_sell_cand) and cand_take_profit is not None:
+            tp_distance = abs(cand_take_profit - target_entry_price)
+            if tp_distance <= 0.0:
+                # Fail-closed: a zero/negative reward leg is untradeable.
+                spread_tp_exceeded = current_spread > 0.0
+                spread_tp_ratio = float("inf")
+            else:
+                spread_tp_ratio = current_spread / tp_distance
+                spread_tp_exceeded = current_spread > 0.0 and (
+                    spread_tp_ratio > self.max_spread_pct_of_tp
+                )
+
+        # TASK-AUDREV-C3 gate (b): session-percentile spread gate. When the
+        # runtime injects a read-only percentile provider, a live spread above
+        # the Nth percentile of the CURRENT SESSION's fill distribution means
+        # the broker is quoting abnormally wide vs what we actually traded —
+        # stand down until the quote normalizes. fn None => no-op (no I/O
+        # from policy — INV-001).
+        spread_session_pct_exceeded = False
+        spread_session_pct_value: float | None = None
+        if (
+            self.spread_session_gate_enabled
+            and self.session_spread_percentile_fn is not None
+            and current_spread > 0.0
+        ):
+            spread_session_pct_value = float(
+                self.session_spread_percentile_fn(
+                    current_tick.symbol, now, self.spread_session_percentile
+                )
+            )
+            spread_session_pct_exceeded = current_spread > spread_session_pct_value
+
         # Multi-timeframe trend & S/R variables
         h4_trend = self._sanitize_float(getattr(feature_vector, "htf_h4_trend", 0.0), 0.0)
         h1_mom = self._sanitize_float(getattr(feature_vector, "htf_h1_momentum", 0.0), 0.0)
@@ -743,6 +816,17 @@ class SignalPolicy:
                 # BUG-249 gate evidence (INV-018): ATR-normalized spread.
                 "spread_atr_ratio": float(round(spread_atr_ratio, 4)),
                 "max_spread_atr_ratio": float(self.max_spread_atr_ratio),
+                # TASK-AUDREV-C3 gate (a) evidence: spread vs TP distance.
+                "spread_tp_ratio": float(round(spread_tp_ratio, 4)) if math.isfinite(spread_tp_ratio) else None,
+                "tp_distance_usd": float(tp_distance) if tp_distance > 0.0 else None,
+                "max_spread_pct_of_tp": float(self.max_spread_pct_of_tp),
+                # TASK-AUDREV-C3 gate (b) evidence: session percentile.
+                "spread_session_percentile_value": (
+                    float(round(spread_session_pct_value, 4))
+                    if spread_session_pct_value is not None
+                    else None
+                ),
+                "spread_session_percentile": float(self.spread_session_percentile),
             }
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
@@ -1140,6 +1224,21 @@ class SignalPolicy:
                     "ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD",
                     blocked_by_filter="ASYMMETRIC_RR_LIMIT",
                 )
+            elif spread_tp_exceeded and proposed_action != ActionType.NO_TRADE:
+                # TASK-AUDREV-C3 gate (a): spread percent-of-TP cap (fail-closed).
+                decision_stage = "SPREAD_TP_GATE"
+                final_proposal = build_nt(
+                    f"SPREAD_TP_RATIO_EXCEEDED ({spread_tp_ratio:.2f} > {self.max_spread_pct_of_tp:.2f})",
+                    blocked_by_filter="SPREAD_TP_RATIO",
+                )
+            elif spread_session_pct_exceeded and proposed_action != ActionType.NO_TRADE:
+                # TASK-AUDREV-C3 gate (b): session-percentile spread gate.
+                decision_stage = "SPREAD_SESSION_PCT_GATE"
+                final_proposal = build_nt(
+                    f"SPREAD_SESSION_PCT_EXCEEDED ({current_spread:.2f} > "
+                    f"P{self.spread_session_percentile:.0f} {spread_session_pct_value:.2f})",
+                    blocked_by_filter="SPREAD_SESSION_PCT",
+                )
             elif spread_atr_exceeded and proposed_action != ActionType.NO_TRADE:
                 # BUG-249: ATR-normalized spread gate (fail-closed).
                 decision_stage = "SPREAD_ATR_GATE"
@@ -1171,6 +1270,17 @@ class SignalPolicy:
                     # BUG-249 gate evidence (INV-018): ATR-normalized spread.
                     "spread_atr_ratio": float(round(spread_atr_ratio, 4)),
                     "max_spread_atr_ratio": float(self.max_spread_atr_ratio),
+                    # TASK-AUDREV-C3 gate evidence (pass path): spread vs TP
+                    # distance and session percentile snapshot.
+                    "spread_tp_ratio": float(round(spread_tp_ratio, 4)) if math.isfinite(spread_tp_ratio) else None,
+                    "tp_distance_usd": float(tp_distance) if tp_distance > 0.0 else None,
+                    "max_spread_pct_of_tp": float(self.max_spread_pct_of_tp),
+                    "spread_session_percentile_value": (
+                        float(round(spread_session_pct_value, 4))
+                        if spread_session_pct_value is not None
+                        else None
+                    ),
+                    "spread_session_percentile": float(self.spread_session_percentile),
                 }
 
                 final_proposal = TradeProposal(

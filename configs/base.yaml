@@ -34,6 +34,16 @@ algo:
   ai_zone_confidence_threshold: 0.60
   fvg_mitigation_sensitivity: 0.5
   order_block_lookback_bars: 30
+  # TASK-AUDREV-C3 spread gates (audit rev2):
+  #  - max_spread_pct_of_tp: skip entries when live spread exceeds this
+  #    fraction of the candidate TP distance (0.15 == spread may eat at most
+  #    15% of the reward leg).
+  #  - spread_session_percentile / spread_session_gate_enabled: skip entries
+  #    when live spread exceeds the Nth percentile of the current session's
+  #    paper-fill spread distribution (audit_paper_executions).
+  max_spread_pct_of_tp: 0.15
+  spread_session_percentile: 70.0
+  spread_session_gate_enabled: true
 
 candle_intel:
   # MARKET-CONTEXT P0 Phase 3 (2026-09-07): disabled — the engine computes

@@ -108,6 +108,10 @@ class AlgorithmSnapshot:
     order_block_lookback_bars: int = 30
     ai_flip_relative_bias_threshold: float = 0.60
     ai_flip_min_delta: float = 0.10
+    # TASK-AUDREV-C3: spread gates (percent-of-TP cap + session percentile).
+    max_spread_pct_of_tp: float = 0.15
+    spread_session_percentile: float = 70.0
+    spread_session_gate_enabled: bool = True
     min_confirmation_duration: float = 2.5
     min_observation_count: int = 10
     recovery_budget_pct_of_r: float = 0.50
@@ -290,6 +294,10 @@ class RuntimeConfiguration:
                 "order_block_lookback_bars": self.algo.order_block_lookback_bars,
                 "ai_flip_relative_bias_threshold": self.algo.ai_flip_relative_bias_threshold,
                 "ai_flip_min_delta": self.algo.ai_flip_min_delta,
+                # TASK-AUDREV-C3 spread gates.
+                "max_spread_pct_of_tp": self.algo.max_spread_pct_of_tp,
+                "spread_session_percentile": self.algo.spread_session_percentile,
+                "spread_session_gate_enabled": self.algo.spread_session_gate_enabled,
                 "recovery_budget_pct_of_r": self.algo.recovery_budget_pct_of_r,
                 "min_recovery_horizon_sec": self.algo.min_recovery_horizon_sec,
                 "max_recovery_horizon_sec": self.algo.max_recovery_horizon_sec,
@@ -359,6 +367,9 @@ class RuntimeConfiguration:
             order_block_lookback_bars=self.algo.order_block_lookback_bars,
             ai_flip_relative_bias_threshold=self.algo.ai_flip_relative_bias_threshold,
             ai_flip_min_delta=self.algo.ai_flip_min_delta,
+            max_spread_pct_of_tp=self.algo.max_spread_pct_of_tp,
+            spread_session_percentile=self.algo.spread_session_percentile,
+            spread_session_gate_enabled=self.algo.spread_session_gate_enabled,
         )
 
     def to_app_config(self) -> AppConfig:
@@ -556,6 +567,11 @@ _VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "algo.ai_zone_confidence_threshold": lambda v: (
         isinstance(v, (int, float)) and 0.50 <= float(v) <= 0.99
     ),
+    "algo.max_spread_pct_of_tp": lambda v: isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0,
+    "algo.spread_session_percentile": lambda v: (
+        isinstance(v, (int, float)) and 50.0 <= float(v) <= 99.0
+    ),
+    "algo.spread_session_gate_enabled": lambda v: isinstance(v, bool),
     "algo.fvg_mitigation_sensitivity": lambda v: (
         isinstance(v, (int, float)) and 0.1 <= float(v) <= 1.0
     ),
@@ -736,6 +752,9 @@ def build_runtime_configuration(
             order_block_lookback_bars=int(cur["algo.order_block_lookback_bars"]),
             ai_flip_relative_bias_threshold=float(cur["algo.ai_flip_relative_bias_threshold"]),
             ai_flip_min_delta=float(cur["algo.ai_flip_min_delta"]),
+            max_spread_pct_of_tp=float(cur["algo.max_spread_pct_of_tp"]),
+            spread_session_percentile=float(cur["algo.spread_session_percentile"]),
+            spread_session_gate_enabled=bool(cur["algo.spread_session_gate_enabled"]),
         ),
         model=ModelSnapshot(
             confidence_threshold=float(cur["model.confidence_threshold"]),
@@ -784,6 +803,9 @@ def _empty_values() -> dict[str, Any]:
         "algo.order_block_lookback_bars": 30,
         "algo.ai_flip_relative_bias_threshold": 0.60,
         "algo.ai_flip_min_delta": 0.10,
+        "algo.max_spread_pct_of_tp": 0.15,
+        "algo.spread_session_percentile": 70.0,
+        "algo.spread_session_gate_enabled": True,
         "model.confidence_threshold": 0.35,
         "model.feature_schema_version": "v1.0",
         "model.model_artifact_path": "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt",
@@ -830,6 +852,9 @@ def _apply_bootstrap(cur: dict[str, Any], bootstrap: AppConfig) -> dict[str, Any
     out["algo.order_block_lookback_bars"] = al.order_block_lookback_bars
     out["algo.ai_flip_relative_bias_threshold"] = al.ai_flip_relative_bias_threshold
     out["algo.ai_flip_min_delta"] = al.ai_flip_min_delta
+    out["algo.max_spread_pct_of_tp"] = al.max_spread_pct_of_tp
+    out["algo.spread_session_percentile"] = al.spread_session_percentile
+    out["algo.spread_session_gate_enabled"] = al.spread_session_gate_enabled
     md = bootstrap.model
     out["model.confidence_threshold"] = md.confidence_threshold
     out["model.feature_schema_version"] = md.feature_schema_version
