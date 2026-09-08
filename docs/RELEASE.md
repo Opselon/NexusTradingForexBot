@@ -226,3 +226,54 @@ The release build fails if the application expects schema N but the migration
 package does not contain a path to N (§49). The updater (`nexus update`)
 invokes the canonical migration engine for all three domains after the staged
 install; a failed migration aborts the update transaction.
+
+## 12. Binary verification (unsigned builds) (audit finding B4)
+
+Releases are currently UNSIGNED (no code-signing certificate). Until the
+tracked P0 decision (B4: EV code-signing certificate or Microsoft Store
+distribution, pending operator purchase) is implemented, verify binaries
+by digest and expect the Windows SmartScreen flow below.
+
+### 12.1 Verify the installer digest
+
+1. Download BOTH the installer (`NexusScalpEngine-<version>-windows-x64.exe`
+   or equivalent) and `SHA256SUMS.txt` from the same GitHub release.
+2. `SHA256SUMS.txt` lives at the TOP LEVEL of the release's attached
+   artifacts (next to the installer(s) and the release manifest) — see §2
+   (Artifacts per release) and §9 (Reproducibility & security).
+3. From the download directory run:
+
+   ```
+   sha256sum -c SHA256SUMS.txt
+   ```
+
+   Every listed file must report `OK`. A `FAILED` or `No such file` line is
+   a hard stop — do not run the installer; re-download or report the
+   release. (On Windows PowerShell:
+   `Get-FileHash <installer>.exe -Algorithm SHA256` and compare against the
+   digest line in `SHA256SUMS.txt`.)
+
+### 12.2 Expected SmartScreen flow (unsigned builds)
+
+Windows Defender SmartScreen will show **"Windows protected your PC"** for
+the unsigned installer. This is EXPECTED, not a detected threat:
+
+1. On the SmartScreen dialog click **More info**.
+2. The dialog expands to show the unrecognized app name and a
+   **Run anyway** button — click **Run anyway**.
+3. Proceed with the normal installer flow (§5). If SmartScreen reports a
+   confirmed malware verdict (rather than "unrecognized app"), abort.
+
+Antivirus heuristic flags on PyInstaller/torch binaries are a known B4
+friction point; the digest check in §12.1 is the trust anchor until a
+signing certificate removes both warnings.
+
+### 12.3 Code-signing decision status (B4, tracked P0)
+
+Code-signing (EV certificate OR Microsoft Store distribution) is a tracked
+P0 decision (audit finding B4) pending operator purchase. The build
+pipeline already supports an optional signing step when a certificate is
+configured (§9); until the certificate exists, unsigned builds + SHA256SUMS
+digest verification + the documented SmartScreen flow above are the
+accepted interim state. See
+`docs/agent_handoffs/2026-09-07_NSE_audit_findings_and_status.txt` (B4).

@@ -1,4 +1,0 @@
-s                                                                        [100%]
-=========================== short test summary info ===========================
-SKIPPED [1] tests\integration\test_engine_runtime_launch.py:208: engine log absent — run engine once first (CI has no live engine log)
-1 skipped in 0.11s

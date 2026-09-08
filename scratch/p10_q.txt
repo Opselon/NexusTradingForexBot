@@ -1,5 +1,0 @@
-.....................FF.F...................                             [100%]
-=========================== short test summary info ===========================
-FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_champion_verified_logs_once_per_fingerprint
-FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_artifact_rewrite_reverifies_once
-FAILED tests/unit/test_model_lifecycle_phase10.py::TestCompatibility::test_bug118_force_reload_performs_fresh_verify

@@ -1,2 +1,0 @@
-[main 75b7c69e] fix(lifecycle): ChampionModel/ChampionManager default head width follows the canonical 3-class contract (P0 phase 2 follow-through)
- 1 file changed, 16 insertions(+), 2 deletions(-)

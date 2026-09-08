@@ -1,8 +1,0 @@
-........                                                                 [100%]
-============================== warnings summary ===============================
-src\nexus_scalp\configuration\execution_costs.py:102
-  C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\configuration\execution_costs.py:102: UserWarning: Field name "schema" in "ExecutionCostAssumptions" shadows an attribute in parent "BaseModel"
-    class ExecutionCostAssumptions(BaseModel):
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-8 passed, 1 warning in 0.52s

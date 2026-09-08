@@ -1,2 +1,0 @@
-https://fred.stlouisfed.org/release/calendar FAILED: ReadTimeout The read operation timed out
-https://fred.stlouisfed.org/releases/calendar FAILED: ReadTimeout The read operation timed out

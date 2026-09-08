@@ -1,6 +1,0 @@
-ERROR: usage: python -m pytest [options] [file_or_dir] [file_or_dir] [...]
-python -m pytest: error: unrecognized arguments: --timeout=120
-  inifile: C:\Users\Capsizer\source\repos\NexusTradingForexBot\pyproject.toml
-  rootdir: C:\Users\Capsizer\source\repos\NexusTradingForexBot
-
-exit=4
