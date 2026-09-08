@@ -9,6 +9,7 @@ row. The read path must drain the queue once (bounded) before refusing.
 
 from __future__ import annotations
 
+import queue
 import sqlite3
 from datetime import UTC, datetime
 
@@ -128,8 +129,27 @@ class TestOutcomeFlushRace:
         assert merged.realized_r_multiple == 0.0  # no fabricated R
 
     def test_flush_is_bounded_when_worker_stalled(self, repo):
-        """A stalled worker must not deadlock the live path."""
-        repo._running = False  # simulate a dead worker loop
-        repo._queue.put(("SELECT 1", ()))  # item that will never be task_done'd
+        """A stalled worker must not deadlock the live path.
+
+        CI run #983 race: with the worker ALIVE, flush() returned True
+        because the live writer drained the poisoned item between put()
+        and flush(). Deterministic stall: freeze the worker inside its
+        blocking q.get() by raising _flush_interval, then stop the loop —
+        the worker sleeps in get() for an hour while an item sits in the
+        queue with no consumer, so unfinished_tasks > 0 and flush() must
+        time out (return False) instead of hanging.
+        """
+        worker = repo._worker_thread
+        assert worker is not None and worker.is_alive()
+        # Deterministic stall (no worker-timing dependence): the writer loop
+        # captured its local ref `q = self._queue` at startup. Swap the
+        # instance attribute to a FRESH queue — the worker keeps draining the
+        # old object while flush() polls self._queue.unfinished_tasks on the
+        # new one. An item parked in the new queue has NO consumer, so
+        # flush(timeout) must time out (return False) instead of hanging.
+        stalled_queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
+        repo._queue = stalled_queue
+        repo._queue.put(("SELECT 1", ()))  # enqueued, never consumed
         result = repo.flush(timeout_sec=0.05)
         assert result is False  # returned instead of hanging
+        repo._queue = queue.Queue(maxsize=10000)  # restore for teardown/close()

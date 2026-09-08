@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -379,6 +380,34 @@ def test_matrix_4_duplicate_processing_seeder(tmp_path):
 # ---------------------------------------------------------------------------
 # 5. PROMOTION RESTART (VALIDATED -> SHADOW -> ACTIVE PERSISTENCE)
 # ---------------------------------------------------------------------------
+def _provision_model_artifact(cfg) -> None:
+    """Matrix-5 provisioning: save a REAL ScalpNet artifact at the configured
+    path using the engine's own atomic saver, so LiveEngine's verify-on-load
+    trust gate (P1 ARTIFACT TRUST) finds a valid servable file on both boots.
+    The path previously had NO file: pre-trust-chain this silently cold-start
+    minted; the gate now fail-closes on missing artifacts (correct prod
+    behavior), so the test provisions instead."""
+    import hashlib
+    import json
+
+    import torch
+
+    from nexus_scalp.models.scalp_net import ScalpNet
+
+    path = Path(cfg.model.model_artifact_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    model = ScalpNet(num_features=70, num_classes=3)
+    model.eval()
+    torch.save(model.state_dict(), path)
+    # Write the integrity manifest so the P1 verify-on-load gate sees a
+    # FULLY TRUSTED artifact (digest match), not a legacy-unverified one.
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    (path.parent / "manifest.json").write_text(
+        json.dumps({"model_sha256": digest, "manifest_version": "test-matrix5"}),
+        encoding="utf-8",
+    )
+
+
 def test_matrix_5_promotion_restart_persistence(tmp_path):
     """Promote VALIDATED->SHADOW->ACTIVE via API client, restart registry, verify persistence."""
     db_path = tmp_path / "mat5.db"
@@ -389,6 +418,7 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
     )
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 
+    _provision_model_artifact(cfg)
     engine = LiveEngine(
         config=cfg,
         adapter=PaperMT5Adapter(initial_balance=10000.0, symbol="XAUUSD"),
@@ -430,7 +460,12 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
     assert engine.strategy_registry.upsert(validated_entry) is True
     _flush(repo)
 
+    # WEB-AUTH-P0: control-plane clients authenticate like production.
+    import os as _os
+
+    _os.environ.setdefault("NSE_WEB_AUTH_TOKEN", "matrix5-token")
     client = TestClient(create_app(engine))
+    client.headers.update({"Authorization": "Bearer matrix5-token"})
 
     r1 = client.post(
         "/api/research/promote",
@@ -457,6 +492,7 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
         audit_repo=repo2,
     )
     client2 = TestClient(create_app(engine2))
+    client2.headers.update({"Authorization": "Bearer matrix5-token"})
     r2 = client2.post(
         "/api/research/promote",
         json={

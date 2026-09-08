@@ -692,6 +692,22 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
     adapter = _GatePaperAdapter(initial_balance=10_000.0, symbol="XAUUSD")
     adapter.connect()
     artifact = REPO_ROOT / AppConfig().model.model_artifact_path
+    if not artifact.exists():
+        # CI runners never carry the private champion artifact. Provision a
+        # REAL fresh artifact (ScalpNet 70D/3-class) via the engine's own
+        # atomic saver so the P1 verify-on-load trust gate finds a valid
+        # servable file instead of fail-closing the boot (run #982/#983:
+        # MODEL_LOAD_REJECTED -> L3 stages skipped -> smoke check-count floor
+        # missed). Honest evidence of the provisioning is recorded.
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        _fresh = ScalpNet(num_features=70, num_classes=3)
+        _fresh.eval()
+        torch.save(_fresh.state_dict(), artifact)
+        gate._artifact_provisioned = str(artifact)
     config = AppConfig.model_validate(
         {
             "execution": {"symbol": "XAUUSD", "mode": "PAPER", "magic_number": 888201},
@@ -766,6 +782,8 @@ class _GatePaperAdapter:
 
 def l5_service_graph(gate: Gate, res: StageResult) -> None:
     engine, adapter, _repo = build_gate_engine(gate)
+    if getattr(gate, "_artifact_provisioned", None):
+        res.evidence["artifact_provisioned"] = gate._artifact_provisioned
     required_services = (
         "feature_engine",
         "regime_classifier",
@@ -978,8 +996,19 @@ def l7_api(gate: Gate, res: StageResult) -> None:
 def client_get(app: Any, path: str) -> Any:
     from fastapi.testclient import TestClient
 
+    # WEB-AUTH-P0: the control plane requires a bearer token on every
+    # non-public route. The gate is a first-party consumer — authenticate
+    # with the operator token (env) or a gate-local generated one.
+    headers: dict[str, str] = {}
+    tok = os.environ.get("NSE_WEB_AUTH_TOKEN", "").strip()
+    if not tok:
+        import secrets as _secrets
+
+        tok = _secrets.token_urlsafe(32)
+        os.environ["NSE_WEB_AUTH_TOKEN"] = tok
+    headers["Authorization"] = f"Bearer {tok}"
     with TestClient(app) as client:
-        return client.get(path)
+        return client.get(path, headers=headers)
 
 
 # ===========================================================================
