@@ -57,7 +57,7 @@ class ForensicCheckError(RuntimeError):
 def new_correlation_id(prefix: str = "fh") -> str:
     """Short deterministic-ish correlation id for a check run."""
     raw = f"{prefix}:{time.time_ns()}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return f"{prefix}-" + hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
