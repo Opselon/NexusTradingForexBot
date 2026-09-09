@@ -4,6 +4,11 @@ execution:
   timeframe: "M1"
   magic_number: 999101
   max_slippage_points: 30
+  # OPERATOR RULING (2026-09-09): XAUUSD ONLY until multi-symbol approved.
+  # Policy refuses candidates for any symbol outside this whitelist
+  # (reason SYMBOL_NOT_ENABLED). Add "EURUSD" here when approved.
+  enabled_symbols:
+    - "XAUUSD"
 
 risk:
   max_account_drawdown_pct: 2.0

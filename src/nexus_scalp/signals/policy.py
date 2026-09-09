@@ -60,7 +60,8 @@ class SignalPolicy:
         range_confidence_penalty: float = 0.10,  # Reduced range penalty to encourage micro-scalps
         max_spread_atr_ratio: float = 0.18,  # Maximum allowed spread as 18% of current M1 ATR
         # TASK-AUDREV-C3 (audit rev2) spread gates:
-        max_spread_pct_of_tp: float | None = None,  # Max spread as fraction of candidate TP distance
+        max_spread_pct_of_tp: float
+        | None = None,  # Max spread as fraction of candidate TP distance
         spread_session_percentile: float | None = None,  # Session spread percentile threshold
         spread_session_gate_enabled: bool = True,  # Runtime on/off for gate (b)
         session_spread_percentile_fn: Callable[[str, datetime, float], float] | None = None,
@@ -69,6 +70,11 @@ class SignalPolicy:
         min_allowed_rr: float = 1.10,  # Absolute minimum Risk-to-Reward ratio required
         rule_matrix: RuleMatrixEngine | None = None,
         algo_config: AlgoConfig | None = None,
+        # OPERATOR RULING (2026-09-09): XAUUSD ONLY for now. Symbols allowed to
+        # produce candidates; None resolves to ["XAUUSD"] (fail-closed to the
+        # ruling). C4 made ticket-matching symbol-aware — this whitelist is the
+        # operator gate deciding which tick symbols reach the candidate path.
+        enabled_symbols: list[str] | None = None,
     ) -> None:
         # THRESHOLD OWNERSHIP (P0 policy-governance): the base confidence
         # threshold has ONE canonical default — ModelConfig.confidence_threshold
@@ -91,6 +97,9 @@ class SignalPolicy:
         self.min_allowed_rr = min_allowed_rr
         self.rule_matrix = rule_matrix
         self.algo_config = algo_config or AlgoConfig()
+        # OPERATOR RULING (2026-09-09): XAUUSD only until multi-symbol is
+        # approved. None/empty resolves fail-closed to ["XAUUSD"].
+        self.enabled_symbols = [s.upper() for s in (enabled_symbols or ["XAUUSD"])] or ["XAUUSD"]
 
         # TASK-AUDREV-C3 (audit rev2) spread gates. Threshold ownership follows
         # the confidence_threshold pattern: AlgoConfig is the canonical default
@@ -99,9 +108,7 @@ class SignalPolicy:
         # the None sentinel resolves from AlgoConfig (getattr fallback keeps
         # this robust against frozen/replayed AlgoConfig shapes).
         if max_spread_pct_of_tp is None:
-            max_spread_pct_of_tp = float(
-                getattr(self.algo_config, "max_spread_pct_of_tp", 0.15)
-            )
+            max_spread_pct_of_tp = float(getattr(self.algo_config, "max_spread_pct_of_tp", 0.15))
         self.max_spread_pct_of_tp = float(max_spread_pct_of_tp)
         if spread_session_percentile is None:
             spread_session_percentile = float(
@@ -167,6 +174,10 @@ class SignalPolicy:
         guardian_proposal = self._evaluate_guardian_gate(regime_state, current_tick, execution_id)
         if guardian_proposal is not None:
             return guardian_proposal
+
+        symbol_gate = self._evaluate_enabled_symbols_gate(current_tick, execution_id)
+        if symbol_gate is not None:
+            return symbol_gate
 
         probs = probabilities.squeeze().tolist()
         if not isinstance(probs, list):
@@ -830,7 +841,9 @@ class SignalPolicy:
                 "spread_atr_ratio": float(round(spread_atr_ratio, 4)),
                 "max_spread_atr_ratio": float(self.max_spread_atr_ratio),
                 # TASK-AUDREV-C3 gate (a) evidence: spread vs TP distance.
-                "spread_tp_ratio": float(round(spread_tp_ratio, 4)) if math.isfinite(spread_tp_ratio) else None,
+                "spread_tp_ratio": float(round(spread_tp_ratio, 4))
+                if math.isfinite(spread_tp_ratio)
+                else None,
                 "tp_distance_usd": float(tp_distance) if tp_distance > 0.0 else None,
                 "max_spread_pct_of_tp": float(self.max_spread_pct_of_tp),
                 # TASK-AUDREV-C3 gate (b) evidence: session percentile.
@@ -1112,7 +1125,11 @@ class SignalPolicy:
 
                     # TASK-AUDREV-C4: runtime-resolved expected identity
                     # (tick symbol + configured execution magic).
-                    if t_symbol == expected_symbol and t_magic == expected_magic and t_price is not None:
+                    if (
+                        t_symbol == expected_symbol
+                        and t_magic == expected_magic
+                        and t_price is not None
+                    ):
                         price_dist = abs(target_entry_price - t_price)
                         threshold = 0.50  # minimum distance threshold is $0.50
                         if price_dist < threshold:
@@ -1294,7 +1311,9 @@ class SignalPolicy:
                     "max_spread_atr_ratio": float(self.max_spread_atr_ratio),
                     # TASK-AUDREV-C3 gate evidence (pass path): spread vs TP
                     # distance and session percentile snapshot.
-                    "spread_tp_ratio": float(round(spread_tp_ratio, 4)) if math.isfinite(spread_tp_ratio) else None,
+                    "spread_tp_ratio": float(round(spread_tp_ratio, 4))
+                    if math.isfinite(spread_tp_ratio)
+                    else None,
                     "tp_distance_usd": float(tp_distance) if tp_distance > 0.0 else None,
                     "max_spread_pct_of_tp": float(self.max_spread_pct_of_tp),
                     "spread_session_percentile_value": (
@@ -1681,7 +1700,11 @@ class SignalPolicy:
                     t_price = ticket_info.get("price")
                     # TASK-AUDREV-C4: runtime-resolved expected identity
                     # (tick symbol + configured execution magic).
-                    if t_symbol == expected_symbol and t_magic == expected_magic and t_price is not None:
+                    if (
+                        t_symbol == expected_symbol
+                        and t_magic == expected_magic
+                        and t_price is not None
+                    ):
                         if abs(target_entry_price - t_price) < 0.50:
                             is_same_level = True
                             break
@@ -1832,7 +1855,9 @@ class SignalPolicy:
                 if expected_symbol is None:
                     last_tick = getattr(self, "_c4_last_identity_tick", None)
                     if last_tick is not None:
-                        expected_symbol, expected_magic = self._expected_live_ticket_identity(last_tick)
+                        expected_symbol, expected_magic = self._expected_live_ticket_identity(
+                            last_tick
+                        )
                     else:
                         expected_symbol = "XAUUSD"
                 if t_symbol == expected_symbol and t_magic == expected_magic:
@@ -1937,6 +1962,60 @@ class SignalPolicy:
         self._dedup_last_bid = tick_bid
         self._dedup_last_ask = tick_ask
         return None
+
+    def _evaluate_enabled_symbols_gate(
+        self,
+        current_tick: TickData,
+        execution_id: str,
+    ) -> TradeProposal | None:
+        """OPERATOR RULING gate (2026-09-09): XAUUSD-only until multi-symbol
+        is approved (user directive in the wave-3 exit-behavior brief).
+
+        The C4 unlock made live-ticket matching symbol-aware; this gate is the
+        operator-facing whitelist deciding which tick symbols may reach the
+        candidate path AT ALL. `enabled_symbols` defaults fail-closed to
+        ["XAUUSD"]; re-enable others via execution.enabled_symbols. Additive
+        reason code SYMBOL_NOT_ENABLED (never reuses an existing string).
+        """
+        tick_symbol = str(getattr(current_tick, "symbol", "") or "").upper()
+        if tick_symbol in self.enabled_symbols:
+            return None
+        return TradeProposal(
+            request_id=str(uuid.uuid4()),
+            execution_id=execution_id,
+            symbol=current_tick.symbol,
+            generated_at=current_tick.timestamp,
+            action=ActionType.NO_TRADE,
+            confidence=0.0,
+            proposed_entry=current_tick.bid,
+            stop_loss=current_tick.bid * 0.99,
+            take_profit=current_tick.bid * 1.01,
+            risk_reward_ratio=1.0,
+            reason_code="SYMBOL_NOT_ENABLED",
+            model_action="NO_TRADE",
+            buy_probability=0.0,
+            sell_probability=0.0,
+            no_trade_probability=1.0,
+            regime="UNKNOWN",
+            regime_confidence=0.0,
+            risk_allowed=False,
+            guardian_status="INACTIVE",
+            rejection_reason="SYMBOL_NOT_ENABLED",
+            final_action="NO_TRADE",
+            decision_stage="SYMBOL_WHITELIST_GATE",
+            blocked_by="SYMBOL_WHITELIST",
+            htf_score=0.0,
+            smc_score=0.0,
+            confidence_before_filters=0.0,
+            confidence_after_filters=0.0,
+            risk_checks={
+                "spread_usd": float(round(max(0.0, current_tick.ask - current_tick.bid), 2)),
+                "geometry_unavailable_before_gate": True,
+                "confidence_source": "PRE_MODEL_SYMBOL_GATE",
+                "enabled_symbols": list(self.enabled_symbols),
+                "tick_symbol": tick_symbol,
+            },
+        )
 
     def _evaluate_guardian_gate(
         self,
