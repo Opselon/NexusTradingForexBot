@@ -1,0 +1,47 @@
+name: Drift Debug (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv 0.12.10
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+          version: "0.12.10"
+
+      - name: Resolver environment
+        run: |
+          uv --version
+          uv python list --only-installed || true
+          python3 --version
+
+      - name: Fresh universal resolve (CI-identical)
+        run: |
+          set -e
+          uv pip compile pyproject.toml --all-extras --universal --generate-hashes \
+            --no-header --output-file /tmp/fresh.lock
+          echo "=== numpy arms in CI fresh lock ==="
+          grep -n "^numpy==" /tmp/fresh.lock || true
+          echo "=== polars arms in CI fresh lock ==="
+          grep -n "^polars==" /tmp/fresh.lock || true
+          echo "=== diff vs committed lock (first 80 lines) ==="
+          diff <(grep -v "^#" requirements.lock) <(grep -v "^#" /tmp/fresh.lock) | head -80 || true
+          echo "=== uv-resolved python notes ==="
+          grep -m 5 -i "resolved\|python" /tmp/fresh.lock || true
+
+      - name: Upload fresh lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-fresh-lock
+          path: /tmp/fresh.lock
