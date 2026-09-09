@@ -46,7 +46,7 @@ This handoff contains evidence-backed, auditable improvement targets. **None of 
 ---
 
 ## EXPLICIT FORBIDDEN ACTIONS (do not implement)
-- ❌ Lower `MIN_OOS_EXPECTANCY_R` (0.0R)
+- ❌ Lower `MIN_OOS_EXPECTANCY_R` below `MIN_ECONOMIC_OOS_EXPECTANCY_R` (0.02R, edge round-2 gate default; the legacy 0.0R constant is preserved but no longer the gate default)
 - ❌ Lower `MIN_EVIDENCE_SAMPLES` (20)
 - ❌ Write OOS scores into mutation/search probabilities
 - ❌ Increase `oos_frac` to inflate passes

@@ -195,6 +195,8 @@ class ResearchPipeline:
         run_id: str | None = None,
         strategy_configuration: dict | None = None,
         random_seed: int | None = None,
+        n_trials: int | None = None,
+        family_r_lists: list[list[float]] | None = None,
     ) -> dict[str, Any]:
         """
         Runs the complete evidence pipeline for one candidate and persists the
@@ -288,6 +290,10 @@ class ResearchPipeline:
             # (schema/model/commit) so build_run_snapshot records what this
             # run ACTUALLY used — not placeholders.
             identity_cfg: dict[str, Any] = dict(strategy_configuration or {})
+            # EDGE ROUND-2 provenance: the multiplicity factor travels on the
+            # run snapshot so DSR/SPA are auditable after the fact.
+            if n_trials is not None:
+                identity_cfg.setdefault("n_trials", int(n_trials))
             try:
                 from nexus_scalp.features.schema_contract import (
                     SCHEMA_ID as _SID,
@@ -628,6 +634,8 @@ class ResearchPipeline:
             strategy_version=version,
             purge_seconds=purge_seconds,
             embargo_seconds=embargo_seconds,
+            n_trials=n_trials,
+            family_r_lists=family_r_lists,
         )
         oos_data = oos.model_dump(mode="json")
         oos_data["context_contract_hash"] = _ctx_hash

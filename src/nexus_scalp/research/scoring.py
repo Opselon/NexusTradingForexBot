@@ -53,6 +53,36 @@ def _oos_evidence_is_decisive(oos: OOSResult | None) -> bool:
     return bool(sig.get("decisive"))
 
 
+#: Minimum DSR confidence (Bailey-de Prado) for a mined candidate to count as
+#: real-after-search; the conventional bar is 0.95.
+DSR_CONFIDENCE_FLOOR: float = 0.95
+
+
+def _selection_bias_control_passed(oos: OOSResult | None) -> bool:
+    """True when the multiplicity controls (DSR / SPA) do not reject.
+
+    DSR: when the gate attached a deflated Sharpe (i.e., n_trials > 1 was
+    declared), the DSR confidence must reach DSR_CONFIDENCE_FLOOR.
+    SPA: when a family Reality Check p-value is attached, it must not flag
+    the best family as luck (survivor=False).
+    Absent fields -> legacy behavior (True): only mined-multiplicity runs
+    are deflated, direct single-strategy runs are untouched.
+    """
+    if oos is None:
+        return True
+    dsr = oos.deflated_sharpe
+    if dsr:
+        # n_trials <= 1 means no multiplicity declared -> no deflation.
+        if int(dsr.get("n_trials", 1) or 1) > 1:
+            if float(dsr.get("dsr", 0.0) or 0.0) < DSR_CONFIDENCE_FLOOR:
+                return False
+    spa = oos.spa
+    if spa and spa.get("n_families", 0):
+        if spa.get("survivor") is False:
+            return False
+    return True
+
+
 def compute_strategy_score(
     dataset: ResearchDataset,
     backtest: BacktestResult,
@@ -231,6 +261,25 @@ def compute_strategy_score(
             )
         else:
             reasons.append("OOS significance not available (evidence-building)")
+    elif not _selection_bias_control_passed(oos):
+        # EDGE ROUND-2 (2026-09-09): multiplicity control — the best-of-N
+        # mined candidate must survive deflation (DSR) / the family Reality
+        # Check (SPA) before the verdict may claim a real edge.
+        verdict = "INCONCLUSIVE"
+        dsr = (oos.deflated_sharpe or {}) if oos is not None else {}
+        spa = (oos.spa or {}) if oos is not None else {}
+        if dsr and int(dsr.get("n_trials", 1) or 1) > 1:
+            reasons.append(
+                "selection-bias control failed: deflated Sharpe "
+                f"{float(dsr.get('dsr', 0.0)):.3f} < {DSR_CONFIDENCE_FLOOR:.2f} "
+                f"across n_trials={dsr.get('n_trials')}"
+            )
+        if spa and spa.get("n_families", 0):
+            reasons.append(
+                "selection-bias control failed: family Reality Check "
+                f"p={float(spa.get('p_value', 1.0)):.3f} — best-of-"
+                f"{spa.get('n_families')} families not distinguished from luck"
+            )
     else:
         verdict = "VALIDATED"
         reasons.append("All evidence gates passed")

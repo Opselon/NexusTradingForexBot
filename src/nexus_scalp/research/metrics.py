@@ -517,6 +517,137 @@ def oos_significance(
     }
 
 
+# ---------------------------------------------------------------------------
+# SELECTION-BIAS CONTROL (edge round-2, 2026-09-09): when the search mines
+# hundreds of candidate families from ONE dataset, the best-of-N expectancy is
+# inflated by luck (multiple testing). Two deterministic, additive instruments:
+#
+#   * deflated_sharpe_ratio — Bailey & de Prado's DSR: the probability that a
+#     TRUE Sharpe of 0 yields an observed (annualization-free, per-trade) SR
+#     at least as extreme, given N independent trials and the variance of the
+#     trials' SRs. Reports a 0..1 confidence.
+#   * spa_family_pvalue — White's Reality Check (the SPA idea in its canonical
+#     deterministic form): bootstrap p-value that the BEST family expectancy
+#     in the mined set is attributable to luck. p <= alpha => survivor is real.
+# ---------------------------------------------------------------------------
+
+
+def sharpe_ratio_r(r_values: Sequence[float]) -> float:
+    """Per-trade Sharpe ratio of an R series (mean / std, ddof=1)."""
+    vals = np.asarray([float(v) for v in r_values if math.isfinite(float(v))], dtype=float)
+    if len(vals) < 2:
+        return 0.0
+    std = float(np.std(vals, ddof=1))
+    if std <= 1e-12:
+        return 0.0
+    return float(np.mean(vals)) / std
+
+
+def deflated_sharpe_ratio(
+    r_values: Sequence[float],
+    n_trials: int,
+    *,
+    trial_sr_variance: float | None = None,
+) -> dict[str, Any]:
+    """Deflated Sharpe Ratio (Bailey & de Prado 2014), per-trade R semantics.
+
+    n_trials: how many candidate strategies were mined/evaluated from the same
+    data before this one (multiplicity). trial_sr_variance: variance of the
+    trials' Sharpe ratios; when unknown, the conservative identity
+    var(SR*) ≈ 1/(n-1) for unit-variance R series is used.
+
+    Returns {"sr", "dsr", "n", "n_trials"} — dsr in [0,1] is P(SR0 < observed)
+    under the deflated null; > 0.95 is the conventional "real after search" bar.
+    Deterministic; no RNG (closed-form under CLT).
+    """
+    vals = np.asarray([float(v) for v in r_values if math.isfinite(float(v))], dtype=float)
+    n = len(vals)
+    if n < 3 or n_trials < 1:
+        return {"sr": 0.0, "dsr": 0.0, "n": n, "n_trials": int(n_trials)}
+    mean = float(np.mean(vals))
+    std = float(np.std(vals, ddof=1))
+    sr = mean / std if std > 1e-12 else 0.0
+    # Higher-moment estimator variance of SR (Bailey-de Prado 2014, eq. for
+    # V[SR]); with unit-ish R series this collapses near 1/(n-1).
+    g1 = float(np.mean(((vals - mean) / std) ** 3)) if std > 1e-12 else 0.0  # skew
+    g2 = float(np.mean(((vals - mean) / std) ** 4)) if std > 1e-12 else 3.0  # kurtosis
+    sr_var = (
+        float(trial_sr_variance)
+        if trial_sr_variance is not None and trial_sr_variance > 0
+        else (1.0 - g1 * sr + ((g2 - 1.0) / 4.0) * sr * sr) / max(n - 1, 1)
+    )
+    # Expected MAXIMUM SR under the null across n_trials independent trials
+    # (Bailey-de Prado: Z_alpha = sqrt(2 ln N) - (ln(pi N)) / (2 sqrt(2 ln N))).
+    ln_n = math.log(max(float(n_trials), 2.0))
+    z_alpha = math.sqrt(2.0 * ln_n) - (math.log(math.pi * n_trials)) / (2.0 * math.sqrt(2.0 * ln_n))
+    sr0 = math.sqrt(max(sr_var, 1e-12)) * z_alpha
+    # DSR = P(true SR of a null-strategy max < observed SR) — closed form via erf.
+    dsr = 0.5 * (1.0 + math.erf((sr - sr0) / math.sqrt(2.0 * max(sr_var, 1e-12))))
+    dsr = max(0.0, min(1.0, dsr))
+    return {"sr": round(sr, 6), "dsr": round(dsr, 6), "n": n, "n_trials": int(n_trials)}
+
+
+def spa_family_pvalue(
+    family_r_lists: Sequence[Sequence[float]],
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """White's Reality Check p-value for the BEST mined family (SPA-style).
+
+    family_r_lists: per-trade R lists for EVERY candidate mined from the same
+    dataset (the multiplicity set). The null: the best family's mean R is 0 —
+    i.e., its observed advantage is pure selection luck. Bootstrap resamples
+    each family's pooled indices jointly (preserving cross-family dependence)
+    and reports P(max family mean <= observed best mean under centered null).
+
+    Deterministic via seeded RNG. Returns {"n_families", "best_mean_r",
+    "p_value", "alpha", "survivor"} where survivor = p_value <= alpha.
+    """
+    families = [
+        np.asarray([float(v) for v in lst if math.isfinite(float(v))], dtype=float)
+        for lst in family_r_lists
+        if lst is not None and len(lst) > 0
+    ]
+    families = [f for f in families if len(f) >= 2]
+    n_fam = len(families)
+    if n_fam == 0:
+        return {
+            "n_families": 0,
+            "best_mean_r": 0.0,
+            "p_value": 1.0,
+            "alpha": 0.05,
+            "survivor": False,
+        }
+    means = np.asarray([f.mean() for f in families], dtype=float)
+    best_idx = int(np.argmax(means))
+    best_mean = float(means[best_idx])
+    # Centered null: shift every family to zero mean (White's RC step).
+    centered = [f - f.mean() for f in families]
+    rng = np.random.default_rng(seed)
+    lengths = [len(f) for f in centered]
+    boot_max_means = np.empty(n_boot, dtype=np.float64)
+    for b in range(n_boot):
+        mx = -np.inf
+        for f in centered:
+            idx = rng.integers(0, len(f), len(f))
+            m = float(f[idx].mean())
+            mx = max(mx, m)
+        boot_max_means[b] = mx
+    # p = P(luck-only max >= observed best mean)
+    p = float(np.mean(boot_max_means >= best_mean))
+    p = max(0.0, min(1.0, p))
+    return {
+        "n_families": n_fam,
+        "best_mean_r": round(best_mean, 6),
+        "p_value": round(p, 6),
+        "alpha": 0.05,
+        "survivor": bool(p <= 0.05),
+        "_best_idx": best_idx,
+        "_lengths": lengths,
+    }
+
+
 # ECON v1: BacktestResult (in models) carries a forward reference to
 # SizedEconomicResult (defined above). Now that this module has fully
 # imported, the reference is resolvable — rebuild the model so the

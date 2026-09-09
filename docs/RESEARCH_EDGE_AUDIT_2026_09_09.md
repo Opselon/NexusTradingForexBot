@@ -84,3 +84,48 @@ stress-tests the full family population (PHASE 27 scoped only BACKTEST+WF+OOS
    (history is never destroyed — needs an archival contract, not deletion).
 5. Heavy gates (WF×folds×stress) are sequential; the fold loop is
    parallelizable (no shared state) once the box allows threads.
+
+
+## 6. Round-2 additions (2026-09-09, same mission continuation)
+
+### E2 resolution — economic OOS floor (additive contract)
+- New constant `MIN_ECONOMIC_OOS_EXPECTANCY_R = 0.02` in `research/oos.py`;
+  the OOS gate DEFAULT is now the economic floor. Rationale: the canonical
+  friction model consumes ~0.01–0.02R per trade in spread+slippage, so an
+  OOS edge below 0.02R is indistinguishable from execution-noise — not a
+  tradable edge.
+- **Public-contract compatibility:** the legacy constant
+  `MIN_OOS_EXPECTANCY_R = 0.0` is preserved and importable; an explicit
+  `OOSGate(min_oos_expectancy_r=0.0)` restores the old semantics. The
+  boundary rule ("never LOWER the OOS floor") is unchanged — this change
+  RAISES the effective default, the documented tightening direction.
+- `tests/unit/test_phase27_consistency.py` TEST E updated deliberately to
+  pin BOTH constants (documented contract change, not a silent edit).
+
+### Selection-bias control (multiplicity)
+- `metrics.deflated_sharpe_ratio(r_values, n_trials, trial_sr_variance=...)`:
+  Bailey–de Prado DSR per-trade semantics with higher-moment estimator
+  variance; `dsr >= 0.95` is the "real after search" bar. Deterministic.
+- `metrics.spa_family_pvalue(family_r_lists, n_boot, seed)`: White Reality
+  Check — bootstrap p-value that the BEST mined family's mean R is luck;
+  `survivor = p <= 0.05`. Deterministic via seeded RNG.
+- `OOSGate.evaluate(..., n_trials=None, family_r_lists=None)` attaches
+  `OOSResult.deflated_sharpe` / `OOSResult.spa` when the caller declares the
+  multiplicity (fields stay None otherwise — no fabricated metrics).
+- `pipeline.validate_candidate(..., n_trials=..., family_r_lists=...)`
+  threads the multiplicity through, and `n_trials` lands on the run
+  snapshot (provenance/auditability).
+- `scoring._selection_bias_control_passed` (+ `DSR_CONFIDENCE_FLOOR=0.95`):
+  the verdict chain gains a hard gate — a mined candidate that fails DSR or
+  SPA is INCONCLUSIVE with an explicit reason. Absent fields → legacy
+  behavior.
+
+### Round-2 evidence
+- DSR sanity: strong edge (SR 0.84) → dsr 0.997 @ 200 trials (survives);
+  weak edge (SR 0.11) → dsr 0.12 @ 200 trials (deflated away); monotone in
+  n_trials.
+- SPA sanity: real edge buried in 50 noise families → p=0.0, survivor=True;
+  40 pure-noise families → p=0.367, survivor=False.
+- Sub-economic gate: an OOS window with +0.01R adjusted expectancy FAILS by
+  default and PASSes only under the explicit legacy 0.0 floor.
+- 16 new tests in `tests/unit/test_research_selection_bias_20260909.py`.

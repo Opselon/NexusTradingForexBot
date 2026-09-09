@@ -27,8 +27,18 @@ from nexus_scalp.research.splitting import (
 
 logger = get_logger("nexus_scalp.research.oos")
 
-#: OOS must at minimum retain a non-negative expectancy to pass the gate.
+#: LEGACY floor (PHASE 09B, doc-pinned in SEARCH_LEARNING_BOUNDARIES.md):
+#: the gate historically required only a non-negative OOS expectancy. Kept as
+#: a public constant for backward-compatible imports; the GATE DEFAULT is now
+#: the economic floor below (edge round-2, 2026-09-09).
 MIN_OOS_EXPECTANCY_R: float = 0.0
+#: ECONOMIC FLOOR (edge round-2): the minimum OOS expectancy that survives the
+#: friction model's own noise. The canonical spread+slippage sensitivity of a
+#: scalp is ~0.01-0.02R per trade, so an edge below 0.02R is statistically
+#: indistinguishable from execution-cost noise — not a tradable economic
+#: edge. Raising (never lowering) this constant is the documented tightening
+#: direction; explicit constructors may still pass 0.0 for legacy semantics.
+MIN_ECONOMIC_OOS_EXPECTANCY_R: float = 0.02
 #: Maximum acceptable relative degradation from in-sample to OOS.
 MAX_OOS_DEGRADATION: float = 1.0  # 100% relative drop is the hard ceiling
 
@@ -38,10 +48,14 @@ class OOSGate:
 
     def __init__(
         self,
-        min_oos_expectancy_r: float = MIN_OOS_EXPECTANCY_R,
+        min_oos_expectancy_r: float | None = None,
         max_degradation: float = MAX_OOS_DEGRADATION,
         assumptions: ExecutionAssumptions | None = None,
     ) -> None:
+        # min_oos_expectancy_r=None -> the ECONOMIC floor (new default).
+        # Passing 0.0 EXPLICITLY restores the legacy non-negative contract.
+        if min_oos_expectancy_r is None:
+            min_oos_expectancy_r = MIN_ECONOMIC_OOS_EXPECTANCY_R
         self.min_oos_expectancy_r = float(min_oos_expectancy_r)
         self.max_degradation = float(max_degradation)
         # E1/E2: canonical-cost default (see walkforward for the contract).
@@ -62,6 +76,8 @@ class OOSGate:
         embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         context_contract: dict | None = None,
         allow_zero_friction: bool = False,
+        n_trials: int | None = None,
+        family_r_lists: list[list[float]] | None = None,
     ) -> OOSResult:
         # E1 loud guard: refuse a zero-cost run unless explicitly allowed.
         ensure_not_zero_friction(
@@ -154,6 +170,8 @@ class OOSGate:
         # backtest itself produced (first differences of the cumulative R path)
         # — no re-simulation, no duplicated friction logic.
         oos_sig: dict = {}
+        dsr: dict | None = None
+        spa: dict | None = None
         curve = oos_bt.equity_curve_r
         if curve:
             prev = 0.0
@@ -161,9 +179,21 @@ class OOSGate:
             for point in curve:
                 oos_r_list.append(float(point) - prev)
                 prev = float(point)
-            from nexus_scalp.research.metrics import oos_significance
+            from nexus_scalp.research.metrics import (
+                deflated_sharpe_ratio,
+                oos_significance,
+                spa_family_pvalue,
+            )
 
             oos_sig = oos_significance(oos_r_list)
+            # EDGE ROUND-2: selection-bias control when the strategy was mined
+            # from a family search. n_trials = mined-trial count; family_r_lists
+            # = per-trade R lists of ALL mined candidates (Reality Check set).
+            # Both optional: absent -> fields stay None (legacy producers).
+            if n_trials is not None and n_trials > 1:
+                dsr = deflated_sharpe_ratio(oos_r_list, int(n_trials))
+            if family_r_lists:
+                spa = spa_family_pvalue(family_r_lists)
 
         oos_samples = len(split.oos)
         # BUG-244 (Agent 13): an OOS window with rows but ZERO finite real
@@ -215,4 +245,6 @@ class OOSGate:
             reason=reason,
             context_diagnostics=(context_diag or None),
             oos_significance=(oos_sig or None),
+            deflated_sharpe=dsr,
+            spa=spa,
         )
