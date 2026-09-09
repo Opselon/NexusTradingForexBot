@@ -421,9 +421,10 @@ class TickPipeline:
                     self.om.liquidity_governor is not None
                     and self.om.liquidity_governor.causal_state() == "STALE"
                 )
-                if _gov_stale and (
-                    time.time() - getattr(self.om, "_liq_stale_retry_at", 0.0)
-                ) >= 15.0:
+                if (
+                    _gov_stale
+                    and (time.time() - getattr(self.om, "_liq_stale_retry_at", 0.0)) >= 15.0
+                ):
                     self.om._liq_stale_retry_at = time.time()
                     self.om._warm_liquidity_from_bars(
                         completed_bars,
