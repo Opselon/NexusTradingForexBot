@@ -155,8 +155,7 @@ def ensure_not_zero_friction(
             "allow=True (engine entrypoint: allow_zero_friction=True) for "
             "explicit frictionless analytics, or derive assumptions from "
             "configs/execution_assumptions.json via "
-            "default_research_assumptions()."
-            + (f" Context: {context}" if context else "")
+            "default_research_assumptions()." + (f" Context: {context}" if context else "")
         )
 
 

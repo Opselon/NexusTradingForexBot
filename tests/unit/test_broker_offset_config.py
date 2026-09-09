@@ -109,7 +109,9 @@ class TestBoundaryValues:
 
 
 class TestBrokerEpochConversion:
-    def test_broker_epoch_to_utc_uses_configured_offset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_broker_epoch_to_utc_uses_configured_offset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv(ENV_VAR, "120")
         real_utc = datetime(2026, 8, 18, 22, 55, 2, tzinfo=UTC)
         server_epoch = _server_epoch_for_utc(real_utc, 120)

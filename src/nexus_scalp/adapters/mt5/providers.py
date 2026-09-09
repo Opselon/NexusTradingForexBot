@@ -68,8 +68,7 @@ def get_broker_server_utc_offset_minutes() -> int:
         return BROKER_SERVER_UTC_OFFSET_MINUTES
     if not _BROKER_OFFSET_RE.match(raw):
         _logger.warning(
-            "BROKER_OFFSET_INVALID_ENV %s=%r is not an integer; "
-            "keeping default %d min",
+            "BROKER_OFFSET_INVALID_ENV %s=%r is not an integer; keeping default %d min",
             BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
             raw,
             BROKER_SERVER_UTC_OFFSET_MINUTES,
@@ -78,8 +77,7 @@ def get_broker_server_utc_offset_minutes() -> int:
     value = int(raw)
     if not 0 <= value <= 1440:
         _logger.warning(
-            "BROKER_OFFSET_OUT_OF_RANGE %s=%d outside 0..1440; "
-            "keeping default %d min",
+            "BROKER_OFFSET_OUT_OF_RANGE %s=%d outside 0..1440; keeping default %d min",
             BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
             value,
             BROKER_SERVER_UTC_OFFSET_MINUTES,
@@ -148,9 +146,7 @@ def broker_epoch_to_utc(epoch: float | int | None) -> datetime | None:
     if math.isnan(epoch) or math.isinf(epoch):
         return None
     try:
-        return datetime.fromtimestamp(
-            epoch - get_broker_server_utc_offset_minutes() * 60, tz=UTC
-        )
+        return datetime.fromtimestamp(epoch - get_broker_server_utc_offset_minutes() * 60, tz=UTC)
     except (OverflowError, OSError, ValueError):
         return None
 

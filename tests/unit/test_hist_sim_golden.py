@@ -148,12 +148,8 @@ class TestM5DerivationGolden:
         """Missing minute => bucket skipped + recorded in gaps; never filled."""
         m5, gaps = bars_mod.build_m5(_fixture_bars())
         assert len(gaps) == 2
-        assert gaps[0] == (
-            "2026-09-07T09:05:00+00:00 missing=['2026-09-07T09:07:00+00:00']"
-        )
-        assert gaps[1] == (
-            "2026-09-07T09:30:00+00:00 missing=['2026-09-07T09:33:00+00:00']"
-        )
+        assert gaps[0] == ("2026-09-07T09:05:00+00:00 missing=['2026-09-07T09:07:00+00:00']")
+        assert gaps[1] == ("2026-09-07T09:30:00+00:00 missing=['2026-09-07T09:33:00+00:00']")
         # the corrupted buckets must NOT appear as fabricated bars
         bucket_stamps = {b.timestamp for b in m5}
         assert datetime(2026, 9, 7, 9, 5, tzinfo=UTC) not in bucket_stamps

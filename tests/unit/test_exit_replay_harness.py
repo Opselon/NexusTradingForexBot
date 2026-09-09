@@ -78,9 +78,7 @@ class TestGridMath:
     def test_floor80_gives_at_least_04_minus_friction_with_friction(self):
         # same setup but friction 0.05 -> outcome >= 0.4 - 0.05
         t = _trade(mfe_r=0.5, mae_r=-0.5, realized_r=0.14)
-        res = epc.replay_trade(
-            t, _policy(retention=0.80, arm_threshold_r=0.5), friction_r=0.05
-        )
+        res = epc.replay_trade(t, _policy(retention=0.80, arm_threshold_r=0.5), friction_r=0.05)
         assert res.outcome_r >= 0.4 - 0.05 - 1e-9
         assert res.outcome_r <= 0.4 + 1e-9  # friction is subtracted, never added
 
@@ -104,7 +102,9 @@ class TestGridMath:
 
     def test_wide_trail_retains_more_than_tight_trail(self):
         t = _trade(mfe_r=1.2, mae_r=-0.5)
-        tight = epc.replay_trade(t, _policy(trail_atr_mult=1.15, retention=0.5, arm_threshold_r=0.5))
+        tight = epc.replay_trade(
+            t, _policy(trail_atr_mult=1.15, retention=0.5, arm_threshold_r=0.5)
+        )
         wide = epc.replay_trade(t, _policy(trail_atr_mult=2.0, retention=0.5, arm_threshold_r=0.5))
         # 0.8 vs 0.5 floor... retention 0.5*1.2 = 0.6 floor for both;
         # trail: 1.2-1.15*0.35=0.7975 vs 1.2-2.0*0.35=0.5 -> binding differs
@@ -132,8 +132,11 @@ class TestPathBounds:
             for arm in (0.5, 1.0):
                 for trail in (1.15, 2.0):
                     pol = _policy(
-                        be_trigger_r=trigger, retention=retention,
-                        arm_threshold_r=arm, trail_atr_mult=trail, ai_flip_enabled=flip,
+                        be_trigger_r=trigger,
+                        retention=retention,
+                        arm_threshold_r=arm,
+                        trail_atr_mult=trail,
+                        ai_flip_enabled=flip,
                     )
                     res = epc.replay_trade(t, pol)
                     assert res.outcome_r <= mfe + 1e-9
@@ -325,8 +328,15 @@ class TestAiFlipDifferential:
     def test_non_flip_trade_identical_on_vs_off(self):
         # AI-flip disabled must change NOTHING for trades whose exit mechanism
         # was not the flip (mfe below arm threshold isolates the flip rule)
-        for mech in ("TAKE_PROFIT_HIT", "HARD_SL_HIT", "BREAK_EVEN_SL_HIT",
-                     "TRAILING_STOP_HIT", "RISK_FREE_SL_HIT", "MANUAL_CLOSE", ""):
+        for mech in (
+            "TAKE_PROFIT_HIT",
+            "HARD_SL_HIT",
+            "BREAK_EVEN_SL_HIT",
+            "TRAILING_STOP_HIT",
+            "RISK_FREE_SL_HIT",
+            "MANUAL_CLOSE",
+            "",
+        ):
             t = _trade(mfe_r=0.3, mae_r=-0.5, exit_mechanism=mech)
             on = epc.replay_trade(t, _policy())
             off = epc.replay_trade(t, _policy(ai_flip_enabled=False))
@@ -375,8 +385,7 @@ class TestModeSeparation:
         # population's MFE spread.
         max_mfe = max(t.mfe_r for t in trades)
         inert_cells = [
-            c for c in cells
-            if c.policy.be_trigger_r > max_mfe and c.policy.ai_flip_enabled
+            c for c in cells if c.policy.be_trigger_r > max_mfe and c.policy.ai_flip_enabled
         ]
         baseline = epc.compute_stats([t.realized_r for t in trades])
         if inert_cells:
@@ -389,9 +398,9 @@ class TestModeSeparation:
             assert capped, "expected trades below the smallest trigger"
             capped_cells = epc.sweep_grid(capped)
             above = [
-                c for c in capped_cells
-                if c.policy.be_trigger_r > max(t.mfe_r for t in capped)
-                and c.policy.ai_flip_enabled
+                c
+                for c in capped_cells
+                if c.policy.be_trigger_r > max(t.mfe_r for t in capped) and c.policy.ai_flip_enabled
             ]
             assert above
             assert above[0].net_r == pytest.approx(

@@ -159,8 +159,9 @@ class TestSpreadTpRatioGate:
             max_spread_atr_ratio=10.0,  # disable the ATR gate for isolation
         )
         # Pin the cap to the observed TP distance so spread/max == ratio exactly.
-        probe = _evaluate(_fresh_policy(max_spread_pct_of_tp=0.15,
-                                        max_spread_atr_ratio=10.0), spread=1.125)
+        probe = _evaluate(
+            _fresh_policy(max_spread_pct_of_tp=0.15, max_spread_atr_ratio=10.0), spread=1.125
+        )
         tp_distance = probe.risk_checks["tp_distance_usd"]
         boundary_spread = round(0.15 * tp_distance, 2)  # tick spread is 2dp
         assert boundary_spread == 1.12  # 7.5 * 0.15 == 1.125 -> 2dp tick quote
@@ -211,7 +212,9 @@ class TestSpreadTpRatioGate:
         tp_distance = abs(policy.max_spread_pct_of_tp * 0.0)  # degenerate: 0.0
         spread = 0.20
         tp_ratio = spread / tp_distance if tp_distance > 0 else float("inf")
-        degenerate_exceeded = spread > 0.0 and not (tp_distance > 0.0 and tp_ratio <= policy.max_spread_pct_of_tp)
+        degenerate_exceeded = spread > 0.0 and not (
+            tp_distance > 0.0 and tp_ratio <= policy.max_spread_pct_of_tp
+        )
         assert degenerate_exceeded is True
         # And the evidence contract for the inf case: risk_checks stamps None
         # (not inf) so JSON audit rows stay serializable.
@@ -253,9 +256,7 @@ class TestSpreadSessionPctGate:
 
     def test_below_percentile_passes(self) -> None:
         """live 0.20 <= session P70 0.90 -> candidate proceeds."""
-        policy = _fresh_policy(
-            session_spread_percentile_fn=lambda s, n, p: 0.90
-        )
+        policy = _fresh_policy(session_spread_percentile_fn=lambda s, n, p: 0.90)
         proposal = _evaluate(policy, spread=0.20)
         assert proposal.action == ActionType.BUY_MARKET
         assert proposal.decision_stage == "FINAL_DECISION"
@@ -321,9 +322,7 @@ class TestSpreadGateConfig:
 
         result = build_runtime_configuration(
             version=1,
-            base=RuntimeConfiguration(
-                version=0, updated_at="", source="", correlation_id=""
-            ),
+            base=RuntimeConfiguration(version=0, updated_at="", source="", correlation_id=""),
             updates={"algo.max_spread_pct_of_tp": 0.20},
         )
         assert result.errors == []
@@ -334,9 +333,7 @@ class TestSpreadGateConfig:
         # Invalid update rejected atomically.
         bad = build_runtime_configuration(
             version=2,
-            base=RuntimeConfiguration(
-                version=0, updated_at="", source="", correlation_id=""
-            ),
+            base=RuntimeConfiguration(version=0, updated_at="", source="", correlation_id=""),
             updates={"algo.spread_session_percentile": 120.0},
         )
         assert bad.errors
@@ -352,9 +349,7 @@ class TestSpreadGateConfig:
 
         real = build_runtime_configuration(
             version=1,
-            base=RuntimeConfiguration(
-                version=0, updated_at="", source="", correlation_id=""
-            ),
+            base=RuntimeConfiguration(version=0, updated_at="", source="", correlation_id=""),
             bootstrap=AppConfig(algo=AlgoConfig(max_spread_pct_of_tp=0.30)),
         )
         assert real.errors == []
@@ -378,7 +373,9 @@ def _paper_conn() -> sqlite3.Connection:
 _INSERT_SEQ = [0]
 
 
-def _insert_fill(conn: sqlite3.Connection, ts: str, spread: float, symbol: str = "XAUUSD", status: str = "FILLED") -> None:
+def _insert_fill(
+    conn: sqlite3.Connection, ts: str, spread: float, symbol: str = "XAUUSD", status: str = "FILLED"
+) -> None:
     _INSERT_SEQ[0] += 1  # unique (ts, ticket, order_type, requested_price) identity
     conn.execute(
         """
@@ -388,8 +385,23 @@ def _insert_fill(conn: sqlite3.Connection, ts: str, spread: float, symbol: str =
              ticket, latency_ticks, status, source)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (ts, symbol, "BUY", 0.01, 2000.0, 2000.0, 2000.0 + spread, spread,
-         2000.0 + spread, 0.0, None, _INSERT_SEQ[0], 0, status, "TEST"),
+        (
+            ts,
+            symbol,
+            "BUY",
+            0.01,
+            2000.0,
+            2000.0,
+            2000.0 + spread,
+            spread,
+            2000.0 + spread,
+            0.0,
+            None,
+            _INSERT_SEQ[0],
+            0,
+            status,
+            "TEST",
+        ),
     )
 
 

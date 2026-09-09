@@ -311,7 +311,12 @@ def sweep_grid(
     net_r descending."""
     cells: list[CellStats] = []
     for be_trig, lock_pips, retention, arm, trail, flip in itertools.product(
-        BE_TRIGGERS_R, BE_LOCK_PIPS, RETENTION_FLOORS, ARM_THRESHOLDS_R, TRAIL_ATR_MULTS, AI_FLIP_FLAGS
+        BE_TRIGGERS_R,
+        BE_LOCK_PIPS,
+        RETENTION_FLOORS,
+        ARM_THRESHOLDS_R,
+        TRAIL_ATR_MULTS,
+        AI_FLIP_FLAGS,
     ):
         policy = PolicyParams(
             be_trigger_r=be_trig,
@@ -404,9 +409,7 @@ def load_trades(db_path: str | Path) -> tuple[list[TradeRow], dict[str, Any]]:
                 cols.get("execution_id", "NULL"),
             ]
         )
-        rows = conn.execute(
-            f"SELECT {select} FROM {TABLE} WHERE is_closed = 1"
-        ).fetchall()
+        rows = conn.execute(f"SELECT {select} FROM {TABLE} WHERE is_closed = 1").fetchall()
         row_count_all = conn.execute(f"SELECT COUNT(*) FROM {TABLE}").fetchone()[0]
     finally:
         conn.close()
@@ -479,8 +482,14 @@ def generate_synthetic_trades(n: int, seed: int = SYNTHETIC_SEED) -> list[TradeR
             realized = rng.uniform(0.4, 1.05)
             mfe = realized + rng.uniform(0.05, 0.5)
         mae = min(realized, -abs(rng.uniform(0.0, 1.0)))
-        mechanisms = ["TAKE_PROFIT_HIT", "HARD_SL_HIT", "BREAK_EVEN_SL_HIT",
-                      "TRAILING_STOP_HIT", "AI_REVERSAL_EXIT", "RISK_FREE_SL_HIT"]
+        mechanisms = [
+            "TAKE_PROFIT_HIT",
+            "HARD_SL_HIT",
+            "BREAK_EVEN_SL_HIT",
+            "TRAILING_STOP_HIT",
+            "AI_REVERSAL_EXIT",
+            "RISK_FREE_SL_HIT",
+        ]
         mech = mechanisms[i % len(mechanisms)]
         trades.append(
             TradeRow(

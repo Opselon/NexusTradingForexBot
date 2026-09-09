@@ -963,12 +963,8 @@ class ResearchPipeline:
                 # FALLBACK_ZERO) — artifact-comparability across calibrations.
                 # getattr: test doubles may substitute engines without the
                 # attribute.
-                "execution_cost_calibration_version": (
-                    self.execution_cost_calibration_version
-                ),
-                "assumptions_provenance": getattr(
-                    self.backtest, "assumptions_provenance", None
-                ),
+                "execution_cost_calibration_version": (self.execution_cost_calibration_version),
+                "assumptions_provenance": getattr(self.backtest, "assumptions_provenance", None),
             },
             result_summary=summary,
             status=status,
