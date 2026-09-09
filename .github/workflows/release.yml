@@ -383,6 +383,31 @@ jobs:
 
           Copy-Item "$Out\manifests\release-manifest.json" "$Out\portable\release-manifest.json" -Force
           Write-Host "manifest embedded in portable tree"
+      # P0 TRUST ROOT: sign the release update manifest with the Ed25519
+      # release key (private seed ONLY via the NSE_UPDATE_SIGNING_KEY secret).
+      # docs/ARTIFACT_TRUST_CHAIN.md section 3: a release without a valid
+      # signed update manifest is REJECTED by every client updater
+      # (SECURITY_BLOCKED, fail-closed, no unsigned fallback) — the signing
+      # step is therefore MANDATORY, not optional hardening.
+      - name: Sign update manifest (Ed25519 trust root)
+        shell: bash
+        env:
+          NSE_UPDATE_SIGNING_KEY: ${{ secrets.NSE_UPDATE_SIGNING_KEY }}
+          NSE_VERSION: ${{ needs.gates.outputs.version }}
+          NSE_RELEASE_ID: ${{ github.run_id }}
+        run: |
+          set -e
+          python scripts/release/sign_update_manifest.py "$NSE_OUT" "$NSE_OUT/NexusScalpEngine-$NSE_VERSION-win-x64.zip"
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, 'src')
+          from nexus_scalp.release.signing import verify_manifest_signature
+          m = json.loads(Path('release').glob('**/manifests/update-manifest.signed.json').__next__().read_text())
+          v = verify_manifest_signature(m)
+          assert v["verified"] and v["covered_digest"] == m["artifact_sha256"]
+          print("client-side signed-manifest verify OK:", v["key_id"], v["covered_digest"][:12])
+          PY
       - name: verify-release (full self-check incl. secrets)
         shell: pwsh
         run: |
@@ -422,6 +447,7 @@ jobs:
             release/v*/windows/x64/cli/NexusScalpEngine-CLI.exe
             release/v*/windows/x64/checksums/SHA256SUMS.txt
             release/v*/windows/x64/manifests/release-manifest.json
+            release/v*/windows/x64/manifests/update-manifest.signed.json
             release/v*/windows/x64/sbom/sbom.spdx.json
           retention-days: 14
 
