@@ -81,6 +81,24 @@ from nexus_scalp.release.update_engine.safety_guards import (
     UpdateBlockedError,
 )
 
+#: Structured update-lifecycle logger (OBS-006: every stage transition and
+#: terminal outcome must land in the severity tree stamped with the ``upd-``
+#: correlation id so an update is reconstructable from logs alone, not only
+#: from the terminal update-state.json). Import is lazy inside _update_log()
+#: to keep this module import-light for the slim CLI contract.
+_UPDATE_LOGGER_NAME = "nexus_scalp.release.update"
+
+
+def _update_log(level: str, event: str, msg: str, *args: Any) -> None:
+    """Failure-isolated structured update log (never breaks an update)."""
+    try:
+        from nexus_scalp.observability.logging import get_logger
+
+        log = get_logger(_UPDATE_LOGGER_NAME)
+        getattr(log, level)("[UPDATE] event=%s %s", event, msg % args if args else msg)
+    except Exception:
+        pass
+
 
 class UpdateOrchestrator:
     """Runs the full installed-user update: discovery -> install -> health.
@@ -546,6 +564,17 @@ class UpdateOrchestrator:
         def _emit(state: str, detail: str = "") -> None:
             self.state.set_state(state, self._correlation_id)
             report["state"] = state
+            # OBS-006: persist the transition to the severity tree too —
+            # update-state.json holds only the terminal state, so a mid-update
+            # crash previously left no log evidence of the stage chain.
+            _update_log(
+                "info",
+                "STAGE",
+                "correlation_id=%s state=%s%s",
+                self._correlation_id,
+                state,
+                f" detail={detail}" if detail else "",
+            )
             if on_event is not None:
                 with contextlib.suppress(Exception):
                     on_event(state, detail)
@@ -558,6 +587,13 @@ class UpdateOrchestrator:
             report["error_message"] = (
                 f"previous update crashed at {crashed['previous_state']} — "
                 "run `nexus update rollback` before any new update"
+            )
+            _update_log(
+                "error",
+                "CRASH_RECOVERY",
+                "correlation_id=%s previous_state=%s (rollback required before any new update)",
+                self._correlation_id,
+                crashed["previous_state"],
             )
             return report
 
@@ -618,6 +654,18 @@ class UpdateOrchestrator:
                         "error_code": "COMPATIBILITY_BLOCKED",
                         "error_message": "compatibility gate blocked the update",
                     }
+                )
+                _update_log(
+                    "warning",
+                    "COMPATIBILITY_BLOCKED",
+                    "correlation_id=%s verdict=%s reasons=%s",
+                    self._correlation_id,
+                    compat.get("verdict"),
+                    [
+                        str(c.get("reason", c.get("name", "?")))
+                        for c in compat.get("checks", [])
+                        if isinstance(c, dict) and c.get("verdict") == "BLOCKED"
+                    ],
                 )
                 return report
 
@@ -767,6 +815,15 @@ class UpdateOrchestrator:
             report["error_code"] = "UPDATE_FAILED"
             report["error_message"] = str(e)[:500]
             self.state.mark_failed(str(e)[:500])
+            _update_log(
+                "error",
+                "FAILED",
+                "correlation_id=%s stage=%s error_type=%s error=%s",
+                self._correlation_id,
+                report.get("state"),
+                type(e).__name__,
+                str(e)[:300],
+            )
             self.history_store.append(
                 from_version=self.installed_version,
                 to_version=report.get("target_version", self.installed_version),
@@ -838,6 +895,14 @@ class UpdateOrchestrator:
             rb = RollbackEngine(app_root=self.app_root, backup_dir=prev_dir)
             res = rb.restore_application(reason=reason)
             self.state.set_state(STATE_ROLLED_BACK, self._correlation_id)
+            _update_log(
+                "warning",
+                "ROLLED_BACK",
+                "correlation_id=%s reason=%s restored=%s",
+                self._correlation_id,
+                reason,
+                bool(res.get("restored", res.get("files"))),
+            )
             self.history_store.append(
                 from_version=self.installed_version,
                 to_version=self.installed_version,
