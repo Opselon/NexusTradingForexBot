@@ -49,6 +49,12 @@ algo:
   max_spread_pct_of_tp: 0.15
   spread_session_percentile: 70.0
   spread_session_gate_enabled: true
+  # TASK-EXIT-SEPARATION (A8): exit-policy switches (this block only).
+  # Defaults mirror the code constants; no threshold tuning.
+  giveback_arm_r: 0.50
+  trail_atr_multiplier: 1.15
+  # AI direction-flip exit (close + fast reversal): SUSPENDED by default.
+  ai_flip_exit_enabled: false
 
 candle_intel:
   # MARKET-CONTEXT P0 Phase 3 (2026-09-07): disabled — the engine computes

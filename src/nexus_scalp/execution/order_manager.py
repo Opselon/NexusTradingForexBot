@@ -174,6 +174,10 @@ ATR_TRAILING_MULTIPLIER: float = 1.15
 #: throttled by this value.
 TELEMETRY_CONSOLE_INTERVAL_SEC: float = 10.0
 
+#: TASK-EXIT-SEPARATION (c): minimum spacing between "AI flip exit suppressed"
+#: WARNINGs for the SAME ticket (log-spam guard only; never gates any action).
+_AI_FLIP_SUPPRESS_WARN_INTERVAL_SEC: float = 10.0
+
 
 # -----------------------------------------------------------------------------
 # P0 seam S5: dict-shaped views over TicketStateStore.
@@ -464,6 +468,9 @@ class OrderLifecycleManager:
         self.risk_engine = risk_engine
         self.experience_engine = experience_engine
         self._processed_orders: dict[str, bool] = {}
+        # TASK-EXIT-SEPARATION (c): per-ticket last "AI flip suppressed"
+        # WARNING stamp (monotonic clock; log-spam guard only).
+        self._ai_flip_warn_times: dict[int, float] = {}
 
         import threading
 
@@ -1033,6 +1040,20 @@ class OrderLifecycleManager:
 
         Opposing orders are NEVER stacked: if the close fails, no new order is sent.
         """
+        # TASK-EXIT-SEPARATION (c): the AI direction-flip exit is SUSPENDED
+        # unless the operator enables `algo.ai_flip_exit_enabled` (default
+        # False, fail-safe). The flag is read LIVE on every call so an
+        # operator re-enables without a code change; each suppressed flip
+        # logs ONE structured WARNING per ticket, rate-limited.
+        if not bool(getattr(getattr(self, "algo_config", None), "ai_flip_exit_enabled", False)):
+            self._warn_ai_flip_suspended(
+                getattr(decision, "ticket", 0) or 0,
+                getattr(
+                    getattr(decision, "action", None), "value", str(getattr(decision, "action", ""))
+                ),
+            )
+            return False
+
         symbol = getattr(decision, "symbol", "") or ""
         new_action = getattr(decision, "reversal_action", None) or getattr(decision, "action", None)
 
@@ -1152,6 +1173,15 @@ class OrderLifecycleManager:
         if action == ActionType.CLOSE_POSITION and AI_REVERSAL_REASON in str(
             getattr(decision, "reason_code", "") or ""
         ):
+            # TASK-EXIT-SEPARATION (c): while the flip is suspended, the
+            # autopsy tag must NOT be set (a later organic exit must not be
+            # mislabelled as AI_REVERSAL_EXIT).
+            if not bool(getattr(getattr(self, "algo_config", None), "ai_flip_exit_enabled", False)):
+                self._warn_ai_flip_suspended(
+                    ticket,
+                    getattr(getattr(decision, "reversal_action", None), "value", "CLOSE_POSITION"),
+                )
+                return False
             self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
             logger.info("Intercepted CLOSE_POSITION as AI_REVERSAL_SIGNAL", ticket=ticket)
             return self.execute_ai_reversal(decision=decision, volume=volume)
@@ -1574,6 +1604,39 @@ class OrderLifecycleManager:
     def _tiered_giveback_floor(self, ticket: int, peak: float) -> tuple[float, bool]:
         """Delegate: tiered retention floor (owned by ProtectionEngine, S10)."""
         return self._protection._tiered_giveback_floor(ticket, peak)
+
+    def _warn_ai_flip_suspended(self, ticket: int, action: str) -> None:
+        """TASK-EXIT-SEPARATION (c): ONE structured WARNING per ticket per
+        interval when an AI direction-flip exit is suppressed. Rate-limited
+        on the monotonic clock (no per-tick I/O, INV-001 respected); the
+        per-ticket stamp lives in a plain dict, cleaned up with the ticket."""
+        now_mono = time.monotonic()
+        last = self._ai_flip_warn_times.get(ticket, 0.0)
+        if (now_mono - last) >= _AI_FLIP_SUPPRESS_WARN_INTERVAL_SEC:
+            self._ai_flip_warn_times[ticket] = now_mono
+            logger.warning(
+                "AI FLIP EXIT SUPPRESSED: ai_flip_exit_enabled=false (default); "
+                "deterministic protection chain remains the exit authority",
+                ticket=ticket,
+                suppressed_action=action,
+                flag="algo.ai_flip_exit_enabled",
+            )
+
+    def _exit_policy_config_value(self, field_name: str, module_constant: float) -> float:
+        """TASK-EXIT-SEPARATION (A8): resolve one exit-policy scalar.
+
+        Live AlgoConfig override -> module-constant fallback. Invalid
+        (non-finite / non-positive) overrides never disable or corrupt
+        protection; the constant always wins when the override is broken.
+        """
+        raw = getattr(self.algo_config, field_name, None)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return module_constant
+        if not math.isfinite(value) or value <= 0.0:
+            return module_constant
+        return value
 
     def evaluate_profit_giveback(
         self,
@@ -3482,82 +3545,97 @@ class OrderLifecycleManager:
                 pass
 
         if ai_flip_detected and ai_flip_action is not None:
-            msg_id = self._order_message_ids.get(ticket)
-            logger.info(
-                f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<"
-            )
+            # TASK-EXIT-SEPARATION (c): the AI direction-flip EXIT (close +
+            # fast reversal) is SUSPENDED unless the operator enables
+            # `algo.ai_flip_exit_enabled` (default False, fail-safe). The
+            # flag is read LIVE every pass; ONE rate-limited structured
+            # WARNING per ticket is logged on each suppression. The flip
+            # code below is intentionally left intact (suspension, not
+            # deletion); the position falls through to the deterministic
+            # giveback -> breakeven -> trailing protection chain.
+            if not bool(getattr(getattr(self, "algo_config", None), "ai_flip_exit_enabled", False)):
+                self._warn_ai_flip_suspended(ticket, ai_flip_action.value)
+                ai_flip_detected = False
+                ai_flip_action = None
+            else:
+                msg_id = self._order_message_ids.get(ticket)
+                logger.info(
+                    f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<"
+                )
 
-            # Tag the exit BEFORE closing so the ledger autopsy attributes it to the
-            # reversal protocol rather than a generic manual close.
-            self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
+                # Tag the exit BEFORE closing so the ledger autopsy attributes it to the
+                # reversal protocol rather than a generic manual close.
+                self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
 
-            if self.adapter.close_position(ticket=ticket):
-                if self.notifier:
-                    self.notifier.notify_canonical_close(
-                        ticket=ticket,
-                        symbol=pos.symbol,
-                        entry=pos.price_open,
-                        exit_price=price_current,
-                        profit_usd=pos.profit,
-                        duration_sec=holding_duration,
-                        exit_reason=ExitMechanism.AI_REVERSAL_EXIT,
-                        evidence=f"AI_REVERSAL ({ai_flip_action.value})",
-                        reply_to_message_id=msg_id,
+                if self.adapter.close_position(ticket=ticket):
+                    if self.notifier:
+                        self.notifier.notify_canonical_close(
+                            ticket=ticket,
+                            symbol=pos.symbol,
+                            entry=pos.price_open,
+                            exit_price=price_current,
+                            profit_usd=pos.profit,
+                            duration_sec=holding_duration,
+                            exit_reason=ExitMechanism.AI_REVERSAL_EXIT,
+                            evidence=f"AI_REVERSAL ({ai_flip_action.value})",
+                            reply_to_message_id=msg_id,
+                        )
+
+                    # Free the exposure slot immediately (the broker position is gone) but
+                    # deliberately KEEP the per-ticket trackers alive: the next management
+                    # pass detects the dead ticket and writes the single autopsy row.
+                    with self._live_tickets_lock:
+                        self._tickets_cache.pop_ticket(ticket)
+
+                    # Dispatch immediate reversal stop order (clamped to HARD_MAX_LOTS).
+                    rev_volume = self._clamp_dispatch_volume(pos.volume, symbol=pos.symbol)
+                    if rev_volume <= 0.0:
+                        logger.warning(
+                            "AI REVERSAL: reversal order skipped, clamped volume is zero",
+                            ticket=ticket,
+                        )
+                        # (continue -> skip-rest signal, S6 STEP-C extraction)
+                        return True
+
+                    rev_entry = (
+                        current_tick.ask
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else current_tick.bid
                     )
-
-                # Free the exposure slot immediately (the broker position is gone) but
-                # deliberately KEEP the per-ticket trackers alive: the next management
-                # pass detects the dead ticket and writes the single autopsy row.
-                with self._live_tickets_lock:
-                    self._tickets_cache.pop_ticket(ticket)
-
-                # Dispatch immediate reversal stop order (clamped to HARD_MAX_LOTS).
-                rev_volume = self._clamp_dispatch_volume(pos.volume, symbol=pos.symbol)
-                if rev_volume <= 0.0:
-                    logger.warning(
-                        "AI REVERSAL: reversal order skipped, clamped volume is zero",
-                        ticket=ticket,
+                    rev_sl = (
+                        round(rev_entry - (atr * 1.5), 2)
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else round(rev_entry + (atr * 1.5), 2)
+                    )
+                    rev_tp = (
+                        round(rev_entry + (atr * 3.0), 2)
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else round(rev_entry - (atr * 3.0), 2)
+                    )
+                    # BUG-247 (RESIDUAL P1): fast-reversal follow-up is an ENTRY and must
+                    # honor the SAFE_MODE circuit; the protective close above already ran.
+                    if self.global_state == "SAFE_MODE":
+                        logger.warning(
+                            "AI REVERSAL follow-up blocked: SAFE_MODE circuit open",
+                            ticket=ticket,
+                            suppressed_action=ai_flip_action.value,
+                        )
+                        return True
+                    self.adapter.place_pending_order(
+                        symbol=pos.symbol,
+                        order_type=OrderType.BUY_STOP
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else OrderType.SELL_STOP,
+                        volume=rev_volume,
+                        price=rev_entry,
+                        stop_loss=rev_sl,
+                        take_profit=rev_tp,
                     )
                     # (continue -> skip-rest signal, S6 STEP-C extraction)
                     return True
 
-                rev_entry = (
-                    current_tick.ask if ai_flip_action == ActionType.BUY_STOP else current_tick.bid
-                )
-                rev_sl = (
-                    round(rev_entry - (atr * 1.5), 2)
-                    if ai_flip_action == ActionType.BUY_STOP
-                    else round(rev_entry + (atr * 1.5), 2)
-                )
-                rev_tp = (
-                    round(rev_entry + (atr * 3.0), 2)
-                    if ai_flip_action == ActionType.BUY_STOP
-                    else round(rev_entry - (atr * 3.0), 2)
-                )
-                # BUG-247 (RESIDUAL P1): fast-reversal follow-up is an ENTRY and must
-                # honor the SAFE_MODE circuit; the protective close above already ran.
-                if self.global_state == "SAFE_MODE":
-                    logger.warning(
-                        "AI REVERSAL follow-up blocked: SAFE_MODE circuit open",
-                        ticket=ticket,
-                        suppressed_action=ai_flip_action.value,
-                    )
-                    return True
-                self.adapter.place_pending_order(
-                    symbol=pos.symbol,
-                    order_type=OrderType.BUY_STOP
-                    if ai_flip_action == ActionType.BUY_STOP
-                    else OrderType.SELL_STOP,
-                    volume=rev_volume,
-                    price=rev_entry,
-                    stop_loss=rev_sl,
-                    take_profit=rev_tp,
-                )
-                # (continue -> skip-rest signal, S6 STEP-C extraction)
-                return True
-
-            # Close failed: clear the tag so a later organic exit is not mislabelled.
-            self._forced_exit_mechanisms.pop(ticket, None)
+                # Close failed: clear the tag so a later organic exit is not mislabelled.
+                self._forced_exit_mechanisms.pop(ticket, None)
 
         # =================================================================
         # DETERMINISTIC PROTECTION PRIORITY CHAIN

@@ -596,6 +596,12 @@ class ProtectionEngine:
         PROFIT_GIVEBACK_MIN_RETENTION = _S[7]
         TIERED_GIVEBACK_RETENTION_FLOOR = _S[8]
         TIERED_GIVEBACK_ARM_R = _S[9]
+        # TASK-EXIT-SEPARATION (b): live-config override of the arming point.
+        # Default AlgoConfig carries 0.50 == the module constant, so default
+        # behavior is identical; invalid overrides fall back to the constant.
+        TIERED_GIVEBACK_ARM_R = self.om._exit_policy_config_value(
+            "giveback_arm_r", TIERED_GIVEBACK_ARM_R
+        )
         risk_usd = self.om._initial_risks.get(ticket, 0.0)
         if risk_usd <= 0.0 or peak <= 0.0:
             # Without a known planned risk we fall back to the absolute floor so
@@ -846,6 +852,12 @@ class ProtectionEngine:
         would loosen the broker SL or regress behind a confirmed breakeven lock.
         """
         ATR_TRAILING_MULTIPLIER = _om_protection_symbols()[12]
+        # TASK-EXIT-SEPARATION (d): live-config override of the trail distance.
+        # Default AlgoConfig carries 1.15 == the module constant (unchanged
+        # behavior); invalid overrides fall back to the constant.
+        ATR_TRAILING_MULTIPLIER = self.om._exit_policy_config_value(
+            "trail_atr_multiplier", ATR_TRAILING_MULTIPLIER
+        )
         state = self.om.get_protection_state(pos.ticket)
         if state.close_requested or state.profit_giveback_triggered:
             # A higher-priority protection decision is in force; trailing must not
