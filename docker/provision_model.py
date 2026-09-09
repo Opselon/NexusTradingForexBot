@@ -5,6 +5,7 @@ Mirrors scripts/ci/runtime_gate.py provisioning: real ScalpNet(70,3) weights +
 manifest.json (sha256) + model.scaler.npz (identity 70) + model.meta.json.
 Idempotent: skips when a verified bundle already exists.
 """
+
 from __future__ import annotations
 
 import hashlib
