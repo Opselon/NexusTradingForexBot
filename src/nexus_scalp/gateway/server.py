@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import sys
 import time
@@ -45,6 +46,8 @@ DEFAULT_API_KEY = "default_local_key"
 DEFAULT_SECRET = "default_local_secret"
 TIMESTAMP_SKEW_S = 300  # ±5 min
 MAX_BODY_BYTES = 64 * 1024
+
+logger = logging.getLogger("nexus_scalp.gateway.server")
 
 app = FastAPI(title="NSE Gateway Server", version="1.0.0")
 
@@ -452,17 +455,25 @@ async def execute(
 
     try:
         adapter = _get_adapter()
-    except Exception as exc:
-        return JSONResponse({"status": "FAILED", "message": str(exc)}, status_code=500)
+    except Exception:
+        # AUDIT (CodeQL py/stack-trace-exposure): never echo exception text to
+        # the client — log server-side with traceback instead.
+        logger.exception("gateway adapter init failed")
+        return JSONResponse(
+            {"status": "FAILED", "message": "gateway adapter unavailable"}, status_code=500
+        )
 
     try:
         result = _handle_action(action, payload, adapter)
         # Map internal FAILED to HTTP 200 with status FAILED (client expects 200 + JSON)
         # except PING which is always OK.
         return JSONResponse(result, status_code=200)
-    except Exception as exc:  # pragma: no cover - broker edge
+    except Exception:  # pragma: no cover - broker edge
+        # AUDIT (CodeQL py/stack-trace-exposure): exception details (incl. stack
+        # trace) must not reach the client — log them server-side only.
+        logger.exception("gateway handler error (action=%s)", action)
         return JSONResponse(
-            {"status": "FAILED", "message": f"handler error: {exc}"}, status_code=500
+            {"status": "FAILED", "message": "internal handler error"}, status_code=500
         )
 
 
@@ -480,8 +491,10 @@ async def health() -> dict[str, Any]:
         mode = getattr(snap, "trade_mode", None)
         bal = getattr(snap, "balance", None)
         return {"status": "OK", "platform": sys.platform, "trade_mode": mode, "balance": bal}
-    except Exception as exc:
-        return {"status": "ERROR", "platform": sys.platform, "message": str(exc)}
+    except Exception:
+        # Same exposure rule as /api/v1/execute: no exception text to clients.
+        logger.exception("gateway health check failed")
+        return {"status": "ERROR", "platform": sys.platform, "message": "health check error"}
 
 
 def set_allow_live(v: bool) -> None:
