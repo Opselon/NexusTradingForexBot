@@ -56,6 +56,11 @@ jobs:
 
       - name: Boot isolated core (docker compose)
         run: |
+          # AUDIT-B1 compose contract: core refuses to boot without a web
+          # auth token (NSE_WEB_AUTH_TOKEN:? in docker-compose.yml). CI has
+          # no operator .env — generate a throwaway PAPER-mode token here
+          # (never echoed, single-run, torn down in the always() step).
+          echo "NSE_WEB_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
           docker compose up -d --build core
           docker compose ps
 
@@ -128,3 +133,4 @@ jobs:
         if: always()
         run: |
           docker compose down -v --remove-orphans || true
+          rm -f .env
