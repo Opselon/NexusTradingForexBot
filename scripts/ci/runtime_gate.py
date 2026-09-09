@@ -727,6 +727,33 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
         (artifact.parent / "manifest.json").write_text(
             json.dumps(_manifest, indent=2), encoding="utf-8"
         )
+        # Full-bundle parity: L4 MODEL/FEATURE requires scaler 70/70 alongside
+        # the checkpoint (artifact width split: checkpoint=70 scaler=None ->
+        # MODEL_CONTRACT_ERROR, CI #1010). A provisioned synthetic bundle is
+        # only self-consistent when the scaler ships with it: identity
+        # transform (mean=0, std=1 for all 70 dims) — deterministic, std>0,
+        # and the scaled vector is finite by construction. meta.json carries
+        # the canonical schema id/dimension so the meta contract check passes.
+        import numpy as _np
+
+        _np.savez(
+            artifact.with_suffix(".scaler.npz"),
+            mean=_np.zeros(70, dtype=_np.float64),
+            std=_np.ones(70, dtype=_np.float64),
+        )
+        from nexus_scalp.features.schema_contract import SCHEMA_ID as _SCHEMA_ID
+
+        (artifact.parent / "model.meta.json").write_text(
+            json.dumps(
+                {
+                    "feature_schema_id": _SCHEMA_ID,
+                    "feature_schema_dimension": 70,
+                    "note": "runtime_gate provisioned (no champion on this host)",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         gate._artifact_provisioned = str(artifact)
     config = AppConfig.model_validate(
         {
