@@ -1023,6 +1023,7 @@ nvidia-nccl-cu13==2.30.7 ; sys_platform == 'linux' \
 nvidia-nvjitlink==13.4.52 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') \
     --hash=sha256:3a589e3732140839349545efd0db67426523459b12e6952c3c73b6d55900f200 \
     --hash=sha256:4bd7c27adc7832da5e6b8580fa64a42b9eebc94baae3ddcbedf4719f0bab2bb8 \
+    --hash=sha256:75f7e1a04b0a63c7d8af9921e1ed45d9ef880d3c6ef976989082482698e01205 \
     --hash=sha256:90401db7e5a580a5067a468b3086e0b65f3b96ab3c42524afd741efc8a0e150a
     # via
     #   cuda-toolkit
