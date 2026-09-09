@@ -126,6 +126,12 @@ class AlgorithmSnapshot:
     w_market_reversal: float = 0.20
     w_recovery_probability: float = 0.10
     w_hold_score: float = 0.10
+    # TASK-EXIT-SEPARATION (A8): exit-policy switches ride the snapshot so a
+    # runtime-config swap (_sync_runtime_config -> to_algo_config) preserves
+    # operator overrides instead of silently reverting them to defaults.
+    giveback_arm_r: float = 0.50
+    trail_atr_multiplier: float = 1.15
+    ai_flip_exit_enabled: bool = False
     effective_scope: str = NEXT_SIGNAL
 
 
@@ -311,6 +317,10 @@ class RuntimeConfiguration:
                 "w_market_reversal": self.algo.w_market_reversal,
                 "w_recovery_probability": self.algo.w_recovery_probability,
                 "w_hold_score": self.algo.w_hold_score,
+                # TASK-EXIT-SEPARATION (A8): exit-policy switches.
+                "giveback_arm_r": self.algo.giveback_arm_r,
+                "trail_atr_multiplier": self.algo.trail_atr_multiplier,
+                "ai_flip_exit_enabled": self.algo.ai_flip_exit_enabled,
                 "effective_scope": self.algo.effective_scope,
             },
             "model": {
@@ -373,6 +383,9 @@ class RuntimeConfiguration:
             max_spread_pct_of_tp=self.algo.max_spread_pct_of_tp,
             spread_session_percentile=self.algo.spread_session_percentile,
             spread_session_gate_enabled=self.algo.spread_session_gate_enabled,
+            giveback_arm_r=self.algo.giveback_arm_r,
+            trail_atr_multiplier=self.algo.trail_atr_multiplier,
+            ai_flip_exit_enabled=self.algo.ai_flip_exit_enabled,
         )
 
     def to_app_config(self) -> AppConfig:
@@ -759,6 +772,9 @@ def build_runtime_configuration(
             max_spread_pct_of_tp=float(cur["algo.max_spread_pct_of_tp"]),
             spread_session_percentile=float(cur["algo.spread_session_percentile"]),
             spread_session_gate_enabled=bool(cur["algo.spread_session_gate_enabled"]),
+            giveback_arm_r=float(cur["algo.giveback_arm_r"]),
+            trail_atr_multiplier=float(cur["algo.trail_atr_multiplier"]),
+            ai_flip_exit_enabled=bool(cur["algo.ai_flip_exit_enabled"]),
         ),
         model=ModelSnapshot(
             confidence_threshold=float(cur["model.confidence_threshold"]),
@@ -810,6 +826,9 @@ def _empty_values() -> dict[str, Any]:
         "algo.max_spread_pct_of_tp": 0.15,
         "algo.spread_session_percentile": 70.0,
         "algo.spread_session_gate_enabled": True,
+        "algo.giveback_arm_r": 0.50,
+        "algo.trail_atr_multiplier": 1.15,
+        "algo.ai_flip_exit_enabled": False,
         "model.confidence_threshold": 0.35,
         "model.feature_schema_version": "v1.0",
         "model.model_artifact_path": "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt",
@@ -859,6 +878,9 @@ def _apply_bootstrap(cur: dict[str, Any], bootstrap: AppConfig) -> dict[str, Any
     out["algo.max_spread_pct_of_tp"] = al.max_spread_pct_of_tp
     out["algo.spread_session_percentile"] = al.spread_session_percentile
     out["algo.spread_session_gate_enabled"] = al.spread_session_gate_enabled
+    out["algo.giveback_arm_r"] = al.giveback_arm_r
+    out["algo.trail_atr_multiplier"] = al.trail_atr_multiplier
+    out["algo.ai_flip_exit_enabled"] = al.ai_flip_exit_enabled
     md = bootstrap.model
     out["model.confidence_threshold"] = md.confidence_threshold
     out["model.feature_schema_version"] = md.feature_schema_version

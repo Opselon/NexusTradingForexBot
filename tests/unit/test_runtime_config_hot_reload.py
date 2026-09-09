@@ -26,6 +26,7 @@ import pytest
 
 from nexus_scalp.configuration import RuntimeConfigStore
 from nexus_scalp.configuration.config import AlgoConfig, AppConfig, ModelConfig
+from nexus_scalp.configuration.runtime_config import build_runtime_configuration
 
 # ---------------------------------------------------------------------------
 # Deterministic calculation fixtures (the SAME operation before/after apply)
@@ -330,3 +331,75 @@ class TestBug136BootModelPathRehydration:
         except Exception:
             pass
         assert resolved == "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+
+
+# ---------------------------------------------------------------------------
+# TASK-EXIT-SEPARATION (A8): exit-policy keys must survive a runtime-config
+# swap (snapshot -> to_algo_config) and a persisted restart restore. Without
+# this, an operator override applied via hot-reload silently reverts to the
+# AlgoConfig defaults (which mirror the module constants).
+# ---------------------------------------------------------------------------
+
+
+class TestExitPolicyKeysSurviveSwap:
+    def test_snapshot_projects_exit_policy_keys(self) -> None:
+        from nexus_scalp.configuration.config import AlgoConfig
+
+        algo = AlgoConfig(giveback_arm_r=0.8, trail_atr_multiplier=2.0, ai_flip_exit_enabled=True)
+        snap = build_runtime_configuration(version=1, bootstrap=_boot_with_algo(algo))
+        assert snap.snapshot is not None, snap.errors
+        projected = snap.snapshot.to_algo_config()
+        assert projected.giveback_arm_r == 0.8
+        assert projected.trail_atr_multiplier == 2.0
+        assert projected.ai_flip_exit_enabled is True
+        # flat round-trip keeps the keys (restart-restore shape)
+        flat = snap.snapshot.to_flat_dict()
+        assert flat["algo.giveback_arm_r"] == 0.8
+        assert flat["algo.trail_atr_multiplier"] == 2.0
+        assert flat["algo.ai_flip_exit_enabled"] is True
+
+    def test_persisted_restore_keeps_exit_policy_overrides(self, tmp_path: Path) -> None:
+        from nexus_scalp.configuration import PersistentConfigStore
+        from nexus_scalp.settings import SettingsDatabase, SettingsService
+
+        db_path = tmp_path / "app_settings_exit.db"
+        svc = SettingsService(db=SettingsDatabase(db_path))
+        store1 = RuntimeConfigStore(
+            persistent=PersistentConfigStore(svc), bootstrap=_boot_with_algo(None)
+        )
+        r = store1.apply(
+            {
+                "algo.giveback_arm_r": 0.9,
+                "algo.trail_atr_multiplier": 1.8,
+                "algo.ai_flip_exit_enabled": True,
+            }
+        )
+        assert r.success, r.errors
+
+        # 'Restart': brand-new store over the SAME settings DB
+        svc2 = SettingsService(db=SettingsDatabase(db_path))
+        store2 = RuntimeConfigStore(
+            persistent=PersistentConfigStore(svc2), bootstrap=_boot_with_algo(None)
+        )
+        snap = store2.get_snapshot()
+        assert snap.algo.giveback_arm_r == 0.9
+        assert snap.algo.trail_atr_multiplier == 1.8
+        assert snap.algo.ai_flip_exit_enabled is True
+        # and the live engine surface (to_algo_config) sees the same values
+        projected = snap.to_algo_config()
+        assert projected.giveback_arm_r == 0.9
+        assert projected.ai_flip_exit_enabled is True
+
+
+def _boot_with_algo(algo):
+    from nexus_scalp.configuration.config import AppConfig, ModelConfig
+
+    kwargs = dict(
+        execution={"symbol": "XAUUSD", "mode": "PAPER", "timeframe": "M1"},
+        risk={"max_account_drawdown_pct": 10.0, "risk_per_trade_pct": 1.0},
+        model=ModelConfig(confidence_threshold=0.35),
+        telegram={"enabled": False},
+    )
+    if algo is not None:
+        kwargs["algo"] = algo
+    return AppConfig(**kwargs)
