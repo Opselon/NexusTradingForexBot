@@ -97,7 +97,10 @@ class StorageGuard:
         self.workspace = Path(workspace)
         self.user_root = Path(user_root)
         self.settings = settings or StorageGuardSettings()
-        self._last_cycle = 0.0
+        #: None = never ran (the FIRST cycle is always due — do NOT compare a
+        #: 0.0 sentinel against time.monotonic(): on a freshly booted machine
+        #: monotonic < interval and the first pass would be silently skipped).
+        self._last_cycle: float | None = None
         self._startup_done = False
 
     # ------------------------------------------------------------------
@@ -156,6 +159,8 @@ class StorageGuard:
     # ------------------------------------------------------------------
     def is_due(self, now: float | None = None) -> bool:
         now = now if now is not None else time.monotonic()
+        if self._last_cycle is None:
+            return True
         return (now - self._last_cycle) >= _CYCLE_INTERVAL_SEC
 
     def cycle(self, *, force: bool = False) -> dict[str, Any]:
