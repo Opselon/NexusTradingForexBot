@@ -146,6 +146,65 @@ def _info(msg: str) -> None:
 
 T0 = datetime(2026, 9, 5, 10, 0, tzinfo=UTC)
 XAU_TICK_KW = dict(symbol="XAUUSD", bid=2000.00, ask=2000.05, volume=1.0)
+
+# ---------------------------------------------------------------------------
+# TIME DETERMINISM — maintenance-window band (CI flake #987)
+# ---------------------------------------------------------------------------
+# The canonical nightly maintenance break is 23:00->01:00 SERVER time with a
+# +/-30 min spread-evidence buffer (research/economics.in_maintenance_window).
+# On the canonical GMT+3 broker (BROKER_SERVER_UTC_OFFSET_MINUTES=180) that is
+# 19:30..22:30 UTC. Any test that stamps a real datetime.now(UTC) onto a tick
+# feeding SignalPolicy -> dispatch_order is LEGITIMATELY blocked
+# (NIGHTLY_MAINTENANCE_BREAK, fail-closed) whenever CI lands in that band —
+# a wall-clock flake, not a product bug. Helpers below keep the timestamp
+# fresh (real now, so tick-recency semantics stay honest) but pin the HOUR
+# outside the blocked band. Window arithmetic mirrors the canonical predicate
+# (offset-env-driven, server window minus/plus buffer) without importing
+# production internals into the test module — a duplicated constant pair, not
+# a second time implementation.
+_MAINT_WINDOW_START_SERVER_MIN = 23 * 60  # 23:00 server
+_MAINT_WINDOW_END_SERVER_MIN = 1 * 60  # 01:00 server (next day)
+_MAINT_WINDOW_BUFFER_MIN = 30  # spread-evidence buffer (canonical)
+
+
+def _broker_server_utc_offset_minutes() -> int:
+    """Canonical broker/server offset (env-overridable), matching providers.py."""
+    raw = os.environ.get("NSE_BROKER_SERVER_UTC_OFFSET_MINUTES")
+    try:
+        value = int(raw) if raw is not None else 180
+    except ValueError:
+        return 180
+    return value if 0 <= value <= 1440 else 180
+
+
+def _in_maintenance_band_utc(ts: datetime) -> bool:
+    """True when UTC instant `ts` maps into the buffered nightly maintenance
+    window under the canonical server offset (UTC minutes only — window is
+    server-time-fixed, so the band is a fixed UTC ring once offset is set)."""
+    offset_min = _broker_server_utc_offset_minutes()
+    srv_minutes = (ts.hour * 60 + ts.minute + offset_min) % (24 * 60)
+    start = _MAINT_WINDOW_START_SERVER_MIN - _MAINT_WINDOW_BUFFER_MIN
+    end = _MAINT_WINDOW_END_SERVER_MIN + _MAINT_WINDOW_BUFFER_MIN
+    if start <= end:
+        return start <= srv_minutes <= end
+    return srv_minutes >= start or srv_minutes <= end  # crosses midnight
+
+
+def _utc_now_outside_maintenance_band() -> datetime:
+    """Real UTC now, with the hour shifted out of the blocked band when it
+    lands inside. Keeps tick freshness real AND the dispatch outcome
+    deterministic regardless of the hour at which CI runs."""
+    now = datetime.now(UTC)
+    if not _in_maintenance_band_utc(now):
+        return now
+    # The band is exactly 3h wide in UTC (offset-independent width: buffered
+    # server window 22:30..01:30), so a 3h shift back always lands outside.
+    # Floor to the shifted hour for a stable, minute-safe result.
+    shifted = (now - timedelta(hours=3)).replace(minute=0, second=0, microsecond=0)
+    assert not _in_maintenance_band_utc(shifted), "shift must clear the band"
+    return shifted
+
+
 SYMBOL_INFO_KW: dict[str, Any] = dict(
     symbol="XAUUSD",
     digits=2,
@@ -759,7 +818,17 @@ def test_smoke_exposure_guard_and_idempotency(tmp_path) -> None:
     from nexus_scalp.execution.order_manager import OrderLifecycleManager
 
     om = OrderLifecycleManager(adapter=paper, audit_repo=audit, risk_engine=risk)  # type: ignore[arg-type]
-    now = datetime.now(UTC)
+    # TIME DETERMINISM (CI flake #987): `now` feeds tick.timestamp ->
+    # policy generated_at -> DispatchEngine's canonical nightly
+    # maintenance-window guard (23:00->01:00 server = 19:30..22:30 UTC on
+    # the GMT+3 broker). A real wall-clock now() inside that band is
+    # legitimately blocked (NIGHTLY_MAINTENANCE_BREAK) and the first
+    # dispatch fails — a wall-clock flake, not a product bug. Fix: keep
+    # now() real (fresh timestamp for the tick/policy path) but shift the
+    # HOUR out of the blocked band, so the guard stays exercised (open
+    # side) and the outcome is hour-of-day invariant. Same treatment as
+    # test_smoke_full_chain stage 05/07 and the risk sentinel below.
+    now = _utc_now_outside_maintenance_band()
     tick = TickData(timestamp=now, **XAU_TICK_KW)
     # craft a proposal via policy so SL/TP are valid — trending vector so the
     # AGGRESSIVE channel can fire (tenkan > kijun, displacement above range floor)
@@ -844,7 +913,9 @@ def test_smoke_exposure_guard_and_idempotency(tmp_path) -> None:
         current_tick=tick,
     )
     assert verdict is not None
-    # first dispatch succeeds
+    # first dispatch succeeds (deterministic: now is pinned outside the
+    # maintenance band by _utc_now_outside_maintenance_band, so the
+    # NIGHTLY_MAINTENANCE_BREAK guard is open on every CI run)
     assert om.dispatch_order(decision=p, volume=float(verdict.volume)) is True
     _ok("first dispatch accepted")
     # duplicate request_id blocked
