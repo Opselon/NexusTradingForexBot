@@ -108,6 +108,10 @@ jobs:
           tail -20 "$CI_RESULTS_DIR/journeys/pytest.txt"
           if [ "$rc" -ne 0 ]; then
             echo "::error::client E2E journeys failed (rc=$rc)"
+            # TASK-A10: the ::error:: annotation alone does NOT fail the job —
+            # without exit 1 a red journey reported a green nightly (the exact
+            # silent-bypass class the CI/CD gate-integrity audit hunts).
+            exit 1
           fi
           exit 0
 
