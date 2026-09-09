@@ -52,6 +52,13 @@ web = [
     "uvicorn>=0.27.0,<1.0.0",
     "httpx>=0.26.0,<1.0.0",
 ]
+# Client E2E golden journeys (tests/e2e_client, nightly-e2e.yml) drive a real
+# Chromium via Playwright. Kept as a dedicated extra so the base runtime wheel
+# and the docker image stay free of the browser toolchain; CI installs
+# `.[e2e]` before `python -m playwright install chromium`.
+e2e = [
+    "playwright>=1.40.0",
+]
 release = [
     "pyinstaller>=6.0.0",
     "feedparser>=6.0.0,<7.0.0",

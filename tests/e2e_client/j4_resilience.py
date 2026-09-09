@@ -7,12 +7,13 @@ killing the page's network (route abort) — like a Wi-Fi drop — then restored
 """
 
 import json
+import os
 import time
 
 from e2e_harness import RESULTS, js_summary, record, save_results, shot
 from playwright.sync_api import sync_playwright
 
-BASE = "http://127.0.0.1:8081"
+BASE = os.environ.get("NSE_E2E_BASE", "http://127.0.0.1:8081")
 
 
 def tab_click(page, tab):
