@@ -72,7 +72,11 @@ class TestOutcomeFlushRace:
     def test_audit_repo_flush_drains_queue(self, repo):
         ledger = ExperienceLedger(repo)
         ledger.record_experience(_record("req_flush_a"))
-        assert ledger.get_experience_by_key("exp_req_flush_a") is None  # still queued
+        # NOT asserted here: the row may or may not be visible pre-flush — the
+        # background worker flushes on its own cadence (CI run #1014: slow
+        # scheduling let the worker drain between record() and this read, so
+        # asserting "still queued" raced the worker). The CONTRACT under test:
+        # flush() must make the row durably visible (polled below).
         assert repo.flush(timeout_sec=5.0) is True
         # flush() guarantees durability (worker committed). The ledger reads
         # through a SEPARATE WAL connection; poll briefly for the reader to
