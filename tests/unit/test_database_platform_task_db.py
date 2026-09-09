@@ -53,7 +53,9 @@ class TestManifestRegistryAgreement:
             )
 
     def test_specific_pinned_versions(self) -> None:
-        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 7
+        # AUDIT bumped 7 -> 8 with AUDIT-0008-research-hot-query-indexes
+        # (ddf37e08); manifest and registry must agree.
+        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 8
         assert MANIFESTS[DatabaseDomain.NEWS].schema_version == 2
         assert MANIFESTS[DatabaseDomain.CANDLE_INTEL].schema_version == 2
 

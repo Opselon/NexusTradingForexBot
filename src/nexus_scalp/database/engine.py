@@ -497,14 +497,21 @@ class DatabaseMigrationEngine:
                 for ddl in _NEWS_SCHEMA_SQL:
                     con.execute(ddl)
             except ImportError as e:
-                # Slim/no-app-deps context: SKIP alignment, do NOT create the
-                # id-skeleton either (an id-skeleton would shadow the real DDL
-                # and break CREATE INDEX on news_articles(published_at) on
-                # every boot). Tables simply do not exist yet here — the app
-                # bootstrap owns creating them on first use.
+                # Slim/no-app-deps context (CI check_migration_safety installs
+                # only structlog): cannot build the full canonical DDL. Keep
+                # the migration chain valid by skeletoning ONLY the tables the
+                # registered migrations actually reference (news_health with
+                # its indexed columns) and SKIP the rest — a full id-skeleton
+                # would shadow CREATE TABLE IF NOT EXISTS and break
+                # news_articles(published_at) indexes on every boot.
                 logger.warning(
                     "[DB_MIGRATION] event=NEWS_BASELINE_SKIPPED reason=deps_missing error=%s",
                     str(e),
+                )
+                con.execute(
+                    "CREATE TABLE IF NOT EXISTS news_health ("
+                    "id INTEGER PRIMARY KEY, source_id TEXT, "
+                    "last_success_at TEXT, checked_at TEXT)"
                 )
                 return
             except Exception as e:
