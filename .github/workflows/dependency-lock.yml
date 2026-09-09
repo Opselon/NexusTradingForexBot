@@ -39,6 +39,11 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: false
+          # PIN: the lock artifact must be byte-reproducible across local and
+          # CI. Newer uv releases changed universal-resolution output in the
+          # past (numpy arm merging), which would flag a committed lock as
+          # stale. Bump BOTH sides (this pin + local uv) together.
+          uv-version: "0.12.10"
 
       - name: Drift check (regenerates nothing; fails on stale artifacts)
         run: |

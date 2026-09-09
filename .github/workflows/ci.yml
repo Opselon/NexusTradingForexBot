@@ -349,6 +349,7 @@ jobs:
         if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         run: |
           set +e
+          mkdir -p "$CI_RESULTS_DIR/coverage"
           python scripts/ci/critical_manifest.py --coverage "$CI_RESULTS_DIR/pytest/coverage.xml" --report-only > "$CI_RESULTS_DIR/coverage/critical-gate.txt" 2>&1
           rc=$?
           cat "$CI_RESULTS_DIR/coverage/critical-gate.txt"
