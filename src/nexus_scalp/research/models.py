@@ -408,6 +408,12 @@ class OOSResult(BaseModel):
     #: verdict consumes it ONLY when present (no silent behavior change for
     #: callers that construct OOSResult directly).
     oos_significance: dict[str, Any] | None = Field(default=None)
+    #: EDGE ROUND-2 (2026-09-09): selection-bias control. deflated_sharpe =
+    #: Bailey-de Prado DSR over the OOS R series given the number of mined
+    #: trials; spa = White Reality Check p-value for the best mined family.
+    #: Optional for legacy compatibility; verdict consumes ONLY when present.
+    deflated_sharpe: dict[str, Any] | None = Field(default=None)
+    spa: dict[str, Any] | None = Field(default=None)
 
 
 class RobustnessResult(BaseModel):

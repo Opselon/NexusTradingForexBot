@@ -20,7 +20,11 @@ from nexus_scalp.research.context_contract import (
 )
 from nexus_scalp.research.dataset import ResearchDatasetBuilder
 from nexus_scalp.research.models import ResearchDataset, ResearchSample
-from nexus_scalp.research.oos import MIN_OOS_EXPECTANCY_R, OOSGate
+from nexus_scalp.research.oos import (
+    MIN_ECONOMIC_OOS_EXPECTANCY_R,
+    MIN_OOS_EXPECTANCY_R,
+    OOSGate,
+)
 from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.walkforward import WalkForwardEngine
@@ -32,7 +36,13 @@ def _make_phase27_samples() -> list[ResearchSample]:
     # Timeline: London block FIRST (00:00-00:39), poison AFTER (01:00+) so the
     # GLOBAL temporal OOS tail lands on the -0.5R noise while the contract-
     # scoped population stays pure London.
-    for i in range(40):
+    # 66 London samples (was 40): the temporal OOS window is the last 20%, and
+    # the OOS-significance contract (edge round-1) needs >= 12 OOS trades
+    # before the bootstrap CI is decisive. 40 samples -> 8 OOS trades -> the
+    # candidate was INCONCLUSIVE on evidence grounds even though every gate
+    # passed; 66 -> 13 OOS trades (purge/embargo trims one) restores the test's
+    # intent (n >= MIN_OOS_SIGNIFICANCE_SAMPLES).
+    for i in range(66):
         out.append(
             ResearchSample(
                 sample_id=f"lon_{i}",
@@ -249,8 +259,16 @@ def test_phase27_d_contract_hash_determinism():
 
 
 def test_phase27_e_temporal_split_oos_gate_thresholds():
-    """TEST E: IS +0.5R then OOS -0.3R temporal split must FAIL the OOS gate thresholds unchanged (MIN_OOS_EXPECTANCY_R=0.0)."""
+    """TEST E: IS +0.5R then OOS -0.3R temporal split must FAIL the OOS gate.
+
+    Contract update (edge round-2, 2026-09-09): the GATE DEFAULT is now the
+    economic floor MIN_ECONOMIC_OOS_EXPECTANCY_R=0.02 (tightening, the
+    documented direction). The legacy constant MIN_OOS_EXPECTANCY_R=0.0 is
+    preserved for imports; this test's negative-OOS scenario fails under ANY
+    non-negative floor, so its verdict semantics are unchanged.
+    """
     assert MIN_OOS_EXPECTANCY_R == 0.0
+    assert MIN_ECONOMIC_OOS_EXPECTANCY_R >= MIN_OOS_EXPECTANCY_R
 
     out: list[ResearchSample] = []
     # Create samples such that temporal split produces positive IS and negative OOS

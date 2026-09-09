@@ -88,7 +88,11 @@ def extract_context_contract(
     # contract dimension. Only genuine trend tokens stay in trend_states.
     regime_states: set[str] = set()
     trend_only: set[str] = set()
-    _TREND_TOKENS = {"BULLISH", "BEARISH", "NEUTRAL"}
+    # UP/DOWN are the trend-state tokens used by live strategy contexts
+    # (sample.trend_state) alongside BULLISH/BEARISH/NEUTRAL; routing them to
+    # regime_states made phase27-style contracts match zero samples
+    # (CONTEXT_CONTRACT_EMPTY_POPULATION) — fail-loud on a correct strategy.
+    _TREND_TOKENS = {"BULLISH", "BEARISH", "NEUTRAL", "UP", "DOWN"}
     for token in trend_states:
         (trend_only if token in _TREND_TOKENS else regime_states).add(token)
 

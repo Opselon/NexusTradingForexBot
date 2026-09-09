@@ -16,8 +16,9 @@
   runs it on the candidate's own family dataset.
 
 - KEY CONCEPTS:
-  - Floors: MIN_OOS_EXPECTANCY_R = 0.0 (line 25) and MAX_OOS_DEGRADATION =
-    1.0 — a 100% relative drop from in-sample is the hard ceiling
+  - Floors: MIN_OOS_EXPECTANCY_R = 0.0 (legacy, preserved) and
+    MIN_ECONOMIC_OOS_EXPECTANCY_R = 0.02 (edge round-2 GATE DEFAULT);
+    MAX_OOS_DEGRADATION = 1.0 — a 100% relative drop from in-sample is the hard ceiling
     (line 27, "100% relative drop is the hard ceiling"; note the ceiling
     only bites when in_exp > 0, see pitfall).
   - `OOSGate.evaluate` (lines 43-120): split_temporal (val 0.2 / oos 0.2,

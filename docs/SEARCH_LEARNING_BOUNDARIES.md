@@ -52,7 +52,7 @@ Verification of `summarizer.memory_summary()` and `orchestrator._adaptive_probab
 
 ## 5. Forbidden Adaptations (hard rules)
 
-- ❌ Lowering `MIN_OOS_EXPECTANCY_R` (0.0R)
+- ❌ Lowering `MIN_OOS_EXPECTANCY_R` below `MIN_ECONOMIC_OOS_EXPECTANCY_R` (0.02R, edge round-2 gate default; the legacy 0.0R constant is preserved but no longer the gate default)
 - ❌ Lowering `MIN_EVIDENCE_SAMPLES` (20)
 - ❌ Writing OOS scores into `mutation_probabilities`
 - ❌ Increasing `oos_frac` to inflate pass rate
