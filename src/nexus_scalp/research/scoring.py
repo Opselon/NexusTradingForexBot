@@ -37,6 +37,22 @@ def _logistic(x: float, mid: float, steep: float) -> float:
         return 1.0 if steep * (x - mid) > 0 else 0.0
 
 
+def _oos_evidence_is_decisive(oos: OOSResult | None) -> bool:
+    """True when the OOS window is decisive evidence for a positive edge.
+
+    Decisive = the OOS gate attached a bootstrap significance whose 95% CI
+    lower bound is > 0 with at least MIN_OOS_SIGNIFICANCE_SAMPLES trades.
+    Legacy OOSResult instances without the field are accepted unchanged so
+    persisted-history replays and direct constructors keep their contract.
+    """
+    if oos is None:
+        return False
+    sig = oos.oos_significance
+    if not sig:
+        return True  # legacy/no-significance producers: unchanged behavior
+    return bool(sig.get("decisive"))
+
+
 def compute_strategy_score(
     dataset: ResearchDataset,
     backtest: BacktestResult,
@@ -198,6 +214,23 @@ def compute_strategy_score(
     elif walkforward is not None and not walkforward.passed:
         verdict = "INCONCLUSIVE"
         reasons.append("Walk-forward did not pass")
+    elif not _oos_evidence_is_decisive(oos):
+        # EDGE HARDENING (2026-09-09): a VALIDATED verdict may no longer rest
+        # on a point estimate. When the OOS gate produced a bootstrap
+        # significance (it always does on the real gate path), the 95% CI for
+        # mean OOS R must sit ENTIRELY above breakeven. Breakeven-or-noise OOS
+        # (CI straddling 0, or too few OOS trades) is evidence-building, not
+        # tradable edge. Legacy producers without the field keep old behavior.
+        verdict = "INCONCLUSIVE"
+        sig = (oos.oos_significance or {}) if oos is not None else {}
+        if sig.get("decisive") is False and int(sig.get("n", 0) or 0) > 0:
+            reasons.append(
+                "OOS evidence not decisive: bootstrap 95% CI "
+                f"[{sig.get('ci_low', 0.0):.3f}, {sig.get('ci_high', 0.0):.3f}] "
+                f"on n={sig.get('n', 0)} straddles 0 or sample floor unmet"
+            )
+        else:
+            reasons.append("OOS significance not available (evidence-building)")
     else:
         verdict = "VALIDATED"
         reasons.append("All evidence gates passed")

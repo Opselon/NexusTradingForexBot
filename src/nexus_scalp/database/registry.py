@@ -24,6 +24,7 @@ Version numbering: each domain starts at 1. New migrations bump +1.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from pathlib import Path
 
@@ -379,6 +380,81 @@ def _audit_0007_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
             conn.execute("DROP TABLE IF EXISTS release_metadata")
 
 
+def _audit_0008_research_hot_query_indexes(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Edge-research DB calibration (2026-09-09): evidence-based indexes for the
+    research observability hot path.
+
+    EXPLAIN QUERY PLAN on the canonical observability queries showed TEMP
+    B-TREE ORDER BY spills for the three hottest access patterns:
+
+      1. research_gates: WHERE strategy_id=? AND research_run_id=?
+         ORDER BY order_index, gate_id  (runs at the END of EVERY
+         validation run to collect gate lineage)
+         -> idx_gates_strategy_run (strategy_id, research_run_id, order_index)
+      2. research_runs: WHERE strategy_id=? ORDER BY executed_at DESC
+         (registry lineage + replay timelines)
+         -> idx_research_runs_strategy_executed (strategy_id, executed_at)
+      3. research_evidence: WHERE strategy_id=? ORDER BY created_at DESC,
+         evidence_id  (evidence browser; sort spills on the secondary key)
+         -> idx_evidence_strategy_created_id (strategy_id, created_at, evidence_id)
+
+    Pure additive indexes: no row is touched, no history rewritten, every
+    statement idempotent (IF NOT EXISTS). The existing narrower indexes are
+    kept — SQLite picks the best prefix match per query.
+    """
+    # Fresh-baseline safety: the checker's version-chain postcondition runs
+    # migrate() on a DB whose baseline may not include every table yet; a
+    # missing table is not an error (nothing to index yet). The verify step
+    # is correspondingly table-aware so the chain stays honest.
+    if _table_exists(conn, "research_gates"):
+        _ensure_index(
+            conn,
+            "idx_gates_strategy_run",
+            "research_gates",
+            "(strategy_id, research_run_id, order_index)",
+        )
+    if _table_exists(conn, "research_runs"):
+        _ensure_index(
+            conn,
+            "idx_research_runs_strategy_executed",
+            "research_runs",
+            "(strategy_id, executed_at)",
+        )
+    if _table_exists(conn, "research_evidence"):
+        _ensure_index(
+            conn,
+            "idx_evidence_strategy_created_id",
+            "research_evidence",
+            "(strategy_id, created_at, evidence_id)",
+        )
+    # Refresh the planner statistics so the new access paths are actually
+    # chosen over the pre-existing narrower indexes (cheap on research
+    # tables; runs once per migration application).
+    with contextlib.suppress(sqlite3.Error):
+        conn.execute("ANALYZE")
+
+
+def _audit_0008_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    checks = []
+    if _table_exists(conn, "research_gates"):
+        checks.append(_index_exists(conn, "idx_gates_strategy_run"))
+    if _table_exists(conn, "research_runs"):
+        checks.append(_index_exists(conn, "idx_research_runs_strategy_executed"))
+    if _table_exists(conn, "research_evidence"):
+        checks.append(_index_exists(conn, "idx_evidence_strategy_created_id"))
+    return all(checks)
+
+
+def _audit_0008_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    for name in (
+        "idx_gates_strategy_run",
+        "idx_research_runs_strategy_executed",
+        "idx_evidence_strategy_created_id",
+    ):
+        if _index_exists(conn, name):
+            conn.execute(f"DROP INDEX {name}")
+
+
 # ---------------------------------------------------------------------------
 # NEWS migrations
 # ---------------------------------------------------------------------------
@@ -516,6 +592,21 @@ AUDIT_MIGRATIONS: tuple[Migration, ...] = (
         risk=MigrationRisk.LOW,
         transaction_kind=TransactionKind.TRANSACTIONAL,
         rollback=_audit_0007_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0008-research-hot-query-indexes",
+        domain=DatabaseDomain.AUDIT,
+        from_version=7,
+        to_version=8,
+        description=(
+            "add evidence-based indexes for research_gates/research_runs/"
+            "research_evidence hot queries (edge-research DB calibration)"
+        ),
+        apply=_audit_0008_research_hot_query_indexes,
+        verify=_audit_0008_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
+        rollback=_audit_0008_rollback,
     ),
 )
 

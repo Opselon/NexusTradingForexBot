@@ -425,6 +425,14 @@ class DatabaseMigrationEngine:
         for table in sorted(self.manifest.table_names()):
             if table in actual or table in ("schema_migrations", "schema_meta"):
                 continue
+            # docker-repair (2026-09-09): NEWS tables use the application's
+            # canonical DDL (news/db_schema._SCHEMA_SQL) instead of an id-only
+            # skeleton. The app bootstrap is CREATE TABLE IF NOT EXISTS, so an
+            # id-skeleton would shadow the real DDL forever and CREATE INDEX
+            # on news_articles(published_at) would fail on every boot
+            # (1468 NEWS_DB errors / 4 min observed in the container).
+            if self.domain is DatabaseDomain.NEWS:
+                continue
             # Skip pure-metadata tables we create explicitly.
             cols = self.manifest.column_names(table)
             col_defs = ["id INTEGER PRIMARY KEY"]
@@ -443,6 +451,17 @@ class DatabaseMigrationEngine:
             ("news_health", "checked_at"),
             ("candle_closures", "symbol"),
             ("candle_closures", "ts"),
+            # AUDIT-0008 research hot-query index targets (edge-research DB
+            # calibration 2026-09-09): the manifest skeleton must carry the
+            # indexed columns so the migration is valid on fresh DBs.
+            ("research_gates", "strategy_id"),
+            ("research_gates", "research_run_id"),
+            ("research_gates", "order_index"),
+            ("research_runs", "strategy_id"),
+            ("research_runs", "executed_at"),
+            ("research_evidence", "strategy_id"),
+            ("research_evidence", "created_at"),
+            ("research_evidence", "evidence_id"),
         ):
             if table not in actual and table not in {
                 r[0]
@@ -456,6 +475,31 @@ class DatabaseMigrationEngine:
                 # incomplete and later migrations may reference a missing
                 # column — a real failure, never a swallowed one.
                 con.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        # docker-repair (2026-09-09): the news skeleton must carry the FULL
+        # application column contract, not just (id). NewsDatabase
+        # .initialize_schema() is CREATE TABLE IF NOT EXISTS — it silently
+        # no-ops on these skeletons — and then CREATE INDEX on
+        # news_articles(published_at) fails with "no such column", leaving
+        # every engine boot with a permanently broken news schema
+        # (1468 NEWS_DB errors / 4 min observed in the container). Aligning
+        # the fresh-DB skeleton with the canonical DDL lets the idempotent
+        # app bootstrap own the remaining column-contract details.
+        if self.domain is DatabaseDomain.NEWS:
+            try:
+                from nexus_scalp.news.db_schema import _SCHEMA_SQL as _NEWS_SCHEMA_SQL
+
+                for ddl in _NEWS_SCHEMA_SQL:
+                    con.execute(ddl)
+            except Exception as e:
+                raise MigrationError(
+                    f"news baseline skeleton alignment failed: {e}",
+                    database=self.domain.value,
+                    migration="BASELINE",
+                    stage="BASELINE",
+                    current_version=0,
+                    target_version=self.expected_version(),
+                    error_type="BASELINE_FAILED",
+                ) from e
         # ------------------------------------------------------------------
         # BUG-197 (TASK-DB-PLATFORM 2026-09-02): heal minimal skeletons so
         # the APPLICATION bootstrap cannot crash after a bare migration.
