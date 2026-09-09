@@ -127,4 +127,6 @@ tests/unit/test_agent17_oos_hard_gate.py
 tests/unit/test_sizing_policy_failclosed.py
 tests/unit/test_protection_ledger_invariants.py
 tests/unit/test_audit_flush_contract.py
+tests/unit/test_research_edge_hardening_20260909.py
+tests/unit/test_research_loop_smoke.py
 tests/unit/test_disk_safety_guards.py
