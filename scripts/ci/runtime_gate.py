@@ -707,6 +707,26 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
         _fresh = ScalpNet(num_features=70, num_classes=3)
         _fresh.eval()
         torch.save(_fresh.state_dict(), artifact)
+        # P1 trust-gate parity: the engine's verify-on-load gate rejects an
+        # artifact with no integrity metadata (LEGACY_UNVERIFIED -> boot
+        # fail-closed -> RUNTIME-01 FAIL -> smoke check-count floor missed;
+        # CI-983..CI-989 regression). The provisioning path therefore writes
+        # the matching manifest.json digest so the bundle classifies VERIFIED
+        # — same trust contract as the trainer's bundle writer.
+        import hashlib as _hashlib
+
+        _h = _hashlib.sha256()
+        with open(artifact, "rb") as _fh:
+            for _chunk in iter(lambda: _fh.read(1 << 20), b""):
+                _h.update(_chunk)
+        _manifest = {
+            "model_sha256": _h.hexdigest(),
+            "manifest_version": "1",
+            "note": "runtime_gate provisioned (no champion on this host)",
+        }
+        (artifact.parent / "manifest.json").write_text(
+            json.dumps(_manifest, indent=2), encoding="utf-8"
+        )
         gate._artifact_provisioned = str(artifact)
     config = AppConfig.model_validate(
         {
