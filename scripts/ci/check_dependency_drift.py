@@ -78,6 +78,15 @@ def _run_uv_compile() -> str:
             "--all-extras",
             "--universal",
             "--generate-hashes",
+            # Resolve for the LOWEST supported interpreter, never the ambient
+            # one: uv prunes `python_full_version` marker arms below every
+            # interpreter it can see, so without this pin the fresh lock
+            # silently loses the <3.12 arms (numpy 2.4.6, tomli) on hosts
+            # that only have 3.12+ installed — and drifts from the committed
+            # lock even with the uv version pinned (CI run #989, 2026-09-09).
+            # 3.11 = project floor (requires-python >=3.11).
+            "--python-version",
+            "3.11",
             "--no-header",
             "--output-file",
             "-",
