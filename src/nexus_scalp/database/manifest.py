@@ -29,13 +29,15 @@ from nexus_scalp.database.models import (
 # AUDIT domain (audit.db)
 # ---------------------------------------------------------------------------
 
-# AUDIT_SCHEMA_VERSION must equal baseline(1) + len(AUDIT_MIGRATIONS) = 7.
+# AUDIT_SCHEMA_VERSION must equal baseline(1) + len(AUDIT_MIGRATIONS) = 8.
 # TASK-DB-PLATFORM (2026-09-02): the engine's expected_version() is derived
 # from the migration REGISTRY (registry.expected_version_for_domain); this
 # constant is the manifest-side mirror used by docs/drift tooling. A
 # regression test (test_database_platform_task_db.py) pins all three
 # domains to registry-expected so the two SSOTs can never diverge silently.
-AUDIT_SCHEMA_VERSION: int = 7
+# 2026-09-09: AUDIT-0008-research-hot-query-indexes (ddf37e08) extended the
+# chain to v8 — manifest bumped in the same contract.
+AUDIT_SCHEMA_VERSION: int = 8
 
 AUDIT_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(
