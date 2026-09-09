@@ -149,6 +149,22 @@ class OOSGate:
         oos_exp = oos_bt.expectancy_r
         degradation = compute_relative_degradation(in_exp, oos_exp)
 
+        # EDGE HARDENING (2026-09-09): bootstrap significance for the OOS mean.
+        # Per-trade adjusted R is recovered exactly from the equity curve the
+        # backtest itself produced (first differences of the cumulative R path)
+        # — no re-simulation, no duplicated friction logic.
+        oos_sig: dict = {}
+        curve = oos_bt.equity_curve_r
+        if curve:
+            prev = 0.0
+            oos_r_list: list[float] = []
+            for point in curve:
+                oos_r_list.append(float(point) - prev)
+                prev = float(point)
+            from nexus_scalp.research.metrics import oos_significance
+
+            oos_sig = oos_significance(oos_r_list)
+
         oos_samples = len(split.oos)
         # BUG-244 (Agent 13): an OOS window with rows but ZERO finite real
         # evidence previously PASSED on fabricated 0.0 expectancy.
@@ -198,4 +214,5 @@ class OOSGate:
             status=status,
             reason=reason,
             context_diagnostics=(context_diag or None),
+            oos_significance=(oos_sig or None),
         )

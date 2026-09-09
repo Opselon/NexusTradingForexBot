@@ -403,6 +403,11 @@ class OOSResult(BaseModel):
     reason: str = Field(default="")
     #: PHASE 26 strategy-aware validation: context contract diagnostics.
     context_diagnostics: dict[str, Any] | None = Field(default=None)
+    #: EDGE HARDENING (2026-09-09): bootstrap significance of the OOS mean R.
+    #: Optional so historical/legacy producers stay compatible; the scoring
+    #: verdict consumes it ONLY when present (no silent behavior change for
+    #: callers that construct OOSResult directly).
+    oos_significance: dict[str, Any] | None = Field(default=None)
 
 
 class RobustnessResult(BaseModel):
