@@ -278,19 +278,29 @@ class TestSanitizedResponses:
 
 
 class TestSSESanitization:
-    def test_07_sse_payload_has_no_traceback(self) -> None:
+    def test_07_sse_payload_has_no_traceback(self, monkeypatch) -> None:
         """SSE frames must be sanitized (no traceback ever streamed).
 
         Uses a REAL uvicorn server on a local socket + bounded raw read:
         the endless SSE generator cannot be consumed by sync TestClient or
         ASGITransport (they buffer until response completion, which never
         happens for SSE - pre-existing stack limitation).
+
+        SEC-AUDIT (Agent-9): the raw-socket request must carry the web-auth
+        token — create_app installs WEB-AUTH-P0 middleware unconditionally,
+        so an unauthenticated probe now (correctly) receives 401 before any
+        SSE frame. The token is set via env for BOTH the middleware (server
+        side) and this raw request (client side).
         """
         import socket
         import threading
         import time
 
         import uvicorn
+
+        token = "sse-sanitize-test-token-12345"
+        monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", token)
+        auth_header = f"Authorization: Bearer {token}\r\n".encode()
 
         srv_app = create_app(engine_ref=None)
         cfg = uvicorn.Config(srv_app, host="127.0.0.1", port=0, log_level="error")
@@ -312,7 +322,9 @@ class TestSSESanitization:
             assert port, "uvicorn did not bind a port"
 
             with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
-                sock.sendall(b"GET /api/ticks/stream HTTP/1.1\r\nHost: test\r\n\r\n")
+                sock.sendall(
+                    b"GET /api/ticks/stream HTTP/1.1\r\nHost: test\r\n" + auth_header + b"\r\n"
+                )
                 sock.settimeout(15)
                 buf = b""
                 deadline = time.time() + 15
