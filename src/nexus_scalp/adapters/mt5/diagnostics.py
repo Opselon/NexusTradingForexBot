@@ -24,6 +24,7 @@ PRIVACY: this module never receives passwords, tokens or credentials. The
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -192,12 +193,74 @@ def run_mt5_call(
     return result, diag
 
 
+#: Failure-storm throttle (2026-09-09 disk/log-hygiene pass): during a
+#: degraded broker connection the adapter retries at ~100ms cadence; without
+#: suppression each retry emitted an IDENTICAL WARNING line into logs/error
+#: (measured production drivers of multi-GB log trees). The FIRST failure of
+#: a (operation, error_code, exception) signature always logs; identical
+#: repeats inside the suppression window are counted and summarized once
+#: after the window closes (honest SUPPRESSED_N line — nothing hidden).
+#: Recoveries (SUCCESS after failures) are NEVER suppressed.
+_MT5_STORM_WINDOW_SEC = 30.0
+_MT5_STORM_LOCK = threading.Lock()
+_MT5_STORM_STATE: dict[tuple[str, int | None, str], dict[str, Any]] = {}
+
+
+def _storm_key(diag: MT5CallDiagnostic) -> tuple[str, int | None, str]:
+    """Stable signature of an identical repeating failure."""
+    return (
+        diag.operation,
+        diag.mt5_error_code,
+        diag.exception_type or diag.mt5_error_message or "",
+    )
+
+
+def reset_storm_suppression() -> None:
+    """Test/ops seam: clear the failure-storm throttle state."""
+    with _MT5_STORM_LOCK:
+        _MT5_STORM_STATE.clear()
+
+
 def _emit(diag: MT5CallDiagnostic, logger_name: str) -> None:
-    """Logs the diagnostic: WARNING on failure, DEBUG on success."""
-    if diag.status == "FAILED":
-        logging.getLogger(logger_name).warning(diag.log_line())
-    else:
-        logging.getLogger(logger_name).debug(diag.log_line())
+    """Logs the diagnostic: WARNING on failure (storm-throttled), DEBUG on success."""
+    target = logging.getLogger(logger_name)
+    if diag.status != "FAILED":
+        # recovery or routine success: always visible, and it closes every
+        # storm registered for this operation (any error signature)
+        with _MT5_STORM_LOCK:
+            for key in [k for k in _MT5_STORM_STATE if k[0] == diag.operation]:
+                _MT5_STORM_STATE.pop(key, None)
+        target.debug(diag.log_line())
+        return
+
+    key = _storm_key(diag)
+    now = time.monotonic()
+    with _MT5_STORM_LOCK:
+        state = _MT5_STORM_STATE.get(key)
+        if state is None:
+            _MT5_STORM_STATE[key] = {"first": now, "last": now, "suppressed": 0}
+            target.warning(diag.log_line())
+            return
+        if now - state["last"] > _MT5_STORM_WINDOW_SEC:
+            # window closed: summarize what was held back, then re-arm
+            suppressed = int(state["suppressed"])
+            state.update({"first": now, "last": now, "suppressed": 0})
+            if suppressed > 0:
+                target.warning(
+                    "[MT5_CALL] event=FAILURE_STORM_SUMMARY operation=%s error_code=%s "
+                    "suppressed_identical_failures=%d window_sec=%.0f (first failure always logged)",
+                    diag.operation,
+                    diag.mt5_error_code,
+                    suppressed,
+                    _MT5_STORM_WINDOW_SEC,
+                )
+            target.warning(diag.log_line())
+            return
+        state["last"] = now
+        state["suppressed"] = int(state["suppressed"]) + 1
+    # suppressed inside the window: visible on the DEBUG channel only, so a
+    # DEBUG-level operator still sees every attempt and nothing is truly hidden
+    target.debug("%s (storm-suppressed; identical failure repeats inside window)", diag.log_line())
 
 
 class MT5ConnectionState:
