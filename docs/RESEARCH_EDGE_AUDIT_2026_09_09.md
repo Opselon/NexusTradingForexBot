@@ -129,3 +129,20 @@ stress-tests the full family population (PHASE 27 scoped only BACKTEST+WF+OOS
 - Sub-economic gate: an OOS window with +0.01R adjusted expectancy FAILS by
   default and PASSes only under the explicit legacy 0.0 floor.
 - 16 new tests in `tests/unit/test_research_selection_bias_20260909.py`.
+
+
+### Round-2b — automatic multiplicity wiring in the research loop
+
+The multiplicity controls are only effective if the loop feeds them without
+operator memory. `research.worker.ResearchWorker` (the production loop) now:
+
+  1. At discovery: captures `n_trials` = number of mined candidates, and the
+     per-family per-trade R lists keyed by each candidate's context
+     fingerprint (the Reality Check set).
+  2. At validation: passes both into `validate_candidate`, so
+     `OOSResult.deflated_sharpe` / `.spa` are populated automatically and the
+     run snapshot records `n_trials` for after-the-fact audit.
+
+A cycle over an unchanged dataset remains a no-op (the dataset rebuild guard
+is untouched); the discovery -> validation boundary (spec 27) is untouched —
+OOS evidence never flows back into discovery.

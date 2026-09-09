@@ -42,6 +42,7 @@ from typing import Any
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.research.discovery import _context_fingerprint
 from nexus_scalp.research.pipeline import ResearchPipeline
 
 logger = get_logger("nexus_scalp.research.worker")
@@ -90,6 +91,10 @@ class ResearchWorker:
         self._candidates: list[Any] = []
         self._last_dataset_id: str = ""
         self._seen_candidate_ids: set[str] = set()
+        # EDGE ROUND-2 (2026-09-09): multiplicity provenance captured at discovery
+        # time and consumed by validate_candidate -> OOSGate (DSR / family SPA).
+        self._n_trials: int = 0
+        self._family_r_lists: list[list[float]] = []
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -314,6 +319,20 @@ class ResearchWorker:
             dataset = self.pipeline.dataset_builder.build()
             self._dataset = dataset
         candidates = self.pipeline.discover(dataset)
+        # EDGE ROUND-2: capture the multiplicity set ONCE per discovery pass —
+        # the mined candidates ARE the trials (their context families' per-trade
+        # realized-R lists). The list includes families already seen this session
+        # so the Reality Check set stays complete across ticks.
+        self._n_trials = len(candidates)
+        groups: dict[str, list[float]] = {}
+        for s in dataset.samples:
+            fp = _context_fingerprint(s)
+            groups.setdefault(fp, []).append(float(s.realized_r))
+        self._family_r_lists = [
+            groups[c.context_definition.get("fingerprint", "")]
+            for c in candidates
+            if c.context_definition.get("fingerprint", "") in groups
+        ]
         pending = [c for c in candidates if c.strategy_id not in self._seen_candidate_ids]
         # Record everything discovered this cycle so subsequent ticks skip it.
         for c in candidates:
@@ -341,6 +360,8 @@ class ResearchWorker:
                 self.pipeline.validate_candidate(
                     candidate,
                     getattr(self, "_dataset", self.pipeline.dataset_builder.build()),
+                    n_trials=self._n_trials or None,
+                    family_r_lists=self._family_r_lists or None,
                 )
                 self._validated_count += 1
                 validated += 1
