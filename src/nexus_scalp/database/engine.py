@@ -560,6 +560,69 @@ class DatabaseMigrationEngine:
                 "pnl REAL",
                 "timestamp TEXT",
             ),
+            # docker-repair (2026-09-09): the audit skeleton shadowed the app
+            # bootstrap (CREATE TABLE IF NOT EXISTS no-ops on it), so
+            # behavior_analysis permanently missed analysis_key/ticket and
+            # every intelligence cycle failed with "no such column". Heal the
+            # remaining manifest-skeleton intelligence tables to the exact
+            # app-declared column contract (adapters/database/
+            # audit_repository.py), additive + idempotent only.
+            "behavior_analysis": (
+                "analysis_key TEXT NOT NULL",
+                "ticket TEXT NOT NULL",
+                "symbol TEXT",
+                "strategy_id TEXT",
+                "behavior_version TEXT NOT NULL",
+                "anomaly_version TEXT NOT NULL",
+                "analyzed_at TEXT NOT NULL",
+                "evidence_coverage REAL DEFAULT 0.0",
+                "complete_context INTEGER DEFAULT 0",
+                "partial_context INTEGER DEFAULT 0",
+                "flags TEXT DEFAULT '[]'",
+                "anomalies TEXT DEFAULT '[]'",
+            ),
+            "position_lifecycle_events": (
+                "event_key TEXT NOT NULL",
+                "ticket TEXT NOT NULL",
+            ),
+            "behavior_detections": (
+                "ticket TEXT NOT NULL",
+                "ticket_ctx TEXT DEFAULT ''",
+                "pattern TEXT NOT NULL",
+            ),
+            "anomaly_events": (
+                "anomaly_id TEXT NOT NULL",
+                "ticket TEXT DEFAULT ''",
+                "anomaly_type TEXT NOT NULL",
+                "category TEXT DEFAULT 'DATA'",
+                "severity TEXT DEFAULT 'LOW'",
+                "confidence REAL DEFAULT 0.0",
+                "evidence TEXT DEFAULT '{}'",
+                "detected_at TEXT NOT NULL",
+                "algorithm_version TEXT NOT NULL",
+            ),
+            "strategy_evolution_candidates": (
+                "candidate_id TEXT NOT NULL",
+                "source_strategy_id TEXT NOT NULL",
+                "symbol TEXT NOT NULL",
+                "timeframe TEXT DEFAULT ''",
+                "hypothesis TEXT NOT NULL",
+                "parameter_delta TEXT DEFAULT '{}'",
+                "pattern_evidence TEXT DEFAULT '{}'",
+                "status TEXT NOT NULL",
+                "backtest_expectancy_r REAL DEFAULT 0.0",
+                "backtest_sample_count INTEGER DEFAULT 0",
+                "validated_at TEXT DEFAULT ''",
+                "discovered_at TEXT NOT NULL",
+                "payload TEXT NOT NULL",
+            ),
+            "intelligence_worker_state": (
+                "scope TEXT NOT NULL",
+                "last_checkpoint TEXT DEFAULT ''",
+                "last_cycle_at TEXT DEFAULT ''",
+                "last_error TEXT DEFAULT ''",
+                "cycle_count INTEGER DEFAULT 0",
+            ),
         }
         for table, heal_col_defs in skeleton_heal.items():
             heal_cols = list(heal_col_defs)
