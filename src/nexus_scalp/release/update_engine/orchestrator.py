@@ -778,6 +778,30 @@ class UpdateOrchestrator:
         finally:
             self.lock.release()
             self._record_backup_pointer_cleanup()
+            # 2026-09-09 storage-hygiene pass: one sweep at the END of every
+            # update run — clears crash-leftover stage/preserve dirs, stale
+            # *.part residue and old full-app backups (keep newest 1). The
+            # just-installed tree is NEVER inside an allowlisted shape, so a
+            # completed install cannot be damaged by this. Failure-isolated.
+            try:
+                from nexus_scalp.observability.logging import get_logger
+                from nexus_scalp.storage.policy import (
+                    prune_update_cache,
+                    sweep_crash_leftovers,
+                    sweep_residue_files,
+                )
+
+                cache_res = prune_update_cache(self.cache_dir, keep_packages=2)
+                leftovers = sweep_crash_leftovers(self.app_root, keep_previous_backups=1)
+                residue = sweep_residue_files(self.user_root, min_age_sec=3600.0)
+                get_logger("nexus_scalp.release.update").info(
+                    "[STORAGE] event=UPDATE_SWEEP cache_freed=%d leftovers_dirs=%d residue_files=%d",
+                    cache_res.get("bytes_freed", 0),
+                    leftovers.get("removed_dirs", 0),
+                    residue.get("removed", 0),
+                )
+            except Exception:
+                pass
 
     def rollback(self, reason: str = "update-failure") -> dict[str, Any]:
         """Rollback restores the prior application only; user DBs/config are

@@ -28,8 +28,12 @@ Rotation: daily + size cap (MAX_BYTES_PER_FILE). Files that exceed the cap
 split into ``YYYY-MM-DD.part-NNN.log`` — never deleted mid-use, so no logs
 are lost. Retention: per-severity ``retention_days`` (defaults: info/
 warning 30, error 90, critical 365) enforced by a prune pass on configure
-and then at most hourly; unknown buckets (logs/archive) are never
-auto-deleted.
+AND re-armed at most hourly while the process runs (``maybe_prune_on_emit``
+day-roll hook, 2026-09-09 storage-hygiene pass) — a long-lived client can no
+longer accumulate post-boot logs forever. Aged severity files are gzip-
+compressed (DEFAULT_COMPRESS_AFTER_DAYS) and each severity directory carries
+a byte budget (DEFAULT_MAX_MB_PER_SEVERITY) enforced oldest-first; unknown
+buckets (logs/archive) are never auto-deleted.
 
 Multi-process safety: every write is appended under a process-wide
 ``threading.RLock`` and files are opened in append mode, so parallel
@@ -84,6 +88,14 @@ DEFAULT_RETENTION_DAYS: dict[str, int] = {
     "error": 90,
     "critical": 365,
 }
+
+#: Default per-severity byte budget (MB) enforced by the runtime prune pass.
+#: 0 disables the budget (age retention still applies).
+DEFAULT_MAX_MB_PER_SEVERITY = 500
+
+#: Default age (days) at which archived log files are gzip-compressed.
+#: 0 disables compression.
+DEFAULT_COMPRESS_AFTER_DAYS = 2
 
 #: Severity name -> subdirectory.
 _SEVERITY_DIRS: dict[str, str] = {
@@ -484,6 +496,12 @@ class DatedRotatingFileHandler(logging.Handler):
                     self._close_stream()
                     self._date_stamp = today
                     self._active_part = 0
+                    # day roll is the cheap trigger point for the runtime
+                    # retention pass (hourly throttle lives inside the hook);
+                    # only the INFO-severity handler runs it so four sibling
+                    # handlers do not race the same prune window
+                    if self.level == logging.INFO:
+                        maybe_prune_on_emit()
                 if self._stream is None:
                     self._stream = self._open_stream()
                 if self._stream is None:
@@ -521,8 +539,10 @@ class DatedRotatingFileHandler(logging.Handler):
 def _prune_old_logs(base: Path | None = None, retention_days: dict[str, int] | None = None) -> None:
     """Delete severity files older than their retention window.
 
-    Runs at configure time, then at most once per hour. Unknown buckets
-    (e.g. ``logs/archive``) are never auto-deleted.
+    Runs at configure time, then at most once per hour (the emit-path hook
+    ``maybe_prune_on_emit`` re-arms it while the process keeps running —
+    2026-09-09 storage-hygiene pass). Unknown buckets (e.g. ``logs/archive``)
+    are never auto-deleted.
     """
     now = time.time()
     if _last_prune_ts > 0 and now - _last_prune_ts < _PRUNE_INTERVAL_SEC:
@@ -546,6 +566,57 @@ def _prune_old_logs(base: Path | None = None, retention_days: dict[str, int] | N
                     path.unlink()
             except OSError:
                 continue
+
+
+def maybe_prune_on_emit(force_check: bool = False) -> None:
+    """Emit-path retention hook (cheap, lock-free).
+
+    Called from DatedRotatingFileHandler.emit once per day-roll window. When
+    the hourly prune window has elapsed (or ``force_check`` is set by tests /
+    the storage guard) it runs the full retention pass: age pruning, then
+    gzip compression of aged files, then the per-severity byte budget.
+    Anything raised here is swallowed — a retention fault must never break
+    logging (BUG-122 discipline).
+    """
+    now = time.time()
+    if not force_check and (now - _last_prune_ts) < _PRUNE_INTERVAL_SEC:
+        return
+    try:
+        base = _current_base
+        if not base.exists():
+            return
+        _prune_old_logs(base, _current_retention_days)
+        _compress_and_budget_pass(base)
+    except Exception:
+        pass
+
+
+def _compress_and_budget_pass(base: Path) -> None:
+    """gzip aged severity logs + enforce the per-severity byte budget.
+
+    Imported lazily to keep the logging module import-light and to avoid a
+    circular import (storage.policy has no logging dependency at import time).
+    """
+    try:
+        from nexus_scalp.storage.policy import compress_old_logs, enforce_byte_budget
+
+        compress_days = int(DEFAULT_COMPRESS_AFTER_DAYS)
+        budget_mb = int(DEFAULT_MAX_MB_PER_SEVERITY)
+    except Exception:
+        return
+    for severity_dir in base.iterdir():
+        if not severity_dir.is_dir() or severity_dir.name not in (
+            "info",
+            "warning",
+            "error",
+            "critical",
+        ):
+            continue
+        try:
+            compress_old_logs(severity_dir, compress_after_days=compress_days)
+            enforce_byte_budget(severity_dir, max_total_mb=budget_mb)
+        except OSError:
+            continue
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +788,8 @@ def bind_correlation_id(
 
 
 __all__ = [
+    "DEFAULT_COMPRESS_AFTER_DAYS",
+    "DEFAULT_MAX_MB_PER_SEVERITY",
     "DEFAULT_RETENTION_DAYS",
     "ERROR_CODES",
     "EVENT_CATEGORIES",
@@ -727,5 +800,6 @@ __all__ = [
     "configure_logging",
     "get_logger",
     "log_event",
+    "maybe_prune_on_emit",
     "timestamp_now",
 ]

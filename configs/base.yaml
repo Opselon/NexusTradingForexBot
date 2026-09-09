@@ -112,6 +112,25 @@ database_hygiene:
     failed_jobs_days: 14
     audit_days: 0
 
+# STORAGE POLICY (2026-09-09 disk-hygiene pass): one owner for removable
+# disk state — severity log trees, updater cache, crash leftovers, old
+# full-app backups, diagnostics zips, stale *.tmp/*.part residue.
+# ALLOWLIST-based: trading/research databases, models, config, hygiene
+# archives and quarantine are NEVER touched (test-pinned contract).
+# quota_mb is ALERT-ONLY (surfaced in status/Telegram); cleanup never
+# deletes protected data to "make room".
+storage:
+  enabled: true
+  startup_sweep: true
+  compress_after_days: 2        # gzip severity logs older than 2 days
+  max_total_mb_per_severity: 500  # oldest-first byte cap per severity dir
+  max_total_logs_mb: 2000         # cap over the whole logs/ tree
+  quota_mb: 5000                  # soft alert threshold for managed roots
+  keep_update_packages: 2         # updater cache: newest N verified packages
+  keep_previous_backups: 1        # .previous-* full-app backups for rollback
+  diagnostics_keep: 10
+  residue_min_age_sec: 3600       # *.tmp/*.part younger than 1h: untouched
+
 forensic_report:
   enabled: false
   interval_sec: 21600

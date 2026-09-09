@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from nexus_scalp.candle_intelligence.config import CandleIntelligenceConfig
+from nexus_scalp.configuration.storage_config import StorageConfig
 from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.model_lifecycle.learning_config import LearningConfig
 from nexus_scalp.news.config import NewsConfig
@@ -228,6 +229,9 @@ class AppConfig(BaseSettings):
     forensic_report: ForensicReportConfig | None = None
     # TASK-22: DATABASE HYGIENE (continuous runtime cleanup; optional)
     database_hygiene: DatabaseHygieneConfig | None = None
+    # STORAGE POLICY (2026-09-09 disk-hygiene pass): logs/updates/backup
+    # lifecycle control. Optional section — absent YAML = safe defaults.
+    storage: StorageConfig | None = None
     # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: live-freshness truth model
     freshness: FreshnessConfig = FreshnessConfig()
     # LEARNING-LOOP: config-driven retrain/shadow/promotion triggers — ALL

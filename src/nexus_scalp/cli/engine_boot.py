@@ -521,6 +521,42 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         json_format=False,
         log_to_file=True,
     )
+    # 2026-09-09 storage-hygiene pass: sweep crash leftovers + stale residue
+    # BEFORE the engine writes anything new (update staging, .part residue,
+    # .previous-* keep-1). Failure-isolated: a sweep fault must never block
+    # a boot. Heavy imports stay function-local (slim CLI contract).
+    try:
+        from nexus_scalp.storage.runtime import StorageGuard, StorageGuardSettings
+
+        _cfg_storage = getattr(cfg, "storage", None)
+        _storage_map = (
+            _cfg_storage.model_dump()
+            if hasattr(_cfg_storage, "model_dump")
+            else dict(_cfg_storage or {})
+        )
+        guard = StorageGuard(
+            workspace=Path.cwd(),
+            user_root=Path.cwd(),
+            settings=StorageGuardSettings.from_mapping(_storage_map),
+        )
+        _sweep = guard.startup_sweep()
+        _freed = int(_sweep.get("crash_leftovers", {}).get("bytes_freed", 0)) + int(
+            _sweep.get("residue", {}).get("bytes_freed", 0)
+        )
+        if _freed > 0:
+            console.print(
+                Panel(
+                    f"[green]Startup cleanup[/green] reclaimed ~{_freed / (1024 * 1024):.1f} MB",
+                    border_style="green",
+                )
+            )
+    except Exception as sweep_err:
+        console.print(
+            Panel(
+                f"[yellow]Startup cleanup skipped[/yellow]\n[dim]{sweep_err}[/dim]",
+                border_style="yellow",
+            )
+        )
     # Small beat so the welcome animation lands before the server log burst
 
     with Progress(
