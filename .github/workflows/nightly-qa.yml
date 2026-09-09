@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload slow-suite results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-slow-suite-${{ github.run_number }}
           path: ${{ env.CI_RESULTS_DIR }}/
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload chaos evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-chaos-${{ github.run_number }}
           path: |
@@ -172,7 +172,7 @@ jobs:
 
       - name: Upload mutation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-mutations-${{ github.run_number }}
           path: ${{ env.CI_RESULTS_DIR }}/

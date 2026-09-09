@@ -526,7 +526,7 @@ jobs:
       # (aggregate does not run).
       - name: Upload CI results artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-results-quality-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -795,7 +795,7 @@ jobs:
 
       - name: Upload suite artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-results-${{ matrix.suite }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -870,7 +870,7 @@ jobs:
           find ci-results/run-info -type f | sort
 
       - name: Upload canonical aggregate artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-results-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
