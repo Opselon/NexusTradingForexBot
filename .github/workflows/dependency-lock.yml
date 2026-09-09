@@ -35,6 +35,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python 3.11 (lowest supported — resolver needs it)
+        # Universal resolution PRUNES marker arms below the lowest interpreter
+        # uv can see. ubuntu-24.04 ships no 3.11, so without this step uv
+        # pruned the `python_full_version < '3.12'` arms (numpy 2.4.6, tomli
+        # <=3.11) and the fresh lock drifted from the committed one even with
+        # the pinned uv version. The project floor is requires-python >=3.11,
+        # so the resolver MUST see a 3.11 interpreter.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
