@@ -53,12 +53,12 @@ jobs:
           # PIN: the lock artifact must be byte-reproducible across local and
           # CI. Newer uv releases changed universal-resolution output in the
           # past (numpy arm merging), which would flag a committed lock as
-          # stale. NOTE: setup-uv@v5's input is `version` (NOT `uv-version`
-          # — that name is silently ignored, which is exactly how CI ended
-          # up on uv 0.12.11 while the lock was cut with 0.12.10 and the
-          # drift gate failed). Bump BOTH sides (this pin + local uv)
-          # together. setup-uv@v7 renames it to `uv-version` (PR #109).
-          version: "0.12.10"
+          # stale. Bump BOTH sides (this pin + local uv) together.
+          # Input-name history (both directions bit us): setup-uv@v5 used
+          # `version` (writing `uv-version` was silently ignored -> CI
+          # drifted to 0.12.11); setup-uv@v7 (PR #109) RENAMED the input to
+          # `uv-version` — `version` is now the one silently ignored.
+          uv-version: "0.12.10"
 
       - name: Drift check (regenerates nothing; fails on stale artifacts)
         run: |
