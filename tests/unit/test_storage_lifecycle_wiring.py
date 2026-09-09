@@ -197,3 +197,20 @@ def test_startup_sweep_survives_io_errors(tmp_path: Path) -> None:
     report = guard.startup_sweep()  # must not raise on nonexistent roots
     assert report["crash_leftovers"]["removed_dirs"] == 0
     assert report["residue"]["removed"] == 0
+
+
+def test_storage_guard_first_cycle_is_due_on_low_uptime_host(tmp_path: Path) -> None:
+    """The first cycle must run even when host uptime < the cycle interval.
+
+    Regression (CI run 1032): StorageGuard used a 0.0 sentinel against
+    time.monotonic(); on a freshly booted machine monotonic() < 600s so the
+    FIRST wired cycle was silently skipped ("throttled") and nothing was
+    swept until the host had been up for 10 minutes.
+    """
+    guard = StorageGuard(workspace=tmp_path / "ws", user_root=tmp_path / "u")
+    # simulate a freshly rebooted host: monotonic small relative to interval
+    assert guard.is_due(now=1.0) is True, "first cycle must be due immediately"
+    report = guard.cycle()  # non-forced
+    assert "skipped" not in report, f"first cycle must not be throttled: {report}"
+    followup = guard.cycle()
+    assert followup.get("skipped") == "throttled"
