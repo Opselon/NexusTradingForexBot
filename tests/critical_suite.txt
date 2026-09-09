@@ -60,6 +60,10 @@ tests/unit/test_logging_redaction.py
 # log<->DB join key and must survive the high-entropy redactor; secrets stay
 # redacted on the same path (artifacts/forensics/observability-audit.json).
 tests/unit/test_logging_correlation_ids.py
+# OBS-006 (2026-09-10): update lifecycle leaves log evidence — every stage
+# transition + blocked/failed/rollback verdict logs [UPDATE] with the upd-
+# correlation id (incl. the -<hex8> uuid suffix the redactor previously ate).
+tests/unit/test_update_lifecycle_logging.py
 # TASK-STORAGE-HYGIENE (2026-09-09): 10GB client-disk mission — storage policy
 # engine (allowlist cleanup), runtime retention re-prune, MT5 failure-storm
 # throttle, protected-data + concurrency + growth-clamp regression nets.
