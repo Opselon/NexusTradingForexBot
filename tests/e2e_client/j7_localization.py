@@ -8,11 +8,12 @@ Persian RTL rendering is tested against the STATIC DOCS SITE if reachable
 """
 
 import json
+import os
 
 from e2e_harness import RESULTS, record, save_results, shot
 from playwright.sync_api import sync_playwright
 
-BASE = "http://127.0.0.1:8081"
+BASE = os.environ.get("NSE_E2E_BASE", "http://127.0.0.1:8081")
 
 
 def run():
