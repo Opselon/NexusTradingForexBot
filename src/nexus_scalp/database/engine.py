@@ -486,10 +486,27 @@ class DatabaseMigrationEngine:
         # app bootstrap own the remaining column-contract details.
         if self.domain is DatabaseDomain.NEWS:
             try:
+                # Lazy import at BASELINE time: news.db_schema pulls the app
+                # config stack (pydantic). The migration engine must stay
+                # importable in slim tooling contexts (scripts/ci/
+                # check_migration_safety.py runs the engine without the app
+                # deps installed) — and a fresh baseline that cannot align
+                # must FAIL LOUD (never ship a shadowing id-skeleton).
                 from nexus_scalp.news.db_schema import _SCHEMA_SQL as _NEWS_SCHEMA_SQL
 
                 for ddl in _NEWS_SCHEMA_SQL:
                     con.execute(ddl)
+            except ImportError as e:
+                # Slim/no-app-deps context: SKIP alignment, do NOT create the
+                # id-skeleton either (an id-skeleton would shadow the real DDL
+                # and break CREATE INDEX on news_articles(published_at) on
+                # every boot). Tables simply do not exist yet here — the app
+                # bootstrap owns creating them on first use.
+                logger.warning(
+                    "[DB_MIGRATION] event=NEWS_BASELINE_SKIPPED reason=deps_missing error=%s",
+                    str(e),
+                )
+                return
             except Exception as e:
                 raise MigrationError(
                     f"news baseline skeleton alignment failed: {e}",
