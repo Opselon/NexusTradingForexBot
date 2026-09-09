@@ -7,6 +7,13 @@ name: OSV Dependency Scan
 # a disclosed CVE never blocks a merge (reviewers act on the alert). Maps to the
 # supply-chain-audit / osv-scanner need.
 #
+# --no-resolve is REQUIRED: without it osv-scanner (deps.dev) "resolves" the
+# hash-less top-level pins in requirements.txt transitively and fabricates
+# ancient minimum versions (filelock 3.9.1 via torch, idna 3.9.0 via
+# httpx/anyio) that are never installed -> false CVE alerts. With it, both
+# requirements.txt (32 direct pins) and uv.lock (full 99-package resolution,
+# identical to requirements.lock) are checked against OSV with real versions.
+#
 # NOTE: google/osv-scanner-action does NOT expose a direct action at the repo
 # root. Its consumable surfaces are:
 #   - google/osv-scanner-action/osv-scanner-action@v2.5.1   (leaf action)
@@ -35,5 +42,6 @@ jobs:
     with:
       scan-args: |-
         --recursive
+        --no-resolve
         ./
       fail-on-vuln: false
