@@ -152,6 +152,15 @@ _NON_SECRET_KEY_FRAGMENTS = (
     "authored_by",
     "token_bucket",
     "authority",
+    # OBS-002 (2026-09-09): correlation-id keys are observability, not secrets.
+    # Key-based redaction already masked execution_id=... wholesale (the id
+    # never reached the entropy catcher), breaking the log<->DB join by id.
+    "execution_id",
+    "correlation_id",
+    "request_id",
+    "incident_id",
+    "trace_id",
+    "update_correlation",
 )
 
 #: Secret-shaped assignment catch-all for trusted string values (event/message/
@@ -174,6 +183,35 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _HIGH_ENTROPY_RE = re.compile(r"[A-Za-z0-9_\-+/=]{24,}")
 _ENTROPY_ALNUM_THRESHOLD = 0.75
 _ENTROPY_BITS_THRESHOLD = 3.2
+
+#: OBS-002 (2026-09-09): correlation-id token shapes. These are the canonical
+#: id formats the engine itself stamps (policy.py EXEC-, web/errors.py req_,
+#: incidents/models.py INC-, update_engine orchestrator upd-). Tokens matching
+#: this pattern are pinned VERBATIM in _redact_value before the entropy
+#: catcher runs, because ids are the log<->DB join key, not credentials.
+_CORRELATION_ID_RE = re.compile(
+    r"\b(?:EXEC-[0-9]{8}-[0-9]{6}-[0-9a-f]{6}"
+    r"|INC-[0-9]{4}-[0-9A-F]{8}"
+    r"|upd-[0-9]{8}T[0-9]{6}[0-9]{1,6}"
+    r"|fh-[0-9a-f]{16,24}"
+    r"|req[_-][0-9a-zA-Z\-]{6,32})"
+    r"(?![0-9a-zA-Z_\-+/=])"
+)
+
+#: OBS-002: key=correlation-id pairs. The entropy catcher scans key=value as
+#: one token, so the bare-id pin above cannot save `execution_id=EXEC-...`
+#: (the key prefix breaks the id match's left boundary). Pin the whole pair.
+#: Key list mirrors the correlation-id keys in _NON_SECRET_KEY_FRAGMENTS.
+_ID_KEY_RE = re.compile(
+    r"(?i)\b(?:execution_id|correlation_id|request_id|incident_id|trace_id|update_correlation)"
+    r"(?::|=)"
+    r"(?:EXEC-[0-9]{8}-[0-9]{6}-[0-9a-f]{6}"
+    r"|INC-[0-9]{4}-[0-9A-F]{8}"
+    r"|upd-[0-9]{8}T[0-9]{6}[0-9]{1,6}"
+    r"|fh-[0-9a-f]{16,24}"
+    r"|req[_-][0-9a-zA-Z\-]{6,32})"
+    r"(?![0-9a-zA-Z_\-+/=])"
+)
 
 #: Stable event -> category map (master logging brief §16/§17).
 EVENT_CATEGORIES: dict[str, str] = {
@@ -291,7 +329,8 @@ def _redact_value(value: Any) -> Any:
 
     First pass: redact short/medium secret-bearing assignments (password=SECRET,
     TELEGRAM_BOT_TOKEN=..., bearer ..., etc.) that the >=24-char high-entropy
-    catch-all would otherwise miss. Second pass: the high-entropy blob catcher.
+    catch-all would otherwise miss. Second pass: the high-entropy blob catcher,
+    with an OBS-002 carve-out for correlation-id tokens/pairs (see _scrub).
     """
     if not isinstance(value, str) or not value:
         return value
@@ -300,6 +339,19 @@ def _redact_value(value: Any) -> Any:
 
     def _scrub(match: re.Match[str]) -> str:
         token = match.group(0)
+        # OBS-002 (2026-09-09): correlation ids are the log<->DB join key
+        # (audit_signals.execution_id / audit_orders.reason / X-Request-ID),
+        # not credentials. The entropy catcher matched them as >=24-char
+        # runs — 2631/2631 EXEC_TRACE lines carried
+        # execution_id=[REDACTED_SECRET] in the 2026-08-31 census, so a
+        # decision could never be reconstructed from logs. The catcher scans
+        # key=value as ONE token, so both bare ids (id=EXEC-...) and
+        # key=value pairs (execution_id=EXEC-...) are detected by searching
+        # the id shapes INSIDE the matched run and returning it verbatim.
+        # The shapes are case-sensitive and length-anchored; a real secret
+        # that happens to embed such a shape is a theoretical-only risk.
+        if _CORRELATION_ID_RE.search(token) or _ID_KEY_RE.search(token):
+            return token
         # Skip all-uppercase system event names / snake_case constants (e.g. GLOBAL_KILL_SWITCH_ACTIVATED)
         if token.isupper() and "_" in token:
             return token
