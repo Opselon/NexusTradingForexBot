@@ -45,6 +45,22 @@ import logging  # noqa: E402
 
 import pytest  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Disk-safety guard (2026-09-09): a crashing test interpreter must never write
+# a core dump. A Linux teardown abort in the runtime gate / slow suites
+# (NX-RUNTIMEGATE-ABORT class) produced multi-GB core files under
+# /var/lib/apport/coredump (4GB in one day on a 48GB host). RLIMIT_CORE=0
+# disables core dumps for THIS process and every child (gate stages, subprocess
+# probes) at zero runtime cost. Windows has no `resource` module -> no-op.
+# Import-time (not fixture) so it applies before pytest spawns anything.
+# ---------------------------------------------------------------------------
+try:
+    import resource as _resource
+
+    _resource.setrlimit(_resource.RLIMIT_CORE, (0, 0))
+except (ImportError, OSError, ValueError):  # pragma: no cover - platform guard
+    pass
+
 # Daemon worker threads (telegram notifier heartbeat, audit DB worker) can log
 # into pytest's closed stdout at teardown. The stdlib logging module would print
 # 'Logging error' tracebacks for those emits; disable that (workers already
