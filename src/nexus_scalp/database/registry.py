@@ -464,6 +464,14 @@ def _news_0002_source_health_index(conn: sqlite3.Connection, db_path: Path) -> N
     # Real news_health schema (2026-08-18): source_id + last_success_at rows.
     # The source-health lookup is per-source recency — index on the real
     # columns, verified against the actual schema (task §46).
+    #
+    # Slim-context guard (edge-audit follow-up 2026-09-09): when the news
+    # baseline DDL alignment was SKIPPED (no pydantic in slim tooling
+    # contexts), news_health does not exist yet — the app bootstrap owns
+    # creating it. Creating an index on a missing table fails the whole
+    # migration chain; skip here and let verify() report the truth.
+    if not _table_exists(conn, "news_health"):
+        return
     _ensure_index(
         conn,
         "idx_news_health_source",
@@ -475,6 +483,10 @@ def _news_0002_source_health_index(conn: sqlite3.Connection, db_path: Path) -> N
 def _news_0002_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
     # Verify on the real schema: if news_health has no last_success_at the
     # index cannot be created — fall back to a plain source_id index.
+    if not _table_exists(conn, "news_health"):
+        # Slim-context fresh baseline: table not created yet (skipped DDL
+        # alignment). Nothing to verify here — not a failure.
+        return True
     cols = {r[1] for r in conn.execute("PRAGMA table_info(news_health)").fetchall()}
     if "last_success_at" not in cols:
         return False
