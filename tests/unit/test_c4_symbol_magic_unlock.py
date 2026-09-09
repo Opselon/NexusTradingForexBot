@@ -123,7 +123,9 @@ def _feature_vector(symbol: str, tick: TickData, displacement: float = 0.5) -> F
     )
 
 
-def _policy_with_configured_identity(symbol: str, magic: int, price_scale: str = "fx") -> SignalPolicy:
+def _policy_with_configured_identity(
+    symbol: str, magic: int, price_scale: str = "fx"
+) -> SignalPolicy:
     """Policy whose execution config carries the (symbol, magic) under test.
 
     Mirrors the live wiring (live_engine passes ``config.algo``); the
@@ -140,7 +142,16 @@ def _policy_with_configured_identity(symbol: str, magic: int, price_scale: str =
 
         execution: ExecutionConfig = ExecutionConfig()
 
-    policy = SignalPolicy(algo_config=_ConfiguredAlgoConfig(execution=ExecutionConfig(symbol=symbol, magic_number=magic)))  # type: ignore[arg-type]
+    # Wave-3 ruling gate: the whitelist must include the symbol under test so
+    # these tests exercise C4's alias-key/matching logic (their intent), not
+    # the SYMBOL_WHITELIST_GATE (which has its own suite,
+    # tests/unit/test_symbol_whitelist_w3.py).
+    policy = SignalPolicy(
+        algo_config=_ConfiguredAlgoConfig(
+            execution=ExecutionConfig(symbol=symbol, magic_number=magic)
+        ),
+        enabled_symbols=[symbol],
+    )  # type: ignore[arg-type]
     policy.confidence_threshold = 0.10
     policy.algo_config.min_risk_reward_ratio = 0.10
     return policy

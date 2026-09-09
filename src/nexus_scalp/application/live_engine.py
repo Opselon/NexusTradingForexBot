@@ -1346,6 +1346,10 @@ class LiveEngine:
             cooldown_seconds=4.0,
             rule_matrix=self.rule_matrix,
             algo_config=config.algo,
+            # OPERATOR RULING (2026-09-09): symbol whitelist from execution
+            # config (default ["XAUUSD"]) — policy refuses candidates for
+            # symbols outside it.
+            enabled_symbols=config.execution.enabled_symbols,
         )
         self.risk_engine = RiskEngine(
             config=config.risk,

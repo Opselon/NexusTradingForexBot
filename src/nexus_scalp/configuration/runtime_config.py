@@ -82,6 +82,8 @@ class ExecutionSnapshot:
     magic_number: int = 888101
     max_slippage_points: int = 30
     effective_scope: str = NEXT_ORDER
+    #: OPERATOR RULING (2026-09-09): XAUUSD-only symbol whitelist (policy gate).
+    enabled_symbols: tuple[str, ...] = ("XAUUSD",)
 
 
 @dataclass(frozen=True)
@@ -272,6 +274,7 @@ class RuntimeConfiguration:
                 "magic_number": self.execution.magic_number,
                 "max_slippage_points": self.execution.max_slippage_points,
                 "effective_scope": self.execution.effective_scope,
+                "enabled_symbols": list(self.execution.enabled_symbols),
             },
             "risk": {
                 "max_account_drawdown_pct": self.risk.max_account_drawdown_pct,
@@ -382,6 +385,7 @@ class RuntimeConfiguration:
             timeframe=self.execution.timeframe,
             magic_number=self.execution.magic_number,
             max_slippage_points=self.execution.max_slippage_points,
+            enabled_symbols=list(self.execution.enabled_symbols),
         )
         risk = RiskConfig(
             max_account_drawdown_pct=self.risk.max_account_drawdown_pct,

@@ -39,6 +39,12 @@ class ExecutionConfig(BaseModel):
     timeframe: str = "M1"
     magic_number: int = 888101
     max_slippage_points: int = 30
+    #: OPERATOR RULING (2026-09-09): XAUUSD ONLY for now. The C4 policy unlock
+    #: made ticket-matching symbol-aware; this whitelist is the operator-facing
+    #: gate that decides WHICH symbols may produce candidates at all. The
+    #: engine's data symbol (`symbol`) must stay inside this list. Add symbols
+    #: here (e.g. ["XAUUSD", "EURUSD"]) when multi-symbol trading is approved.
+    enabled_symbols: list[str] = Field(default_factory=lambda: ["XAUUSD"])
 
 
 class RiskConfig(BaseModel):
