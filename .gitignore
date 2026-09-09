@@ -604,3 +604,10 @@ scratch/task4_probe_worker_rebuild.out.txt
 # quality and CI surfaces, so it is untracked to cut clone size and
 # agent-confusion cost (finding I6). Files remain on disk locally.
 scratch/
+
+# === Host-leak guards (disk-leak mission, 2026-09-09) ===
+# A missing uri=True on sqlite3.connect once created a literal file named
+# after the in-memory URI in the CWD; and a stray shell redirect created a
+# file literally named "-". Neither may ever be committed.
+file::memory:*
+-

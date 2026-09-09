@@ -19,6 +19,7 @@ import queue
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -132,9 +133,22 @@ class AuditRepository:
         # A4 dead-letter split: compose the durable dead-letter store over
         # THIS repository's connection accessor (sqlite3.connect on the same
         # _db_path — never a second handle) and delegate the dead-letter
-        # surface to it (record / list / counters).
+        # surface to it (record / list / counters). For file: URIs (shared
+        # in-memory DB) the factory must pass uri=True, or sqlite treats the
+        # URI string as a literal file name and creates a junk CWD file on
+        # every dead-letter write (disk-leak bug, 2026-09-09).
+        if self._db_path.startswith("file:"):
+
+            def _uri_conn_factory(path: str) -> sqlite3.Connection:
+                # `path` always IS self._db_path here (the store borrows the
+                # owner's path verbatim); reconnect with uri=True.
+                return sqlite3.connect(self._db_path, uri=True)
+
+            _dl_conn_factory: Callable[[str], sqlite3.Connection] = _uri_conn_factory
+        else:
+            _dl_conn_factory = sqlite3.connect
         self.dead_letter_store = DeadLetterStore(
-            conn_factory=sqlite3.connect,
+            conn_factory=_dl_conn_factory,
             is_sqlite=self._is_sqlite,
             db_path=self._db_path,
         )
@@ -218,9 +232,7 @@ class AuditRepository:
             # NOTE: `with sqlite3.connect(...)` only wraps a transaction, it does NOT
             # close the connection. Leaking it keeps the .db/-wal/-shm files locked on
             # Windows, which breaks temp-directory cleanup in tests and log rotation.
-            conn = sqlite3.connect(
-                self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")
-            )
+            conn = self._connect_sqlite(10.0)
             try:
                 # Enable Write-Ahead Logging for high concurrency without locks
                 if self._db_path.startswith("file::"):
@@ -658,9 +670,7 @@ class AuditRepository:
             int(consecutive_losses),
         )
         try:
-            with sqlite3.connect(
-                self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")
-            ) as conn:
+            with self._connect_sqlite(10.0) as conn:
                 conn.execute(sql, args)
                 conn.commit()
             return True
@@ -674,9 +684,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return None
         try:
-            with sqlite3.connect(
-                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
-            ) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute("SELECT * FROM runtime_risk_state WHERE id = 1").fetchone()
                 return dict(row) if row is not None else None
@@ -725,9 +733,7 @@ class AuditRepository:
             WHERE id=1
         """
         try:
-            with sqlite3.connect(
-                self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")
-            ) as conn:
+            with self._connect_sqlite(10.0) as conn:
                 conn.execute(
                     sql,
                     (datetime.now(UTC).isoformat(), str(actor), str(note or ""), str(note or "")),
@@ -789,9 +795,7 @@ class AuditRepository:
         try:
             from nexus_scalp.risk.runtime_safety import evaluate_consecutive_losses_with_time
 
-            with sqlite3.connect(
-                self._db_path, timeout=5.0, uri=self._db_path.startswith("file::")
-            ) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 rows = conn.execute(
                     """
                     SELECT status, net_pnl_usd, COALESCE(NULLIF(close_time,''), timestamp) AS close_ts
@@ -851,7 +855,7 @@ class AuditRepository:
         sync_to_dt = (
             sync_to.astimezone(_UTC) if isinstance(sync_to, _dt) else normalize_history_dt(sync_to)
         )
-        with sqlite3.connect(self._db_path, timeout=15.0) as conn:
+        with self._connect_sqlite(15.0) as conn:
             return sync_broker_history(
                 conn,
                 orders=orders or [],
@@ -865,7 +869,7 @@ class AuditRepository:
         """Returns the persisted sync watermark (None before the first sync)."""
         if not self._is_sqlite:
             return None
-        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+        with self._connect_sqlite(5.0) as conn:
             return last_sync_window(conn, symbol or "")
 
     def get_broker_trades(
@@ -889,7 +893,7 @@ class AuditRepository:
             "LIMIT ? OFFSET ?"
         )
         args += [int(limit), int(offset)]
-        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+        with self._connect_sqlite(5.0) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
 
@@ -907,7 +911,7 @@ class AuditRepository:
         else:
             sql = "SELECT * FROM audit_broker_deals ORDER BY time DESC LIMIT ?"
             args = (int(limit),)
-        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+        with self._connect_sqlite(5.0) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -928,7 +932,7 @@ class AuditRepository:
         else:
             sql = "SELECT * FROM audit_broker_orders ORDER BY time_setup DESC LIMIT ?"
             args = (int(limit),)
-        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+        with self._connect_sqlite(5.0) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -1713,6 +1717,20 @@ class AuditRepository:
         ]:
             _add_column_if_missing(conn, "research_run_snapshots", col_def[0], col_def[1])
 
+    def _connect_sqlite(self, timeout: float) -> sqlite3.Connection:
+        """One SQLite connect site for the whole repository.
+
+        Every raw sqlite3.connect(self._db_path, ...) call is routed HERE so
+        the URI contract lives in exactly one place: when the resolved path
+        is a ``file:`` URI (the shared in-memory audit DB), sqlite3.connect
+        MUST receive uri=True. Without it, sqlite treats the URI STRING as a
+        literal FILE NAME and silently creates a junk file called
+        "file::memory:?cache=shared" in the process CWD on every flush/read
+        of an in-memory repository (disk-leak bug, 2026-09-09).
+        """
+        uri = self._db_path.startswith("file:")
+        return sqlite3.connect(self._db_path, timeout=timeout, uri=uri)
+
     def flush(self, timeout_sec: float = 5.0) -> bool:
         """Boundedly drains the background write queue.
 
@@ -1753,7 +1771,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return
 
-        conn = sqlite3.connect(self._db_path, timeout=10.0, uri=self._db_path.startswith("file::"))
+        conn = self._connect_sqlite(10.0)
         q = self._queue  # local ref: never GC'd while the loop runs (BUG-058)
 
         while self._running or not q.empty():
@@ -2337,7 +2355,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return False
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
                     "SELECT 1 FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
                     (int(ticket),),
@@ -2368,7 +2386,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return -1
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
                     "SELECT COUNT(*) FROM audit_ledger WHERE status = 'OPENED' "
                     "AND COALESCE(exit_price, 0) = 0;"
@@ -2417,7 +2435,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return False
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 create_paper_executions_table(conn)
                 conn.execute(
                     """
@@ -2462,7 +2480,7 @@ class AuditRepository:
 
         cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
                     """
                     SELECT
@@ -2499,7 +2517,7 @@ class AuditRepository:
 
         cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
                     """
                     SELECT
@@ -2537,7 +2555,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return []
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     'SELECT ticket, "order", position_id, symbol, type, entry, '
@@ -2586,7 +2604,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return None
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
                     "SELECT * FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
@@ -2798,7 +2816,7 @@ class AuditRepository:
             }
 
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
 
                 # Fetch all closed trades from ledger
@@ -2890,7 +2908,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return []
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     """
@@ -2931,7 +2949,7 @@ class AuditRepository:
             return []
 
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 if status_filter:
                     cursor = conn.execute(
@@ -2956,7 +2974,7 @@ class AuditRepository:
             return []
 
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT timestamp, balance, equity FROM audit_account_snapshots ORDER BY id ASC"
@@ -2975,7 +2993,7 @@ class AuditRepository:
             return []
 
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     """
@@ -2997,7 +3015,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return None
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM audit_ledger WHERE ticket = ?", (ticket,))
                 row = cursor.fetchone()
@@ -3015,7 +3033,7 @@ class AuditRepository:
             return None
 
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT * FROM audit_account_snapshots ORDER BY id DESC LIMIT 1"
@@ -3183,7 +3201,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return []
         try:
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT rule_name, is_enabled, category, parameters FROM trading_rules_config"
@@ -3209,7 +3227,7 @@ class AuditRepository:
             return False
         try:
             # Execute synchronously to avoid thread-safety mismatch with web thread toggles
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with self._connect_sqlite(5.0) as conn:
                 if parameters_json is not None:
                     conn.execute(
                         """
@@ -3291,7 +3309,7 @@ class AuditRepository:
             "deleted": {},
         }
         start = time.monotonic()
-        conn = sqlite3.connect(self._db_path, timeout=30.0)
+        conn = self._connect_sqlite(30.0)
         try:
             # Bounded batched deletes: each batch is its own transaction so a
             # long table never blocks writers for more than a few rows.

@@ -73,6 +73,17 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = REPO_ROOT / "src"
 
+# Disk-safety guard (2026-09-09): a crashed gate child must never write a core
+# dump (an L-teardown abort once produced multi-GB core files under
+# /var/lib/apport/coredump and filled the disk). RLIMIT_CORE=0 covers this
+# process and every subprocess the gate spawns. Windows: no `resource` -> no-op.
+try:
+    import resource as _core_limit
+
+    _core_limit.setrlimit(_core_limit.RLIMIT_CORE, (0, 0))
+except (ImportError, OSError, ValueError):  # pragma: no cover - platform guard
+    pass
+
 # ---------------------------------------------------------------------------
 # Exit-code contract (do not renumber; documented in
 # docs/architecture/runtime-certification-gate.md)
