@@ -619,6 +619,14 @@ class LiveEngine:
         # reports). Replaces the bare TASK-11 worker as the runtime driver.
         self._hygiene_scheduler: Any = None
 
+        # TASK-STORAGE-HYGIENE: runtime storage conductor (log compression +
+        # byte budget + WAL checkpoint + updater cache/backup sweeps). Built
+        # lazily by MaintenanceCycle from cfg.storage; throttled 10-min cycle
+        # runs OFF the tick path via asyncio.to_thread, never on it.
+        self._storage_guard: Any = None
+        self._storage_cycle_interval_sec: float = 600.0
+        self._last_storage_cycle_time: float = 0.0
+
         # TASK-13: incident response worker (background, off tick path).
         # Lazy construction in run_loop so a DB failure at startup can never
         # block trading; the worker is observability-only (INV-019).

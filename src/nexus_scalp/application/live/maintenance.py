@@ -23,10 +23,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-from nexus_scalp.application.live_engine import _split_telegram_report
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.maintenance")
+
+
+def _split_telegram_report(text: str, max_len: int = 3500) -> list[str]:
+    """Lazily resolve the live-engine helper (keeps this module import-light)."""
+    from nexus_scalp.application.live_engine import _split_telegram_report as _fn
+
+    return _fn(text, max_len)
 
 
 class MaintenanceCycle:
@@ -34,17 +40,21 @@ class MaintenanceCycle:
 
     def __init__(self, om: Any) -> None:
         self.om = om
-        #: Paper-parity ledger export + weekly snapshot cadence (mission P0-1).
-        #: Export is cheap (bounded insert-or-ignore of the adapter ledger);
-        #: the parity snapshot runs weekly on its own throttle.
-        self._parity_export_interval_sec: float = 6 * 3600.0
-        self._parity_snapshot_interval_sec: float = 7 * 86400.0
-        self._last_parity_export_time: float = 0.0
-        self._last_parity_snapshot_time: float = 0.0
         #: Daily operational digest cadence (mission 5) — state lives on the
         #: composition root so both maintenance call sites share one throttle.
         self._operational_digest_interval_sec: float = 24 * 3600.0
         self._last_operational_digest_time: float = 0.0
+        # Parity snapshot state lives on the CYCLE (read via self._last_*):
+        # keep instance defaults so a duck-typed composition root without
+        # these attributes still runs (test stand-ins).
+        self._parity_export_interval_sec: float = getattr(
+            om, "_parity_export_interval_sec", 6 * 3600.0
+        )
+        self._parity_snapshot_interval_sec: float = getattr(
+            om, "_parity_snapshot_interval_sec", 7 * 86400.0
+        )
+        self._last_parity_export_time: float = getattr(om, "_last_parity_export_time", 0.0)
+        self._last_parity_snapshot_time: float = getattr(om, "_last_parity_snapshot_time", 0.0)
 
     async def run_cycle(self, *, now_t: float) -> None:
         """Runs one maintenance pass (all stages internally throttled)."""
@@ -199,6 +209,56 @@ class MaintenanceCycle:
                 logger.warning(
                     "[INCIDENT_WORKER] event=CYCLE_FAILED (isolated)",
                     error=str(inc_err),
+                )
+
+        # TASK-STORAGE-HYGIENE: throttled StorageGuard cycle (log compression
+        # + per-severity byte budget + WAL checkpoint(TRUNCATE) on managed
+        # DBs + updater cache/backup/diagnostics sweeps). Composed lazily from
+        # cfg.storage (enabled by default), runs OFF the tick path via
+        # asyncio.to_thread, fully failure-isolated — a storage fault must
+        # never disturb trading.
+        if self.om._storage_guard is None:
+            try:
+                from nexus_scalp.storage.runtime import (
+                    StorageGuard,
+                    StorageGuardSettings,
+                )
+
+                _cfg_storage = getattr(self.om.config, "storage", None)
+                if hasattr(_cfg_storage, "model_dump"):
+                    _storage_map = dict(_cfg_storage.model_dump())
+                elif isinstance(_cfg_storage, dict):
+                    _storage_map = dict(_cfg_storage)
+                else:
+                    _storage_map = {}
+                _base_dir = getattr(self.om.config, "base_dir", None) or None
+                _ws = Path(_base_dir) if _base_dir else Path.cwd()
+                self.om._storage_guard = StorageGuard(
+                    workspace=_ws,
+                    user_root=_ws,
+                    settings=StorageGuardSettings.from_mapping(_storage_map),
+                )
+            except Exception as storage_init_err:
+                logger.warning(
+                    "[STORAGE_GUARD] event=INIT_FAILED (isolated)",
+                    error=str(storage_init_err),
+                )
+        if (
+            self.om._storage_guard is not None
+            and now_t - self.om._last_storage_cycle_time >= self.om._storage_cycle_interval_sec
+        ):
+            self.om._last_storage_cycle_time = now_t
+            try:
+                cyc = await asyncio.to_thread(self.om._storage_guard.cycle)
+                freed = int(cyc.get("logs", {}).get("bytes_saved", 0)) + int(
+                    cyc.get("update_cache", {}).get("bytes_freed", 0)
+                )
+                if freed > 0:
+                    logger.info("[STORAGE] event=CYCLE_OK freed_bytes=%d", freed)
+            except Exception as storage_err:
+                logger.warning(
+                    "[STORAGE_GUARD] event=CYCLE_FAILED (isolated)",
+                    error=str(storage_err),
                 )
 
         # Daily Telegram performance summary (BUG-057): throttled to
