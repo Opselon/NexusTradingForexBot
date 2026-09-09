@@ -2541,19 +2541,62 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # Historical Replay Mode Controller
     @app.post("/api/replay/toggle")
     def toggle_replay(req: ToggleReplayRequest) -> dict[str, Any]:
-        app.state.is_replaying = req.active
-        app.state.replay_speed = req.speed
-
+        # SEC-AUDIT (Agent-9): this route previously FORCED
+        # ``execution.mode = LIVE`` whenever replay was switched off — a
+        # paper/shadow session was hot-flipped to LIVE with no adapter
+        # realignment (BUG-212 boundary is owned by the ENGINE's hot-swap
+        # path, which this route bypassed), no operator confirmation, and
+        # no settings persistence. The replay flag is now INDEPENDENT of
+        # the execution mode: entering replay restores PAPER only when the
+        # engine is already on the simulation boundary, leaving replay
+        # restores the mode captured at entry, and replay activation is
+        # refused outright on a LIVE engine (a synthetic replay stream must
+        # never be attached to a real-money session).
         engine = app.state.engine
         if engine:
-            if req.active:
-                logger.info("Historical Replay mode enabled.", speed=req.speed)
-                # Toggle engine configuration to replay mode
-                engine.config.execution.mode = ExecutionMode.PAPER
-            else:
-                logger.info("Historical Replay mode disabled.")
-                engine.config.execution.mode = ExecutionMode.LIVE
+            try:
+                current_mode = ExecutionMode(str(engine.config.execution.mode).strip().upper())
+            except ValueError:
+                current_mode = None
+            if current_mode is ExecutionMode.LIVE:
+                if req.active:
+                    return {
+                        "success": False,
+                        "message": (
+                            "Replay refused: execution_mode=LIVE (synthetic "
+                            "replay stream is not permitted on a live session)."
+                        ),
+                        "replaying": False,
+                    }
+                # Deactivate on LIVE: only clear the replay flag (the
+                # pre-existing mode is LIVE; there is nothing to restore).
+                app.state.is_replaying = False
+                app.state.replay_speed = req.speed
+                return {"success": True, "replaying": False}
 
+            if req.active:
+                # Remember the PRE-REPLAY mode so leaving replay can restore
+                # it exactly (never a hardcoded LIVE).
+                app.state.pre_replay_mode = str(current_mode) if current_mode else None
+                if current_mode is not ExecutionMode.PAPER:
+                    engine.config.execution.mode = ExecutionMode.PAPER
+            elif current_mode is not None:
+                restored = getattr(app.state, "pre_replay_mode", None)
+                target = (
+                    ExecutionMode(restored)
+                    if restored and ExecutionMode(restored) is not ExecutionMode.LIVE
+                    else None
+                )
+                if target is not None and current_mode is not target:
+                    engine.config.execution.mode = target
+                app.state.pre_replay_mode = None
+
+        app.state.is_replaying = req.active
+        app.state.replay_speed = req.speed
+        if req.active:
+            logger.info("Historical Replay mode enabled.", speed=req.speed)
+        else:
+            logger.info("Historical Replay mode disabled.")
         return {"success": True, "replaying": req.active}
 
     # =========================================================================
