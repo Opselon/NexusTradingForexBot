@@ -132,6 +132,18 @@ class AlgoConfig(BaseModel):
     w_recovery_probability: float = Field(default=0.10, ge=0.0, le=1.0)
     w_hold_score: float = Field(default=0.10, ge=0.0, le=1.0)
 
+    # TASK-EXIT-SEPARATION (A8): exit-policy config fields. Defaults preserve
+    # the current module constants byte-for-byte (no threshold tuning).
+    #: Giveback protection arming threshold in R (module fallback 0.50).
+    giveback_arm_r: float = Field(default=0.50, gt=0.0, le=10.0)
+    #: ATR trailing-stop distance multiplier (module fallback 1.15).
+    trail_atr_multiplier: float = Field(default=1.15, gt=0.0, le=10.0)
+    #: TASK-EXIT-SEPARATION (c): AI direction-flip exit (close + fast
+    #: reversal). SUSPENDED by default (fail-safe): the deterministic
+    #: protection chain (giveback / breakeven / trailing) remains the only
+    #: exit authority. Read LIVE from algo_config on every evaluation.
+    ai_flip_exit_enabled: bool = False
+
 
 class ForensicReportConfig(BaseModel):
     """TASK-12: periodic forensic Telegram report (bounded, dedup, config-driven).
