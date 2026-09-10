@@ -39,7 +39,33 @@ class DeadLetterStore:
     (``conn_factory`` returning a NEW connection per use — the exact
     ``sqlite3.connect(...)`` call sites AuditRepository itself uses) so no
     second database connection/pool is created.
+
+    BOUNDED RETENTION (PERF-DEADLETTER, 2026-09-10): the table is a
+    DIAGNOSTIC log, not financial truth, and a producer that fails on every
+    row (the schema-drift incident: ~553k rows in ~15h at ~10/s) must not be
+    able to grow audit.db without bound. ``record()`` therefore throttles a
+    bounded prune pass (by default at most once per 30s; first call is
+    always due): keep the newest ``max_rows`` rows, delete older ones in
+    short batched transactions (WAL-safe, never one giant DELETE), and warn
+    ONCE per overflow event so the loss of older diagnostics is loud but not
+    a per-row log flood. Forensic value is preserved by keeping the NEWEST
+    rows (the current failure signature) and a per-window WARNING with the
+    pruned count; the schema repair contract itself is pinned by
+    tests/unit/test_perf_deadletter_skeleton_repro.py so the incident class
+    cannot silently recur.
     """
+
+    #: Default cap on retained dead-letter rows (this run measured the
+    #: incident corpus at ~1.8KB/row ⇒ ~0.9GB at 500k; 20k rows ≈ 36MB and
+    #: keeps days of the newest signatures at incident rates).
+    DEFAULT_MAX_ROWS: int = 20000
+
+    #: Default prune batch (short transaction per batch — WAL concurrency).
+    DEFAULT_PRUNE_BATCH: int = 2000
+
+    #: Minimum seconds between prune passes (a 10/s producer must not prune
+    #: per-row; the first pass is always due via the None sentinel).
+    PRUNE_MIN_INTERVAL_SEC: float = 30.0
 
     def __init__(
         self,
@@ -47,10 +73,21 @@ class DeadLetterStore:
         conn_factory: Callable[[str], sqlite3.Connection],
         is_sqlite: bool,
         db_path: str,
+        max_rows: int = DEFAULT_MAX_ROWS,
+        prune_batch: int = DEFAULT_PRUNE_BATCH,
     ) -> None:
         self._conn_factory = conn_factory
         self._is_sqlite = is_sqlite
         self._db_path = db_path
+        self._max_rows = max(0, int(max_rows))
+        self._prune_batch = max(1, int(prune_batch))
+        # None = never ran (first prune is always due — do NOT compare a
+        # 0.0 sentinel against time.monotonic(): on a freshly booted host
+        # monotonic < interval and the first pass would be silently skipped).
+        self._last_prune: float | None = None
+        # One WARNING per overflow event (re-armed when the table drops
+        # back under the cap).
+        self._overflow_warned = False
         # =================================================================
         # DATA-INTEGRITY METRICS (runtime safety mission, P0).
         # Financial record loss MUST be observable. These counters are the
@@ -59,6 +96,9 @@ class DeadLetterStore:
         # =================================================================
         self.audit_dead_letter_rows: int = 0
         self._dead_letter_seq: int = 0
+        # Rows removed by retention (observable: growth is bounded AND the
+        # pruning is visible in debug_snapshot consumers of this store).
+        self.dead_letter_pruned_rows: int = 0
 
     # ---------------------------------------------------------------------
     # SCHEMA (moved VERBATIM from AuditRepository._create_sqlite_tables —
@@ -181,6 +221,7 @@ class DeadLetterStore:
                 )
                 conn.commit()
             self.audit_dead_letter_rows += 1
+            self._prune_if_due()
             return True
         except Exception as dl_err:
             # Dead-letter persistence itself failed: the loss MUST be loud.
@@ -193,6 +234,89 @@ class DeadLetterStore:
                 dl_err,
             )
             return False
+
+    # ---------------------------------------------------------------------
+    # BOUNDED RETENTION (PERF-DEADLETTER, 2026-09-10).
+    # The dead-letter table is diagnostic evidence, NOT financial truth —
+    # but without a cap a producer failure loop grows audit.db ~1GB/15h
+    # (measured). Retention policy, deterministic and WAL-safe:
+    #   * cap     = newest N rows retained (Default 20_000 ≈ 36MB);
+    #   * trigger = throttled to one pass per PRUNE_MIN_INTERVAL_SEC
+    #     (None sentinel: the FIRST pass is always due);
+    #   * delete  = batched rowid-anchored DELETEs, one short transaction
+    #     per batch (never one giant DELETE against a huge table);
+    #   * loud    = ONE WARNING per overflow event (re-armed when the table
+    #     drops back under the cap) — never a per-row log flood, never
+    #     silent.
+    # Cleanup NEVER touches any other table (no ledger/experience/research
+    # deletes here) and is safe under WAL: each batch is its own short
+    # transaction on a fresh read connection, so concurrent readers/writers
+    # are never blocked longer than one batch.
+    # ---------------------------------------------------------------------
+
+    def _prune_if_due(self, now: float | None = None) -> None:
+        """Runs at most one bounded prune pass when the throttle allows."""
+        if self._max_rows <= 0 or not self._is_sqlite:
+            return
+        import time as _time
+
+        now = _time.monotonic() if now is None else now
+        if self._last_prune is not None and (now - self._last_prune) < self.PRUNE_MIN_INTERVAL_SEC:
+            return
+        self._last_prune = now
+        try:
+            pruned = self._prune_locked()
+        except Exception as prune_err:  # retention must NEVER break record()
+            logger.warning("dead-letter retention prune failed (isolated): %s", prune_err)
+            return
+        if pruned > 0 and not self._overflow_warned:
+            self._overflow_warned = True
+            logger.warning(
+                "DEAD-LETTER RETENTION: cap=%d exceeded — %d oldest diagnostic rows "
+                "pruned (newest failure signatures retained; pruned_rows=%d). "
+                "Fix the producing failure — this table is bounded by design.",
+                self._max_rows,
+                pruned,
+                self.dead_letter_pruned_rows,
+            )
+        elif pruned == 0:
+            # Under cap again: re-arm the overflow warning for the NEXT event.
+            self._overflow_warned = False
+
+    def _prune_locked(self) -> int:
+        """One bounded prune pass: delete rows older than the newest N.
+
+        Returns the number of rows removed. Count source of truth is the
+        live COUNT (not the in-memory counter, which tracks writes since
+        construction and can drift after restarts).
+        """
+        pruned = 0
+        with self._conn_factory(self._db_path) as conn:
+            total = conn.execute("SELECT COUNT(*) FROM audit_dead_letter").fetchone()[0]
+            if total <= self._max_rows:
+                return 0
+            keep_floor = conn.execute(
+                "SELECT id FROM audit_dead_letter ORDER BY id DESC LIMIT 1 OFFSET ?",
+                (self._max_rows - 1,),
+            ).fetchone()
+            if keep_floor is None:
+                return 0
+            floor_id = keep_floor[0]
+            while True:
+                with conn:
+                    cur = conn.execute(
+                        "DELETE FROM audit_dead_letter WHERE id IN ("
+                        "SELECT id FROM audit_dead_letter WHERE id < ? "
+                        "ORDER BY id LIMIT ?)",
+                        (floor_id, self._prune_batch),
+                    )
+                    removed = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+                pruned += removed
+                self.dead_letter_pruned_rows += removed
+                if removed < self._prune_batch:
+                    break
+            conn.commit()
+        return pruned
 
     # ---------------------------------------------------------------------
     # LIST (moved verbatim from AuditRepository.get_dead_letter_rows).

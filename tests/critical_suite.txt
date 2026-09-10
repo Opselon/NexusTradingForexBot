@@ -153,3 +153,12 @@ tests/unit/test_disk_safety_guards.py
 # squeeze limits, dispatch idempotency, clamp insanity guards, config-contract pin
 # (risk-engine ctor vs RiskConfig.max_allowed_lots).
 tests/unit/test_capital_protection_a15.py
+
+# PERF-DEADLETTER / PERF-HEALTH / PERF-EXEC-TRACE wave (2026-09-10):
+#   gate-first skeleton heal -> dead-letter bounded retention -> /health TTL
+#   cache -> EXEC_TRACE rate limit; plus fail-closed / LIVE-PAPER guard pins.
+tests/unit/test_perf_deadletter_skeleton_repro.py
+tests/unit/test_dead_letter_retention_cap.py
+tests/unit/test_perf_safety_contract_pins.py
+tests/unit/test_perf_health_probe_cache.py
+tests/unit/test_perf_exec_trace_throttle.py

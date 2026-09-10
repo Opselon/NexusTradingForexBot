@@ -132,6 +132,16 @@ class SignalPolicy:
         # the trace stamps MODEL_IDENTITY_UNAVAILABLE honestly.
         self.model_identity_fn: Callable[[], tuple[str, str, str]] | None = None
 
+        # PERF-EXEC-TRACE (2026-09-10): rate-limit state for the [EXEC_TRACE]
+        # forensic line. Routine NO_TRADE evaluations emit at most one trace
+        # per `exec_trace_interval_sec`; trade-relevant decisions (non-NO_TRADE
+        # action, FINAL_DECISION stage, any blocked_by gate, DEDUP_GATE
+        # re-surface) always emit. The suppressed count rides on the next
+        # emitted line (trace_suppressed=...) so the reduction stays observable.
+        self.exec_trace_interval_sec: float = 4.0
+        self._last_exec_trace_time: datetime | None = None
+        self._exec_trace_suppressed: int = 0
+
         self._last_signal_time: datetime | None = None
         self._last_telemetry_time: datetime | None = None
         self._last_logged_action: ActionType = ActionType.NO_TRADE
@@ -1407,9 +1417,47 @@ class SignalPolicy:
         # PHASE 13 forensic trace: one log line per evaluation carrying the
         # EXEC id + full decision chain (action, stage, blocked_by, confidences,
         # regime) so a single id explains WHY this evaluation did/didn't trade.
-        # Guarded by the same throttle as radar telemetry (never a hot-path
-        # flood). Observability only.
+        # Observability only.
+        #
+        # PERF-EXEC-TRACE (2026-09-10): the trace is now RATE-LIMITED. The
+        # old comment claimed "the same throttle as radar telemetry" but the
+        # emit below was UNCONDITIONAL — measured 20,249 [EXEC_TRACE] lines
+        # in 15h (every tick, overwhelmingly NO_TRADE). Contract:
+        #   * always emit when the decision is NOT a routine NO_TRADE
+        #     abstention (BUY/SELL/WAIT actions, any FINAL_DECISION stage,
+        #     any blocked_by gate) — every trade-relevant line survives;
+        #   * otherwise (routine NO_TRADE churn) emit at most one line per
+        #     exec_trace_interval_sec and note the suppressed count on the
+        #     next emitted line, so the volume reduction itself stays
+        #     observable and no evaluation class silently disappears;
+        #   * DEDUP_GATE re-surfaces always emit (BUG-169 UI-truth path).
         if execution_id and final_proposal is not None:
+            _action = final_proposal.action
+            _action_val = _action.value if hasattr(_action, "value") else str(_action)
+            _stage = str(getattr(final_proposal, "decision_stage", "") or "")
+            _blocked = str(getattr(final_proposal, "blocked_by", "") or "")
+            _trade_relevant = (
+                _action_val != "NO_TRADE"
+                or _stage == "FINAL_DECISION"
+                or bool(_blocked)
+                or _stage == "DEDUP_GATE"
+            )
+            _suppress_reason = False
+            if not _trade_relevant:
+                if self._last_exec_trace_time is None:
+                    self._last_exec_trace_time = now
+                else:
+                    _elapsed = (now - self._last_exec_trace_time).total_seconds()
+                    if _elapsed < self.exec_trace_interval_sec:
+                        self._exec_trace_suppressed += 1
+                        _suppress_reason = True
+                    else:
+                        self._last_exec_trace_time = now
+            else:
+                # a trade-relevant line resets the routine-NO_TRADE window
+                self._last_exec_trace_time = now
+            if _suppress_reason:
+                return final_proposal
             # OBS-TRACE (2026-09-09): the EXEC_TRACE line now carries the
             # SERVING model identity so the log itself binds decision ->
             # artifact without trusting any later claim. The fingerprint is
@@ -1429,11 +1477,7 @@ class SignalPolicy:
                 "[EXEC_TRACE]",
                 execution_id=execution_id,
                 request_id=final_proposal.request_id,
-                action=(
-                    final_proposal.action.value
-                    if hasattr(final_proposal.action, "value")
-                    else str(final_proposal.action)
-                ),
+                action=_action_val,
                 stage=final_proposal.decision_stage,
                 blocked_by=final_proposal.blocked_by,
                 reason=final_proposal.reason_code,
@@ -1443,7 +1487,9 @@ class SignalPolicy:
                 model_id=_model_id or "MODEL_IDENTITY_UNAVAILABLE",
                 model_version=_model_version or "MODEL_IDENTITY_UNAVAILABLE",
                 artifact_fingerprint=_artifact_fp or "MODEL_IDENTITY_UNAVAILABLE",
+                trace_suppressed=self._exec_trace_suppressed,
             )
+            self._exec_trace_suppressed = 0
 
         # Throttled Console Telemetry logging actual finalized decision action
         should_log = False
