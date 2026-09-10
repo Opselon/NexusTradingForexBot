@@ -969,6 +969,9 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         audit = getattr(engine, "audit", None)
         out["audit_batch_failures"] = int(getattr(audit, "audit_batch_failures", 0) or 0)
         out["audit_dead_letter_rows"] = int(getattr(audit, "audit_dead_letter_rows", 0) or 0)
+        out["audit_dead_letter_pruned_rows"] = int(
+            getattr(audit, "dead_letter_pruned_rows", 0) or 0
+        )
         out["audit_salvaged_rows"] = int(getattr(audit, "audit_salvaged_rows", 0) or 0)
         out["telemetry_dropped"] = int(getattr(audit, "telemetry_dropped", 0) or 0)
         out["financial_queue_backpressure"] = int(

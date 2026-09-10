@@ -53,9 +53,10 @@ class TestManifestRegistryAgreement:
             )
 
     def test_specific_pinned_versions(self) -> None:
-        # AUDIT bumped 7 -> 8 with AUDIT-0008-research-hot-query-indexes
-        # (ddf37e08); manifest and registry must agree.
-        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 8
+        # AUDIT bumped 8 -> 9 with AUDIT-0009-research-archive-tables
+        # (31cc2003); manifest alignment landed in the PERF-DEADLETTER wave
+        # (2026-09-10) after 31cc2003 skipped it (SSOT drift).
+        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 9
         assert MANIFESTS[DatabaseDomain.NEWS].schema_version == 2
         assert MANIFESTS[DatabaseDomain.CANDLE_INTEL].schema_version == 2
 

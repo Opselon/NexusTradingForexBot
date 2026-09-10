@@ -1855,7 +1855,8 @@ Status: IMPLEMENTING -> VERIFIED (offline TestClient + real create_app; 6/6 regr
 - SCOPE: `src/nexus_scalp/experience/outcome_recovery.py:classify_exit_with_evidence` - the `reason==0` branch (MT5 DEAL_REASON_CLIENT ambiguous) + `tests/unit/test_agent12_bug250_exit_classification.py` (3, offline) + `agents/bugs.md:BUG-250`.
 - WHY: the CHG-0058 / Wave-2 forensic sweep (router coverage map + exit classification v3 + accounting) found the `reason==0` promotion conflated PnL magnitude with broker evidence (any non-zero profit promoted to `MANUAL_CLOSE`; INV-012 violated). The predicate now requires comment or price-geometry corroboration (fail-closed; profit alone -> `UNKNOWN`). No live-broker-path, clamp, or gate semantics changed.
 - VERIFICATION: situ probe before/after on `reason==0`; full exit/accounting suites `test_trade_lifecycle_task3` + `test_performance_metric_truth` + `test_agent11_scenario_coverage_contract` stay green (102 passed); ruff/mypy/py_compile clean.
-
+
+
 
 
 ## CHG-0065 (cont.) — registry + handoff rows landed (2026-09-05, Nexus-Main)
@@ -1898,3 +1899,17 @@ Registered: 2026-09-06. Plan: audit probes PASSED (scratch/tv_audit_1.py 15/15).
 In scope: Web/tv_widget.html, Web/tv_widget.js, Web/tv_widget_styles.css (new, served additively), Web/index.html (embedded copy sync), tailwind.config.js (safelist additions), Web/tailwind.css (build script rebuild), tests/js/tv_widget_redesign.test.js (new).
 Out of scope: src/** (zero backend changes), API contracts (API_V1_INDICATORS envelope untouched), trading logic, other cards/pages.
 Design decisions (user-approved 2026-09-06): gauges -> distribution bars; last_close + meta.generated_at surfaced as real data.
+
+
+CHANGE-ID: CHG-0066
+Agent: Hermes (PERF-DEADLETTER wave)
+Role: Performance & reliability audit + fix (user mission 2026-09-10: audit AND fix end-to-end)
+Task: TASK-PERF-DEADLETTER — trace the ~553k audit_dead_letter producer to root cause; bounded dead-letter retention; /health integrity_check separation; EXEC_TRACE rate limit; regression protection; safety pins.
+Scope: src/nexus_scalp/database/app_columns.py (NEW APP_REQUIRED_COLUMNS), src/nexus_scalp/database/engine.py (_create_baseline_tables skeleton heal), src/nexus_scalp/database/manifest.py (AUDIT 8→9 SSOT alignment), src/nexus_scalp/adapters/database/dead_letter_store.py (bounded retention), src/nexus_scalp/adapters/database/audit_repository.py (facade counter), src/nexus_scalp/signals/policy.py (EXEC_TRACE rate limit, trade-relevant always-emit), src/nexus_scalp/web/diagnostics_state_routes.py (/health TTL cache), src/nexus_scalp/web/debug_snapshot.py (pruned-rows counter), tests/unit/test_perf_*.py + test_dead_letter_retention_cap.py (NEW 35 tests), tests/critical_suite.txt (+5 entries), agents registries, docs/agent_handoffs/2026-09-10_perf_deadletter_health_exectrace_wave.md.
+Contracts touched: DB_MIGRATION (baseline heal, additive), RETENTION_POLICY (dead-letter cap additive), HEALTH_ENTRY (unchanged semantics; TTL cache additive). BUG-254/BUG-255 filed.
+Runtime paths touched: migration baseline (boot only), audit worker (retention on worker thread, off tick), /health route (cache), policy log site (rate limit). NO trading/risk/execution/model/halt changes. PERSISTED_HALTED fail-closed + LIVE/PAPER separation re-pinned.
+Owners affected: DB platform (baseline heal owner), audit persistence owner, observability owner.
+Risk: MEDIUM-LOW (persistence-path fixes, fail-loud, heavily regression-pinned; gates: ruff/format/mypy/migration-safety/smoke --fast green).
+Dependencies: none conflicting; foreign WIP never staged.
+Required tests: see critical_suite.txt PERF wave entries.
+Status: VERIFIED (offline; full gate evidence in the handoff doc)

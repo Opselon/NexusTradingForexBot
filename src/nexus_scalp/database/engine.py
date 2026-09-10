@@ -641,6 +641,61 @@ class DatabaseMigrationEngine:
                     # half-healed baseline skeleton).
                     con.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
                     cols_now.add(col_name)
+        # =================================================================
+        # PERF-DEADLETTER (2026-09-10): heal skeletons to the FULL
+        # application column contract, not just the hand-listed shapes
+        # above. Production incident: gate-first fresh install built
+        # `audit_signals`/`audit_guard_telemetry`/... as id-only skeletons
+        # (manifest declares no columns); the app bootstrap's
+        # CREATE TABLE IF NOT EXISTS no-ops on them and its
+        # _add_column_if_missing loops only heal EXTRAS — so EVERY producer
+        # INSERT failed ("table audit_signals has no column named
+        # request_id") and the audit worker dead-lettered ~553k rows in
+        # ~15h (1GB audit.db). APP_REQUIRED_COLUMNS (database/app_columns.py,
+        # stdlib-only, import-safe in slim tooling contexts) is the
+        # machine-readable copy of the columns the app's INSERTs use; the
+        # dead-letter error corpus is its forensic source of truth. Heal is
+        # PRAGMA-gated + additive + fail-loud, exactly like the hand list.
+        # The app bootstrap remains the owner of constraints (PK/UNIQUE) and
+        # NOT NULL truth — healing never retypes an existing column.
+        # =================================================================
+        try:
+            from nexus_scalp.database.app_columns import APP_REQUIRED_COLUMNS
+        except ImportError as _app_cols_err:  # pragma: no cover - slim tooling
+            logger.warning(
+                "[DB_MIGRATION] event=APP_COLUMN_HEAL_SKIPPED reason=deps_missing error=%s",
+                str(_app_cols_err),
+            )
+        else:
+            _healed_tables: list[str] = []
+            for _heal_table, _heal_cols in APP_REQUIRED_COLUMNS.items():
+                if _heal_table not in {
+                    r[0]
+                    for r in con.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }:
+                    continue
+                cols_now = {
+                    r[1] for r in con.execute(f"PRAGMA table_info({_heal_table})").fetchall()
+                }
+                added = 0
+                for _col_name, _col_ddl in _heal_cols:
+                    if _col_name in cols_now:
+                        continue
+                    # MIGRATION-SAFETY: fail-loud — a real DDL failure must
+                    # propagate so the engine records FAILED instead of
+                    # shipping a skeleton the application cannot write to.
+                    con.execute(f'ALTER TABLE {_heal_table} ADD COLUMN "{_col_name}" {_col_ddl}')
+                    cols_now.add(_col_name)
+                    added += 1
+                if added:
+                    _healed_tables.append(f"{_heal_table}({added})")
+            if _healed_tables:
+                logger.warning(
+                    "[DB_MIGRATION] event=BASELINE_SKELETON_HEALED tables=%s",
+                    ",".join(_healed_tables),
+                )
         # Retype audit_ledger.ticket TEXT → INTEGER PRIMARY KEY when the
         # skeleton shape is present and the table is EMPTY (fresh install
         # only; any pre-existing row means a real DB we never rebuild).
