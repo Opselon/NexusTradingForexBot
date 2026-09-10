@@ -228,12 +228,40 @@ class InferenceService:
         if bundle is None:
             raise RuntimeError("Model bundle not initialized")
 
+        # RUNTIME RESILIENCE (Agent-7 failure injection): a bundle whose
+        # scaler sidecar exists but is CORRUPT must never be served — raw
+        # unscaled inputs would produce garbage-but-finite probabilities
+        # that the confidence gates cannot recognize as broken (T24: wrong
+        # distribution). Fail closed: raise so the caller degrades to
+        # probs=None (positions still managed, entries blocked).
+        if bool(getattr(bundle.scaler, "corrupt", False)):
+            raise RuntimeError(
+                "Scaler sidecar corrupt (declared artifact unreadable) — "
+                "refusing to serve the model with raw unscaled features"
+            )
+
         x_np = bundle.scaler.transform(x_np)
         _trace.mark(LatencyStage.T3_SCALER_DONE)
+        # TRAIN/SERVE PARITY (P0 2026-09-09): the sequence tensor is built ONLY
+        # for artifacts declaring trained_mode="sequence" (the gate lives in
+        # LiveSequenceService.maybe_build_sequence_tensor and returns None for
+        # 2D-trained checkpoints, which is every canonical trainer artifact).
+        # The window is BAR-ALIGNED: the REAL completed-bar timestamp travels
+        # with the vector (never bar_ts=None), so the >max_gap_us invalidation
+        # and the one-entry-per-M1-bar semantics match the dataset side.
         seq_x = None
         try:
+            _bar_ts = None
+            try:
+                _raw_ts = getattr(fv, "timestamp_utc", None)
+                if _raw_ts:
+                    from datetime import datetime as _dt
+
+                    _bar_ts = _dt.fromisoformat(str(_raw_ts).replace("Z", "+00:00"))
+            except Exception:
+                _bar_ts = None
             seq_x = self._maybe_build_live_sequence_tensor(
-                x_scaled_now=x_np[0].tolist(), bar_ts=None
+                x_scaled_now=x_np[0].tolist(), bar_ts=_bar_ts
             )
         except Exception:
             seq_x = None

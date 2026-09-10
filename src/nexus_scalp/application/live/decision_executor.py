@@ -45,6 +45,31 @@ class DecisionExecutor:
         """Runs the BUG-212 shadow boundary, dispatch/lifecycle actions,
         hedging, and survival/equity audit for one processed tick."""
         # =================================================================
+        # RUNTIME RESILIENCE (Agent-7 failure injection): a proposal whose
+        # decision_stage is DEDUP_GATE is the BUG-169 duplicate re-surface —
+        # an OBSERVABILITY artifact only. It must never execute: the
+        # re-surfaced payload carries a FRESH request_id, so the
+        # dispatch-layer duplicate guard is blind to it and a replayed
+        # market event would re-dispatch the cached order. Duplicates are
+        # zero-information by contract; the engine prefers NO TRADE.
+        # =================================================================
+        if (
+            str(getattr(policy_decision, "decision_stage", "") or "") == "DEDUP_GATE"
+            and getattr(policy_decision, "action", ActionType.NO_TRADE) != ActionType.NO_TRADE
+        ):
+            policy_decision = policy_decision.model_copy(
+                update={
+                    "action": ActionType.NO_TRADE,
+                    "final_action": "NO_TRADE",
+                    "reason_code": "TICK_DUPLICATE_SUPPRESSED",
+                    "rejection_reason": "duplicate market event re-surface is never executable",
+                }
+            )
+            logger.info(
+                "[DEDUP_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED suppressed_action=%s",
+                "replayed duplicate",
+            )
+        # =================================================================
         # BUG-212: SHADOW EXECUTION BOUNDARY (observation-only mutations).
         # -----------------------------------------------------------------
         # SHADOW means "live data, live prediction, NO execution". The
