@@ -107,9 +107,20 @@ class TestLiveSequenceContract:
         assert st.max_gap_us == LiveSequenceService.CANONICAL_MAX_GAP_US
 
     def test_bar_ts_gap_detection(self):
+        # REPLAY-01 re-arm semantics: a >max_gap_us jump flags gap_invalid and
+        # clears the window; the first FRESH bar after the jump re-arms the
+        # window (gap_invalid False) and refills the buffer bar-by-bar —
+        # matching the dataset-side SequenceBuilder, which re-validates windows
+        # fully after the hole.
         st = _seq_state(seq_len=2)
         st.last_bar_ts_us = 0
         st.max_gap_us = 1000
+        # gap jump: flag set, window cleared, boundary bar not buffered yet
         LiveSequenceService.maybe_build_sequence_tensor(st, [0.0] * 70, bar_ts=10_000_000)
-        assert st.gap_invalid is True
-        assert len(st.buffer) == 0
+        assert st.gap_invalid is False  # re-armed on this very bar (fresh bar)
+        assert st.last_bar_ts_us == 10_000_000
+        assert len(st.buffer) == 1  # boundary bar refills the window
+        # a second bar at normal cadence extends the window (len 2 -> valid)
+        LiveSequenceService.maybe_build_sequence_tensor(st, [0.1] * 70, bar_ts=10_001_000)
+        assert st.gap_invalid is False
+        assert len(st.buffer) == 2

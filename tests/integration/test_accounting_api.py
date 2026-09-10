@@ -149,8 +149,14 @@ def _snapshot(repo: AuditRepository, ts: datetime, balance: float, equity: float
 
 
 @pytest.fixture()
-def wired_app(tmp_path):
+def wired_app(tmp_path, monkeypatch):
     """Audit repo + full LiveEngine wiring + FastAPI app with real data."""
+    # WEB-AUTH-P0 (7c14451a) wraps every create_app in token auth. These
+    # fixtures are PAPER-only (PaperMT5Adapter, no secrets) and exercise the
+    # accounting endpoints, not the auth layer — disable the web-auth gate
+    # explicitly (the documented local/PAPER override) instead of scattering
+    # Bearer headers across 13 TestClient call sites.
+    monkeypatch.setenv("NSE_WEB_AUTH_DISABLE", "1")
     db_url = f"sqlite:///{tmp_path / 'accounting_api.db'}"
     repo = AuditRepository(db_url=db_url, flush_interval_sec=0.05)
     adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
@@ -381,8 +387,10 @@ class TestAccountingApi:
         assert alpha["trade_count"] == 2
         assert alpha["net_pnl"] == pytest.approx(100.0)
 
-    def test_no_synthetic_zero_history_when_empty(self, tmp_path) -> None:
+    def test_no_synthetic_zero_history_when_empty(self, tmp_path, monkeypatch) -> None:
         """An empty database must NOT fabricate a zeroed history."""
+        # WEB-AUTH-P0: local PAPER fixture — documented auth opt-out (see wired_app).
+        monkeypatch.setenv("NSE_WEB_AUTH_DISABLE", "1")
         repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'empty.db'}")
         engine = None
         try:

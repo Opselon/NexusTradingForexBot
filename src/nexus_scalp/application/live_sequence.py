@@ -118,10 +118,17 @@ class LiveSequenceService:
         if last is not None and ts_us - int(last) > int(state.max_gap_us):
             state.gap_invalid = True
             state.buffer.clear()
-        elif state.gap_invalid and last is not None and ts_us > int(last):
-            # A fresh bar AFTER the invalidating gap re-arms the window only
-            # via an explicit reset (buffer stays empty until then).
-            pass
+        # RE-ARM ON FIRST FRESH BAR (REPLAY-01 dataset parity): gap_invalid is a
+        # ONE-WINDOW quarantine, never sticky. Whether the gap was detected on
+        # this bar (above) or flagged earlier via note_bar_gap(), the first bar
+        # that is NOT an intra-bar duplicate re-arms the window so the buffer
+        # refills bar-by-bar and post-gap windows rebuild exactly like
+        # SequenceBuilder (which re-validates windows fully after the boundary).
+        # The old sticky-until-reset() semantics permanently starved the live
+        # serving path (reset() has no production caller -> every window after
+        # one gap returned None forever).
+        if state.gap_invalid and (last is None or ts_us != int(last)):
+            state.gap_invalid = False
         # BAR-ALIGNED WINDOW: ticks carrying the SAME bar timestamp as the
         # last buffered entry update nothing (one entry per completed M1 bar;
         # intra-bar ticks must not fill the window).
@@ -135,8 +142,14 @@ class LiveSequenceService:
                     return None
             return None
         state.last_bar_ts_us = int(ts_us)
-        if state.gap_invalid:
-            return None
+        # STICKY GATE REMOVED (REPLAY-01 starvation fix): the old
+        # `if state.gap_invalid: return None` here kept every post-gap window
+        # returning None forever (the flag was re-armed only by reset(), which
+        # has no production caller). The flag is re-armed above on the first
+        # fresh bar, so it can never be True at this point. The boundary bar's
+        # vector is appended like any fresh bar: the first post-gap window then
+        # spans exactly the L bars after the hole, matching SequenceBuilder,
+        # whose first valid post-gap window includes the boundary row.
         if state.buffer is None:  # type: ignore[unreachable]
             return None
         state.buffer.append([float(v) for v in x_scaled_now])
