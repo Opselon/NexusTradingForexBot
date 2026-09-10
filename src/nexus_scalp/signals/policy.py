@@ -748,12 +748,20 @@ class SignalPolicy:
             and self.session_spread_percentile_fn is not None
             and current_spread > 0.0
         ):
-            spread_session_pct_value = float(
-                self.session_spread_percentile_fn(
-                    current_tick.symbol, now, self.spread_session_percentile
-                )
+            raw_pct = self.session_spread_percentile_fn(
+                current_tick.symbol, now, self.spread_session_percentile
             )
-            spread_session_pct_exceeded = current_spread > spread_session_pct_value
+            if raw_pct is None:
+                # Honest-unknown (C3 contract): a thin session sample returns
+                # None and the gate is a NO-OP — never float(None), never 0.0
+                # (which would fail-open on an empty distribution). Wired for
+                # real in 2026-09-11 (LiveEngine binds the provider), so this
+                # branch runs on every thin-session evaluation now.
+                spread_session_pct_value = None
+                spread_session_pct_exceeded = False
+            else:
+                spread_session_pct_value = float(raw_pct)
+                spread_session_pct_exceeded = current_spread > spread_session_pct_value
 
         # Multi-timeframe trend & S/R variables
         h4_trend = self._sanitize_float(getattr(feature_vector, "htf_h4_trend", 0.0), 0.0)
