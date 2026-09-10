@@ -77,7 +77,11 @@ RESTART_REQUIRED = "RESTART_REQUIRED"  # cannot safely change without restart
 @dataclass(frozen=True)
 class ExecutionSnapshot:
     symbol: str = "XAUUSD"
-    mode: str = "LIVE"
+    #: AGENT-18 (config-contract): default mode MUST match the bootstrap
+    #: schema (ExecutionConfig.PAPER — "default: paper — NEVER live"). A
+    #: snapshot built with NO bootstrap previously defaulted to LIVE, the
+    #: fail-OPEN direction for the most critical runtime knob.
+    mode: str = "PAPER"
     timeframe: str = "M1"
     magic_number: int = 888101
     max_slippage_points: int = 30
@@ -140,7 +144,8 @@ class ModelSnapshot:
     confidence_threshold: float = 0.35
     feature_schema_version: str = "v1.0"
     model_artifact_path: str = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
-    liquidity_features_enabled: bool = False
+    #: AGENT-18: synced with ModelConfig bootstrap default (BUG-185 P3, 70D lane).
+    liquidity_features_enabled: bool = True
     model_version: str = ""
     model_hash: str = ""
     effective_scope: str = NEXT_SIGNAL
@@ -621,6 +626,34 @@ _VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "news.poll_slow_interval_sec": lambda v: isinstance(v, int) and 300 <= int(v) <= 86400,
     "news.max_queue_size": lambda v: isinstance(v, int) and 10 <= int(v) <= 10000,
     "news.auto_analysis_enabled": lambda v: isinstance(v, bool),
+    # AGENT-18 (config-contract): the six keys introduced by 4a67e091 rode the
+    # snapshot WITHOUT validators — build_runtime_configuration treated any
+    # unvalidated key as valid, so out-of-schema exit-policy values (negative
+    # giveback arm, zero trail multiplier, 5.0 flip threshold) were ACCEPTED,
+    # persisted and replayed at every restart. Bounds mirror the bootstrap
+    # AlgoConfig / ModelConfig Field constraints exactly (fail-closed parity).
+    "algo.ai_flip_relative_bias_threshold": lambda v: (
+        isinstance(v, (int, float)) and not isinstance(v, bool) and 0.51 <= float(v) <= 0.85
+    ),
+    "algo.ai_flip_min_delta": lambda v: (
+        isinstance(v, (int, float)) and not isinstance(v, bool) and 0.02 <= float(v) <= 0.30
+    ),
+    "algo.giveback_arm_r": lambda v: (
+        isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 < float(v) <= 10.0
+    ),
+    "algo.trail_atr_multiplier": lambda v: (
+        isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 < float(v) <= 10.0
+    ),
+    "algo.ai_flip_exit_enabled": lambda v: isinstance(v, bool),
+    "model.feature_schema_version": lambda v: isinstance(v, str) and bool(v.strip()),
+    # AGENT-18 (D4): symbol whitelist — non-empty collection of non-empty
+    # symbol strings (list/tuple). Normalization (uppercase, tuple) happens
+    # in _coerce; here we only fail-closed on impossible shapes.
+    "execution.enabled_symbols": lambda v: (
+        isinstance(v, (list, tuple))
+        and len(v) > 0
+        and all(isinstance(s, str) and bool(s.strip()) for s in v)
+    ),
 }
 
 
@@ -648,6 +681,10 @@ def _coerce(key: str, value: Any) -> Any:
         "news.max_queue_size",
     ):
         return int(value)
+    if key == "execution.enabled_symbols":
+        # AGENT-18 (D4): policy gate compares tick symbols uppercased —
+        # store the whitelist normalized (uppercase, de-duplicated, tuple).
+        return tuple(dict.fromkeys(str(s).strip().upper() for s in value))
     if key in (
         "risk.enforce_stop_loss",
         "model.liquidity_features_enabled",
@@ -663,6 +700,9 @@ def _coerce(key: str, value: Any) -> Any:
         or key.endswith("_sensitivity")
         or key.endswith("_threshold")
         or key.endswith("_delta")
+        # AGENT-18: giveback_arm_r (R-multiple) matches none of the suffixes
+        # above — explicit name so the value is always a float.
+        or key == "algo.giveback_arm_r"
     ):
         return float(value)
     return value
@@ -748,6 +788,8 @@ def build_runtime_configuration(
             timeframe=str(cur["execution.timeframe"]),
             magic_number=int(cur["execution.magic_number"]),
             max_slippage_points=int(cur["execution.max_slippage_points"]),
+            #: AGENT-18 (D4): tuple[str, ...] (normalized in _coerce).
+            enabled_symbols=tuple(cur["execution.enabled_symbols"]),
         ),
         risk=RiskSnapshot(
             max_account_drawdown_pct=float(cur["risk.max_account_drawdown_pct"]),
@@ -802,10 +844,15 @@ def build_runtime_configuration(
 def _empty_values() -> dict[str, Any]:
     return {
         "execution.symbol": "XAUUSD",
-        "execution.mode": "LIVE",
+        #: AGENT-18: PAPER (bootstrap-schema parity; never default LIVE).
+        "execution.mode": "PAPER",
         "execution.timeframe": "M1",
         "execution.magic_number": 888101,
         "execution.max_slippage_points": 30,
+        #: AGENT-18 (D4): the operator symbol whitelist is runtime-config
+        #: (was: bootstrap-only; UI saves to live.yaml while the snapshot
+        #: kept the stale whitelist until restart — silent divergence).
+        "execution.enabled_symbols": ("XAUUSD",),
         "risk.max_account_drawdown_pct": 2.0,
         "risk.risk_per_trade_pct": 0.5,
         "risk.max_concurrent_positions": 1,
@@ -831,8 +878,10 @@ def _empty_values() -> dict[str, Any]:
         "algo.ai_flip_exit_enabled": False,
         "model.confidence_threshold": 0.35,
         "model.feature_schema_version": "v1.0",
-        "model.model_artifact_path": "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt",
-        "model.liquidity_features_enabled": False,
+        #: AGENT-18: parity with ModelConfig bootstrap defaults (BUG-185 P3:
+        #: the production contract is the 70D scalp_v3 champion lane).
+        "model.model_artifact_path": "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+        "model.liquidity_features_enabled": True,
         "telegram.enabled": True,
         "news.enabled": True,
         "news.worker_interval_sec": 60,
@@ -856,6 +905,10 @@ def _apply_bootstrap(cur: dict[str, Any], bootstrap: AppConfig) -> dict[str, Any
     out["execution.timeframe"] = ex.timeframe
     out["execution.magic_number"] = ex.magic_number
     out["execution.max_slippage_points"] = ex.max_slippage_points
+    # AGENT-18 (D4): whitelist rides the snapshot from bootstrap too.
+    out["execution.enabled_symbols"] = tuple(
+        dict.fromkeys(str(s).strip().upper() for s in ex.enabled_symbols)
+    )
     rk = bootstrap.risk
     out["risk.max_account_drawdown_pct"] = rk.max_account_drawdown_pct
     out["risk.risk_per_trade_pct"] = rk.risk_per_trade_pct
