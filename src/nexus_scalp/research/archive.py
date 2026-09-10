@@ -112,9 +112,17 @@ def _archive_rows(
     if not expired:
         return 0
     placeholders = ",".join("?" for _ in expired)
+    # Copy the FULL row set — the archive is the history; an id-only copy
+    # would destroy every payload column and silently falsify retention.
+    archive_cols = [
+        row[1]
+        for row in conn.execute(f"PRAGMA table_info({archive_table})").fetchall()
+        if row[1] != "archived_at"
+    ]
+    col_list = ",".join(archive_cols)
     conn.execute(
-        f"INSERT INTO {archive_table} "
-        f"({id_column}) SELECT {id_column} FROM {live_table} "
+        f"INSERT INTO {archive_table} ({col_list}) "
+        f"SELECT {col_list} FROM {live_table} "
         f"WHERE {id_column} IN ({placeholders})",
         expired,
     )

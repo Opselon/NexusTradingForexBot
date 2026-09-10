@@ -1436,8 +1436,13 @@ def register_debug_research_routes(
         strategy_id: str | None = None,
         research_run_id: str | None = None,
         limit: int = 300,
+        include_archive: bool = True,
     ) -> dict[str, Any]:
-        """TASK-21: persisted gate timeline (never fake timestamps)."""
+        """TASK-21: persisted gate timeline (never fake timestamps).
+
+        EDGE ROUND-4: archive-aware — the archive IS the history; pass
+        include_archive=false for hot (live-table) rows only.
+        """
         engine = _research()
         if engine is None:
             return {"available": False}
@@ -1446,7 +1451,10 @@ def register_debug_research_routes(
 
             obs = ResearchObservabilityStore(engine.audit)
             events = obs.list_events(
-                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+                strategy_id=strategy_id,
+                research_run_id=research_run_id,
+                limit=limit,
+                include_archive=include_archive,
             )
             return serialize_enums({"available": True, "events": events})
         except Exception as e:
@@ -1458,8 +1466,12 @@ def register_debug_research_routes(
         strategy_id: str | None = None,
         research_run_id: str | None = None,
         limit: int = 500,
+        include_archive: bool = True,
     ) -> dict[str, Any]:
-        """TASK-21: immutable evidence vault."""
+        """TASK-21: immutable evidence vault.
+
+        EDGE ROUND-4: archive-aware (see /api/research/events).
+        """
         engine = _research()
         if engine is None:
             return {"available": False}
@@ -1468,11 +1480,33 @@ def register_debug_research_routes(
 
             obs = ResearchObservabilityStore(engine.audit)
             evidence = obs.list_evidence(
-                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+                strategy_id=strategy_id,
+                research_run_id=research_run_id,
+                limit=limit,
+                include_archive=include_archive,
             )
             return serialize_enums({"available": True, "evidence": evidence})
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research evidence failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/history")
+    def get_research_history() -> dict[str, Any]:
+        """EDGE ROUND-4: archive-only retention visibility.
+
+        Live vs archived counts for research events/evidence — proves the
+        archive-only contract (nothing is ever deleted, only moved).
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            return serialize_enums({"available": True, "retention": obs.history_counts()})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research history failed"})
             return _err("INTERNAL_ERROR")
 
     @app.get("/api/research/worker")

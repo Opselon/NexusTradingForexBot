@@ -173,6 +173,19 @@ def test_archiver_moves_old_rows_and_keeps_fresh(tmp_path) -> None:
             ((datetime.now(UTC) - timedelta(days=30)).isoformat(),),
         ).fetchone()[0]
         assert fresh_live > 0
+        # EDGE ROUND-4 regression: the move copies FULL rows — an archived
+        # event keeps its event_id/message, an archived evidence keeps its
+        # evidence_id/content. An id-only copy would be silent data loss.
+        archived_event = conn.execute(
+            "SELECT event_id, message FROM research_events_archive WHERE event_id = 'EVT-0'"
+        ).fetchone()
+        assert archived_event is not None
+        assert archived_event[1] == "m"
+        archived_evidence = conn.execute(
+            "SELECT evidence_id, content FROM research_evidence_archive WHERE evidence_id = 'EV-0'"
+        ).fetchone()
+        assert archived_evidence is not None
+        assert archived_evidence[1] == "c"
     finally:
         conn.close()
         repo.close()

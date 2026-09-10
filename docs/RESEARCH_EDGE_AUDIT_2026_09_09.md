@@ -167,3 +167,23 @@ the DELETE only runs after a count-verified archive copy exists; any
 mismatch rolls back and deletes nothing; negative horizon refused; bounded
 batch. The worker calls it once per working validation cycle. History is
 never destroyed — the archive IS the history.
+
+
+### Round-4 — archive-aware history surface (API)
+
+Retention is archive-only, so the read path must treat the archive as the
+history it is:
+
+  * `ResearchObservabilityStore.list_events` / `.list_evidence` UNION live +
+    archive by default (`include_archive=False` = hot-only legacy view).
+    Explicit column lists keep the UNION valid (archive carries an extra
+    archived_at stamp).
+  * `history_counts()` exposes live vs archived row counts.
+  * New endpoint `/api/research/history` (retention visibility);
+    `/api/research/events` and `/api/research/evidence` gained
+    `include_archive` (default true).
+
+**Silent-loss fix found by this round:** `_archive_rows` originally copied
+only row IDs into the archive — payload columns were silently lost while row
+counts still matched. Round-4 tests pin FULL-ROW moves (message/content must
+survive the move); the archiver now copies every live column.
