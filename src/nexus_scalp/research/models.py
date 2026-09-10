@@ -452,6 +452,9 @@ class StrategyScore(BaseModel):
     final_score: float = Field(default=0.0, ge=0.0, le=1.0)
     verdict: str = Field(default="INCONCLUSIVE")  # VALIDATED | REJECTED | INCONCLUSIVE
     reasons: list[str] = Field(default_factory=list)
+    #: EDGE ROUND-3: expectancy-per-regime decomposition behind
+    #: regime_coverage (diagnostics only; optional for legacy producers).
+    regime_diagnostics: dict[str, Any] | None = Field(default=None)
 
 
 class StrategyRegistryEntry(BaseModel):

@@ -146,3 +146,24 @@ operator memory. `research.worker.ResearchWorker` (the production loop) now:
 A cycle over an unchanged dataset remains a no-op (the dataset rebuild guard
 is untouched); the discovery -> validation boundary (spec 27) is untouched —
 OOS evidence never flows back into discovery.
+
+
+### Round-3 — expectancy-per-regime scoring + archive-only retention
+
+**Regime scoring (scoring.py).** The regime dimension counted distinct
+regimes (breadth only). Now `_regime_expectancy_coverage` decomposes per
+regime actually traded: coverage = consistency (fraction of traded regimes
+with POSITIVE mean R) x breadth (n_regimes / 8 buckets), with UNKNOWN
+provenance discounted. A losing regime is penalized AND named in
+score.reasons; `StrategyScore.regime_diagnostics` carries the per-regime
+means. Optional field: legacy producers unchanged.
+
+**Archive-only retention (research/archive.py + AUDIT-0009 v8->9).**
+`research_events` / `research_evidence` previously grew unbounded.
+`archive_research_history(conn, older_than_days=365, batch_size=5000)` moves
+expired rows into `research_events_archive` / `research_evidence_archive`
+(migration AUDIT-0009; same DB, same columns + archived_at). Safety contract:
+the DELETE only runs after a count-verified archive copy exists; any
+mismatch rolls back and deletes nothing; negative horizon refused; bounded
+batch. The worker calls it once per working validation cycle. History is
+never destroyed — the archive IS the history.

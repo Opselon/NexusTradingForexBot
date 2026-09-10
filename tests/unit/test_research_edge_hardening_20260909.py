@@ -268,7 +268,9 @@ def test_audit_0008_applies_and_reaches_v8(tmp_path) -> None:
     repo, eng, result, db = _migrated_db(tmp_path)
     try:
         assert result["state"] == "DB_MIGRATION_SUCCEEDED"
-        assert eng.current_version() == 8
+        # AUDIT-0009 (archive tables) bumped the chain past 8; assert the
+        # chain reached AT LEAST v8 with all three round-1 indexes present.
+        assert eng.current_version() >= 8
         conn = sqlite3.connect(db)
         try:
             names = {
@@ -309,7 +311,7 @@ def test_audit_0008_rollback_drops_only_new_indexes(tmp_path) -> None:
     try:
         eng2 = DatabaseMigrationEngine(db, DatabaseDomain.AUDIT)
         status = eng2.verify()
-        assert status["current_version"] == 8
+        assert status["current_version"] >= 8
         assert status["integrity"] == "ok"
         # Direct rollback of the 0008 indexes leaves the rest of the chain intact.
         conn = sqlite3.connect(db)

@@ -373,6 +373,20 @@ class ResearchWorker:
                     exc_info=True,
                 )
         self._candidates = []
+        # EDGE ROUND-3: archive-only retention — move research events/evidence
+        # past the retention horizon into the archive tables (bounded batch,
+        # count-verified; live history is never deleted without its archive
+        # twin). Runs at most once per validation cycle that did work.
+        try:
+            from nexus_scalp.research.archive import archive_research_history
+
+            conn = sqlite3.connect(self.audit_repo._db_path, timeout=10.0)
+            try:
+                archive_research_history(conn)
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning("[STRATEGY_RESEARCH] event=ARCHIVE_SKIP error=%s", e)
         return validated > 0
 
     def _emit_heartbeat(
