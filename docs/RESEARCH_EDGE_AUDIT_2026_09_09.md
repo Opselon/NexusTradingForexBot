@@ -187,3 +187,17 @@ history it is:
 only row IDs into the archive — payload columns were silently lost while row
 counts still matched. Round-4 tests pin FULL-ROW moves (message/content must
 survive the move); the archiver now copies every live column.
+
+
+### Round-5 — calibration data + digest retention visibility
+
+**Per-regime expectancy report (`research/regime_report.py`).** Standalone,
+deterministic decomposition over a dataset for calibration sweeps against
+real data: per-regime n / mean_r / win_rate / share / consistent flags,
+sorted by |mean_r|; `regime_coverage` agrees exactly with the scorer's
+`_regime_expectancy_coverage` (pinned by test). `render_regime_report` gives
+an OK/NEG flagged text view.
+
+**Operational digest.** New research line: events/evidence live+archived
+counts (📦 = archived), honest "no history yet" placeholder when empty —
+operator sees archive-only retention working without opening the API.

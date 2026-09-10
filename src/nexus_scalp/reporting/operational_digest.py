@@ -138,6 +138,24 @@ def build_operational_digest(self: Any, container: Any | None = None) -> str:
     except Exception:
         lines.append("🔁 Parity: <i>unavailable</i>")
 
+    # --- Research pipeline + archive-only retention (edge round-4) ---
+    try:
+        from nexus_scalp.research.observability import ResearchObservabilityStore
+
+        obs = ResearchObservabilityStore(self.audit)
+        counts = obs.history_counts()
+        if counts["events_live"] + counts["events_archived"] > 0:
+            lines.append(
+                f"🔬 Research: events <code>{counts['events_live']}"
+                f"+{counts['events_archived']}📦</code>, "
+                f"evidence <code>{counts['evidence_live']}"
+                f"+{counts['evidence_archived']}📦</code>"
+            )
+        else:
+            lines.append("🔬 Research: <i>no history yet</i>")
+    except Exception:
+        lines.append("🔬 Research: <i>unavailable</i>")
+
     # --- Rollbacks / critical failures (governance truth) ---
     try:
         gov = getattr(self, "governance_engine", None)

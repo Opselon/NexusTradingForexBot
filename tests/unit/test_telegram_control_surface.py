@@ -145,3 +145,59 @@ class TestDigest:
         # honest placeholders (no fabricated numbers), key sections present
         assert "not included" in text
         assert "Drift" in text and "Parity" in text and "Breakers" in text
+
+
+class TestDigestResearchLine:
+    """EDGE ROUND-4: digest exposes archive-only retention visibility."""
+
+    def _engine_with_audit(self, tmp_path):
+        from types import SimpleNamespace
+
+        from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
+        repo = AuditRepository(
+            db_url=f"sqlite:///{tmp_path / 'digest.db'}", flush_interval_sec=0.02
+        )
+        eng = SimpleNamespace(audit=repo)
+        return eng, repo
+
+    def test_digest_shows_research_unavailable_without_history(self, tmp_path) -> None:
+        from nexus_scalp.reporting.operational_digest import build_operational_digest
+
+        eng, repo = self._engine_with_audit(tmp_path)
+        try:
+            text = build_operational_digest(eng, container=None)
+            # empty DB -> honest placeholder, never fabricated counts
+            assert "Research" in text
+        finally:
+            repo.close()
+
+    def test_digest_shows_live_and_archived_counts(self, tmp_path) -> None:
+        import sqlite3
+        from datetime import UTC, datetime, timedelta
+
+        from nexus_scalp.reporting.operational_digest import build_operational_digest
+        from nexus_scalp.research.archive import archive_research_history
+
+        eng, repo = self._engine_with_audit(tmp_path)
+        try:
+            db_path = str(repo._db_path)
+            conn = sqlite3.connect(db_path)
+            ts_old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+            ts_new = datetime.now(UTC).isoformat()
+            for i in range(4):
+                conn.execute(
+                    "INSERT INTO research_events (event_id, strategy_id,"
+                    " research_run_id, gate_id, event_type, message, payload,"
+                    " occurred_at) VALUES (?, 'S', 'R', 'G', 'T', 'm', '{}', ?)",
+                    (f"EVT-{i}", ts_old if i < 2 else ts_new),
+                )
+            conn.commit()
+            archive_research_history(conn, older_than_days=365)
+            conn.close()
+
+            text = build_operational_digest(eng, container=None)
+            assert "🔬 Research:" in text
+            assert "2+2📦" in text  # 2 live + 2 archived events
+        finally:
+            repo.close()

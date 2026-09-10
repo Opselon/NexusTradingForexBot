@@ -145,6 +145,7 @@ tests/unit/test_research_selection_bias_20260909.py
 tests/unit/test_research_worker_multiplicity.py
 tests/unit/test_research_archive_round3.py
 tests/unit/test_research_history_surface.py
+tests/unit/test_research_regime_report.py
 tests/unit/test_research_loop_smoke.py
 tests/unit/test_disk_safety_guards.py
 
