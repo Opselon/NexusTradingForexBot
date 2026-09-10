@@ -2378,10 +2378,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         with open(live_config_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
         algo_data = raw_data.get("algo", {})
+        # AGENT-18 (D5): the fallback default must be the CANONICAL AlgoConfig
+        # default (0.60) — 0.82 was a fabricated value the engine never used,
+        # shown to operators only when the engine was offline (evidence-quality
+        # defect: a threshold that was never configured, displayed as truth).
         return {
             "atr_sl_buffer_multiplier": algo_data.get("atr_sl_buffer_multiplier", 1.5),
             "min_risk_reward_ratio": algo_data.get("min_risk_reward_ratio", 1.8),
-            "ai_zone_confidence_threshold": algo_data.get("ai_zone_confidence_threshold", 0.82),
+            "ai_zone_confidence_threshold": algo_data.get("ai_zone_confidence_threshold", 0.60),
             "fvg_mitigation_sensitivity": algo_data.get("fvg_mitigation_sensitivity", 0.5),
             "order_block_lookback_bars": algo_data.get("order_block_lookback_bars", 30),
             "runtime_applied": False,
