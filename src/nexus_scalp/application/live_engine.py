@@ -2804,6 +2804,13 @@ class LiveEngine:
                 }
             )
             self.signal_policy.confidence_threshold = snap.confidence_threshold
+            # AGENT-18 (D4): the operator symbol whitelist rides the runtime
+            # snapshot — keep the policy gate in lockstep (hot-reload parity
+            # with every other runtime key; a UI whitelist update must never
+            # silently wait for a restart while live.yaml says otherwise).
+            snap_symbols = tuple(snap.execution.enabled_symbols) or ("XAUUSD",)
+            if tuple(self.signal_policy.enabled_symbols) != snap_symbols:
+                self.signal_policy.enabled_symbols = list(snap_symbols)
             # Live SMC tunables: FVG mitigation depth + OB scan lookback
             fe = getattr(self, "feature_engine", None)
             if fe is not None:
