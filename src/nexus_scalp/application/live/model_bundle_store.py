@@ -279,13 +279,19 @@ class ModelBundleStore:
             return _SB(mean=mean, std=std)
 
         except Exception as err:
-            logger.warning(
-                "Failed to load scaler; fallback to raw features",
+            # RUNTIME RESILIENCE (Agent-7 failure injection): a scaler
+            # sidecar that EXISTS but fails to load/validate is CORRUPT —
+            # that is a declared-artifact defect, not a cold start. The
+            # bundle is stamped corrupt=True so the inference path can
+            # refuse to serve raw unscaled features (T24 fail-closed).
+            logger.error(
+                "[SCALER_CORRUPT] event=SCALER_LOAD_FAILED sidecar_exists_but_unreadable "
+                "inference_will_be_blocked_for_this_bundle",
                 error=str(err),
                 path=str(scaler_path),
             )
             _, _SB = _engine_types()
-            return _SB(mean=None, std=None)
+            return _SB(mean=None, std=None, corrupt=True)
 
     def _save_model_weights_atomic(self, model: ScalpNet, model_path: Path) -> bool:
         """Saves current PyTorch model weights state_dict atomically to disk with thread lock and logging.

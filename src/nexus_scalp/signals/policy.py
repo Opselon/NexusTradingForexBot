@@ -172,6 +172,32 @@ class SignalPolicy:
         """
         Evaluates conditions at maximum live speed (50ms hot path) and outputs a sized TradeProposal.
         """
+        # =================================================================
+        # RUNTIME RESILIENCE (Agent-7 failure injection): a degraded
+        # inference state (probs=None — e.g. the BUG-253 70D stale-liquidity
+        # gate, an in-trade inference exception, or a missing bundle) used
+        # to reach this method and crash on ``probabilities.squeeze`` ->
+        # AttributeError -> hot-path circuit breaker -> DEGRADED loop on
+        # EVERY tick. The engine must prefer NO TRADE over a crash loop:
+        # any non-tensor / empty probability payload fail-closes to a
+        # NO_TRADE proposal without touching any gate state.
+        # =================================================================
+        if (
+            probabilities is None
+            or not isinstance(probabilities, torch.Tensor)
+            or (probabilities.numel() == 0)
+        ):
+            return self._build_no_trade(
+                tick=current_tick,
+                confidence=0.0,
+                reason="PROBS_UNAVAILABLE_DEGRADED",
+                regime_str=(
+                    regime_state.regime_type.value if regime_state is not None else "UNKNOWN"
+                ),
+                regime_conf=float(regime_state.regime_probability) if regime_state else 0.0,
+                blocked_by="INFERENCE_DEGRADED",
+                decision_stage="INFERENCE_DEGRADED",
+            )
         # Forensic execution trace id (PHASE 13 audit, 2026-08-20): ONE id per
         # evaluation, stamped BEFORE any gate, carried into every proposal the
         # policy emits (NO_TRADE included) so logs + audit rows + dispatch are
@@ -1941,6 +1967,16 @@ class SignalPolicy:
             # "Active Intelligence Output", hiding the actual fresh decision
             # and freezing the displayed confidence at 0.00%. The duplicate
             # still never touches cooldown/direction/price-lock state.
+            #
+            # RUNTIME RESILIENCE (Agent-7 failure injection): the re-surfaced
+            # proposal keeps the LAST REAL decision's observability payload
+            # (BUG-169 UI-truth: action/confidence visible, never a fabricated
+            # 0.0) BUT is stamped decision_stage="DEDUP_GATE". A duplicate
+            # event must never become an executable order: the replayed
+            # proposal carries a FRESH request_id, so the dispatch-layer
+            # idempotency guard cannot recognize it — the decision executor
+            # therefore refuses any non-NO_TRADE proposal stamped DEDUP_GATE
+            # (FI-3 regression: test_runtime_failure_injection.py).
             last = getattr(self, "_last_real_proposal", None)
             if last is not None:
                 return last.model_copy(
@@ -1948,6 +1984,7 @@ class SignalPolicy:
                         "request_id": str(uuid.uuid4()),
                         "execution_id": execution_id,
                         "generated_at": current_tick.timestamp,
+                        "decision_stage": "DEDUP_GATE",
                     }
                 )
             _pb = probs[1] if len(probs) > 1 else 0.0

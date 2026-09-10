@@ -75,6 +75,24 @@ class DispatchEngine:
 
     def execute_order(self, order: TradeOrder) -> bool:
         """Submits trade deal to broker adapter with duplicate submission prevention."""
+        # RUNTIME RESILIENCE (Agent-7 failure injection): the operator
+        # EMERGENCY HALT (RiskEngine kill switch) and the persisted safety
+        # decision (HALTED/KILL_SWITCH runtime_risk_state row) were enforced
+        # ONLY on the hedge-sizing path (RiskEngine.evaluate_proposal) — the
+        # hedge submit, the primary dispatch and the AI-reversal flip all
+        # bypassed them. Fail closed: no broker submission while the kill
+        # switch is armed or a persisted halt is active.
+        _risk_engine_h = getattr(self.om, "risk_engine", None)
+        if bool(getattr(_risk_engine_h, "_kill_switch_active", False)) or (
+            hasattr(self.om, "_trading_blocked_by_safety_state")
+            and self.om._trading_blocked_by_safety_state()
+        ):
+            logger.critical(
+                "Hedge entry blocked: emergency kill switch / persisted safety halt active",
+                order_id=order.order_id,
+            )
+            return False
+
         if self.om.global_state == "SAFE_MODE":
             logger.warning("Order blocked: Safety State is SAFE_MODE.")
             return False
@@ -222,6 +240,32 @@ class DispatchEngine:
         autopsy row for post-hoc strategy/setup attribution.
         """
         MAX_TOTAL_EXPOSURE = _om_dispatch_symbols()[1]
+        # RUNTIME RESILIENCE (Agent-7 failure injection): the operator
+        # EMERGENCY HALT (RiskEngine kill switch) and the persisted safety
+        # decision (HALTED/KILL_SWITCH runtime_risk_state row) must gate the
+        # PRIMARY entry path too. Previously they were enforced only inside
+        # RiskEngine.evaluate_proposal (hedge sizing), so a Telegram/operator
+        # halt did NOT stop new BUY/SELL entries from the main decision path.
+        # Fail closed: refuse every new entry while the halt is armed.
+        _risk_engine = getattr(self.om, "risk_engine", None)
+        if bool(getattr(_risk_engine, "_kill_switch_active", False)) or (
+            hasattr(self.om, "_trading_blocked_by_safety_state")
+            and self.om._trading_blocked_by_safety_state()
+        ):
+            _blocked_action = getattr(decision, "action", None)
+            logger.critical(
+                "[ENTRY_BLOCKED] layer=KILL_SWITCH action=%s symbol=%s "
+                "(operator halt / persisted safety state active)",
+                getattr(_blocked_action, "value", str(_blocked_action)),
+                getattr(decision, "symbol", ""),
+            )
+            emit_terminal_pending_outcome(
+                experience_engine=self.om.experience_engine,
+                request_id=str(getattr(decision, "request_id", "") or ""),
+                state=DecisionLifecycle.NOT_DISPATCHED,
+                detail="KILL_SWITCH / persisted safety halt at dispatch",
+            )
+            return False
         # BUG-241: the primary dispatch path now honors the engine safety
         # state machine. Previously only execute_order (hedge path) checked
         # SAFE_MODE, so the main entry path kept dispatching through a
