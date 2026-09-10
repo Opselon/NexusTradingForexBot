@@ -16,6 +16,14 @@ class LiveSequenceState:
     max_gap_us: int
     last_bar_ts_us: int | None
     gap_invalid: bool
+    # TRAIN/SERVE PARITY GATE (P0 2026-09-09): the artifact's DECLARED serving
+    # mode. Only sequence-trained artifacts ("sequence"/"sequence_L*") may
+    # consume the (1, L, 70) TCN+attention path; every canonical
+    # WalkForwardTrainer artifact trains the 2D MLP path on per-row vectors, so
+    # the default is "2d" and the sequence tensor is then NEVER built (a
+    # 2D-trained checkpoint must never be served through untrained temporal
+    # weights).
+    trained_mode: str = "2d"
 
 
 class LiveSequenceService:
@@ -30,6 +38,7 @@ class LiveSequenceService:
             max_gap_us=10 * 60 * 1_000_000,
             last_bar_ts_us=None,
             gap_invalid=False,
+            trained_mode="2d",
         )
 
     @staticmethod
@@ -62,6 +71,15 @@ class LiveSequenceService:
                 g2 = meta.get("max_gap_us")
                 if isinstance(g2, int) and g2 >= 0:
                     max_gap = int(g2)
+        # TRAIN/SERVE PARITY GATE: trained_mode binds the SERVING path to the
+        # artifact's DECLARED training geometry. "sequence*" enables the 3D
+        # path; anything else (2d/absent/unknown) pins the 2D MLP path.
+        mode = ""
+        if isinstance(meta, dict):
+            tm = meta.get("trained_mode")
+            if isinstance(tm, str):
+                mode = tm.strip().lower()
+        state.trained_mode = "sequence" if mode.startswith("sequence") else "2d"
         if isinstance(seq_len, int) and seq_len >= 2:
             state.seq_len = int(seq_len)
             with contextlib.suppress(Exception):
@@ -75,23 +93,48 @@ class LiveSequenceService:
     def maybe_build_sequence_tensor(
         state: LiveSequenceState, x_scaled_now: list[float], bar_ts: object = None
     ) -> object | None:
+        # TRAIN/SERVE PARITY GATE (P0 2026-09-09): 2D-trained artifacts NEVER
+        # get a sequence tensor — live must run the path training optimized.
+        if state.trained_mode != "sequence" or not str(state.trained_mode).startswith("sequence"):
+            return None
         try:
             import torch as _torch
         except Exception:
             return None
-        with contextlib.suppress(Exception):
-            if bar_ts is not None:
-                ts_us = None
-                if hasattr(bar_ts, "timestamp"):
-                    ts_us = int(bar_ts.timestamp() * 1_000_000)  # type: ignore[union-attr]
-                elif isinstance(bar_ts, int):
-                    ts_us = int(bar_ts)
-                if ts_us is not None:
-                    last = state.last_bar_ts_us
-                    if last is not None and ts_us - int(last) > int(state.max_gap_us):
-                        state.gap_invalid = True
-                        state.buffer.clear()
-                    state.last_bar_ts_us = int(ts_us)
+        # GAP INVALIDATION (enforced): the bar timestamp is REQUIRED for buffer
+        # writes (bar-aligned window, not a tick window). A >max_gap_us interval
+        # between consecutive bars clears the buffer and invalidates the window
+        # (honest None -> 2D fallback), matching the dataset-side gap contract.
+        if bar_ts is None:
+            return None
+        ts_us: int | None = None
+        if hasattr(bar_ts, "timestamp"):
+            ts_us = int(bar_ts.timestamp() * 1_000_000)  # type: ignore[union-attr]
+        elif isinstance(bar_ts, int):
+            ts_us = int(bar_ts)
+        if ts_us is None:
+            return None
+        last = state.last_bar_ts_us
+        if last is not None and ts_us - int(last) > int(state.max_gap_us):
+            state.gap_invalid = True
+            state.buffer.clear()
+        elif state.gap_invalid and last is not None and ts_us > int(last):
+            # A fresh bar AFTER the invalidating gap re-arms the window only
+            # via an explicit reset (buffer stays empty until then).
+            pass
+        # BAR-ALIGNED WINDOW: ticks carrying the SAME bar timestamp as the
+        # last buffered entry update nothing (one entry per completed M1 bar;
+        # intra-bar ticks must not fill the window).
+        if last is not None and ts_us == int(last):
+            need = int(state.seq_len)
+            if len(state.buffer) >= need:
+                try:
+                    arr = _torch.tensor(list(state.buffer)[-need:], dtype=_torch.float32)
+                    return arr.unsqueeze(0)
+                except Exception:
+                    return None
+            return None
+        state.last_bar_ts_us = int(ts_us)
         if state.gap_invalid:
             return None
         if state.buffer is None:  # type: ignore[unreachable]
@@ -110,6 +153,14 @@ class LiveSequenceService:
 
     @staticmethod
     def note_bar_gap(state: LiveSequenceState, gap_us: int) -> None:
+        """Bar-cadence gap ledger (completed M1 bars only).
+
+        A gap beyond max_gap_us invalidates the window (buffer cleared; the
+        next sequence build returns None until the buffer refills bar-by-bar).
+        Within-window gaps re-arm the flag so a transient gap cannot poison
+        every future window forever (the old flag was sticky until reset(),
+        which no production caller invoked).
+        """
         if int(gap_us) > int(state.max_gap_us):
             state.gap_invalid = True
             state.buffer.clear()
