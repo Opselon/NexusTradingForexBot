@@ -23,6 +23,7 @@ from __future__ import annotations
 import typer
 from rich.panel import Panel
 
+from nexus_scalp.adapters.database.audit_repository import RuntimeRiskStateReadError
 from nexus_scalp.cli import app_factory
 from nexus_scalp.cli.styling import console
 from nexus_scalp.release import exit_codes as xc
@@ -47,10 +48,28 @@ _STATE_TRUTH = {
 
 
 def _load_row() -> dict | None:
-    """Reads the persisted row through a read-only AuditRepository handle."""
+    """Reads the persisted row through a read-only AuditRepository handle.
+
+    Fail-closed (agent-17 boot-trust contract, 2026-09-10): a FAILED read is
+    NOT the same as 'no persisted state'. ``RuntimeRiskStateReadError``
+    surfaces as an explicit UNCERTAIN panel + nonzero exit — never as the
+    green RUNNING banner, and never as a releasable no-halt state.
+    """
     repo = _repo_handle()
     try:
         return repo.get_runtime_risk_state()
+    except RuntimeRiskStateReadError as err:
+        console.print(
+            Panel(
+                "[red]UNCERTAIN — persisted safety state could NOT be read.[/red]\n"
+                f"{err}\n\n"
+                "Fail closed: treat the engine as halted until the audit DB is "
+                "readable again. Do NOT release, do NOT start trading.",
+                title="Runtime Risk State",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     finally:
         repo.close()
 
