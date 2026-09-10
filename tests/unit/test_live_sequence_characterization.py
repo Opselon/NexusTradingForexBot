@@ -1,6 +1,25 @@
-"""Characterization for LiveSequence temporal contract."""
+"""Characterization for LiveSequence temporal contract.
 
-from nexus_scalp.application.live_sequence import LiveSequenceService
+Updated for the TRAIN/SERVE PARITY gate (2026-09-09): the sequence tensor is
+built ONLY for sequence-trained artifacts ("sequence") and only from BAR
+timestamps — the old tick-fed, mode-less behavior was the P0 defect (a
+2D-trained champion served through the never-trained TCN/attention path).
+"""
+
+from collections import deque
+
+from nexus_scalp.application.live_sequence import LiveSequenceService, LiveSequenceState
+
+
+def _seq_state(seq_len: int = 4) -> LiveSequenceState:
+    return LiveSequenceState(
+        buffer=deque(maxlen=64),
+        seq_len=seq_len,
+        max_gap_us=LiveSequenceService.CANONICAL_MAX_GAP_US,
+        last_bar_ts_us=None,
+        gap_invalid=False,
+        trained_mode="sequence",
+    )
 
 
 class TestLiveSequenceContract:
@@ -23,12 +42,28 @@ class TestLiveSequenceContract:
         assert LiveSequenceService.maybe_build_sequence_tensor(st, [0.0] * 50) is None
 
     def test_build_succeeds_at_seq_len(self):
+        # sequence-trained artifact + bar timestamps => (1, L, 70) tensor
+        st = _seq_state(seq_len=2)
+        LiveSequenceService.maybe_build_sequence_tensor(
+            st, [0.0] * 70, bar_ts=__import__("datetime").datetime(2026, 9, 9, 12, 0)
+        )
+        t2 = LiveSequenceService.maybe_build_sequence_tensor(
+            st, [0.1] * 70, bar_ts=__import__("datetime").datetime(2026, 9, 9, 12, 1)
+        )
+        assert t2 is not None
+        assert tuple(t2.shape) == (1, 2, 70)
+
+    def test_2d_default_never_builds(self):
+        # THE PARITY GATE: mode-less (2D-trained) artifact => never a sequence.
         st = LiveSequenceService.defaults()
         st.seq_len = 2
-        LiveSequenceService.maybe_build_sequence_tensor(st, [0.0] * 70)
-        t = LiveSequenceService.maybe_build_sequence_tensor(st, [0.1] * 70)
-        assert t is not None
-        assert tuple(t.shape) == (1, 2, 70)
+        for m in range(4):
+            out = LiveSequenceService.maybe_build_sequence_tensor(
+                st,
+                [0.1] * 70,
+                bar_ts=__import__("datetime").datetime(2026, 9, 9, 12, m),
+            )
+        assert out is None
 
     def test_gap_invalid_blocks_build(self):
         st = LiveSequenceService.defaults()
@@ -72,7 +107,7 @@ class TestLiveSequenceContract:
         assert st.max_gap_us == LiveSequenceService.CANONICAL_MAX_GAP_US
 
     def test_bar_ts_gap_detection(self):
-        st = LiveSequenceService.defaults()
+        st = _seq_state(seq_len=2)
         st.last_bar_ts_us = 0
         st.max_gap_us = 1000
         LiveSequenceService.maybe_build_sequence_tensor(st, [0.0] * 70, bar_ts=10_000_000)

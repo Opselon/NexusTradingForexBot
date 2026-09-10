@@ -36,6 +36,24 @@ class BarData(BaseModel):
 class BarAggregator:
     """
     Maintains active forming bars and yields completed bars upon timeframe boundary crossing.
+
+    Market-data integrity contract (Agent-13, 2026-09-09):
+      * Symbol identity: a tick whose ``symbol`` differs from the aggregator's
+        own symbol is rejected (ValueError, fail closed) — a foreign-symbol
+        quote must never be able to mint or mutate a bar of this instrument.
+      * Tick timestamp monotonicity: a tick OLDER than the last ACCEPTED tick
+        is dropped (returns ``None``) — an out-of-order / replayed quote must
+        never mutate a bar that the market has already moved past.
+
+    Deliberately NO future-stamp guard: a large POSITIVE timestamp jump is a
+    legitimate market gap (feed outage, session break, weekend) and MT5
+    itself seals the previous bar on the next quote in that case. Clock-
+    offset-scale timebase defects are handled fail-closed at the freshness
+    layer (LiveFreshnessService.stage_freshness reports a future stamp as
+    STALE) and the G29 freshness gate downgrades proposals while the skew
+    persists.
+
+    Dropped ticks never touch any bar state; they carry zero bar information.
     """
 
     def __init__(self, symbol: str, timeframe_minutes: int = 1) -> None:
@@ -49,6 +67,9 @@ class BarAggregator:
         self._close: float = 0.0
         self._volume: int = 0
         self._completed_bars: list[BarData] = []
+        # Monotonic stamp of the last ACCEPTED tick (UTC-aware). None until
+        # the first valid tick arrives; rebased by reseed() from broker bars.
+        self._last_accepted_ts: datetime | None = None
 
     def process_tick(self, tick: TickData) -> BarData | None:
         """
@@ -60,6 +81,49 @@ class BarAggregator:
         Returns:
             Optional[BarData]: Completed bar if period closed, else None.
         """
+        # ------------------------------------------------------------------
+        # INTEGRITY GUARD 1 — symbol identity (fail closed).
+        # A foreign-symbol tick must never contribute to this instrument's
+        # bars (wrong-price contamination at 1e4 price-scale distance).
+        # ------------------------------------------------------------------
+        if str(tick.symbol) != self.symbol:
+            raise ValueError(
+                f"BarAggregator[{self.symbol}]: tick symbol mismatch "
+                f"(got '{tick.symbol}'); bar state left untouched"
+            )
+
+        tick_ts = tick.timestamp
+        if tick_ts.tzinfo is None:  # defensive: TickData already normalizes
+            from datetime import UTC as _UTC
+
+            tick_ts = tick_ts.replace(tzinfo=_UTC)
+
+        # ------------------------------------------------------------------
+        # INTEGRITY GUARD — out-of-order / replayed tick (drop, no raise):
+        # the market has already built state past this timestamp; mutating
+        # the current bar with it would inject a stale price. The lower
+        # bound is the monotonic MARKET clock (last accepted tick).
+        #
+        # Deliberately NO future-stamp guard here: a large POSITIVE jump is
+        # a legitimate market gap (feed outage, session break, weekend) and
+        # MT5 itself seals the previous bar on the next quote in that case.
+        # Clock-offset-scale timebase defects are handled fail-closed at the
+        # freshness layer (LiveFreshnessService.stage_freshness now reports
+        # a future stamp as STALE) and the G29 freshness gate downgrades
+        # proposals to NO_TRADE while the skew persists.
+        # ------------------------------------------------------------------
+        if self._last_accepted_ts is not None and tick_ts < self._last_accepted_ts:
+            logger.warning(
+                "Out-of-order tick dropped",
+                symbol=self.symbol,
+                timeframe=self.timeframe_str,
+                tick_ts=tick_ts.isoformat(),
+                last_accepted=self._last_accepted_ts.isoformat(),
+            )
+            return None
+
+        self._last_accepted_ts = tick_ts
+
         price = (tick.bid + tick.ask) / 2.0
         tick_minute = tick.timestamp.minute
         bar_minute = (tick_minute // self.timeframe_minutes) * self.timeframe_minutes
@@ -134,6 +198,7 @@ class BarAggregator:
         if not completed_bars:
             self._completed_bars = []
             self._current_bar_time = None
+            self._last_accepted_ts = None
             return None
 
         # Deterministic dedupe + ascending order (never trust caller order).
@@ -150,6 +215,7 @@ class BarAggregator:
         if not deduped:
             self._completed_bars = []
             self._current_bar_time = None
+            self._last_accepted_ts = None
             return None
 
         last_bar = deduped[-1]
@@ -169,6 +235,14 @@ class BarAggregator:
         self._low = last_bar.close
         self._close = last_bar.close
         self._volume = 0
+        # Rebase the monotonic tick stamp to the broker clock. The last
+        # bar's OPEN time is the correct strict lower bound for live ticks:
+        # a tick stamped within the last (still forming) broker minute must
+        # be accepted (it continues that bar), while anything at/before the
+        # last COMPLETED bar's open is provably stale. Anchor at the last
+        # bar's open (not close) so the first tick of the forming minute —
+        # stamped anywhere inside [last_open+1m, next_minute] — survives.
+        self._last_accepted_ts = last_bar.timestamp + timedelta(minutes=self.timeframe_minutes)
 
         logger.info(
             "BarAggregator reseeded",

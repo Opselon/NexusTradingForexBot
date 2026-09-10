@@ -404,10 +404,16 @@ class RuntimeLoop:
                 # which is what the UI then displays. A duplicate carries ZERO
                 # new information: keep the previous proposal/state untouched
                 # and service the heartbeat workers below.
+                # BUG-169 duplicate-tick predicate. State is OWNED BY THE
+                # ENGINE (self.om._pipeline_last_*) — the pre-fix guard read
+                # `getattr(self, ...)` on the RuntimeLoop wrapper, where those
+                # attributes never exist, so the predicate was DEAD CODE and
+                # every repeated quote re-ran the full pipeline (Agent-13
+                # probe 2026-09-09: identical bid/ask/ts always fell through).
                 if (
-                    tick.timestamp == getattr(self, "_pipeline_last_ts", None)
-                    and float(tick.bid) == getattr(self, "_pipeline_last_bid", 0.0)
-                    and float(tick.ask) == getattr(self, "_pipeline_last_ask", 0.0)
+                    tick.timestamp == getattr(self.om, "_pipeline_last_ts", None)
+                    and float(tick.bid) == getattr(self.om, "_pipeline_last_bid", 0.0)
+                    and float(tick.ask) == getattr(self.om, "_pipeline_last_ask", 0.0)
                 ):
                     await self.om._service_pipeline_workers(now_t=time.time())
                     await asyncio.sleep(0.05)
