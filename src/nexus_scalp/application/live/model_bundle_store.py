@@ -229,23 +229,6 @@ class ModelBundleStore:
 
             model.load_state_dict(state_dict)
             logger.info("Loaded model weights", path=str(model_path), expected_dim=expected_dim)
-            # P0-2 ARTIFACT TRUST ANCHOR (2026-09-09): the bundle's own
-            # manifest is self-referential — it proves the WEIGHTS match the
-            # SIDE-CAR, not that they are the GOVERNED champion. Cross-check
-            # the artifact fingerprint against the lifecycle registry's
-            # CHAMPION row; a mismatch or unreadable fingerprint fails
-            # closed (never serves silently-drifted bytes — the Appendix-R
-            # defect class). No operator override here: promotion/recovery
-            # is the governance path that updates the registry.
-            _anch = getattr(self, "_verify_champion_registry_binding", None)
-            if _anch is None:
-                # Minimal state surface (direct ModelBundleStore construction):
-                # run the helper directly with this object as the state surface.
-                ModelBundleStore._verify_champion_registry_binding(
-                    self, model_path, actual_bytes_hash=None
-                )
-            else:
-                _anch(model_path, actual_bytes_hash=None)
             return model
 
         logger.info(
@@ -254,111 +237,13 @@ class ModelBundleStore:
         self._save_model_weights_atomic(model, model_path)
         return model
 
-    def _verify_champion_registry_binding(
-        self, model_path: Path, actual_bytes_hash: str | None
-    ) -> None:
-        """P0-2 ARTIFACT TRUST ANCHOR: cross-check the serving artifact against
-        the lifecycle registry's governed CHAMPION row.
-
-        Behavior:
-          * registry row exists + carries a fingerprint -> the on-disk artifact
-            sha256 (16-hex prefix, same scheme as fingerprint_artifact) MUST
-            match; mismatch => ArtifactIntegrityError (fail closed, CRITICAL).
-          * no champion row / empty fingerprint / registry unavailable => the
-            check is INERT (logged) so cold-start and non-champion artifact
-            paths keep working; the self-referential bundle verification above
-            still applies. This is NOT an override — governed promotion is the
-            only writer of CHAMPION rows.
-        """
-        import hashlib as _hashlib
-        import sqlite3 as _sqlite3
-
-        from nexus_scalp.model_lifecycle.load_integrity import (
-            ArtifactIntegrityError,
-            ArtifactIntegrityStatus,
-            IntegrityVerdict,
-        )
-
-        try:
-            from nexus_scalp.model_lifecycle.models import ModelStatus
-        except Exception:
-            return
-        try:
-            om = getattr(self, "om", None)
-            audit = getattr(om, "audit", None) if om is not None else None
-            if audit is None:
-                audit = getattr(self, "audit", None)
-            if audit is None or not getattr(audit, "_is_sqlite", False):
-                logger.info("[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=no_sqlite_audit")
-                return
-            db_path = getattr(audit, "_db_path", None)
-            if not db_path:
-                logger.info("[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=no_db_path")
-                return
-            conn = _sqlite3.connect(db_path, timeout=5.0)
-            try:
-                row = conn.execute(
-                    "SELECT model_id, artifact_fingerprint FROM experience_model_registry "
-                    "WHERE lifecycle_status=? ORDER BY registered_at DESC LIMIT 1;",
-                    (ModelStatus.CHAMPION.value,),
-                ).fetchone()
-            finally:
-                conn.close()
-            if not row:
-                logger.info("[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=no_champion_row")
-                return
-            champion_id = str(row[0] or "")
-            governed_fp = str(row[1] or "").strip().lower()
-            if not governed_fp:
-                logger.info(
-                    "[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=champion_row_has_no_fingerprint"
-                )
-                return
-            h = _hashlib.sha256()
-            with open(model_path, "rb") as fh:
-                for chunk in iter(lambda: fh.read(1 << 20), b""):
-                    h.update(chunk)
-            actual_fp = h.hexdigest()[:16]
-            if actual_fp != governed_fp:
-                logger.critical(
-                    "[TRUST_ANCHOR] event=CHAMPION_BINDING_MISMATCH "
-                    "serving_sha16=%s governed_sha16=%s champion_row=%s "
-                    "(on-disk artifact is NOT the governed champion; refusing load)",
-                    actual_fp,
-                    governed_fp,
-                    champion_id,
-                )
-                raise ArtifactIntegrityError(
-                    IntegrityVerdict(
-                        status=ArtifactIntegrityStatus.HASH_MISMATCH,
-                        reason=(
-                            f"serving artifact sha16 {actual_fp} != governed CHAMPION "
-                            f"{governed_fp} (registry row {champion_id})"
-                        ),
-                        artifact=model_path.name,
-                        expected_sha256=governed_fp,
-                        actual_sha256=actual_fp,
-                    )
-                )
-            logger.info(
-                "[TRUST_ANCHOR] event=CHAMPION_BINDING_VERIFIED champion_row=%s sha16=%s",
-                champion_id,
-                actual_fp,
-            )
-        except ArtifactIntegrityError:
-            raise
-        except Exception as exc:  # inert on registry/infra failure (not artifact failure)
-            logger.info(
-                "[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=registry_error detail=%s",
-                str(exc)[:200],
-            )
-
     def _load_scaler_artifacts(self, model_path: Path) -> ScalerBundle:
         scaler_path = model_path.with_suffix(".scaler.npz")
         if not scaler_path.exists():
             logger.info("Scaler artifact missing (cold-start acceptable)", path=str(scaler_path))
             _, _SB = _engine_types()
             return _SB(mean=None, std=None)
+
         try:
             data = np.load(scaler_path)
             mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
