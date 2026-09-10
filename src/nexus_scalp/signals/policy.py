@@ -124,6 +124,14 @@ class SignalPolicy:
         # session_spread_percentile for the read-only provider contract).
         self.session_spread_percentile_fn = session_spread_percentile_fn
 
+        # OBS-TRACE (2026-09-09): optional zero-arg provider returning the
+        # SERVING model identity (model_id, model_version,
+        # artifact_fingerprint) for the EXEC_TRACE forensic line. Injected by
+        # the engine (which owns the loaded bundle) so the policy itself never
+        # touches the artifact (INV-001: no I/O in the policy). None/unset =>
+        # the trace stamps MODEL_IDENTITY_UNAVAILABLE honestly.
+        self.model_identity_fn: Callable[[], tuple[str, str, str]] | None = None
+
         self._last_signal_time: datetime | None = None
         self._last_telemetry_time: datetime | None = None
         self._last_logged_action: ActionType = ActionType.NO_TRADE
@@ -1368,6 +1376,21 @@ class SignalPolicy:
         # Guarded by the same throttle as radar telemetry (never a hot-path
         # flood). Observability only.
         if execution_id and final_proposal is not None:
+            # OBS-TRACE (2026-09-09): the EXEC_TRACE line now carries the
+            # SERVING model identity so the log itself binds decision ->
+            # artifact without trusting any later claim. The fingerprint is
+            # the sha256-prefix of the artifact file (experience/provenance
+            # fingerprint_artifact) when the bundle carries a real file;
+            # None/empty is stamped honestly as MODEL_IDENTITY_UNAVAILABLE
+            # (never a placeholder hash). Structured kwargs only: no hot-path
+            # I/O (INV-001) — the identity comes from the already-loaded
+            # bundle object, not from disk.
+            _model_id = _model_version = _artifact_fp = None
+            try:
+                if self.model_identity_fn is not None:
+                    _model_id, _model_version, _artifact_fp = self.model_identity_fn()
+            except Exception:  # pragma: no cover - identity is observability only
+                _model_id = _model_version = _artifact_fp = None
             logger.info(
                 "[EXEC_TRACE]",
                 execution_id=execution_id,
@@ -1383,6 +1406,9 @@ class SignalPolicy:
                 conf_before=float(final_proposal.confidence_before_filters or 0.0),
                 conf_after=float(final_proposal.confidence_after_filters or 0.0),
                 regime=str(final_proposal.regime or ""),
+                model_id=_model_id or "MODEL_IDENTITY_UNAVAILABLE",
+                model_version=_model_version or "MODEL_IDENTITY_UNAVAILABLE",
+                artifact_fingerprint=_artifact_fp or "MODEL_IDENTITY_UNAVAILABLE",
             )
 
         # Throttled Console Telemetry logging actual finalized decision action

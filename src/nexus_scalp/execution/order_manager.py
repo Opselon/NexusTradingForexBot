@@ -1087,6 +1087,7 @@ class OrderLifecycleManager:
             # (which runs on the next management pass) attributes it correctly.
             self._forced_exit_mechanisms[pos.ticket] = ExitMechanism.AI_REVERSAL_EXIT
 
+            _flip_close_started = time.monotonic()
             if self.adapter.close_position(ticket=pos.ticket):
                 self.audit.log_order(
                     ticket=pos.ticket,
@@ -1098,7 +1099,7 @@ class OrderLifecycleManager:
                     take_profit=pos.tp,
                     volume=pos.volume,
                     reason=AI_REVERSAL_REASON,
-                    latency=0.009,
+                    latency=max(0.0, time.monotonic() - _flip_close_started),
                     execution_mode="AI_REVERSAL",
                 )
                 if self.notifier:
@@ -1191,11 +1192,15 @@ class OrderLifecycleManager:
         )
 
         if action == ActionType.CLOSE_POSITION:
+            _action_started = time.monotonic()
             success = self.mt5_adapter.close_position(ticket=ticket)
-            logger.info(
-                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
-            )
+            # OBS-TRACE (2026-09-09): banner moved behind verified success -
+            # a failed close previously logged *** REAL ORDER/EXECUTION
+            # EXECUTED *** as if it had happened (log-as-authority defect).
             if success:
+                logger.info(
+                    f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
+                )
                 self.audit.log_order(
                     ticket=ticket,
                     order_id=f"close_{ticket}",
@@ -1206,18 +1211,19 @@ class OrderLifecycleManager:
                     take_profit=0.0,
                     volume=volume,
                     reason="close_position",
-                    latency=0.009,
+                    latency=max(0.0, time.monotonic() - _action_started),
                     execution_mode="STANDARD",
                 )
             return success
 
         elif action == ActionType.PARTIAL_CLOSE:
+            _action_started = time.monotonic()
             success = self.mt5_adapter.close_position(ticket=ticket, volume=volume)
             lots = volume if volume is not None else 0.0
-            logger.info(
-                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {lots}"
-            )
             if success:
+                logger.info(
+                    f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {lots}"
+                )
                 self.audit.log_order(
                     ticket=ticket,
                     order_id=f"partial_{ticket}",
@@ -1228,19 +1234,20 @@ class OrderLifecycleManager:
                     take_profit=0.0,
                     volume=lots,
                     reason="partial_close",
-                    latency=0.010,
+                    latency=max(0.0, time.monotonic() - _action_started),
                     execution_mode="STANDARD",
                 )
             return success
 
         elif action == ActionType.MODIFY_SL_TP:
+            _action_started = time.monotonic()
             success = self.mt5_adapter.modify_order(
                 ticket=ticket, stop_loss=decision.stop_loss, take_profit=decision.take_profit
             )
-            logger.info(
-                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
-            )
             if success:
+                logger.info(
+                    f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
+                )
                 self.audit.log_order(
                     ticket=ticket,
                     order_id=f"modify_{ticket}",
@@ -1251,7 +1258,7 @@ class OrderLifecycleManager:
                     take_profit=decision.take_profit,
                     volume=0.0,
                     reason="modify_order SL/TP",
-                    latency=0.011,
+                    latency=max(0.0, time.monotonic() - _action_started),
                     execution_mode="STANDARD",
                 )
             return success
@@ -1260,10 +1267,10 @@ class OrderLifecycleManager:
             # BUG-072/073: broker-verified cancellation — never release the
             # exposure slot on a send-result alone.
             success = self.cancel_pending_order_verified(ticket=ticket)
-            logger.info(
-                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
-            )
             if success:
+                logger.info(
+                    f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
+                )
                 self.audit.log_order(
                     ticket=ticket,
                     order_id=f"cancel_{ticket}",
@@ -1274,7 +1281,7 @@ class OrderLifecycleManager:
                     take_profit=0.0,
                     volume=0.0,
                     reason="Manual cancel_pending_order",
-                    latency=0.008,
+                    latency=0.0,
                     execution_mode="STANDARD",
                 )
             return success
@@ -2519,7 +2526,7 @@ class OrderLifecycleManager:
                                         self._pending_field(pending, "volume", default=0.01) or 0.01
                                     ),
                                     reason="FALLING_KNIFE_PROTECTION",
-                                    latency=0.01,
+                                    latency=0.0,
                                     execution_mode="STANDARD",
                                 )
         except Exception as err:

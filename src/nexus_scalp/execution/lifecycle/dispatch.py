@@ -110,6 +110,7 @@ class DispatchEngine:
             volume=order.volume,
         )
 
+        _dispatch_started = time.monotonic()
         success: bool = bool(self.om.adapter.send_order(order))
 
         if not success:
@@ -125,6 +126,10 @@ class DispatchEngine:
         self.om._processed_orders[order.order_id] = success
         self.om.audit.log_execution(order, status_str)
 
+        # OBS-TRACE (2026-09-09): latency is MEASURED (monotonic dispatch ->
+        # adapter return), never a constant. Constants in audit_orders.latency
+        # previously made execution-latency forensics impossible (the
+        # OBS-010 census: 81% zeros / synthetic values).
         self.om.audit.log_order(
             ticket=0,
             order_id=order.order_id,
@@ -135,7 +140,7 @@ class DispatchEngine:
             take_profit=order.take_profit,
             volume=order.volume,
             reason="execute_order executed",
-            latency=0.015,
+            latency=max(0.0, time.monotonic() - _dispatch_started),
             execution_mode="STANDARD",
         )
 
@@ -350,6 +355,10 @@ class DispatchEngine:
             )
             return False
 
+        # OBS-TRACE (2026-09-09): monotonic dispatch clock for MEASURED
+        # audit_orders.latency on every dispatch branch below.
+        _dispatch_started = time.monotonic()
+
         # Stage the entry context so the ledger autopsy row carries WHY we entered,
         # plus the Phase 08 execution-quality baseline (expected fill + dispatch clock).
         self.om.register_entry_context(
@@ -387,11 +396,15 @@ class DispatchEngine:
                     take_profit=tp,
                 )
             )
-            # Log broker confirmation exactly as required
-            logger.info(
-                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}"
-            )
+            # OBS-TRACE (2026-09-09): the *** REAL ORDER/EXECUTION EXECUTED ***
+            # banner previously logged BEFORE the ticket>0 verification - a
+            # broker refusal (ticket=0 retcode path) printed a success claim.
+            # Evidence, not authority: the banner now only fires on a
+            # broker-confirmed ticket, and the refusal is its own WARNING.
             if ticket > 0:
+                logger.info(
+                    f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}"
+                )
                 self.om.audit.log_order(
                     ticket=ticket,
                     order_id=decision.request_id,
@@ -402,11 +415,17 @@ class DispatchEngine:
                     take_profit=tp,
                     volume=volume,
                     reason=f"dispatch_order {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
-                    latency=0.012,
+                    latency=max(0.0, time.monotonic() - _dispatch_started),
                     execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
                     execution_id=getattr(decision, "execution_id", None),
                 )
             else:
+                logger.warning(
+                    "[DISPATCH] broker returned no ticket for market order",
+                    action=action.value,
+                    symbol=symbol,
+                    volume=volume,
+                )
                 # P0-A (BUG-140): market dispatch refused (retcode/ticket=0) —
                 # the decision can never fill; record the terminal state.
                 emit_terminal_pending_outcome(
@@ -474,7 +493,7 @@ class DispatchEngine:
                     take_profit=tp,
                     volume=volume,
                     reason=f"dispatch_order pending {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
-                    latency=0.011,
+                    latency=max(0.0, time.monotonic() - _dispatch_started),
                     execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
                     execution_id=getattr(decision, "execution_id", None),
                 )

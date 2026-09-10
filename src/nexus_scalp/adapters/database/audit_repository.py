@@ -315,6 +315,13 @@ class AuditRepository:
             ("raw_prob_wait", "REAL"),
             ("confidence_source", "TEXT"),
             ("spread_usd", "REAL"),
+            # OBS-TRACE (2026-09-09): BUG-226 account provenance on the DECISION
+            # table. execution_mode on audit_signals is the execution PATH
+            # (STANDARD/PREDICTIVE_LIMIT/...), never LIVE/PAPER — without this
+            # column a decision row cannot be attributed to the account that
+            # produced it. Written by log_signal from the adapter-bound
+            # current_account_source at enqueue time; '' for legacy rows.
+            ("account_source", "TEXT DEFAULT ''"),
         ]:
             _add_column_if_missing(conn, "audit_signals", col_def[0], col_def[1])
 
@@ -2108,18 +2115,30 @@ class AuditRepository:
                 # not to trade".
                 "blocked_by": str(getattr(proposal, "blocked_by", "") or ""),
                 "decision_stage": str(getattr(proposal, "decision_stage", "") or ""),
+                # OBS-TRACE (2026-09-09): the EXEC correlation id travels with
+                # the decision row so audit_signals -> audit_orders joins by id
+                # do not depend on parsing the reason string.
+                "execution_id": str(getattr(proposal, "execution_id", "") or ""),
             }
         )
 
         # Task 4 Check for UNKNOWN regime
+        # OBS-TRACE (2026-09-09): this diagnostic previously asserted FABRICATED
+        # specifics — missing_features=[ADX, ATR] and available_bars=4000 —
+        # that this layer never measured (a downstream forensic consumer could
+        # cite them as evidence). The regime reason the policy actually
+        # recorded (proposal.reason_code / regime_confidence) is real evidence
+        # and is echoed verbatim; everything else is honestly NOT_RECORDED.
         if regime_str == "UNKNOWN" or not regime_str:
             unknown_log = {
                 "regime": "UNKNOWN",
-                "reason": "MISSING_FEATURES",
-                "missing_features": ["ADX", "ATR"],
-                "available_bars": 4000,
+                "reason": str(getattr(proposal, "reason_code", "") or "UNKNOWN"),
+                "regime_confidence": float(getattr(proposal, "regime_confidence", 0.0) or 0.0),
+                "missing_features": "NOT_RECORDED",
+                "available_bars": "NOT_RECORDED",
+                "request_id": str(getattr(proposal, "request_id", "") or ""),
             }
-            logger.warning("UNKNOWN regime detected - missing features logged", extra=unknown_log)
+            logger.warning("UNKNOWN regime detected - decision context echoed", extra=unknown_log)
             # Standard console log of the json string representation for stdout audit parsing
             print(json.dumps(unknown_log))
 
@@ -2127,8 +2146,9 @@ class AuditRepository:
             INSERT INTO audit_signals
             (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload,
              execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters,
-             signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd,
+             account_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(signal_dedup_key) DO NOTHING
         """
         args = (
@@ -2159,6 +2179,11 @@ class AuditRepository:
             None,  # raw_prob_wait: WAIT slice not exposed on the proposal contract (never invented)
             confidence_source,
             spread_usd,
+            # OBS-TRACE: BUG-226 provenance read NOW (enqueue time) from the
+            # repository attribute the engine keeps synced to the bound
+            # adapter — never resolved later at worker time, so a hot-swap
+            # between enqueue and flush cannot misattribute the row.
+            str(getattr(self, "current_account_source", "") or ""),
         )
 
         self._enqueue_financial(query, args)
