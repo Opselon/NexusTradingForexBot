@@ -90,12 +90,24 @@ _UPDATE_LOGGER_NAME = "nexus_scalp.release.update"
 
 
 def _update_log(level: str, event: str, msg: str, *args: Any) -> None:
-    """Failure-isolated structured update log (never breaks an update)."""
-    try:
-        from nexus_scalp.observability.logging import get_logger
+    """Failure-isolated structured update log (never breaks an update).
 
-        log = get_logger(_UPDATE_LOGGER_NAME)
-        getattr(log, level)("[UPDATE] event=%s %s", event, msg % args if args else msg)
+    Uses the STDLIB logger so routing is context-correct: under the engine
+    (configure_logging installed severity-file handlers) records land in the
+    severity tree exactly as before; under the bare CLI (no handlers) INFO
+    records are dropped instead of polluting stdout — ``--json`` output must
+    stay machine-parseable (structlog's unconfigured PrintLogger default
+    writes to stdout, which broke ``nexus update install --json``).
+    """
+    try:
+        import logging
+
+        logging.getLogger(_UPDATE_LOGGER_NAME).log(
+            getattr(logging, level.upper(), logging.INFO),
+            "[UPDATE] event=%s %s",
+            event,
+            msg % args if args else msg,
+        )
     except Exception:
         pass
 
@@ -457,9 +469,25 @@ class UpdateOrchestrator:
             artifact = self.cache_dir / str(rec.get("asset_name") or "")
             if artifact.exists():
                 ok = HashVerifier.verify_sha256(artifact, rec["asset_sha256"])
-                _add("staged_artifact_hash", ok, "verified" if ok else "MISMATCH")
+                if ok:
+                    _add("staged_artifact_hash", True, "verified")
+                else:
+                    # present-but-wrong bytes = real tamper/corruption signal
+                    _add("staged_artifact_hash", False, "MISMATCH")
             else:
-                _add("staged_artifact_hash", False, "staged artifact not found (pruned)")
+                # OBS-006 follow-up (2026-09-10): the staged package is a
+                # TRANSIENT download cache the storage guard prunes by design
+                # (keep=2 sweeps). Its absence says nothing about the INSTALLED
+                # client's integrity — treat as informational WARNING, never a
+                # verification failure (a healthy up-to-date client whose cache
+                # was swept must still pass `nexus update verify`).
+                checks.append(
+                    {
+                        "name": "staged_artifact_hash",
+                        "verdict": "WARNING",
+                        "detail": "staged artifact not in cache (pruned) — installed files unaffected",
+                    }
+                )
         manifest_path = self.app_root / "release-manifest.json"
         if manifest_path.exists():
             res = ManifestVerifier.verify_manifest(manifest_path, base_dir=self.app_root)
@@ -501,8 +529,10 @@ class UpdateOrchestrator:
             except Exception as e:
                 _add("model_check", False, str(e)[:120])
         failed = [c for c in checks if c["verdict"] == "FAIL"]
+        warned = [c for c in checks if c["verdict"] == "WARNING"]
         return {
             "status": "VERIFIED" if not failed else "VERIFICATION_FAILED",
+            "warnings": [c["name"] for c in warned],
             "current_version": version,
             "checks": checks,
             "record": rec,
@@ -841,7 +871,6 @@ class UpdateOrchestrator:
             # just-installed tree is NEVER inside an allowlisted shape, so a
             # completed install cannot be damaged by this. Failure-isolated.
             try:
-                from nexus_scalp.observability.logging import get_logger
                 from nexus_scalp.storage.policy import (
                     prune_update_cache,
                     sweep_crash_leftovers,
@@ -851,8 +880,14 @@ class UpdateOrchestrator:
                 cache_res = prune_update_cache(self.cache_dir, keep_packages=2)
                 leftovers = sweep_crash_leftovers(self.app_root, keep_previous_backups=1)
                 residue = sweep_residue_files(self.user_root, min_age_sec=3600.0)
-                get_logger("nexus_scalp.release.update").info(
-                    "[STORAGE] event=UPDATE_SWEEP cache_freed=%d leftovers_dirs=%d residue_files=%d",
+                # stdlib logger (NOT structlog get_logger): under the bare CLI
+                # structlog's unconfigured PrintLogger would print to stdout and
+                # corrupt the --json machine contract (2026-09-10 self-update
+                # CLI audit). Engine context routes identically via stdlib.
+                _update_log(
+                    "info",
+                    "STORAGE_SWEEP",
+                    "cache_freed=%d leftovers_dirs=%d residue_files=%d",
                     cache_res.get("bytes_freed", 0),
                     leftovers.get("removed_dirs", 0),
                     residue.get("removed", 0),
