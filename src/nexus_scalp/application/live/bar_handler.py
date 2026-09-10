@@ -241,30 +241,50 @@ class BarHandler:
         # the DATAFRAME boundary instead of the builder. Guard = keep only
         # rows whose feat_* width matches the bound trainer contract.
         if self.om._rolling_feature_records:
-            _widths = {
-                sum(1 for k in r if str(k).startswith("feat_"))
-                for r in self.om._rolling_feature_records
-            }
-            if len(_widths) > 1:
-                _expected = int(self.om.trainer.num_features)
-                _before = len(self.om._rolling_feature_records)
-                self.om._rolling_feature_records = deque(
-                    (
-                        r
-                        for r in self.om._rolling_feature_records
-                        if sum(1 for k in r if str(k).startswith("feat_")) == _expected
-                    ),
-                    maxlen=_before,
-                )
-                logger.warning(
-                    "[ONLINE_TRAIN] event=BUFFER_WIDTH_FILTER dropped=%s kept=%s "
-                    "expected_width=%s widths_seen=%s (mixed-width rows would "
-                    "have become None->0.0 fabrications in the training frame)",
-                    _before - len(self.om._rolling_feature_records),
-                    len(self.om._rolling_feature_records),
-                    _expected,
-                    sorted(_widths),
-                )
+            # PERF (TASK-PERF-A16-HOTPATH): the BUG-243 filter used to rescan
+            # the full buffer deque (up to 4000 records x ~56 keys, measured
+            # ~23.5ms) on EVERY completed bar. The buffer is APPEND-ONLY, so a
+            # width anomaly can enter through exactly two doors: (a) the record
+            # appended by THIS bar (checked in O(1) below), or (b) a trainer
+            # width change since the previous bar (hot-swap epoch boundary).
+            # On either trigger we fall back to the ORIGINAL full scan + filter
+            # so the BUG-243 repair semantics are preserved verbatim.
+            _rec_feat_width = sum(1 for k in rec if str(k).startswith("feat_"))
+            _expected = int(self.om.trainer.num_features)
+            _prev_expected = getattr(self, "_a16_last_trainer_width", None)
+            self._a16_last_trainer_width = _expected
+            # (c) FIRST bar handled by this handler instance: the buffer may
+            # already hold mixed-width rows (restart mid-epoch, live hot-swap
+            # by another surface) - the original per-bar scan would have caught
+            # that immediately, so the first pass must too. After the first
+            # pass the buffer is width-clean and only doors (a)/(b) can
+            # re-introduce a mix.
+            _first_bar = _prev_expected is None
+            _epoch_changed = _prev_expected is not None and _prev_expected != _expected
+            if _rec_feat_width != _expected or _epoch_changed or _first_bar:
+                _widths = {
+                    sum(1 for k in r if str(k).startswith("feat_"))
+                    for r in self.om._rolling_feature_records
+                }
+                if len(_widths) > 1:
+                    _before = len(self.om._rolling_feature_records)
+                    self.om._rolling_feature_records = deque(
+                        (
+                            r
+                            for r in self.om._rolling_feature_records
+                            if sum(1 for k in r if str(k).startswith("feat_")) == _expected
+                        ),
+                        maxlen=_before,
+                    )
+                    logger.warning(
+                        "[ONLINE_TRAIN] event=BUFFER_WIDTH_FILTER dropped=%s kept=%s "
+                        "expected_width=%s widths_seen=%s (mixed-width rows would "
+                        "have become None->0.0 fabrications in the training frame)",
+                        _before - len(self.om._rolling_feature_records),
+                        len(self.om._rolling_feature_records),
+                        _expected,
+                        sorted(_widths),
+                    )
 
         if (
             self.om._bars_since_last_retrain
