@@ -147,3 +147,8 @@ tests/unit/test_research_archive_round3.py
 tests/unit/test_research_history_surface.py
 tests/unit/test_research_loop_smoke.py
 tests/unit/test_disk_safety_guards.py
+
+# AGENT-15 (2026-09-09): capital-protection boundary battery — exposure/spread
+# squeeze limits, dispatch idempotency, clamp insanity guards, config-contract pin
+# (risk-engine ctor vs RiskConfig.max_allowed_lots).
+tests/unit/test_capital_protection_a15.py
