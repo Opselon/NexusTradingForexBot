@@ -8362,7 +8362,8 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
 - ROOT CAUSE: the four-part `or` disjunction conflated "some broker evidence is present" with "the deal has PnL" - a price-based signal leaked into a reason-code taxonomy.
 - FIX (fail-closed, 1-line predicate tighten): the condition is now `if comment_l or near_sl or near_tp:` (comment or geometry required; profit alone no longer promotes). The else-branch stays `UNKNOWN/FALLBACK_HEURISTIC/0.2` with the same docstring. Previously-promoted cases that had a client comment or near-SL/TP geometry still classify `MANUAL_CLOSE` unchanged.
 - EVIDENCE: live probe before/after: `reason==0, profit=-12.34, comment="", sl=0` before fix `MANUAL_CLOSE/0.8`, after fix `UNKNOWN/0.2`; with `comment="client close"` or `exit_price` within `0.15` of `sl_price` still `MANUAL_CLOSE`. Situated regression `tests/unit/test_agent12_bug250_exit_classification.py` (3, offline): profit-alone stays UNKNOWN, comment/geometry promotion preserved. Broad accounting suites `test_trade_lifecycle_task3` + `test_performance_metric_truth` + `test_agent11_scenario_coverage_contract` stay green (102 passed).
-
+
+
 
 ## BUG-249 - Spread-gate parameter `max_spread_atr_ratio` was plumbed into the constructor but NEVER enforced (dead guard; Agent-5 decision-path forensics, 2026-09-05, Nexus-Main)
 
@@ -8408,4 +8409,20 @@ Status: FIXED (test-layer hardening; flake vector closed by construction; produc
 - REGRESSION: `tests/unit/test_agent5_bug249_251_252.py::TestBug252PeakEquityDrawdownPenalty` (2: no-peak honest fallback, 33% DD -> volume < 0.35x baseline).
 - INVARIANTS: INV-003 strengthened (risk engine now actually enforces its documented drawdown scaling); INV-018 (peak forwarded as data, not a decision mutation).
 - NOTE: numbered BUG-252 to avoid the BUG-250 ID collision with the Agent-12 exit-classification row already in the ledger.
+## BUG-254 - Gate-first fresh install poisoned the audit DB: baseline skeletons shadowed the app DDL → ~553k dead-letter rows / 1GB in 15h (production container forensics 2026-09-10, Hermes PERF-DEADLETTER wave)
+
+- SEVERITY: CRITICAL (every audit INSERT failed for 15h at ~10 rows/s: 553,206 audit_dead_letter rows, audit.db 1,006MB; all decision/telemetry/lifecycle persistence lost while failing closed) | STATUS: FIXED
+- SURFACE: `src/nexus_scalp/database/engine.py::_create_baseline_tables` (skeleton heal), `src/nexus_scalp/adapters/database/{audit_repository,dead_letter_store}.py` (worker salvage + dead-letter), `src/nexus_scalp/database/manifest.py` (AUDIT_SCHEMA_VERSION 8→9 alignment after 31cc2003 skipped it), NEW `src/nexus_scalp/database/app_columns.py` (APP_REQUIRED_COLUMNS contract)
+- SYMPTOM: dead-letter error corpus (probe, read-only): 440,470x "table audit_signals has no column named request_id", 93,065x "audit_guard_telemetry no window_start", 16,929x "position_lifecycle_events no event_key", 1,484x "strategy_registry no strategy_id", 784x/312x/154x/6x/1x/1x account_snapshots/experiences/orders/model_registry/worker_states; ALL error_type=OperationalError, ALL payload_note="audit worker batch-retry failure"
+- ROOT CAUSE (chain, each link verified live on the container): (1) docker entrypoint runs `nexus db migrate` BEFORE the engine; (2) on a fresh volume the migration engine's baseline builder creates every manifest table as an id-only skeleton (manifest declares those tables with zero columns); (3) the app bootstrap is CREATE TABLE IF NOT EXISTS (no-op on skeletons) and its _add_column_if_missing loops heal only EXTRAS (execution_mode, reason_code, spread_usd...), never core columns (request_id, symbol, window_start...); (4) every producer INSERT fails → the worker batch-salvage dead-letters every row, repeating on every restart.
+- FIX: (a) NEW database/app_columns.py — stdlib-only APP_REQUIRED_COLUMNS mapping every audit table to the columns its real INSERTs use (verified against the app DDL union); (b) _create_baseline_tables heals skeletons from it (PRAGMA-gated, additive-only, fail-loud, event=BASELINE_SKELETON_HEALED, slim-context ImportError fallback); (c) manifest AUDIT_SCHEMA_VERSION 8→9 (SSOT drift from 31cc2003); (d) dead-letter bounded retention (BUG-255). Regression: tests/unit/test_perf_deadletter_skeleton_repro.py (RED at HEAD incl. `no such column: order_id` bootstrap crash, GREEN after).
+- INVARIANTS: INV-023 (retention bounded, off tick path), DB-MIGRATION contract (heal is additive/idempotent/fail-loud), INV-001 (no hot-path change)
+## BUG-255 - audit_dead_letter grew without bound (553k rows / ~1GB in 15h): no retention cap on the diagnostic dead-letter table (PERF-DEADLETTER wave, 2026-09-10, Hermes)
+
+- SEVERITY: HIGH (unbounded diagnostic growth on a 3.8GB VM; dead-letter is diagnostic evidence, NOT financial truth, but its volume must be bounded) | STATUS: FIXED
+- SURFACE: `src/nexus_scalp/adapters/database/dead_letter_store.py` (DeadLetterStore.record/_prune_if_due/_prune_locked), `src/nexus_scalp/adapters/database/audit_repository.py` (facade dead_letter_pruned_rows), `src/nexus_scalp/web/debug_snapshot.py` (audit_dead_letter_pruned_rows)
+- ROOT CAUSE: BUG-254 produced a permanent failure loop (~10 rows/s); the dead-letter table had NO cap, NO prune, NO age policy — audit.db grew ~1GB/15h.
+- FIX: bounded retention on record() — keep the NEWEST max_rows (default 20,000 ≈ 36MB at the measured ~1.8KB/row), prune throttled to ≤1 pass/30s (None sentinel: first pass always due — monotonic-boot trap), batched rowid-anchored short transactions (WAL-safe, never one giant DELETE), live-COUNT as source of truth, ONE WARNING per overflow event (re-armed under cap), dead_letter_pruned_rows surfaced on the facade + debug_snapshot. Retention deletes from audit_dead_letter ONLY — pinned: ledger row, account snapshot and the persisted HALT row survive a full overflow cycle.
+- REGRESSION: tests/unit/test_dead_letter_retention_cap.py (5) + test_perf_safety_contract_pins.py (HALT survives; LIVE/PAPER provenance columns intact).
+- INVARIANTS: INV-023 (cleanup bounded/off-tick-path, never financial truth), INV-025 (halt semantics untouched)
 
