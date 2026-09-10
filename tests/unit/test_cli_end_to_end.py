@@ -108,6 +108,53 @@ def _isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+def _seed_canonical_bars(tmp_path: Path, rows: int = 100, symbol: str = "XAUUSD") -> Path:
+    """Create the canonical data/raw/XAUUSD_M1.parquet in a sandbox.
+
+    The doctor DATA check (555e6df2) FAILs when the canonical bars file is
+    absent — an intentional first-run honesty gate. Tests that exercise the
+    repair/verify loop seed a small deterministic parquet so the check sees
+    a valid bars file without touching any real data directory.
+    """
+    import datetime as _dt
+
+    import polars as _pl
+
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    base = _dt.datetime(2026, 9, 9, 12, 0, tzinfo=_dt.UTC)
+    frame = _pl.DataFrame(
+        {
+            "timestamp": [base + _dt.timedelta(minutes=i) for i in range(rows)],
+            "open": [2000.0] * rows,
+            "high": [2001.0] * rows,
+            "low": [1999.0] * rows,
+            "close": [2000.5] * rows,
+            "volume": [1.0] * rows,
+            "symbol": [symbol] * rows,
+        }
+    )
+    path = raw / "XAUUSD_M1.parquet"
+    frame.write_parquet(path)
+    return path
+
+
+def _seed_config_template(tmp_path: Path) -> Path:
+    """Copy the repo's configs/base.yaml into the sandbox workspace.
+
+    The RepairEngine template lookup is workspace-relative
+    (``workspace/configs/base.yaml``); a chdir'd sandbox has no configs/, so
+    without this the config repair is SKIPPED and the doctor stays NOT READY.
+    """
+    cfg = tmp_path / "configs"
+    cfg.mkdir(parents=True, exist_ok=True)
+    source = REPO_ROOT / "configs" / "base.yaml"
+    target = cfg / "base.yaml"
+    if source.exists():
+        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    return target
+
+
 def _fake_logs_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     log_dir = tmp_path / "logs"
     log_dir.mkdir(exist_ok=True)
@@ -225,11 +272,28 @@ def test_e2e_04_doctor_json_reports_20_checks_plus_environment() -> None:
     assert data["environment"]
 
 
-def test_e2e_05_doctor_fix_repairs_then_reverifies_to_ready() -> None:
+def test_e2e_05_doctor_fix_repairs_then_reverifies_to_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # BUG-158: --yes makes the repair non-interactive. Without it, a fresh
     # environment (no user config yet) has fixable fails and the doctor
     # prompts; CliRunner EOF then raises Abort -> exit 1. Machine-state
     # dependency, not a CLI defect (human TTY gets default=True on Enter).
+    #
+    # ENVIRONMENT ISOLATION (nightly slow-suite triage 2026-09-10): doctor's
+    # DATA check (555e6df2) FAILs when data/raw/XAUUSD_M1.parquet is missing
+    # (first-run honesty — DATA is a non-repairable first-run condition), so
+    # `doctor --fix` on a runner without bars re-verifies to DEGRADED and
+    # exits RUNTIME. The repair engine operates on the CWD-relative workspace;
+    # chdir into a fresh tmp sandbox and seed a tiny canonical bars file so
+    # the DATA check sees real bars and the repaired verdict is READY/PASS
+    # on ANY host (CI runner, dev box, fresh install).
+    monkeypatch.chdir(tmp_path)
+    _seed_canonical_bars(tmp_path)
+    # The RepairEngine resolves its config template CWD-relative
+    # (workspace/configs/base.yaml) — provide it inside the sandbox so the
+    # repair can actually create the user config (fresh HOME on CI runners).
+    _seed_config_template(tmp_path)
     res = _invoke(["doctor", "--fix", "--yes", "--json"])
     assert res.exit_code == xc.EXIT_OK
     # BUG-158 (2/2): repair progress lines precede the JSON document; use
@@ -237,6 +301,11 @@ def test_e2e_05_doctor_fix_repairs_then_reverifies_to_ready() -> None:
     data = _parse_json_output(res)
     assert {"checks", "overall", "repair"} <= set(data)
     assert data["overall"] in ("READY", "DEGRADED", "PASS")
+    data_fails = [c for c in data["checks"] if c.get("verdict") == "FAIL"]
+    assert data_fails == [], (
+        "doctor --fix must repair every fixable FAIL in the sandbox: "
+        f"{[(c.get('category'), c.get('reason')) for c in data_fails]}"
+    )
 
 
 def test_e2e_06_test_unknown_mode_is_usage_error_with_hint() -> None:
