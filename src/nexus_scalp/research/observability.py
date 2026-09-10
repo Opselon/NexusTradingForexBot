@@ -418,16 +418,72 @@ class ResearchObservabilityStore:
         )
         return event
 
+    def _archive_available(self, conn: Any) -> bool:
+        """True when the AUDIT-0009 archive tables exist on this database."""
+        row = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN "
+            "('research_events_archive', 'research_evidence_archive')"
+        ).fetchone()
+        return bool(row and row[0] == 2)
+
+    def history_counts(self) -> dict[str, int]:
+        """Live vs archived row counts (archive-only retention visibility).
+
+        Never fake: missing archive tables report archived=0.
+        """
+        out = {
+            "events_live": 0,
+            "events_archived": 0,
+            "evidence_live": 0,
+            "evidence_archived": 0,
+        }
+        if not self.audit_repo._is_sqlite:
+            return out
+        try:
+            conn = _connect(self.audit_repo)
+            try:
+                out["events_live"] = int(
+                    conn.execute("SELECT COUNT(*) FROM research_events").fetchone()[0]
+                )
+                out["evidence_live"] = int(
+                    conn.execute("SELECT COUNT(*) FROM research_evidence").fetchone()[0]
+                )
+                if self._archive_available(conn):
+                    out["events_archived"] = int(
+                        conn.execute("SELECT COUNT(*) FROM research_events_archive").fetchone()[0]
+                    )
+                    out["evidence_archived"] = int(
+                        conn.execute("SELECT COUNT(*) FROM research_evidence_archive").fetchone()[0]
+                    )
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[RESEARCH_OBS] history counts failed", error=str(e))
+        return out
+
     def list_events(
         self,
         strategy_id: str | None = None,
         research_run_id: str | None = None,
         limit: int = 300,
+        include_archive: bool = True,
     ) -> list[dict[str, Any]]:
         if not self.audit_repo._is_sqlite:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
-        sql = "SELECT * FROM research_events"
+        # EDGE ROUND-4: archive-aware read. The archive IS the history, so the
+        # default view is live UNION archived; `include_archive=False` preserves
+        # the old live-only behavior for callers that want hot data only.
+        # Explicit column list: the archive carries an extra archived_at stamp,
+        # so SELECT * would break the UNION (column counts must match).
+        cols = (
+            "id, event_id, strategy_id, research_run_id, gate_id, event_type, "
+            "message, payload, occurred_at"
+        )
+        sql = f"SELECT * FROM (SELECT {cols} FROM research_events"
+        if include_archive:
+            sql += f" UNION ALL SELECT {cols} FROM research_events_archive"
+        sql += ")"
         where: list[str] = []
         args: list[Any] = []
         if strategy_id:
@@ -507,11 +563,21 @@ class ResearchObservabilityStore:
         strategy_id: str | None = None,
         research_run_id: str | None = None,
         limit: int = 500,
+        include_archive: bool = True,
     ) -> list[dict[str, Any]]:
         if not self.audit_repo._is_sqlite:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
-        sql = "SELECT * FROM research_evidence"
+        # EDGE ROUND-4: archive-aware (see list_events); explicit columns —
+        # the archive's archived_at stamp would break the UNION.
+        cols = (
+            "id, evidence_id, strategy_id, research_run_id, gate_id, kind, "
+            "content, content_hash, dataset_version, engine_version, created_at"
+        )
+        sql = f"SELECT * FROM (SELECT {cols} FROM research_evidence"
+        if include_archive:
+            sql += f" UNION ALL SELECT {cols} FROM research_evidence_archive"
+        sql += ")"
         where: list[str] = []
         args: list[Any] = []
         if strategy_id:
