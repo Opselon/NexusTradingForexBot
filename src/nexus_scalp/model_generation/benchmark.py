@@ -212,10 +212,40 @@ class BenchmarkRunner:
                 continue
 
             # ---- validation + per-class metrics on the SAME split ----
+            # P0-3 SPLIT SCOPE (2026-09-09): the candidate trains on ALL
+            # non-test rows (CandidateTrainer: train_idx = split != test & !=
+            # purged). Scoring the FULL frame therefore grades the model on
+            # rows it FIT — inflated OOS metrics fed CHALLENGER_ELIGIBLE.
+            # Validation now runs on val+test rows only (enforced inside
+            # ValidationFactory too; this scoping also keeps the confusion
+            # table honest because predictions align with the scoped frame).
             vf = ValidationFactory()
-            labels = frame["label"].to_numpy().astype(np.int64)
-            probs = _predict_probs(self.store, mid, frame, cell["seq"], res)
-            vr = vf.validate(mid, exp.experiment_id, frame, probs, labels)
+            try:
+                import polars as _pl
+
+                _has_split = isinstance(frame, _pl.DataFrame) and "_split" in frame.columns
+            except Exception:
+                _has_split = False
+            if _has_split:
+                from nexus_scalp.model_generation.validation import OOS_SPLITS
+
+                _mask = np.isin(frame["_split"].to_numpy(), sorted(OOS_SPLITS))
+                if int(_mask.sum()) == 0:
+                    raise ValueError(
+                        "BenchmarkRunner: dataset has zero val/test rows — refusing "
+                        "contaminated full-frame validation (P0-3)"
+                    )
+                scoped_frame = frame.filter(_pl.Series("_oos_scope_mask", _mask))
+                labels = scoped_frame["label"].to_numpy().astype(np.int64)
+                probs_full = _predict_probs(self.store, mid, frame, cell["seq"], res)
+                probs = probs_full[_mask] if probs_full is not None else None
+                vr = vf.validate(mid, exp.experiment_id, scoped_frame, probs, labels)
+            else:
+                # No _split column (legacy fixture datasets): ValidationFactory's
+                # own scope enforcement passes the frame through unchanged.
+                labels = frame["label"].to_numpy().astype(np.int64)
+                probs = _predict_probs(self.store, mid, frame, cell["seq"], res)
+                vr = vf.validate(mid, exp.experiment_id, frame, probs, labels)
             if probs is not None:
                 preds = np.argmax(probs, axis=1)
                 if preds.shape[0] != len(labels):
