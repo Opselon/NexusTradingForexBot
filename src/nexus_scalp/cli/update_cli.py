@@ -73,14 +73,20 @@ def _update_exit_code(report: dict[str, Any]) -> int:
     # callers. ROLLED_BACK stays a controlled success (exit 0).
     if status == "FAILED_SAFE":
         return xc.EXIT_RUNTIME
-    ok_states = ("COMPLETED", "NO_UPDATE", "ROLLED_BACK", "IDLE")
+    ok_states = ("COMPLETED", "NO_UPDATE", "ROLLED_BACK", "IDLE", "VERIFIED")
     if status in ok_states:
         return xc.EXIT_OK
     if status == "ROLLED_BACK":
         return xc.EXIT_OK
+    # cli-reference exit-code contract: 4 = release verification failure
+    # (SHA256 / manifest / tamper). VERIFICATION_FAILED is the verify
+    # subcommand's tamper/corruption verdict; UPDATE_VERIFICATION_FAILED is
+    # run()'s post-install verification failure. Both must map to 4 — the
+    # explicit branches must run BEFORE the legacy "verification" substring
+    # rule, which would otherwise swallow them into 5.
+    if status in ("VERIFICATION_FAILED", "UPDATE_VERIFICATION_FAILED"):
+        return xc.EXIT_RELEASE
     if report.get("error_code") in ("SHA256_MISMATCH",) or "verification" in status.lower():
-        return xc.EXIT_UPDATE
-    if status in ("UPDATE_VERIFICATION_FAILED",):
         return xc.EXIT_UPDATE
     if status in (
         "RELEASE_NOT_FOUND",

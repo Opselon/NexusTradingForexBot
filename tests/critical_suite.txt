@@ -64,6 +64,11 @@ tests/unit/test_logging_correlation_ids.py
 # transition + blocked/failed/rollback verdict logs [UPDATE] with the upd-
 # correlation id (incl. the -<hex8> uuid suffix the redactor previously ate).
 tests/unit/test_update_lifecycle_logging.py
+# SELF-UPDATE CLI AUDIT (2026-09-10): real-CLI operator matrix found verify exit-code
+# contract breaks (VERIFIED -> 5, tamper -> 5) + transient-cache FAIL + --json stdout
+# pollution; pinned by the contract battery below.
+tests/unit/test_update_cli_contract.py
+
 # TASK-STORAGE-HYGIENE (2026-09-09): 10GB client-disk mission — storage policy
 # engine (allowlist cleanup), runtime retention re-prune, MT5 failure-storm
 # throttle, protected-data + concurrency + growth-clamp regression nets.
