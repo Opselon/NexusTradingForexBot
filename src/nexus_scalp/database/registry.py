@@ -455,6 +455,80 @@ def _audit_0008_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
             conn.execute(f"DROP INDEX {name}")
 
 
+def _audit_0009_research_archive_tables(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Edge-research round-3 (2026-09-09): ARCHIVE-ONLY retention for research
+    history.
+
+    research_events / research_evidence grow without bound; retention must be
+    ARCHIVE-ONLY (never delete history): rows past the retention horizon move
+    to research_events_archive / research_evidence_archive with an
+    archived_at stamp and the full original column set, so every historical
+    query remains answerable (archive tables live in the SAME database).
+
+    Idempotent (CREATE TABLE IF NOT EXISTS); the archiver (research.archive)
+    owns row movement and only ever deletes rows it has verified present in
+    the archive. Audit/financial truth tables are NOT touched.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS research_events_archive (
+            id INTEGER PRIMARY KEY,
+            event_id TEXT,
+            strategy_id TEXT,
+            research_run_id TEXT,
+            gate_id TEXT,
+            event_type TEXT,
+            message TEXT,
+            payload TEXT,
+            occurred_at TEXT,
+            archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS research_evidence_archive (
+            id INTEGER PRIMARY KEY,
+            evidence_id TEXT,
+            strategy_id TEXT,
+            research_run_id TEXT,
+            gate_id TEXT,
+            kind TEXT,
+            content TEXT,
+            content_hash TEXT,
+            dataset_version TEXT,
+            engine_version TEXT,
+            created_at TEXT,
+            archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_archive_occurred "
+        "ON research_events_archive (occurred_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_evidence_archive_created "
+        "ON research_evidence_archive (created_at)"
+    )
+
+
+def _audit_0009_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    return _table_exists(conn, "research_events_archive") and _table_exists(
+        conn, "research_evidence_archive"
+    )
+
+
+def _audit_0009_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    # Rollback may only drop the archive tables while they are EMPTY — an
+    # archive holding moved history must never be silently destroyed.
+    for name in ("research_events_archive", "research_evidence_archive"):
+        if _table_exists(conn, name):
+            n = conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+            if n == 0:
+                conn.execute(f"DROP TABLE {name}")
+
+
 # ---------------------------------------------------------------------------
 # NEWS migrations
 # ---------------------------------------------------------------------------
@@ -619,6 +693,21 @@ AUDIT_MIGRATIONS: tuple[Migration, ...] = (
         risk=MigrationRisk.LOW,
         transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
         rollback=_audit_0008_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0009-research-archive-tables",
+        domain=DatabaseDomain.AUDIT,
+        from_version=8,
+        to_version=9,
+        description=(
+            "add archive-only retention tables for research_events/evidence "
+            "(edge-research round-3; archive-only, never deletes live history)"
+        ),
+        apply=_audit_0009_research_archive_tables,
+        verify=_audit_0009_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
+        rollback=_audit_0009_rollback,
     ),
 )
 

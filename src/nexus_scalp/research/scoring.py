@@ -14,6 +14,7 @@ The score is fully explainable: every dimension and every reason is exposed.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from nexus_scalp.research.models import (
     MIN_EVIDENCE_SAMPLES,
@@ -81,6 +82,57 @@ def _selection_bias_control_passed(oos: OOSResult | None) -> bool:
         if spa.get("survivor") is False:
             return False
     return True
+
+
+#: Number of common regime buckets used to normalize breadth.
+_REGIME_BREADTH_BUCKETS: int = 8
+
+
+def _regime_expectancy_coverage(dataset: ResearchDataset) -> tuple[float, dict[str, Any]]:
+    """Expectancy-per-regime decomposition of the regime dimension.
+
+    Per regime actually traded:
+      mean_r = mean realized R.
+    Consistency = fraction of traded regimes with POSITIVE expectancy.
+    Breadth     = n_regimes / _REGIME_BREADTH_BUCKETS (capped at 1).
+    Coverage    = consistency * breadth — breadth only counts when the edge
+    held in each traded regime; a two-regime candidate with one losing regime
+    scores HALF of a two-regime candidate that won in both.
+
+    Diagnostics travel with the score (negative regime names) so the failure
+    is explainable, not just lower.
+    """
+    by_regime: dict[str, list[float]] = {}
+    for s in dataset.samples:
+        by_regime.setdefault(str(s.regime or "UNKNOWN"), []).append(float(s.realized_r))
+    n_regimes = len(by_regime)
+    if n_regimes == 0:
+        return 0.0, {
+            "n_regimes": 0,
+            "negative_regimes": 0,
+            "negative_regime_names": [],
+            "untraded_regimes": _REGIME_BREADTH_BUCKETS,
+            "per_regime": {},
+        }
+    per_regime: dict[str, float] = {}
+    negative: list[str] = []
+    for name, rs in by_regime.items():
+        mean_r = sum(rs) / len(rs)
+        per_regime[name] = round(mean_r, 4)
+        if mean_r <= 0.0:
+            negative.append(name)
+    consistency = 1.0 - (len(negative) / n_regimes)
+    breadth = min(1.0, n_regimes / _REGIME_BREADTH_BUCKETS)
+    if "UNKNOWN" in by_regime:
+        consistency *= 0.9  # unknown-regime trades are weak provenance
+    coverage = max(0.0, min(1.0, consistency * breadth))
+    return round(coverage, 4), {
+        "n_regimes": n_regimes,
+        "negative_regimes": len(negative),
+        "negative_regime_names": negative,
+        "untraded_regimes": max(0, _REGIME_BREADTH_BUCKETS - n_regimes),
+        "per_regime": per_regime,
+    }
 
 
 def compute_strategy_score(
@@ -162,12 +214,20 @@ def compute_strategy_score(
         sample_conf = min(sample_conf, 0.4)
         reasons.append("Sample count 8-19: confidence capped (LOW EVIDENCE)")
 
-    # --- REGIME COVERAGE -------------------------------------------------------
-    regimes = {s.regime for s in dataset.samples}
-    # Normalize coverage by 8 common regime buckets.
-    regime_cov = min(1.0, len(regimes) / 8.0)
-    if "UNKNOWN" in regimes:
-        regime_cov *= 0.85
+    # --- REGIME COVERAGE (edge round-3): expectancy-per-regime decomposition ---
+    # The old heuristic counted DISTINCT regimes (breadth only, blind to
+    # whether the edge held in each). Now: decompose per-regime expectancy and
+    # score consistency — a candidate is only credited for regimes it traded
+    # PROFITABLY; breadth multiplies, inconsistency penalizes.
+    regime_cov, regime_diag = _regime_expectancy_coverage(dataset)
+    if regime_diag.get("negative_regimes"):
+        reasons.append(
+            "Negative expectancy in "
+            f"{regime_diag['negative_regimes']}/{regime_diag['n_regimes']} regimes: "
+            + ", ".join(regime_diag["negative_regime_names"][:4])
+        )
+    if regime_diag.get("untraded_regimes"):
+        reasons.append(f"Only {regime_diag['n_regimes']} regime(s) traded — breadth limited")
 
     # --- RECENCY ---------------------------------------------------------------
     # Reward recent performance (last 20% of trades).
@@ -298,4 +358,5 @@ def compute_strategy_score(
         final_score=final,
         verdict=verdict,
         reasons=reasons,
+        regime_diagnostics=regime_diag,
     )
