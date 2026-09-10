@@ -39,6 +39,14 @@ from nexus_scalp.web.errors import log_web_error, new_request_id
 
 logger = get_logger("nexus_scalp.web.diagnostics_state_routes")
 
+#: PERF-HEALTH (2026-09-10): /health verdict cache TTL (seconds). The Docker
+#: healthcheck polls /health every 15s; a full HealthEngine sweep costs
+#: ~0.7-2.4s on a 1GB audit.db (PRAGMA integrity_check). A 60s TTL keeps the
+#: container healthcheck cheap while verdict staleness stays bounded (the
+#: engine's own state moves slower than this; deeper/uncached health remains
+#: on /api/v1/system/health, `nexus doctor` and `nexus health`).
+_HEALTH_TTL_SEC = 60.0
+
 
 class ToggleRequest(BaseModel):
     active: bool
@@ -95,6 +103,7 @@ def register_diagnostics_state_routes(
             return rs.refresh_from_github()
         return rs.build_release_status()
 
+    # =========================================================================
     # Docker/native health probe (DOCKER-REPAIR, 2026-08-20):
     # * 200 with verdict READY or DEGRADED -> healthy
     # * 200 with verdict NOT READY           -> degraded (dependencies missing,
@@ -103,14 +112,36 @@ def register_diagnostics_state_routes(
     # Verdict semantics are the HealthEngine contract: READY requires
     # SYSTEM/RUNTIME/CONFIGURATION/DATABASE/MODEL/FEATURE_SCHEMA all PASS;
     # optional subsystems (NEWS/WORKERS/TELEGRAM/...) may be WARNING.
+    #
+    # PERF-HEALTH (2026-09-10): the Docker healthcheck polls this endpoint
+    # every 15s. A full HealthEngine sweep measured ~0.7-2.4s on a 1GB
+    # audit.db (the DATABASE check runs PRAGMA integrity_check over every
+    # page) — thousands of full DB scans, all on the request path. The full
+    # verdict block is now cached per-app for _HEALTH_TTL_SEC (documented
+    # staleness, same pattern as the api_v1 system health block); integrity
+    # truth is NOT weakened — integrity_check remains the authority in
+    # `nexus doctor`, `nexus health`, /api/v1/system/health and the deeper
+    # diagnostic paths (explicit maintenance operations), while /health
+    # serves the cached verdict.
+    # =========================================================================
     @app.get("/health")
     def health_probe() -> dict[str, Any]:
         try:
-            from nexus_scalp.release.health import HealthEngine
+            cached = getattr(app.state, "health_probe_cache", None)
+            if isinstance(cached, tuple) and (time.monotonic() - cached[0]) < _HEALTH_TTL_SEC:
+                verdict, checks, critical = cached[1], cached[2], cached[3]
+            else:
+                from nexus_scalp.release.health import HealthEngine
 
-            verdict, entries = HealthEngine().overall()
-            checks = [e.to_dict() for e in entries]
-            critical = [e["category"] for e in checks if e.get("verdict") == "FAIL"]
+                verdict, entries = HealthEngine().overall()
+                checks = [e.to_dict() for e in entries]
+                critical = [e["category"] for e in checks if e.get("verdict") == "FAIL"]
+                app.state.health_probe_cache = (
+                    time.monotonic(),
+                    verdict,
+                    checks,
+                    critical,
+                )
             if verdict == "NOT READY" or critical:
                 raise HTTPException(
                     status_code=503,

@@ -680,6 +680,15 @@ class AuditRepository:
     def _dead_letter_seq(self, value: int) -> None:
         self.dead_letter_store._dead_letter_seq = int(value)
 
+    @property
+    def dead_letter_pruned_rows(self) -> int:
+        """Rows removed by dead-letter retention (PERF-DEADLETTER).
+
+        Bounded-retention observability: a nonzero value proves the cap is
+        active and a producer failure loop is being contained (never
+        silently — see the store's per-event WARNING)."""
+        return self.dead_letter_store.dead_letter_pruned_rows
+
     # ---------------------------------------------------------------------
     # RUNTIME SAFETY STATE (P0) — canonical durable store.
     # One single-row table (id=1) holding the current safety decision.
