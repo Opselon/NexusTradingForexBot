@@ -127,13 +127,17 @@ def seed_dispatch(
     price: float = 2000.0,
 ) -> None:
     conn = sqlite3.connect(repo._db_path)
+    # execution_id is the durable event-identity key (UNIQUE partial index
+    # idx_orders_execution_idempotency, commit c2662e31) — make it unique per
+    # dispatch row, mirroring production where every dispatch carries its own
+    # execution identity.
     conn.execute(
         """INSERT INTO audit_orders
            (ticket, order_id, symbol, action, price, stop_loss, take_profit,
             volume, reason, latency, execution_mode, execution_id, timestamp)
            VALUES (?, ?, ?, 'BUY', ?, 1990.0, 2020.0, 0.1, 'dispatch', 0.01,
-                   'STANDARD', 'EXEC-1', ?)""",
-        (ticket, request_id, symbol, price, ts.isoformat()),
+                   'STANDARD', ?, ?)""",
+        (ticket, request_id, symbol, price, f"EXEC-{request_id}", ts.isoformat()),
     )
     conn.commit()
     conn.close()
