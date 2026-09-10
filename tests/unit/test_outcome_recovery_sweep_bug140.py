@@ -132,8 +132,11 @@ def seed_dispatch(
            (ticket, order_id, symbol, action, price, stop_loss, take_profit,
             volume, reason, latency, execution_mode, execution_id, timestamp)
            VALUES (?, ?, ?, 'BUY', ?, 1990.0, 2020.0, 0.1, 'dispatch', 0.01,
-                   'STANDARD', 'EXEC-1', ?)""",
-        (ticket, request_id, symbol, price, ts.isoformat()),
+                   'STANDARD', ?, ?)""",
+        # Agent-17 idempotency contract: execution_id is a UNIQUE identity per
+        # order row (idx_orders_execution_idempotency). Each dispatched order
+        # gets its own execution id derived from the request id.
+        (ticket, request_id, symbol, price, f"EXEC-{request_id}", ts.isoformat()),
     )
     conn.commit()
     conn.close()

@@ -37,7 +37,10 @@ import polars as pl
 import torch
 
 from nexus_scalp.accounting import AccountingCore, AccountingWorker
-from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.audit_repository import (
+    AuditRepository,
+    RuntimeRiskStateReadError,
+)
 from nexus_scalp.candle_intelligence import CandleIntelligenceEngine
 
 # RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
@@ -4163,9 +4166,17 @@ class LiveEngine:
         Called at the very start of run_loop. Never recalculates drawdown —
         only the persisted decision decides.
         """
-        decision = resolve_boot_decision(
-            PersistedRiskState.from_row(self.audit.get_runtime_risk_state())
-        )
+        try:
+            row = self.audit.get_runtime_risk_state()
+        except RuntimeRiskStateReadError as err:
+            logger.critical("[SAFETY_STATE] persisted state READ FAILED — failing CLOSED (%s)", err)
+            decision = BootDecision(
+                trading_allowed=False,
+                state="DB_READ_UNCERTAIN",
+                detail=f"PERSISTED_STATE_READ_FAILED: {err}",
+            )
+        else:
+            decision = resolve_boot_decision(PersistedRiskState.from_row(row))
         self._apply_persisted_halt(decision)
         if decision.state == "RUNNING":
             # Mirror the RUNNING decision back durably (single canonical row,
