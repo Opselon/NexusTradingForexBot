@@ -552,6 +552,12 @@ class ExperienceIntelligenceEngine:
             experience_id=f"exp_{proposal.request_id[:12]}",
             request_id=proposal.request_id,
             decision_id=decision_id,
+            # OBS-TRACE (2026-09-09): the EXEC correlation id is stamped on
+            # the PRE-TRADE row, so the decision_id <-> EXEC id join is
+            # reconstructable immediately (it previously stayed '' until an
+            # outcome write filled it, breaking OBS-005-class joins for any
+            # decision that never filled). Additive observability only.
+            execution_id=str(getattr(proposal, "execution_id", "") or ""),
             idempotency_key=self.build_idempotency_key(proposal.request_id),
             symbol=proposal.symbol,
             timeframe=context.timeframe,

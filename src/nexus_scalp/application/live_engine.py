@@ -57,7 +57,7 @@ from nexus_scalp.experience.evaluator import StrategyEvaluator
 from nexus_scalp.experience.intelligence import ExperienceIntelligenceEngine
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import PreTradeExperienceDecision
-from nexus_scalp.experience.provenance import ModelRegistry
+from nexus_scalp.experience.provenance import ModelRegistry, fingerprint_artifact
 from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
@@ -1359,6 +1359,12 @@ class LiveEngine:
             # symbols outside it.
             enabled_symbols=config.execution.enabled_symbols,
         )
+        # OBS-TRACE (2026-09-09): give the policy a zero-I/O provider for the
+        # SERVING model identity so every EXEC_TRACE log line binds the
+        # decision to model_id / version / artifact fingerprint. Reads only
+        # in-memory bundle metadata; a missing bundle stamps
+        # MODEL_IDENTITY_UNAVAILABLE (honest absence, never a fake hash).
+        self.signal_policy.model_identity_fn = self._serving_model_identity
         self.risk_engine = RiskEngine(
             config=config.risk,
             max_margin_usage_pct=config.risk.max_margin_usage_pct,
@@ -1564,6 +1570,31 @@ class LiveEngine:
             )
         except Exception as e:
             logger.warning("[STRATEGY_FACTORY] provider hot-rebuild failed", error=str(e))
+
+    def _serving_model_identity(self) -> tuple[str, str, str]:
+        """OBS-TRACE (2026-09-09): identity of the bundle currently serving.
+
+        Returns (model_id, model_version, artifact_fingerprint) from the
+        loaded bundle's on-disk artifact (sha256 prefix via
+        fingerprint_artifact) — or honest empty strings when no bundle is
+        loaded / the artifact is absent (EXEC_TRACE stamps
+        MODEL_IDENTITY_UNAVAILABLE, never a placeholder identity).
+        """
+        b = None
+        with contextlib.suppress(Exception):
+            with self._bundle_lock:
+                b = self._bundle
+        if b is None:
+            return "", "", ""
+        fp = ""
+        with contextlib.suppress(Exception):
+            fp = fingerprint_artifact(b.artifact_path)
+        mid = getattr(getattr(b, "model", None), "model_id", "") or ""
+        return (
+            str(mid or ""),
+            str(getattr(b, "model_version", "") or ""),
+            str(fp or ""),
+        )
 
     def _register_active_model(self, model_path: Path, replaced: bool) -> None:
         """

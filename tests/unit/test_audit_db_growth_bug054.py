@@ -139,6 +139,8 @@ def test_payload_is_minimal_and_approved_only(repo: AuditRepository) -> None:
     payload = json.loads(row[0])
     # BUG-072/073: blocked_by + decision_stage added to distinguish
     # execution-state blocks from model rejections (additive to BUG-054's 8).
+    # OBS-TRACE (2026-09-09): execution_id joins the decision row to its
+    # audit_orders rows by correlation id (additive observability key).
     assert set(payload.keys()) == {
         "model_action",
         "ai_buy_probability",
@@ -150,6 +152,7 @@ def test_payload_is_minimal_and_approved_only(repo: AuditRepository) -> None:
         "rejection_reason",
         "blocked_by",
         "decision_stage",
+        "execution_id",
     }
     assert "risk_checks" not in payload
     assert "buy_probability" not in payload
