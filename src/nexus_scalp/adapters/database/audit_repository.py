@@ -39,11 +39,22 @@ from nexus_scalp.risk.runtime_safety import (
 
 logger = get_logger("nexus_scalp.adapters.audit_db")
 
-# BUG-223: legacy relative default of AuditRepository (kept for BUG-149
-# anchoring semantics). NEXUS_AUDIT_DB overrides this implicit default only
-# (explicit db_url/config callers are never hijacked); tests/conftest.py sets
-# it per pytest run so bare constructions cannot touch the production tree.
+#: BUG-223: legacy relative default of AuditRepository (kept for BUG-149
+#: anchoring semantics). NEXUS_AUDIT_DB overrides this implicit default only
+#: (explicit db_url/config callers are never hijacked); tests/conftest.py sets
+#: it per pytest run so bare constructions cannot touch the production tree.
 _DEFAULT_AUDIT_DB_URL = "sqlite:///artifacts/audit.db"
+
+
+class RuntimeRiskStateReadError(RuntimeError):
+    """The persisted safety-state row could not be read (DB uncertain).
+
+    Raised by :meth:`AuditRepository.get_runtime_risk_state` instead of
+    returning None so callers can distinguish 'healthy read proves unset'
+    from 'the database cannot be trusted right now'. Boot resolution and the
+    release path fail CLOSED on this — a corrupt/locked/unavailable audit DB
+    must never be interpreted as 'no halt in force'.
+    """
 
 
 def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -392,6 +403,56 @@ class AuditRepository:
         # execution_id" and audit_orders silently stays empty (observed on
         # 2026-08-20 local engine). Idempotent ADD COLUMN upgrade.
         _add_column_if_missing(conn, "audit_orders", "execution_id", "TEXT")
+        # =====================================================================
+        # PERSISTENCE-CORE idempotency identity for order lifecycle events
+        # (agent-17 durability audit, 2026-09-10). audit_orders rows are the
+        # durable evidence of order lifecycle events (dispatch / close /
+        # modify / cancel). They used to be plain INSERTs: a redelivered
+        # event (worker batch retry after a partial commit, replayed
+        # lifecycle update, operator retry) created a SECOND durable row, so
+        # downstream consumers (accounting order-event traces, dispatch
+        # ticket resolution LIMIT 3, operator order lookup) read duplicated
+        # evidence. The engine stamps ONE execution_id per decision (BUG-226
+        # identity chain), so a PARTIAL UNIQUE index on it makes event
+        # redelivery idempotent at the database layer — same guarantee shape
+        # audit_signals already has via idx_audit_signals_dedup. Rows with
+        # NULL execution_id (legacy rows, post-fill ticket events) are
+        # unaffected: partial index, plain inserts keep working.
+        #
+        # LEGACY-DATA SAFETY: a database that ran during the un-deduplicated
+        # era may already hold duplicate non-null execution_id rows. Creating
+        # the index there unguarded would fail the whole construction and
+        # take the engine down. Bounded repair instead: detect duplicates
+        # first; when found, keep the LOWEST id (the original observation)
+        # per execution_id and delete the later redeliveries, then create the
+        # index. Repairs only exact-identity duplicates (never touching rows
+        # with NULL/'' execution_id); when nothing is duplicated the scan is
+        # two cheap indexed reads and every legacy row is preserved verbatim.
+        # =====================================================================
+        _dup_rows = conn.execute(
+            "SELECT execution_id, COUNT(*) AS c FROM audit_orders "
+            "WHERE execution_id IS NOT NULL AND execution_id != '' "
+            "GROUP BY execution_id HAVING c > 1 LIMIT ?",
+            (self._ORDERS_DEDUP_REPAIR_BATCH,),
+        ).fetchall()
+        for _dup_id, _ in _dup_rows:
+            conn.execute(
+                "DELETE FROM audit_orders WHERE execution_id = ? AND id NOT IN "
+                "(SELECT MIN(id) FROM audit_orders WHERE execution_id = ?)",
+                (_dup_id, _dup_id),
+            )
+            logger.warning(
+                "audit_orders duplicate lifecycle rows repaired (kept earliest row) "
+                "execution_id=%s",
+                _dup_id,
+            )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_execution_idempotency
+            ON audit_orders (execution_id)
+            WHERE execution_id IS NOT NULL AND execution_id != ''
+            """
+        )
 
         # =====================================================================
         # INSTITUTIONAL FINANCIAL ACCOUNTING LEDGER (One autopsy row per trade)
@@ -515,6 +576,23 @@ class AuditRepository:
                 executed_at TEXT NOT NULL,
                 payload TEXT NOT NULL
             );
+            """
+        )
+        # =====================================================================
+        # PERSISTENCE-CORE idempotency identity for execution ATTEMPTS
+        # (agent-17 durability audit, 2026-09-10). audit_executions records
+        # one row per dispatch attempt (dispatch.py logs exactly one
+        # log_execution per order_id after send_order). It used to be a
+        # plain INSERT: a redelivered attempt (batch retry after partial
+        # commit / replayed dispatch) created a SECOND durable row. Identity
+        # = (order_id, status): the same order_id reaching the same terminal
+        # status twice is redelivery, not a new event — a second distinct
+        # status (FILLED after REJECTED retry) still inserts its own row.
+        # =====================================================================
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_executions_order_status
+            ON audit_executions (order_id, status)
             """
         )
         # BUGFIX: Table to persist Account Equity for Crash Recovery
@@ -687,7 +765,16 @@ class AuditRepository:
             return False
 
     def get_runtime_risk_state(self) -> dict[str, Any] | None:
-        """Synchronous read of the persisted runtime risk state (None if unset)."""
+        """Synchronous read of the persisted runtime risk state.
+
+        Read is UNTRUSTED-fail-closed: None is only returned when a healthy
+        read proves the row is unset (or the DB does not exist yet). A failed
+        read (corruption, lock storm, IO error) raises
+        :class:`RuntimeRiskStateReadError` so the boot path can refuse to
+        trade — DB uncertainty must NEVER be decoded as 'no persisted state'
+        (the old contract made a corrupt/unavailable DB boot as RUNNING with
+        a live HALT row on disk; agent-17 probe, 2026-09-10).
+        """
         if not self._is_sqlite:
             return None
         try:
@@ -695,9 +782,12 @@ class AuditRepository:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute("SELECT * FROM runtime_risk_state WHERE id = 1").fetchone()
                 return dict(row) if row is not None else None
+        except RuntimeRiskStateReadError:
+            raise
         except Exception as e:
-            logger.error("get_runtime_risk_state failed: %s", e)
-            return None
+            raise RuntimeRiskStateReadError(
+                f"runtime_risk_state read failed ({type(e).__name__}): {e}"
+            ) from e
 
     def release_runtime_risk_state(
         self,
@@ -1931,6 +2021,13 @@ class AuditRepository:
 
     _FINANCIAL_OVERFLOW_DIR = "artifacts/audit_overflow"
 
+    #: Bounded duplicate-repair scan width for the audit_orders idempotency
+    #: index bootstrap (agent-17, 2026-09-10). One construction pass repairs
+    #: at most this many duplicated identities; remaining duplicates (if any
+    #: pathological volume) are repaired on the next boot — construction is
+    #: never an unbounded delete against a huge table.
+    _ORDERS_DEDUP_REPAIR_BATCH = 500
+
     def _enqueue_financial(self, query: str, args: tuple[Any, ...]) -> None:
         """Enqueue a CRITICAL FINANCIAL audit row. Never silently drops.
 
@@ -2228,6 +2325,8 @@ class AuditRepository:
             INSERT INTO audit_orders
             (ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, execution_id, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(execution_id) WHERE execution_id IS NOT NULL AND execution_id != ''
+            DO NOTHING
         """
         from datetime import UTC, datetime
 
@@ -2258,6 +2357,7 @@ class AuditRepository:
             INSERT INTO audit_executions
             (order_id, symbol, order_type, volume, price, status, executed_at, payload)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(order_id, status) DO NOTHING
         """
         from datetime import UTC, datetime
 
