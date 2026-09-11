@@ -435,6 +435,11 @@ class ResearchDatasetBuilder:
             realized_r=rec.realized_r_multiple,
             realized_pnl_usd=rec.realized_pnl_usd,
             risk_distance=rec.planned_risk_distance,
+            # ECON v1 sizing basis: carry the ledger's decision-time signal
+            # confidence into the research sample so the sized economic view
+            # reproduces the live confidence factor instead of collapsing
+            # every trade onto the 0.0 floor (0.25x de-risk on ALL history).
+            signal_confidence=rec.signal_confidence,
             holding_duration_sec=rec.behavior.duration_sec,
             mae_r=rec.behavior.mae_r,
             mfe_r=rec.behavior.mfe_r,
