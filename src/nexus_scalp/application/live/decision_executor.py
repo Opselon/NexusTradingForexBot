@@ -17,7 +17,7 @@ import contextlib
 from typing import Any
 
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
-from nexus_scalp.domain.models import TickData, TradeOrder
+from nexus_scalp.domain.models import TickData, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.decision_executor")
@@ -29,6 +29,51 @@ class DecisionExecutor:
     def __init__(self, om: Any) -> None:
         # The composition root (LiveEngine). All engine state stays there.
         self.om = om
+
+    @staticmethod
+    def _build_directional_reversal_proposal(reversal: Any) -> TradeProposal | None:
+        """Derives the DIRECTIONAL flip proposal from a CLOSE_POSITION reversal.
+
+        The policy-built reversal proposal carries the NEW direction geometry
+        (proposed_entry / stop_loss / take_profit, signals/policy.py) with
+        action=CLOSE_POSITION, so the domain validator skipped the directional
+        price invariants. Rebuilding a TradeProposal with the reversal_action
+        re-runs the full model validation - an inverted or degenerate geometry
+        is REJECTED here (fail-closed: no proposal, no risk evaluation, no flip
+        order) instead of reaching the broker. Returns None when the reversal
+        carries no actionable direction or the directional proposal fails
+        validation.
+        """
+        reversal_action = getattr(reversal, "reversal_action", None)
+        if reversal_action is None:
+            return None
+        try:
+            return TradeProposal(
+                request_id=str(getattr(reversal, "request_id", "") or ""),
+                execution_id=getattr(reversal, "execution_id", None),
+                symbol=str(getattr(reversal, "symbol", "") or ""),
+                generated_at=getattr(reversal, "generated_at", None),
+                action=reversal_action,
+                confidence=float(getattr(reversal, "confidence", 0.0) or 0.0),
+                proposed_entry=float(getattr(reversal, "proposed_entry", 0.0) or 0.0),
+                stop_loss=float(getattr(reversal, "stop_loss", 0.0) or 0.0),
+                take_profit=float(getattr(reversal, "take_profit", 0.0) or 0.0),
+                risk_reward_ratio=float(getattr(reversal, "risk_reward_ratio", 0.0) or 0.0),
+                reason_code=str(getattr(reversal, "reason_code", "") or ""),
+                ticket=int(getattr(reversal, "ticket", 0) or 0),
+                regime=getattr(reversal, "regime", None),
+                regime_confidence=getattr(reversal, "regime_confidence", None),
+                is_ai_reversal=True,
+                model_action=reversal_action.value,
+                execution_mode=getattr(reversal, "execution_mode", None),
+            )
+        except Exception as build_err:
+            logger.warning(
+                "[AI_REVERSAL] directional proposal build failed (fail-closed)",
+                error=str(build_err),
+                ticket=getattr(reversal, "ticket", 0) or 0,
+            )
+            return None
 
     def execute_decision_stage(
         self,
@@ -111,19 +156,52 @@ class DecisionExecutor:
                 policy_decision.action == ActionType.CLOSE_POSITION
                 and "AI_REVERSAL_SIGNAL" in (policy_decision.reason_code or "")
             ):
+                # BUG-258 (Agent-15 capital-protection wave 3): the flip
+                # entry is gated through RiskEngine.evaluate_proposal on a
+                # DIRECTIONAL TradeProposal (kill switch, breakers, RR,
+                # spread, stops-level, exposure, margin, impact). None =>
+                # close-only: the protective close still happens, no flip
+                # order. The old mirrored-volume fallback is removed.
                 reversal_volume = 0.0
-                if self.om._symbol_info:
-                    reversal_volume = self.om.risk_engine.calculate_volume(
-                        entry=policy_decision.proposed_entry,
-                        sl=policy_decision.stop_loss,
-                        tp=policy_decision.take_profit,
-                        account=account,
-                        symbol_info=self.om._symbol_info,
-                    )
-                    reversal_volume = self.om.risk_engine.get_clamped_position_size(
-                        volume=reversal_volume,
-                        account=account,
-                        symbol_info=self.om._symbol_info,
+                if (
+                    self.om._symbol_info
+                    and getattr(policy_decision, "reversal_action", None) is not None
+                ):
+                    directional = self._build_directional_reversal_proposal(policy_decision)
+                    if directional is not None:
+                        atr_for_risk = max(float(getattr(fv, "atr_m1", 1.5) or 0.0), 0.5)
+                        reversal_risk_order = self.om.risk_engine.evaluate_proposal(
+                            proposal=directional,
+                            account=account,
+                            symbol_info=self.om._symbol_info,
+                            active_positions=active_positions,
+                            current_tick=tick,
+                            regime_state=regime_state,
+                            atr=atr_for_risk,
+                            peak_equity=getattr(self.om, "_peak_equity", None),
+                        )
+                        if reversal_risk_order is None:
+                            logger.warning(
+                                "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_RISK_REJECTED "
+                                "reversal_action=%s ticket=%s request_id=%s - close-only, "
+                                "no flip order will be dispatched",
+                                getattr(policy_decision.reversal_action, "value", None),
+                                getattr(policy_decision, "ticket", 0) or 0,
+                                getattr(policy_decision, "request_id", ""),
+                            )
+                        else:
+                            reversal_volume = reversal_risk_order.volume
+                    else:
+                        logger.warning(
+                            "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_GEOMETRY_UNAVAILABLE "
+                            "ticket=%s - close-only, no flip order will be dispatched",
+                            getattr(policy_decision, "ticket", 0) or 0,
+                        )
+                elif not self.om._symbol_info:
+                    logger.warning(
+                        "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_NO_SYMBOL_INFO "
+                        "ticket=%s - close-only, no flip order will be dispatched",
+                        getattr(policy_decision, "ticket", 0) or 0,
                     )
 
                 success = self.om.order_manager.execute_ai_reversal(

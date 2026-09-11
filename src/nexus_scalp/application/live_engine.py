@@ -3277,6 +3277,18 @@ class LiveEngine:
         active_tickets = {pos.ticket for pos in active_positions}
         self._hedged_tickets &= active_tickets
 
+        # RUNTIME RESILIENCE (Agent-7 failure injection, FI-9): degraded
+        # inference (probs=None — the BUG-253 70D stale-liquidity gate or an
+        # in-trade inference failure) crashed HERE on ``probs.squeeze`` — the
+        # same FI-2 crash class FI-2 fixed at the policy layer, still open at
+        # the hedging layer (every degraded tick -> AttributeError -> hot-path
+        # circuit breaker loop). Hedging model-scores require healthy probs;
+        # without them the hedging evaluation is a NO-OP (never a crash, never
+        # a fabricated score, position protection continues via manage_active_positions).
+        if probs is None or not isinstance(probs, torch.Tensor) or probs.numel() == 0:
+            logger.debug("[HEDGE] event=SKIPPED reason=PROBS_UNAVAILABLE_DEGRADED")
+            return
+
         atr = max(self.order_manager._safe_feature_float(fv, "atr_m1", 1.50), 0.50)
         probs_list = probs.squeeze().tolist()
         if not isinstance(probs_list, list):
@@ -4307,6 +4319,41 @@ class LiveEngine:
                 release_required=False,
             )
             logger.info("[SAFETY_STATE] boot decision=RUNNING (trading permitted)")
+        # BUG-259 (Agent-15 capital-protection wave 3): restore the persisted
+        # breaker anchors BEFORE any trading. A loss taken earlier in the
+        # same UTC day / ISO week must keep counting against the daily /
+        # weekly budgets across a restart. Absent / corrupt / stale-identity
+        # anchors restore NOTHING (fail-closed to natural re-anchoring, which
+        # is the honest behavior when no trustworthy anchor exists — the
+        # breaker then anchors on the first evaluation, as before).
+        try:
+            persisted_anchors = self.audit.get_breaker_anchors()
+        except Exception as anchor_err:
+            logger.warning("[BREAKER] anchor restore read failed (isolated): %s", anchor_err)
+            persisted_anchors = None
+        if persisted_anchors is not None:
+            now_utc = datetime.now(UTC)
+            restored = self.risk_engine.breakers.restore_anchors(
+                day_anchor=persisted_anchors["day_anchor"],
+                day_utc=persisted_anchors["day_utc"],
+                week_anchor=persisted_anchors["week_anchor"],
+                week_iso=persisted_anchors["week_iso"],
+                now=now_utc,
+            )
+            if restored:
+                logger.info(
+                    "[BREAKER] anchors restored from persisted state day=%s "
+                    "day_anchor=%.2f week=%s week_anchor=%.2f",
+                    persisted_anchors["day_utc"],
+                    persisted_anchors["day_anchor"],
+                    persisted_anchors["week_iso"],
+                    persisted_anchors["week_anchor"],
+                )
+            else:
+                logger.info(
+                    "[BREAKER] persisted anchors rejected (stale/corrupt identity) — "
+                    "period re-arms on first evaluation"
+                )
         return decision
 
     def trigger_runtime_halt(
