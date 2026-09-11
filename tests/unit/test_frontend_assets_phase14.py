@@ -32,8 +32,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture()
 def client() -> TestClient:
+    """TestClient for the PROTECTED surface (WEB-AUTH-P0 contract).
+
+    create_app installs token auth unconditionally (audit B1, 7c14451a), so
+    API/dashboard probes authenticate exactly like an operator browser with
+    an explicit credential (Bearer transport over the NSE_WEB_AUTH_TOKEN env
+    contract — same pattern as test_node_runtime_role).
+    """
+    import os
+
+    os.environ.setdefault("NSE_WEB_AUTH_TOKEN", "phase14-test-token")
     app = create_app(engine_ref=None)
-    return TestClient(app)
+    c = TestClient(app)
+    c.headers.update({"Authorization": "Bearer " + os.environ["NSE_WEB_AUTH_TOKEN"]})
+    return c
 
 
 # ---------------------------------------------------------------------------
@@ -185,12 +197,17 @@ class TestLocalAssetsServed:
         ],
     )
     def test_webfont_traversal_attempts_404(self, client: TestClient, malicious: str) -> None:
+        # WEB-AUTH-P0: traversal candidates are NEVER public (is_public_path
+        # hard-rejects ".." and "\\"), so they are refused at the middleware
+        # (401) OR by the route's own CodeQL path guard (404). Both codes mean
+        # the traversal was rejected without content — the original security
+        # intent (never 200, never serves a file) is preserved.
         r = client.get(f"/vendor/webfonts/{malicious}")
-        assert r.status_code == 404, f"traversal {malicious!r} must 404"
+        assert r.status_code in (401, 404), f"traversal {malicious!r} must be refused"
 
     def test_webfont_unknown_name_404(self, client: TestClient) -> None:
         r = client.get("/vendor/webfonts/../server.py")
-        assert r.status_code == 404
+        assert r.status_code in (401, 404)  # WEB-AUTH-P0: refused (never 200)
         r2 = client.get("/vendor/webfonts/no-such-font.woff2")
         assert r2.status_code == 404
 
