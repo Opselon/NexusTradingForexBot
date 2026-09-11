@@ -8,6 +8,13 @@
 # working trees. Pin LF so every checkout (CI incl.) is LF.
 tests/critical_suite.txt text eol=lf
 
+# Linux runtime scripts: CRLF breaks bash on Linux with confusing
+# `set: -CR: invalid option` style errors (proven 2026-09-11 on WSL2:
+# a Windows working-tree copy of mt5_runtime.sh failed every subcommand
+# while still exiting 0 - masked breakage). Pin LF; the committed blobs
+# are already LF, so this only affects future checkouts.
+scripts/linux/*.sh text eol=lf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #
