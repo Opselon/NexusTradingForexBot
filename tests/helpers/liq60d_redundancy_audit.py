@@ -7,6 +7,7 @@ feature and every base feature (max |corr|, near-duplicate detection).
 Purpose: does the Liquidity block add NEW information or merely re-encode
 the existing 50D structure? Flag |r| >= 0.85 as near-duplicate (redundant).
 """
+
 from __future__ import annotations
 
 import json
@@ -158,7 +159,7 @@ def main() -> dict:
         "vectors": int(B.shape[0]),
         "flag_threshold_abs_corr": flag_threshold,
         "note": "SYNTHETIC deterministic regimes — structure informative; real "
-                "market rates need the 70D dataset (TASK-3).",
+        "market rates need the 70D dataset (TASK-3).",
         "generated_at_utc": datetime.now(UTC).isoformat(),
     }
     return report
@@ -173,7 +174,5 @@ if __name__ == "__main__":
         if name.startswith("_"):
             continue
         flag = "NEAR-DUP" if d["near_duplicate"] else ""
-        print(
-            f"{name:<28}{d['best_pearson_with']:<28}{d['pearson']:>9}{d['spearman']:>9}  {flag}"
-        )
+        print(f"{name:<28}{d['best_pearson_with']:<28}{d['pearson']:>9}{d['spearman']:>9}  {flag}")
     print(f"\nvectors: {rep['_meta']['vectors']}")

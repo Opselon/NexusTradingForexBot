@@ -35,6 +35,7 @@ from nexus_scalp.research.economics import (
     compute_sizing,
 )
 from nexus_scalp.research.metrics import (
+    _sized_view_confidence_factor,
     compute_backtest,
     compute_sized_economic_pnl,
 )
@@ -69,6 +70,7 @@ def _trade(
         realized_r=r,
         realized_pnl_usd=r * 10.0,
         risk_distance=risk_distance,
+        signal_confidence=conf,
     )
 
 
@@ -104,11 +106,13 @@ def test_sized_view_volumes_match_canonical_sizing() -> None:
             peak_equity=peak,
             entry=sample.entry_price,
             stop_loss=sample.stop_loss,
-            confidence=0.0,  # samples carry no confidence: neutral is 1.0 factor? no —
+            confidence=_sized_view_confidence_factor(
+                getattr(sample, "signal_confidence", 0.0)
+            ),  # ECON-CONF parity: same per-trade factor the view uses
             regime=sample.regime,
         )
-        # samples have no per-trade confidence; both paths must use the SAME
-        # input (0.0 -> live-min 0.5 factor). Volumes must match exactly.
+        # samples built by _dataset() carry no recorded confidence (0.0 =>
+        # NOT RECORDED => flat 1.0 on both paths). Volumes must match exactly.
         assert vol == decision.volume
         # advance the equity path the same way the view does
         risk_distance = sample.risk_distance
@@ -278,3 +282,82 @@ def test_mutation_divergent_sizing_formula_detected() -> None:
     assert legacy.slippage_ticks == econ.friction.slippage_ticks
     assert legacy.price_tick == econ.friction.price_tick
     assert legacy.max_slippage_ticks == econ.friction.max_slippage_ticks
+
+
+# =============================================================================
+# F. ECON-CONF: per-trade confidence parity (unknown == flat, recorded == band)
+# =============================================================================
+
+
+def test_confidence_factor_unknown_is_flat_not_floored() -> None:
+    """THE ECON-CONF regression: confidence 0.0 (NOT RECORDED) must size FLAT
+    (factor 1.0) exactly like the live NOT_CALIBRATED engine contract —
+    never the 0.25x de-risk floor. The historical bug fed 0.0 for every
+    ledger trade and understated sized risk/P&L/drawdown up to 4x."""
+    assert _sized_view_confidence_factor(0.0) == 1.0
+    assert _sized_view_confidence_factor(-0.4) == 1.0  # invalid -> flat
+    assert _sized_view_confidence_factor(float("nan")) == 1.0
+    # recorded confidence routes through the calibrated de-risk band
+    assert _sized_view_confidence_factor(0.3) == pytest.approx(0.25 + 0.75 * 0.3)
+    assert _sized_view_confidence_factor(1.0) == 1.0  # cap, never lever
+
+
+def test_sized_view_unknown_confidence_matches_flat_sizing() -> None:
+    """A ledger sample with NO recorded confidence must size EXACTLY like the
+    live flat base-risk path (confidence_scalar(1.0) == 1.0), not the floor."""
+    sample = _trade(0, r=1.0, conf=0.9).model_copy(update={"signal_confidence": 0.0})
+    view = compute_sized_economic_pnl([sample], ECON)
+    flat = compute_sizing(
+        policy=ECON.sizing,
+        instrument=ECON.instrument,
+        equity=START_EQ,
+        peak_equity=START_EQ,
+        entry=sample.entry_price,
+        stop_loss=sample.stop_loss,
+        confidence=1.0,
+        regime=sample.regime,
+    )
+    assert view.volumes[0] == flat.volume
+    assert flat.volume > 0.0
+
+
+def test_sized_view_recorded_confidence_de_risks_not_levers() -> None:
+    """Recorded confidence must de-risk relative to the flat path and must
+    match the canonical factor band — the sized view mirrors live sizing."""
+    low = _trade(0, r=1.0, conf=0.3)
+    high = _trade(0, r=1.0, conf=0.9)
+    view_low = compute_sized_economic_pnl([low], ECON)
+    view_high = compute_sized_economic_pnl([high], ECON)
+    assert view_low.volumes[0] < view_high.volumes[0]  # de-risk only
+    flat = compute_sizing(
+        policy=ECON.sizing,
+        instrument=ECON.instrument,
+        equity=START_EQ,
+        peak_equity=START_EQ,
+        entry=low.entry_price,
+        stop_loss=low.stop_loss,
+        confidence=1.0,
+        regime=low.regime,
+    )
+    assert view_high.volumes[0] <= flat.volume  # never lever above flat
+
+
+def test_dataset_builder_carries_ledger_confidence(tmp_path) -> None:
+    """ResearchDatasetBuilder._to_sample must FORWARD the ledger's
+    signal_confidence — the producer exists (experience ledger), the field
+    must survive the ledger -> research sample projection (ECON-CONF)."""
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+    from nexus_scalp.experience.ledger import ExperienceLedger
+    from nexus_scalp.research.dataset import ResearchDatasetBuilder
+    from tests.unit.task4_research_helpers import make_outcome, make_record
+
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'econconf.db'}")
+    ledger = ExperienceLedger(audit_repo=repo)
+    rec = make_record("econconf1").model_copy(update={"signal_confidence": 0.42})
+    ledger.record_experience(rec)
+    ledger.record_outcome(make_outcome(rec, r=1.2))
+    repo._queue.join()
+    ds = ResearchDatasetBuilder(ledger).build()
+    repo.close()
+    assert len(ds.samples) == 1
+    assert ds.samples[0].signal_confidence == pytest.approx(0.42)
