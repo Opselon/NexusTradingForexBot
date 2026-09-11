@@ -25,6 +25,7 @@ import pytest
 
 from nexus_scalp.research.metrics import (
     MIN_OOS_SIGNIFICANCE_SAMPLES,
+    _sized_view_confidence_factor,
     compute_sized_economic_pnl,
     oos_significance,
 )
@@ -219,7 +220,9 @@ def test_shared_risk_engine_produces_identical_volumes() -> None:
             peak_equity=peak,
             entry=float(s.entry_price),
             stop_loss=float(s.stop_loss),
-            confidence=0.0,
+            # ECON-CONF: mirror the sized view's per-trade factor contract
+            # (sample confidence 0.0 = NOT RECORDED -> flat 1.0).
+            confidence=_sized_view_confidence_factor(s.signal_confidence),
             regime=str(s.regime or ""),
             risk_engine=fresh,
         )
