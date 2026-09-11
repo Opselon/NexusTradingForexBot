@@ -474,6 +474,7 @@ class LiveEngine:
         self._live_sequence_max_gap_us = st.max_gap_us
         self._live_last_bar_ts_us = st.last_bar_ts_us
         self._live_sequence_gap_invalid = st.gap_invalid
+        self._live_sequence_trained_mode = st.trained_mode
 
     def _rebind_live_temporal_contract(self) -> None:
         if not hasattr(self, "_live_sequence_buffer"):
@@ -486,6 +487,7 @@ class LiveEngine:
             max_gap_us=self._live_sequence_max_gap_us,
             last_bar_ts_us=self._live_last_bar_ts_us,
             gap_invalid=self._live_sequence_gap_invalid,
+            trained_mode=getattr(self, "_live_sequence_trained_mode", "2d"),
         )
         meta = None
         try:
@@ -506,6 +508,12 @@ class LiveEngine:
         self._live_sequence_max_gap_us = state.max_gap_us
         self._live_last_bar_ts_us = state.last_bar_ts_us
         self._live_sequence_gap_invalid = state.gap_invalid
+        self._live_sequence_trained_mode = state.trained_mode
+        logger.info(
+            "[MODEL] event=SERVING_MODE_BOUND",
+            trained_mode=state.trained_mode,
+            seq_len=state.seq_len,
+        )
 
     def _maybe_build_live_sequence_tensor(self, x_scaled_now, bar_ts=None):
         from nexus_scalp.application.live_sequence import LiveSequenceService, LiveSequenceState
@@ -516,6 +524,7 @@ class LiveEngine:
             max_gap_us=self._live_sequence_max_gap_us,
             last_bar_ts_us=self._live_last_bar_ts_us,
             gap_invalid=self._live_sequence_gap_invalid,
+            trained_mode=getattr(self, "_live_sequence_trained_mode", "2d"),
         )
         result = LiveSequenceService.maybe_build_sequence_tensor(state, x_scaled_now, bar_ts)
         self._live_sequence_buffer = state.buffer
@@ -534,6 +543,7 @@ class LiveEngine:
             max_gap_us=self._live_sequence_max_gap_us,
             last_bar_ts_us=self._live_last_bar_ts_us,
             gap_invalid=self._live_sequence_gap_invalid,
+            trained_mode=getattr(self, "_live_sequence_trained_mode", "2d"),
         )
         LiveSequenceService.note_bar_gap(state, gap_us)
         self._live_sequence_buffer = state.buffer
@@ -549,6 +559,7 @@ class LiveEngine:
             max_gap_us=self._live_sequence_max_gap_us,
             last_bar_ts_us=self._live_last_bar_ts_us,
             gap_invalid=self._live_sequence_gap_invalid,
+            trained_mode=getattr(self, "_live_sequence_trained_mode", "2d"),
         )
         LiveSequenceService.reset(state)
         self._live_sequence_buffer = state.buffer
@@ -1412,6 +1423,15 @@ class LiveEngine:
             # position timeline (POSITION_EXITED) with canonical realized
             # PnL / R / exit mechanism.
             lifecycle_tracker=self.intelligence_lifecycle,
+            # BUG-256 (Agent-15 capital-protection fix): register THIS engine
+            # as the persisted-safety-state authority for the dispatch layer.
+            # DispatchEngine consults order_manager._trading_blocked_by_safety_state;
+            # without this provider the persisted HALTED/KILL_SWITCH half of
+            # the dispatch gate was inert (only the RiskEngine kill-switch
+            # flag gated), so a drawdown halt that stopped the loop would not
+            # stop a dispatch arriving through any other live path (hedge
+            # router, recovery dispatch, web/CLI route regression).
+            safety_state_provider=self._trading_blocked_by_safety_state,
         )
         # BUG-226: seed the audit-stream provenance from the effective boot
         # mode; the accounting layer filters PAPER-tagged rows out of metrics.
@@ -1444,6 +1464,9 @@ class LiveEngine:
         # FIX #1+#8: live sequence deque declared+initialized in the class
         # header (see _live_sequence_defaults above); _rebind_live_temporal_contract
         # already ran during __init__ earlier (before bundle load ordering).
+        # TRAIN/SERVE PARITY (P0 2026-09-09): serving mode of the LOADED bundle
+        # ("2d" default; "sequence" only for sequence-trained artifacts).
+        self._live_sequence_trained_mode: str = "2d"
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
         self._retrain_task: asyncio.Task | None = None
@@ -1701,6 +1724,15 @@ class LiveEngine:
         from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
 
         return ModelBundleStore._load_or_create_bundle(self, **kw)
+
+    def _verify_champion_registry_binding(
+        self, model_path, actual_bytes_hash=None
+    ):  # P0-2 trust anchor delegate (engine surface -> ModelBundleStore seam)
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._verify_champion_registry_binding(
+            self, model_path, actual_bytes_hash
+        )
 
     @staticmethod
     def _artifact_meta_coherence(*args, **kwargs):
