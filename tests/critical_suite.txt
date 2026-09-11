@@ -14,6 +14,10 @@ tests/unit/test_70d_replay_parity_task3.py
 tests/unit/test_70d_bug106_incremental_phase19.py
 tests/unit/test_news_bridge_contract_phase13b.py
 tests/unit/test_news_bridge_finalize_phase13b.py
+# BUG-258 (Hermes-Swarm, 2026-09-11): news DB list caps silently truncated
+# explicit caller limits (newest-500) -> dataset news-frame export lost the
+# oldest analyzed history; windowed exports dropped rows INSIDE the window.
+tests/unit/test_news_db_truncation_honesty.py
 tests/unit/test_accounting_advanced_metrics.py
 tests/unit/test_performance_metric_truth.py
 tests/unit/test_risk_engine.py

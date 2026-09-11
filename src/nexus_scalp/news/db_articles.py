@@ -13,10 +13,42 @@ import json
 from typing import Any
 
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.news.database")
+
+#: BUG-258 hard memory cap for ``list_articles``. Explicit caller limits are
+#: honored up to this bound; a request above it truncates (newest rows
+#: first) and logs exactly one WARNING per call.
+ARTICLES_LIST_HARD_CAP = 20_000
 
 
 class ArticlesMixin(_NewsDbCoreProto):
     """ArticlesMixin — verbatim method cluster from NewsDatabase."""
+
+    @staticmethod
+    def _bounded_article_limit(limit: int, hard_cap: int | None = None) -> int:
+        """BUG-258: honor explicit caller limits up to the hard cap.
+
+        See ``AnalysisMixin._bounded_limit`` for the defect narrative
+        (silently clamping every request to 500 narrowed the pro-cycle
+        drain pool and the auto-prune sweep to the newest 500 rows).
+        Truncation above the hard cap is newest-first and logs exactly
+        one WARNING per clamping call. ``hard_cap`` defaults to the
+        MODULE constant (read at call time so tests can monkeypatch it).
+        """
+        cap = ARTICLES_LIST_HARD_CAP if hard_cap is None else hard_cap
+        value = max(1, int(limit))
+        if value > cap:
+            logger.warning(
+                "[NEWS_DB] event=LIST_LIMIT_CLAMPED table=news_articles "
+                "requested=%s hard_cap=%s (oldest rows beyond the cap are "
+                "excluded; narrow the request or raise ARTICLES_LIST_HARD_CAP)",
+                value,
+                cap,
+            )
+            return cap
+        return value
 
     def is_junk_hash(self, article_hash: str) -> bool:
         """True if this article_hash was tombstoned as junk (never re-ingest)."""
@@ -231,7 +263,7 @@ class ArticlesMixin(_NewsDbCoreProto):
         asset_filter: str | None = None,
         status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
-        bounded = max(1, min(int(limit), 500))
+        bounded = self._bounded_article_limit(limit)
         sql = "SELECT * FROM news_articles"
         where: list[str] = []
         args: list[Any] = []
