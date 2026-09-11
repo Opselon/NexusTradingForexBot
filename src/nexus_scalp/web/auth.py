@@ -117,11 +117,20 @@ def _resolve_token() -> tuple[str, str]:
         store = SecureSecretStore()
         token = _generate_token()
         store.set_secret(WEB_AUTH_TOKEN_SECRET_NAME, token)
+        # OBS-TRACE-2 (Agent 8, 2026-09-11): the previous message claimed the
+        # token could be "retrieved ONCE from this log line" — but the logging
+        # pipeline's key-based redactor (_redact_sensitive_fields) scrubs every
+        # secret-bearing key (token=... -> [REDACTED_SECRET]), so the log line
+        # NEVER carried the value and operators were pointed at evidence that
+        # cannot exist. Credentials never belong in logs anyway: the token is
+        # persisted to the secure secret store (DPAPI-backed); retrieve it via
+        # the secret store or override with NSE_WEB_AUTH_TOKEN.
         logger.warning(
-            "[WEB-AUTH] generated new web auth token (persisted to secure "
-            "store). Retrieve ONCE from this log line and store it safely; "
-            "it will not be logged again.",
-            token=token,
+            "[WEB-AUTH] generated new web auth token and persisted it to the "
+            "secure secret store. The token value is intentionally NOT logged "
+            "(the redaction pipeline scrubs credential values). Retrieve it "
+            "from the secret store (secret name: web_auth_token) or set "
+            "NSE_WEB_AUTH_TOKEN to control it explicitly.",
         )
         return token, "generated"
     except Exception as exc:

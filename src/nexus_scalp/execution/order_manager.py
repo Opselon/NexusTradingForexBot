@@ -447,12 +447,26 @@ class OrderLifecycleManager:
         risk_engine: Any = None,
         experience_engine: Any = None,
         lifecycle_tracker: Any = None,
+        safety_state_provider: Any = None,
     ) -> None:
         #: TASK-3: optional immutable position-timeline tracker. When present,
         #: the close path finalizes the position timeline (POSITION_EXITED
         #: event) with the canonical realized PnL / R / exit mechanism so the
         #: lifecycle chain is complete (BUG-086). Never blocks on failure.
         self.lifecycle_tracker = lifecycle_tracker
+        # PERSISTED-SAFETY-STATE WIRING (Agent-15 capital-protection fix,
+        # BUG-256): DispatchEngine dispatch_order / execute_order consult
+        # ``om._trading_blocked_by_safety_state`` as the fail-closed defense
+        # against a persisted HALTED/KILL_SWITCH row. That method lives on
+        # LiveEngine, not on this manager (the real composition root for the
+        # dispatch layer), so without a provider the hasattr check was always
+        # False and the persisted-halt half of the dispatch gate was INERT
+        # (only the RiskEngine kill-switch flag remained). The composition
+        # root registers the authority here; when absent the gate resolves
+        # conservatively by refusing to claim "not blocked" is fine ONLY
+        # because the RiskEngine flag + evaluate_proposal + loop-stop remain
+        # — see the regression test for the full chain contract.
+        self._safety_state_provider = safety_state_provider
         self.adapter = adapter
         self.mt5_adapter = adapter
         self.audit = audit_repo or AuditRepository()
@@ -1472,6 +1486,33 @@ class OrderLifecycleManager:
         return bool(self._closed_tickets.get(ticket, False)) or bool(
             self.get_protection_state(ticket).close_requested
         )
+
+    def _trading_blocked_by_safety_state(self) -> bool:
+        """True when the persisted safety state refuses new trading (BUG-256).
+
+        Delegates to the composition root's authority (LiveEngine.
+        _trading_blocked_by_safety_state, registered as
+        ``safety_state_provider``). DispatchEngine dispatch_order /
+        execute_order consult THIS method, so a persisted HALTED /
+        KILL_SWITCH row now actually blocks the primary and hedge dispatch
+        paths on the real engine wiring (previously the hasattr probe on
+        this manager was always False and the gate was inert).
+
+        Fail-closed: a provider that raises, or a malformed verdict, is
+        treated as BLOCKED — capital protection must never depend on the
+        provider being healthy.
+        """
+        provider = getattr(self, "_safety_state_provider", None)
+        if provider is None:
+            return False
+        try:
+            return bool(provider())
+        except Exception:
+            logger.warning(
+                "[SAFETY_STATE] trading_blocked provider raised — treating as BLOCKED",
+                exc_info=True,
+            )
+            return True
 
     def _broker_close_verified(self, ticket: int) -> bool:
         """
