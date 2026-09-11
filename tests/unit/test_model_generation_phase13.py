@@ -490,6 +490,7 @@ class TestValidation:
         labels = oos["label"].to_numpy().astype(np.int64)
         # Per-regime table computed on the OOS population (spec 26).
         from nexus_scalp.model_generation.validation import evaluate_regime_performance
+
         assert evaluate_regime_performance(oos)  # per-regime evaluation exists
         # End-to-end: scoped 45-row population is honestly INSUFFICIENT_EVIDENCE.
         vr = vf.validate("cand_regime", "exp_cand_regime", oos, None, labels)

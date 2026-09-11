@@ -1466,7 +1466,7 @@ class LiveEngine:
         # already ran during __init__ earlier (before bundle load ordering).
         # TRAIN/SERVE PARITY (P0 2026-09-09): serving mode of the LOADED bundle
         # ("2d" default; "sequence" only for sequence-trained artifacts).
-        self._live_sequence_trained_mode: str = "2d"
+        self._live_sequence_trained_mode = "2d"
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
         self._retrain_task: asyncio.Task | None = None
