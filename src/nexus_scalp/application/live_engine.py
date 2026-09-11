@@ -38,6 +38,7 @@ import torch
 
 from nexus_scalp.accounting import AccountingCore, AccountingWorker
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.broker_history import session_spread_percentile
 from nexus_scalp.candle_intelligence import CandleIntelligenceEngine
 
 # RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
@@ -1365,6 +1366,24 @@ class LiveEngine:
         # in-memory bundle metadata; a missing bundle stamps
         # MODEL_IDENTITY_UNAVAILABLE (honest absence, never a fake hash).
         self.signal_policy.model_identity_fn = self._serving_model_identity
+        # TASK-AUDREV-C3 gate (b) runtime wiring (NSE-Swarm 2026-09-11): bind
+        # the read-only session spread-percentile provider so the gate is
+        # LIVE. Before this, the C3 (b) policy hook existed (76eb23b9) but
+        # NOTHING ever set session_spread_percentile_fn — the gate was a
+        # permanent no-op in production (dead wiring; the audit's "cheapest
+        # remaining real-P&L win" was silently disabled). Contract honored:
+        #   * INV-001: the provider runs a bounded read-only SELECT inside
+        #     the policy's per-evaluation call ONLY when a candidate is
+        #     live-spread-positive — never a write, never a cached handle;
+        #   * honest-unknown: a thin session sample (< min_samples) returns
+        #     None and the policy treats the gate as a no-op (never 0.0);
+        #   * reads the DURABLE audit_paper_executions copy (survives
+        #     restarts), not the adapter's in-memory ledger (export source);
+        #   * failure-isolated: a provider exception would surface inside the
+        #     policy's evaluate — the broker_history implementation already
+        #     returns None on sqlite3.Error, and this wrapper additionally
+        #     clamps any unexpected fault to None so trading never breaks.
+        self.signal_policy.session_spread_percentile_fn = self._session_spread_percentile_provider  # type: ignore[assignment]
         self.risk_engine = RiskEngine(
             config=config.risk,
             max_margin_usage_pct=config.risk.max_margin_usage_pct,
@@ -1570,6 +1589,46 @@ class LiveEngine:
             )
         except Exception as e:
             logger.warning("[STRATEGY_FACTORY] provider hot-rebuild failed", error=str(e))
+
+    def _session_spread_percentile_provider(
+        self,
+        symbol: str,
+        now_utc: datetime,
+        percentile: float,
+    ) -> float | None:
+        """TASK-AUDREV-C3 gate (b): read-only session spread-percentile provider.
+
+        Binds broker_history.session_spread_percentile to the audit DB the
+        engine already owns. Called by SignalPolicy ONLY when a candidate is
+        live-spread-positive (INV-001: still zero synchronous writes; a single
+        bounded SELECT over audit_paper_executions with a same-UTC-day 4h
+        window). Honest-unknown semantics: thin samples return None and the
+        policy treats the gate as a no-op (never 0.0 fail-open). Failure
+        isolation: any unexpected fault clamps to None — a spread-gate fault
+        must never break a trading evaluation.
+        """
+        if not self.audit._is_sqlite or not self.audit._db_path:
+            return None
+        try:
+            # Same connection surface the repository itself uses (URI-aware,
+            # bounded timeout); the SELECT is read-only and sub-millisecond
+            # on the indexed audit_paper_executions table.
+            conn = self.audit._connect_sqlite(5.0)
+            try:
+                return session_spread_percentile(
+                    conn,
+                    symbol,
+                    now_utc,
+                    percentile,
+                )
+            finally:
+                conn.close()
+        except Exception as spread_err:
+            logger.warning(
+                "[SPREAD_GATE] event=SESSION_PCT_PROVIDER_FAILED (isolated) error=%s",
+                spread_err,
+            )
+            return None
 
     def _serving_model_identity(self) -> tuple[str, str, str]:
         """OBS-TRACE (2026-09-09): identity of the bundle currently serving.
@@ -2804,6 +2863,18 @@ class LiveEngine:
                 }
             )
             self.signal_policy.confidence_threshold = snap.confidence_threshold
+            # TASK-AUDREV-C3 gate (b) hot-reload parity (NSE-Swarm 2026-09-11):
+            # the session-percentile gate toggle + threshold ride the runtime
+            # snapshot like every other algo key. Without this, an operator
+            # flipping algo.spread_session_gate_enabled / percentile in the
+            # web UI silently waited for a restart (dead knob while live.yaml
+            # said otherwise).
+            self.signal_policy.spread_session_gate_enabled = bool(
+                snap.algo.spread_session_gate_enabled
+            )
+            self.signal_policy.spread_session_percentile = float(
+                snap.algo.spread_session_percentile
+            )
             # AGENT-18 (D4): the operator symbol whitelist rides the runtime
             # snapshot — keep the policy gate in lockstep (hot-reload parity
             # with every other runtime key; a UI whitelist update must never
