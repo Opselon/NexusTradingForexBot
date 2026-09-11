@@ -700,3 +700,84 @@ def test_fi8_2d_trained_artifact_never_builds_sequence_tensor() -> None:
     # And a sequence-declared artifact still requires a bar timestamp:
     state.trained_mode = "sequence"
     assert LiveSequenceService.maybe_build_sequence_tensor(state, [0.0] * 70, None) is None
+
+
+# ---------------------------------------------------------------------------
+# FI-9: degraded inference must not crash the hedging layer (FI-2 crash class
+# at the last unguarded probs consumer). End-to-end: policy fail-closes the
+# tick (FI-2) -> executor runs -> _evaluate_hedging_policy receives probs=None
+# -> must be a NO-OP (never AttributeError -> hot-path circuit-breaker loop).
+# ---------------------------------------------------------------------------
+
+
+def test_fi9_degraded_probs_hedging_layer_no_op() -> None:
+    """FI-9a: the real hedging body no-ops on degraded inference (probs=None)."""
+    import torch as _torch
+
+    from nexus_scalp.application.live_engine import LiveEngine
+
+    eng = SimpleNamespace(
+        _hedged_tickets=set(),
+        order_manager=SimpleNamespace(
+            _safe_feature_float=lambda fv_, name, d: 1.5, _hold_score_tracker={}
+        ),
+        config=SimpleNamespace(risk=SimpleNamespace(max_concurrent_positions=3)),
+    )
+    # Must not raise (pre-fix: AttributeError 'NoneType' has no attribute 'squeeze')
+    LiveEngine._evaluate_hedging_policy(
+        eng,
+        active_positions=[],
+        tick=None,
+        probs=None,
+        regime_state=None,
+        fv=None,
+        account=None,
+    )
+    LiveEngine._evaluate_hedging_policy(
+        eng,
+        active_positions=[],
+        tick=None,
+        probs=_torch.tensor([]),
+        regime_state=None,
+        fv=None,
+        account=None,
+    )
+
+
+def test_fi9_degraded_tick_end_to_end_never_crashes_hedging() -> None:
+    """FI-9b: full degraded-tick chain — policy NO_TRADE (FI-2) then the real
+    hedging body with probs=None survives (the production crash sequence)."""
+    from datetime import UTC, datetime
+
+    from nexus_scalp.application.live_engine import LiveEngine
+    from nexus_scalp.domain.models import TickData
+
+    policy = _policy()
+    degraded = policy.evaluate_probabilities(
+        probabilities=None, current_tick=_T()(), feature_vector=_fv_neutral()
+    )
+    assert degraded.action == ActionType.NO_TRADE  # FI-2 held
+
+    eng = SimpleNamespace(
+        _hedged_tickets=set(),
+        order_manager=SimpleNamespace(
+            _safe_feature_float=lambda fv_, name, d: 1.5, _hold_score_tracker={}
+        ),
+        config=SimpleNamespace(risk=SimpleNamespace(max_concurrent_positions=3)),
+    )
+    LiveEngine._evaluate_hedging_policy(
+        eng,
+        active_positions=[],
+        tick=TickData(
+            symbol="XAUUSD",
+            timestamp=datetime.now(UTC),
+            bid=2350.0,
+            ask=2350.3,
+            last=0.0,
+            volume=1.0,
+        ),
+        probs=None,
+        regime_state=None,
+        fv=_fv_neutral(),
+        account=None,
+    )

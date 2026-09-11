@@ -540,13 +540,44 @@ class ExperienceIntelligenceEngine:
         or the feature contract changes.
         """
         values = self._extract_feature_values(feature_vector)
+        # EXP-PROV-1 (Agent 8, 2026-09-11): the SNAPSHOT identity must describe
+        # the CAPTURED tensor, never the SERVING model's schema. The captured
+        # values are the base-family tensor (``fv.to_tensor_input()`` — the
+        # protected scalp_v1 base 0..49 per features/schema_contract.py), so
+        # under a 70D (scalp_v3) champion the previous code stamped
+        # feature_schema_id="scalp_v3" onto a 50-value snapshot: a schema id
+        # the registry defines as 70D, attached to 50 values. That impossible
+        # pair (a) broke the FeatureSnapshot coexistence contract pinned by
+        # test_33 (schema id + dimension + len(values) must agree) and (b)
+        # made every audit/forensic reader mis-resolve the snapshot width.
+        # Resolution (two-representation contract, no new schema invented):
+        #   * snapshot.feature_schema_id = the registry schema matching the
+        #     captured width (50 -> scalp_v1; unregistered width keeps the
+        #     legacy provenance id with a loud WARNING rather than a fabricated
+        #     identity — fail-honest, never fail-silent);
+        #   * record.provenance stays the SERVING model identity (scalp_v3/70
+        #     unchanged) so model attribution is not lost — the row now reads
+        #     "70D model served, base-50 snapshot captured".
+        captured_dim = len(values)
+        from nexus_scalp.features.schema import schema_for_dimension
+
+        _captured_schema = schema_for_dimension(captured_dim)
+        if _captured_schema is not None:
+            captured_schema_id = _captured_schema.schema_id
+        else:
+            logger.warning(
+                "[EXPERIENCE] event=SNAPSHOT_SCHEMA_UNRESOLVED "
+                "captured_dim=%s provenance_schema=%s (keeping provenance id; "
+                "no registered schema matches the captured width)",
+                captured_dim,
+                self.provenance.feature_schema_id,
+            )
+            captured_schema_id = self.provenance.feature_schema_id
         snapshot = FeatureSnapshot(
-            feature_schema_id=self.provenance.feature_schema_id,
-            feature_dimension=len(values) or self.provenance.feature_dimension,
+            feature_schema_id=captured_schema_id,
+            feature_dimension=captured_dim or self.provenance.feature_dimension,
             values=values,
-            feature_hash=self.ledger.compute_feature_hash(
-                values, self.provenance.feature_schema_id
-            ),
+            feature_hash=self.ledger.compute_feature_hash(values, captured_schema_id),
         )
         record = ExperienceRecord(
             experience_id=f"exp_{proposal.request_id[:12]}",
