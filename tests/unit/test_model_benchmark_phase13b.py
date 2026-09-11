@@ -51,6 +51,7 @@ from nexus_scalp.model_generation.validation import (
     compute_calibration,
     confusion_and_class_metrics,
     detect_class_collapse,
+    evaluate_regime_performance,
 )
 
 
@@ -403,17 +404,30 @@ class TestValidation:
         dataset_id = bench_dataset[1]["dataset_id"]
         frame = store.read_dataset(dataset_id)
         vf = ValidationFactory()
-        labels = frame["label"].to_numpy().astype(np.int64)
-        vr = vf.validate("m", "e", frame, None, labels)
-        assert vr.regime_results  # per-regime evaluation exists
+        # P0-4: the OOS verdict is computed on the val/test population ONLY.
+        # Scope the label vector the way the benchmark lane now does (a
+        # full-frame vector is the contamination shape the gate refuses).
+        oos = frame.filter(pl.col("_split").is_in(["val", "test"]))
+        labels = oos["label"].to_numpy().astype(np.int64)
+        # Per-regime evaluation covers the OOS population (spec 26).
+        regime = evaluate_regime_performance(oos)
+        assert regime  # per-regime evaluation exists
+        # End-to-end: the 57-row scoped population is honestly INSUFFICIENT
+        # (n < MIN_EVIDENCE_SAMPLES=100) => REJECTED, never a widened verdict.
+        vr = vf.validate("m", "e", oos, None, labels)
+        assert vr.verdict == "REJECTED"
+        assert vr.overall.get("reason") == "INSUFFICIENT_EVIDENCE"
 
     def test_17_oos_rejected(self, store, bench_dataset):
         dataset_id = bench_dataset[1]["dataset_id"]
         frame = store.read_dataset(dataset_id)
         vf = ValidationFactory()
-        labels = frame["label"].to_numpy().astype(np.int64)
+        # P0-4: random predictions on the SCOPED val/test population fail the
+        # OOS floors (same contract as before; population now provable).
+        oos = frame.filter(pl.col("_split").is_in(["val", "test"]))
+        labels = oos["label"].to_numpy().astype(np.int64)
         probs = np.full((len(labels), 3), 1 / 3)  # random -> fails OOS floor
-        vr = vf.validate("m2", "e2", frame, probs, labels)
+        vr = vf.validate("m2", "e2", oos, probs, labels)
         assert vr.passed is False or vr.verdict == "REJECTED"
 
 

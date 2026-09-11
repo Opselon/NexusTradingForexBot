@@ -99,9 +99,15 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def _declared_digest(model_path: Path) -> tuple[str, str, str] | None:
-    """Returns (digest, source_name, manifest_version) or None when no
-    integrity metadata declares a digest for this weight file."""
+def _declared_digest(
+    model_path: Path,
+) -> tuple[str, str, str, str | None] | None:
+    """Returns (digest, source_name, manifest_version, scaler_sha256|None).
+
+    The fourth element is the DECLARED scaler content hash when the record
+    binds one (P0-2 artifact trust anchor). None keeps legacy behavior for
+    records that bind only the weights (e.g. minimal CI provisioners).
+    """
     for name in _INTEGRITY_SOURCES:
         p = model_path.parent / name
         if not p.exists():
@@ -114,7 +120,9 @@ def _declared_digest(model_path: Path) -> tuple[str, str, str] | None:
             continue
         digest = str(record.get("model_sha256") or record.get("artifact_hash") or "")
         if digest:
-            return digest.lower(), name, str(record.get("manifest_version") or "")
+            scaler_decl = record.get("scaler_sha256")
+            scaler_decl = str(scaler_decl).lower() if scaler_decl else None
+            return digest.lower(), name, str(record.get("manifest_version") or ""), scaler_decl
     return None
 
 
@@ -157,7 +165,7 @@ def verify_artifact_integrity(
             return verdict
         raise ArtifactIntegrityError(verdict)
 
-    expected, source, manifest_version = declared
+    expected, source, manifest_version, declared_scaler = declared
     if actual != expected:
         verdict = IntegrityVerdict(
             status=ArtifactIntegrityStatus.HASH_MISMATCH,
@@ -172,6 +180,42 @@ def verify_artifact_integrity(
         )
         _log_verdict(verdict)
         raise ArtifactIntegrityError(verdict)
+
+    # P0-2 ARTIFACT TRUST ANCHOR: when the declaring record BINDS the scaler
+    # content (scaler_sha256), the sibling model.scaler.npz is verified too —
+    # a swapped/stale scaler must never serve alongside verified weights.
+    # Absence of the binding keeps the legacy contract (weights-only).
+    if declared_scaler:
+        scaler_path = p.with_name("model.scaler.npz")
+        if not scaler_path.exists():
+            verdict = IntegrityVerdict(
+                status=ArtifactIntegrityStatus.MISSING_METADATA,
+                reason=(
+                    f"{source} declares scaler_sha256 but model.scaler.npz "
+                    "is missing from the bundle"
+                ),
+                artifact=artifact_name,
+                expected_sha256=expected,
+                actual_sha256=actual,
+                manifest_version=manifest_version,
+            )
+            _log_verdict(verdict)
+            raise ArtifactIntegrityError(verdict)
+        scaler_actual = _sha256_file(scaler_path)
+        if scaler_actual != declared_scaler:
+            verdict = IntegrityVerdict(
+                status=ArtifactIntegrityStatus.HASH_MISMATCH,
+                reason=(
+                    f"scaler sha256 {scaler_actual[:12]} != {source} "
+                    f"scaler_sha256 {declared_scaler[:12]} (scaler swapped/stale)"
+                ),
+                artifact=scaler_path.name,
+                expected_sha256=declared_scaler,
+                actual_sha256=scaler_actual,
+                manifest_version=manifest_version,
+            )
+            _log_verdict(verdict)
+            raise ArtifactIntegrityError(verdict)
 
     verdict = IntegrityVerdict(
         status=ArtifactIntegrityStatus.VERIFIED,

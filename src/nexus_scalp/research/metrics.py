@@ -313,6 +313,31 @@ def _friction_sensitivity(
 # valuation view, never a mutation of recorded evidence.
 
 
+def _sized_view_confidence_factor(confidence: float) -> float:
+    """Per-trade confidence factor for the sized economic view (ECON v1).
+
+    Reproduces the LIVE confidence contract exactly:
+
+      * confidence <= 0 (NOT RECORDED / unknown)  -> 1.0 flat sizing.
+        The live engine sizes at base risk when no validated calibration
+        artifact is bound (NOT_CALIBRATED -> multiplier exactly 1.0,
+        confidence_calibration.confidence_to_risk_multiplier) — unknown
+        evidence never de-risks, never levers. The historical bug fed 0.0
+        for every trade, silently applying the 0.25x floor to ALL history
+        and understating sized risk/P&L/drawdown up to 4x.
+      * recorded confidence (0, 1]                -> the calibrated band
+        [LIVE_CONF_MULTIPLIER_MIN, 1.0] via SizingPolicy.confidence_scalar,
+        the same factor the live pipeline composes (de-risk only).
+    """
+    # Lazy import: economics imports metrics' models layer (import-cycle
+    # contract — see research/models.py rebuild_economic_refs).
+    from nexus_scalp.research.economics import SizingPolicy
+
+    if not math.isfinite(confidence) or confidence <= 0.0:
+        return 1.0
+    return SizingPolicy.confidence_scalar(min(1.0, confidence))
+
+
 def compute_sized_economic_pnl(
     ordered: Sequence[ResearchSample],
     assumptions: Any,
@@ -364,7 +389,13 @@ def compute_sized_economic_pnl(
             peak_equity=peak,
             entry=float(s.entry_price) if s.entry_price > 0 else 1.0,
             stop_loss=float(s.stop_loss) if s.stop_loss > 0 else 0.0,
-            confidence=float(getattr(s, "signal_confidence", 0.0) or 0.0),
+            # ECON-CONF: route the per-trade confidence through the LIVE
+            # factor contract (unknown -> flat 1.0; recorded -> calibrated
+            # de-risk band). Passing the raw sample value would let 0.0
+            # (not-recorded) engage the 0.25x floor on EVERY trade.
+            confidence=_sized_view_confidence_factor(
+                float(getattr(s, "signal_confidence", 0.0) or 0.0)
+            ),
             regime=str(s.regime or ""),
             risk_engine=shared_engine,
         )

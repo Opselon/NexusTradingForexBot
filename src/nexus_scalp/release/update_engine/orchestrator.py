@@ -141,7 +141,7 @@ class UpdateOrchestrator:
         info = get_version_info()
         self.installed_version = installed_version or info["version"]
         self.installed_commit = installed_commit or info.get("commit")
-        self.pidfile = pidfile or self.user_root / "nexus.pid"
+        self.pidfile = pidfile or self._default_pidfile()
         self.state = UpdateState(self.update_home)
         self.history_store = UpdateHistory(update_home=self.update_home)
         self.lock = UpdateLock(self.update_home)
@@ -540,6 +540,35 @@ class UpdateOrchestrator:
             "schema_version": rec.get("schema_version"),
         }
 
+    @staticmethod
+    def _default_pidfile() -> Path:
+        """AGENT-9 (2026-09-11): default to the ENGINE WRITER's pidfile location.
+
+        The engine daemon writes its pid at
+        ``release.paths.get_data_root() / "nexus.pid"`` (cli/engine_boot._pidfile),
+        which for portable/frozen layouts is ``<exe_dir>/data/nexus.pid`` and
+        otherwise ``<app_data_root>/data/nexus.pid``.  The updater previously
+        defaulted to ``user_root / "nexus.pid"`` — one ``/data`` segment apart —
+        so EngineGuard NEVER found a live engine and the
+        UPDATE_BLOCKED_WHILE_LIVE gate (spec sections 13/14) was dead code in
+        every deployed layout.  Reading through the same canonical helper keeps
+        the reader and the writer in agreement for every install mode.
+        """
+        from nexus_scalp.release import paths as rpaths
+
+        return rpaths.get_data_root() / "nexus.pid"
+
+    @staticmethod
+    def _engine_config_path() -> Path | None:
+        """Best-effort path to the engine's user config for LIVE-mode detection."""
+        from nexus_scalp.release import paths as rpaths
+
+        try:
+            cfg = rpaths.get_user_config_path()
+        except Exception:
+            return None
+        return cfg if cfg.exists() else None
+
     # --------------------------------------------------------- release info
     def release_info(self) -> dict[str, Any]:
         """Metadata of the release currently installed (spec 38)."""
@@ -645,7 +674,7 @@ class UpdateOrchestrator:
             _emit(STATE_AVAILABLE, f"found {plan['target_version']}")
 
             # 2. LIVE-safety gate (sections 13/14)
-            guard = EngineGuard(pidfile=self.pidfile)
+            guard = EngineGuard(pidfile=self.pidfile, config_path=self._engine_config_path())
             engine_state = guard.engine_state()
             if engine_state == "LIVE" and not force:
                 report["state"] = STATE_FAILED

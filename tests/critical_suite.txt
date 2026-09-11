@@ -162,3 +162,8 @@ tests/unit/test_dead_letter_retention_cap.py
 tests/unit/test_perf_safety_contract_pins.py
 tests/unit/test_perf_health_probe_cache.py
 tests/unit/test_perf_exec_trace_throttle.py
+
+# BUG-256 (Agent-15 capital protection, 2026-09-11): persisted-safety-state
+# wiring on the dispatch layer — the HALTED/KILL_SWITCH gate must stay live
+# on the real OrderLifecycleManager composition root.
+tests/unit/test_bug256_dispatch_halt_wiring.py

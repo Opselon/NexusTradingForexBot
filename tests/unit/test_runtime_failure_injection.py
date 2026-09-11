@@ -26,10 +26,19 @@ Proven defects covered (found by deterministic injection probes, 2026-09-09):
         to the model. Pinned: corrupt-scaler bundle is refused at inference.
 
 All tests are offline and deterministic (no MT5, no network, no model files).
+
+Reland wave (2026-09-11, Agent-7 second pass): the f3f53f69 containment
+revert removed the ScalerBundle.corrupt field together with its absorbed
+carrier (2fc1d84c), leaving FI-4 red at HEAD and the fail-closed corrupt-
+scaler chain dead in production. The field is relanded and the new FI-5..FI-8
+probes pin the FULL corrupt-sidecar chain, the degenerate-std boundary, the
+NaN-poisoned-weights policy contract, and the 2D sequence-serving gate.
+
 """
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -307,12 +316,9 @@ def test_fi3_duplicate_tick_resurface_is_never_executable() -> None:
     # …and the executor refuses any executable DEDUP_GATE proposal (FI-3c).
 
 
-def test_fi3_duplicate_no_trade_resurface_still_restores_last_real() -> None:
-    """FI-3b: BUG-169 UI-truth is preserved for the NO_TRADE case."""
-    policy = _policy()
-    tf = _T()
-
-    fv_neutral = FeatureVector.model_construct(
+def _fv_neutral() -> FeatureVector:
+    """Neutral feature geometry: no candidate channel fires (no OB/sweep/FVG)."""
+    return FeatureVector.model_construct(
         atr_m1=1.5,
         tenkan_sen=2349.0,
         kijun_sen=2348.0,
@@ -342,7 +348,17 @@ def test_fi3_duplicate_no_trade_resurface_still_restores_last_real() -> None:
         support_zone_dist=3.0,
         resistance_zone_dist=3.0,
         rsi_14=50.0,
+        timestamp_utc="2026-09-11T00:00:00+00:00",
+        symbol="XAUUSD",
     )
+
+
+def test_fi3_duplicate_no_trade_resurface_still_restores_last_real() -> None:
+    """FI-3b: BUG-169 UI-truth is preserved for the NO_TRADE case."""
+    policy = _policy()
+    tf = _T()
+
+    fv_neutral = _fv_neutral()
     first = policy.evaluate_probabilities(
         probabilities=STRONG_BUY, current_tick=tf(), feature_vector=fv_neutral
     )
@@ -445,3 +461,242 @@ def test_fi4_inference_refuses_corrupt_scaler_bundle() -> None:
 
     with pytest.raises(RuntimeError, match="corrupt"):
         InferenceService.infer_probabilities(engine, _fv())
+
+
+# ---------------------------------------------------------------------------
+# FI-5: corrupt scaler sidecar — END-TO-END (load path flags, inference refuses)
+# FI-6: degenerate-std scaler is degraded-not-corrupt (documented passthrough)
+# FI-7: poisoned model weights -> NaN logits -> policy fail-closed NO_TRADE
+# FI-8: 2D-trained artifact can never reach the sequence tensor path
+# (Agent-7 reland wave: the f3f53f69 containment revert removed the
+# ScalerBundle.corrupt field together with its carrier; these tests pin the
+# field AND the full corrupt-sidecar chain at HEAD.)
+# ---------------------------------------------------------------------------
+
+
+def _write_weight_file(path, num_features=50, poison_nan=False):
+    import torch as _torch
+
+    from nexus_scalp.models.scalp_net import ScalpNet
+
+    model = ScalpNet(num_features=num_features)
+    if poison_nan:
+        with _torch.no_grad():
+            model.input_projection.weight.fill_(float("nan"))
+    _torch.save(model.state_dict(), path)
+    return model
+
+
+class _EngineSurface:
+    """Minimal LiveEngine surface for the unbound bundle-store helpers.
+
+    The store methods are invoked UNBOUND with the surface as the engine
+    state (ModelBundleStore.method(surface, ...)), so the surface needs the
+    same helper surface LiveEngine provides. _load_or_create_bundle /
+    _load_or_initialize_model_weights / _load_scaler_artifacts /
+    _expected_num_features_for_artifact are pulled in verbatim; only the
+    declared-contract probes are stubbed (test artifacts carry no meta).
+    """
+
+    allow_legacy_unverified_artifacts = True
+
+    from nexus_scalp.application.live.model_bundle_store import (
+        ModelBundleStore as _store,
+    )
+
+    _declared_contract_dim_for_path = staticmethod(lambda path: None)
+    _declared_head_classes_for_path = staticmethod(lambda path: None)
+
+    def __init__(self) -> None:
+        import threading as _threading
+
+        self._bundle_lock = _threading.RLock()
+
+    def _load_or_create_bundle(self, **kw):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._load_or_create_bundle(self, **kw)
+
+    def _load_or_initialize_model_weights(self, *args, **kwargs):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._load_or_initialize_model_weights(self, *args, **kwargs)
+
+    def _load_scaler_artifacts(self, model_path):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._load_scaler_artifacts(self, model_path)
+
+    def _expected_num_features_for_artifact(self, model_path):
+        from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+        return ModelBundleStore._expected_num_features_for_artifact(self, model_path)
+
+
+def test_fi5_corrupt_scaler_sidecar_end_to_end(tmp_path) -> None:
+    """FI-5: unreadable sidecar -> corrupt flag -> infer_probabilities refuses."""
+
+    model_path = tmp_path / "m.pt"
+    _write_weight_file(model_path)
+    model_path.with_suffix(".scaler.npz").write_bytes(b"not-an-npz-file")
+
+    from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+    from nexus_scalp.application.live_engine import ModelBundle, ScalerBundle
+
+    surface = _EngineSurface()
+    bundle = ModelBundleStore._load_or_create_bundle(
+        surface, model_path=model_path, force_fresh=False
+    )
+    assert isinstance(bundle.scaler, ScalerBundle)
+    assert bundle.scaler.corrupt is True
+
+    # The inference path must refuse to serve the flagged bundle.
+    engine = SimpleNamespace(
+        _bundle=bundle,
+        _bundle_lock=threading.RLock(),
+        _build_live_feature_vector=MagicMock(return_value=([0.0] * 50, {})),
+        _last_live_tensor_dim=0,
+        _last_live_tensor_schema="scalp_v1",
+        _last_70d_assembly_timings={},
+        _inference_failures_total=0,
+        emit_incident_telemetry=MagicMock(),
+        effective_feature_dim=50,
+        effective_feature_schema_id="scalp_v1",
+        _news_enabled=False,
+        news_engine=None,
+        liquidity_governor=None,
+    )
+    from nexus_scalp.application.live.inference import InferenceService
+
+    with pytest.raises(RuntimeError, match="corrupt"):
+        InferenceService.infer_probabilities(engine, _fv())
+
+
+def test_fi5_wrong_width_scaler_sidecar_is_flagged_corrupt(tmp_path) -> None:
+    """FI-5b: a width-mismatched sidecar (70 vs 50) is corrupt, not cold-start."""
+
+    import numpy as _np
+
+    model_path = tmp_path / "m50.pt"
+    _write_weight_file(model_path, num_features=50)
+    _np.savez(
+        model_path.with_suffix(".scaler.npz"),
+        mean=_np.zeros(70, dtype=_np.float32),
+        std=_np.ones(70, dtype=_np.float32),
+    )
+
+    from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+    surface = _EngineSurface()
+    bundle = ModelBundleStore._load_or_create_bundle(
+        surface, model_path=model_path, force_fresh=False
+    )
+    assert bundle.scaler.corrupt is True
+    assert bundle.scaler.is_ready() is False
+
+
+def test_fi6_degenerate_std_scaler_is_degraded_not_corrupt(tmp_path) -> None:
+    """FI-6: zero-std sidecar loads but is NOT ready (documented passthrough)."""
+
+    import numpy as _np
+
+    model_path = tmp_path / "m.pt"
+    _write_weight_file(model_path)
+    _np.savez(
+        model_path.with_suffix(".scaler.npz"),
+        mean=_np.zeros(50, dtype=_np.float32),
+        std=_np.zeros(50, dtype=_np.float32),
+    )
+
+    from nexus_scalp.application.live.model_bundle_store import ModelBundleStore
+
+    surface = _EngineSurface()
+    bundle = ModelBundleStore._load_or_create_bundle(
+        surface, model_path=model_path, force_fresh=False
+    )
+    assert bundle.scaler.corrupt is False  # readable sidecar: not corruption
+    assert bundle.scaler.is_ready() is False  # ...but never marked ready
+
+
+def test_fi7_nan_poisoned_weights_fail_closed_in_policy(tmp_path) -> None:
+    """FI-7: a weights file poisoned with NaN yields NaN probabilities; the
+    policy must fail-closed to NO_TRADE (never an executable NaN proposal)."""
+
+    import numpy as _np
+    import torch as _torch
+
+    from nexus_scalp.application.live.inference import InferenceService
+    from nexus_scalp.application.live_engine import ModelBundle, ScalerBundle
+
+    poisoned = _write_weight_file(tmp_path / "unused.pt", poison_nan=True)
+
+    class _Bundle:
+        scaler = ScalerBundle(
+            mean=_np.zeros(50, dtype=_np.float32), std=_np.ones(50, dtype=_np.float32)
+        )
+        model = poisoned
+        artifact_path = "unused.pt"
+
+    engine = SimpleNamespace(
+        _bundle=_Bundle(),
+        _bundle_lock=threading.RLock(),
+        _build_live_feature_vector=MagicMock(return_value=([0.0] * 50, {})),
+        _last_live_tensor_dim=0,
+        _last_live_tensor_schema="scalp_v1",
+        _last_70d_assembly_timings={},
+        _inference_failures_total=0,
+        _inference_count=0,
+        _latency_dbg_every=64,
+        _latency_regression=None,
+        _last_model_input_tensor=None,
+        emit_incident_telemetry=MagicMock(),
+        effective_feature_dim=50,
+        effective_feature_schema_id="scalp_v1",
+        _news_enabled=False,
+        news_engine=None,
+        liquidity_governor=None,
+        _maybe_build_live_sequence_tensor=MagicMock(return_value=None),
+    )
+    probs = InferenceService.infer_probabilities(engine, _fv())
+    assert bool(_torch.isnan(probs).any()), "poisoned weights must surface as NaN probs"
+
+    # Neutral feature geometry (no OB / sweep / FVG) so the structural
+    # PREDICTIVE_LIMIT path — model-confidence-independent BY DESIGN — does
+    # not fire; we are pinning the MODEL-probability contract here.
+    policy = _policy()
+    neutral = _fv_neutral()
+    proposal = policy.evaluate_probabilities(
+        probabilities=probs, current_tick=_T()(), feature_vector=neutral
+    )
+    # Fail-closed contract: sanitized to zero mass -> no candidate can pass
+    # the confidence/zone gates -> NO_TRADE with conf 0.0 and no fabricated
+    # directional confidence (the NaN payload never becomes an executable
+    # proposal or a nonzero confidence).
+    assert proposal.action == ActionType.NO_TRADE
+    assert proposal.confidence == 0.0
+    assert proposal.final_action == "NO_TRADE"
+    assert proposal.buy_probability == 0.0
+    assert proposal.sell_probability == 0.0
+    assert proposal.risk_allowed is False
+
+
+def test_fi8_2d_trained_artifact_never_builds_sequence_tensor() -> None:
+    """FI-8: the train/serve parity gate — a 2D artifact (default) can never
+    consume the (1, L, D) sequence path, regardless of buffer state."""
+    from collections import deque
+
+    from nexus_scalp.application.live_sequence import LiveSequenceService, LiveSequenceState
+
+    state = LiveSequenceService.defaults()
+    assert state.trained_mode == "2d"
+    # Feed a full window of bar-aligned rows with real timestamps.
+    bar = datetime.now(UTC)
+    result = None
+    for i in range(40):
+        result = LiveSequenceService.maybe_build_sequence_tensor(
+            state, [0.0] * 70, bar + timedelta(minutes=i)
+        )
+    assert result is None  # 2D gate: sequence tensor never built
+    # And a sequence-declared artifact still requires a bar timestamp:
+    state.trained_mode = "sequence"
+    assert LiveSequenceService.maybe_build_sequence_tensor(state, [0.0] * 70, None) is None
