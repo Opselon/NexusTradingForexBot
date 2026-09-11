@@ -110,6 +110,15 @@ class LiveSequenceService:
         ts_us: int | None = None
         if hasattr(bar_ts, "timestamp"):
             ts_us = int(bar_ts.timestamp() * 1_000_000)  # type: ignore[union-attr]
+            # REPLAY-04 BAR-ALIGNMENT FLOOR: the live caller passes fv's RAW
+            # TICK timestamp (sub-minute precision), but this window is
+            # bar-aligned — one entry per completed M1 bar, dedupe on the
+            # same bar, gaps measured bar-to-bar. Floor datetime inputs to
+            # their containing minute so intra-bar ticks collapse onto the
+            # bar stamp instead of injecting phantom rows / splitting gap
+            # detection. Raw-int inputs are treated as ALREADY bar-aligned
+            # (synthetic-test / pre-floored callers).
+            ts_us -= ts_us % 60_000_000
         elif isinstance(bar_ts, int):
             ts_us = int(bar_ts)
         if ts_us is None:
