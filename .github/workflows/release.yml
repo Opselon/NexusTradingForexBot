@@ -32,11 +32,46 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # A0. RELEASE AUTHORIZATION — main-CI evidence for the EXACT same SHA
+  # (Finding 3, release wave). NO MAIN-CI EVIDENCE == NO RELEASE.
+  # Every downstream job depends on this gate, so publication can never
+  # bypass the required main-CI checks of the release commit — including on
+  # workflow_dispatch: the gate queries the Checks API for GITHUB_SHA and
+  # fails closed on missing/failed/pending/ambiguous evidence.
+  # ---------------------------------------------------------------------------
+  release-auth:
+    name: Release authorization (main-CI evidence for same SHA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Require main-CI evidence for this exact SHA
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # Identity sanity: the full 40-hex SHA is the ONLY accepted identity.
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          echo "RELEASE_SHA=$RELEASE_SHA"
+          python scripts/release/release_auth_gate.py --repo "${{ github.repository }}" --sha "$RELEASE_SHA"
+
+  # ---------------------------------------------------------------------------
   # A. VALIDATE — tag/version consistency + secrets + clean tree
   # ---------------------------------------------------------------------------
   validate:
     name: Validate tag & version
     runs-on: ubuntu-latest
+    needs: release-auth
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
