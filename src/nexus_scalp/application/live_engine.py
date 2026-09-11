@@ -37,7 +37,10 @@ import polars as pl
 import torch
 
 from nexus_scalp.accounting import AccountingCore, AccountingWorker
-from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.audit_repository import (
+    AuditRepository,
+    RuntimeRiskStateReadError,
+)
 from nexus_scalp.adapters.database.broker_history import session_spread_percentile
 from nexus_scalp.candle_intelligence import CandleIntelligenceEngine
 
@@ -4242,10 +4245,30 @@ class LiveEngine:
 
         Called at the very start of run_loop. Never recalculates drawdown —
         only the persisted decision decides.
+
+        AGENT-17 BOOT-TRUST CONTRACT (2026-09-10, reland on this branch): a
+        FAILED read of the persisted state (corrupt image / lock storm /
+        unavailable audit DB) is NOT 'no persisted state'. The store raises
+        ``RuntimeRiskStateReadError``; this boot path resolves it to a
+        fail-closed ``DB_READ_UNCERTAIN`` decision so the engine idles until
+        the durable state can actually be trusted. Database uncertainty is
+        NEVER decoded as RUNNING (c2662e31 landed this on main; the
+        f3f53f69 containment revert carried the change away from this
+        branch's lineage while the CLI half stayed — the store now raises
+        on read failure and an unprotected call site would crash boot
+        instead of failing closed, which is also unsafe).
         """
-        decision = resolve_boot_decision(
-            PersistedRiskState.from_row(self.audit.get_runtime_risk_state())
-        )
+        try:
+            row = self.audit.get_runtime_risk_state()
+        except RuntimeRiskStateReadError as err:
+            logger.critical("[SAFETY_STATE] persisted state READ FAILED — failing CLOSED (%s)", err)
+            decision = BootDecision(
+                trading_allowed=False,
+                state="DB_READ_UNCERTAIN",
+                detail=f"PERSISTED_STATE_READ_FAILED: {err}",
+            )
+        else:
+            decision = resolve_boot_decision(PersistedRiskState.from_row(row))
         self._apply_persisted_halt(decision)
         if decision.state == "RUNNING":
             # Mirror the RUNNING decision back durably (single canonical row,
