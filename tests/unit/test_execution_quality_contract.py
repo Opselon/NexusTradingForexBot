@@ -58,7 +58,18 @@ def _manager(adapter, experience_engine=None) -> OrderLifecycleManager:
 
 
 def _decision(request_id: str, action: ActionType = ActionType.BUY_MARKET):
+    # AGENT-12 core-integrity repair (2026-09-11): dispatch_order routes
+    # directional entries through the canonical MAINTENANCE_WINDOW guard
+    # (f1c2c14e), which evaluates decision.generated_at against the nightly
+    # break. This battery predates that guard and left generated_at as an
+    # unset MagicMock, so `in_maintenance_window` crashed with
+    # TypeError(MagicMock >= int) whenever the duplicate/refusal branches
+    # were reached — deterministically RED on every run since f1c2c14e.
+    # Pin a real timestamp far outside the window (same CI-determinism
+    # ruling as the a15 twin fix 6ee50b1d) so the battery exercises the
+    # DUPLICATE/REFUSAL guards it exists to pin.
     d = MagicMock()
+    d.generated_at = datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC)
     d.action = action
     d.symbol = "XAUUSD"
     d.proposed_entry = 2000.0

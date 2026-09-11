@@ -192,6 +192,21 @@ class SignalPolicy:
         # any non-tensor / empty probability payload fail-closes to a
         # NO_TRADE proposal without touching any gate state.
         # =================================================================
+        # =================================================================
+        # Forensic execution trace id (PHASE 13 audit, 2026-08-20): ONE id per
+        # evaluation, stamped BEFORE any gate, carried into every proposal the
+        # policy emits (NO_TRADE included) so logs + audit rows + dispatch are
+        # joinable by a single EXEC-... key. Observability only (INV-018) —
+        # never influences a decision.
+        # OBS-TRACE-2 (Agent 8, 2026-09-11): the id is created BEFORE the
+        # degraded-inference early return so EVERY emitted proposal — including
+        # PROBS_UNAVAILABLE / throttle / exposure / AI-reversal early returns —
+        # carries it. Previously those rows carried execution_id='' and the
+        # decision->signal->order join was unreconstructable for exactly the
+        # degraded/gated evaluation classes forensics cares most about.
+        # =================================================================
+        now_exec = current_tick.timestamp
+        execution_id = f"EXEC-{now_exec:%Y%m%d}-{now_exec:%H%M%S}-{uuid.uuid4().hex[:6]}"
         if (
             probabilities is None
             or not isinstance(probabilities, torch.Tensor)
@@ -207,14 +222,8 @@ class SignalPolicy:
                 regime_conf=float(regime_state.regime_probability) if regime_state else 0.0,
                 blocked_by="INFERENCE_DEGRADED",
                 decision_stage="INFERENCE_DEGRADED",
+                execution_id=execution_id,
             )
-        # Forensic execution trace id (PHASE 13 audit, 2026-08-20): ONE id per
-        # evaluation, stamped BEFORE any gate, carried into every proposal the
-        # policy emits (NO_TRADE included) so logs + audit rows + dispatch are
-        # joinable by a single EXEC-... key. Observability only (INV-018) —
-        # never influences a decision.
-        now_exec = current_tick.timestamp
-        execution_id = f"EXEC-{now_exec:%Y%m%d}-{now_exec:%H%M%S}-{uuid.uuid4().hex[:6]}"
         guardian_proposal = self._evaluate_guardian_gate(regime_state, current_tick, execution_id)
         if guardian_proposal is not None:
             return guardian_proposal
@@ -339,6 +348,7 @@ class SignalPolicy:
                 atr=atr,
                 regime_str=regime_str,
                 regime_conf=regime_conf,
+                execution_id=execution_id,
             )
             if reversal_proposal is not None:
                 self._last_signal_time = now
@@ -347,7 +357,7 @@ class SignalPolicy:
                 return reversal_proposal
 
         throttle_proposal = self._evaluate_frequency_throttle(
-            now, current_tick, regime_str, regime_conf
+            now, current_tick, regime_str, regime_conf, execution_id=execution_id
         )
         if throttle_proposal is not None:
             return throttle_proposal
@@ -368,6 +378,7 @@ class SignalPolicy:
             now,
             expected_symbol,
             expected_magic,
+            execution_id=execution_id,
         )
         if exposure_proposal is not None:
             return exposure_proposal
@@ -1787,6 +1798,7 @@ class SignalPolicy:
         now: datetime,
         expected_symbol: str | None = None,
         expected_magic: int = 888101,
+        execution_id: str = "",
     ) -> TradeProposal | None:
         # TASK-AUDREV-C4: the exposure gate matches live tickets against the
         # runtime-resolved expected identity (tick symbol + configured
@@ -1822,6 +1834,7 @@ class SignalPolicy:
                     reason="SAME_LEVEL_REENTRY_BLOCKED",
                     regime_str=regime_str,
                     regime_conf=regime_conf,
+                    execution_id=execution_id,
                 )
 
             # If we hold 1 active open position, block entries.
@@ -1837,6 +1850,7 @@ class SignalPolicy:
                     regime_conf=regime_conf,
                     blocked_by="EXECUTION_STATE_BLOCK",
                     decision_stage="EXPOSURE_GATE",
+                    execution_id=execution_id,
                 )
 
             # If we hold 1 active pending order, check lock & price drift hysteresis
@@ -1873,6 +1887,7 @@ class SignalPolicy:
                         regime_conf=regime_conf,
                         blocked_by="EXECUTION_STATE_BLOCK",
                         decision_stage="EXPOSURE_GATE",
+                        execution_id=execution_id,
                     )
         return None
 
@@ -1882,6 +1897,7 @@ class SignalPolicy:
         current_tick: TickData,
         regime_str: str,
         regime_conf: float,
+        execution_id: str = "",
     ) -> TradeProposal | None:
         # 1. Enforce ORDER_FREQUENCY_THROTTLED check (MIN_ORDER_INTERVAL_SECONDS = 60)
         if self._last_signal_time is not None:
@@ -1893,6 +1909,7 @@ class SignalPolicy:
                     reason="ORDER_FREQUENCY_THROTTLED",
                     regime_str=regime_str,
                     regime_conf=regime_conf,
+                    execution_id=execution_id,
                 )
         return None
 
@@ -2215,6 +2232,7 @@ class SignalPolicy:
         atr: float = 1.5,
         regime_str: str = "UNKNOWN",
         regime_conf: float = 0.0,
+        execution_id: str = "",
     ) -> TradeProposal | None:
         """
         AI Position Reversal veto.
@@ -2310,6 +2328,12 @@ class SignalPolicy:
             # after the conflicting ticket is confirmed closed.
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
+                # OBS-TRACE-2 (Agent 8, 2026-09-11): the reversal proposal is an
+                # early return BEFORE the EXEC_TRACE emit, so it previously left
+                # execution_id empty — the CLOSE decision (and the flip order it
+                # triggers) could not be joined back to the decision row. Carry
+                # the caller's evaluation id like every other proposal.
+                execution_id=execution_id,
                 symbol=current_tick.symbol,
                 generated_at=current_tick.timestamp,
                 action=ActionType.CLOSE_POSITION,
@@ -2360,9 +2384,14 @@ class SignalPolicy:
         risk_checks: dict[str, Any] | None = None,
         blocked_by: str | None = None,
         decision_stage: str | None = None,
+        execution_id: str = "",
     ) -> TradeProposal:
         return TradeProposal(
             request_id=str(uuid.uuid4()),
+            # OBS-TRACE-2: every proposal carries the evaluation's EXEC id so
+            # audit_signals.payload / experience rows are joinable even for the
+            # gated NO_TRADE classes (throttle, exposure, degraded inference).
+            execution_id=execution_id or None,
             symbol=tick.symbol,
             generated_at=tick.timestamp,
             action=ActionType.NO_TRADE,

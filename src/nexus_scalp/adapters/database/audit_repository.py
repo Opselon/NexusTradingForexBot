@@ -588,13 +588,23 @@ class AuditRepository:
         # = (order_id, status): the same order_id reaching the same terminal
         # status twice is redelivery, not a new event — a second distinct
         # status (FILLED after REJECTED retry) still inserts its own row.
+        #
+        # BUG-254 (2026-09-11): the bare CREATE UNIQUE INDEX here crashed
+        # EVERY construction on any pre-release database carrying
+        # duplicates from the plain-INSERT era (sqlite3.IntegrityError —
+        # the same defect the audit_orders repair below already guards
+        # against). The index bootstrap is now the shared idempotent
+        # repair+create helper: bounded detect->archive-to-reconciled->
+        # create under BEGIN IMMEDIATE, earliest-row survivor rule,
+        # non-destructive (superseded rows preserved in
+        # audit_executions_reconciled), aggregate-only logging. See
+        # adapters/database/executions_idempotency.py for the full contract.
         # =====================================================================
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_executions_order_status
-            ON audit_executions (order_id, status)
-            """
+        from nexus_scalp.adapters.database.executions_idempotency import (
+            ensure_executions_idempotency_index,
         )
+
+        ensure_executions_idempotency_index(conn)
         # BUGFIX: Table to persist Account Equity for Crash Recovery
         conn.execute(
             """

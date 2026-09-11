@@ -27,6 +27,16 @@ def paper_om():
 class TestBug247HedgeHardCap:
     def test_direct_100_is_clamped_to_10(self, paper_om):
         om, adapter = paper_om
+        # AGENT-12 core-integrity repair (2026-09-11): the paper adapter's
+        # margin realism (bd9f4bba: "G" margin check, contract 100 @ 100:1)
+        # needs 44,000 free margin for the clamped 10.0-lot order at 4400 —
+        # the original 10,000 balance made the paper broker REFUSE the fill
+        # after the clamp, turning the clamp assertion into a margin
+        # rejection (deterministically RED since 09-06). BUG-247's contract
+        # is the VOLUME CLAMP, not account size: fund the account so the
+        # clamped order is fillable and the clamp assertion stays real.
+        adapter.balance = 100000.0
+        adapter.equity = 100000.0
         om.global_state = "NORMAL"
         order = TradeOrder(
             order_id="bug247-h1",

@@ -79,25 +79,53 @@ def test_browser_js_has_no_bundler_or_cdn_refs() -> None:
 
 
 def test_web_ui_served_without_node() -> None:
-    """The Control Center must be servable by FastAPI alone — no Node server."""
+    """The Control Center must be servable by FastAPI alone — no Node server.
+
+    WEB-AUTH-P0 note (7c14451a, 2026-09-07): GET / now requires a token, so
+    the probe authenticates (the contract being tested is FastAPI serving,
+    not auth).
+    """
+    import os
+
     app = _create_app()
     client = TestClient(app)
-    index = client.get("/")
+    headers = {}
+    token = os.environ.get("NSE_WEB_AUTH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    elif os.environ.get("NSE_WEB_AUTH_DISABLE") == "1":
+        headers = {}
+    else:
+        # Auth enabled with a generated token: the disable flag documented
+        # for local/PAPER fixtures is the supported probe path here.
+        os.environ["NSE_WEB_AUTH_DISABLE"] = "1"
+        app = _create_app()
+        client = TestClient(app)
+    index = client.get("/", headers=headers or None)
     assert index.status_code == 200, "GET / (index.html) must be served by FastAPI"
     assert "text/html" in index.headers.get("content-type", "")
     # Asset routes the browser actually loads — all served by the Python process.
     for route in ("/app.js", "/styles.css", "/api_client.js", "/tailwind.css"):
-        resp = client.get(route)
+        resp = client.get(route, headers=headers or None)
         assert resp.status_code == 200, f"{route} must be served by FastAPI"
 
 
 def test_no_package_json_runtime_marker() -> None:
-    """No package.json => Node is not a declared runtime/manifest dependency.
-    (A future dev-only package.json may exist, but its absence today proves there
-    is no npm-driven runtime contract.)"""
+    """No ROOT-LEVEL package.json => Node is not a declared runtime/manifest
+    dependency of the ENGINE or the legacy Web UI. (A future dev-only
+    package.json may exist — frontend/ is the build-time habitat of the
+    alternative React console, build/dev-only per DEC-0002; its compiled
+    dist/ is what the runtime serves, with no Node process.)"""
     found = list(REPO_ROOT.glob("package.json")) + list(REPO_ROOT.glob("**/package.json"))
-    # Filter out anything inside node_modules (test-only playwright) and .venv.
-    real = [p for p in found if "node_modules" not in str(p) and ".venv" not in str(p)]
+    # Filter out anything inside node_modules (test-only playwright), .venv,
+    # and the frontend/ build habitat (alternative UI dev dependency only).
+    real = [
+        p
+        for p in found
+        if "node_modules" not in str(p)
+        and ".venv" not in str(p)
+        and "frontend" not in p.relative_to(REPO_ROOT).parts
+    ]
     assert not real, f"unexpected package.json at runtime root: {real}"
 
 

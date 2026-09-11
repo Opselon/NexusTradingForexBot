@@ -45,9 +45,45 @@ def _make_engine(tmp_path: Path | None = None) -> LiveEngine:
     )
     cfg = AppConfig.load_from_yaml(yaml_path)
     if tmp_path is not None:
-        artifact_dir = tmp_path / "artifacts" / "model_generation" / "models"
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        cfg.model.model_artifact_path = str(artifact_dir / "fixture_model.pt")
+        # AGENT-12 core-integrity repair (2026-09-11): since the P1 artifact
+        # trust gate (verify_artifact_integrity in ModelBundleStore,
+        # d9f6b577) rejects a MISSING/EMPTY artifact before minting, a
+        # bare fixture path crashed _make_engine with
+        # ArtifactIntegrityError(LOAD_REJECTED) — c004 went permanently
+        # RED. Fix the FIXTURE, not the gate (same ruling as ab9db747):
+        # emit a hermetic SELF-PAIRED (weights, manifest) bundle so the
+        # boot-time integrity gate passes deterministically, exactly like
+        # the launcher battery's _write_verified_bundle.
+        import hashlib
+        import json
+
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        bundle_dir = tmp_path / "bundle"
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        model_path = bundle_dir / "model.pt"
+        net = ScalpNet(num_features=50)
+        net.eval()
+        torch.save(net.state_dict(), model_path)
+        digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
+        manifest = {
+            "manifest_version": "1.0.0",
+            "bundle_id": f"bundle_{digest[:12]}",
+            "model_sha256": digest,
+            "feature_schema_id": "scalp_v1",
+            "input_dim": 50,
+            "architecture": "ScalpNet",
+            "architecture_version": "1.0.0",
+            "lineage": "CLEAN_HISTORICAL",
+            "production_eligible": True,
+            "smoke": True,
+            "dataset_id": "test",
+            "dataset_sha256": "0" * 64,
+        }
+        (bundle_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cfg.model.model_artifact_path = str(model_path)
     return LiveEngine(config=cfg, adapter=_FakeAdapter(), audit_repo=MagicMock())
 
 

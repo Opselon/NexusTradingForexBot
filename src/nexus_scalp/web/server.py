@@ -1679,6 +1679,43 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html")
 
+    # ------------------------------------------------------------------
+    # ALT-UI (alternative React console, frontend/dist): additive static
+    # mount under /alt. Served by THIS process (no Node runtime — DEC-0002
+    # principle). Disabled by default: enabled only when the built bundle
+    # exists at <repo|cwd>/frontend/dist (dev) or NEXUS_ALT_UI_DIR points
+    # at a dist/ folder (packaged releases opt in explicitly). The legacy
+    # Web/ dashboard at / remains the primary UI until parity lands.
+    # Static assets only — the API under /api keeps full token auth.
+    # ------------------------------------------------------------------
+    def _resolve_alt_ui_dir() -> Path | None:
+        override = os.environ.get("NEXUS_ALT_UI_DIR")
+        if override:
+            candidate = Path(override)
+            if (candidate / "index.html").is_file():
+                return candidate
+            return None
+        for base in (Path(__file__).resolve().parent.parent.parent.parent, Path.cwd()):
+            candidate = base / "frontend" / "dist"
+            if (candidate / "index.html").is_file():
+                return candidate
+        return None
+
+    _alt_ui_dir = _resolve_alt_ui_dir()
+    if _alt_ui_dir is not None:
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount(
+            "/alt",
+            StaticFiles(directory=str(_alt_ui_dir), html=True),
+            name="alt_ui",
+        )
+        logger.info("[ALT-UI] serving alternative React console from %s", _alt_ui_dir)
+    else:
+        logger.info(
+            "[ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)"
+        )
+
     @app.get("/command_center.html")
     def serve_command_center_html() -> FileResponse:
         return FileResponse(WEB_DIR / "command_center.html")

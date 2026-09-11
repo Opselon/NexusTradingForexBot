@@ -10,10 +10,30 @@ Candidate models must pass:
 
 Reuses Phase 10 gate concepts; extends with class-collapse + calibration +
 news ablation. Candidates that fail are REJECTED, never CHALLENGER.
+
+P0-4 EVALUATION INTEGRITY (deep audit Section K, Agent-2):
+The historical "OOS" verdicts were computed over the ENTIRE dataset frame
+(train+val+test), so CHALLENGER_ELIGIBLE rested on metrics that included
+the rows the candidate trained on (three_model trains on train+val ~85%
+of the frame). Contracts now enforced HERE, at the gate:
+
+    * OOS population = rows with ``_split in {val, test}`` ONLY. Train and
+      purged rows are excluded by construction. No provable val/test
+      population => REJECTED (fail closed, never widen — BUG-245 class).
+    * the protected TEST block is consumable ONCE per candidate
+      (evaluate_test_block_once + the test_block_single_shot gate);
+      reuse => TestBlockReuseError / REJECTED, recorded in a ledger.
+    * ``force`` keeps its documented insufficient-evidence/calibration
+      bypass semantics but can NEVER bypass split integrity (no path
+      back to train-row contamination).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -36,6 +56,157 @@ MIN_EVIDENCE_SAMPLES: int = 100
 #: Maximum acceptable Expected Calibration Error (spec 14). A model whose
 #: confidence has no empirical meaning cannot become CHALLENGER.
 ECE_FLOOR: float = 0.15
+
+#: P0-4: splits that MAY enter an out-of-sample validation verdict.
+#: Train rows (the candidate's own fitting data) and purged boundary rows
+#: (BUG-244: belong to NO scored block) are excluded BY CONSTRUCTION.
+#: ``OOS_SCOPES`` is the legacy name used by the benchmark lane's own
+#: scope mask (kept as an alias so both callers share ONE contract).
+OOS_SPLITS: frozenset[str] = frozenset({"val", "test"})
+OOS_SCOPES: frozenset[str] = OOS_SPLITS
+
+#: P0-4: persisted consumption ledger for the protected test block
+#: (default location under the model-generation artifact root).
+DEFAULT_TEST_BLOCK_LEDGER = Path("artifacts/model_generation/test_block_usage.json")
+
+
+class TestBlockReuseError(RuntimeError):
+    """The protected test block was already consumed by this candidate."""
+
+
+def _dataset_fingerprint(dataset_frame: Any) -> str:
+    """Deterministic identity of the dataset frame the test block belongs to
+    (labels + timestamps when present + split markers). Any content change
+    re-identifies; the fingerprint is what the ledger keys consumption on."""
+    try:
+        cols = [
+            c
+            for c in ("sample_id", "timestamp", "label", "_split")
+            if dataset_frame is not None and c in dataset_frame.columns
+        ]
+        if dataset_frame is None or not cols:
+            return "unknown"
+        proj = dataset_frame.select(cols).to_dict(as_series=False)
+        canonical = json.dumps(proj, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        return "unknown"
+
+
+def evaluate_test_block_once(
+    model_id: str,
+    dataset_frame: Any,
+    *,
+    ledger_path: Path | str | None = None,
+    artifact_store: Any = None,
+    write_store: bool = True,
+) -> tuple[bool, dict[str, Any]]:
+    """Single-shot consumption of the protected TEST block (P0-4).
+
+    The test block must answer ONE selection question per candidate.
+    Repeated candidate-selection runs previously re-scored the same test
+    rows, silently turning the protected block into a tuning set. This
+    gate records each candidate's consumption in a persisted ledger and:
+
+      * allows the FIRST consumption (record: status=CONSUMED);
+      * raises TestBlockReuseError on reuse by the same model_id
+        (the recorded status becomes REUSED_REJECTED — audit-visible);
+      * keeps the ledger JSON co-located with the candidate artifacts
+        (model_generation root) so the evidence survives the process.
+
+    Returns (allowed, record). Callers that persist validation results via
+    an ArtifactStore should pass ``artifact_store`` so the per-candidate
+    model manifest carries the same evidence.
+    """
+    path = Path(ledger_path) if ledger_path else DEFAULT_TEST_BLOCK_LEDGER
+    dataset_fp = _dataset_fingerprint(dataset_frame)
+    now = datetime.now(UTC).isoformat()
+
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+    entry = data.get(model_id) or {}
+
+    n_test_rows = 0
+    try:
+        if dataset_frame is not None and "_split" in dataset_frame.columns:
+            n_test_rows = int((dataset_frame["_split"].to_numpy() == "test").sum())
+    except Exception:
+        n_test_rows = 0
+
+    attempts = int(entry.get("attempts", 0) or 0) + 1
+    if entry.get("status") == "CONSUMED":
+        record = {
+            "model_id": model_id,
+            "status": "REUSED_REJECTED",
+            "attempts": attempts,
+            "dataset_fingerprint": dataset_fp,
+            "first_consumed_at": entry.get("first_consumed_at", ""),
+            "rejected_at": now,
+            "n_test_rows": n_test_rows,
+            "reason": "TEST_BLOCK_REUSE: protected test block already consumed",
+        }
+        data[model_id] = record
+        # The ledger is the SAFETY MECHANISM — reuse detection only works
+        # when consumption is durable, so it is ALWAYS persisted (write_store
+        # only controls the optional artifact-store evidence stamp below).
+        _write_ledger(path, data)
+        logger.error(
+            "[EVAL-GOV] event=TEST_BLOCK_REUSE model_id=%s attempts=%d",
+            model_id,
+            attempts,
+        )
+        raise TestBlockReuseError(
+            f"TEST_BLOCK_REUSE: {model_id} already consumed the protected test "
+            f"block (attempts={attempts}); second verdict refused"
+        )
+
+    record = {
+        "model_id": model_id,
+        "status": "CONSUMED",
+        "attempts": attempts,
+        "dataset_fingerprint": dataset_fp,
+        "first_consumed_at": now,
+        "n_test_rows": n_test_rows,
+    }
+    data[model_id] = record
+    # Always durable: a consumed test block MUST be remembered, or the
+    # single-shot protection does not exist. write_store governs only the
+    # optional per-artifact evidence stamp below.
+    _write_ledger(path, data)
+    logger.info(
+        "[EVAL-GOV] event=TEST_BLOCK_CONSUMED model_id=%s dataset=%s n_test_rows=%d",
+        model_id,
+        dataset_fp,
+        n_test_rows,
+    )
+    if artifact_store is not None and write_store:
+        try:
+            store_save_test_block_evidence(artifact_store, model_id, record)
+        except Exception as exc:  # evidence stamping must not break the gate
+            logger.warning("[EVAL-GOV] test-block evidence stamp failed: %s", exc)
+    return True, record
+
+
+def _write_ledger(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+
+
+def store_save_test_block_evidence(
+    artifact_store: Any, model_id: str, record: dict[str, Any]
+) -> None:
+    """Stamps the consumption record into the candidate's persisted manifest
+    (best effort): the artifact becomes self-describing about whether its
+    validation verdict consumed the protected block."""
+    manifest = artifact_store.read_model_manifest(model_id) or {}
+    manifest["test_block_usage"] = record
+    artifact_store.write_json(artifact_store.model_manifest_path(model_id), manifest)
 
 
 def detect_class_collapse(
@@ -144,6 +315,65 @@ def evaluate_regime_performance(
     return out
 
 
+def scope_oos_frame(dataset_frame: Any) -> tuple[Any, dict[str, Any]]:
+    """P0-4: restrict a dataset frame to the provable OOS population.
+
+    Returns (oos_frame, audit) where audit describes exactly what was
+    excluded. Raises ValueError (fail closed) when no provable val/test
+    population exists — the verdict then has no honest evaluation set
+    (BUG-245 precedent: never widen the population to keep going).
+    """
+    audit: dict[str, Any] = {
+        "total_rows": 0,
+        "train_rows_excluded": 0,
+        "purged_rows_excluded": 0,
+        "evaluated_splits": [],
+    }
+    if dataset_frame is None:
+        # Labels-only gate exercise (collapse / calibration / min-evidence unit
+        # tests pass frame=None with explicit label vectors): no DATASET
+        # population is claimed, so there is nothing to scope or hide. The
+        # caller's label vector IS the evaluation set; the OOS floors still
+        # apply. A None frame can never smuggle train rows because there are
+        # no rows at all.
+        audit["reason"] = "LABELS_ONLY_NO_FRAME"
+        return None, audit
+    try:
+        total = int(dataset_frame.height)
+    except Exception as exc:
+        raise ValueError(
+            "OOS_SPLIT_INTEGRITY: dataset frame unreadable — no OOS population"
+        ) from exc
+    audit["total_rows"] = total
+    if "_split" not in dataset_frame.columns:
+        # A frame that cannot prove its split scope is the contamination-risk
+        # class this gate targets. Tiny hand-built gate-exercise fixtures
+        # (n < MIN_EVIDENCE_SAMPLES) can never become CHALLENGER_ELIGIBLE
+        # anyway: route them to the honest INSUFFICIENT_EVIDENCE rejection
+        # instead of raising past every gate, and keep the hard failure for
+        # real-scale frames where a hidden train block would matter.
+        if total < MIN_EVIDENCE_SAMPLES:
+            audit["reason"] = "NO_SPLIT_MARKERS_INSUFFICIENT"
+            return None, audit
+        audit["reason"] = "NO_SPLIT_MARKERS"
+        raise ValueError(
+            "OOS_SPLIT_INTEGRITY: dataset frame carries no _split markers — "
+            "the OOS population cannot be proven (fail closed, no widening)"
+        )
+    split = dataset_frame["_split"].to_numpy()
+    oos_mask = np.isin(split, sorted(OOS_SPLITS))
+    audit["train_rows_excluded"] = int((split == "train").sum())
+    audit["purged_rows_excluded"] = int((split == "purged").sum())
+    audit["evaluated_splits"] = sorted({str(s) for s in split[oos_mask]})
+    if not oos_mask.any():
+        audit["reason"] = "NO_VAL_TEST_ROWS"
+        raise ValueError(
+            "OOS_SPLIT_INTEGRITY: frame contains no val/test rows — "
+            "every candidate would be scored on train rows (fail closed)"
+        )
+    return dataset_frame.filter(__import__("polars").Series("_oos_mask", oos_mask)), audit
+
+
 class ValidationFactory:
     """Runs the validation pipeline for a candidate artifact."""
 
@@ -159,19 +389,118 @@ class ValidationFactory:
         labels: np.ndarray | None = None,
         *,
         force: bool = False,
+        artifact_store: Any = None,
+        test_block_ledger: Path | str | None = None,
     ) -> ValidationResults:
         """Validates a candidate. ``force`` bypasses insufficient evidence.
 
         Returns ValidationResults with verdict REJECTED / CHALLENGER_ELIGIBLE.
+
+        P0-4: the verdict is computed on the OOS population ONLY (rows with
+        ``_split in {val, test}``). ``force`` can never bypass that scoping.
+        When ``artifact_store``/``test_block_ledger`` are provided the
+        protected test block is consumed single-shot per candidate.
         """
         gates: list[dict[str, Any]] = []
 
-        # 1. label integrity (3-class contract)
+        # 0. OOS split integrity (P0-4) — BEFORE anything can pass.
+        #    The evaluation population is val/test rows only; train rows can
+        #    never enter the verdict and force cannot change that.
+        try:
+            oos_frame, split_audit = scope_oos_frame(dataset_frame)
+            split_ok = True
+            split_reason = (
+                f"evaluated={'/'.join(split_audit['evaluated_splits'])} "
+                f"train_excluded={split_audit['train_rows_excluded']} "
+                f"purged_excluded={split_audit['purged_rows_excluded']}"
+                if split_audit.get("evaluated_splits")
+                else str(split_audit.get("reason", ""))
+            )
+        except ValueError as exc:
+            oos_frame, split_audit, split_ok, split_reason = None, {}, False, str(exc)
+        gates.append(
+            {
+                "gate": "oos_split_integrity",
+                "passed": split_ok,
+                "reason": split_reason,
+            }
+        )
+        if not split_ok:
+            # Fail closed with an honest REJECTED — no OOS verdict exists.
+            return ValidationResults(
+                model_id=model_id,
+                experiment_id=experiment_id,
+                gates=gates,
+                verdict="REJECTED",
+                passed=False,
+                class_distribution={},
+                overall={
+                    "n": 0,
+                    "oos_accuracy": 0.0,
+                    "reason": "NO_OOS_POPULATION",
+                    "split_audit": split_audit,
+                },
+            )
+
+        # 0b. Protected test block single-shot consumption (P0-4) — enforced
+        #     wherever artifacts persist (ledger path given or default).
+        test_block_gate: dict[str, Any] | None = None
+        if artifact_store is not None or test_block_ledger is not None:
+            try:
+                allowed, tb_record = evaluate_test_block_once(
+                    model_id,
+                    oos_frame,
+                    ledger_path=test_block_ledger,
+                    artifact_store=artifact_store,
+                )
+            except Exception as exc:  # corrupted ledger must not fabricate a PASS
+                allowed, tb_record = False, {"status": "ERROR", "reason": str(exc)}
+            test_block_gate = {
+                "gate": "test_block_single_shot",
+                "passed": allowed,
+                "reason": tb_record.get("reason", f"status={tb_record.get('status')}"),
+            }
+            gates.append(test_block_gate)
+            if not allowed:
+                return ValidationResults(
+                    model_id=model_id,
+                    experiment_id=experiment_id,
+                    gates=gates,
+                    verdict="REJECTED",
+                    passed=False,
+                    class_distribution={},
+                    overall={
+                        "n": 0,
+                        "oos_accuracy": 0.0,
+                        "reason": "TEST_BLOCK_REUSE",
+                        "test_block": tb_record,
+                    },
+                )
+
+        # 1. label integrity (3-class contract) — on the OOS population
         if labels is None:
             labels = (
-                dataset_frame["label"].to_numpy().astype(np.int64)
-                if dataset_frame is not None
+                oos_frame["label"].to_numpy().astype(np.int64)
+                if oos_frame is not None
                 else np.array([], dtype=np.int64)
+            )
+        elif oos_frame is None:
+            pass  # labels-only gate exercise: the caller's vector IS the set
+        # P0-4 hard rule (oos_frame proven): a caller-supplied label vector is
+        # accepted ONLY when it already describes the OOS population. A
+        # full-frame label vector (the historical contamination shape) is
+        # REFUSED — never silently re-aligned, train rows never scored.
+        elif labels is not None and len(labels) != len(oos_frame):
+            if len(labels) == int(split_audit.get("total_rows", -1)):
+                raise ValueError(
+                    "OOS_SPLIT_INTEGRITY: label vector covers the FULL frame "
+                    "(incl. train rows) while the verdict evaluates the OOS "
+                    "population only — scope the labels/probabilities to the "
+                    "val/test rows before calling validate (no silent widening)"
+                )
+            raise ValueError(
+                "OOS_SPLIT_INTEGRITY: label/probability vector length "
+                f"({len(labels)}) != OOS population ({len(oos_frame)} rows)"
             )
         try:
             self.label_schema.validate_labels(labels.tolist())
@@ -189,7 +518,7 @@ class ValidationFactory:
                 },
             )
 
-        # 2. class collapse + minimum evidence
+        # 2. class collapse + minimum evidence (OOS population only)
         collapse = detect_class_collapse(labels)
         n = len(labels)
         gates.append(
@@ -216,11 +545,31 @@ class ValidationFactory:
                 verdict="REJECTED",
                 passed=False,
                 class_distribution={str(k): int(v) for k, v in collapse["distribution"].items()},
-                overall={"n": n, "oos_accuracy": 0.0, "reason": "INSUFFICIENT_EVIDENCE"},
+                overall={
+                    "n": n,
+                    "oos_accuracy": 0.0,
+                    "reason": "INSUFFICIENT_EVIDENCE",
+                    "evaluated_splits": split_audit.get("evaluated_splits", []),
+                    "train_rows_excluded": split_audit.get("train_rows_excluded", 0),
+                    "purged_rows_excluded": split_audit.get("purged_rows_excluded", 0),
+                    "total_rows": split_audit.get("total_rows", 0),
+                    "rows_eval": n,
+                    "rows_dropped": split_audit.get("total_rows", 0) - n,
+                    "split_scope": {
+                        "split_scoped": split_ok,
+                        "scope": "val+test",
+                        "rows_total": split_audit.get("total_rows", 0),
+                        "rows_eval": n,
+                        "rows_dropped": split_audit.get("total_rows", 0) - n,
+                        "evaluated_splits": split_audit.get("evaluated_splits", []),
+                        "train_rows_excluded": split_audit.get("train_rows_excluded", 0),
+                        "purged_rows_excluded": split_audit.get("purged_rows_excluded", 0),
+                    },
+                },
             )
 
         # 3. OOS / regime results (always computed when regime col present)
-        regime_results = evaluate_regime_performance(dataset_frame)
+        regime_results = evaluate_regime_performance(oos_frame)
         gates.append({"gate": "regime_coverage", "passed": bool(regime_results), "reason": ""})
 
         # 4. calibration (when probabilities available)
@@ -295,6 +644,22 @@ class ValidationFactory:
                 "oos_accuracy": round(oos_acc, 4),
                 "oos_macro_f1": round(oos_macro_f1, 4),
                 "oos_balanced_accuracy": round(oos_balanced_acc, 4),
+                "evaluated_splits": split_audit.get("evaluated_splits", []),
+                "train_rows_excluded": split_audit.get("train_rows_excluded", 0),
+                "purged_rows_excluded": split_audit.get("purged_rows_excluded", 0),
+                "total_rows": split_audit.get("total_rows", 0),
+                "rows_eval": n,
+                "rows_dropped": split_audit.get("total_rows", 0) - n,
+                "split_scope": {
+                    "split_scoped": split_ok,
+                    "scope": "val+test",
+                    "rows_total": split_audit.get("total_rows", 0),
+                    "rows_eval": n,
+                    "rows_dropped": split_audit.get("total_rows", 0) - n,
+                    "evaluated_splits": split_audit.get("evaluated_splits", []),
+                    "train_rows_excluded": split_audit.get("train_rows_excluded", 0),
+                    "purged_rows_excluded": split_audit.get("purged_rows_excluded", 0),
+                },
             },
             verdict=verdict,
             passed=passed,

@@ -114,3 +114,63 @@ def test_replay03_2d_trained_never_builds_sequence():
         )
     assert out is None
     assert len(st.buffer) == 0
+
+
+def test_replay04_sub_minute_ticks_collapse_to_one_bar_entry():
+    """REPLAY-04 (bar-alignment under the REAL live caller).
+
+    The live inference path passes fv.timestamp_utc — the raw TICK timestamp
+    (sub-minute precision), not the completed-bar stamp. The service's
+    contract is a BAR-ALIGNED window (one entry per completed M1 bar, dedupe
+    on the same bar stamp, gap measured bar-to-bar). Therefore datetime
+    inputs must be FLOORED to their containing minute: two ticks inside the
+    same M1 bar must collapse to ONE buffer entry, and the gap check must
+    measure bar-to-bar (minute-to-minute) distance.
+    """
+    st = _live_state(seq_len=4)
+    st.max_gap_us = 10 * 60 * 1_000_000  # 10-min contract gap
+    # First tick of minute 0 appends; later intra-minute ticks dedupe.
+    LiveSequenceService.maybe_build_sequence_tensor(
+        st, [0.0] * 70, bar_ts=T0 + timedelta(seconds=0.25)
+    )
+    LiveSequenceService.maybe_build_sequence_tensor(
+        st, [9.9] * 70, bar_ts=T0 + timedelta(seconds=41.9)
+    )
+    assert len(st.buffer) == 1, "intra-minute ticks must collapse to one bar entry"
+    assert st.buffer[-1][0] == 0.0, "first tick of the bar wins; later ticks never enter"
+    # Next minutes append exactly once each.
+    LiveSequenceService.maybe_build_sequence_tensor(
+        st, [1.0] * 70, bar_ts=T0 + timedelta(minutes=1, seconds=2.3)
+    )
+    LiveSequenceService.maybe_build_sequence_tensor(
+        st, [2.0] * 70, bar_ts=T0 + timedelta(minutes=2, microseconds=999_000)
+    )
+    assert len(st.buffer) == 3
+    assert [row[0] for row in st.buffer] == [0.0, 1.0, 2.0]
+    # Gap detection is bar-to-bar and re-armed exactly like the dataset side:
+    # after bar min-2 the window jumps to bar min-14 (12-min bar gap > 10-min
+    # contract), the buffer is cleared, the boundary bar is appended, and the
+    # flag re-arms on this fresh bar (REPLAY-01 semantics). The first VALID
+    # post-gap window therefore spans exactly the L bars after the hole —
+    # identical to SequenceBuilder, whose window ending at the boundary row
+    # (rows 12..14 all post-gap) is valid=True.
+    LiveSequenceService.maybe_build_sequence_tensor(
+        st, [3.0] * 70, bar_ts=T0 + timedelta(minutes=14, seconds=1.1)
+    )
+    assert len(st.buffer) == 1  # cleared + refilled with the boundary bar
+    assert st.buffer[-1][0] == 3.0
+    # The next minute's FIRST tick re-arms/refills bar-by-bar (REPLAY-01).
+    LiveSequenceService.maybe_build_sequence_tensor(
+        st, [4.0] * 70, bar_ts=T0 + timedelta(minutes=15, seconds=0.8)
+    )
+    assert len(st.buffer) == 2
+    # L bars after the hole -> window builds again (min 14..17).
+    LiveSequenceService.maybe_build_sequence_tensor(
+        st, [5.0] * 70, bar_ts=T0 + timedelta(minutes=16, seconds=0.2)
+    )
+    assert len(st.buffer) == 3
+    out = LiveSequenceService.maybe_build_sequence_tensor(
+        st, [6.0] * 70, bar_ts=T0 + timedelta(minutes=17, seconds=0.5)
+    )
+    assert out is not None and tuple(out.shape) == (1, 4, 70)
+    assert [row[0] for row in st.buffer] == [3.0, 4.0, 5.0, 6.0]

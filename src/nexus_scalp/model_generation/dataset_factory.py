@@ -356,9 +356,17 @@ class DatasetFactory:
                 "reused": True,
             }
 
+        # P0-4 EVALUATION INTEGRITY (deep audit Section K): the split markers
+        # MUST survive persistence, otherwise the benchmark/validation lane can
+        # never PROVE the OOS population it scores (_split in {val, test}) and
+        # every stored dataset fails closed with NO_SPLIT_MARKERS. _split and
+        # _purged_split are row bookkeeping over the same samples; the
+        # deterministic dataset id hashes the RAW bar input
+        # (frame_content_digest_raw(df)), not the split frame, so keeping them
+        # changes neither the dataset identity nor any existing row value.
         handle = self.store.save_dataset(
             real_id,
-            frame.drop("_split"),
+            frame,
             manifest_payload,
         )
         handle["dataset_id"] = real_id

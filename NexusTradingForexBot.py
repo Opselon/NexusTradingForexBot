@@ -26,6 +26,7 @@ Key Architectural Responsibilities:
 
 import argparse
 import asyncio
+import os
 import shutil
 import socket
 import sys
@@ -200,6 +201,21 @@ model:
     return live_config
 
 
+def _alt_ui_banner_line(port: int) -> str:
+    """Additive alt-UI banner line: shown only when the built React console
+    is present (frontend/dist). Never breaks the legacy banner layout."""
+    try:
+        alt_index = Path(__file__).resolve().parent / "frontend" / "dist" / "index.html"
+        override = os.environ.get("NEXUS_ALT_UI_DIR")
+        if override:
+            alt_index = Path(override) / "index.html"
+        if alt_index.is_file():
+            return f"  [dim]>[/dim] [dim]Alternative console:[/dim] [cyan]http://localhost:{port}/alt/[/cyan]"
+    except Exception:
+        pass
+    return "[dim]Alternative console: build frontend/ (npm run build) to enable /alt/[/dim]"
+
+
 def print_startup_banner(port: int, mode: str, symbol: str) -> None:
     """Bloomberg/Terminal welcome — mode-aware, endpoint-rich."""
     tag = _version_tag()
@@ -229,6 +245,7 @@ def print_startup_banner(port: int, mode: str, symbol: str) -> None:
         f"[{'bold red' if live else 'bold green'}]● {mode_u}[/{'bold red' if live else 'bold green'}]"
         f"  [dim]·[/dim]  [bold]{symbol}[/bold]  [dim]·[/dim]  [dim]port {port}[/dim]\n\n"
         f"[bold]Web Control Center[/bold]\n{ep_str}\n\n"
+        f"{_alt_ui_banner_line(port)}\n"
         f"[dim italic]{tip}[/dim italic]\n"
         f"[dim]Press Ctrl+C to stop safely  ·  nexus doctor --fix for health[/dim]"
     )
