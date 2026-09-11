@@ -32,6 +32,7 @@ from typing import Any
 import polars as pl
 
 from nexus_scalp.model_generation.models import NewsContextSchema, default_news_context_schema
+from nexus_scalp.news import db_analysis as db_analysis_module
 from nexus_scalp.news.models import NewsImpactHorizon
 
 #: NewsContextSchema field names (canonical order, from the model contract).
@@ -305,7 +306,7 @@ def build_news_frame_from_db(
     *,
     start: datetime | None = None,
     end: datetime | None = None,
-    limit: int = 2000,
+    limit: int | None = None,
 ) -> pl.DataFrame:
     """Exports the news DB analysis rows into the canonical news frame.
 
@@ -314,14 +315,26 @@ def build_news_frame_from_db(
     is sorted by publication time (ascending) so the causal snapshot logic
     is deterministic.
 
+    BUG-258 (2026-09-11): ``limit`` now defaults to None — export EVERY
+    analysis in the requested window. The previous fixed default (2000)
+    combined with the DB layer's silent 500-row clamp dropped the OLDEST
+    analyzed history first, so news context for older bars silently became
+    zero and a windowed export could even lose rows INSIDE the window.
+    Pass an explicit ``limit`` only to bound a diagnostic/preview export.
+
     Args:
         db: a NewsDatabase instance (or any object exposing ``list_analysis``
             and ``get_article``).
         start/end: optional publication-time bounds.
-        limit: bounded row count (defensive).
+        limit: optional bounded row count (defensive; None = unbounded).
     """
     rows: list[dict[str, Any]] = []
-    analyses = db.list_analysis(limit=limit)
+    # BUG-258: None limit -> ask the DB layer for everything (its own hard
+    # cap still bounds memory); int limit -> honor the caller's explicit bound.
+    if limit is None:
+        analyses = db.list_analysis(limit=db_analysis_module.ANALYSIS_LIST_HARD_CAP)
+    else:
+        analyses = db.list_analysis(limit=limit)
     for a in analyses:
         try:
             art = db.get_article(a["article_id"]) if hasattr(db, "get_article") else None
