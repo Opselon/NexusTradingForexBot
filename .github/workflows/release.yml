@@ -170,7 +170,10 @@ jobs:
         run: |
           $V = $env:NSE_VERSION
           $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
-          $commit = (git rev-parse --short HEAD)
+          # Release-wave Finding 2: identity must bind to the FULL immutable
+          # 40-hex commit SHA (short SHAs are presentation-only).
+          $commit = (git rev-parse HEAD).Trim()
+          if ($commit -notmatch '^[0-9a-fA-F]{40}$') { throw "RELEASE_IDENTITY_FULL_SHA_REQUIRED: got '$commit'" }
           $dirty = if ((git status --porcelain | Measure-Object).Count -gt 0) { $true } else { $false }
           $info = @{
             product = "NexusScalpEngine"
