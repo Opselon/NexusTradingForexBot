@@ -52,7 +52,7 @@ class DecisionExecutor:
                 request_id=str(getattr(reversal, "request_id", "") or ""),
                 execution_id=getattr(reversal, "execution_id", None),
                 symbol=str(getattr(reversal, "symbol", "") or ""),
-                generated_at=getattr(reversal, "generated_at"),
+                generated_at=getattr(reversal, "generated_at", None),
                 action=reversal_action,
                 confidence=float(getattr(reversal, "confidence", 0.0) or 0.0),
                 proposed_entry=float(getattr(reversal, "proposed_entry", 0.0) or 0.0),

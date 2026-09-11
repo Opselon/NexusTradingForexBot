@@ -164,7 +164,8 @@ def _manager(
         ),
         notifier=None,
         algo_config=AlgoConfig(ai_flip_exit_enabled=True),
-        risk_engine=risk_engine or RiskEngine(RiskConfig(max_concurrent_positions=2), max_allowed_lots=2.0),
+        risk_engine=risk_engine
+        or RiskEngine(RiskConfig(max_concurrent_positions=2), max_allowed_lots=2.0),
         experience_engine=None,
         safety_state_provider=safety_state_provider,
     )
@@ -210,7 +211,7 @@ class TestAiReversalRiskApproval:
         positions = [_position()]
         adapter.positions = list(positions)
 
-        executor = DecisionExecutor(om)
+        DecisionExecutor(om)  # composition check: real executor constructs
         directional = DecisionExecutor._build_directional_reversal_proposal(decision)
         assert directional is not None
         order = engine.evaluate_proposal(
@@ -223,9 +224,7 @@ class TestAiReversalRiskApproval:
         assert order is not None and order.volume > 0.0
 
         reversal_volume = order.volume
-        ok = om.execute_ai_reversal(
-            decision=decision, volume=reversal_volume, current_tick=tick
-        )
+        ok = om.execute_ai_reversal(decision=decision, volume=reversal_volume, current_tick=tick)
         assert ok is True
         # close happened, flip dispatched with the risk-approved volume
         assert adapter.closed_tickets == [42]
@@ -239,9 +238,7 @@ class TestAiReversalRiskApproval:
         om = _manager(adapter)
         tick = _tick()
         adapter.positions = [_position()]
-        ok = om.execute_ai_reversal(
-            decision=_reversal_decision(), volume=0.0, current_tick=tick
-        )
+        ok = om.execute_ai_reversal(decision=_reversal_decision(), volume=0.0, current_tick=tick)
         assert ok is True  # close-only success
         assert adapter.closed_tickets == [42]
         assert adapter.market_orders == []  # the bypass is gone
@@ -260,7 +257,7 @@ class TestAiReversalRiskApproval:
         # (the canonical engine default) rejects the second concurrent position.
         positions = [_position(volume=2.0, ptype=OrderType.BUY)]
         adapter.positions = list(positions)
-        executor = DecisionExecutor(om)
+        DecisionExecutor(om)  # composition check: real executor constructs
         decision = _reversal_decision()
 
         directional = DecisionExecutor._build_directional_reversal_proposal(decision)
@@ -324,9 +321,7 @@ class TestAiReversalRiskApproval:
         engine = RiskEngine(RiskConfig(max_spread_points=20), max_allowed_lots=2.0)
         from nexus_scalp.application.live.decision_executor import DecisionExecutor
 
-        directional = DecisionExecutor._build_directional_reversal_proposal(
-            _reversal_decision()
-        )
+        directional = DecisionExecutor._build_directional_reversal_proposal(_reversal_decision())
         assert directional is not None
         order = engine.evaluate_proposal(
             proposal=directional,
@@ -345,9 +340,7 @@ class TestAiReversalRiskApproval:
         om = _manager(adapter, safety_state_provider=lambda: state["halted"])
         tick = _tick()
         adapter.positions = [_position()]
-        ok = om.execute_ai_reversal(
-            decision=_reversal_decision(), volume=0.5, current_tick=tick
-        )
+        ok = om.execute_ai_reversal(decision=_reversal_decision(), volume=0.5, current_tick=tick)
         assert ok is False  # dispatch refused by the dispatch gate stack
         assert adapter.closed_tickets == [42]  # close still happened
         assert adapter.market_orders == []
@@ -359,7 +352,7 @@ class TestAiReversalRiskApproval:
         protocol dispatches.)"""
         adapter = _SpyMT5Adapter()
         om = _manager(adapter)
-        tick = _tick()
+        _tick()  # tick provenance not needed for the duplicate-guard probe
         adapter.positions = [_position()]
         decision = _reversal_decision()
         directional = decision.model_copy(update={"action": ActionType.SELL_MARKET})

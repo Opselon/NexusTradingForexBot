@@ -823,8 +823,7 @@ class AuditRepository:
         except (TypeError, ValueError):
             return False
         if not all(
-            isinstance(v, float) and v == v and abs(v) != float("inf") and v > 0.0
-            for v in (day_anchor, week_anchor)
+            isinstance(v, float) and math.isfinite(v) and v > 0.0 for v in (day_anchor, week_anchor)
         ):
             return False
         try:
