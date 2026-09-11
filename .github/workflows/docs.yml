@@ -5,30 +5,24 @@ name: Docs
 # deploys the built multilingual site to GitHub Pages on main.
 # This workflow does NOT duplicate project CI responsibilities (ci.yml):
 # it only validates docs/ + site/ + README and publishes the static site.
+#
+# TRIGGER CONTRACT (DEC-0008): this workflow is the source of the REQUIRED
+# context "Validate documentation" on branch protection, so it MUST run on
+# EVERY push to main — a docs-silent commit still needs the context to report
+# success or main sits pending forever. The old top-level on.push.paths filter
+# starved main of the context whenever a push touched no docs paths.
+# Path scoping therefore moved INSIDE the job: docs-affecting pushes run the
+# full validator chain, all other pushes take the fast always-report no-op.
 
 on:
   push:
     branches: [main]
-    paths:
-      - "docs/**"
-      - "site/**"
-      - "README.md"
-      - "scripts/docs/**"
-      - "pyproject.toml"
-      - ".github/workflows/docs.yml"
     tags:
       - "v*"
   release:
     types: [published, edited]
   pull_request:
     branches: [main]
-    paths:
-      - "docs/**"
-      - "site/**"
-      - "README.md"
-      - "scripts/docs/**"
-      - "pyproject.toml"
-      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -49,43 +43,79 @@ jobs:
     name: Validate documentation
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      docs_changed: ${{ steps.filter.outputs.docs_changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-affecting changes (DEC-0008 always-report)
+        id: filter
+        uses: dorny/paths-filter@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        with:
+          # On PRs: diff against the PR base. On pushes: diff against the
+          # previous main tip (before=<base sha> after=<pushed sha>).
+          token: ${{ github.token }}
+          filters: |
+            docs_changed:
+              - "docs/**"
+              - "site/**"
+              - "agents/**"
+              - "*.md"
+              - "scripts/docs/**"
+              - "pyproject.toml"
+              - ".github/workflows/docs.yml"
+
+      - name: Fast no-op report (no docs changes)
+        if: steps.filter.outputs.docs_changed != 'true'
+        run: |
+          echo "No documentation changes detected — skipping validation and reporting success."
+          echo "context 'Validate documentation' still reports success on this push (DEC-0008)."
 
       - name: Setup Python
+        if: steps.filter.outputs.docs_changed == 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install docs tooling
+        if: steps.filter.outputs.docs_changed == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install ruff mypy
 
       - name: Refresh release metadata (What's New / releases page)
+        if: steps.filter.outputs.docs_changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/docs/fetch_releases.py
 
       - name: Lint docs tooling (ruff)
+        if: steps.filter.outputs.docs_changed == 'true'
         run: |
           ruff check scripts/docs/
           ruff format --check scripts/docs/
 
       - name: Type-check docs tooling (mypy)
+        if: steps.filter.outputs.docs_changed == 'true'
         run: mypy scripts/docs/
 
       - name: Secret scan (docs surface)
+        if: steps.filter.outputs.docs_changed == 'true'
         run: python scripts/ci/scan_secrets.py
 
       - name: Build site
+        if: steps.filter.outputs.docs_changed == 'true'
         run: python scripts/docs/build_site.py
 
       - name: Docs doctor (links, anchors, translations, RTL, drift)
+        if: steps.filter.outputs.docs_changed == 'true'
         run: python scripts/docs/check_docs.py
 
       - name: Translation audit
+        if: steps.filter.outputs.docs_changed == 'true'
         run: python scripts/docs/check_translations.py
 
       - name: Live smoke (deployed site) — deploy job only
@@ -93,7 +123,7 @@ jobs:
         run: echo "smoke runs in deploy job after Pages propagation"
 
       - name: Upload site artifact
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.filter.outputs.docs_changed == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: docs-site
@@ -102,7 +132,7 @@ jobs:
 
   deploy:
     name: Deploy GitHub Pages
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.validate.outputs.docs_changed == 'true'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
