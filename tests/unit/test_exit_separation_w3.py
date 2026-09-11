@@ -149,7 +149,12 @@ def _buy(ticket, profit=8.0, entry=2000.00, sl=1995.00, volume=0.10):
 def _tick(bid, ask=None):
     return TickData(
         symbol="XAUUSD",
-        timestamp=datetime.now(UTC),
+        # BUG-256/a15-class wall-clock flake: datetime.now(UTC) lands INSIDE the
+        # nightly 23:00-01:00(+30m) server maintenance window whenever the host
+        # clock sits in UTC ~19:30-22:30, and the dispatch guard then blocks the
+        # flip's fresh reversal entry (fail-closed by design). Pin the tick to a
+        # fixed mid-session stamp so the scenario is time-of-day independent.
+        timestamp=datetime(2026, 9, 11, 12, 0, 0, tzinfo=UTC),
         bid=bid,
         ask=ask if ask is not None else bid + 0.20,
         volume=1.0,
