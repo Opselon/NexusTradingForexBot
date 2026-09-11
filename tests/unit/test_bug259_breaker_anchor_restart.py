@@ -111,10 +111,7 @@ class TestBreakerRestoreSemantics:
             {"day_anchor": 0.0, "week_anchor": 1.0},
         ):
             assert (
-                engine.restore_anchors(
-                    day_utc=day_id, week_iso=week_id, now=now, **kwargs
-                )
-                is False
+                engine.restore_anchors(day_utc=day_id, week_iso=week_id, now=now, **kwargs) is False
             )
         assert engine._day_start_equity is None
 
@@ -228,9 +225,5 @@ class TestBootRestoreWiring:
         from nexus_scalp.application.live_engine import LiveEngine
 
         src = inspect.getsource(LiveEngine._restore_runtime_risk_state)
-        assert "get_breaker_anchors" in src, (
-            "boot must read the persisted breaker anchors"
-        )
-        assert "restore_anchors" in src, (
-            "boot must adopt persisted anchors into the breaker engine"
-        )
+        assert "get_breaker_anchors" in src, "boot must read the persisted breaker anchors"
+        assert "restore_anchors" in src, "boot must adopt persisted anchors into the breaker engine"

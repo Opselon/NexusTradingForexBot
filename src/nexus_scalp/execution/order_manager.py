@@ -1201,8 +1201,7 @@ class OrderLifecycleManager:
             # REMOVED: the protective close above still happened, but no new
             # order is dispatched without risk-approved sizing.
             logger.warning(
-                "[AI_REVERSAL] flip dispatch refused: volume not risk-approved "
-                "(close-only)",
+                "[AI_REVERSAL] flip dispatch refused: volume not risk-approved (close-only)",
                 ticket=getattr(decision, "ticket", 0) or 0,
                 volume=volume,
             )
