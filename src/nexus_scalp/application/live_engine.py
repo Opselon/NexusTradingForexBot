@@ -157,6 +157,14 @@ def _split_telegram_report(text: str, max_len: int = 3500) -> list[str]:
 class ScalerBundle:
     mean: np.ndarray | None
     std: np.ndarray | None
+    #: RUNTIME RESILIENCE (Agent-7 failure injection): True when a scaler
+    #: sidecar FILE existed but failed to load / validate (corrupt npz,
+    #: wrong width, unreadable). A corrupt scaler must NEVER silently serve
+    #: raw unscaled features to the model (T24: wrong distribution -> wrong
+    #: predictions); the inference path refuses to serve such a bundle.
+    #: Relanded after the f3f53f69 containment revert removed it together
+    #: with the absorbed 2fc1d84c carrier (FI-4 regression net was left red).
+    corrupt: bool = False
 
     def is_ready(self) -> bool:
         """False when mean/std are missing OR any std is zero/negative/non-finite.
