@@ -20,7 +20,7 @@ Offline, deterministic: no MT5, no network, no model artifacts.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from nexus_scalp.configuration.config import RiskConfig
@@ -43,7 +43,14 @@ def _decision(generated_at: datetime | None = None) -> MagicMock:
     d.stop_loss = 1998.5
     d.take_profit = 2004.5
     d.confidence = 0.9
-    d.generated_at = generated_at or datetime.now(UTC) + timedelta(minutes=180)
+    # CI-DETERMINISM (a15 precedent, 6ee50b1d): pinned OUTSIDE the nightly
+    # maintenance window (23:00-01:00 server = 20:00-22:00 UTC at the +180min
+    # broker offset, +/-30m buffer). A wall-clock `now()` here made the first
+    # dispatch hit the MAINTENANCE_WINDOW entry guard whenever the runner's
+    # UTC clock sat in 19:30-22:30, failing the "proceeds when running" test
+    # at that time of day on ANY machine (CI macOS 2026-09-11 16:52 UTC).
+    # 2026-09-09 10:00 UTC -> server 13:00: mid-session, far from the window.
+    d.generated_at = generated_at or datetime(2026, 9, 9, 10, 0, 0, tzinfo=UTC)
     return d
 
 

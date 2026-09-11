@@ -13,10 +13,46 @@ import json
 from typing import Any
 
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.news.database")
+
+#: BUG-258 hard memory cap for ``list_analysis`` / ``list_ai_analysis``.
+#: Explicit caller limits are honored UP TO this bound; a request above it
+#: truncates (newest rows first) and logs exactly one WARNING per call.
+ANALYSIS_LIST_HARD_CAP = 20_000
 
 
 class AnalysisMixin(_NewsDbCoreProto):
     """AnalysisMixin — verbatim method cluster from NewsDatabase."""
+
+    @staticmethod
+    def _bounded_limit(limit: int, hard_cap: int | None = None) -> int:
+        """BUG-258: honor explicit caller limits up to the hard cap.
+
+        The pre-fix clamp (``min(limit, 500)``) silently narrowed every
+        >500-row request to the NEWEST 500 rows — the dataset news-frame
+        export (limit=2000) silently lost the oldest analyzed history and a
+        windowed export dropped the oldest rows INSIDE the window. Now the
+        caller's limit is honored; only requests above the hard memory cap
+        truncate (newest-first, deterministic) and they log exactly one
+        WARNING so the narrowing is observable, never silent.
+
+        ``hard_cap`` defaults to the MODULE constant (read at call time so
+        tests can monkeypatch it); passing it explicitly overrides.
+        """
+        cap = ANALYSIS_LIST_HARD_CAP if hard_cap is None else hard_cap
+        value = max(1, int(limit))
+        if value > cap:
+            logger.warning(
+                "[NEWS_DB] event=LIST_LIMIT_CLAMPED requested=%s hard_cap=%s "
+                "(oldest rows beyond the cap are excluded; narrow the request "
+                "or raise ANALYSIS_LIST_HARD_CAP if the full history is required)",
+                value,
+                cap,
+            )
+            return cap
+        return value
 
     def replace_entities(self, article_id: str, entities: list[dict[str, Any]]) -> None:
         with self._connect() as conn:
@@ -149,7 +185,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             return dict(row) if row else None
 
     def list_analysis(self, limit: int = 50) -> list[dict[str, Any]]:
-        bounded = max(1, min(int(limit), 500))
+        bounded = self._bounded_limit(limit)
         with self._connect() as conn:
             return [
                 dict(r)
@@ -365,7 +401,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             return dict(row) if row else None
 
     def list_ai_analysis(self, limit: int = 50) -> list[dict[str, Any]]:
-        bounded = max(1, min(int(limit), 500))
+        bounded = self._bounded_limit(limit)
         with self._connect() as conn:
             return [
                 dict(r)
