@@ -269,6 +269,18 @@ class TestSpreadSessionPctGate:
         checks = proposal.risk_checks or {}
         assert checks["spread_session_percentile_value"] is None
 
+    def test_provider_returning_none_is_noop(self) -> None:
+        """Honest-unknown contract: provider returning None (thin session) is a
+        no-op — regression pin for the runtime_gate L6 TypeError the wiring
+        exposed on CI (float(None) crashed the decision cycle when the
+        audit_paper_executions table had no session rows)."""
+        policy = _fresh_policy(session_spread_percentile_fn=lambda s, n, p: None)
+        proposal = _evaluate(policy, spread=0.20)
+        assert proposal.action == ActionType.BUY_MARKET
+        assert proposal.decision_stage == "FINAL_DECISION"
+        checks = proposal.risk_checks or {}
+        assert checks["spread_session_percentile_value"] is None
+
     def test_disabled_flag_bypasses_gate(self) -> None:
         """spread_session_gate_enabled=False bypasses even with a provider."""
         policy = _fresh_policy(

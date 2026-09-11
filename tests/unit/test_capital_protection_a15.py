@@ -25,7 +25,7 @@ Offline, deterministic: no MT5, no network, no model artifacts.
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -280,12 +280,30 @@ class _OM:
 
 class TestDispatchIdempotency:
     def test_primary_path_duplicate_request_id_blocked(self) -> None:
+        from nexus_scalp.adapters.mt5.providers import BROKER_SERVER_UTC_OFFSET_MINUTES
+        from nexus_scalp.research.economics import in_maintenance_window
+
         om = _OM()
         de = DispatchEngine(om)
-        assert de.dispatch_order(_proposal("DUP-1"), 0.05) is True
+        # CI-DETERMINISM (NSE-Swarm 2026-09-11): the first dispatch ran into
+        # the nightly MAINTENANCE_WINDOW guard whenever the wall clock sat in
+        # the buffered break (server 00:30..01:30 -> UTC 21:30..22:30 +30m
+        # spread buffer) — the duplicate assertion then compared against a
+        # maintenance-blocked False, failing every run in that window (CI
+        # 1072/1073 all platforms). Pin the decision timestamp OUTSIDE the
+        # window so the test exercises the DUPLICATE guard, not the clock.
+        outside = datetime.now(UTC) + timedelta(minutes=180)
+        if in_maintenance_window(
+            outside, server_utc_offset_hours=BROKER_SERVER_UTC_OFFSET_MINUTES / 60.0
+        ):
+            outside = outside + timedelta(minutes=180)
+        # TradeProposal is a frozen model -> rebuild with the pinned timestamp.
+        p1 = _proposal("DUP-1").model_copy(update={"generated_at": outside})
+        p2 = _proposal("DUP-1").model_copy(update={"generated_at": outside})
+        assert de.dispatch_order(p1, 0.05) is True
         # Same request_id again (re-fire/replay) must be terminal regardless
         # of the first outcome.
-        assert de.dispatch_order(_proposal("DUP-1"), 0.05) is False
+        assert de.dispatch_order(p2, 0.05) is False
 
     def test_refused_request_id_is_also_terminal(self) -> None:
         om = _OM()
