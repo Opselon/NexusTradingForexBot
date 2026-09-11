@@ -290,6 +290,14 @@ node_modules/playwright*
 node_modules/.bin/playwright*
 # (there is no other node_modules in this repo; do NOT add a blanket node_modules/)
 
+# Alternative React UI (frontend/): Node is a BUILD/DEV-ONLY dependency there
+# (same DEC-0002 principle). The compiled dist/ artifact and node_modules are
+# never committed; source (src/, package.json, vite.config.ts) is.
+frontend/node_modules/
+frontend/dist/
+frontend/*.log
+frontend/tsconfig.tsbuildinfo
+
 # Visual Studio 6 build log
 *.plg
 
