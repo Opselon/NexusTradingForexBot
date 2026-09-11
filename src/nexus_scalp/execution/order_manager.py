@@ -2882,6 +2882,7 @@ class OrderLifecycleManager:
                 impact_price_delta=impact_price_delta,
                 atr=atr,
                 smart_metrics=smart_metrics,
+                now=now,
             )
 
             # --- Trajectory, Evidence, and State machine Processing (Requirements 13-16, 20) ---
@@ -3320,16 +3321,17 @@ class OrderLifecycleManager:
         impact_price_delta: float,
         atr: float,
         smart_metrics: dict[str, Any],
+        now: datetime | None = None,
     ) -> tuple[int, list[str], int]:
         """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
-        evaluation + position-state recalculation + giveback override +
-        tracker store. Moved VERBATIM from manage_active_positions'
+        evaluation + position-state recalculation + giveback override + tracker
+        store. Moved VERBATIM from manage_active_positions'
         per-position loop. Returns (hold_score, invalidate_reasons,
         base_hold_score)."""
         last_eval = self._last_hold_eval_time.get(ticket, 0.0)
         if (current_time - last_eval) >= 0.50:
             base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
-                pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics
+                pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics, now=now
             )
             base_hold_score = self._recalculate_hold_score_with_position_state(
                 ticket, base_hold_score, smart_metrics, invalidate_reasons

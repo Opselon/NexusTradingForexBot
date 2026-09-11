@@ -25,6 +25,7 @@ Ownership contract:
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from datetime import UTC, datetime
 from typing import Any
@@ -369,6 +370,7 @@ class PositionScoringEngine:
         impact_price_delta: float,
         atr: float,
         smart_metrics: dict[str, Any] | None = None,
+        now: datetime | None = None,
     ) -> tuple[int, list[str]]:
         """
         Calculates position Hold Value Score (0 to 100) dynamically based on real-time metrics:
@@ -410,14 +412,37 @@ class PositionScoringEngine:
                 reasons.append(f"DRAWDOWN_PENALTY (-{penalty1}, ratio={ratio:.2f})")
 
         # --- Penalty 2: Time-in-Loss Decay (up to -30) ---
+        # BUG-259 (TASK-HOLD-CLOCK parity): the penalty denominator MUST be the
+        # tick-threaded `now` (the management loop passes now = tick.timestamp),
+        # never the host wall clock. The old wall-clock fallback mixed clock
+        # domains: a host wall clock hours behind the broker/tick domain derived
+        # a near-zero (or negative) duration and fired a spurious -30, while the
+        # opposite skew inflated the duration and suppressed the penalty forever
+        # (production "Age: -10781.6s" class). With no usable `now` (direct/unit
+        # callers, or naive/aware domain mismatch) the duration is conservatively
+        # 0.0 — the >0.70 ratio gate can then never fire on corrupted arithmetic
+        # — plus a rate-limited loud WARNING (G3 HOLD_AGE_FALLBACK pattern).
         entry_time = self.om._entry_timestamps.get(ticket)
-        if entry_time:
-            if entry_time.tzinfo is None:
-                holding_duration = (datetime.now() - entry_time).total_seconds()
-            else:
-                holding_duration = (datetime.now(UTC) - entry_time).total_seconds()
-        else:
-            holding_duration = 1.0
+        holding_duration = 0.0
+        if (
+            entry_time is not None
+            and now is not None
+            and (entry_time.tzinfo is None) == (now.tzinfo is None)
+        ):
+            holding_duration = (now - entry_time).total_seconds()
+        elif entry_time is not None:
+            now_mono = time.monotonic()
+            if (now_mono - getattr(self, "_hold_age_fallback_warned_at", 0.0)) >= 300.0:
+                self._hold_age_fallback_warned_at = now_mono
+                logger.warning(
+                    "[POSITION] event=HOLD_AGE_FALLBACK "
+                    "mode=no_tick_timestamp_conservative_zero "
+                    "ticket=%s entry_time_present=%s "
+                    "(tick timestamp missing in hold-score call; "
+                    "wall-clock duration suppressed — BUG-259)",
+                    ticket,
+                    True,
+                )
         time_loss = self.om._time_in_drawdown_sec.get(ticket, 0.0)
 
         if holding_duration > 0.0 and (time_loss / holding_duration) > 0.70:
