@@ -9,13 +9,11 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths:
-      - "docs/**"
-      - "site/**"
-      - "README.md"
-      - "scripts/docs/**"
-      - "pyproject.toml"
-      - ".github/workflows/docs.yml"
+    # NOTE: no paths filter here on purpose. 'Validate documentation' is a
+    # required status check on main; a paths-filtered trigger would leave
+    # main's combined status pending forever on every non-docs landing
+    # (GitHub does not auto-pass skipped required contexts). Path gating
+    # happens INSIDE the validate job via git diff instead.
     tags:
       - "v*"
   release:
@@ -53,6 +51,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Path gate INSIDE the job (push trigger is unfiltered so the
+      # required context always reports). Docs-only job steps below
+      # are skipped when nothing docs-affecting changed vs the base.
+      - name: Detect docs-affecting changes (job-level path gate)
+        id: docs_gate
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "docs_changed=true" >> "$GITHUB_OUTPUT"
+            echo "base unknown (initial/forced push) -> validate"
+            exit 0
+          fi
+          if git diff --name-only "$BASE" "$GITHUB_SHA" -- docs/ site/ README.md scripts/docs/ pyproject.toml .github/workflows/docs.yml | grep -q .; then
+            echo "docs_changed=true" >> "$GITHUB_OUTPUT"
+            echo "docs-affecting changes detected -> validate"
+          else
+            echo "docs_changed=false" >> "$GITHUB_OUTPUT"
+            echo "no docs-affecting changes -> check passes automatically"
+          fi
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -64,28 +86,38 @@ jobs:
           pip install ruff mypy
 
       - name: Refresh release metadata (What's New / releases page)
+        if: steps.docs_gate.outputs.docs_changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/docs/fetch_releases.py
 
       - name: Lint docs tooling (ruff)
+        if: steps.docs_gate.outputs.docs_changed == 'true'
         run: |
           ruff check scripts/docs/
           ruff format --check scripts/docs/
 
       - name: Type-check docs tooling (mypy)
+        if: steps.docs_gate.outputs.docs_changed == 'true'
         run: mypy scripts/docs/
 
       - name: Secret scan (docs surface)
+        if: steps.docs_gate.outputs.docs_changed == 'true'
         run: python scripts/ci/scan_secrets.py
 
       - name: Build site
+        if: steps.docs_gate.outputs.docs_changed == 'true'
         run: python scripts/docs/build_site.py
 
       - name: Docs doctor (links, anchors, translations, RTL, drift)
+        if: steps.docs_gate.outputs.docs_changed == 'true'
         run: python scripts/docs/check_docs.py
 
       - name: Translation audit
+        run: echo 'No docs-affecting changes; skipped by docs_gate.'
+        if: steps.docs_gate.outputs.docs_changed != 'true'
+      - name: Translation audit (docs path)
+        if: steps.docs_gate.outputs.docs_changed == 'true'
         run: python scripts/docs/check_translations.py
 
       - name: Live smoke (deployed site) — deploy job only
