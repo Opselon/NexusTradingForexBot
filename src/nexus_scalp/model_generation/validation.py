@@ -79,7 +79,11 @@ def _dataset_fingerprint(dataset_frame: Any) -> str:
     (labels + timestamps when present + split markers). Any content change
     re-identifies; the fingerprint is what the ledger keys consumption on."""
     try:
-        cols = [c for c in ("sample_id", "timestamp", "label", "_split") if dataset_frame is not None and c in dataset_frame.columns]
+        cols = [
+            c
+            for c in ("sample_id", "timestamp", "label", "_split")
+            if dataset_frame is not None and c in dataset_frame.columns
+        ]
         if dataset_frame is None or not cols:
             return "unknown"
         proj = dataset_frame.select(cols).to_dict(as_series=False)
@@ -194,7 +198,9 @@ def _write_ledger(path: Path, data: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def store_save_test_block_evidence(artifact_store: Any, model_id: str, record: dict[str, Any]) -> None:
+def store_save_test_block_evidence(
+    artifact_store: Any, model_id: str, record: dict[str, Any]
+) -> None:
     """Stamps the consumption record into the candidate's persisted manifest
     (best effort): the artifact becomes self-describing about whether its
     validation verdict consumed the protected block."""
@@ -334,8 +340,10 @@ def scope_oos_frame(dataset_frame: Any) -> tuple[Any, dict[str, Any]]:
         return None, audit
     try:
         total = int(dataset_frame.height)
-    except Exception:
-        raise ValueError("OOS_SPLIT_INTEGRITY: dataset frame unreadable — no OOS population")
+    except Exception as exc:
+        raise ValueError(
+            "OOS_SPLIT_INTEGRITY: dataset frame unreadable — no OOS population"
+        ) from exc
     audit["total_rows"] = total
     if "_split" not in dataset_frame.columns:
         # A frame that cannot prove its split scope is the contamination-risk
@@ -352,8 +360,6 @@ def scope_oos_frame(dataset_frame: Any) -> tuple[Any, dict[str, Any]]:
             "OOS_SPLIT_INTEGRITY: dataset frame carries no _split markers — "
             "the OOS population cannot be proven (fail closed, no widening)"
         )
-    import polars as pl  # local: same lazy-import contract as the probe above
-
     split = dataset_frame["_split"].to_numpy()
     oos_mask = np.isin(split, sorted(OOS_SPLITS))
     audit["train_rows_excluded"] = int((split == "train").sum())
@@ -365,9 +371,7 @@ def scope_oos_frame(dataset_frame: Any) -> tuple[Any, dict[str, Any]]:
             "OOS_SPLIT_INTEGRITY: frame contains no val/test rows — "
             "every candidate would be scored on train rows (fail closed)"
         )
-    return dataset_frame.filter(
-        __import__("polars").Series("_oos_mask", oos_mask)
-    ), audit
+    return dataset_frame.filter(__import__("polars").Series("_oos_mask", oos_mask)), audit
 
 
 class ValidationFactory:
@@ -482,25 +486,22 @@ class ValidationFactory:
             )
         elif oos_frame is None:
             pass  # labels-only gate exercise: the caller's vector IS the set
-        else:
-            # P0-4 hard rule: a caller-supplied label vector is accepted ONLY
-            # when it already describes the OOS population. A full-frame label
-            # vector (the historical contamination shape) is REFUSED — the
-            # gate never silently re-aligns it, and never scores train rows.
-            if labels is not None and oos_frame is not None and len(labels) != len(
-                oos_frame
-            ):
-                if len(labels) == int(split_audit.get("total_rows", -1)):
-                    raise ValueError(
-                        "OOS_SPLIT_INTEGRITY: label vector covers the FULL frame "
-                        "(incl. train rows) while the verdict evaluates the OOS "
-                        "population only — scope the labels/probabilities to the "
-                        "val/test rows before calling validate (no silent widening)"
-                    )
+        # P0-4 hard rule (oos_frame proven): a caller-supplied label vector is
+        # accepted ONLY when it already describes the OOS population. A
+        # full-frame label vector (the historical contamination shape) is
+        # REFUSED — never silently re-aligned, train rows never scored.
+        elif labels is not None and len(labels) != len(oos_frame):
+            if len(labels) == int(split_audit.get("total_rows", -1)):
                 raise ValueError(
-                    "OOS_SPLIT_INTEGRITY: label/probability vector length "
-                    f"({len(labels)}) != OOS population ({len(oos_frame)} rows)"
+                    "OOS_SPLIT_INTEGRITY: label vector covers the FULL frame "
+                    "(incl. train rows) while the verdict evaluates the OOS "
+                    "population only — scope the labels/probabilities to the "
+                    "val/test rows before calling validate (no silent widening)"
                 )
+            raise ValueError(
+                "OOS_SPLIT_INTEGRITY: label/probability vector length "
+                f"({len(labels)}) != OOS population ({len(oos_frame)} rows)"
+            )
         try:
             self.label_schema.validate_labels(labels.tolist())
             gates.append({"gate": "label_integrity", "passed": True, "reason": ""})
@@ -562,9 +563,7 @@ class ValidationFactory:
                         "rows_dropped": split_audit.get("total_rows", 0) - n,
                         "evaluated_splits": split_audit.get("evaluated_splits", []),
                         "train_rows_excluded": split_audit.get("train_rows_excluded", 0),
-                        "purged_rows_excluded": split_audit.get(
-                            "purged_rows_excluded", 0
-                        ),
+                        "purged_rows_excluded": split_audit.get("purged_rows_excluded", 0),
                     },
                 },
             )

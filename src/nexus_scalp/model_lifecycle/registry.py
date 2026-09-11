@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
@@ -298,9 +299,7 @@ def verify_champion_row_pairing(
     path_raw = artifact_path if artifact_path is not None else row.get("artifact_path", "")
     if not str(path_raw or ""):
         return {"ok": False, "reason": "ROW_MISSING_ARTIFACT", "row": _row_identity(row)}
-    from pathlib import Path as _Path
-
-    p = _Path(str(path_raw))
+    p = Path(str(path_raw))
     if not p.exists() or p.stat().st_size == 0:
         return {
             "ok": False,
