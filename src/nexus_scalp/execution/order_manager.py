@@ -418,6 +418,32 @@ class SmartPositionMetrics:
     rescue_quality_score: float = 0.0
 
 
+@dataclass(frozen=True)
+class _FastReversalDecision:
+    """Minimal decision payload for the fast-reversal follow-up (BUG-258).
+
+    The fast reversal (close + stop-order flip inside the protection chain)
+    previously submitted to the adapter DIRECTLY, bypassing the dispatch
+    gate stack. It now routes through ``dispatch_order``, which needs the
+    standard decision surface (action/symbol/geometry/timestamp). The
+    request_id is derived from the source ticket so a repeated flip on the
+    same ticket within one lifecycle cannot double-fire: the duplicate
+    dispatch guard treats a sent request_id as terminal.
+    """
+
+    symbol: str
+    action: Any
+    proposed_entry: float
+    stop_loss: float
+    take_profit: float
+    source_ticket: int
+    generated_at: Any = None
+
+    @property
+    def request_id(self) -> str:
+        return f"fast_reversal_{self.source_ticket}_{self.action.value}"
+
+
 # =============================================================================
 # MASTER ORDER LIFECYCLE MANAGER
 # =============================================================================
@@ -1164,11 +1190,23 @@ class OrderLifecycleManager:
         # Mirror the closed exposure when the caller did not size the flip explicitly
         # (e.g. the risk engine returned 0 because no symbol_info was available).
         if volume is None or float(volume) <= 0.0:
-            volume = closed_volume
-            logger.info(
-                "AI REVERSAL: sizing flip from closed exposure",
-                mirrored_volume=round(closed_volume, 2),
+            # BUG-258 (Agent-15 capital-protection wave 3): the flip order must
+            # carry a risk-approved volume. The caller (DecisionExecutor) sizes
+            # the flip through RiskEngine.evaluate_proposal BEFORE invoking
+            # this protocol; a zero/non-positive volume here means the risk
+            # engine REJECTED or could not evaluate the flip (rejected
+            # geometry, no symbol info, breaker/RR/spread/exposure/margin/
+            # impact refusal). The old mirrored-volume fallback (sizing from
+            # the closed exposure) bypassed canonical risk approval and is
+            # REMOVED: the protective close above still happened, but no new
+            # order is dispatched without risk-approved sizing.
+            logger.warning(
+                "[AI_REVERSAL] flip dispatch refused: volume not risk-approved "
+                "(close-only)",
+                ticket=getattr(decision, "ticket", 0) or 0,
+                volume=volume,
             )
+            return True
 
         return self.dispatch_order(reversal_decision, volume)
 
@@ -3660,25 +3698,32 @@ class OrderLifecycleManager:
                         if ai_flip_action == ActionType.BUY_STOP
                         else round(rev_entry - (atr * 3.0), 2)
                     )
-                    # BUG-247 (RESIDUAL P1): fast-reversal follow-up is an ENTRY and must
-                    # honor the SAFE_MODE circuit; the protective close above already ran.
-                    if self.global_state == "SAFE_MODE":
+                    # BUG-258 (Agent-15 capital-protection wave 3): the
+                    # fast-reversal follow-up was dispatched DIRECTLY through
+                    # adapter.place_pending_order — an architectural bypass of
+                    # the dispatch gate stack (kill switch, persisted halt,
+                    # SAFE_MODE, maintenance window, duplicate request_id,
+                    # engine-wide MAX_TOTAL_EXPOSURE) and of the canonical
+                    # risk-approval chain. It now routes through
+                    # dispatch_order with a full decision payload, so every
+                    # dispatch-layer gate applies exactly like a primary
+                    # entry. Geometry and clamp semantics are unchanged.
+                    fast_reversal_decision = _FastReversalDecision(
+                        symbol=pos.symbol,
+                        action=ai_flip_action,
+                        proposed_entry=rev_entry,
+                        stop_loss=rev_sl,
+                        take_profit=rev_tp,
+                        source_ticket=ticket,
+                        generated_at=getattr(current_tick, "timestamp", None),
+                    )
+                    if not self.dispatch_order(fast_reversal_decision, rev_volume):
                         logger.warning(
-                            "AI REVERSAL follow-up blocked: SAFE_MODE circuit open",
+                            "[AI_REVERSAL] fast-reversal follow-up refused by the "
+                            "dispatch gate stack (close-only)",
                             ticket=ticket,
                             suppressed_action=ai_flip_action.value,
                         )
-                        return True
-                    self.adapter.place_pending_order(
-                        symbol=pos.symbol,
-                        order_type=OrderType.BUY_STOP
-                        if ai_flip_action == ActionType.BUY_STOP
-                        else OrderType.SELL_STOP,
-                        volume=rev_volume,
-                        price=rev_entry,
-                        stop_loss=rev_sl,
-                        take_profit=rev_tp,
-                    )
                     # (continue -> skip-rest signal, S6 STEP-C extraction)
                     return True
 

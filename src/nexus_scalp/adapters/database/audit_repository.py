@@ -14,6 +14,7 @@ Enterprise Upgrades Incorporated:
 
 import contextlib
 import json
+import math
 import os
 import queue
 import sqlite3
@@ -656,10 +657,20 @@ class AuditRepository:
                 release_required INTEGER NOT NULL DEFAULT 1,
                 released_at TEXT,
                 release_actor TEXT,
-                consecutive_losses INTEGER NOT NULL DEFAULT 0
+                consecutive_losses INTEGER NOT NULL DEFAULT 0,
+                breaker_day_anchor REAL,
+                breaker_day_utc TEXT,
+                breaker_week_anchor REAL,
+                breaker_week_iso TEXT
             );
             """
         )
+        # BUG-259 (Agent-15 capital-protection wave 3): breaker anchor
+        # persistence. Older DBs lack the columns — heal additively.
+        _add_column_if_missing(conn, "runtime_risk_state", "breaker_day_anchor", "REAL")
+        _add_column_if_missing(conn, "runtime_risk_state", "breaker_day_utc", "TEXT")
+        _add_column_if_missing(conn, "runtime_risk_state", "breaker_week_anchor", "REAL")
+        _add_column_if_missing(conn, "runtime_risk_state", "breaker_week_iso", "TEXT")
         # A4 dead-letter split: the audit_dead_letter DDL now lives on
         # DeadLetterStore (same table, VERBATIM move) — created here on the
         # setup connection so schema timing is unchanged.
@@ -782,6 +793,113 @@ class AuditRepository:
             # NEVER swallow: a failed safety-state persist must be loud.
             logger.error("runtime_risk_state persist FAILED state=%s error=%s", state_up, e)
             return False
+
+    # ---------------------------------------------------------------------
+    # BREAKER ANCHOR PERSISTENCE (BUG-259, Agent-15 capital-protection wave 3)
+    # ---------------------------------------------------------------------
+    # The profit-protection daily/weekly loss budgets anchor on the equity at
+    # the start of the UTC trading day / ISO week. CircuitBreakerEngine
+    # derives that anchor from the FIRST evaluation it sees in a period, so a
+    # process restart mid-day silently re-anchored to CURRENT equity — a
+    # loss taken before the restart vanished from the budget accounting.
+    # These two methods give the engine an explicit durable home for the
+    # anchors inside the canonical runtime_risk_state row (no new store).
+    # Fail-closed on write: a persist failure returns False so the caller can
+    # refuse trading rather than run with an unverifiable anchor.
+    # ---------------------------------------------------------------------
+
+    def save_breaker_anchors(
+        self,
+        *,
+        day_anchor: float,
+        day_utc: str,
+        week_anchor: float,
+        week_iso: str,
+    ) -> bool:
+        """Persists the current breaker period anchors (day/UTC-week)."""
+        try:
+            day_anchor = float(day_anchor)
+            week_anchor = float(week_anchor)
+        except (TypeError, ValueError):
+            return False
+        if not all(
+            isinstance(v, float) and v == v and abs(v) != float("inf") and v > 0.0
+            for v in (day_anchor, week_anchor)
+        ):
+            return False
+        try:
+            with self._connect_sqlite(10.0) as conn:
+                # The canonical row must exist (set_runtime_risk_state creates
+                # it at boot); INSERT OR IGNORE guarantees a row for anchor
+                # writes on a fresh store without fabricating a state.
+                conn.execute(
+                    "INSERT OR IGNORE INTO runtime_risk_state (id, state) VALUES (1, 'RUNNING')"
+                )
+                conn.execute(
+                    """
+                    UPDATE runtime_risk_state
+                    SET breaker_day_anchor = ?, breaker_day_utc = ?,
+                        breaker_week_anchor = ?, breaker_week_iso = ?
+                    WHERE id = 1
+                    """,
+                    (day_anchor, str(day_utc or ""), week_anchor, str(week_iso or "")),
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error("breaker anchor persist FAILED error=%s", e)
+            return False
+
+    def get_breaker_anchors(self) -> dict[str, Any] | None:
+        """Reads the persisted breaker anchors.
+
+        Returns the anchor dict when a HEALTHY read proves a usable,
+        well-formed anchor row exists; None when absent. CORRUPT/ambiguous
+        values (non-finite, non-positive, missing identity strings, type
+        garbage) return None — the caller must treat None as 'no trustworthy
+        anchor' and FAIL CLOSED, never as 'reset to current equity'.
+        """
+        try:
+            with self._connect_sqlite(5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                    SELECT breaker_day_anchor, breaker_day_utc,
+                           breaker_week_anchor, breaker_week_iso
+                    FROM runtime_risk_state WHERE id = 1
+                    """
+                ).fetchone()
+        except Exception as e:
+            logger.error("breaker anchor read FAILED (treated as absent) error=%s", e)
+            return None
+        if row is None:
+            return None
+        try:
+            day_anchor = row["breaker_day_anchor"]
+            week_anchor = row["breaker_week_anchor"]
+            day_utc = row["breaker_day_utc"]
+            week_iso = row["breaker_week_iso"]
+        except (IndexError, KeyError, TypeError):
+            return None
+        if day_anchor is None or week_anchor is None:
+            return None
+        try:
+            day_anchor = float(day_anchor)
+            week_anchor = float(week_anchor)
+        except (TypeError, ValueError):
+            return None
+        if not (math.isfinite(day_anchor) and day_anchor > 0.0):
+            return None
+        if not (math.isfinite(week_anchor) and week_anchor > 0.0):
+            return None
+        if not str(day_utc or "") or not str(week_iso or ""):
+            return None
+        return {
+            "day_anchor": day_anchor,
+            "day_utc": str(day_utc),
+            "week_anchor": week_anchor,
+            "week_iso": str(week_iso),
+        }
 
     def get_runtime_risk_state(self) -> dict[str, Any] | None:
         """Synchronous read of the persisted runtime risk state.

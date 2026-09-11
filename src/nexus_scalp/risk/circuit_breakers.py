@@ -116,6 +116,70 @@ class CircuitBreakerEngine:
         self._last_trade_closed_at: datetime | None = None
 
     # ------------------------------------------------------------------
+    # PERIOD IDENTITY + ANCHOR PERSISTENCE (BUG-259, Agent-15 wave 3)
+    # ------------------------------------------------------------------
+    # The day/week anchors are now identity-tagged: an anchor only counts
+    # for the period it was taken in. `restore_anchors` re-arms a restarting
+    # process with the anchors persisted by the PREVIOUS process, so a loss
+    # taken earlier in the same trading day keeps counting against the
+    # budget (previously a restart silently re-anchored to current equity).
+    # Anything absent/corrupt/ambiguous is refused (fail-closed to the
+    # caller) — the restore NEVER fabricates an anchor from current equity.
+    # ------------------------------------------------------------------
+
+    def restore_anchors(
+        self,
+        *,
+        day_anchor: float,
+        day_utc: str,
+        week_anchor: float,
+        week_iso: str,
+        now: datetime,
+    ) -> bool:
+        """Adopts persisted anchors for the CURRENT period identities.
+
+        Accepts the restore ONLY when the persisted day identity matches
+        today's UTC date and the persisted ISO-week identity matches the
+        current ISO week. A stale identity (yesterday's anchor) is rejected:
+        the new period re-arms from the next evaluation, exactly like a
+        natural rollover. Returns True only when BOTH anchors were adopted.
+        """
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        day = now.date()
+        week = self._iso_week(day)
+        try:
+            if date.fromisoformat(str(day_utc)[:10]) != day:
+                return False
+            persisted_week = str(week_iso)
+            hyphen = persisted_week.find("-W")
+            if hyphen <= 0:
+                return False
+            if (int(persisted_week[:hyphen]), int(persisted_week[hyphen + 2 :])) != week:
+                return False
+            day_anchor = float(day_anchor)
+            week_anchor = float(week_anchor)
+        except (TypeError, ValueError):
+            return False
+        if not (math.isfinite(day_anchor) and day_anchor > 0.0):
+            return False
+        if not (math.isfinite(week_anchor) and week_anchor > 0.0):
+            return False
+        self._day = day
+        self._day_start_equity = day_anchor
+        self._week = week
+        self._week_start_equity = week_anchor
+        return True
+
+    def period_identities(self, now: datetime) -> tuple[str, str]:
+        """Canonical identity strings for the current day / ISO week."""
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        day = now.date()
+        iso = self._iso_week(day)
+        return day.isoformat(), f"{iso[0]}-W{iso[1]}"
+
+    # ------------------------------------------------------------------
     # Period bookkeeping (equity-based budgets)
     # ------------------------------------------------------------------
 
