@@ -73,12 +73,17 @@ class TestStageFreshness:
         state, _ = svc.stage_freshness(stamp, 30.0)
         assert state == "STALE"
 
-    def test_future_stamp_clamped_to_zero_and_fresh(self):
+    def test_future_stamp_is_stale_timebase_defect(self):
+        # Agent-13 (2026-09-09): the pre-fix clamp (age<0 -> 0.0 -> FRESH)
+        # made a future-stamped tick read as perfectly fresh and froze the
+        # freshness verdict for the whole clock-offset period. A negative age
+        # is a timebase DEFECT and must fail closed to STALE (age preserved
+        # as the negative magnitude for diagnostics).
         svc = LiveFreshnessService()
         stamp = datetime.now(UTC) + timedelta(seconds=60)
         state, age = svc.stage_freshness(stamp, 30.0)
-        assert state == "FRESH"
-        assert age == 0.0
+        assert state == "STALE"
+        assert age is not None and age <= -59_000  # ~-60_000ms, allow jitter
 
 
 # === GOLDEN 2: compute aggregation ===

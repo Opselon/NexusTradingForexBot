@@ -56,7 +56,13 @@ class LiveFreshnessService:
             return "UNKNOWN", None
         age = (datetime.now(UTC) - stamp).total_seconds()
         if age < 0:
-            age = 0.0
+            # Agent-13 (2026-09-09): a FUTURE stamp is a timebase defect, not
+            # extra freshness. Clamping a negative age to 0 reported FRESH for
+            # a tick from a skewed/mis-offset clock and froze the freshness
+            # verdict for the whole offset period (staleness blind spot — a
+            # frozen feed after one future tick kept 'FRESH'). Fail closed:
+            # report the negative age as STALE with its magnitude preserved.
+            return "STALE", round(age * 1000.0, 1)
         if age > max_age_sec:
             return "STALE", round(age * 1000.0, 1)
         return "FRESH", round(age * 1000.0, 1)
