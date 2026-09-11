@@ -3277,6 +3277,18 @@ class LiveEngine:
         active_tickets = {pos.ticket for pos in active_positions}
         self._hedged_tickets &= active_tickets
 
+        # RUNTIME RESILIENCE (Agent-7 failure injection, FI-9): degraded
+        # inference (probs=None — the BUG-253 70D stale-liquidity gate or an
+        # in-trade inference failure) crashed HERE on ``probs.squeeze`` — the
+        # same FI-2 crash class FI-2 fixed at the policy layer, still open at
+        # the hedging layer (every degraded tick -> AttributeError -> hot-path
+        # circuit breaker loop). Hedging model-scores require healthy probs;
+        # without them the hedging evaluation is a NO-OP (never a crash, never
+        # a fabricated score, position protection continues via manage_active_positions).
+        if probs is None or not isinstance(probs, torch.Tensor) or probs.numel() == 0:
+            logger.debug("[HEDGE] event=SKIPPED reason=PROBS_UNAVAILABLE_DEGRADED")
+            return
+
         atr = max(self.order_manager._safe_feature_float(fv, "atr_m1", 1.50), 0.50)
         probs_list = probs.squeeze().tolist()
         if not isinstance(probs_list, list):
