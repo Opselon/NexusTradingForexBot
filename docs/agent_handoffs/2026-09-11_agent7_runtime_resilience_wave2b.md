@@ -11,7 +11,7 @@ failure). Prior tests masked the hole: the FI-2b and Agent-6 stubs replaced
 `om._evaluate_hedging_policy` with a MagicMock, so the REAL body was never
 exercised with `probs=None`.
 
-Fix (PR #130): the hedging evaluation NO-OPs on degraded inference
+Fix (landed through PR #131, bd944fea; #130 was closed by the coordinator as SUPERSEDED BY #131 with content preservation verified — identical branch head 5d0b0691; work NOT lost): the hedging evaluation NO-OPs on degraded inference
 (None / non-tensor / empty probs). Position protection continues via
 `manage_active_positions`; no crash; no fabricated score. Pinned by FI-9a
 (real body, None/empty) and FI-9b (full degraded-tick chain) in
@@ -46,3 +46,18 @@ taskboard row — the owner must adjudicate.
 
 Separate ML-provenance lane (Agent-8). No code coupling found with BUG-192
 or the runtime resilience chain; rows must not be purged or fabricated.
+
+## Integration state (authoritative: origin/main = integration truth)
+
+- origin/main contains this lane's content: ScalerBundle.corrupt chain, FI-5..FI-9 pins,
+  taskboard rows, and this note. d6636f18 / 425de8e3 were squash-merged (content fully
+  present; not direct ancestors by design).
+- CI: PR #131 17/17 checks passed; PR #132 12/12 checks passed.
+- Post-merge focused verification on origin/main: 140/140 passed.
+- VERDICT: READY - SCOPED TO RUNTIME-RESILIENCE LANE. NOT a global production-ready claim.
+
+## Explicitly unresolved (do NOT close or relabel)
+
+- BUG-192 validate_70d_vector element types: NOT FIXED; contract decision still required.
+- 70D / scalp_v3 972-row provenance: separate ML lane; NOT resolved by this task.
+- BUG-257 drift re-publication writer: unresolved / unidentified; do not close or relabel.
