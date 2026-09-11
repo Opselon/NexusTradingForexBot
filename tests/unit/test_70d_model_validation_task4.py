@@ -743,10 +743,9 @@ def test_70d_model_26_liquidity_distribution_audit_smoke() -> None:
     import importlib.machinery
     import importlib.util
 
-    # Audit module restored to tracked tests/helpers/ (TASK4-SCRATCH-PROBES:
-    # a77f8315 untracked scratch/, d49e4cf6 had quarantined the probes). No
-    # parent __init__.py; load by file location so the smoke still exercises
-    # the REAL module.
+    # Audit module lives in tests/helpers/ (restored after a77f8315 deleted
+    # scratch/, which orphaned this path-load and broke CI-only). Load by file
+    # location so the smoke still exercises the REAL module source.
     _leaf = REPO_ROOT / "tests/helpers/liq60d_distribution_audit.py"
     _loader = importlib.machinery.SourceFileLoader("liq60d_distribution_audit", str(_leaf))
     _spec = importlib.util.spec_from_loader(_loader.name, _loader, origin=str(_leaf))

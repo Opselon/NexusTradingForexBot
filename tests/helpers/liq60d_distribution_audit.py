@@ -17,6 +17,7 @@ Regimes (deterministic, from liquidity_fixtures):
   - VOLATILE:        swing high + swing low sequence (wide ATR)
   - SWEEP:           stop-hunt (spike through a level then reverse)
 """
+
 from __future__ import annotations
 
 import json
@@ -52,9 +53,7 @@ def _sweep_bars() -> list:
         if i == 55:  # the sweep: spike 2.5x ATR above the recent high
             h = max(h, 3350.0)
             c = 3348.0
-        bars.append(
-            bar(i, t0, o, h, l, c, vol=150 if i != 55 else 600)
-        )
+        bars.append(bar(i, t0, o, h, l, c, vol=150 if i != 55 else 600))
         price = c
     return bars
 
@@ -143,8 +142,12 @@ def main() -> dict:
             "zero_rate": round(float(1.0 - nonzero.size / finite.size), 4) if finite.size else None,
             "missing_rate": round(float(1.0 - finite.size / col.size), 4),
             "unique_count": int(np.unique(col[finite]).size) if finite.any() else 0,
-            "saturated_at_minus3": round(float((col[finite] <= -3.0).mean()), 4) if finite.any() else None,
-            "saturated_at_plus3": round(float((col[finite] >= 3.0).mean()), 4) if finite.any() else None,
+            "saturated_at_minus3": round(float((col[finite] <= -3.0).mean()), 4)
+            if finite.any()
+            else None,
+            "saturated_at_plus3": round(float((col[finite] >= 3.0).mean()), 4)
+            if finite.any()
+            else None,
             "constant": bool(finite.any() and np.unique(col[finite]).size == 1),
         }
         # near-constant: 99% of values identical
@@ -160,8 +163,8 @@ def main() -> dict:
         "regimes": {k: len(v) for k, v in per_regime.items()},
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "note": "SYNTHETIC deterministic regimes (fixtures) — real-market audit "
-                "requires the 70D dataset (TASK-3). Distribution shape is "
-                "informative; absolute rates are fixture-dependent.",
+        "requires the 70D dataset (TASK-3). Distribution shape is "
+        "informative; absolute rates are fixture-dependent.",
     }
     return report
 
@@ -178,6 +181,6 @@ if __name__ == "__main__":
             continue
         print(
             f"{name:<28}{d['min']:>8}{d['max']:>8}{d['mean']:>8}"
-            f"{d['zero_rate']*100:>7.1f}%{d['saturated_at_plus3']*100:>7.1f}%{d['unique_count']:>6}"
+            f"{d['zero_rate'] * 100:>7.1f}%{d['saturated_at_plus3'] * 100:>7.1f}%{d['unique_count']:>6}"
         )
     print(f"\nvectors: {rep['_meta']['vectors_total']} | regimes: {rep['_meta']['regimes']}")

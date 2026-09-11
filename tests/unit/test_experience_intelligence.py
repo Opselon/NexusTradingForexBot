@@ -1331,10 +1331,14 @@ def test_40_large_experience_set_is_handled(temp_audit_repo, components):
 
 
 def test_41_existing_signal_pipeline_unchanged():
-    """SignalPolicy defaults must be untouched by Phase 08."""
+    """SignalPolicy default confidence_threshold must stay the canonical
+    ModelConfig value (0.35 since d57d003d); SignalPolicy falls back to it
+    when no explicit threshold is passed (policy.py)."""
+    from nexus_scalp.configuration.config import ModelConfig
     from nexus_scalp.signals.policy import SignalPolicy
 
-    assert SignalPolicy().confidence_threshold == 0.20
+    assert ModelConfig().confidence_threshold == 0.35
+    assert SignalPolicy().confidence_threshold == 0.35
 
 
 def test_42_existing_risk_engine_unchanged():

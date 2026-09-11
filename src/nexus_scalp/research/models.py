@@ -226,6 +226,14 @@ class ResearchSample(BaseModel):
     realized_r: float = Field(default=0.0)
     realized_pnl_usd: float = Field(default=0.0)
     risk_distance: float = Field(default=0.0, ge=0.0)
+    #: Ledger signal_confidence for the decision (ECON v1 sizing basis).
+    #: 0.0 = NOT RECORDED — the same honest sentinel TrainingDatasetRow uses
+    #: for mae_r/mfe_r; consumers must treat 0 as unknown, not as a value.
+    #: The sized economic view sizes unknown flat at base risk (the live
+    #: NOT_CALIBRATED contract: confidence never de-risks on broken/absent
+    #: evidence) and routes recorded values through the calibrated
+    #: [LIVE_CONF_MULTIPLIER_MIN, 1.0] band.
+    signal_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     holding_duration_sec: float = Field(default=0.0, ge=0.0)
     mae_r: float = Field(default=0.0, ge=0.0)
     mfe_r: float = Field(default=0.0, ge=0.0)
