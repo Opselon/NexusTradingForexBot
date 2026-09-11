@@ -4319,6 +4319,41 @@ class LiveEngine:
                 release_required=False,
             )
             logger.info("[SAFETY_STATE] boot decision=RUNNING (trading permitted)")
+        # BUG-259 (Agent-15 capital-protection wave 3): restore the persisted
+        # breaker anchors BEFORE any trading. A loss taken earlier in the
+        # same UTC day / ISO week must keep counting against the daily /
+        # weekly budgets across a restart. Absent / corrupt / stale-identity
+        # anchors restore NOTHING (fail-closed to natural re-anchoring, which
+        # is the honest behavior when no trustworthy anchor exists — the
+        # breaker then anchors on the first evaluation, as before).
+        try:
+            persisted_anchors = self.audit.get_breaker_anchors()
+        except Exception as anchor_err:
+            logger.warning("[BREAKER] anchor restore read failed (isolated): %s", anchor_err)
+            persisted_anchors = None
+        if persisted_anchors is not None:
+            now_utc = datetime.now(UTC)
+            restored = self.risk_engine.breakers.restore_anchors(
+                day_anchor=persisted_anchors["day_anchor"],
+                day_utc=persisted_anchors["day_utc"],
+                week_anchor=persisted_anchors["week_anchor"],
+                week_iso=persisted_anchors["week_iso"],
+                now=now_utc,
+            )
+            if restored:
+                logger.info(
+                    "[BREAKER] anchors restored from persisted state day=%s "
+                    "day_anchor=%.2f week=%s week_anchor=%.2f",
+                    persisted_anchors["day_utc"],
+                    persisted_anchors["day_anchor"],
+                    persisted_anchors["week_iso"],
+                    persisted_anchors["week_anchor"],
+                )
+            else:
+                logger.info(
+                    "[BREAKER] persisted anchors rejected (stale/corrupt identity) — "
+                    "period re-arms on first evaluation"
+                )
         return decision
 
     def trigger_runtime_halt(

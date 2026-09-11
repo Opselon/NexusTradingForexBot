@@ -219,8 +219,25 @@ class RiskEngine:
 
         volume = min(volume, tier_max)
 
-        # Step 7: Calculate Required Margin & Apply 20% Free-Margin Clamp
-        maximum_allowed_margin = account.margin_free * 0.20
+        # Step 7: Calculate Required Margin & Apply the margin-usage clamp.
+        # BUG-260 (Agent-15 capital-protection wave 3): the clamp fraction is
+        # now the MINIMUM of the historical hard safety clamp (20% of free
+        # margin — preserved as the upper safety boundary) and the OPERATOR-
+        # configured max_margin_usage_pct (previously stored + hot-reloaded
+        # but never enforced — the config lied). An invalid configured value
+        # (non-finite / <=0 / >100) is refused and the hard clamp governs:
+        # a broken config can only TIGHTEN or preserve the clamp, never
+        # loosen it past the 20% safety boundary.
+        clamp_fraction = 0.20
+        _cfg_margin_pct = getattr(self, "max_margin_usage_pct", None)
+        if (
+            isinstance(_cfg_margin_pct, (int, float))
+            and not isinstance(_cfg_margin_pct, bool)
+            and math.isfinite(float(_cfg_margin_pct))
+            and 0.0 < float(_cfg_margin_pct) <= 100.0
+        ):
+            clamp_fraction = min(clamp_fraction, float(_cfg_margin_pct) / 100.0)
+        maximum_allowed_margin = account.margin_free * clamp_fraction
         if contract_size > 0 and entry > 0 and account.leverage > 0:
             max_margin_volume = (maximum_allowed_margin * account.leverage) / (
                 contract_size * entry

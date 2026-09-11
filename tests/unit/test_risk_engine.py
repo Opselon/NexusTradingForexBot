@@ -191,7 +191,11 @@ def test_equity_scaling() -> None:
     The calculated size should increase approximately linearly with equity until constrained.
     """
     config = RiskConfig(risk_per_trade_pct=1.0)
-    engine = RiskEngine(config)
+    # BUG-260: max_margin_usage_pct is now ENFORCED (min of hard clamp and
+    # config). This test pins the sizing math + the HARD 20% clamp, so the
+    # engine is built with the hard-clamp value explicitly; the config-
+    # enforcement contract is pinned by tests/unit/test_bug260_*.
+    engine = RiskEngine(config, max_margin_usage_pct=20.0)
 
     symbol_info = SymbolInfo(
         symbol="XAUUSD",
@@ -297,7 +301,11 @@ def test_free_margin_protection() -> None:
     Step 7: Check that required margin does not consume more than 20% of free_margin.
     """
     config = RiskConfig(risk_per_trade_pct=1.0)
-    engine = RiskEngine(config)
+    # BUG-260: max_margin_usage_pct is now ENFORCED (min of hard clamp and
+    # config). This test pins the HARD 20% clamp contract, so the engine is
+    # built with the hard-clamp value explicitly; the config-enforcement
+    # contract is pinned by tests/unit/test_bug260_*.
+    engine = RiskEngine(config, max_margin_usage_pct=20.0)
 
     # Small free margin of $100 on a $10,000 account
     account = AccountInfo(
