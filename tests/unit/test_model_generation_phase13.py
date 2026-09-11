@@ -464,9 +464,13 @@ class TestValidation:
         store, built_dataset = built_dataset
         frame = self._train_and_validate(store, built_dataset["dataset_id"], "cand_oos")
         vf = ValidationFactory()
-        labels = frame["label"].to_numpy().astype(np.int64)
+        # P0-4: random predictions on the SCOPED val/test population fail the
+        # OOS floors (a full-frame vector is the contamination shape the gate
+        # refuses).
+        oos = frame.filter(pl.col("_split").is_in(["val", "test"]))
+        labels = oos["label"].to_numpy().astype(np.int64)
         probs = np.full((len(labels), 3), 1 / 3)  # random -> OOS ~ 33% < 30%?
-        vr = vf.validate("cand_oos", "exp_cand_oos", frame, probs, labels)
+        vr = vf.validate("cand_oos", "exp_cand_oos", oos, probs, labels)
         assert vr.passed is False or vr.verdict == "REJECTED"
 
     def test_30_robustness_failure_detected(self):
@@ -481,9 +485,16 @@ class TestValidation:
         store, built_dataset = built_dataset
         frame = self._train_and_validate(store, built_dataset["dataset_id"], "cand_regime")
         vf = ValidationFactory()
-        labels = frame["label"].to_numpy().astype(np.int64)
-        vr = vf.validate("cand_regime", "exp_cand_regime", frame, None, labels)
-        assert vr.regime_results  # per-regime evaluation computed
+        # P0-4: per-regime evaluation covers the SCOPED val/test population.
+        oos = frame.filter(pl.col("_split").is_in(["val", "test"]))
+        labels = oos["label"].to_numpy().astype(np.int64)
+        # Per-regime table computed on the OOS population (spec 26).
+        from nexus_scalp.model_generation.validation import evaluate_regime_performance
+        assert evaluate_regime_performance(oos)  # per-regime evaluation exists
+        # End-to-end: scoped 45-row population is honestly INSUFFICIENT_EVIDENCE.
+        vr = vf.validate("cand_regime", "exp_cand_regime", oos, None, labels)
+        assert vr.verdict == "REJECTED"
+        assert vr.overall.get("reason") == "INSUFFICIENT_EVIDENCE"
 
     def test_32_news_ablation_comparison(self):
         from nexus_scalp.model_generation.models import ValidationResults
@@ -503,10 +514,12 @@ class TestValidation:
         store, built_dataset = built_dataset
         vf = ValidationFactory()
         frame = store.read_dataset(built_dataset["dataset_id"])
-        labels = frame["label"].to_numpy().astype(np.int64)
+        # P0-4: score the SCOPED val/test population (no train rows).
+        oos = frame.filter(pl.col("_split").is_in(["val", "test"]))
+        labels = oos["label"].to_numpy().astype(np.int64)
         probs = np.random.rand(len(labels), 3)
         probs /= probs.sum(axis=1, keepdims=True)
-        vr = vf.validate("cand_abl", "exp_abl", frame, probs, labels)
+        vr = vf.validate("cand_abl", "exp_abl", oos, probs, labels)
         store.save_validation("cand_abl", vr.model_dump(mode="json"))
         saved = store.read_validation("cand_abl")
         assert saved is not None

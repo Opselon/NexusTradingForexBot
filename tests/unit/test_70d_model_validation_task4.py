@@ -743,10 +743,11 @@ def test_70d_model_26_liquidity_distribution_audit_smoke() -> None:
     import importlib.machinery
     import importlib.util
 
-    # Audit module lives in scratch/archive/historic-20260823/ (commit
-    # d49e4cf6 quarantined 215 historic probes). No parent __init__.py;
-    # load by file location so the smoke still exercises the REAL module.
-    _leaf = REPO_ROOT / "scratch/archive/historic-20260823/liq60d_distribution_audit.py"
+    # Audit module restored to tracked tests/helpers/ (TASK4-SCRATCH-PROBES:
+    # a77f8315 untracked scratch/, d49e4cf6 had quarantined the probes). No
+    # parent __init__.py; load by file location so the smoke still exercises
+    # the REAL module.
+    _leaf = REPO_ROOT / "tests/helpers/liq60d_distribution_audit.py"
     _loader = importlib.machinery.SourceFileLoader("liq60d_distribution_audit", str(_leaf))
     _spec = importlib.util.spec_from_loader(_loader.name, _loader, origin=str(_leaf))
     dist_audit_mod = importlib.util.module_from_spec(_spec)
@@ -769,7 +770,7 @@ def test_70d_model_27_liquidity_redundancy_audit_smoke() -> None:
     import importlib.machinery
     import importlib.util
 
-    _leaf2 = REPO_ROOT / "scratch/archive/historic-20260823/liq60d_redundancy_audit.py"
+    _leaf2 = REPO_ROOT / "tests/helpers/liq60d_redundancy_audit.py"
     _loader2 = importlib.machinery.SourceFileLoader("liq60d_redundancy_audit", str(_leaf2))
     _spec2 = importlib.util.spec_from_loader(_loader2.name, _loader2, origin=str(_leaf2))
     red_audit_mod = importlib.util.module_from_spec(_spec2)
