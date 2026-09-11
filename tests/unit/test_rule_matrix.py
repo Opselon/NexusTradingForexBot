@@ -406,7 +406,11 @@ def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
     adapter.close_position.assert_called_with(ticket=1001)
 
 
-def test_api_endpoints(temp_audit_repo: AuditRepository) -> None:
+def test_api_endpoints(temp_audit_repo: AuditRepository, monkeypatch) -> None:
+    # WEB-AUTH-P0: local PAPER fixture — documented auth opt-out (see
+    # tests/integration/test_accounting_api.py); the auth gate landed after
+    # this test was written and 401s every endpoint without it.
+    monkeypatch.setenv("NSE_WEB_AUTH_DISABLE", "1")
     engine = MagicMock()
     engine.audit = temp_audit_repo
     app = create_app(engine_ref=engine)
@@ -477,8 +481,12 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
 
     # 3. Simulate high time in drawdown (decay)
     # Backdate entry timestamp so elapsed trade duration is 20s and time in drawdown is 16s (80% > 70%)
+    # BUG-259: the penalty denominator is the TICK-THREADED now (G3 clock-domain
+    # parity) — the wall clock is never consulted, so the tick stamp is explicit.
     om._entry_timestamps[1002] = datetime.now(UTC) - dt_module.timedelta(seconds=20)
     om._time_in_drawdown_sec[1002] = 16.0
-    score3, reasons = om._calculate_hold_value_score(pos, 2330.0, fv, 0.25, 1.0)
+    score3, reasons = om._calculate_hold_value_score(
+        pos, 2330.0, fv, 0.25, 1.0, now=datetime.now(UTC)
+    )
     assert score3 == 70
     assert any("TIME_IN_LOSS_DECAY_PENALTY" in r for r in reasons)
