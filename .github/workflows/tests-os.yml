@@ -8,7 +8,7 @@ name: Tests (OS Matrix)
 
 on:
   push:
-    branches: [ci-tests]
+    branches: [main, ci-tests]
     tags-ignore: ["v*"]
   pull_request:
     branches: [main, develop]
