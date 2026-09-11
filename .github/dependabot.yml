@@ -1,21 +1,132 @@
+# =============================================================================
+# Dependabot — institutional dependency governance
+# TASK-DEVOPS-DEPENDABOT-HARDENING (2026-09-11)
+#
+# Design contract (docs/architecture/DEPENDENCY_MANAGEMENT.md is the SSOT for
+# the full policy):
+#   * Low noise: all three ecosystems are WEEKLY and staggered (04:00 / 04:30 /
+#     05:00 UTC) with open-pull-requests-limit 5 each and grouped version
+#     updates.
+#   * Security-first: groups apply to VERSION updates only
+#     (applies-to: version-updates). Dependabot security-update PRs are never
+#     grouped or suppressed — they arrive individually and get triaged before
+#     routine bumps. There are deliberately NO `ignore` rules: a broad ignore
+#     would also suppress security remediation. Risky-package behavior (torch,
+#     polars, ...) is bounded by the pyproject.toml version RANGES
+#     (e.g. torch>=2.2,<3 ; polars>=0.20,<2), which Dependabot respects.
+#   * Lockfile-safe: any Python PR that changes pyproject.toml MUST ship the
+#     regenerated artifacts (requirements.lock + requirements.txt via
+#     `python scripts/ci/check_dependency_drift.py --regen`, uv 0.12.10) in the
+#     SAME PR. The required "Dependency drift (lock vs pyproject)" check makes
+#     this fail-closed. Frontend PRs must keep package.json and
+#     package-lock.json in lockstep (verify with `npm ci`).
+#   * Actions hygiene: the github-actions ecosystem keeps third-party actions
+#     current; production workflows are additionally SHA-pinned (40-char) with
+#     a human-readable version comment. Floating tag refs (@v4) are mutable and
+#     are NOT accepted as pinning.
+# =============================================================================
+
 version: 2
 updates:
+  # --- Python (pip) — root project -------------------------------------------
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
+      day: "sunday"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps-py)"
+      include: "scope"
     labels:
       - "dependencies"
       - "python"
+    groups:
+      python-production:
+        applies-to: version-updates
+        patterns:
+          - "pydantic"
+          - "pydantic-settings"
+          - "pyyaml"
+          - "structlog"
+          - "typer"
+          - "rich"
+          - "polars"
+          - "networkx"
+          - "pyarrow"
+          - "numpy"
+          - "torch"
+          - "fastapi"
+          - "uvicorn"
+          - "httpx"
+          - "MetaTrader5"
+          - "feedparser"
+          - "tzdata"
+          - "Pygments"
+          - "PyNaCl"
+      python-dev-tools:
+        applies-to: version-updates
+        patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy"
+          - "types-*"
 
+  # --- Frontend (npm) — /frontend (build/dev-time only, NOT prod runtime) ----
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "04:30"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps-fe)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "javascript"
+    groups:
+      frontend-framework:
+        applies-to: version-updates
+        patterns:
+          - "@tanstack/*"
+          - "react*"
+          - "zustand"
+      frontend-build-tools:
+        applies-to: version-updates
+        patterns:
+          - "@types/*"
+          - "@vitejs/*"
+          - "typescript"
+          - "vite"
+
+  # --- GitHub Actions ---------------------------------------------------------
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "sunday"
+      time: "05:00"
+      timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(actions)"
+      include: "scope"
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "actions/*"
+          - "astral-sh/*"
+          - "docker/*"
+          - "aquasecurity/*"
+          - "github/*"
+          - "google/*"
+          - "softprops/*"
