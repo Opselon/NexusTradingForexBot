@@ -59,10 +59,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -107,16 +106,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
           cache: "pip"
 
       - name: Cache dependency intelligence graph
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: artifacts/dependency_intelligence/cache.json
           key: dep-graph-v1-${{ hashFiles('src/nexus_scalp/**/*.py') }}
@@ -526,7 +524,7 @@ jobs:
       # (aggregate does not run).
       - name: Upload CI results artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ci-results-quality-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -634,10 +632,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
           cache: "pip"
@@ -764,7 +761,7 @@ jobs:
 
       - name: Upload suite artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ci-results-${{ matrix.suite }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -803,7 +800,7 @@ jobs:
 
     steps:
       - name: Download all suite artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
           # merge-multiple is intentionally OFF: each arm's ci-results/ tree
@@ -839,7 +836,7 @@ jobs:
           find ci-results/run-info -type f | sort
 
       - name: Upload canonical aggregate artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ci-results-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
