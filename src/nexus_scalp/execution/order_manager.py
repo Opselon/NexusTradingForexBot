@@ -746,23 +746,29 @@ class OrderLifecycleManager:
         """Delegate: lineage registry pruning (owned by PendingOrderLifecycle)."""
         self._pending_lifecycle.prune_bound_context(order_id)
 
-    def _emit_terminal_for_pending(self, ticket: int, state: Any, detail: str = "") -> bool:
+    def _emit_terminal_for_pending(
+        self, ticket: int, state: Any, detail: str = "", at: Any = None
+    ) -> bool:
         """Delegate: terminal pending outcome (owned by PendingOrderLifecycle)."""
-        return self._pending_lifecycle.emit_terminal_for_pending(ticket, state, detail)
+        return self._pending_lifecycle.emit_terminal_for_pending(ticket, state, detail, at=at)
 
     def _pending_broker_state(self, ticket: int, symbol: str | None = None) -> str:
         """Delegate: broker truth probe (owned by PendingOrderLifecycle)."""
         return self._pending_lifecycle.broker_state(ticket, symbol)
 
-    def cancel_pending_order_verified(self, ticket: int, symbol: str | None = None) -> bool:
+    def cancel_pending_order_verified(
+        self, ticket: int, symbol: str | None = None, at: Any = None
+    ) -> bool:
         """Delegate: broker-verified cancellation (owned by PendingOrderLifecycle)."""
-        return self._pending_lifecycle.cancel_pending_order_verified(ticket, symbol)
+        return self._pending_lifecycle.cancel_pending_order_verified(ticket, symbol, at=at)
 
     def cancel_pending_order_with_retry(
-        self, ticket: int, symbol: str | None = None, max_attempts: int = 3
+        self, ticket: int, symbol: str | None = None, max_attempts: int = 3, at: Any = None
     ) -> int:
         """Delegate: bounded cancel retry (owned by PendingOrderLifecycle)."""
-        return self._pending_lifecycle.cancel_pending_order_with_retry(ticket, symbol, max_attempts)
+        return self._pending_lifecycle.cancel_pending_order_with_retry(
+            ticket, symbol, max_attempts, at=at
+        )
 
     def reconcile_pending_state(
         self, symbol: str | None = None, current_tick: TickData | None = None

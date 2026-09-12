@@ -627,9 +627,20 @@ class HistoricalOutcomeRecoverySweep:
         detail: str = "",
     ) -> None:
         key = str(dec.get("idempotency_key", ""))
+        # BUG-261: stamp at the decision's own tick-domain timestamp
+        # (already SELECTed). The sweep runs tick-less (startup/offline);
+        # a wall-clock stamp risks ledger CAUSALITY_REJECTED on
+        # host-behind skew. Failure-isolated: unparsable -> None ->
+        # the terminal_outcome.py clamp fallback.
+        try:
+            _dec_ts_raw = dec.get("decision_timestamp")
+            _dec_ts = datetime.fromisoformat(str(_dec_ts_raw)) if _dec_ts_raw is not None else None
+        except (ValueError, TypeError):
+            _dec_ts = None
         outcome = build_terminal_non_trade_outcome(
             idempotency_key=key,
             state=state,
+            outcome_timestamp=_dec_ts,
             detail=detail or f"{RECOVERY_SOURCE_BROKER_HISTORY}: broker order state evidence",
         )
         if dry_run:

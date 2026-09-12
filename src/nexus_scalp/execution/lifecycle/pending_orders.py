@@ -430,7 +430,9 @@ class PendingOrderLifecycle:
             return "UNKNOWN"
         return "UNKNOWN"
 
-    def emit_terminal_for_pending(self, ticket: int, state: Any, detail: str = "") -> bool:
+    def emit_terminal_for_pending(
+        self, ticket: int, state: Any, detail: str = "", at: datetime | None = None
+    ) -> bool:
         """Emits the terminal outcome for the decision that placed `ticket`.
 
         The request_id is resolved from the staged entry context registry
@@ -438,6 +440,13 @@ class PendingOrderLifecycle:
         decision.request_id at context-bind time). Idempotent: the ledger
         refuses a second outcome for the same key, so repeated sweeps,
         retries or restart replays cannot duplicate the row.
+
+        ``at`` (BUG-261): the tick/broker-domain timestamp for the
+        outcome. When supplied it replaces the wall-clock fallback so
+        the ledger's causality guard (outcome_timestamp >=
+        decision_timestamp) cannot reject the outcome on host-behind
+        skew. The caller supplies the current tick timestamp from the
+        manage loop.
         """
         request_id = str(self._entry_order_ids_probe(ticket))
         if not request_id:
@@ -450,6 +459,7 @@ class PendingOrderLifecycle:
             state=state,
             detail=detail or f"broker ticket {ticket} terminal",
             broker_order_id=str(ticket),
+            outcome_timestamp=at,
         )
         if written:
             # The lifecycle is closed: drop the ephemeral cancel-reason note.
@@ -460,7 +470,9 @@ class PendingOrderLifecycle:
         """Registers the canonical entry-order-id probe (manager's S5 view)."""
         self._entry_order_ids_probe = probe
 
-    def cancel_pending_order_verified(self, ticket: int, symbol: str | None = None) -> bool:
+    def cancel_pending_order_verified(
+        self, ticket: int, symbol: str | None = None, at: datetime | None = None
+    ) -> bool:
         """Sends the cancel request, THEN verifies broker state.
 
         Returns True ONLY when broker truth confirms the order is no longer
@@ -513,7 +525,10 @@ class PendingOrderLifecycle:
                 if "AGE" in self._pending_cancel_reasons.get(ticket, "")
                 else DecisionLifecycle.CANCELED_UNFILLED
             )
-            self.emit_terminal_for_pending(ticket=ticket, state=state_lifecycle)
+            # BUG-261: tick-domain stamp — the caller must supply
+            # current_tick.timestamp; None degrades to the ledger
+            # clamp fallback (see terminal_outcome.py).
+            self.emit_terminal_for_pending(ticket=ticket, state=state_lifecycle, at=at)
             self._pending_orders_setup_time.pop(ticket, None)
             try:
                 self._refresh_cache(symbol=symbol)
@@ -553,7 +568,7 @@ class PendingOrderLifecycle:
         return False
 
     def cancel_pending_order_with_retry(
-        self, ticket: int, symbol: str | None = None, max_attempts: int = 3
+        self, ticket: int, symbol: str | None = None, max_attempts: int = 3, at: Any = None
     ) -> int:
         """Bounded, idempotent cancellation retry.
 
@@ -565,7 +580,7 @@ class PendingOrderLifecycle:
         attempts = 0
         for _ in range(max(1, int(max_attempts))):
             attempts += 1
-            if self.cancel_pending_order_verified(ticket=ticket, symbol=symbol):
+            if self.cancel_pending_order_verified(ticket=ticket, symbol=symbol, at=at):
                 break
             time.sleep(0.05)  # tiny backoff between bounded retries
         return attempts
@@ -736,7 +751,12 @@ class PendingOrderLifecycle:
                     # P0-A (BUG-140): remember WHY so the terminal outcome can
                     # distinguish CANCELED_UNFILLED from EXPIRED_UNFILLED.
                     self._pending_cancel_reasons[ticket] = cancel_reason
-                    cancelled_ok = self.cancel_pending_order_verified(ticket=ticket, symbol=symbol)
+                    # BUG-261: thread the tick-domain timestamp so the
+                    # terminal outcome cannot fall back to the host wall
+                    # clock (ledger CAUSALITY_REJECTED on host-behind skew).
+                    cancelled_ok = self.cancel_pending_order_verified(
+                        ticket=ticket, symbol=symbol, at=current_tick.timestamp
+                    )
                     if cancelled_ok:
                         logger.info(
                             f"[CANCEL TRACE] PENDING ORDER CANCELLED: Ticket {ticket}. "

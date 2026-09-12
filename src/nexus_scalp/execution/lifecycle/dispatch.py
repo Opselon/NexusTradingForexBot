@@ -264,6 +264,10 @@ class DispatchEngine:
                 request_id=str(getattr(decision, "request_id", "") or ""),
                 state=DecisionLifecycle.NOT_DISPATCHED,
                 detail="KILL_SWITCH / persisted safety halt at dispatch",
+                # BUG-261: tick-domain stamp (decision.generated_at ==
+                # tick.timestamp at proposal build); wall clock here risks
+                # a ledger CAUSALITY_REJECTED when the host runs behind.
+                outcome_timestamp=getattr(decision, "generated_at", None),
             )
             return False
         # BUG-241: the primary dispatch path now honors the engine safety
@@ -281,6 +285,8 @@ class DispatchEngine:
                 request_id=str(getattr(decision, "request_id", "") or ""),
                 state=DecisionLifecycle.NOT_DISPATCHED,
                 detail="SAFE_MODE circuit open at dispatch",
+                # BUG-261: tick-domain stamp (see KILL_SWITCH site above).
+                outcome_timestamp=getattr(decision, "generated_at", None),
             )
             return False
 
@@ -338,6 +344,8 @@ class DispatchEngine:
                     request_id=str(getattr(decision, "request_id", "") or ""),
                     state=DecisionLifecycle.NOT_DISPATCHED,
                     detail="NIGHTLY_MAINTENANCE_BREAK entry guard",
+                    # BUG-261: tick-domain stamp.
+                    outcome_timestamp=getattr(decision, "generated_at", None),
                 )
                 return False
 
@@ -379,6 +387,8 @@ class DispatchEngine:
                 request_id=str(getattr(decision, "request_id", "") or ""),
                 state=DecisionLifecycle.NOT_DISPATCHED,
                 detail="MAX_EXPOSURE_REACHED at dispatch",
+                # BUG-261: tick-domain stamp.
+                outcome_timestamp=getattr(decision, "generated_at", None),
             )
             return False
 
@@ -396,6 +406,8 @@ class DispatchEngine:
                 request_id=str(getattr(decision, "request_id", "") or ""),
                 state=DecisionLifecycle.NOT_DISPATCHED,
                 detail="LOT_SIZE_REJECTED (zero volume after clamp)",
+                # BUG-261: tick-domain stamp.
+                outcome_timestamp=getattr(decision, "generated_at", None),
             )
             return False
 
@@ -477,6 +489,8 @@ class DispatchEngine:
                     request_id=str(getattr(decision, "request_id", "") or ""),
                     state=DecisionLifecycle.REJECTED_UNFILLED,
                     detail="broker refused market order at dispatch (ticket=0)",
+                    # BUG-261: tick-domain stamp.
+                    outcome_timestamp=getattr(decision, "generated_at", None),
                 )
             # BUG-241: consecutive broker refusals feed the SAFE_MODE breaker
             # (same 3-rejection rule the hedge path has always enforced); a
@@ -552,6 +566,8 @@ class DispatchEngine:
                     request_id=str(getattr(decision, "request_id", "") or ""),
                     state=DecisionLifecycle.REJECTED_UNFILLED,
                     detail="broker rejected pending order at dispatch (ticket=0)",
+                    # BUG-261: tick-domain stamp.
+                    outcome_timestamp=getattr(decision, "generated_at", None),
                 )
             # BUG-241: pending dispatch refusals feed the same breaker.
             if ticket > 0:

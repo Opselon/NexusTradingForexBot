@@ -65,6 +65,18 @@ def emit_terminal_pending_outcome(
     the ledger refuses orphan outcomes and the failure is logged.
 
     Returns True only when a NEW terminal outcome row was queued.
+
+    BUG-261 (clock-domain parity, G3/BUG-259/BUG-260 class): ``outcome_timestamp``
+    MUST come from the tick/broker domain. Callers on the live path pass the
+    decision's own ``generated_at`` (== tick.timestamp at proposal build) or the
+    current tick timestamp; the ledger's causality guard
+    (``outcome_timestamp >= decision_timestamp``) REFUSES a wall-clock stamp
+    whenever the host runs behind the broker, which would hang the decision as
+    MISSING_OUTCOME forever. When no tick-domain time is supplied (tick-less
+    paths: reconcile sweep, operator CANCEL_ORDER, retry wrapper), the fallback
+    clamps the wall clock up to the decision's own timestamp via a ledger
+    lookup — failure-isolated, so an unreadable ledger degrades to the legacy
+    wall clock rather than refusing the outcome.
     """
     if experience_engine is None or not request_id:
         # BUG-185: this skip MUST be observable. Production forensics
@@ -90,10 +102,23 @@ def emit_terminal_pending_outcome(
         return False
     try:
         key = ExperienceIntelligenceEngine.build_idempotency_key(request_id)
+        # BUG-261: when the caller has no tick-domain time (tick-less
+        # paths), clamp the wall clock up to the decision's own
+        # timestamp (== tick/broker domain by construction). Failure-
+        # isolated: a ledger error degrades to the raw wall clock.
+        if outcome_timestamp is None:
+            try:
+                decision = experience_engine.ledger.get_experience_by_key(key)
+                if decision is not None:
+                    outcome_timestamp = max(datetime.now(UTC), decision.decision_timestamp)
+                else:
+                    outcome_timestamp = datetime.now(UTC)
+            except Exception:
+                outcome_timestamp = datetime.now(UTC)
         outcome = build_terminal_non_trade_outcome(
             idempotency_key=key,
             state=state,
-            outcome_timestamp=outcome_timestamp or datetime.now(UTC),
+            outcome_timestamp=outcome_timestamp,
             execution_id=broker_order_id,
             detail=detail,
         )
