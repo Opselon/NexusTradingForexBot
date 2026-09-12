@@ -1704,10 +1704,128 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     _alt_ui_dir = _resolve_alt_ui_dir()
     if _alt_ui_dir is not None:
         from fastapi.staticfiles import StaticFiles
+        from starlette.exceptions import HTTPException as _AltHTTPException
+        from starlette.responses import FileResponse as _AltFileResponse
+        from starlette.types import Receive as _AltReceive
+        from starlette.types import Scope as _AltScope
+        from starlette.types import Send as _AltSend
+
+        class _AltSpaHistory:
+            """MOUNT-DEEP-LINK: SPA history fallback + cache policy, scoped to /alt.
+
+            ``StaticFiles(html=True)`` serves real files and ``/alt/`` (index.html)
+            and 404s every other subpath — so a browser reload on a client-side
+            route (/alt/positions, /alt/trading …) died as a JSON 404 and the deep
+            link was not shareable. This wrapper does exactly two additive things:
+
+            1. catches the StaticFiles 404 (raised before any bytes are sent) and,
+               for a GET/HEAD whose ``Accept`` explicitly asks for text/html and
+               whose path is not file-shaped (last segment has no dot), answers
+               with the SAME index.html, letting React Router resolve the route;
+            2. pins caching: HTML shell ``no-store`` (a rebuild lands on the next
+               navigation), content-hashed ``/alt/assets/*`` immutable/long.
+
+            Deliberately narrow: non-HTML probes (fetch/JSON) still get the plain
+            JSON 404, missing hashed assets still 404 instead of masquerading as
+            HTML, and every other response passes through untouched. The mount is
+            the only thing wrapped — legacy Web/ routes at ``/``, all ``/api``
+            routes, and the WEB-AUTH layer (which sits OUTSIDE, above this app)
+            are byte-identical to before.
+            """
+
+            SHELL_CACHE = "no-store"
+            ASSET_CACHE = "public, max-age=31536000, immutable"
+
+            def __init__(self, static_app: Any, index_html: Path) -> None:
+                self._static = static_app
+                self._index_html = index_html
+
+            async def __call__(
+                self, scope: _AltScope, receive: _AltReceive, send: _AltSend
+            ) -> None:
+                if scope.get("type") != "http":
+                    await self._static(scope, receive, send)
+                    return
+
+                started = False
+
+                async def _send(message: dict) -> None:
+                    nonlocal started
+                    if message.get("type") == "http.response.start":
+                        started = True
+                        message = self._with_cache_headers(scope, message)
+                    await send(message)
+
+                try:
+                    await self._static(scope, receive, _send)
+                except _AltHTTPException as exc:
+                    if started or exc.status_code != 404 or not self._is_navigation(scope):
+                        raise
+                    shell = _AltFileResponse(
+                        str(self._index_html),
+                        status_code=200,
+                        # Accept-dependent + no-store: an intermediary can never
+                        # replay this shell to a non-HTML probe of the same URL.
+                        headers={"Cache-Control": self.SHELL_CACHE, "Vary": "Accept"},
+                    )
+                    await shell(scope, receive, send)
+
+            # -------------------------------------------------------- internals
+            def _subpath(self, scope: _AltScope) -> str:
+                """Path under the mount (StaticFiles' own route-path arithmetic)."""
+                root = scope.get("root_path") or ""
+                path = scope.get("path") or ""
+                if root and path.startswith(root):
+                    path = path[len(root) :]
+                return path or "/"
+
+            def _is_navigation(self, scope: _AltScope) -> bool:
+                """Browser navigation (reload/back/enter-URL), never an API probe."""
+                if scope.get("method") not in ("GET", "HEAD"):
+                    return False
+                accept = ""
+                for key, value in scope.get("headers", []):
+                    if key == b"accept":
+                        accept = value.decode("latin-1").lower()
+                        break
+                if "text/html" not in accept and "application/xhtml+xml" not in accept:
+                    return False
+                sub = self._subpath(scope)
+                # Bundle subtree: a missing/renamed hashed asset must 404 (never
+                # masquerade as the HTML shell — that hides broken deploys).
+                if sub.startswith("/assets/"):
+                    return False
+                # File-shaped subpaths (missing .js/.css) must stay 404.
+                return "." not in sub.rsplit("/", 1)[-1]
+
+            def _with_cache_headers(self, scope: _AltScope, message: dict) -> dict:
+                # Only successful responses get a policy: never decorate a 404
+                # (an "immutable" 404 could pin a missing asset in a cache) nor
+                # a redirect (the final response carries the policy). 206 stays
+                # policy-bearing so ranged asset fetches remain cacheable.
+                if message.get("status") not in (200, 206):
+                    return message
+                sub = self._subpath(scope)
+                if sub.startswith("/assets/"):
+                    cache = self.ASSET_CACHE
+                elif sub in ("", "/") or sub.endswith("/") or sub == "/index.html":
+                    cache = self.SHELL_CACHE
+                else:
+                    return message
+                headers = [
+                    (k, v)
+                    for k, v in message.get("headers", [])
+                    if bytes(k).lower() != b"cache-control"
+                ]
+                headers.append((b"cache-control", cache.encode("latin-1")))
+                return {**message, "headers": headers}
 
         app.mount(
             "/alt",
-            StaticFiles(directory=str(_alt_ui_dir), html=True),
+            _AltSpaHistory(
+                StaticFiles(directory=str(_alt_ui_dir), html=True),
+                _alt_ui_dir / "index.html",
+            ),
             name="alt_ui",
         )
         logger.info("[ALT-UI] serving alternative React console from %s", _alt_ui_dir)

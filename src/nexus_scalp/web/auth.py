@@ -80,7 +80,22 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
     }
 )
 #: /vendor/ = fontawesome webfonts (static binaries, no credentials).
-PUBLIC_PREFIXES: tuple[str, ...] = ("/static/", "/assets/", "/vendor/")
+#:
+#: TASK-ALT-UI-HARDENING (B2): /alt/assets/ is the Alternative UI's compiled
+#: Vite bundle subtree — content-hashed, immutable, non-sensitive static
+#: files. Browsers do NOT attach Authorization headers (or query tokens) to
+#: <script>/<link> subresource requests, so leaving the hashed assets behind
+#: the token gate yields an authenticated-but-blank console (HTML 200,
+#: JS/CSS 401). The hashed bundle therefore becomes a public static resource
+#: exactly like the repo-root Web/ assets above. The security model is
+#: unchanged everywhere else:
+#:   GET /alt, /alt/            -> authentication required (HTML shell)
+#:   GET /alt/assets/<hashed>   -> public static asset
+#:   GET /api/*                 -> authentication required
+#:   GET /api/ticks/stream      -> authentication required
+#: (Traversal candidates are rejected by the ".."/backslash guard below and
+#:  404 at the route layer — fail-closed unchanged.)
+PUBLIC_PREFIXES: tuple[str, ...] = ("/static/", "/assets/", "/vendor/", "/alt/assets/")
 PUBLIC_JS_ASSETS: frozenset[str] = frozenset(
     {
         "ux_i18n.js",

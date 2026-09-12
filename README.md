@@ -322,6 +322,15 @@ docker compose up -d --build
 Starts engine + Control Center in container-safe **PAPER** mode; dashboard at `http://localhost:9090`; `/health` readiness (`READY`/`DEGRADED` = healthy).
 Full reference → [docs/docker.md](docs/docker.md)
 
+## 🐧 Linux (WSL2) MT5 test platform
+
+Verified TEST/PAPER environment: MT5 build 6191 under Wine 10.0 in an
+isolated prefix, headless via Xvfb, lifecycle via `scripts/linux/mt5_runtime.sh`.
+Direct Python `MetaTrader5` IPC is unsupported under Wine — the supported
+path is `RemoteMT5GatewayAdapter`. WSL2 → Windows-host TCP is firewalled by
+default.
+Full reference → [docs/linux_wsl2_mt5_platform.md](docs/linux_wsl2_mt5_platform.md) · toolkit README → [scripts/linux/README.md](scripts/linux/README.md)
+
 ---
 
 ## 🔬 Research & Validation
