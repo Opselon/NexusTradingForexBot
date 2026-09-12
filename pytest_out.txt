@@ -1,0 +1,8 @@
+.....s....xxxxx.......                                                   [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] tests\unit\test_alt_ui_route_parity.py:434: 300-entry visibility ledger walk; run with NSE_LEDGER_AUDIT=1
+XFAIL tests/unit/test_alt_ui_snapshot_field_coverage.py::test_unverified_snapshot_fields[health.details.mt5] - ledger:coverage-gap — health.details is assembled at runtime in _build_health_section; one nesting level of AST analysis cannot enumerate its keys
+XFAIL tests/unit/test_alt_ui_snapshot_field_coverage.py::test_unverified_snapshot_fields[health.subsystems.engine] - ledger:coverage-gap — health.subsystems is runtime-assembled per subsystem probe; its key set is not statically enumerable from the snapshot builder
+XFAIL tests/unit/test_alt_ui_snapshot_field_coverage.py::test_unverified_snapshot_fields[live_freshness.overall] - ledger:coverage-gap — live_freshness is delegated to LiveFreshnessService.compute_freshness (outside web/) and is None while the engine is detached
+XFAIL tests/unit/test_alt_ui_snapshot_field_coverage.py::test_unverified_snapshot_fields[model.latency_breakdown.feature_ms] - ledger:coverage-gap — latency_breakdown is engine-owned (_last_latency_breakdown); opaque to the web-layer builder
+XFAIL tests/unit/test_alt_ui_snapshot_field_coverage.py::test_unverified_snapshot_fields[model.latency_breakdown.model_forward_ms] - ledger:coverage-gap — latency_breakdown is engine-owned (_last_latency_breakdown); opaque to the web-layer builder
