@@ -396,13 +396,16 @@ def _provision_model_artifact(cfg) -> None:
 
     path = Path(cfg.model.model_artifact_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    model = ScalpNet(num_features=70, num_classes=3)
     # The P0 serving gate refuses fresh-init / behavioral-degenerate weights,
     # so boot fixtures must mint TRAINED artifacts (fix the fixture, not the
-    # gate — precedent ab9db747 / AGENT-12 c004). Deterministic recipe.
+    # gate — precedent ab9db747 / AGENT-12 c004). Deterministic recipe — and
+    # BUG-154: manual_seed MUST precede construction (ScalpNet.__init__ draws
+    # weights from the ambient RNG; construct-then-seed made CI-runner boots
+    # fail LOAD_REJECTED with sensitivity 0.003 while dev hosts passed).
     import torch as _torch
 
     _torch.manual_seed(999)
+    model = ScalpNet(num_features=70, num_classes=3)
     model.train()
     gen = _torch.Generator().manual_seed(1234)
     X = _torch.randn(256, 70, generator=gen)

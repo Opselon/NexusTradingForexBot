@@ -64,11 +64,13 @@ def _make_engine(tmp_path: Path | None = None) -> LiveEngine:
         bundle_dir = tmp_path / "bundle"
         bundle_dir.mkdir(parents=True, exist_ok=True)
         model_path = bundle_dir / "model.pt"
-        net = ScalpNet(num_features=50)
         # The P0 serving gate refuses fresh-init / behavioral-degenerate
         # weights, so boot fixtures must mint TRAINED artifacts (fix the
         # fixture, not the gate — same ruling as ab9db747 / this c004 repair).
+        # BUG-154: seed BEFORE construction — __init__ draws weights from the
+        # ambient RNG, so construct-then-seed minted machine-dependent health.
         torch.manual_seed(999)
+        net = ScalpNet(num_features=50)
         net.train()
         gen = torch.Generator().manual_seed(1234)
         n_cls = int(net.classifier.weight.shape[0])

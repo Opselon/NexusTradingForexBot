@@ -479,13 +479,16 @@ def _write_weight_file(path, num_features=50, poison_nan=False):
 
     from nexus_scalp.models.scalp_net import ScalpNet
 
-    model = ScalpNet(num_features=num_features)
     # The P0 serving gate refuses fresh-init / behavioral-degenerate weights
     # on the load path, so the sidecar-failure probes need genuinely TRAINED
     # weights to reach the scaler handling (fix the fixture, not the gate —
     # precedent ab9db747 / AGENT-12 c004). Deterministic recipe mirroring
-    # test_promotion_rejects_degenerate_model.
+    # test_promotion_rejects_degenerate_model. BUG-154: seed BEFORE
+    # construction — ScalpNet.__init__ consumes the ambient RNG, so
+    # construct-then-seed mints machine-dependent weights whose behavioral
+    # probe can fail on CI workers (LOAD_REJECTED) while passing locally.
     _torch.manual_seed(999)
+    model = ScalpNet(num_features=num_features)
     model.train()
     gen = _torch.Generator().manual_seed(1234)
     n_cls = int(model.classifier.weight.shape[0])
