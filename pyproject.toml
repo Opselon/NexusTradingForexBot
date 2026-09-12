@@ -84,6 +84,14 @@ target-version = "py311"
 # remain fully covered.
 exclude = ["scratch", ".venv", "release", "artifacts", "_cleanup_hold_20260819"]
 
+[tool.ruff.format]
+# Byte-exact external spec fixtures: their content is pinned by an md5 issued
+# with the security task (tests must not be "reformatted", or the pinned spec
+# file and the committed file diverge and the pin can no longer be verified).
+# Formatting is the ONLY thing exempted — the assertions themselves are the
+# spec of BUG-263 and are never edited.
+exclude = ["tests/unit/test_agent9_rollback_integrity.py"]
+
 [tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
 ignore = [
