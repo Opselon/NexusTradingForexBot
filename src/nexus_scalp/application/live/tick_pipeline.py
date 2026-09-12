@@ -167,6 +167,10 @@ class TickPipeline:
                     request_id=str(getattr(proposal, "request_id", "") or ""),
                     state=DecisionLifecycleAlias.NOT_DISPATCHED,
                     detail=f"pre-dispatch gate rejection: {proposal.rejection_reason or proposal.reason_code}",
+                    # BUG-261: tick-domain stamp (tick in scope); wall clock
+                    # here risks a ledger CAUSALITY_REJECTED on host-behind
+                    # skew, hanging the decision as MISSING_OUTCOME.
+                    outcome_timestamp=tick.timestamp,
                 )
             except Exception as _term_err:
                 logger.debug(
