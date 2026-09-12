@@ -276,6 +276,13 @@ class ArtifactStore:
                     if leftover.exists():
                         leftover.unlink(missing_ok=True)
             manifest["scaler_hash"] = sha256_file(scaler_path)
+            # P0-2 artifact trust anchor (writer side): stamp the serving-side
+            # contract name too. model_lifecycle.load_integrity verifies a
+            # bundle's sibling model.scaler.npz when its integrity record
+            # declares ``scaler_sha256``; without this field the scaler content
+            # binding silently degrades to weights-only verification. Purely
+            # additive alongside the legacy ``scaler_hash``.
+            manifest["scaler_sha256"] = manifest["scaler_hash"]
         else:
             manifest["scaler_hash"] = ""
 
