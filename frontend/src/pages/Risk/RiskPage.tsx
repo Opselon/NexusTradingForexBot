@@ -166,7 +166,7 @@ export default function RiskPage({ snapshot }: Props) {
 
       <Panel
         title="Last proposal gate trace (risk_checks)"
-        right={<span className="timestamp-note">{statusQuery.data ? `probed ${formatMoney(null)}`.replace("$—", "") : ""} {statusQuery.data?.probed_at ?? ""}</span>}
+        right={<span className="timestamp-note">{statusQuery.data ? `probed ${statusQuery.data.probed_at}` : ""}</span>}
       >
         {statusQuery.isPending ? (
           <div className="muted small">loading…</div>

@@ -14,7 +14,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { auditApi } from "@/api/auditApi";
 import type { AuditEventRow, AuditLedgerRow, IncidentRow } from "@/types/domain";
-import { DataTable, EmptyState, ErrorState, LoadingState, MetricCard, Panel, SeverityBadge } from "@/components/primitives";
+import { DataTable, EmptyState, ErrorState, LoadingState, MetricCard, Panel, Segmented, SeverityBadge } from "@/components/primitives";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
 import { ApiError } from "@/types/api";
 
@@ -72,10 +72,17 @@ export default function AuditPage() {
     retry: false,
   });
 
-  const tabBtn = (id: Tab, label: string): JSX.Element => (
-    <button className={`btn small ${tab === id ? "primary" : ""}`} onClick={() => setTab(id)}>
-      {label}
-    </button>
+  const tabSeg = (
+    <Segmented<Tab>
+      options={[
+        { id: "events", label: "Event stream" },
+        { id: "ledger", label: "Trade ledger" },
+        { id: "incidents", label: "Incidents" },
+        { id: "db", label: "Integrity" },
+      ]}
+      value={tab}
+      onChange={setTab}
+    />
   );
 
   const pager = (page: number, hasMore: boolean, setPage: (p: number) => void): JSX.Element => (
@@ -105,10 +112,7 @@ export default function AuditPage() {
       </Panel>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {tabBtn("events", "Event stream")}
-        {tabBtn("ledger", "Trade ledger")}
-        {tabBtn("incidents", "Incidents")}
-        {tabBtn("db", "Integrity")}
+        {tabSeg}
       </div>
 
       {tab === "events" && (

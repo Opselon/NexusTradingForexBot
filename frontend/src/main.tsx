@@ -10,6 +10,12 @@ import "@/styles/theme.css";
 // FastAPI process) and proxied same-origin in dev via the Vite proxy — so no
 // absolute URL is baked into the bundle.
 
+// Router base: the production bundle is mounted under /alt (web/server.py
+// StaticFiles), while `vite dev` serves at "/". Vite rewrites import.meta.env
+// .BASE_URL at build time from vite.config `base`, so this stays correct in
+// both habitats without a second config source.
+const ROUTER_BASENAME = import.meta.env.BASE_URL.replace(/\/+$/, "") || "/";
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -23,7 +29,7 @@ const queryClient = new QueryClient({
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={ROUTER_BASENAME}>
         <AppShell />
       </BrowserRouter>
     </QueryClientProvider>

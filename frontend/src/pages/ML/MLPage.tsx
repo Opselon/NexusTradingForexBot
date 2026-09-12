@@ -13,7 +13,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { mlApi } from "@/api/mlApi";
 import type { EngineSnapshot } from "@/types/domain";
-import { EmptyState, MetricCard, Panel, StatusBadge } from "@/components/primitives";
+import { EmptyState, MetricCard, Panel, ProbBar, StatusBadge } from "@/components/primitives";
 import { formatNumber, formatPct } from "@/lib/format";
 import { ErrorState } from "@/components/primitives";
 
@@ -88,13 +88,15 @@ export default function MLPage({ snapshot }: Props) {
       </div>
 
       <div className="grid cols-2" style={{ marginTop: 14 }}>
-        <Panel title="Live probabilities (engine)">
+        <Panel title="Live probabilities (engine)" accent>
           {snapshot?.probs.available ? (
-            <div className="grid cols-3">
-              <MetricCard label="P(NO_TRADE)" value={formatPct((snapshot.probs.no_trade ?? 0) * 100, 1)} />
-              <MetricCard label="P(BUY)" value={formatPct((snapshot.probs.buy ?? 0) * 100, 1)} tone="pos" />
-              <MetricCard label="P(SELL)" value={formatPct((snapshot.probs.sell ?? 0) * 100, 1)} tone="neg" />
-            </div>
+            <ProbBar
+              rows={[
+                { label: "P(NO_TRADE)", value: snapshot.probs.no_trade, tone: "flat" },
+                { label: "P(BUY)", value: snapshot.probs.buy, tone: "buy" },
+                { label: "P(SELL)", value: snapshot.probs.sell, tone: "sell" },
+              ]}
+            />
           ) : (
             <EmptyState message="No live inference yet (model warming up or engine stopped)." />
           )}

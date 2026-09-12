@@ -1,0 +1,137 @@
+/* Pro risk/guardian visuals (components/pro/RiskViz.tsx).
+   Additive namespace: every selector is prefixed `rv-`, so nothing here can
+   restyle an existing console surface. Colours encode state only — the state
+   itself always arrives from the backend payload. Reuses theme.css custom
+   properties (surfaces, --green/--amber/--red, --mono, tabular numerals). */
+
+.rv-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: var(--panel-gap);
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  box-shadow: 0 1px 0 var(--elevate-hi) inset, 0 8px 24px -18px var(--elevate-lo);
+  padding: 14px;
+}
+.rv-hero__state {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-inset);
+  padding: 12px 14px;
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+.rv-hero__k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }
+.rv-hero__word {
+  font-family: var(--mono);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  word-break: break-word;
+}
+.rv-hero__state.tone-ok .rv-hero__word { color: var(--green); }
+.rv-hero__state.tone-bad .rv-hero__word { color: var(--red); }
+.rv-hero__state.tone-warn .rv-hero__word { color: var(--amber); }
+.rv-hero__state.tone-unknown { border-style: dashed; }
+.rv-hero__state.tone-unknown .rv-hero__word { color: var(--text-faint); }
+.rv-hero__state.tone-bad { box-shadow: 0 0 0 1px rgba(242, 86, 77, 0.35), 0 0 22px -6px rgba(242, 86, 77, 0.5); }
+.rv-hero__src { font-size: 11px; color: var(--text-faint); font-family: var(--mono); }
+.rv-hero__reason { font-size: 12px; color: var(--text-dim); }
+.rv-hero__side { display: flex; flex-direction: column; gap: 8px; }
+
+/* generic tile frame shared by hero sub-tiles / breaker tiles */
+.rv-tile {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-inset);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.rv-tile__k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); }
+.rv-tile__v { font-family: var(--mono); font-size: 15px; font-weight: 650; }
+.rv-tile__s { font-size: 11px; color: var(--text-dim); }
+.rv-tile.tone-ok .rv-tile__v { color: var(--green); }
+.rv-tile.tone-bad .rv-tile__v { color: #ff8f89; }
+.rv-tile.tone-warn .rv-tile__v { color: var(--amber); }
+.rv-tile.tone-unknown { border-style: dashed; }
+.rv-tile.tone-unknown .rv-tile__v { color: var(--text-faint); }
+
+/* ------------------------------- drawdown bar ------------------------------- */
+.rv-limit { display: flex; flex-direction: column; gap: 8px; }
+.rv-limit__row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rv-limit__actual { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+.rv-limit__actual.tone-ok { color: var(--green); }
+.rv-limit__actual.tone-warn { color: var(--amber); }
+.rv-limit__actual.tone-bad { color: #ff8f89; }
+.rv-limit__actual.tone-unknown { color: var(--text-faint); }
+.rv-limit__limit { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+.rv-limit__track {
+  position: relative;
+  height: 12px;
+  border-radius: 7px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.rv-limit__fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; transition: width 0.18s ease; }
+.rv-limit__track.tone-ok .rv-limit__fill { background: linear-gradient(90deg, rgba(62, 207, 142, 0.55), var(--green)); }
+.rv-limit__track.tone-warn .rv-limit__fill { background: linear-gradient(90deg, rgba(235, 161, 63, 0.55), var(--amber)); }
+.rv-limit__track.tone-bad .rv-limit__fill { background: linear-gradient(90deg, rgba(242, 86, 77, 0.55), var(--red)); }
+.rv-limit__track.tone-unknown .rv-limit__fill { background: repeating-linear-gradient(45deg, #1d2937 0 6px, #131c27 6px 12px); }
+/* backend limit marker at the 100 % point of the track */
+.rv-limit__mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--border-strong); }
+.rv-limit__note { font-size: 11px; color: var(--text-faint); }
+.rv-limit__note.no-budget { color: var(--amber); }
+
+/* -------------------------------- margin arc -------------------------------- */
+.rv-arc { display: flex; align-items: center; gap: 14px; }
+.rv-arc svg { display: block; overflow: visible; }
+.rv-arc__track { stroke: var(--border); }
+.rv-arc__value { transition: stroke-dashoffset 0.2s ease; }
+.rv-arc.tone-ok .rv-arc__value { stroke: var(--green); }
+.rv-arc.tone-warn .rv-arc__value { stroke: var(--amber); }
+.rv-arc.tone-bad .rv-arc__value { stroke: var(--red); }
+.rv-arc.tone-unknown .rv-arc__value { stroke: var(--text-faint); stroke-dasharray: 3 5; }
+.rv-arc__num { font-family: var(--mono); font-size: 18px; font-weight: 700; fill: currentColor; }
+.rv-arc__legend { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--text-dim); min-width: 0; }
+.rv-arc__legend b { font-family: var(--mono); color: var(--text); font-weight: 650; }
+
+/* ------------------------------- gate funnel -------------------------------- */
+.rv-funnel { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.rv-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+  max-width: 100%;
+}
+.rv-chip__n { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-chip__v { font-weight: 700; letter-spacing: 0.04em; }
+.rv-chip.tone-pass { border-color: rgba(62, 207, 142, 0.4); }
+.rv-chip.tone-pass .rv-chip__v { color: var(--green); }
+.rv-chip.tone-fail { border-color: rgba(242, 86, 77, 0.45); }
+.rv-chip.tone-fail .rv-chip__v { color: #ff8f89; }
+.rv-chip.tone-unknown { border-style: dashed; }
+.rv-chip.tone-unknown .rv-chip__v { color: var(--text-faint); }
+.rv-funnel__count { font-size: 11px; color: var(--text-faint); font-family: var(--mono); }
+.rv-funnel__empty { font-size: 12px; color: var(--text-dim); font-style: italic; }
+
+/* ------------------------------ breaker tiles ------------------------------ */
+.rv-breakers { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.rv-breakers .rv-tile__v { font-size: 17px; }
+
+@media (max-width: 860px) {
+  .rv-hero { grid-template-columns: 1fr; }
+}
