@@ -3175,7 +3175,7 @@ class LiveEngine:
                     floating_pnl=pos.profit,
                 )
                 # Risk-normalised excursions from the order manager trackers.
-                perf = self._position_performance(pos.ticket)
+                perf = self._position_performance(pos.ticket, now=tick.timestamp)
                 decision_ctx, trade_id, experience_id = self._position_decision_context(
                     pos.ticket, pos.symbol
                 )
@@ -3198,8 +3198,20 @@ class LiveEngine:
                 correlation_id="position-track",
             )
 
-    def _position_performance(self, ticket: int) -> PositionPerformance:
-        """Builds risk-normalised excursion performance from order-manager state."""
+    def _position_performance(
+        self,
+        ticket: int,
+        now: datetime | None = None,
+    ) -> PositionPerformance:
+        """Builds risk-normalised excursion performance from order-manager state.
+
+        ``now`` is the CURRENT TICK timestamp threaded from the tick pipeline
+        (BUG-260 parity with the G3/BUG-259 clock-domain contract): the holding
+        duration must never mix the host wall clock with the broker/tick domain
+        of ``entry_timestamp`` — a host clock hours behind the broker derived a
+        negative (or near-zero) duration and corrupted the PositionPerformance
+        timeline. No threaded ``now`` -> conservative 0.0.
+        """
         try:
             om = self.order_manager
             planned_risk = abs(
@@ -3212,7 +3224,9 @@ class LiveEngine:
             mfe_r = abs(mfe_points) / planned_risk if planned_risk > 1e-9 else 0.0
             mae_r = abs(mae_points) / planned_risk if planned_risk > 1e-9 else 0.0
             entry_time = om._entry_timestamps.get(ticket)
-            duration = (datetime.now(UTC) - entry_time).total_seconds() if entry_time else 0.0
+            duration = 0.0
+            if entry_time is not None and now is not None:
+                duration = (now - entry_time).total_seconds()
             giveback = 0.0
             if peak_profit > 0.0:
                 floating = float(om._mfe_tracker.get(ticket, 0.0))

@@ -4081,12 +4081,32 @@ class OrderLifecycleManager:
         now: datetime | None = None,
     ) -> None:
         """Delegate — state owned by PositionTrackingLedger (S6-followup).
-        entry_time anchor comes from the manager-owned _entry_timestamps."""
+        entry_time anchor comes from the manager-owned _entry_timestamps.
+
+        BUG-260 (clock-domain parity with G3/BUG-259): ``now`` must be the
+        tick-domain timestamp threaded from the management loop. With no
+        threaded ``now`` the elapsed stamps are conservatively skipped —
+        deriving them from the host wall clock mixed clock domains against the
+        broker-stamped ``entry_timestamp`` and corrupted time_to_mfe/mae.
+        """
+        entry_time = self._entry_timestamps.get(ticket)
+        if now is None or entry_time is None:
+            # BUG-260 conservative path: no threaded tick timestamp (or no
+            # entry anchor) -> advance only the excursion magnitudes and skip
+            # the elapsed stamps. Never substitute the host wall clock: the
+            # broker/tick domain owns every duration in the exit surface.
+            self._tracking.update_mfe_mae(
+                ticket,
+                profit_price_delta,
+                entry_time=None,
+                now=now or entry_time or datetime.now(UTC),
+            )
+            return
         self._tracking.update_mfe_mae(
             ticket,
             profit_price_delta,
-            entry_time=self._entry_timestamps.get(ticket),
-            now=now or datetime.now(UTC),
+            entry_time=entry_time,
+            now=now,
         )
 
     def _capture_reversal_state(
