@@ -21,6 +21,19 @@ Checks (each is a finding with a severity; CI fails on any ERROR):
   6. No-op `if: always()` masking — informational.
   7. Self-referencing CI run IDs in poller-like logic — informational
      (guards against a status poller observing its own run).
+  8. Action pin SHA shape (STRICT, ERROR): every third-party `uses:` ref
+     (workflows and composite actions; job-level reusable-workflow `uses:`
+     included) must resolve to a full 40-hex commit SHA, never a tag or
+     branch name. Rationale: the #139 wave "pinned" actions by pasting
+     *tag-object* SHAs (astral-sh/setup-uv v7/v5 objects, and a
+     download-artifact sha under upload-artifact) beside `# vX.Y.Z`
+     comments — GitHub Actions fails those runs at ref-resolution time
+     because an annotated-tag object is not a commit. This rule is
+     deliberately OFFLINE and deterministic (no network, no GitHub API):
+     it enforces the *shape* that makes a pin auditable; verifying that a
+     well-formed SHA is the *correct commit for its advertised tag*
+     (via `git ls-remote ... refs/tags/<v>*` + peeling `^{}`) stays the
+     mandatory manual audit step for any pin change.
 
 Lane vocabulary is DERIVED FROM THE ACTUAL REPO, not hard-coded to a foreign
 reference. The classifier (classify_changes.py) is the canonical lane list;
@@ -59,6 +72,38 @@ _EXPR_RE = re.compile(r"\$\{\{\s*(.+?)\s*\}\}")
 _LANE_REF_RE = re.compile(r"needs\.(?P<job>[A-Za-z0-9_\-]+)\.outputs\.(?P<lane>[A-Za-z0-9_\-]+)")
 
 
+# 8. `uses:` ref parsing from RAW TEXT (line-exact, survives workflow *and*
+# composite-action files, and job-level reusable-workflow refs). Captures the
+# full ref string; the `@<commit-ish>` tail decides pin vs. tag.
+_USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>[^\s#]+)", re.MULTILINE)
+_SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
+
+# 8b. Phantom-pin ledger (regression pins). An annotated-tag *object* SHA is
+# 40-hex and passes the shape rule, yet GitHub Actions cannot resolve it to a
+# commit — the run dies at ref resolution. Each entry below was verified via
+# `git ls-remote <repo> 'refs/tags/<v>*'` + `^{}` peels on 2026-09-12 (the
+# #139-wave audit); the ledger keeps those exact phantoms from ever shipping
+# again without needing any network access at scan time.
+PHANTOM_PINS: dict[tuple[str, str], str] = {
+    (
+        "astral-sh/setup-uv",
+        "94527f2e458b27549849d47d273a16bec83a01e9",
+    ): "annotated-tag object of refs/tags/v7 (not a commit); the v7.6.0 "
+    "commit is 37802adc94f370d6bfd71619e3f0bf239e1f3b78",
+    (
+        "astral-sh/setup-uv",
+        "e58605a9b6da7c637471fab8847a5e5a6b8df081",
+    ): "annotated-tag object of refs/tags/v5 (not a commit); the v5.4.2 "
+    "commit is d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86",
+    (
+        "actions/upload-artifact",
+        "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+    ): "does not exist in actions/upload-artifact — it is "
+    "actions/download-artifact refs/tags/v4.3.0; the upload-artifact "
+    "v4.3.0 commit is 26f96dfa697d77e81fd5907df203aa23a56210a8",
+}
+
+
 @dataclass
 class Finding:
     severity: str  # ERROR | WARNING | INFO
@@ -94,6 +139,7 @@ class JobModel:
 class WorkflowModel:
     name: str
     raw: dict
+    path: Path | None = None
     jobs: dict[str, JobModel] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
 
@@ -150,7 +196,7 @@ def _extract_artifacts(steps: list[dict]) -> list[str]:
 
 
 def parse_workflow(path: Path) -> WorkflowModel:
-    wf = WorkflowModel(name=path.name, raw={})
+    wf = WorkflowModel(name=path.name, raw={}, path=path)
     if yaml is None:
         wf.error(message="PyYAML not available; cannot parse workflows")
         return wf
@@ -340,12 +386,84 @@ def check_self_watch(wf: WorkflowModel) -> None:
         )
 
 
+def _uses_repo_and_commitish(ref: str) -> tuple[str, str] | None:
+    """Split `owner/repo[/path]@<commit-ish>` into (owner/repo, commit-ish).
+
+    Returns None for local composite-action refs (`./.github/actions/x`) —
+    those resolve inside this repository and carry no upstream pin to audit.
+    """
+    if ref.startswith("./") or ref.startswith(".github/"):
+        return None
+    if "@" not in ref:
+        return ref, ""
+    repo_part, commitish = ref.rsplit("@", 1)
+    segments = repo_part.split("/")
+    key = "/".join(segments[:2]) if len(segments) >= 2 else repo_part
+    return key, commitish
+
+
+def check_action_pins(wf: WorkflowModel) -> None:
+    """Every third-party `uses:` ref must be pinned to a full 40-hex commit SHA.
+
+    OFFLINE / deterministic by design: this enforces pin *shape* (a tag or
+    branch 'pin' is not auditable and moves under CI) and rejects the exact
+    phantom SHAs recorded in PHANTOM_PINS (annotated-tag objects that are 40
+    hex but resolve to no commit — Actions fails the run at ref resolution).
+    Confirming that a well-formed SHA is the right commit for its advertised
+    tag stays a manual `git ls-remote` + `^{}` peel audit (see module docstring
+    and docs/CI_ARCHITECTURE.md); this scanner never touches the network.
+    """
+    if wf.path is None or not wf.path.is_file():
+        return
+    try:
+        text = wf.path.read_text(encoding="utf-8")
+    except OSError as e:  # pragma: no cover
+        wf.error("", "action-pin-unreadable", f"cannot read {wf.path.name}: {e}")
+        return
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        m = _USES_RE.match(line)
+        if not m:
+            continue
+        ref = m.group("ref")
+        split = _uses_repo_and_commitish(ref)
+        if split is None:
+            continue  # local composite action — no upstream pin
+        repo, commitish = split
+        if not commitish:
+            wf.error(
+                "",
+                "action-pin-shape",
+                f"line {lineno}: `uses: {ref}` has no @ref — an action must be "
+                f"pinned to a full 40-hex commit SHA",
+            )
+            continue
+        if not _SHA40_RE.match(commitish):
+            wf.error(
+                "",
+                "action-pin-shape",
+                f"line {lineno}: `uses: {ref}` is not a 40-hex commit SHA pin — "
+                f"tag/branch refs are mutable (a '# vX.Y.Z' comment next to it "
+                f"is a claim, not a pin); use `git ls-remote "
+                f"https://github.com/{repo} 'refs/tags/<v>*'` and pin the peeled "
+                f"^{{}} commit",
+            )
+            continue
+        reason = PHANTOM_PINS.get((repo, commitish))
+        if reason:
+            wf.error(
+                "",
+                "action-pin-phantom",
+                f"line {lineno}: `uses: {ref}` is a KNOWN PHANTOM PIN — {reason}",
+            )
+
+
 def analyze_workflow(wf: WorkflowModel) -> None:
     check_undefined_outputs(wf)
     check_local_action_checkout(wf)
     check_matrix_collisions(wf)
     check_silent_skip(wf)
     check_self_watch(wf)
+    check_action_pins(wf)
 
 
 def run(workflows_dir: Path, strict: bool = False) -> tuple[list[WorkflowModel], int]:

@@ -56,6 +56,7 @@ from nexus_scalp.release.update_engine.rollback_state import (
     UpdateState,
 )
 from nexus_scalp.release.update_engine.safety_guards import EngineGuard
+from tests.helpers.rollback_fixtures import seed_release_contract
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +254,8 @@ def test_sc3b_rollback_preserves_new_user_data(tmp_path: Path) -> None:
     (backup / "NexusScalpEngine.exe").write_bytes(b"MZ-PREV")
     (backup / "data").mkdir()
     (backup / "data" / "state.bin").write_bytes(b"OLD-DATA")
+    # BUG-263: a restorable snapshot must carry the embedded release contract.
+    seed_release_contract(backup)
     fresh_db = app / "data"
     fresh_db.mkdir(parents=True, exist_ok=True)
     (fresh_db / "state.bin").write_bytes(b"NEW-DATA")
@@ -384,6 +387,10 @@ def test_sc7_crash_during_install_requires_rollback_then_recovers(
     (snapshot / "NexusScalpEngine.exe").write_bytes(b"MZ-PREV")
     (app / ".previous-1").mkdir()
     (app / ".previous-1" / "NexusScalpEngine.exe").write_bytes(b"MZ-PREV")
+    # BUG-263: the crash-recovery rollback now re-verifies the snapshot, so a
+    # recovery path that expects to land the prior tree must ship a snapshot
+    # whose release contract verifies.
+    seed_release_contract(app / ".previous-1")
     rb_report = orch.rollback(reason="sc7 recovery")
     assert rb_report["state"] == STATE_ROLLED_BACK
     assert rb_report["restored"] is True
