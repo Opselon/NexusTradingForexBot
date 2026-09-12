@@ -41,8 +41,8 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
       nav("goto_trading", "/trading", t("ux.action.goto_signals", "Trading / engine commands"), "⇅", "trading engine start stop mode live paper shadow"),
       nav("goto_positions", "/positions", t("ux.action.goto_positions", "Positions"), "▤", "positions close tickets exposure ledger"),
       nav("goto_risk", "/risk", t("ux.action.goto_health", "Risk / guardian"), "⛨", "risk guardian halt kill switch circuit breaker"),
-      nav("goto_ml", "/ml", "ML / 70D model", "Σ", "model ml shadow70 integrity features inference"),
-      nav("goto_intel", "/intelligence", "Intelligence / news", "≈", "news intelligence autopsies calendar sentiment"),
+      nav("goto_ml", "/ml", t("ux.action.goto_ml", "ML / 70D model"), "Σ", "model ml shadow70 integrity features inference"),
+      nav("goto_intel", "/intelligence", t("ux.action.goto_intel", "Intelligence / news"), "≈", "news intelligence autopsies calendar sentiment"),
       nav("goto_audit", "/audit", t("ux.action.goto_diagnostics", "Audit / diagnostics"), "☰", "audit events ledger incidents database integrity"),
       {
         id: "refresh",
@@ -104,7 +104,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
       style={{ alignItems: "flex-start", paddingTop: "12vh" }}
       onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
     >
-      <div className="modal" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div className="modal" role="dialog" aria-modal="true" aria-label={t("alt.palette.aria", "Command palette")}>
         <input
           ref={inputRef}
           className="palette-input"

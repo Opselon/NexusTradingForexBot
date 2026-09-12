@@ -8,6 +8,10 @@
  *  - /api/v1/model/status: serving bundle + warmup + inference enablement.
  *  - /api/v1/features/status: warmup + missing features.
  *  - /api/models/shadow70/summary: 70D shadow runtime/store/worker state.
+ *
+ * i18n: state words (ACTIVE/LOADED/ENABLED/READY/PASS...) are backend
+ * verdicts and render verbatim; panel titles, metric labels and hint copy
+ * are UI copy and translate through alt.ml.*.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +19,7 @@ import { mlApi } from "@/api/mlApi";
 import type { EngineSnapshot } from "@/types/domain";
 import { EmptyState, MetricCard, Panel, ProbBar, StatusBadge } from "@/components/primitives";
 import { formatNumber, formatPct } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { ErrorState } from "@/components/primitives";
 
 interface Props {
@@ -22,6 +27,7 @@ interface Props {
 }
 
 export default function MLPage({ snapshot }: Props) {
+  const t = useI18n((s) => s.t);
   const integrityQuery = useQuery({
     queryKey: ["model-integrity"],
     queryFn: ({ signal }) => mlApi.integrity(signal),
@@ -62,33 +68,33 @@ export default function MLPage({ snapshot }: Props) {
     <div>
       <div className="grid cols-4">
         <MetricCard
-          label="Model integrity (backend verdict)"
+          label={t("alt.ml.metric_integrity", "Model integrity (backend verdict)")}
           value={integrityQuery.isPending ? "…" : (integ?.state ?? "UNKNOWN")}
           tone={integrityLevel === "good" ? "pos" : integrityLevel === "bad" ? "neg" : "dim"}
-          sub={integ?.reason ?? (integ?.state === "ACTIVE" ? "champion valid + serving" : "backend decides — not inferred from artifact presence")}
+          sub={integ?.reason ?? (integ?.state === "ACTIVE" ? t("alt.ml.integrity_sub_active", "champion valid + serving") : t("alt.ml.integrity_sub", "backend decides — not inferred from artifact presence"))}
         />
         <MetricCard
-          label="Serving bundle"
+          label={t("alt.ml.metric_bundle", "Serving bundle")}
           value={statusQuery.data ? (statusQuery.data.bundle_loaded ? "LOADED" : "NOT LOADED") : "—"}
           tone={statusQuery.data?.bundle_loaded ? "pos" : "dim"}
-          sub={`inference ${statusQuery.data?.inference_enabled ? "ENABLED" : "BLOCKED"} · warmup ${statusQuery.data?.warmup_state ?? "—"}`}
+          sub={t("alt.ml.bundle_sub", "inference {inf} · warmup {warm}", { inf: statusQuery.data?.inference_enabled ? "ENABLED" : "BLOCKED", warm: statusQuery.data?.warmup_state ?? "—" })}
         />
         <MetricCard
-          label="70D schema (bundle)"
+          label={t("alt.ml.metric_schema", "70D schema (bundle)")}
           value={snapshot?.model.feature_schema_id ?? "—"}
           tone="dim"
           sub={`${snapshot?.model.feature_dimension ?? "?"}D · scaler ${snapshot?.model.scaler_ready === null || snapshot?.model.scaler_ready === undefined ? "—" : snapshot.model.scaler_ready ? "READY" : "NOT FITTED"}`}
         />
         <MetricCard
-          label="Inference latency"
+          label={t("alt.ml.metric_latency", "Inference latency")}
           value={snapshot?.model.latency_ms === null || snapshot?.model.latency_ms === undefined ? "—" : `${snapshot.model.latency_ms.toFixed(1)} ms`}
           tone="dim"
-          sub={snapshot?.model.latency_breakdown ? `fwd ${snapshot.model.latency_breakdown.model_forward_ms ?? "—"} · feat ${snapshot.model.latency_breakdown.feature_ms ?? "—"}` : "backend-measured only"}
+          sub={snapshot?.model.latency_breakdown ? t("alt.ml.latency_sub", "fwd {fwd} · feat {feat}", { fwd: snapshot.model.latency_breakdown.model_forward_ms ?? "—", feat: snapshot.model.latency_breakdown.feature_ms ?? "—" }) : t("alt.ml.latency_sub_backend", "backend-measured only")}
         />
       </div>
 
       <div className="grid cols-2" style={{ marginTop: 14 }}>
-        <Panel title="Live probabilities (engine)" accent>
+        <Panel title={t("alt.ml.panel_probs", "Live probabilities (engine)")} accent>
           {snapshot?.probs.available ? (
             <ProbBar
               rows={[
@@ -98,25 +104,25 @@ export default function MLPage({ snapshot }: Props) {
               ]}
             />
           ) : (
-            <EmptyState message="No live inference yet (model warming up or engine stopped)." />
+            <EmptyState message={t("alt.ml.empty_probs", "No live inference yet (model warming up or engine stopped).")} />
           )}
           <dl className="kv" style={{ marginTop: 12 }}>
-            <dt>decision</dt>
+            <dt>{t("alt.ml.dt_decision", "decision")}</dt>
             <dd>{snapshot?.ai_decision ?? "—"}</dd>
-            <dt>confidence</dt>
+            <dt>{t("alt.ml.dt_confidence", "confidence")}</dt>
             <dd>{snapshot?.ai_confidence === null || snapshot?.ai_confidence === undefined ? "—" : formatPct(snapshot.ai_confidence * 100, 1)}</dd>
-            <dt>inference age</dt>
+            <dt>{t("alt.ml.dt_inference_age", "inference age")}</dt>
             <dd>{snapshot?.diagnostics.inference_age_sec === null || snapshot?.diagnostics.inference_age_sec === undefined ? "—" : `${snapshot.diagnostics.inference_age_sec.toFixed(1)}s`}</dd>
-            <dt>feature age</dt>
+            <dt>{t("alt.ml.dt_feature_age", "feature age")}</dt>
             <dd>{snapshot?.diagnostics.features_age_sec === null || snapshot?.diagnostics.features_age_sec === undefined ? "—" : `${snapshot.diagnostics.features_age_sec.toFixed(1)}s`}</dd>
           </dl>
         </Panel>
 
-        <Panel title="Artifact identity (manifest)">
+        <Panel title={t("alt.ml.panel_identity", "Artifact identity (manifest)")}>
           {identityQuery.isPending ? (
-            <div className="muted small">loading…</div>
+            <div className="muted small">{t("alt.common.loading", "loading…")}</div>
           ) : identityQuery.data?.available === false ? (
-            <EmptyState message={identityQuery.data.reason ?? "No model bundle loaded."} />
+            <EmptyState message={identityQuery.data.reason ?? t("alt.ml.empty_identity", "No model bundle loaded.")} />
           ) : identityQuery.data ? (
             <dl className="kv">
               <dt>model_id</dt>
@@ -125,56 +131,56 @@ export default function MLPage({ snapshot }: Props) {
               <dd>{identityQuery.data.schema_id ?? "—"}</dd>
               <dt>version</dt>
               <dd>{identityQuery.data.version ?? "—"}</dd>
-              <dt>schema hash</dt>
+              <dt>{t("alt.ml.dt_schema_hash", "schema hash")}</dt>
               <dd className="small">{identityQuery.data.feature_schema_hash ? `${identityQuery.data.feature_schema_hash.slice(0, 16)}…` : "—"}</dd>
-              <dt>champion id</dt>
+              <dt>{t("alt.ml.dt_champion", "champion id")}</dt>
               <dd>{snapshot?.model.model_id ?? "—"}</dd>
             </dl>
           ) : (
-            <ErrorState message="Identity endpoint failed." onRetry={() => identityQuery.refetch()} />
+            <ErrorState message={t("alt.ml.err_identity", "Identity endpoint failed.")} onRetry={() => identityQuery.refetch()} />
           )}
         </Panel>
       </div>
 
       <div className="grid cols-2">
-        <Panel title="Feature pipeline">
+        <Panel title={t("alt.ml.panel_pipeline", "Feature pipeline")}>
           {featuresQuery.data ? (
             <dl className="kv">
-              <dt>warmup</dt>
+              <dt>{t("alt.ml.dt_warmup", "warmup")}</dt>
               <dd><StatusBadge status={featuresQuery.data.warmup_state} /></dd>
-              <dt>inference</dt>
+              <dt>{t("alt.ml.dt_inference", "inference")}</dt>
               <dd>{featuresQuery.data.inference_enabled ? <span className="badge good">ENABLED</span> : <span className="badge warn">BLOCKED</span>}</dd>
-              <dt>last vector</dt>
+              <dt>{t("alt.ml.dt_last_vector", "last vector")}</dt>
               <dd>{featuresQuery.data.last_vector_available ? <span className="badge good">AVAILABLE</span> : <span className="badge warn">NONE</span>}</dd>
-              <dt>missing features</dt>
+              <dt>{t("alt.ml.dt_missing", "missing features")}</dt>
               <dd>{featuresQuery.data.missing_features.length === 0 ? "—" : <span className="pnl-neg">{featuresQuery.data.missing_features.join(", ")}</span>}</dd>
-              <dt>active dimension</dt>
-              <dd>{snapshot?.features.length ? `${snapshot.features.length} entries` : "—"}</dd>
+              <dt>{t("alt.ml.dt_active_dim", "active dimension")}</dt>
+              <dd>{snapshot?.features.length ? t("alt.ml.entries_value", "{n} entries", { n: snapshot.features.length }) : "—"}</dd>
             </dl>
           ) : (
-            <EmptyState message="Feature status unavailable." />
+            <EmptyState message={t("alt.ml.empty_features", "Feature status unavailable.")} />
           )}
         </Panel>
 
         <Panel
-          title="70D shadow runtime"
+          title={t("alt.ml.panel_shadow", "70D shadow runtime")}
           right={s70?.runtime?.state ? <StatusBadge status={String(s70.runtime.state)} /> : undefined}
         >
           {shadow70Query.isPending ? (
-            <div className="muted small">loading…</div>
+            <div className="muted small">{t("alt.common.loading", "loading…")}</div>
           ) : s70?.available === false || !s70 ? (
-            <EmptyState message="Shadow70 subsystem unavailable (worker not attached or engine offline)." hint="Rendered as UNKNOWN — the UI never claims the 70D model is healthy without backend evidence." />
+            <EmptyState message={t("alt.ml.empty_shadow", "Shadow70 subsystem unavailable (worker not attached or engine offline).")} hint={t("alt.ml.empty_shadow_hint", "Rendered as UNKNOWN — the UI never claims the 70D model is healthy without backend evidence.")} />
           ) : (
             <dl className="kv">
-              <dt>runtime state</dt>
+              <dt>{t("alt.ml.dt_runtime", "runtime state")}</dt>
               <dd><StatusBadge status={String(s70.runtime?.state ?? null)} /></dd>
-              <dt>shadow model</dt>
+              <dt>{t("alt.ml.dt_shadow_model", "shadow model")}</dt>
               <dd className="small">{String((s70.runtime?.load_result as { model_id?: string } | undefined)?.model_id ?? "—")}</dd>
-              <dt>worker</dt>
+              <dt>{t("alt.ml.dt_worker", "worker")}</dt>
               <dd>{s70.worker ? String((s70.worker as { state?: string }).state ?? "—") : "—"}</dd>
-              <dt>observations</dt>
+              <dt>{t("alt.ml.dt_observations", "observations")}</dt>
               <dd>{String((s70.store as { total_observations?: number } | undefined)?.total_observations ?? (s70.store ? "present" : "—"))}</dd>
-              <dt>disagreements</dt>
+              <dt>{t("alt.ml.dt_disagreements", "disagreements")}</dt>
               <dd>{s70.store?.disagreement_counts ? Object.entries(s70.store.disagreement_counts).map(([k, v]) => `${k}:${v}`).join(" · ") || "—" : "—"}</dd>
             </dl>
           )}
@@ -182,12 +188,19 @@ export default function MLPage({ snapshot }: Props) {
       </div>
 
       {s70?.store?.recent_observations && s70.store.recent_observations.length > 0 && (
-        <Panel title="Recent 70D shadow observations" tight>
+        <Panel title={t("alt.ml.panel_recent", "Recent 70D shadow observations")} tight>
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Time</th><th>Champion</th><th>Shadow</th><th>Conf C/S</th><th>Disagreement</th><th>Regime</th><th>News</th><th>Outcome</th>
+                  <th>{t("alt.common.col_time", "Time")}</th>
+                  <th>{t("alt.ml.col_champion", "Champion")}</th>
+                  <th>{t("alt.ml.col_shadow", "Shadow")}</th>
+                  <th>{t("alt.ml.col_conf_cs", "Conf C/S")}</th>
+                  <th>{t("alt.ml.col_disagreement", "Disagreement")}</th>
+                  <th>{t("alt.common.col_regime", "Regime")}</th>
+                  <th>{t("alt.ml.col_news", "News")}</th>
+                  <th>{t("alt.common.col_outcome", "Outcome")}</th>
                 </tr>
               </thead>
               <tbody>

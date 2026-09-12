@@ -15,6 +15,7 @@ import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import type { EngineSnapshot, Position } from "@/types/domain";
 import { ConfirmModal, DataTable, EmptyState, LoadingState, ErrorState, Panel } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPnl, formatPrice } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { ApiError } from "@/types/api";
 
 interface Props {
@@ -26,6 +27,7 @@ interface CloseDialog {
 }
 
 export default function PositionsPage({ snapshot }: Props) {
+  const t = useI18n((s) => s.t);
   const queryClient = useQueryClient();
   const closeCmd = useMutationFeedback();
   const [closeDialog, setCloseDialog] = useState<CloseDialog | null>(null);
@@ -60,14 +62,15 @@ export default function PositionsPage({ snapshot }: Props) {
     <div>
       {closeDialog && (
         <ConfirmModal
-          title={`Close position #${closeDialog.ticket}`}
-          confirmLabel="Confirm close"
+          title={t("alt.pos.confirm_close_title", "Close position #{ticket}", { ticket: closeDialog.ticket })}
+          confirmLabel={t("alt.pos.confirm_close_label", "Confirm close")}
           busy={closeCmd.state.running}
           onConfirm={() => void confirmClose()}
           onCancel={() => setCloseDialog(null)}
         >
           <div>
-            Close position <b className="inline-mono">#{closeDialog.ticket}</b> at market via the OrderLifecycleManager. The backend may refuse (guardian, state, connectivity) — the response decides.
+            {t("alt.pos.close_body1", "Close position")} <b className="inline-mono">#{closeDialog.ticket}</b>{" "}
+            {t("alt.pos.close_body2", "at market via the OrderLifecycleManager. The backend may refuse (guardian, state, connectivity) — the response decides.")}
           </div>
           {closeCmd.state.lastMessage && (
             <div className={`cmd-result ${closeCmd.state.lastResult ? "ok" : "fail"}`}>
@@ -78,34 +81,34 @@ export default function PositionsPage({ snapshot }: Props) {
       )}
 
       <Panel
-        title={`Open positions (${livePositions.length})`}
-        right={<span className="timestamp-note">{snapshot ? `snapshot v${snapshot.state_version}` : "—"}</span>}
+        title={t("alt.pos.panel_open", "Open positions ({count})", { count: livePositions.length })}
+        right={<span className="timestamp-note">{snapshot ? t("alt.pos.snapshot_note", "snapshot v{v}", { v: snapshot.state_version }) : "—"}</span>}
         tight
       >
         {positionsQuery.isPending && livePositions.length === 0 ? (
-          <LoadingState label="Reading broker adapter…" />
+          <LoadingState label={t("alt.pos.loading_adapter", "Reading broker adapter…")} />
         ) : positionsQuery.isError && livePositions.length === 0 ? (
           <ErrorState
-            message={positionsQuery.error instanceof ApiError ? positionsQuery.error.message : "Position endpoint unavailable"}
+            message={positionsQuery.error instanceof ApiError ? positionsQuery.error.message : t("alt.pos.err_positions", "Position endpoint unavailable")}
             requestId={positionsQuery.error instanceof ApiError ? positionsQuery.error.requestId : null}
             onRetry={() => positionsQuery.refetch()}
           />
         ) : livePositions.length === 0 ? (
-          <EmptyState message="No open positions." hint="Broker adapter snapshot is empty — nothing is hidden or estimated." />
+          <EmptyState message={t("alt.pos.empty_positions", "No open positions.")} hint={t("alt.pos.empty_positions_hint", "Broker adapter snapshot is empty — nothing is hidden or estimated.")} />
         ) : (
           <DataTable
             headers={[
-              { label: "Ticket" },
-              { label: "Symbol" },
-              { label: "Side" },
-              { label: "Volume", num: true },
-              { label: "Entry", num: true },
-              { label: "Current", num: true },
-              { label: "SL", num: true },
-              { label: "TP", num: true },
-              { label: "PnL", num: true },
-              { label: "Swap", num: true },
-              { label: "Opened" },
+              { label: t("alt.common.col_ticket", "Ticket") },
+              { label: t("alt.common.col_symbol", "Symbol") },
+              { label: t("alt.common.col_side", "Side") },
+              { label: t("alt.common.col_volume", "Volume"), num: true },
+              { label: t("alt.common.col_entry", "Entry"), num: true },
+              { label: t("alt.common.col_current", "Current"), num: true },
+              { label: t("alt.common.col_sl", "SL"), num: true },
+              { label: t("alt.common.col_tp", "TP"), num: true },
+              { label: t("alt.common.col_pnl", "PnL"), num: true },
+              { label: t("alt.common.col_swap", "Swap"), num: true },
+              { label: t("alt.common.col_opened", "Opened") },
               { label: "" },
             ]}
           >
@@ -125,7 +128,7 @@ export default function PositionsPage({ snapshot }: Props) {
                 <td>
                   {p.ticket !== null && (
                     <button className="btn small danger" onClick={() => setCloseDialog({ ticket: p.ticket as number })}>
-                      Close
+                      {t("alt.pos.close_btn", "Close")}
                     </button>
                   )}
                 </td>
@@ -135,28 +138,28 @@ export default function PositionsPage({ snapshot }: Props) {
         )}
       </Panel>
 
-      <Panel title="Closed-trade ledger (broker-reconstructed)" tight>
+      <Panel title={t("alt.pos.panel_ledger", "Closed-trade ledger (broker-reconstructed)")} tight>
         {historyQuery.isPending ? (
-          <LoadingState label="Reading audit ledger…" />
+          <LoadingState label={t("alt.pos.loading_ledger", "Reading audit ledger…")} />
         ) : historyQuery.isError ? (
           <ErrorState
-            message={historyQuery.error instanceof ApiError ? historyQuery.error.message : "Ledger unavailable"}
+            message={historyQuery.error instanceof ApiError ? historyQuery.error.message : t("alt.audit.err_ledger", "Ledger unavailable")}
             requestId={historyQuery.error instanceof ApiError ? historyQuery.error.requestId : null}
             onRetry={() => historyQuery.refetch()}
           />
         ) : (historyQuery.data?.length ?? 0) === 0 ? (
-          <EmptyState message="No closed trades in the ledger yet." />
+          <EmptyState message={t("alt.pos.empty_ledger", "No closed trades in the ledger yet.")} />
         ) : (
           <DataTable
             headers={[
-              { label: "Ticket" },
-              { label: "Symbol" },
-              { label: "Dir" },
-              { label: "Volume", num: true },
-              { label: "Entry", num: true },
-              { label: "Status" },
-              { label: "PnL", num: true },
-              { label: "Closed" },
+              { label: t("alt.common.col_ticket", "Ticket") },
+              { label: t("alt.common.col_symbol", "Symbol") },
+              { label: t("alt.common.col_dir", "Dir") },
+              { label: t("alt.common.col_volume", "Volume"), num: true },
+              { label: t("alt.common.col_entry", "Entry"), num: true },
+              { label: t("alt.common.col_status", "Status") },
+              { label: t("alt.common.col_pnl", "PnL"), num: true },
+              { label: t("alt.common.col_closed", "Closed") },
             ]}
           >
             {(historyQuery.data ?? []).slice(0, 25).map((r, i) => (

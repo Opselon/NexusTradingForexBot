@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { positionSide } from "@/lib/format";
 import { useUiStore, type ToastItem } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
 
 /** Health/status -> semantic badge level. Backend status strings are trusted;
  *  anything unrecognized renders UNKNOWN (never guessed). */
@@ -15,8 +16,11 @@ function badgeLevel(status: string | null | undefined): "good" | "warn" | "bad" 
 }
 
 export function StatusBadge({ status, label }: { status: string | null | undefined; label?: string }) {
+  const t = useI18n((s) => s.t);
   const level = badgeLevel(status);
-  const text = status ? status.replace(/_/g, " ") : "UNKNOWN";
+  // Backend status words render verbatim; only the client-side "no status"
+  // placeholder is UI copy and translates.
+  const text = status ? status.replace(/_/g, " ") : t("alt.common.badge_unknown", "UNKNOWN");
   return (
     <span className={`badge ${level}`} title={label ?? text}>
       {text}
@@ -81,16 +85,21 @@ export function Panel({
   );
 }
 
-export function LoadingState({ label = "Loading backend state…" }: { label?: string }) {
+/** Shared chrome labels translate here (alt.common.*) so every page gets them
+ *  for free; caller-supplied `message`/`label` strings stay caller-owned. */
+export function LoadingState({ label }: { label?: string }) {
+  const t = useI18n((s) => s.t);
+  const text = label ?? t("alt.common.loading_state", "Loading backend state…");
   return (
     <div className="state-block">
       <div className="spinner" />
-      <div>{label}</div>
+      <div>{text}</div>
     </div>
   );
 }
 
 export function ErrorState({ message, requestId, onRetry }: { message: string; requestId?: string | null; onRetry?: () => void }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="state-block error">
       <div className="glyph">⚠</div>
@@ -98,7 +107,7 @@ export function ErrorState({ message, requestId, onRetry }: { message: string; r
       {requestId && <div className="hint inline-mono">request_id: {requestId}</div>}
       {onRetry && (
         <button className="btn small" onClick={onRetry}>
-          Retry
+          {t("alt.common.retry", "Retry")}
         </button>
       )}
     </div>
@@ -217,6 +226,8 @@ export function ConfirmModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
+  const t = useI18n((s) => s.t);
+
   return (
     <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}>
       <div className={`modal ${danger ? "danger" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
@@ -224,10 +235,10 @@ export function ConfirmModal({
         <div className="modal-body">{children}</div>
         <div className="modal-actions">
           <button className="btn" disabled={busy} onClick={onCancel}>
-            Cancel <kbd>esc</kbd>
+            {t("alt.common.cancel", "Cancel")} <kbd>esc</kbd>
           </button>
           <button className={`btn ${danger ? "danger" : "primary"}`} disabled={busy} onClick={onConfirm}>
-            {busy ? "sending…" : confirmLabel}
+            {busy ? t("alt.common.sending", "sending…") : confirmLabel}
           </button>
         </div>
       </div>
