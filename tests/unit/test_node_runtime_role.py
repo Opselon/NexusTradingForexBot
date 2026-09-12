@@ -78,30 +78,31 @@ def test_browser_js_has_no_bundler_or_cdn_refs() -> None:
     )
 
 
-def test_web_ui_served_without_node() -> None:
+def test_web_ui_served_without_node(monkeypatch: pytest.MonkeyPatch) -> None:
     """The Control Center must be servable by FastAPI alone — no Node server.
 
     WEB-AUTH-P0 note (7c14451a, 2026-09-07): GET / now requires a token, so
     the probe authenticates (the contract being tested is FastAPI serving,
     not auth).
+
+    AUTH-SESSION-ISOLATION (2026-09-12): this test used to BRANCH on ambient
+    NSE_WEB_AUTH_TOKEN / NSE_WEB_AUTH_DISABLE and, in its fallback branch,
+    ``os.environ["NSE_WEB_AUTH_DISABLE"] = "1"`` WITHOUT restoring — a
+    process-global write that opted every later test in the session out of the
+    auth middleware (ordering-dependent fake-green / red-inverted artifacts).
+    It now pins its own auth state with a scoped ``monkeypatch.setenv`` fake
+    token (env wins in web.auth._resolve_token, so the DPAPI secret store is
+    never consulted or written) and authenticates the probe. Auth therefore
+    stays ON — strictly stronger than the old opt-out path — and every
+    assertion is unchanged.
     """
-    import os
+    token = "node-role-test-token"
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", token)
+    headers = {"Authorization": f"Bearer {token}"}
 
     app = _create_app()
     client = TestClient(app)
-    headers = {}
-    token = os.environ.get("NSE_WEB_AUTH_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    elif os.environ.get("NSE_WEB_AUTH_DISABLE") == "1":
-        headers = {}
-    else:
-        # Auth enabled with a generated token: the disable flag documented
-        # for local/PAPER fixtures is the supported probe path here.
-        os.environ["NSE_WEB_AUTH_DISABLE"] = "1"
-        app = _create_app()
-        client = TestClient(app)
-    index = client.get("/", headers=headers or None)
+    index = client.get("/", headers=headers)
     assert index.status_code == 200, "GET / (index.html) must be served by FastAPI"
     assert "text/html" in index.headers.get("content-type", "")
     # Asset routes the browser actually loads — all served by the Python process.

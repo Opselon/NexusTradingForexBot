@@ -23,8 +23,22 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-#: Opt into the documented local/PAPER auth override for these contract tests.
-os.environ.setdefault("NSE_WEB_AUTH_DISABLE", "1")
+# AUTH-SESSION-ISOLATION (2026-09-12): this module used to run
+# ``os.environ.setdefault("NSE_WEB_AUTH_DISABLE", "1")`` at IMPORT time.
+# Collection imports every module before the first test runs, so that single
+# line opted the WHOLE pytest session out of WEB-AUTH-P0 — and, because the
+# opt-out is read by ``web.server._install_web_auth_if_enabled`` at
+# ``create_app`` time, every later auth-contract test in the session
+# (test_replay_toggle_guard, test_frontend_assets_phase14, ...) silently saw
+# 200 where it asserted 401 (or 401 where it asserted 200): a red-inverted /
+# fake-green artifact driven purely by collection order.
+#
+# The opt-out is never needed in-process here: the tests below either read
+# frontend source files or talk to a backend the OPERATOR starts in a separate
+# process (ALT_UI_LIVE_BACKEND; the live backend's own auth mode is that
+# process's environment, not this interpreter's). Where an in-process app is
+# ever built, the supported mechanism is a scoped ``monkeypatch.setenv``,
+# which restores automatically — never import-time os.environ mutation.
 
 
 def _base() -> str:
