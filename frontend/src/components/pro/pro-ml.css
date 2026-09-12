@@ -1,0 +1,454 @@
+/* NSE Alternative Console — ML / model pro-visualization suite (LANE ml-viz).
+   Presentation only: colours encode backend status/class words, never
+   fabricated values. Every selector is additive and namespaced (.mlv*) except
+   the explicit `.mlv-prob .probbar` refinement, which only re-grids columns for
+   the ProbTriple's extra raw-value cell. Reuses theme.css custom properties
+   (surfaces, borders, text, green/red/amber/violet, --mono) — no new palette,
+   no CDN, no framework (repo no-bloat convention, BUG-047 lineage). */
+
+.mlv {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mlv-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mlv-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.mlv-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.mlv-subline {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+
+.mlv-tally {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mlv-tally-item {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  background: var(--bg-inset);
+  white-space: nowrap;
+}
+
+.mlv-tally-item b {
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.mlv-note {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  border-left: 2px solid var(--border-strong);
+  padding-left: 8px;
+}
+
+.mlv-kv {
+  margin: 2px 0 0;
+}
+
+.mlv-missing {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.mlv .num,
+.mlv-num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+
+/* --- 1. feature contribution bars (diverging around a centre axis) --- */
+
+.mlv-contrib-list {
+  display: grid;
+  gap: 3px;
+}
+
+.mlv-contrib-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) minmax(90px, 1fr) 88px auto;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+}
+
+.mlv-contrib-row:hover {
+  background: var(--elevate-hi);
+  border-color: var(--border);
+}
+
+.mlv-contrib-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mlv-flag {
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--amber-dim);
+  color: var(--amber);
+  border: 1px solid rgba(235, 161, 63, 0.4);
+}
+
+.mlv-contrib-track {
+  position: relative;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.mlv-contrib-axis {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+.mlv-contrib-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  transition: width 0.35s ease;
+  min-width: 0;
+}
+
+.mlv-contrib-bar.pos {
+  background: linear-gradient(90deg, rgba(62, 207, 142, 0.45), var(--green));
+}
+
+.mlv-contrib-bar.neg {
+  background: linear-gradient(270deg, rgba(242, 86, 77, 0.45), var(--red));
+}
+
+.mlv-contrib-bar.zero {
+  background: var(--border-strong);
+  width: 2px !important;
+}
+
+/* no bar drawn for a non-finite value: the row keeps its status word instead */
+.mlv-contrib-bar.unknown {
+  display: none;
+}
+
+.mlv-contrib-row.bad .mlv-contrib-track {
+  border-color: rgba(242, 86, 77, 0.45);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--bg-inset),
+    var(--bg-inset) 6px,
+    rgba(242, 86, 77, 0.1) 6px,
+    rgba(242, 86, 77, 0.1) 12px
+  );
+}
+
+.mlv-contrib-row.warn .mlv-contrib-track {
+  border-color: rgba(235, 161, 63, 0.4);
+}
+
+.mlv-contrib-row.unk .mlv-contrib-name,
+.mlv-contrib-row.unk .mlv-contrib-val {
+  color: var(--text-faint);
+}
+
+.mlv-contrib-val {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- 2. probability triple --- */
+
+/* ProbTriple reuses the theme .probbar meters; the extra 4th cell (raw
+   backend value next to the derived %) needs one more grid column. */
+.mlv-prob .probbar .row {
+  grid-template-columns: 84px minmax(90px, 1fr) 56px 72px;
+}
+
+.mlv-prob-raw {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.mlv-prob .probbar .track i.pending {
+  background: transparent;
+}
+
+/* --- 3. latency split bar --- */
+
+.mlv-lat-track {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.mlv-lat-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  background: var(--bg-panel-2);
+  border-top: 2px solid var(--border-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: width 0.35s ease;
+}
+
+.mlv-lat-seg.feature_ms {
+  background: rgba(65, 166, 242, 0.16);
+  border-top-color: var(--accent);
+}
+
+.mlv-lat-seg.model_forward_ms {
+  background: rgba(62, 207, 142, 0.14);
+  border-top-color: var(--green);
+}
+
+.mlv-lat-seg.unattributed {
+  background: var(--bg-panel-2);
+  border-top-color: var(--text-faint);
+  color: var(--text-dim);
+}
+
+/* a stage the backend never measured: hatched gap, explicitly NOT zero */
+.mlv-lat-gap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  border-top: 2px dashed rgba(235, 161, 63, 0.55);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--bg-inset),
+    var(--bg-inset) 5px,
+    rgba(235, 161, 63, 0.1) 5px,
+    rgba(235, 161, 63, 0.1) 10px
+  );
+}
+
+.mlv-lat-total {
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* --- 4. 70D shadow disagreement strip --- */
+
+.mlv-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mlv-chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.mlv-chip b {
+  font-variant-numeric: tabular-nums;
+}
+
+.mlv-strip {
+  display: grid;
+  gap: 3px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.mlv-strip-row {
+  display: grid;
+  grid-template-columns: 132px minmax(150px, auto) minmax(150px, 1fr) minmax(180px, 2fr);
+  align-items: center;
+  gap: 10px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-panel);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mlv-strip-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-panel-2);
+}
+
+.mlv-strip-row.good {
+  border-left-color: var(--green);
+}
+
+.mlv-strip-row.warn {
+  border-left-color: var(--amber);
+}
+
+.mlv-strip-row.bad {
+  border-left-color: var(--red);
+}
+
+.mlv-strip-row.neutral,
+.mlv-strip-row.unknown {
+  border-left-color: var(--text-faint);
+}
+
+.mlv-strip-time {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.mlv-strip-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mlv-act {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  white-space: nowrap;
+}
+
+.mlv-act em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.mlv-act.champ {
+  border-color: rgba(65, 166, 242, 0.35);
+}
+
+.mlv-act.shad {
+  border-color: rgba(157, 123, 240, 0.4);
+}
+
+.mlv-strip-arrow {
+  color: var(--text-faint);
+  font-weight: 700;
+}
+
+.mlv-strip-row.differs .mlv-strip-arrow {
+  color: var(--amber);
+}
+
+.mlv-strip-ctx {
+  color: var(--text-faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* dense mode keeps the suite readable at console density */
+body.dense .mlv-contrib-row,
+body.dense .mlv-strip-row {
+  padding: 1px 4px;
+}
+
+body.dense .mlv-lat-track {
+  height: 20px;
+}
+
+@media (max-width: 900px) {
+  .mlv-contrib-row {
+    grid-template-columns: minmax(90px, 1fr) 70px auto;
+  }
+
+  .mlv-contrib-row .mlv-contrib-track {
+    display: none;
+  }
+
+  .mlv-strip-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .mlv-strip-ctx {
+    text-align: left;
+  }
+
+  .mlv-prob .probbar .row {
+    grid-template-columns: 72px minmax(70px, 1fr) 48px 64px;
+  }
+}

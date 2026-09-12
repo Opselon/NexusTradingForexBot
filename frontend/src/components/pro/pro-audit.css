@@ -1,0 +1,377 @@
+/*
+ * pro-audit.css — styles for the audit/forensics pro tools (AuditTools.tsx).
+ *
+ * Uses only tokens already defined by styles/theme.css (:root custom props) so
+ * the widgets follow the console theme (light/dark + density) with no new
+ * palette. Everything is scoped under `.pat-*` class names to avoid colliding
+ * with the existing `.panel` / `.data-table` / `.badge` rules.
+ */
+
+/* --------------------------------------------------------------------------
+   Shared
+   -------------------------------------------------------------------------- */
+
+.pat-empty {
+  padding: 10px 12px;
+  color: var(--text-faint, #56697d);
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  border: 1px dashed var(--border, #1c2836);
+  border-radius: 6px;
+  background: var(--bg-inset, #0a0f16);
+}
+
+.pat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--border, #1c2836);
+  border-radius: 999px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--text-dim, #8398ad);
+  background: var(--bg-panel-2, #131c27);
+  white-space: nowrap;
+}
+
+.pat-chip-warn {
+  border-color: rgba(235, 161, 63, 0.45);
+  color: var(--amber, #eba13f);
+}
+
+.pat-chip-bad {
+  border-color: rgba(242, 86, 77, 0.45);
+  color: var(--red, #f2564d);
+}
+
+/* --------------------------------------------------------------------------
+   1. JsonTreeViewer
+   -------------------------------------------------------------------------- */
+
+.pat-json {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 340px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #1c2836);
+  border-radius: 6px;
+  background: var(--bg-inset, #0a0f16);
+  /* Hostile payload strings must never widen the layout or escape markup. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.pat-json-empty-state {
+  max-height: none;
+}
+
+.pat-json-row {
+  display: block;
+  white-space: pre-wrap;
+  min-width: 0;
+}
+
+.pat-json-key {
+  color: var(--accent-strong, #6cc0ff);
+}
+
+.pat-json-sep {
+  color: var(--text-faint, #56697d);
+}
+
+.pat-json-val {
+  color: var(--text, #dbe4ee);
+}
+
+.pat-json-string {
+  color: var(--green, #3ecf8e);
+}
+
+.pat-json-number {
+  color: var(--amber, #eba13f);
+}
+
+.pat-json-boolean {
+  color: var(--violet, #9d7bf0);
+}
+
+.pat-json-null {
+  color: var(--text-faint, #56697d);
+  font-style: italic;
+}
+
+.pat-json-meta,
+.pat-json-empty {
+  color: var(--text-dim, #8398ad);
+}
+
+.pat-json-note {
+  color: var(--text-faint, #56697d);
+  font-style: italic;
+  font-size: 11px;
+}
+
+.pat-json-toggle {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-right: 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim, #8398ad);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pat-json-toggle:hover {
+  border-color: var(--border-strong, #2b3d51);
+  color: var(--text, #dbe4ee);
+  background: var(--elevate-hi, rgba(255, 255, 255, 0.035));
+}
+
+.pat-json-raw {
+  margin-top: 4px;
+  padding: 4px 6px;
+  border-left: 2px solid var(--border-strong, #2b3d51);
+  color: var(--text-dim, #8398ad);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------------------
+   2. TimelineStrip
+   -------------------------------------------------------------------------- */
+
+.pat-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 2px;
+}
+
+.pat-timeline svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--bg-inset, #0a0f16);
+  border: 1px solid var(--border, #1c2836);
+  border-radius: 6px;
+}
+
+.pat-tl-axis {
+  stroke: var(--border-strong, #2b3d51);
+  stroke-width: 1;
+}
+
+.pat-tl-dot {
+  fill: var(--accent, #41a6f2);
+  stroke: var(--bg, #070a0f);
+  stroke-width: 0.6;
+}
+
+.pat-tl-dot:hover {
+  fill: var(--accent-strong, #6cc0ff);
+}
+
+.pat-tl-gap {
+  fill: rgba(242, 86, 77, 0.16);
+  stroke: rgba(242, 86, 77, 0.55);
+  stroke-dasharray: 3 2;
+  stroke-width: 0.8;
+}
+
+.pat-tl-gap-label {
+  fill: var(--amber, #eba13f);
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+}
+
+.pat-tl-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+/* --------------------------------------------------------------------------
+   3. SeverityMatrix
+   -------------------------------------------------------------------------- */
+
+.pat-matrix-wrap {
+  overflow-x: auto;
+}
+
+.pat-matrix {
+  border-collapse: collapse;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  width: 100%;
+}
+
+.pat-matrix-caption {
+  caption-side: top;
+  text-align: left;
+  color: var(--text-dim, #8398ad);
+  font-size: 11px;
+  padding-bottom: 4px;
+}
+
+.pat-matrix th,
+.pat-matrix td {
+  border: 1px solid var(--border, #1c2836);
+  padding: 4px 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.pat-matrix thead th {
+  background: var(--bg-panel-2, #131c27);
+  color: var(--text-dim, #8398ad);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.pat-matrix tbody th {
+  background: var(--bg-panel-2, #131c27);
+  color: var(--text, #dbe4ee);
+  font-weight: 600;
+  text-align: left;
+}
+
+.pat-matrix-corner {
+  color: var(--text-faint, #56697d) !important;
+  font-style: italic;
+}
+
+.pat-matrix-unknown {
+  color: var(--amber, #eba13f) !important;
+}
+
+.pat-matrix-cell {
+  background: var(--bg-inset, #0a0f16);
+  color: var(--text-dim, #8398ad);
+  font-variant-numeric: tabular-nums;
+}
+
+.pat-matrix-zero {
+  color: var(--text-faint, #56697d);
+}
+
+.pat-matrix-hit {
+  color: var(--text, #dbe4ee);
+  background: var(--paper-blue-bg, rgba(65, 166, 242, 0.16));
+  font-weight: 600;
+}
+
+.pat-matrix-click {
+  cursor: pointer;
+}
+
+.pat-matrix-click:hover {
+  outline: 1px solid var(--accent, #41a6f2);
+  outline-offset: -1px;
+}
+
+.pat-matrix-total {
+  background: var(--bg-panel-2, #131c27);
+  font-weight: 600;
+}
+
+.pat-matrix-grand {
+  color: var(--accent-strong, #6cc0ff);
+}
+
+.pat-matrix-note {
+  margin-top: 4px;
+  color: var(--text-faint, #56697d);
+  font-size: 11px;
+}
+
+/* --------------------------------------------------------------------------
+   4. CsvExportButton
+   -------------------------------------------------------------------------- */
+
+.pat-csv {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pat-csv-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pat-csv-preview {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 120px;
+  overflow: auto;
+  border: 1px solid var(--border, #1c2836);
+  border-radius: 6px;
+  background: var(--bg-inset, #0a0f16);
+  color: var(--text-dim, #8398ad);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  white-space: pre;
+}
+
+/* --------------------------------------------------------------------------
+   5. PayloadInspector
+   -------------------------------------------------------------------------- */
+
+.pat-inspector {
+  border: 1px solid var(--border, #1c2836);
+  border-radius: 6px;
+  background: var(--bg-panel, #0d131b);
+  overflow: hidden;
+}
+
+.pat-inspector-open {
+  border-color: var(--border-strong, #2b3d51);
+}
+
+.pat-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  min-width: 0;
+}
+
+.pat-inspector-id {
+  color: var(--text-dim, #8398ad);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.pat-inspector-toggle {
+  flex: 0 0 auto;
+}
+
+.pat-inspector-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #dbe4ee);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+}
+
+.pat-inspector .pat-json {
+  margin: 0 6px 6px;
+  border-color: var(--border, #1c2836);
+}

@@ -1,0 +1,280 @@
+/* ==========================================================================
+   OpsChrome — pro operational chrome (KPI strip, decision card, quote tape,
+   feed-quality chip, watermark, error-triage card).
+
+   Visual system only: colors/spacing come from theme.css custom properties,
+   so this file introduces no new design tokens and never encodes data truth.
+   ========================================================================== */
+
+/* ------------------------------ KPI strip ------------------------------ */
+.ops-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--panel-gap);
+}
+
+.ops-kpi {
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--card-pad);
+  box-shadow: inset 0 1px 0 var(--elevate-hi), 0 4px 12px var(--elevate-lo);
+  min-width: 0;
+}
+
+.ops-kpi-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ops-kpi-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 2px;
+  min-width: 0;
+}
+.ops-kpi-value > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ops-kpi-value.pos { color: var(--green); }
+.ops-kpi-value.neg { color: var(--red); }
+.ops-kpi-value.dim { color: var(--text-dim); }
+
+.ops-kpi-trend { font-size: 11px; font-family: var(--mono); flex-shrink: 0; }
+.ops-kpi-trend.trend-neutral { color: var(--text-faint); }
+.ops-kpi-trend.trend-flat { color: var(--text-dim); }
+.ops-kpi-trend.trend-good { color: var(--green); }
+.ops-kpi-trend.trend-bad { color: var(--red); }
+
+.ops-kpi-sub {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------ Decision card ------------------------------ */
+.ops-decision {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-faint);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ops-decision.buy { border-left-color: var(--green); background: linear-gradient(90deg, var(--green-dim), transparent 55%); }
+.ops-decision.sell { border-left-color: var(--red); background: linear-gradient(90deg, var(--red-dim), transparent 55%); }
+.ops-decision.hold { border-left-color: var(--amber); }
+
+.ops-decision-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ops-decision-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+}
+
+.ops-decision-freshness {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+}
+.ops-decision-freshness.good { color: var(--green); border-color: rgba(62, 207, 142, 0.4); }
+.ops-decision-freshness.bad { color: var(--red); border-color: rgba(242, 86, 77, 0.5); }
+.ops-decision-freshness.warn { color: var(--amber); border-color: rgba(235, 161, 63, 0.4); }
+
+.ops-decision-word {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  font-family: var(--mono);
+}
+.ops-decision-word.buy { color: var(--green); }
+.ops-decision-word.sell { color: var(--red); }
+.ops-decision-word.hold { color: var(--amber); }
+.ops-decision-word.unknown { color: var(--text-faint); font-size: 22px; }
+
+.ops-decision-confidence {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.ops-decision-human { font-size: 12px; color: var(--text); }
+.ops-decision-detail { font-size: 10px; color: var(--text-faint); word-break: break-word; }
+.ops-decision .muted { color: var(--text-faint); }
+
+/* ------------------------------ Quote tape ------------------------------ */
+.ops-quote {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: var(--mono);
+}
+.ops-quote.stale { border-color: rgba(235, 161, 63, 0.5); }
+
+.ops-quote-symbol {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--accent-strong);
+}
+
+.ops-quote-cell { display: flex; align-items: baseline; gap: 6px; }
+.ops-quote-cell .lab { font-size: 9px; letter-spacing: 0.12em; color: var(--text-faint); }
+.ops-quote-cell .val { font-size: 15px; font-weight: 700; color: var(--text); }
+
+.ops-quote-age {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ops-quote.stale .ops-quote-age { color: var(--amber); }
+
+/* Flash classes are applied when the PARENT advances the version key.
+   They animate the value's colour, never its content. */
+@keyframes ops-flash-up {
+  0% { background: var(--green-dim); color: var(--green); }
+  100% { background: transparent; }
+}
+@keyframes ops-flash-down {
+  0% { background: var(--red-dim); color: var(--red); }
+  100% { background: transparent; }
+}
+@keyframes ops-flash-flat {
+  0% { background: rgba(65, 166, 242, 0.14); color: var(--accent-strong); }
+  100% { background: transparent; }
+}
+.ops-quote-cell .val.flash-up { animation: ops-flash-up 0.6s ease-out; }
+.ops-quote-cell .val.flash-down { animation: ops-flash-down 0.6s ease-out; }
+.ops-quote-cell .val.flash-flat { animation: ops-flash-flat 0.6s ease-out; }
+
+/* ------------------------------ Feed-quality chip ------------------------------ */
+.ops-feed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-family: var(--mono);
+  background: var(--bg-panel);
+}
+.ops-feed-chip.good { border-color: rgba(62, 207, 142, 0.4); }
+.ops-feed-chip.warn { border-color: rgba(235, 161, 63, 0.5); }
+.ops-feed-chip.bad { border-color: rgba(242, 86, 77, 0.55); }
+.ops-feed-word { letter-spacing: 0.1em; font-weight: 700; }
+.ops-feed-chip.good .ops-feed-word { color: var(--green); }
+.ops-feed-chip.warn .ops-feed-word { color: var(--amber); }
+.ops-feed-chip.bad .ops-feed-word { color: var(--red); }
+.ops-feed-detail { color: var(--text-faint); }
+
+/* ------------------------------ Watermark ------------------------------ */
+.ops-watermark {
+  position: fixed;
+  right: 22px;
+  bottom: 18px;
+  z-index: 50;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px dashed currentColor;
+  opacity: 0.5;
+}
+.ops-watermark.warn { color: var(--amber); background: rgba(235, 161, 63, 0.06); }
+.ops-watermark.critical {
+  color: var(--red);
+  background: rgba(242, 86, 77, 0.08);
+  animation: ops-watermark-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ops-watermark-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.9; }
+}
+
+/* ------------------------------ Error triage ------------------------------ */
+.ops-triage {
+  border: 1px solid rgba(242, 86, 77, 0.45);
+  border-radius: 8px;
+  background: var(--red-dim);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  max-width: 520px;
+}
+.ops-triage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--red);
+  text-transform: uppercase;
+}
+.ops-triage-glyph { font-size: 14px; }
+.ops-triage-message { color: var(--text); word-break: break-word; }
+.ops-triage-rid { font-size: 10px; color: var(--text-dim); }
+.ops-triage-note { font-size: 10px; color: var(--amber); }
+.ops-triage .btn { align-self: flex-start; }
+
+/* ------------------------------ SL/TP inline editor ------------------------------ */
+.ops-sltp { display: flex; flex-direction: column; gap: 4px; min-width: 170px; }
+.ops-sltp-trigger { align-self: flex-start; }
+.ops-sltp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  padding: 6px 8px;
+}
+.ops-sltp-row { display: flex; align-items: center; gap: 6px; }
+.ops-sltp-row .lab { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--text-faint); width: 22px; }
+.ops-sltp-row .input { flex: 1; min-width: 0; padding: 3px 6px; font-size: 11px; font-family: var(--mono); }
+.ops-sltp-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.ops-sltp-invalid { color: var(--red); font-size: 10px; font-family: var(--mono); }
+.ops-sltp-verdict { font-size: 10px; font-family: var(--mono); word-break: break-word; }
+.ops-sltp-verdict.ok { color: var(--green); }
+.ops-sltp-verdict.fail { color: var(--red); }
+.ops-sltp-hint { font-size: 9px; color: var(--text-faint); }
+
+/* dense mode inherits global density vars; just tighten the tape a touch */
+body.dense .ops-quote { padding: 4px 10px; gap: 12px; }
+body.dense .ops-decision-word { font-size: 24px; }
