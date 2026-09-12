@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Test, Build &amp; Release Workflow · Nexus Scalp Engine</title>
+<meta name='description' content='The end-to-end project workflow — branches, PR gates, cross-platform testing, release cuts, hotfixes, and the GitHub Actions surface behind them.'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/engineering/workflow-test-build-release/'>
+<meta property='og:title' content='Test, Build &amp; Release Workflow'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/engineering/workflow-test-build-release/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta name='twitter:card' content='summary'>
+<meta name='twitter:title' content='Test, Build &amp; Release Workflow'>
+<meta name='twitter:description' content='The end-to-end project workflow — branches, PR gates, cross-platform testing, release cuts, hotfixes, and the GitHub Actions surface behind them.'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/engineering/workflow-test-build-release/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/engineering/workflow-test-build-release/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/engineering/workflow-test-build-release/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/engineering/workflow-test-build-release/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/engineering/workflow-test-build-release/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/engineering/workflow-test-build-release/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Test, Build & Release Workflow", "description": "The end-to-end project workflow — branches, PR gates, cross-platform testing, release cuts, hotfixes, and the GitHub Actions surface behind them.", "inLanguage": "de", "url": "https://opselon.github.io/NexusTradingForexBot/de/engineering/workflow-test-build-release/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../de/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.11</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
+    <details class='theme-picker'>
+      <summary aria-label='Design' title='Design'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Hell</button>
+        <button type='button' data-theme-set='dark'>☾ Dunkel</button>
+        <button type='button' data-theme-set='system'>🖥 System</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache'>🌐 Deutsch</summary>
+      <div class='lang-menu'><a href='../../../engineering/workflow-test-build-release/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/getting-started/installation/'>Installation</a></li>
+<li><a class='' href='../../../de/getting-started/quickstart/'>Quickstart</a></li>
+<li><a class='' href='../../../de/getting-started/first-run/'>Erster Lauf</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/getting-started/configuration/'>Konfiguration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/project/vision/'>Vision &amp; Warum</a></li>
+<li><a class='' href='../../../de/project/scope/'>Umfang</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/status/'>Projektstatus</a></li>
+<li><a class='' href='../../../de/project/capabilities/'>Fähigkeitsmatrix</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/roadmap/'>Roadmap</a></li>
+<li><a class='' href='../../../de/project/milestones/'>Meilensteine</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/architecture/overview/'>Überblick</a></li>
+<li><a class='' href='../../../de/architecture/system-map/'>Systemkarte</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/data-flow/'>Datenfluss</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/runtime/'>Laufzeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/research-stack/'>Forschungsstack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/model-pipeline/'>Modellpipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/execution-pipeline/'>Ausführungspipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/observability/'>Observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/database/'>Datenbank</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/research/methodology/'>Methodik</a></li>
+<li><a class='' href='../../../de/research/datasets/'>Datensätze</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/out-of-sample/'>OOS-Gate</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/counterfactuals/'>Kontrafaktische</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/validation/'>Validierung</a></li>
+<li><a class='' href='../../../de/research/reproducibility/'>Reproduzierbarkeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/engineering/quality/'>Qualität &amp; Tests</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/ci/'>CI-Architektur</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/release-process/'>Release-Prozess</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='active' href='../../../de/engineering/workflow-test-build-release/'>Test-, Build- und Release-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/security/'>Sicherheit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/guides/cli/'>CLI-Anleitung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/api/'>API-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/troubleshooting/'>Fehlerbehebung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/common-workflows/'>Typische Workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/contributing/contribution-guide/'>Beitragsleitfaden</a></li>
+<li><a class='' href='../../../de/contributing/documentation/'>Dokumentations-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/contributing/add-language/'>Sprache hinzufügen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/reference/cli-reference/'>CLI-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/glossary/'>Glossar</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/terminology/'>Terminologie &amp; Übersetzungen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.11 &amp; Historie</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../engineering/workflow-test-build-release/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../de/engineering/'>Engineering</a> / <span class='crumb-current' aria-current='page'>Test-, Build- und Release-Workflow</span></nav>
+<h1 id='test-build--release-workflow'>Test, Build &amp; Release Workflow</h1>
+<p>This is the operational workflow every change follows from working tree to</p>
+<p>published release. It unifies rules that were previously scattered across</p>
+<p><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/multi-agent-git-contract.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/multi-agent-git-contract.md"></a><code>agents/multi-agent-git-contract.md</code></a>,</p>
+<p><a href="../CI_ARCHITECTURE.md"><code>docs/CI_ARCHITECTURE.md</code></a>,</p>
+<p><a href="../RELEASE.md"><code>docs/RELEASE.md</code></a>, and the DEC-0006/DEC-0008 decision</p>
+<p>records. Where this page and a decision record disagree, the decision record</p>
+<p>(<code>agents/decisions/</code>) wins — say so and fix this page.</p>
+<p>Core principles:</p>
+<ol>
+<li><strong><code>origin/main</code> is integration truth.</strong> Nobody pushes to <code>main</code> directly —</li>
+</ol>
+<p>branch protection rejects it; everything arrives by PR.</p>
+<ol>
+<li><strong>Local gates mirror CI gates.</strong> <code>beforePush.ps1</code> (Windows) and</li>
+</ol>
+<p><code>beforePush.sh</code> (Linux/macOS) delegate to the same canonical</p>
+<p><code>scripts/ci/check_local.py</code> that CI parity-checks in <code>ci-integrity</code>.</p>
+<p>A change that is red locally is never pushed to "let CI find out".</p>
+<ol>
+<li><strong>Releases are tag-triggered and fail-closed.</strong> A release run that fails</li>
+</ol>
+<p>any gate publishes nothing; artifacts are verified and signed before the</p>
+<p>GitHub Release becomes visible.</p>
+<ol>
+<li><strong>Cross-platform means: test everywhere, publish Windows x64.</strong> The</li>
+</ol>
+<p>dependency stack (MetaTrader5) is Windows-only; see</p>
+<p><a href="#43-what-is-deliberately-not-a-release-channel">What is deliberately NOT a release channel</a>.</p>
+<h2 id='1-day-to-day-flow-change--main'>1. Day-to-day flow (change → main)</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>claim task (agents/taskboard.md row)
+    │
+    ▼
+branch off origin/main ──► work in small coherent commits ──► beforePush locally
+    │
+    ▼
+push branch ──► open PR to main ──► 11 required contexts green
+    │
+    ▼
+coordinator approval (DEC-0008) ──► SQUASH merge ──► CI re-fires on main ──► taskboard row closed</code></pre></div>
+<h3 id='branch-naming'>Branch naming</h3>
+<div class='table-wrap'><table>
+<thead><tr><th>Prefix</th><th>Use</th><th>Lifetime</th></tr></thead><tbody>
+<tr><td><code>agent/&lt;owner&gt;/&lt;topic&gt;</code></td><td>agent-scoped feature/fix work</td><td>deleted after merge (squash auto-delete)</td></tr>
+<tr><td><code>fix/&lt;slug&gt;</code>, <code>chore/&lt;slug&gt;</code></td><td>human-scale fixes and chores</td><td>deleted after merge</td></tr>
+<tr><td><code>integration/&lt;wave&gt;</code></td><td>convergence branch when parallel refs must merge before landing</td><td>deleted after its PR merges</td></tr>
+<tr><td><code>hotfix/&lt;slug&gt;</code></td><td>urgent production fix (see <a href="#5-hotfix-and-rollback">Hotfix flow</a>)</td><td>deleted after merge</td></tr>
+<tr><td><code>dependabot/*</code></td><td>automated dependency PRs (weekly, grouped)</td><td>handled per <a href="#7-dependencies">Dependency workflow</a></td></tr>
+<tr><td><code>recovery/<em></code>, <code>archive/</em></code></td><td>forensics/recovery refs — coordinator-owned</td><td>do not delete without coordinator</td></tr>
+</tbody></table></div>
+<h3 id='pr-contract'>PR contract</h3>
+<ul>
+<li><strong>Required contexts on <code>main</code> (all must be green before merge):</strong></li>
+</ul>
+<p>CI Integrity and Change Classification · Code Quality &amp; Tests ·</p>
+<p>Py Tests (windows-latest) · Py Tests (macos-latest) · Frontend JS Unit Tests ·</p>
+<p>Validate documentation · Dependency drift (lock vs pyproject) ·</p>
+<p>Migration safety (fail-loud + version postconditions) · CodeQL Analysis ·</p>
+<p>Trivy Vulnerability Scan · OSV Scanner / osv-scan.</p>
+<p>Each required context's workflow fires on <code>push: branches: [main]</code> <strong>and</strong></p>
+<p>on PRs by trigger-alignment contract (see <code>docs/CI_ARCHITECTURE.md</code>), so</p>
+<p>post-merge main never sits pending.</p>
+<ul>
+<li><strong>Squash-only.</strong> The repo rejects merge commits (405). The squash carrier</li>
+</ul>
+<p>loses branch SHAs — put the branch tip SHA in the commit body and verify</p>
+<p>tree parity (<code>git rev-parse &lt;merge_sha&gt;^{tree}</code> == branch tip tree) before</p>
+<p>moving local main.</p>
+<ul>
+<li><strong>Merge requires explicit coordinator approval</strong> — green CI is a</li>
+</ul>
+<p>precondition, not an authorization (DEC-0008).</p>
+<ul>
+<li><strong>Stale base:</strong> merge <code>origin/main</code> INTO the PR branch (<code>git merge --no-ff</code>),</li>
+</ul>
+<p>never rebase a shared branch. <code>swarm_log.md</code> and <code>taskboard.md</code> are the</p>
+<p>chronic conflict files — keep ALL rows/lines in chronological order.</p>
+<p>Before pushing to a shared branch: <code>git ls-remote origin &lt;ref&gt;</code>; if</p>
+<p>non-FF, check whether the content already landed via a parallel PR.</p>
+<ul>
+<li><strong>Never force-push or delete shared remote refs</strong> (coordinator-owned;</li>
+</ul>
+<p><code>--force-with-lease</code> at most on integration branches).</p>
+<ul>
+<li><strong>No weakening</strong> a test, golden, or CI check to get green. Known-foreign</li>
+</ul>
+<p>reds are disclosed in the PR body with evidence (stash-probe baseline),</p>
+<p>not silenced.</p>
+<ul>
+<li>Multi-agent race: commit task-scope files immediately (parallel agents can</li>
+</ul>
+<p>wipe or sweep uncommitted work); <code>git diff --cached --name-only</code> right</p>
+<p>before <code>git commit</code> to catch index contamination.</p>
+<h2 id='2-cross-platform-testing-policy'>2. Cross-platform testing policy</h2>
+<p>The test surface runs on three OS families with different jobs. Ubuntu is the</p>
+<p>workhorse; Windows/macOS are parity gates; nothing about running tests on</p>
+<p>Linux makes Linux a <em>supported runtime</em> — see the matrix in §4.</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Lane</th><th>Runner(s)</th><th>What runs</th><th>Fires on</th><th>Blocking?</th></tr></thead><tbody>
+<tr><td><code>ci.yml :: ci-integrity</code></td><td>ubuntu</td><td>workflow static analysis, DEC-id uniqueness, <strong>local-gate parity</strong>, change classification</td><td>PR + push main/develop/ci-tests</td><td>required</td></tr>
+<tr><td><code>ci.yml :: quality</code></td><td>ubuntu</td><td>ruff lint+format → torch.load guard → critical manifest → mypy → pytest critical suite + coverage → E2E smoke → runtime certification</td><td>PR + push main/develop/ci-tests</td><td>required</td></tr>
+<tr><td><code>tests-os.yml</code></td><td><strong>windows-latest + macos-latest</strong></td><td>the same critical suite (xdist + coverage) — catches path/CRLF/encoding regressions an Ubuntu-green hides</td><td>PR + push main</td><td>required (both legs)</td></tr>
+<tr><td><code>js-tests.yml</code></td><td>ubuntu</td><td><code>node --check</code> on every shipped <code>Web/<em>.js</code> + <code>tests/js/</em>.test.js</code> (buildless SPA)</td><td>PR + push main</td><td>required</td></tr>
+<tr><td><code>docs.yml :: validate</code></td><td>ubuntu</td><td>docs doctor (links/anchors/translations/secrets/drift) + Pages deploy on main</td><td>PR + push main + release events</td><td>required ("always-report no-op" when docs-unaffected, DEC-0008)</td></tr>
+<tr><td><code>security.yml</code>, <code>osv-scanner.yml</code>, <code>dependency-lock.yml</code></td><td>ubuntu</td><td>CodeQL, Trivy, OSV, lock drift, migration safety</td><td>PR + push main (weekly schedules too)</td><td>required</td></tr>
+<tr><td><code>qa-deep-assurance.yml</code>, <code>nightly-qa.yml</code>, <code>nightly-e2e.yml</code></td><td>ubuntu</td><td>deep property/invariant + slow suites, real-browser E2E</td><td>PR/push main + nightly/weekly cron</td><td>advisory — but a nightly red is triaged like a P0 the next day</td></tr>
+<tr><td><code>ci.yml :: heavy-ci</code></td><td>ubuntu matrix</td><td>integration / e2e / research / model arms</td><td><code>ci-tests</code> branch or <code>workflow_dispatch: full=true</code></td><td>opt-in</td></tr>
+<tr><td><code>release.yml</code> gates</td><td>ubuntu + <strong>windows-latest build</strong></td><td>see §3</td><td><code>v*</code> tags + dispatch</td><td>release-blocking</td></tr>
+<tr><td><code>docker.yml</code></td><td>ubuntu</td><td>GHCR image build+publish</td><td><code>docker</code> branch push + dispatch</td><td>separate channel (see gap note §4.3)</td></tr>
+</tbody></table></div>
+<p>Windows/macOS dev parity rules:</p>
+<ul>
+<li>The repo is <code>core.autocrlf=true</code> (<code>i/lf w/crlf</code>): compare blob-vs-blob after</li>
+</ul>
+<p>CRLF normalization or formatting-only diffs look like conflicts.</p>
+<ul>
+<li>Pytest locally on Windows: `./.venv/Scripts/python.exe -m pytest &lt;targets&gt;</li>
+</ul>
+<p>-p no:cacheprovider &gt; pytest_out.txt 2&gt;&amp;1`, then read the file (console</p>
+<p>output is unreliable on this host).</p>
+<ul>
+<li>Linux/WSL2: the MT5-under-Wine test/paper platform is documented in</li>
+</ul>
+<p><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md"></a><code>docs/RELEASE.md</code> §3</a></p>
+<p>and <code>docs/linux_wsl2_mt5_platform.md</code>; direct Python <code>MetaTrader5</code> IPC does</p>
+<p>not work under Wine — use <code>RemoteMT5GatewayAdapter</code>.</p>
+<ul>
+<li>macOS: no MT5, no packaged runtime — CI parity only (path-separator,</li>
+</ul>
+<p>timezone/clock-domain, maintenance-window flakes are its main catches).</p>
+<h2 id='3-build-pipeline-what-gets-built-and-how-it-is-proven'>3. Build pipeline (what gets built and how it is proven)</h2>
+<p>Single production build path: <code>release.yml</code> on a <code>v*</code> tag (plus</p>
+<p><code>workflow_dispatch</code> with an explicit version input). The local mirror for</p>
+<p>iteration is <code>scripts/build/build_release.ps1</code> + <code>verify_release.ps1</code> +</p>
+<p><code>clean_install_test.ps1</code> (Windows).</p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>validate      tag == pyproject version · secret scan · no dev artifacts tracked
+  └► gates    ruff · mypy · critical suite · release-hardening smoke
+       └► build-windows-x64 (windows-latest)
+            PyInstaller onedir EXE + onefile CLI
+            build-info.json stamp (identity tripwire: commit non-null,
+            build_timestamp immutable across invocations — BUG-174)
+            EXE smoke: `version --plain`, `health --json`
+            stage tree → BUG-166 pre-staged verification contract
+            Inno Setup installer (embeds SHA256SUMS subset + manifest)
+            checksums → release-manifest.json → SBOM (SPDX-lite)
+            Ed25519 sign update-manifest.signed.json (P0 trust root;
+            client updaters reject unsigned releases fail-closed)
+            verify-release full self-check · optional Authenticode gate
+            (NSE_REQUIRE_CODE_SIGNING=true ⇒ signtool verify must pass)
+       └► arm64-report        explicit, loud UNSUPPORTED (never silent)
+       └► release             publish + post-publish API verification of
+                              tag, assets, sizes (zero assets = failure)</code></pre></div>
+<p>Every step is release-blocking; a broken artifact is never published.</p>
+<p>Artifact naming is canonical:</p>
+<p><code>NexusScalpEngine-&lt;version&gt;-win-x64-setup.exe</code>,</p>
+<p><code>NexusScalpEngine-&lt;version&gt;-win-x64.zip</code>, <code>cli/NexusScalpEngine-CLI.exe</code>,</p>
+<p>plus <code>checksums/</code>, <code>manifests/</code>, <code>sbom/</code>.</p>
+<h2 id='4-release-workflow-the-cut-step-by-step'>4. Release workflow (the cut, step by step)</h2>
+<h3 id='41-preflight-operatorcoordinator'>4.1 Preflight (operator/coordinator)</h3>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>git fetch origin
+# 1. main tip is green:
+gh run list --branch main --limit 6        # CI + OS matrix + docs all success
+# 2. last nightly-qa / nightly-e2e / qa-deep-assurance on main: success
+# 3. no open P0 rows on agents/taskboard.md blocking release
+# 4. UPDATE-SIG-OPERATOR-type parked blockers reviewed (release key present)</code></pre></div>
+<h3 id='42-version-bump--tag--watch--verify'>4.2 Version bump → tag → watch → verify</h3>
+<ol>
+<li><strong>Bump PR.</strong> One commit changes <code>pyproject.toml</code> <code>version = "X.Y.Z"</code></li>
+</ol>
+<p>(semver: <code>Z</code> fixes · <code>Y</code> features · <code>X</code> breaking; prereleases use</p>
+<p><code>X.Y.Z-rcN</code>, which <code>release.yml</code> publishes as a GitHub <strong>prerelease</strong>).</p>
+<p>Docs never hard-code a conflicting version — <code>check_docs.py</code> drift</p>
+<p>detection enforces the single source, and the site build reads</p>
+<p><code>pyproject.toml</code>. Normal PR rules apply.</p>
+<ol>
+<li><strong>Tag after the bump PR is squash-merged</strong> — the tag must point at the</li>
+</ol>
+<p><code>main</code> commit whose release run is expected to pass:</p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>   git checkout main &amp;&amp; git pull
+   git tag -a vX.Y.Z -m &quot;release vX.Y.Z&quot; origin/main   # annotated, on main tip
+   git push origin vX.Y.Z</code></pre></div>
+<p>Never cut release content on a side branch; <code>release.yml</code> <code>validate</code></p>
+<p>fails a tag whose tree doesn't match <code>pyproject</code>.</p>
+<ol>
+<li><strong>Watch the run.</strong> <code>gh run watch</code> (or poll</li>
+</ol>
+<p><code>GET /repos/:o/:r/actions/workflows/release.yml/runs</code>). Do not retry a</p>
+<p>failed publish by hand — fix forward or re-cut.</p>
+<ol>
+<li><strong>Tag discipline (BUG-152).</strong> A tag whose release run failed is</li>
+</ol>
+<p><strong>re-cut, not explained away</strong>: delete the stale tag (remote via REST,</p>
+<p>local too), re-annotate on the verified commit, push again. Two tags may</p>
+<p>be in flight; per-ref concurrency keeps them from racing each other, and</p>
+<p>same-tag re-pushes replace the in-flight run.</p>
+<ol>
+<li><strong>Post-release verification (the publisher's job, not the workflow's):</strong></li>
+</ol>
+<ul>
+<li><code>gh release view vX.Y.Z</code> shows all assets (setup.exe, zip, CLI,</li>
+</ul>
+<p>SHA256SUMS.txt, release-manifest.json, update-manifest.signed.json,</p>
+<p>sbom.spdx.json) with non-trivial sizes.</p>
+<ul>
+<li>Checksum spot-check: download the zip, <code>Get-FileHash</code> vs <code>SHA256SUMS.txt</code>.</li>
+<li>Docs site refreshed release metadata (docs.yml fires on <code>release:</code></li>
+</ul>
+<p>published → <code>fetch_releases.py</code> regenerates What's New / releases page).</p>
+<ul>
+<li>Announce: taskboard row + <code>swarm_log.md</code> entry with tag, run id,</li>
+</ul>
+<p>release URL — same "claims require verified state" rule as PRs.</p>
+<h3 id='43-what-is-deliberately-not-a-release-channel'>4.3 What is deliberately NOT a release channel</h3>
+<ul>
+<li><strong>Linux/macOS binaries:</strong> none published. Tests are cross-platform; the</li>
+</ul>
+<p>runtime stack is Windows-x64-bound (see §2 and <code>docs/RELEASE.md</code> §3).</p>
+<ul>
+<li><strong>Windows ARM64:</strong> explicitly UNSUPPORTED (no torch/polars/MT5 wheels);</li>
+</ul>
+<p>the <code>arm64-report</code> job makes the non-support loud every release.</p>
+<ul>
+<li><strong>Docker (GHCR):</strong> a <em>separate, opt-in channel</em> built only from the</li>
+</ul>
+<p><code>docker</code> branch — never from normal dev pushes. Gap: the <code>docker</code> branch</p>
+<p>does not currently exist on origin, so no image is published; creating it</p>
+<p>(or wiring <code>docker.yml</code> to release tags) is an open infra decision, not a</p>
+<p>silent default.</p>
+<h2 id='5-hotfix-and-rollback'>5. Hotfix and rollback</h2>
+<p><strong>Hotfix (production defect on the latest release):</strong></p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>git checkout -b hotfix/&lt;BUG-id-short-slug&gt; origin/main
+# fix + reproducer test (BUG fixes REQUIRE a regression test — same rule as
+# feature work); beforePush locally; PR to main; label/priority P0 in body.</code></pre></div>
+<p>Merge follows the same rules (all contexts green + coordinator approval).</p>
+<p>Then cut the next patch release (<code>X.Y.Z+1</code>) per §4.2 — a hotfix is not</p>
+<p>"deployed from the branch", it is released like everything else.</p>
+<p>If the defect is in the <em>release tooling itself</em> (wrong artifact published),</p>
+<p>revoke is the client-side answer: the updater filters draft/revoked</p>
+<p>releases; delete-down-and-re-cut of the assets, then re-tag per BUG-152.</p>
+<p><strong>Rollback (client side):</strong> <code>nexus update rollback</code> (ends <code>FAILED_SAFE</code></p>
+<p>exit 1 on failure — never a half-installed state); release-identity lock +</p>
+<p>checksum verification mean a bad release can be rolled back to the previous</p>
+<p>exact release without operator intervention beyond the command.</p>
+<p><strong>Rollback (CI/main):</strong> history is never rewritten. A landed defect gets a</p>
+<p>forward <code>fix(...)</code> PR (revert commit if clean) through the same gates.</p>
+<p>Absorbed/contaminated commits are disclosed via</p>
+<p><code>ABSORPTION-DISCLOSURE-&lt;shorthash&gt;</code> taskboard rows instead of force-pushes.</p>
+<h2 id='6-long-lived-branch-roles'>6. Long-lived branch roles</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Branch</th><th>Role</th><th>Notes</th></tr></thead><tbody>
+<tr><td><code>main</code></td><td>protected integration + release source</td><td>every push runs the full required-context set</td></tr>
+<tr><td><code>develop</code> (when created)</td><td>pre-integration soak</td><td>all workflows already accept it as a trigger; optional, not currently present</td></tr>
+<tr><td><code>ci-tests</code> (when created)</td><td>heavy-matrix opt-in lane (<code>heavy-ci</code> fires there)</td><td>also a trigger in ci/tests-os/js-tests; not currently present</td></tr>
+<tr><td><code>docker</code></td><td>GHCR image channel</td><td>must be created deliberately; see §4.3</td></tr>
+</tbody></table></div>
+<h2 id='7-dependencies'>7. Dependencies</h2>
+<p>Dependabot (<code>.github/dependabot.yml</code>) opens <strong>weekly, grouped</strong> PRs for pip</p>
+<p>(root), npm (<code>frontend/</code>), and GitHub Actions. Governance rules:</p>
+<ul>
+<li>Dependency PRs must keep <code>requirements.lock</code> regenerated in the same PR —</li>
+</ul>
+<p>the "Dependency drift (lock vs pyproject)" context is required and has</p>
+<p>fired true positives (e.g. upstream tzdata 2026.3→2026.4, closed via</p>
+<p>PR #152 with <code>check_dependency_drift.py --regen</code>).</p>
+<ul>
+<li>Actions stay pinned to <strong>immutable commit SHAs</strong> in</li>
+</ul>
+<p><code>release.yml</code>/<code>security.yml</code>/<code>docker.yml</code> (supply-chain hardening);</p>
+<p><code>ci.yml</code> still has floating tags — open follow-up (§8).</p>
+<ul>
+<li>Lockfile changes ride <code>lockfile-diff.yml</code> (PR-only review visibility) and</li>
+</ul>
+<p><code>dependency-lock.yml</code> (migration-safety probe on disposable DBs).</p>
+<ul>
+<li>Merge dependency PRs like any PR (contexts + approval); batch-merge</li>
+</ul>
+<p>grouped PRs in one go to keep the OS-matrix legs warm.</p>
+<h2 id='8-known-gaps-and-follow-ups-state-as-of-2026-09-12'>8. Known gaps and follow-ups (state as of 2026-09-12)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>#</th><th>Gap</th><th>Impact</th><th>Owner/next step</th></tr></thead><tbody>
+<tr><td>1</td><td>Updater never fetches <code>update-manifest.signed.json</code></td><td>client trust chain ends at SECURITY_BLOCKED — releases not auto-updatable</td><td>Agent-10 CI/CD audit finding; wire discovery to the signed asset</td></tr>
+<tr><td>2</td><td>Release manifest uses SHORT git sha</td><td>exact-release identity weaker than design</td><td>emit full <code>git rev-parse HEAD</code> in <code>build-info.json</code></td></tr>
+<tr><td>3</td><td><code>ci.yml</code> floating action tags</td><td>supply-chain drift vs the SHA-pinned lanes</td><td>pin to SHAs (bot PRs in flight, #143/#144)</td></tr>
+<tr><td>4</td><td><code>docker.yml</code> branch absent</td><td>no published image despite the workflow</td><td>decide: create <code>docker</code> branch or retrigger on tags</td></tr>
+<tr><td>5</td><td>Release lane independent of main CI head</td><td>gates re-run in release context (by design) but release run doesn't consult main's last-green</td><td>acceptable — documented trade-off</td></tr>
+</tbody></table></div>
+<h2 id='9-command-cheat-sheet'>9. Command cheat-sheet</h2>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code># local gate (any OS)
+./beforePush.ps1 -SkipPush        # Windows          (beforePush.sh on Linux/macOS)
+
+# PR lifecycle
+git push -u origin agent/&lt;you&gt;/&lt;topic&gt;
+gh pr create --base main ...
+gh pr checks &lt;n&gt; --watch          # all required contexts
+gh pr merge &lt;n&gt; --squash          # coordinator-approved only
+
+# release cut
+# (bump pyproject version in its own PR first, merge it)
+git tag -a vX.Y.Z -m &quot;release vX.Y.Z&quot; origin/main &amp;&amp; git push origin vX.Y.Z
+gh run list --workflow release.yml --limit 3
+gh run view &lt;id&gt; --log-failed
+gh release view vX.Y.Z
+
+# failed release run → re-cut (BUG-152)
+git tag -d vX.Y.Z; gh release delete vX.Y.Z --cleanup-tag --yes
+# fix, land on main, then re-tag per above
+
+# rerun CI forensics
+gh run rerun &lt;id&gt; --failed</code></pre></div>
+<p>Related: <a href="quality.md">Quality &amp; Testing</a> · <a href="ci.md">CI Architecture</a> ·</p>
+<p><a href="release-process.md">Release Process</a> · <a href="security.md">Security</a> ·</p>
+<p>full operational detail in</p>
+<p><a href="<a href="https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md">">https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md"></a><code>docs/RELEASE.md</code></a></p>
+<p>and <a href="../CI_ARCHITECTURE.md"><code>docs/CI_ARCHITECTURE.md</code></a>.</p>
+<nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../../de/engineering/release-process/'><span class='pn-label'>Zurück</span><span class='pn-name'>Release-Prozess</span></a><a class='pn pn-next' href='../../../de/engineering/security/'><span class='pn-label'>Weiter</span><span class='pn-name'>Sicherheit</span></a></nav>
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/engineering/workflow-test-build-release.md'>Diese Seite auf GitHub bearbeiten</a> · Version v9.0.11 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/cb90e17'>cb90e17</a></span>
+    <span><a href='../../../de/project/status/'>Projektstatus</a> · <a href='../../../de/reference/faq/'>FAQ</a> · <a href='../../../de/releases/'>Alle Releases</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../de/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Doku durchsuchen… — ⌘K' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Doku durchsuchen……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Doku durchsuchen…", "home": "Start", "repo": "GitHub", "skip": "Zum Inhalt springen", "language": "Sprache", "partial": "Englische Quelle — Übersetzung ausstehend", "english": "Englisch", "version": "Version", "next": "Weiter", "prev": "Zurück", "on_github": "Diese Seite auf GitHub bearbeiten", "menu": "Menü", "whats_new": "Neuigkeiten", "all_releases": "Alle Releases", "get_started": "Erste Schritte", "view_architecture": "Architektur", "view_roadmap": "Roadmap", "close": "Schließen", "theme": "Design", "theme_light": "Hell", "theme_dark": "Dunkel", "theme_system": "System", "copy": "Kopieren", "copied": "Kopiert", "copy_error": "Kopieren fehlgeschlagen", "no_results": "Keine Ergebnisse", "loading": "Wird geladen…", "section": "Bereich", "search_results": "Suchergebnisse", "explore_docs": "Die Dokumentation erkunden", "full_matrix": "Vollständige Matrix", "release_timeline": "Release-Zeitleiste", "hero_kicker": "QUANTITATIVE HANDELSFORSCHUNGS- UND EXECUTION-PLATTFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Eine forschungsgetriebene, hexagonale, ereignisgesteuerte Scalping-Plattform für MetaTrader 5 — kausale Features, governete Deep-Learning-Modelle, ein invariantes Risikosystem, deterministische Forschungswerkzeuge und forensische Observability in einer prüfbaren Pipeline.", "chip_released": "veröffentlicht", "chip_rev": "Rev", "chip_research": "Forschung: 50D live · 70D Kandidat", "released_history": "Historie", "release_history_kicker": "RELEASE-HISTORIE", "releases_intro": "Jedes Release mit seinen echten Highlights, abgeleitet aus GitHub-Release-Metadaten zur Build-Zeit. Einzelquelle für Versionen:", "nf404_title": "404", "nf404_lead": "Diese Dokumentationsseite existiert nicht.", "nf404_home": "Start", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Release auf GitHub", "back_home": "Zurück zur Startseite", "quickstart_label": "Quickstart", "status_label": "Projektstatus", "faq_label": "FAQ", "cap_engine": "Kausale 50D-Feature-Engine", "cap_risk": "Risikomotor + Ausführungs-Klemmen", "cap_oos": "Walk-Forward + hartes OOS-Gate", "cap_factory": "Artefakt-zentrierte Modellfabrik", "cap_70d": "70D-Vertrag (Basis+News+Liquidität)", "cap_cf": "Kontrafaktische Engine (NO_TRADE-Wanderung)", "pillar_evidence_t": "🧭 Evidenz vor Behauptungen", "pillar_evidence_b": "Metriken ohne Evidenz zeigen n/a — nie falsche Nullen. Negative Ergebnisse werden veröffentlicht: Unser 70D-Forschungskandidat wurde vom eigenen OOS-Gate abgelehnt.", "pillar_safety_t": "🔒 Sicherheit durch Konstruktion", "pillar_safety_b": "PAPER als Standard · SHADOW ohne Order-Autorität · LIVE hinter expliziter Bestätigung · harte Risikoklemmen (HARD_MAX_LOTS, Marge ≤20%) im Ausführungspfad erzwungen.", "pillar_research_t": "🔬 Deterministische Forschung", "pillar_research_b": "Gepurgtes + Embargo-Walk-Forward, bit-exaktes Replay, fingerprintierte Datensätze/Modelle, Provenienz bei jedem Lauf — derselbe Feature-Vertrag für Live, Replay und Training.", "pillar_truth_t": "👁️ Laufzeit-Wahrheit", "pillar_truth_b": "Forensische Observability: schweregetrennte Logs, Incident-Korrelation, Deploy-Gate. Broker-Wahrheit schlägt veralteten Zustand; Gates sind Autoritäten, Settings sind Absicht.", "capability": "Fähigkeit", "status": "Status", "chip_certified": "ZERTIFIZIERT", "chip_implemented": "IMPLEMENTIERT", "chip_experimental": "EXPERIMENTELL", "chip_research_l": "FORSCHUNG", "cap_highlights": "Fähigkeiten im Fokus", "callout_important": "WICHTIG", "callout_note": "HINWEIS", "callout_warning": "WARNUNG", "how_it_works": "So funktioniert Nexus", "reading_time": "Min. Lesezeit", "toc_title": "Auf dieser Seite", "toc_empty": "Keine Überschriften", "last_updated": "Zuletzt aktualisiert", "share": "Teilen", "edit_page": "Seite bearbeiten", "related_title": "Weiter erkunden", "related_sub": "Weiter in diesem Abschnitt", "up_next": "Weiter", "also_read": "Auch lesen", "prev_page": "Zurück", "next_page": "Weiter", "breadcrumb_home": "Start", "hero_eyebrow_project": "Projekt", "hero_eyebrow_architecture": "Architektur", "hero_eyebrow_research": "Forschung", "hero_eyebrow_engineering": "Engineering", "hero_eyebrow_guides": "Anleitungen", "hero_eyebrow_getting_started": "Einstieg", "hero_eyebrow_contributing": "Mitwirken", "hero_eyebrow_reference": "Referenz", "hero_eyebrow_releases": "Releases", "kpi_certified": "Zertifiziert", "kpi_experimental": "Experimentell", "kpi_coverage": "Abdeckung", "steps_title": "Schritte", "copy_code": "Kopieren", "diagram_title": "Systemdiagramm", "diagram_sub": "Interaktive Pipeline-Ansicht", "stats_live": "Live-Vertrag", "callout_tip": "TIPP", "callout_info": "INFO", "callout_success": "ERFOLG", "callout_danger": "GEFAHR", "anchor_copy": "Link kopieren", "anchor_copied": "Link kopiert", "feedback_title": "War das hilfreich?", "feedback_yes": "Ja", "feedback_no": "Nein", "feedback_thanks": "Danke für dein Feedback", "prose_meta": "Artikel", "word_count": "Wörter", "toc_toggle": "Inhalt", "hero_desc_project": "Was Nexus ist, was zertifiziert vs. experimentell ist.", "hero_desc_architecture": "Wie die Engine gebaut ist: hexagonale Schichten.", "hero_desc_research": "Wie historische Daten zu falsifizierbarer Evidenz werden.", "hero_desc_engineering": "Qualitäts-Gates, CI-Architektur und Sicherheitspostur.", "hero_desc_guides": "Die Engine im Alltag bedienen.", "hero_desc_getting_started": "Engine installieren und konfigurieren.", "hero_desc_contributing": "Der Ingenieursvertrag und wie man beiträgt.", "hero_desc_reference": "CLI-Referenz, Glossar und ehrliche Antworten.", "hero_desc_releases": "Jedes Release mit echten Highlights."};
+window.NEXUS_LANG = "de";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>
