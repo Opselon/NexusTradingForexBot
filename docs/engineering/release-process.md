@@ -42,3 +42,5 @@ checksum verification, `minimum_model_version` matrix, honest
 rollback ends FAILED_SAFE with exit 1 on failure (BUG-173).
 
 Full reference: [`docs/RELEASE.md`](https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md).
+The end-to-end process (branches → PR gates → release cut → hotfix) is
+described in [Test, Build & Release Workflow](workflow-test-build-release.md).

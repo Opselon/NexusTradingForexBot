@@ -178,6 +178,7 @@
     "reproducibility": "قابلية إعادة الإنتاج",
     "quality": "الجودة والاختبار",
     "ci": "بنية CI",
+    "workflow-test-build-release": "سير عمل الاختبار والبناء والإصدار",
     "release-process": "عملية الإصدار",
     "security": "الأمان",
     "cli": "دليل CLI",

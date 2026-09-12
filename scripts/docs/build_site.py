@@ -271,7 +271,10 @@ NAV_SECTIONS: list[tuple[str, list[str]]] = [
             "reproducibility",
         ],
     ),
-    ("engineering", ["quality", "ci", "release-process", "security"]),
+    (
+        "engineering",
+        ["quality", "ci", "release-process", "workflow-test-build-release", "security"],
+    ),
     ("guides", ["cli", "api", "troubleshooting", "common-workflows"]),
     ("contributing", ["contribution-guide", "documentation", "add-language"]),
     ("reference", ["cli-reference", "glossary", "terminology", "faq"]),
