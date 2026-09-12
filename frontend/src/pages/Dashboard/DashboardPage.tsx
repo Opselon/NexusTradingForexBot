@@ -1,13 +1,22 @@
 /**
- * Dashboard — the operator's first answer surface.
+ * Dashboard — the operator's pro first-answer surface.
  *
- * Answers immediately, from backend data only:
- *  Is NSE running? LIVE or PAPER? MT5 connected? Trading enabled?
- *  Engine healthy? Market state? Positions/orders? Guardian blocking?
- *  ML/70D state?
+ * Answers immediately, from backend data only, in reading order:
+ *   1. Hero KPI row      — running? LIVE/PAPER? MT5? gate? equity/DD? decision?
+ *   2. Decision + chain  — what the engine decided and WHY (humanizer) + the
+ *                          tick→features→inference→decision freshness lineage.
+ *   3. Account + market  — broker micro-summary; bid/ask/spread/ATR/regime.
+ *   4. Health matrix     — every subsystem verdict, backend words only.
+ *   5. Guardian, ML/70D, recent decisions, positions, MT5 detail.
  *
  * All values are the canonical `get_system_state()` snapshot (REST seed +
  * WebSocket live merge). Nulls render as "—" (UNKNOWN), never fabricated.
+ *
+ * ── PRO LANE WIRING ───────────────────────────────────────────────────────
+ * The colocated tiles in ./pro/* are this lane's own components. The sibling
+ * components/pro/* set (Indicators/RiskViz/MLViz/OpsChrome/DataTablePro/
+ * AuditTools) is NOT imported here yet — see scratch/wiring/dashboard-pro.md
+ * for the exact import lines + JSX slots to apply once those files land.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -23,7 +32,13 @@ import {
   PositionSideBadge,
   StatusBadge,
 } from "@/components/primitives";
-import { formatMoney, formatNumber, formatPct, formatPnl, formatPrice, formatTime } from "@/lib/format";
+import { FeedQualityChip } from "@/components/FeedQualityChip";
+import { formatMoney, formatNumber, formatPct, formatPnl, formatPrice } from "@/lib/format";
+import { HeroKpiRow } from "./pro/HeroKpiRow";
+import { PipelineAgeChain } from "./pro/PipelineAgeChain";
+import { AccountMicroCard } from "./pro/AccountMicroCard";
+import { HealthMatrix } from "./pro/HealthMatrix";
+import { DecisionHumanCard } from "./pro/DecisionHumanCard";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -37,7 +52,7 @@ function fmtAge(sec: number | null | undefined): string {
   return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
 }
 
-export default function DashboardPage({ snapshot }: Props) {
+export default function DashboardPage({ snapshot, nowMs }: Props) {
   const mt5Query = useQuery({
     queryKey: ["mt5-status"],
     queryFn: ({ signal }) => engineApi.mt5Status(signal),
@@ -63,59 +78,60 @@ export default function DashboardPage({ snapshot }: Props) {
 
   return (
     <div>
-      {/* Top strip — the six critical answers */}
-      <div className="grid cols-4">
-        <MetricCard
-          label="Engine"
-          value={snapshot.engine_running ? "RUNNING" : "STOPPED"}
-          tone={snapshot.engine_running ? "pos" : "dim"}
-          sub={`warmup/inference: ${String(health.subsystems.engine ?? "—")}`}
-        />
-        <MetricCard
-          label="Mode (backend)"
-          value={snapshot.runtime_mode ?? snapshot.execution_mode ?? "—"}
-          tone={String(snapshot.runtime_mode ?? "").startsWith("LIVE") ? "neg" : "dim"}
-          sub={`data_source: ${snapshot.data_source ?? "—"}${snapshot.mode_source_mismatch ? " · MISMATCH!" : ""}`}
-        />
-        <MetricCard
-          label="MT5 / Broker"
-          value={String(health.subsystems.mt5 ?? "—")}
-          tone={health.subsystems.mt5 === "READY" ? "pos" : undefined}
-          sub={String(health.details.mt5 ?? "")}
-        />
-        <MetricCard
-          label="Trading gate"
-          value={acct.trade_allowed === null ? "—" : acct.trade_allowed ? "ALLOWED" : "RESTRICTED"}
-          tone={acct.trade_allowed === true ? "pos" : acct.trade_allowed === false ? "neg" : "dim"}
-          sub={`terminal trade_allowed (broker) · guardian: ${guardianBlocking ? "BLOCKING" : "ok"}`}
-        />
-        <MetricCard
-          label="Equity"
-          value={formatMoney(acct.equity)}
-          sub={`balance ${formatMoney(acct.balance)} · floating ${formatPnl(acct.floating)}`}
-          tone={acct.floating !== null && acct.floating < 0 ? "neg" : acct.floating !== null ? "pos" : undefined}
-        />
-        <MetricCard
-          label="Drawdown"
-          value={formatPct(acct.drawdown)}
-          sub={`peak-equity based (backend computed)`}
-          tone={acct.drawdown !== null && acct.drawdown > 5 ? "neg" : undefined}
-        />
-        <MetricCard
-          label="Positions / Orders"
-          value={`${acct.open_positions ?? "—"} / ${acct.pending_orders ?? "—"}`}
-          sub={`open / pending (account snapshot)`}
-        />
-        <MetricCard
-          label="AI decision"
-          value={snapshot.ai_decision ?? "—"}
-          tone={snapshot.ai_decision === "BUY" ? "pos" : snapshot.ai_decision === "SELL" ? "neg" : "dim"}
-          sub={`conf ${formatPct(snapshot.ai_confidence === null ? null : (snapshot.ai_confidence ?? 0) * 100, 1)} · ${snapshot.regime ?? "regime —"}`}
-        />
+      {/* 0 — Realtime truth line: feed quality chip (derived feedStore view),
+         the server state_version, and provenance words straight from the
+         backend snapshot. Positions PnL, spread, engine state and the
+         freshness panels below all render from the version-guarded live
+         merge in useRealtimeSnapshot — every SSE tick reaches them. */}
+      <div className="conn-chip" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, width: "fit-content" }}>
+        <FeedQualityChip nowMs={nowMs} />
+        <span className="timestamp-note" title="Monotonic server snapshot version (never regresses across REST/live merge)">
+          state_version {snapshot.state_version}
+        </span>
+        <span className={`badge ${String(snapshot.provenance.price).toUpperCase() === "UNAVAILABLE" ? "unknown" : "neutral"}`} title="provenance.price (backend word)">
+          PRICE {snapshot.provenance.price}
+        </span>
+        <span className={`badge ${String(snapshot.provenance.features).toUpperCase() === "UNAVAILABLE" ? "unknown" : "neutral"}`} title="provenance.features (backend word)">
+          FEAT {snapshot.provenance.features}
+        </span>
+        <span className={`badge ${String(snapshot.provenance.model).toUpperCase() === "UNAVAILABLE" ? "unknown" : "neutral"}`} title="provenance.model (backend word)">
+          MODEL {snapshot.provenance.model}
+        </span>
+        <span className={`badge ${String(snapshot.provenance.accounting).toUpperCase() === "UNAVAILABLE" ? "unknown" : "neutral"}`} title="provenance.accounting (backend word)">
+          ACCT {snapshot.provenance.accounting}
+        </span>
       </div>
 
+      {/* 1 — Hero: the eight critical answers, wired to the MetricCard primitive */}
+      <HeroKpiRow snapshot={snapshot} guardianBlocking={guardianBlocking} />
+
+      {/* 2 — Decision humanizer + pipeline freshness chain */}
       <div className="grid cols-2" style={{ marginTop: 14 }}>
-        {/* Market state */}
+        <Panel
+          title="AI decision (human layer)"
+          accent
+          right={<span className="timestamp-note">reason codes translated by exact match only</span>}
+        >
+          <DecisionHumanCard snapshot={snapshot} />
+        </Panel>
+
+        <Panel
+          title="Pipeline freshness chain"
+          right={<span className="timestamp-note">live_freshness + diagnostics (backend)</span>}
+        >
+          <PipelineAgeChain snapshot={snapshot} />
+        </Panel>
+      </div>
+
+      {/* 3 — Account micro-summary + market state */}
+      <div className="grid cols-2" style={{ marginTop: 14 }}>
+        <Panel
+          title="Account"
+          right={<span className="timestamp-note">equity {formatMoney(acct.equity)} · floating {formatPnl(acct.floating)}</span>}
+        >
+          <AccountMicroCard acct={acct} />
+        </Panel>
+
         <Panel
           title="Market"
           right={<span className="timestamp-note">tick age {fmtAge(snapshot.diagnostics.tick_age_sec)}{snapshot.tick_stale ? " · STALE" : ""}</span>}
@@ -134,31 +150,17 @@ export default function DashboardPage({ snapshot }: Props) {
             </div>
           )}
         </Panel>
+      </div>
 
-        {/* Subsystem health */}
-        <Panel title="Subsystem health" right={<span className="timestamp-note">checked {formatTime(health.checked_at)}</span>}>
-          <dl className="kv">
-            {Object.entries(health.subsystems).map(([name, st]) => (
-              <div key={name} style={{ display: "contents" }}>
-                <dt>{name.replace(/_/g, " ")}</dt>
-                <dd><StatusBadge status={st} /></dd>
-              </div>
-            ))}
-            <div style={{ display: "contents" }}>
-              <dt>overall</dt>
-              <dd>
-                <StatusBadge status={health.overall} />
-              </dd>
-            </div>
-            <div style={{ display: "contents" }}>
-              <dt>freshness</dt>
-              <dd><StatusBadge status={snapshot.live_freshness?.overall ?? null} /></dd>
-            </div>
-          </dl>
+      {/* 4 — Subsystem health matrix */}
+      <div style={{ marginTop: 14 }}>
+        <Panel title="Subsystem health matrix" right={<span className="timestamp-note">badge levels from backend status words</span>}>
+          <HealthMatrix snapshot={snapshot} />
         </Panel>
       </div>
 
-      <div className="grid cols-2">
+      {/* 5 — Guardian + ML detail (unchanged semantics: UNKNOWN stays UNKNOWN) */}
+      <div className="grid cols-2" style={{ marginTop: 14 }}>
         {/* Guardian / kill switch */}
         <Panel title="Guardian / runtime risk">
           {riskStateQuery.isPending ? (
@@ -211,94 +213,100 @@ export default function DashboardPage({ snapshot }: Props) {
       </div>
 
       {/* Recent audit events = latest predictions (audit_signals passthrough) */}
-      <Panel
-        title="Recent model decisions (audit_signals)"
-        right={<span className="timestamp-note">real rows from the audit DB — never fabricated</span>}
-        tight
-      >
-        {snapshot.predictions.length === 0 ? (
-          <EmptyState message="No model decisions recorded yet." hint="Rows appear once the engine records audit_signals entries." />
-        ) : (
-          <DataTable
-            headers={[
-              { label: "Time" },
-              { label: "Action" },
-              { label: "Confidence", num: true },
-              { label: "Regime" },
-              { label: "P(NO) ", num: true },
-              { label: "P(BUY)", num: true },
-              { label: "P(SELL)", num: true },
-              { label: "Reason" },
-            ]}
-          >
-            {snapshot.predictions.slice(0, 12).map((p, i) => (
-              <tr key={p.request_id ?? i}>
-                <td>{p.time ?? "—"}</td>
-                <td>{p.action ?? "—"}</td>
-                <td className="num">{p.confidence === null ? "—" : formatPct(p.confidence * 100, 1)}</td>
-                <td>{p.regime ?? "—"}</td>
-                <td className="num">{p.probabilities.no_trade?.toFixed(3) ?? "—"}</td>
-                <td className="num">{p.probabilities.buy?.toFixed(3) ?? "—"}</td>
-                <td className="num">{p.probabilities.sell?.toFixed(3) ?? "—"}</td>
-                <td>{p.reason ?? "—"}</td>
-              </tr>
-            ))}
-          </DataTable>
-        )}
-      </Panel>
+      <div style={{ marginTop: 14 }}>
+        <Panel
+          title="Recent model decisions (audit_signals)"
+          right={<span className="timestamp-note">real rows from the audit DB — never fabricated</span>}
+          tight
+        >
+          {snapshot.predictions.length === 0 ? (
+            <EmptyState message="No model decisions recorded yet." hint="Rows appear once the engine records audit_signals entries." />
+          ) : (
+            <DataTable
+              headers={[
+                { label: "Time" },
+                { label: "Action" },
+                { label: "Confidence", num: true },
+                { label: "Regime" },
+                { label: "P(NO) ", num: true },
+                { label: "P(BUY)", num: true },
+                { label: "P(SELL)", num: true },
+                { label: "Reason" },
+              ]}
+            >
+              {snapshot.predictions.slice(0, 12).map((p, i) => (
+                <tr key={p.request_id ?? i}>
+                  <td>{p.time ?? "—"}</td>
+                  <td>{p.action ?? "—"}</td>
+                  <td className="num">{p.confidence === null ? "—" : formatPct(p.confidence * 100, 1)}</td>
+                  <td>{p.regime ?? "—"}</td>
+                  <td className="num">{p.probabilities.no_trade?.toFixed(3) ?? "—"}</td>
+                  <td className="num">{p.probabilities.buy?.toFixed(3) ?? "—"}</td>
+                  <td className="num">{p.probabilities.sell?.toFixed(3) ?? "—"}</td>
+                  <td>{p.reason ?? "—"}</td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </Panel>
+      </div>
 
       {/* Open positions preview */}
-      <Panel title={`Open positions (${positions.length})`} tight>
-        {positions.length === 0 ? (
-          <EmptyState message="No open positions." />
-        ) : (
-          <DataTable
-            headers={[
-              { label: "Ticket" },
-              { label: "Symbol" },
-              { label: "Side" },
-              { label: "Volume", num: true },
-              { label: "Entry", num: true },
-              { label: "Current", num: true },
-              { label: "PnL", num: true },
-            ]}
-          >
-            {positions.slice(0, 8).map((p, i) => (
-              <tr key={p.ticket ?? i}>
-                <td>{p.ticket ?? "—"}</td>
-                <td>{p.symbol ?? "—"}</td>
-                <td><PositionSideBadge type={p.type} /></td>
-                <td className="num">{formatNumber(p.volume)}</td>
-                <td className="num">{formatPrice(p.price_open)}</td>
-                <td className="num">{formatPrice(p.price_current)}</td>
-                <td className={`num ${p.profit !== null && p.profit >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatPnl(p.profit)}</td>
-              </tr>
-            ))}
-          </DataTable>
-        )}
-      </Panel>
+      <div style={{ marginTop: 14 }}>
+        <Panel title={`Open positions (${positions.length})`} tight>
+          {positions.length === 0 ? (
+            <EmptyState message="No open positions." />
+          ) : (
+            <DataTable
+              headers={[
+                { label: "Ticket" },
+                { label: "Symbol" },
+                { label: "Side" },
+                { label: "Volume", num: true },
+                { label: "Entry", num: true },
+                { label: "Current", num: true },
+                { label: "PnL", num: true },
+              ]}
+            >
+              {positions.slice(0, 8).map((p, i) => (
+                <tr key={p.ticket ?? i}>
+                  <td>{p.ticket ?? "—"}</td>
+                  <td>{p.symbol ?? "—"}</td>
+                  <td><PositionSideBadge type={p.type} /></td>
+                  <td className="num">{formatNumber(p.volume)}</td>
+                  <td className="num">{formatPrice(p.price_open)}</td>
+                  <td className="num">{formatPrice(p.price_current)}</td>
+                  <td className={`num ${p.profit !== null && p.profit >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatPnl(p.profit)}</td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </Panel>
+      </div>
 
       {/* MT5 detail from the dedicated status endpoint */}
-      <Panel title="MT5 status detail" tight>
-        {mt5Query.isPending ? (
-          <div className="state-block"><div className="spinner" /></div>
-        ) : mt5Query.isError ? (
-          <EmptyState message="MT5 status unavailable (backend endpoint failed)." hint="Rendered as UNKNOWN — never inferred." />
-        ) : mt5Query.data ? (
-          <dl className="kv" style={{ padding: "10px 14px" }}>
-            <dt>connection</dt>
-            <dd><StatusBadge status={String((mt5Query.data.connection as { state?: string } | undefined)?.state ?? null)} /></dd>
-            <dt>terminal version</dt>
-            <dd>{String((mt5Query.data.connection as { terminal_version?: string } | undefined)?.terminal_version ?? "—")}</dd>
-            <dt>account</dt>
-            <dd>{mt5Query.data.account?.available ? `${mt5Query.data.account.company ?? "—"} · ${mt5Query.data.account.server ?? "—"}` : "—"}</dd>
-            <dt>pending orders (broker)</dt>
-            <dd>{mt5Query.data.orders?.length ?? 0}</dd>
-            <dt>positions (broker)</dt>
-            <dd>{mt5Query.data.positions?.length ?? 0}</dd>
-          </dl>
-        ) : null}
-      </Panel>
+      <div style={{ marginTop: 14 }}>
+        <Panel title="MT5 status detail" tight>
+          {mt5Query.isPending ? (
+            <div className="state-block"><div className="spinner" /></div>
+          ) : mt5Query.isError ? (
+            <EmptyState message="MT5 status unavailable (backend endpoint failed)." hint="Rendered as UNKNOWN — never inferred." />
+          ) : mt5Query.data ? (
+            <dl className="kv" style={{ padding: "10px 14px" }}>
+              <dt>connection</dt>
+              <dd><StatusBadge status={String((mt5Query.data.connection as { state?: string } | undefined)?.state ?? null)} /></dd>
+              <dt>terminal version</dt>
+              <dd>{String((mt5Query.data.connection as { terminal_version?: string } | undefined)?.terminal_version ?? "—")}</dd>
+              <dt>account</dt>
+              <dd>{mt5Query.data.account?.available ? `${mt5Query.data.account.company ?? "—"} · ${mt5Query.data.account.server ?? "—"}` : "—"}</dd>
+              <dt>pending orders (broker)</dt>
+              <dd>{mt5Query.data.orders?.length ?? 0}</dd>
+              <dt>positions (broker)</dt>
+              <dd>{mt5Query.data.positions?.length ?? 0}</dd>
+            </dl>
+          ) : null}
+        </Panel>
+      </div>
     </div>
   );
 }
