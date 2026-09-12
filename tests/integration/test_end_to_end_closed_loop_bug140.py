@@ -53,6 +53,7 @@ from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.robustness import RobustnessEngine
 from nexus_scalp.research.scoring import compute_strategy_score
 from nexus_scalp.research.walkforward import WalkForwardEngine
+from tests.unit.maintenance_time_helpers import outside_maintenance_utc
 
 
 @pytest.fixture
@@ -211,7 +212,13 @@ class TestEndToEndResearchAndExecutionLoop:
         dataset = builder.build(dataset_id="ds_e2e_01")
         assert len(dataset.samples) == 60
         assert dataset.provenance_extra["valid_research_samples"] == 60
-        assert dataset.provenance_extra["eligibility_rules"]["contract_version"] == "p0e-bug140-1"
+        # BUG-264-FOLLOWUP-2: the SSOT stamp moved to 'p0e-bug185-1' in
+        # 5073b865 (research/dataset.py:150) and the unit twin
+        # (test_lifecycle_bug140.py:574) was updated then — this stale
+        # mirror made the Heavy-CI integration matrix red at STAGE 2 on
+        # every HEAD since. Pin the SHIPPED value; the version itself is
+        # pinned at SSOT by the unit lane, not re-derived here.
+        assert dataset.provenance_extra["eligibility_rules"]["contract_version"] == "p0e-bug185-1"
 
         # ------------------------------------------------------------------
         # STAGE 3: STRATEGY CANDIDATE DISCOVERY
@@ -344,7 +351,11 @@ class TestEndToEndResearchAndExecutionLoop:
         proposal = TradeProposal(
             request_id="req_live_demo_01",
             symbol="XAUUSD",
-            generated_at=datetime.now(UTC),
+            # BUG-264-FOLLOWUP-1: STAGE-11 asserts dispatch success, so the
+            # MAINTENANCE_WINDOW guard must not block it — pin outside the
+            # buffered window (the Heavy-CI integration matrix otherwise
+            # flakes red 19:30-22:30 UTC depending on when it runs).
+            generated_at=outside_maintenance_utc(datetime.now(UTC)),
             action=ActionType.BUY_MARKET,
             confidence=0.82,
             reason_code="SMC_GOD_MODE",
