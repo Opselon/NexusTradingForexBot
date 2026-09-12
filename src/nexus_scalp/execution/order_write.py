@@ -157,7 +157,13 @@ class OrderIntentStore:
         return {iid: intent for iid, intent in latest.items() if intent.status == "PENDING"}
 
     def resolve(
-        self, intent_id: str, *, status: str, ticket: int | None = None, detail: str = ""
+        self,
+        intent_id: str,
+        *,
+        status: str,
+        ticket: int | None = None,
+        detail: str = "",
+        resolved_at: datetime | None = None,
     ) -> None:
         pending = self.load_pending()
         intent = pending.get(intent_id)
@@ -176,7 +182,9 @@ class OrderIntentStore:
                 fingerprint=intent.fingerprint,
                 status=status,
                 ticket=ticket,
-                resolved_at_utc=datetime.now(UTC).isoformat(),
+                resolved_at_utc=resolved_at.isoformat()
+                if resolved_at
+                else datetime.now(UTC).isoformat(),
                 resolution_detail=detail,
             )
         )
