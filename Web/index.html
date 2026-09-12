@@ -1326,6 +1326,15 @@
                         <div id="features-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                             <!-- Dynamic populated features card -->
                         </div>
+                        <!-- FEATURE-DELTA VIEW (restored after 8710ce4a): live model-input read-out
+                             (top-12 current feature values) rendered by the dashboard
+                             renderFeatureDeltas() path. Per that commit's stated intent the box belongs
+                             on the AI Intel Hub feature panel, NOT as an always-visible chart-header box
+                             in Monitoring; the container was only deleted, so the render path silently
+                             no-opped (box null -> early return) and the operator-facing read-out was
+                             lost. Re-parented here; same classes as the ai-snapshot-panel for style
+                             parity with the compiled tailwind.css (no new utilities). -->
+                        <div id="feature-delta-view" class="mt-2 bg-darkBg/40 border border-borderClr/60 rounded-lg p-3 text-[11px] font-mono"></div>
                     </div>
                 </div>
 

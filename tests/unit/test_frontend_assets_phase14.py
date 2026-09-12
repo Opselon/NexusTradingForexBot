@@ -30,10 +30,77 @@ from nexus_scalp.web.server import WEB_DIR, create_app
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(autouse=True)
+def _no_web_auth_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A-6 determinism: forbid a cross-module WEB-AUTH opt-out fake-green.
+
+    Sibling test modules mutate the session env at IMPORT time and never
+    restore it (test_alt_ui_runtime_contract.py module-level
+    os.environ.setdefault("NSE_WEB_AUTH_DISABLE", "1");
+    test_node_runtime_role.py sets it in-body). Once import order lands them
+    before this file in the same pytest session, ``create_app`` SKIPS the
+    WEB-AUTH-P0 middleware entirely and this file's auth-dependent probes
+    (asset 401-vs-200 outcomes, traversal 401-vs-404, chart-history auth)
+    silently measure a DIFFERENT contract depending on which modules were
+    collected first — same commit, different verdicts. Removing the opt-out
+    for the duration of every test here keeps the middleware always
+    installed, so the result is deterministic regardless of ambient env or
+    collection order.
+
+    Deliberately disjoint from PR #150's client-fixture hunk (token pinning +
+    Bearer header + (401,404) traversal relaxation) — merge whichever first;
+    both hunks coexist. Note #150's setdefault does NOT neutralize an ambient
+    DISABLE=1 (middleware absent -> header inert), so this guard is the
+    missing determinism piece even after #150 lands.
+    """
+    monkeypatch.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
+
+
+#: A-6 determinism: fixed non-secret probe token.
+FAKE_WEB_AUTH_TOKEN = "a6-determinism-fake-token"
+
+
 @pytest.fixture()
 def client() -> TestClient:
+    """TestClient for the PROTECTED surface (WEB-AUTH-P0 contract).
+
+    create_app installs token auth unconditionally (audit B1, 7c14451a), so
+    API/dashboard probes authenticate exactly like an operator browser with
+    an explicit credential (Bearer transport over the NSE_WEB_AUTH_TOKEN env
+    contract — same pattern as test_node_runtime_role).
+    """
+    import os
+
+    os.environ.setdefault("NSE_WEB_AUTH_TOKEN", "phase14-test-token")
     app = create_app(engine_ref=None)
-    return TestClient(app)
+    c = TestClient(app)
+    c.headers.update({"Authorization": "Bearer " + os.environ["NSE_WEB_AUTH_TOKEN"]})
+    return c
+
+
+@pytest.fixture()
+def auth_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """Authenticated client for API probes (A-6 determinism; WEB-AUTH-P0).
+
+    Same operator pattern as test_live_state_contract / test_incidents /
+    test_web_security: pin NSE_WEB_AUTH_TOKEN with monkeypatch.setenv BEFORE
+    create_app resolves the middleware token (env-wins => the DPAPI
+    SecureSecretStore is never consulted or written, so a token previously
+    generated+persisted by the real engine on this machine cannot leak into
+    results), then send it as Bearer. Deliberately a SEPARATE fixture from
+    ``client`` so it does not collide with PR #150's rewrite of that fixture;
+    it exists because API probes (chart history) must authenticate now that
+    WEB-AUTH-P0 gates every non-allowlisted path — without a credential they
+    401 for reasons unrelated to the contract under test. No assertion is
+    relaxed here: the 401-without-credential contract stays pinned by
+    tests/unit/test_web_auth.py.
+    """
+    monkeypatch.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", FAKE_WEB_AUTH_TOKEN)
+    app = create_app(engine_ref=None)
+    c = TestClient(app)
+    c.headers.update({"Authorization": f"Bearer {FAKE_WEB_AUTH_TOKEN}"})
+    return c
 
 
 # ---------------------------------------------------------------------------
@@ -185,12 +252,17 @@ class TestLocalAssetsServed:
         ],
     )
     def test_webfont_traversal_attempts_404(self, client: TestClient, malicious: str) -> None:
+        # WEB-AUTH-P0: traversal candidates are NEVER public (is_public_path
+        # hard-rejects ".." and "\\"), so they are refused at the middleware
+        # (401) OR by the route's own CodeQL path guard (404). Both codes mean
+        # the traversal was rejected without content — the original security
+        # intent (never 200, never serves a file) is preserved.
         r = client.get(f"/vendor/webfonts/{malicious}")
-        assert r.status_code == 404, f"traversal {malicious!r} must 404"
+        assert r.status_code in (401, 404), f"traversal {malicious!r} must be refused"
 
     def test_webfont_unknown_name_404(self, client: TestClient) -> None:
         r = client.get("/vendor/webfonts/../server.py")
-        assert r.status_code == 404
+        assert r.status_code in (401, 404)  # WEB-AUTH-P0: refused (never 200)
         r2 = client.get("/vendor/webfonts/no-such-font.woff2")
         assert r2.status_code == 404
 
@@ -227,13 +299,104 @@ class TestDomContract:
 
 
 # ---------------------------------------------------------------------------
+# 4b. feature-delta-view placement contract (additive; never edit TestDomContract)
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureDeltaViewHubContract:
+    """Regression pin for the 8710ce4a aftermath.
+
+    8710ce4a deleted the always-visible chart-header ``feature-delta-view`` box and
+    stated the live-feature read-out belongs on the AI Intel Hub — but only removed
+    the DOM node; it never added the container to the hub, so
+    ``Web/app.js renderFeatureDeltas()`` (called from handleIncomingLiveTick on every
+    feature payload) silently no-opped (box null -> early return) and the operator
+    feature was lost while TestDomContract went red. The fix re-parented the
+    container into the hub section. This class pins that contract structurally so a
+    future hub restructure fails loudly instead of silently dead-ending the panel:
+
+    * the container exists in index.html (JS renderFeatureDeltas() keeps its target),
+    * it lives INSIDE <section id="tab-ai-analysis"> (the AI Intel Hub), and
+    * it does NOT live inside <section id="tab-monitoring"> (8710ce4a's pollution
+      complaint must not regress).
+    """
+
+    @staticmethod
+    def _section_span(html: str, section_id: str) -> tuple[int, int]:
+        """Return the (start, end) char span of a tab-content <section>, tracking
+        nested <section> opens/closes so the span ends at ITS OWN </section>."""
+        m = re.search(rf'<section\s+id="{re.escape(section_id)}"[^>]*>', html)
+        assert m, f"section #{section_id} missing from index.html"
+        depth = 1
+        pos = m.end()
+        while depth > 0 and pos < len(html):
+            nxt_open = html.find("<section", pos)
+            nxt_close = html.find("</section>", pos)
+            if nxt_close == -1:
+                raise AssertionError(f"unclosed <section> for #{section_id}")
+            if nxt_open != -1 and nxt_open < nxt_close:
+                depth += 1
+                pos = nxt_open + len("<section")
+            else:
+                depth -= 1
+                pos = nxt_close + len("</section>")
+        return m.start(), pos
+
+    def test_feature_delta_view_container_lives_in_ai_intel_hub(self) -> None:
+        """ONE deterministic pin: the JS render path stays wired AND the container
+        lives inside the hub — never 'fixed' by deleting the app.js feature, never
+        re-polluting Monitoring."""
+        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        assert "function renderFeatureDeltas()" in app_js, (
+            "renderFeatureDeltas() was deleted — the DOM contract must be fixed by "
+            "re-parenting the container (per 8710ce4a intent), not by dropping the "
+            "operator-facing live-feature read-out"
+        )
+        assert "renderFeatureDeltas();" in app_js, (
+            "renderFeatureDeltas() call site removed from the live-tick path"
+        )
+        assert "getElementById('feature-delta-view')" in app_js
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        hub_start, hub_end = self._section_span(html, "tab-ai-analysis")
+        mon_start, mon_end = self._section_span(html, "tab-monitoring")
+        containers = [m.start() for m in re.finditer(r'<div\s+id="feature-delta-view"[^>]*>', html)]
+        assert containers, (
+            "feature-delta-view container deleted from index.html again — "
+            "Web/app.js renderFeatureDeltas() would silently no-op (8710ce4a regression)"
+        )
+        assert len(containers) == 1, (
+            f"feature-delta-view must exist exactly once, found {len(containers)}"
+        )
+        pos = containers[0]
+        assert hub_start < pos < hub_end, (
+            "feature-delta-view must live INSIDE the AI Intel Hub section "
+            '(<section id="tab-ai-analysis">) — the hub restructure moved it out '
+            "and renderFeatureDeltas() would dead-end outside the panel it belongs to"
+        )
+        assert not (mon_start < pos < mon_end), (
+            "feature-delta-view must NOT be re-added to the Monitoring chart panel "
+            "(8710ce4a removed it there as chart-header pollution)"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 5. Chart history contract
 # ---------------------------------------------------------------------------
 
 
 class TestChartHistoryContract:
-    def test_chart_history_response_shape(self, client: TestClient) -> None:
-        r = client.get("/api/chart/history")
+    """API probes authenticated via ``auth_client`` (A-6 determinism).
+
+    /api/chart/history is NOT in WEB-AUTH-P0's public allowlist (every /api
+    route is gated — audit B1 fail-closed), so tokenless probes measured 401
+    instead of the response shape the contract pins: the failures were an
+    auth-transport artifact of machine state (ambient token / persisted DPAPI
+    store), not a chart contract violation. Authenticated with a fixture
+    token, the assertions run exactly as written — nothing relaxed.
+    """
+
+    def test_chart_history_response_shape(self, auth_client: TestClient) -> None:
+        r = auth_client.get("/api/chart/history")
         assert r.status_code == 200
         body = r.json()
         for key in (
@@ -252,16 +415,16 @@ class TestChartHistoryContract:
             for key in ("time", "open", "high", "low", "close"):
                 assert key in bar, f"bar missing key: {key}"
 
-    def test_chart_history_no_synthetic_source_when_offline(self, client: TestClient) -> None:
+    def test_chart_history_no_synthetic_source_when_offline(self, auth_client: TestClient) -> None:
         """engine_ref=None: source must be UNAVAILABLE, not a fake 'MT5'."""
-        r = client.get("/api/chart/history")
+        r = auth_client.get("/api/chart/history")
         body = r.json()
         if not body["bars"]:
             assert body["source"] in ("UNAVAILABLE", "ENGINE_STATE")
 
-    def test_chart_history_error_payload_is_safe(self, client: TestClient) -> None:
+    def test_chart_history_error_payload_is_safe(self, auth_client: TestClient) -> None:
         """Even on failure the payload must not contain tracebacks."""
-        r = client.get("/api/chart/history")
+        r = auth_client.get("/api/chart/history")
         assert r.status_code == 200
         text = r.text
         assert "Traceback" not in text
