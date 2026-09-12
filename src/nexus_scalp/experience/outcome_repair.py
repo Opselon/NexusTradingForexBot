@@ -23,7 +23,7 @@ import json
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from nexus_scalp.experience.ledger import ExperienceLedger
@@ -31,7 +31,11 @@ from nexus_scalp.experience.models import (
     ExperienceOutcome,
     ExperienceRecord,
 )
-from nexus_scalp.experience.outcome_recovery import reconstruct_broker_outcome
+from nexus_scalp.experience.outcome_recovery import (
+    CLOSE_EVIDENCE_TOLERANCE_SEC,
+    broker_close_time,
+    reconstruct_broker_outcome,
+)
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.experience.outcome_repair")
@@ -230,6 +234,26 @@ class OutcomeRepairJob:
         elif "BUY" in rec.action.upper():
             direction = "BUY"
 
+        # BUG-262: the close INSTANT is broker-evidenced, not repair-time.
+        # Stamping datetime.now() made every repaired outcome close "today",
+        # relocating historical trades into the wrong accounting day/week
+        # bucket, fabricating hours-to-days of holding duration (close -
+        # decision entry_time) and poisoning exit-time forensics. Contamination
+        # guard identical to the reconciliation path: evidence must lie inside
+        # [decision_time, now + tolerance]; anything else (server-local stamps)
+        # is refused and repair-time fallback applies (old behavior).
+        ticket_deals: list[dict] = []
+        if ticket.isdigit():
+            ticket_deals = [
+                d for d in deals if isinstance(d, dict) and d.get("position_ticket") == int(ticket)
+            ]
+        evidence_close = broker_close_time(
+            ticket_deals,
+            not_before=rec.decision_timestamp,
+            not_after=datetime.now(UTC) + timedelta(seconds=CLOSE_EVIDENCE_TOLERANCE_SEC),
+        )
+        close_time = evidence_close if evidence_close is not None else datetime.now(UTC)
+
         broker_outcome = reconstruct_broker_outcome(
             ticket=int(ticket) if ticket.isdigit() else 0,
             symbol=rec.symbol or "XAUUSD",
@@ -242,7 +266,7 @@ class OutcomeRepairJob:
             tp_price=rec.take_profit or 0.0,
             volume=float(row.get("approved_volume") or 0.0),
             fallback_exit_price=0.0,
-            close_time=datetime.now(UTC),
+            close_time=close_time,
             entry_time=rec.decision_timestamp,
         )
 
@@ -271,6 +295,21 @@ class OutcomeRepairJob:
         # what `repair_outcome` persists).
         old_payload = json.loads(row.get("payload") or "{}")
         repaired_payload = dict(old_payload)
+        # BUG-262: the outcome INSTANT follows the broker-evidenced close.
+        # The old payload carried the original (corrupt, detection/record-time)
+        # stamp; keeping it would preserve the accounting-day relocation even
+        # after the PnL repair. Only overwritten when evidence survived the
+        # contamination guard (close_time != repair-now fallback).
+        if evidence_close is not None:
+            repaired_payload["outcome_timestamp"] = close_time.isoformat()
+            behavior = repaired_payload.get("behavior")
+            if isinstance(behavior, dict) and rec.decision_timestamp is not None:
+                repaired_dur = max(0.0, (close_time - rec.decision_timestamp).total_seconds())
+                if float(behavior.get("duration_sec") or 0.0) <= 0.0:
+                    repaired_payload["behavior"] = {
+                        **behavior,
+                        "duration_sec": round(repaired_dur, 3),
+                    }
         repaired_payload["realized_r_multiple"] = round(float(r_multiple), 6)
         repaired_payload["realized_pnl_usd"] = round(float(net or 0.0), 2)
         repaired_payload["broker_outcome"] = broker_outcome.model_dump()

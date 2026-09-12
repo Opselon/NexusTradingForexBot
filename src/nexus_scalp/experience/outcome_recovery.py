@@ -511,6 +511,98 @@ def outcome_row_to_broker_outcome(row: sqlite3.Row | dict[str, Any]) -> BrokerOu
     )
 
 
+def as_utc(value: Any) -> datetime | None:
+    """BUG-262: normalize one broker-deal time shape to aware UTC.
+
+    Accepts the shapes that actually flow through the close-evidence chain:
+      * aware/naive ``datetime`` (native adapter: ``closed_at`` is aware UTC;
+        naive values are ASSUMED UTC, matching accounting.ensure_utc),
+      * ISO-8601 string or epoch-digit string (remote gateway JSON payloads),
+      * int/float epoch seconds (durable ``audit_broker_deals.time`` copy).
+    Returns None for garbage — callers must fall back to an explicit sentinel,
+    never to a fabricated instant.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    if isinstance(value, (int, float)):
+        # Plausible UNIX-seconds range guard: 2001..2100. Anything outside is
+        # a milliseconds/microseconds field or noise, not a deal time.
+        if 1e9 <= float(value) <= 4.1e9:
+            try:
+                return datetime.fromtimestamp(float(value), tz=UTC)
+            except (OverflowError, OSError, ValueError):
+                return None
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.isdigit():
+            return as_utc(int(text))
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+    return None
+
+
+#: BUG-262: how far outside the [entry, detection] window a broker-evidenced
+#: close stamp may sit before it is rejected as clock-domain contamination
+#: (server-local vs UTC, G1 class). Covers ordering jitter between tick and
+#: deal fetch; anything larger (e.g. a +3h server-local stamp) is refused and
+#: the caller's fallback instant applies — precision improves ONLY when the
+#: domains agree.
+CLOSE_EVIDENCE_TOLERANCE_SEC: float = 120.0
+
+
+def _deal_time(d: dict[str, Any]) -> Any:
+    value = d.get("closed_at")
+    if value is None:
+        value = d.get("time")
+    return value
+
+
+def broker_close_time(
+    deals: list[dict[str, Any]],
+    *,
+    not_before: datetime | None = None,
+    not_after: datetime | None = None,
+) -> datetime | None:
+    """BUG-262: the authoritative close instant from broker deal evidence.
+
+    Returns the LATEST valid ``closed_at``/``time`` across the given deal rows
+    (multi-deal closes terminate at the last deal). Bounds sanity-filter
+    clock-domain contamination: an evidence stamp BEFORE the position's open
+    time or AFTER the detection instant (plus caller-provided tolerance) is
+    rejected so a server-local vs UTC mix-up (G1 class) can never move a
+    trade between accounting days. Returns None when no usable evidence
+    exists; the caller MUST then keep its previous fallback behavior.
+    """
+    best: datetime | None = None
+    lower = as_utc(not_before) if not_before is not None else None
+    upper = as_utc(not_after) if not_after is not None else None
+    for d in deals or []:
+        if not isinstance(d, dict):
+            continue
+        stamp = as_utc(_deal_time(d))
+        if stamp is None:
+            continue
+        if lower is not None and stamp < lower:
+            continue
+        if upper is not None and stamp > upper:
+            continue
+        if best is None or stamp > best:
+            best = stamp
+    return best
+
+
 def _iso(value: Any) -> str:
     if value is None:
         return ""

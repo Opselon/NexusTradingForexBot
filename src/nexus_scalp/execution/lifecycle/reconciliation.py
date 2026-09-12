@@ -26,11 +26,14 @@ from __future__ import annotations
 import contextlib
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from nexus_scalp.domain.models import SymbolInfo, TickData
 from nexus_scalp.experience.outcome_recovery import (
+    CLOSE_EVIDENCE_TOLERANCE_SEC,
+    as_utc,
+    broker_close_time,
     classify_exit_with_evidence,
     reconstruct_broker_outcome,
 )
@@ -143,6 +146,29 @@ class ReconciliationEngine:
                 atr = max(self.om._safe_feature_float(None, "atr_m1", 0.80), 0.50)
                 initial_sl = float(opened.get("initial_sl_price", 0.0) or 0.0)
                 final_sl = float(matched.get("sl", initial_sl) or initial_sl)
+                # BUG-262: the close INSTANT must come from broker deal
+                # evidence, not from the detection tick. Reconciliation runs
+                # after a restart gap or a missed close event — the position
+                # may have closed hours ago; stamping close_time=tick-now
+                # shifted the trade across accounting-day boundaries, zeroed
+                # its holding duration and made the close-vs-decision
+                # forensic skew meaningless. Contamination guard: evidence is
+                # accepted only inside [ledger open_time, now + tolerance]
+                # (server-local stamps, G1 class, sit outside and are refused
+                # -> previous fallback applies, never a fabricated instant).
+                open_dt = as_utc((opened or {}).get("open_time") or (opened or {}).get("timestamp"))
+                close_dt = broker_close_time(
+                    deals,
+                    not_before=open_dt
+                    if open_dt is not None
+                    else now - timedelta(hours=max(int(hours_back), 1)),
+                    not_after=now + timedelta(seconds=CLOSE_EVIDENCE_TOLERANCE_SEC),
+                )
+                if close_dt is None:
+                    close_dt = now
+                entry_duration = (
+                    max(0.0, (close_dt - open_dt).total_seconds()) if open_dt is not None else 0.0
+                )
                 broker_outcome = reconstruct_broker_outcome(
                     ticket=ticket,
                     symbol=symbol,
@@ -155,8 +181,8 @@ class ReconciliationEngine:
                     tp_price=float(matched.get("tp", 0.0) or 0.0),
                     volume=vol,
                     fallback_exit_price=exit_price,
-                    close_time=now,
-                    entry_time=None,
+                    close_time=close_dt,
+                    entry_time=open_dt,
                 )
                 (
                     exit_mechanism,
@@ -177,6 +203,8 @@ class ReconciliationEngine:
                 )
 
                 # Persist the same single autopsy row the live path writes.
+                # BUG-262: close_time/duration come from the broker-evidenced
+                # close instant (fallback: detection tick), not detection-now.
                 self.om.audit.log_ledger_closed(
                     ticket=ticket,
                     symbol=symbol,
@@ -188,8 +216,8 @@ class ReconciliationEngine:
                     pnl=broker_outcome.gross_profit,
                     commission=broker_outcome.commission,
                     swap=broker_outcome.swap,
-                    duration_sec=0.0,
-                    timestamp_str=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                    duration_sec=entry_duration,
+                    timestamp_str=close_dt.isoformat(),
                     mae=0.0,
                     mfe=0.0,
                     initial_sl_price=initial_sl,
@@ -198,7 +226,7 @@ class ReconciliationEngine:
                     exit_mechanism=exit_mechanism,
                     order_id=opened.get("order_id", "") if opened else "",
                     open_time=opened.get("open_time", "") if opened else "",
-                    close_time=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                    close_time=close_dt.isoformat(),
                     entry_reason=opened.get("entry_reason", "") if opened else "",
                     ai_confidence_at_open=float(opened.get("ai_confidence_at_open", 0.0) or 0.0),
                     market_regime_at_open=opened.get("market_regime_at_open", "") if opened else "",
@@ -218,7 +246,7 @@ class ReconciliationEngine:
                 if self.om.experience_engine is not None:
                     self._record_experience_outcome(
                         dead_ticket=ticket,
-                        now=now,
+                        now=close_dt,
                         entry=entry,
                         exit_price=broker_outcome.exit_price,
                         initial_sl_val=initial_sl,
@@ -232,7 +260,7 @@ class ReconciliationEngine:
                         mfe_val=0.0,
                         mae_usd=0.0,
                         mfe_usd=0.0,
-                        duration_sec=0.0,
+                        duration_sec=entry_duration,
                         exit_mechanism=exit_mechanism,
                         was_sl_modified=bool(initial_sl and abs(final_sl - initial_sl) > 1e-9),
                         broker_outcome=broker_outcome,
@@ -432,6 +460,40 @@ class ReconciliationEngine:
                     ticket=dead_ticket,
                     deals=len(durable),
                 )
+
+        # BUG-262: resolve the close INSTANT from broker deal evidence
+        # instead of the detection tick. This sweep runs when the position has
+        # VANISHED between manage passes — with paper/broker timing the close
+        # may sit minutes-to-hours before detection; stamping detection-now
+        # mis-locates the trade in accounting periods (day/week buckets read
+        # closed_at), inflates/zeroes holding duration, and corrupts the
+        # close-vs-decision forensic skew. Contamination guard: evidence is
+        # accepted only inside [entry_time, now + tolerance]; a server-local
+        # (G1) or otherwise domain-skewed stamp falls outside and is refused,
+        # keeping the previous detection-now fallback (never a fabricated
+        # instant, never a silently-shifted day bucket).
+        close_evidence = [d for d in history_deals if d.get("position_ticket") == dead_ticket]
+        close_dt = broker_close_time(
+            close_evidence,
+            not_before=as_utc(entry_time),
+            not_after=(
+                now + timedelta(seconds=CLOSE_EVIDENCE_TOLERANCE_SEC)
+                if isinstance(now, datetime)
+                else None
+            ),
+        )
+        if close_dt is not None:
+            if now != close_dt:
+                logger.debug(
+                    "[BROKER_OUTCOME] event=CLOSE_TIME_EVIDENCED",
+                    ticket=dead_ticket,
+                    detection=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                    evidenced=close_dt.isoformat(),
+                )
+            now = close_dt
+            duration_sec = (
+                max(0.0, (close_dt - entry_time).total_seconds()) if entry_time else duration_sec
+            )
 
         # ------------------------------------------------------------------
         # BUG-046 FIX: never default missing broker truth to zero.
