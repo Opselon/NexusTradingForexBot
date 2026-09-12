@@ -1,0 +1,109 @@
+/* Settings page (/settings) — additive styles only, consuming theme.css tokens.
+   Deliberately framework-free like the rest of the alt console. Nothing here
+   encodes backend state: it lays out visual prefs. RTL-safe: every row uses
+   flex/flow-relative properties so <html dir=rtl> mirrors without overrides. */
+
+.set-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.set-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--amber);
+  border-radius: 6px;
+  padding: 7px 10px;
+  line-height: 1.5;
+}
+
+.set-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--panel-gap);
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .set-grid { grid-template-columns: 1fr; }
+}
+
+/* label + control rows inside Panels */
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: var(--row-pad) 0;
+  border-bottom: 1px dashed var(--border);
+}
+.set-row:last-child { border-bottom: none; }
+.set-row .lab { font-size: 12px; font-weight: 600; color: var(--text); }
+.set-row .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.5; }
+.set-row .sub .badge { margin-inline-start: 4px; }
+
+/* shortcut cheat-sheet */
+.set-kbd-list { display: flex; flex-direction: column; gap: 6px; }
+.set-kbd-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.set-kbd-row:last-child { border-bottom: none; }
+.set-kbd-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  min-width: 128px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.set-kbd-body .lab { display: block; font-size: 12px; }
+.set-kbd-body .sub { display: block; font-size: 10.5px; color: var(--text-dim); margin-top: 1px; line-height: 1.45; }
+
+/* theme token chips — names only, never invented values */
+.set-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.set-token {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* confirmation feedback row in Local data */
+.set-cleared {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--green);
+  background: var(--green-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+}
+
+/* code inside descriptions keeps mono without stealing panel rhythm */
+.set-row code.inline-mono,
+.set-note code.inline-mono,
+.set-kbd-body code.inline-mono {
+  font-family: var(--mono);
+  font-size: 0.95em;
+  color: var(--text);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
