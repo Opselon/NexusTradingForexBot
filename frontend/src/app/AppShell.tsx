@@ -2,18 +2,22 @@
  * App shell: routing, providers, top status bar, banners.
  *
  * Server state baseline comes from TanStack Query (`/api/status` snapshot);
- * the WebSocket layer merges live updates on top. LIVE/PAPER and every
+ * the realtime layer merges live updates on top. LIVE/PAPER and every
  * authoritative value render from backend data only.
+ *
+ * Pro UX layer (presentation only): persistent sidebar/topbar, density mode,
+ * freshness meters, keyboard navigation (Alt+1..7, Alt+B), dismissible stale
+ * banners, and the command-result toast host. No state decisions live here.
  */
 
 import { useEffect, useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
-import { isFeedStale } from "@/components/ConnectionIndicator";
+import { ConnectionIndicator, FreshnessMeter, isFeedStale } from "@/components/ConnectionIndicator";
 import { ModeIndicator } from "@/components/ModeIndicator";
-import { ConnectionIndicator } from "@/components/ConnectionIndicator";
+import { ToastHost } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
 import { getAuthToken } from "@/api/client";
 import { ApiError } from "@/types/api";
@@ -46,10 +50,23 @@ const NAV_SECTIONS: Array<{ section: string; items: Array<{ to: string; icon: st
   },
 ];
 
+/** Flat route list for Alt+<n> keyboard navigation (visual shortcut only). */
+const NAV_ROUTES = NAV_SECTIONS.flatMap((s) => s.items).map((i) => i.to);
+
+/** Backend age (seconds) -> ms for the freshness meter; null stays null. */
+function ageSecToMs(sec: number | null | undefined): number | null {
+  return sec === null || sec === undefined || !Number.isFinite(sec) ? null : sec * 1000;
+}
+
 export function AppShell() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const dense = useUiStore((s) => s.dense);
+  const toggleDense = useUiStore((s) => s.toggleDense);
+  const dismissedStaleBannerVersion = useUiStore((s) => s.dismissedStaleBannerVersion);
+  const dismissStaleBanner = useUiStore((s) => s.dismissStaleBanner);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   // 1s ticker for data-age display (visual only).
@@ -57,6 +74,31 @@ export function AppShell() {
     const t = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
+
+  // Density class on <body> — CSS custom properties cascade from there.
+  useEffect(() => {
+    document.body.classList.toggle("dense", dense);
+  }, [dense]);
+
+  // Alt+1..7 route jump, Alt+B sidebar (skipped while typing in inputs).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const digit = Number(e.key);
+      if (Number.isInteger(digit) && digit >= 1 && digit <= NAV_ROUTES.length) {
+        e.preventDefault();
+        const route = NAV_ROUTES[digit - 1];
+        if (route) navigate(route);
+      } else if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navigate, toggleSidebar]);
 
   const snapshotQuery = useQuery({
     queryKey: ["engine-snapshot"],
@@ -79,6 +121,8 @@ export function AppShell() {
       : null;
   const feedStale = isFeedStale(realtimeStatus, nowMs);
   const engineStale = snapshot?.is_stale === true;
+  const staleDismissed = snapshot !== undefined && dismissedStaleBannerVersion === snapshot.state_version;
+  const lf = snapshot?.live_freshness ?? null;
 
   return (
     <div className="app-shell">
@@ -87,7 +131,7 @@ export function AppShell() {
           <div className="brand-logo">NSE</div>
           <div className="brand-text">
             NEXUS SCALP ENGINE
-            <span className="sub">ALTERNATIVE CONSOLE</span>
+            <span className="sub">PRO CONSOLE</span>
           </div>
         </div>
         <nav className="nav">
@@ -95,7 +139,7 @@ export function AppShell() {
             <div key={sec.section}>
               <div className="nav-section">{sec.section}</div>
               {sec.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+                <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} title={item.label}>
                   <span className="icon">{item.icon}</span>
                   <span className="nav-label">{item.label}</span>
                 </NavLink>
@@ -103,9 +147,25 @@ export function AppShell() {
             </div>
           ))}
         </nav>
-        <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar">
-          {collapsed ? "»" : "«"}
-        </button>
+        <div className="sidebar-foot">
+          <div className="side-row">
+            <span>DENSITY</span>
+            <button
+              className={`switch ${dense ? "on" : ""}`}
+              role="switch"
+              aria-checked={dense}
+              aria-label="Toggle dense layout"
+              title="Dense layout (visual only)"
+              onClick={toggleDense}
+            />
+          </div>
+          <div className="side-row" title="Keyboard shortcuts">
+            <span><kbd>alt</kbd> 1–7 · <kbd>alt</kbd> B</span>
+          </div>
+          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)">
+            {collapsed ? "»" : "«"}
+          </button>
+        </div>
       </aside>
 
       <div className="main-col">
@@ -118,8 +178,19 @@ export function AppShell() {
           <span className="conn-chip" title="Backend health.overall from /api/status">
             {snapshot ? <span className={`badge ${snapshot.health.overall === "READY" ? "good" : snapshot.health.overall === "STALE" || snapshot.health.overall === "WARMING_UP" ? "warn" : "bad"}`}>{snapshot.health.overall}</span> : <span className="badge unknown">HEALTH —</span>}
           </span>
+          {snapshot && (
+            <span className="conn-chip" style={{ gap: 10 }} title="Pipeline freshness stages (backend live_freshness)">
+              <FreshnessMeter label="MKT" state={lf?.market?.state} ageMs={lf?.market?.age_ms ?? ageSecToMs(snapshot.diagnostics.tick_age_sec)} />
+              <FreshnessMeter label="FEAT" state={lf?.features?.state} ageMs={lf?.features?.age_ms ?? ageSecToMs(snapshot.diagnostics.features_age_sec)} />
+              <FreshnessMeter label="INFR" state={lf?.inference?.state} ageMs={lf?.inference?.age_ms ?? ageSecToMs(snapshot.diagnostics.inference_age_sec)} />
+              <FreshnessMeter label="DEC" state={lf?.decision?.state} ageMs={lf?.decision?.age_ms ?? ageSecToMs(snapshot.diagnostics.proposal_age_sec)} />
+            </span>
+          )}
           {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
           <span className="spacer" />
+          <span className="timestamp-note" title="Local wall clock (visual aid)">
+            {new Date(nowMs).toLocaleTimeString("en-GB", { hour12: false })} · v{snapshot?.state_version ?? "—"}
+          </span>
           <ConnectionIndicator
             status={realtimeStatus}
             nowMs={nowMs}
@@ -141,10 +212,16 @@ export function AppShell() {
             </span>
           </div>
         )}
-        {!authError && !feedStale && engineStale && (
+        {!authError && !feedStale && engineStale && !staleDismissed && (
           <div className="banner stale">
             <span>⚠ Backend reports <span className="inline-mono">live_freshness=STALE</span> — the engine process is up but its intelligence pipeline is not fresh (frozen tick/feature/inference chain).</span>
-            <button className="dismiss-btn" title="Dismiss until state changes">✕</button>
+            <button
+              className="dismiss-btn"
+              title="Dismiss until the next snapshot version"
+              onClick={() => snapshot && dismissStaleBanner(snapshot.state_version)}
+            >
+              ✕
+            </button>
           </div>
         )}
 
@@ -171,6 +248,7 @@ export function AppShell() {
           )}
         </main>
       </div>
+      <ToastHost />
     </div>
   );
 }
