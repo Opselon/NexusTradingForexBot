@@ -397,6 +397,22 @@ def _provision_model_artifact(cfg) -> None:
     path = Path(cfg.model.model_artifact_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     model = ScalpNet(num_features=70, num_classes=3)
+    # The P0 serving gate refuses fresh-init / behavioral-degenerate weights,
+    # so boot fixtures must mint TRAINED artifacts (fix the fixture, not the
+    # gate — precedent ab9db747 / AGENT-12 c004). Deterministic recipe.
+    import torch as _torch
+
+    _torch.manual_seed(999)
+    model.train()
+    gen = _torch.Generator().manual_seed(1234)
+    X = _torch.randn(256, 70, generator=gen)
+    y = _torch.randint(0, 3, (256,), generator=gen)
+    opt = _torch.optim.AdamW(model.parameters(), lr=1e-3)
+    for _ in range(30):
+        opt.zero_grad()
+        loss = _torch.nn.functional.cross_entropy(model(X, return_logits=True), y)
+        loss.backward()
+        opt.step()
     model.eval()
     torch.save(model.state_dict(), path)
     # Write the integrity manifest so the P1 verify-on-load gate sees a

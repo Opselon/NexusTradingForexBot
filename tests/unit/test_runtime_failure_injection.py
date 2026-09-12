@@ -480,6 +480,24 @@ def _write_weight_file(path, num_features=50, poison_nan=False):
     from nexus_scalp.models.scalp_net import ScalpNet
 
     model = ScalpNet(num_features=num_features)
+    # The P0 serving gate refuses fresh-init / behavioral-degenerate weights
+    # on the load path, so the sidecar-failure probes need genuinely TRAINED
+    # weights to reach the scaler handling (fix the fixture, not the gate —
+    # precedent ab9db747 / AGENT-12 c004). Deterministic recipe mirroring
+    # test_promotion_rejects_degenerate_model.
+    _torch.manual_seed(999)
+    model.train()
+    gen = _torch.Generator().manual_seed(1234)
+    n_cls = int(model.classifier.weight.shape[0])
+    X = _torch.randn(256, num_features, generator=gen)
+    y = _torch.randint(0, n_cls, (256,), generator=gen)
+    opt = _torch.optim.AdamW(model.parameters(), lr=1e-3)
+    for _ in range(30):
+        opt.zero_grad()
+        loss = _torch.nn.functional.cross_entropy(model(X, return_logits=True), y)
+        loss.backward()
+        opt.step()
+    model.eval()
     if poison_nan:
         with _torch.no_grad():
             model.input_projection.weight.fill_(float("nan"))

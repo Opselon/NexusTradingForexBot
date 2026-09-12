@@ -65,6 +65,21 @@ def _make_engine(tmp_path: Path | None = None) -> LiveEngine:
         bundle_dir.mkdir(parents=True, exist_ok=True)
         model_path = bundle_dir / "model.pt"
         net = ScalpNet(num_features=50)
+        # The P0 serving gate refuses fresh-init / behavioral-degenerate
+        # weights, so boot fixtures must mint TRAINED artifacts (fix the
+        # fixture, not the gate — same ruling as ab9db747 / this c004 repair).
+        torch.manual_seed(999)
+        net.train()
+        gen = torch.Generator().manual_seed(1234)
+        n_cls = int(net.classifier.weight.shape[0])
+        X = torch.randn(256, 50, generator=gen)
+        y = torch.randint(0, n_cls, (256,), generator=gen)
+        opt = torch.optim.AdamW(net.parameters(), lr=1e-3)
+        for _ in range(30):
+            opt.zero_grad()
+            loss = torch.nn.functional.cross_entropy(net(X, return_logits=True), y)
+            loss.backward()
+            opt.step()
         net.eval()
         torch.save(net.state_dict(), model_path)
         digest = hashlib.sha256(model_path.read_bytes()).hexdigest()

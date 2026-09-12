@@ -716,6 +716,25 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
 
         artifact.parent.mkdir(parents=True, exist_ok=True)
         _fresh = ScalpNet(num_features=70, num_classes=3)
+        # The P0 serving gate refuses fresh-init / behavioral-degenerate
+        # weights on the load path, so a provisioned stand-in must be a
+        # TRAINED model or L3 boots fail closed (RUNTIME-01 FAIL -> smoke
+        # check-count floor). Deterministic 30-step AdamW recipe (mirrors
+        # test_promotion_rejects_degenerate_model) — honest evidence of
+        # provisioning is recorded below either way.
+        import torch as _t
+
+        _t.manual_seed(999)
+        _fresh.train()
+        _gen = _t.Generator().manual_seed(1234)
+        _X = _t.randn(256, 70, generator=_gen)
+        _y = _t.randint(0, 3, (256,), generator=_gen)
+        _opt = _t.optim.AdamW(_fresh.parameters(), lr=1e-3)
+        for _ in range(30):
+            _opt.zero_grad()
+            _loss = _t.nn.functional.cross_entropy(_fresh(_X, return_logits=True), _y)
+            _loss.backward()
+            _opt.step()
         _fresh.eval()
         torch.save(_fresh.state_dict(), artifact)
         # P1 trust-gate parity: the engine's verify-on-load gate rejects an
