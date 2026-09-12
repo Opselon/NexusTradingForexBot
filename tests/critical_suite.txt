@@ -172,3 +172,4 @@ tests/unit/test_perf_exec_trace_throttle.py
 # on the real OrderLifecycleManager composition root.
 tests/unit/test_bug256_dispatch_halt_wiring.py
 tests/unit/test_bug261_terminal_outcome_tick_domain.py
+tests/unit/test_bug262_close_time_evidence.py
