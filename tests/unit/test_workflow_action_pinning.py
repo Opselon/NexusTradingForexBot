@@ -67,7 +67,7 @@ def test_no_floating_mutable_refs_anywhere() -> None:
 
 
 def test_version_comments_do_not_hide_floating_refs() -> None:
-    """"uses: x@v4 # some note" must fail; "uses: x@<sha> # v4" must pass."""
+    """ "uses: x@v4 # some note" must fail; "uses: x@<sha> # v4" must pass."""
     for wf in sorted(WORKFLOWS.glob("*.yml")):
         for lineno, target, _c in _uses_refs(wf.read_text(encoding="utf-8")):
             if target in LOCAL_ALLOWED:

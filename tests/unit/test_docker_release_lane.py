@@ -67,9 +67,8 @@ def test_image_digest_is_the_artifact_identity() -> None:
 def test_docker_not_a_required_main_ci_check() -> None:
     """The docker lane must never be load-bearing for main merges (it is a
     secondary environment; branch protection was verified live 2026-09-11)."""
-    live = (
-        (REPO / "artifacts" / "forensics" / "branch_protection_required_checks.json")
-        .read_text(encoding="utf-8")
+    live = (REPO / "artifacts" / "forensics" / "branch_protection_required_checks.json").read_text(
+        encoding="utf-8"
     )
     assert "docker" not in live.lower()
 

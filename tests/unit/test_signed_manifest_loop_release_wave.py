@@ -75,7 +75,7 @@ class _AssetServer:
         outer = self
 
         class H(BaseHTTPRequestHandler):
-            def do_GET(self) -> None:  # noqa: N802
+            def do_GET(self) -> None:
                 if self.path != outer.path or outer.status != 200:
                     self.send_response(404)
                     self.end_headers()
@@ -239,7 +239,9 @@ def test_malformed_manifest_blocks(signing_key) -> None:
     # version + artifact_name match the release/asset identity (so the
     # identity cross-checks pass) but the manifest lacks required signed
     # fields -> MANIFEST_MALFORMED from the verifier
-    release = _release(manifest={"hello": "world", "version": "9.1.0", "artifact_name": ARTIFACT_NAME})
+    release = _release(
+        manifest={"hello": "world", "version": "9.1.0", "artifact_name": ARTIFACT_NAME}
+    )
     plan = _plan(release)
     assert plan["status"] == "SECURITY_BLOCKED"
     assert plan["signature_status"] == "MANIFEST_MALFORMED"
@@ -298,9 +300,11 @@ def test_wrong_public_key_blocks(signing_key) -> None:
         artifact_size=len(payload),
         key_id=TEST_KEY_ID,
     )
-    sig = attacker.sign(__import__(
-        "nexus_scalp.release.signing.update_manifest", fromlist=["x"]
-    ).manifest_signing_payload(manifest)).signature.hex()
+    sig = attacker.sign(
+        __import__(
+            "nexus_scalp.release.signing.update_manifest", fromlist=["x"]
+        ).manifest_signing_payload(manifest)
+    ).signature.hex()
     signed = {**manifest, "signature": sig}
     release = _release(
         manifest=signed,
