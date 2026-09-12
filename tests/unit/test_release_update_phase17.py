@@ -53,6 +53,7 @@ import pytest
 
 from nexus_scalp.release import updater as upd
 from nexus_scalp.release.metadata import parse_version
+from tests.helpers.rollback_fixtures import seed_release_contract
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +479,9 @@ def test_rollback_restores_prior_application(app_root: Path, tmp_path: Path) -> 
     backup_dir = tmp_path / "prev"
     backup_dir.mkdir()
     (backup_dir / "NexusScalpEngine.exe").write_bytes(b"MZ-OLD-VERSION")
+    # BUG-263: restore is fail-closed unless the snapshot carries the release
+    # contract CI embeds in the installed tree. Seed it (valid, untampered).
+    seed_release_contract(backup_dir)
     rb = upd.RollbackEngine(app_root=app_root, backup_dir=backup_dir)
     res = rb.restore_application(reason="test")
     assert res["restored"] is True
@@ -521,6 +525,7 @@ def test_rollback_never_restores_old_user_data(app_root: Path, tmp_path: Path) -
     (backup_dir / "NexusScalpEngine.exe").write_bytes(b"MZ-OLD")
     (backup_dir / "artifacts").mkdir()
     (backup_dir / "artifacts" / "audit.db").write_bytes(b"OLD-DB-MUST-NOT-RETURN")
+    seed_release_contract(backup_dir)
     rb = upd.RollbackEngine(app_root=app_root, backup_dir=backup_dir)
     res = rb.restore_application(reason="test")
     assert res["restored"] is True
