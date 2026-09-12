@@ -60,6 +60,22 @@ It fails CI on:
   `if:` reading an undeclared lane output.
 * **Self-watching pollers** — a step polling run state via `GITHUB_RUN_ID`
   must use an explicit `TARGET_RUN_ID`, never its own run id.
+* **Unpinned / phantom action refs** (`action-pin-shape`, `action-pin-phantom`)
+  — every third-party `uses:` must be a full 40-hex commit SHA, never a tag or
+  branch name, and never one of the SHAs in the `PHANTOM_PINS` ledger. The
+  #139 wave "pinned" `astral-sh/setup-uv@94527f2e… # v7.6.0` and
+  `…@e58605a9… # v5.4.2` (those are *annotated-tag objects*, not commits) and
+  `actions/upload-artifact@d3f86a10…` (a download-artifact SHA). All three are
+  valid hex, so shape alone cannot catch them — hence the ledger.
+
+  **The scanner stays offline and deterministic by design.** It enforces shape
+  and blocks known phantoms only. Proving a well-formed SHA is the *correct
+  commit for its advertised tag* is a mandatory MANUAL audit on every pin
+  change:
+  `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<v>*'` and pin
+  the peeled `^{}` object (a tag ref with no `^{}` line is lightweight and is
+  itself the commit). Dependabot PRs are not exempt: their pin comments can
+  mislabel too.
 
 The classifier is also exercised in `ci-integrity` so the same formula the jobs
 branch on is validated on every run.
