@@ -41,6 +41,15 @@ logger = get_logger("nexus_scalp.web.auth")
 #: static, non-sensitive content — authenticated UI pages fetch them without
 #: credential support on <script>/<link> tags in some caching setups. Keep
 #: this list MINIMAL: only static assets, never API state/mutation routes.
+#: WEB-UI-BOOTSTRAP (2026-09-11, Hermes forensic session): WEB-AUTH-P0 shipped
+#: an INCOMPLETE allowlist — the remaining repo-root static bundle assets
+#: (styles.css, responsive.css, cc_styles.css, control_center.js, tv_widget.*,
+#: forensic_console.js, news_intelligence.js, replay_panel.js, marketplace.js,
+#: dependency_*.js, command_center.html …) are loaded by <link>/<script>/
+#: <iframe> tags that carry no credentials, so every dashboard load 401'd
+#: them and a tokenless first visit could never render. This completes the
+#: list to cover exactly the repo-root STATIC bundle files + the /vendor font
+#: subtree. Every /api route and everything unknown still 401s (fail-closed).
 PUBLIC_PATHS: frozenset[str] = frozenset(
     {
         "/api/health",
@@ -49,13 +58,29 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         "/favicon.ico",
         "/app.js",
         "/app.js.map",
-        "/tv_widget_styles.css",
+        "/api_client.js",
+        "/styles.css",
+        "/responsive.css",
+        "/cc_styles.css",
         "/tailwind.css",
+        "/tv_widget_styles.css",
+        "/tv_widget.js",
+        "/tv_widget.html",
+        "/control_center.js",
+        "/forensic_console.js",
+        "/news_intelligence.js",
+        "/replay_panel.js",
+        "/marketplace.js",
+        "/dependency_api.js",
+        "/dependency_graph.js",
+        "/dependency_ui.js",
+        "/dependency.html",
+        "/dependency",
+        "/command_center.html",
     }
 )
-#: Any path starting with these prefixes is public as well. UX_* JS modules
-#: (Web/ux_*.js) are static bundle assets served at repo root — non-sensitive.
-PUBLIC_PREFIXES: tuple[str, ...] = ("/static/", "/assets/")
+#: /vendor/ = fontawesome webfonts (static binaries, no credentials).
+PUBLIC_PREFIXES: tuple[str, ...] = ("/static/", "/assets/", "/vendor/")
 PUBLIC_JS_ASSETS: frozenset[str] = frozenset(
     {
         "ux_i18n.js",
@@ -77,6 +102,10 @@ PUBLIC_JS_ASSETS: frozenset[str] = frozenset(
 
 def is_public_path(path: str) -> bool:
     """Single source of truth for the no-token allowlist."""
+    # Path-traversal defense (CodeQL #62/#63/#67 contract): traversal
+    # separators can never be public — refused upstream, 404 at the route.
+    if ".." in path or "\\" in path:
+        return False
     name = path.lstrip("/")
     if path in PUBLIC_PATHS or name in PUBLIC_JS_ASSETS:
         return True
@@ -85,6 +114,14 @@ def is_public_path(path: str) -> bool:
 
 WEB_AUTH_TOKEN_SECRET_NAME = "web_auth_token"
 _TOKEN_BYTES = 32
+#: WEB-UI-BOOTSTRAP cookie (first-party, HttpOnly): the legacy Web/ dashboard
+#: issues ~50 raw fetch() calls + NX.api + an EventSource, none of which can
+#: attach a Bearer header without a bundle-wide rewrite. The cookie carries
+#: the SAME canonical token the middleware enforces (constant-time compare
+#: unchanged); headers still win over the cookie.
+WEB_AUTH_COOKIE_NAME = "nse_web_auth"
+#: Cookie acceptance opt-out (header-only auth for operators behind proxies).
+WEB_AUTH_COOKIE_DISABLE_ENV = "NSE_WEB_AUTH_COOKIE_DISABLE"
 
 
 def _generate_token() -> str:
@@ -136,6 +173,27 @@ def _resolve_token() -> tuple[str, str]:
     except Exception as exc:
         # Fail-closed: no token resolvable -> middleware must block everything.
         raise RuntimeError(f"web auth token unresolvable: {exc}") from exc
+
+
+def current_web_auth_token() -> str | None:
+    """The token the middleware enforces right now (bootstrap accessor).
+
+    Same resolution chain as _resolve_token but NEVER generates: returns
+    None when no env/secret-store token exists (the generator owns
+    persistence; this accessor must not mint a second value).
+    """
+    env_token = os.environ.get("NSE_WEB_AUTH_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    try:
+        from nexus_scalp.settings.secret_store import SecureSecretStore
+
+        stored = SecureSecretStore().get_secret(WEB_AUTH_TOKEN_SECRET_NAME)
+        if stored and stored.strip():
+            return stored.strip()
+    except Exception as exc:  # pragma: no cover - platform edge (DPAPI etc.)
+        logger.warning("[WEB-AUTH] current_web_auth_token store probe failed", error=str(exc))
+    return None
 
 
 class WebAuthMiddleware:
@@ -217,6 +275,13 @@ class WebAuthMiddleware:
         xt = headers.get("x-nse-token", "").strip()
         if xt:
             return xt
+        # WEB-UI-BOOTSTRAP: first-party cookie transport (set on the public
+        # static assets). Accepted AFTER headers so explicit credentials win.
+        if not os.environ.get(WEB_AUTH_COOKIE_DISABLE_ENV, "").strip():
+            for raw in headers.get("cookie", "").split(";"):
+                name, _, value = raw.strip().partition("=")
+                if name == WEB_AUTH_COOKIE_NAME and value.strip():
+                    return value.strip()
         # Query param fallback for SSE clients that cannot set headers.
         qs = scope.get("query_string", b"").decode("latin-1")
         for part in qs.split("&"):
@@ -271,7 +336,29 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
 
         async def dispatch(self, request: StarletteRequest, call_next):
             if self._is_public(request.url.path):
-                return await call_next(request)
+                response = await call_next(request)
+                # WEB-UI-BOOTSTRAP: / sits BEHIND auth, so a tokenless first
+                # visit can never reach it. The browser fetches /app.js +
+                # /api_client.js on every load (script tags) BEFORE or
+                # alongside the page — issue the HttpOnly bootstrap cookie
+                # there so /, /api/* and the EventSource authenticate. The
+                # token value never appears in page source or JS; removing
+                # the cookie re-locks. Only the ACCEPTED transport set is
+                # widened for first-party same-origin clients.
+                if (
+                    request.url.path in ("/app.js", "/api_client.js")
+                    and self._token is not None
+                    and not os.environ.get(WEB_AUTH_COOKIE_DISABLE_ENV, "").strip()
+                ):
+                    response.set_cookie(
+                        key=WEB_AUTH_COOKIE_NAME,
+                        value=self._token,
+                        max_age=60 * 60 * 12,
+                        httponly=True,
+                        samesite="strict",
+                        path="/",
+                    )
+                return response
             if self._token is None:
                 return JSONResponse(
                     status_code=500,
@@ -312,6 +399,11 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
             xt = request.headers.get("x-nse-token", "").strip()
             if xt:
                 return xt
+            # WEB-UI-BOOTSTRAP: first-party cookie transport. Headers win.
+            if not os.environ.get(WEB_AUTH_COOKIE_DISABLE_ENV, "").strip():
+                cookie_token = request.cookies.get(WEB_AUTH_COOKIE_NAME, "").strip()
+                if cookie_token:
+                    return cookie_token
             qp = request.query_params.get("token", "").strip()
             return qp or None
 
