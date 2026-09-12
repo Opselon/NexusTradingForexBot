@@ -15,10 +15,14 @@ import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
-import { ConnectionIndicator, FreshnessMeter, isFeedStale } from "@/components/ConnectionIndicator";
+import { ConnectionIndicator, FreshnessMeter } from "@/components/ConnectionIndicator";
 import { ModeIndicator } from "@/components/ModeIndicator";
-import { ToastHost } from "@/components/primitives";
+import { AttentionStrip } from "@/components/AttentionStrip";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ConfirmModal, ToastHost } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
+import { LANGUAGES } from "@/lib/i18n";
 import { getAuthToken } from "@/api/client";
 import { ApiError } from "@/types/api";
 import { ErrorState, LoadingState } from "@/components/primitives";
@@ -30,9 +34,10 @@ import MLPage from "@/pages/ML/MLPage";
 import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
 import AuditPage from "@/pages/Audit/AuditPage";
 
-const NAV_SECTIONS: Array<{ section: string; items: Array<{ to: string; icon: string; label: string }> }> = [
+const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ to: string; icon: string; label: string }> }> = [
   {
     section: "Operations",
+    sectionKey: "ux.sidebar.operate",
     items: [
       { to: "/", icon: "◈", label: "Dashboard" },
       { to: "/trading", icon: "⇅", label: "Trading" },
@@ -41,6 +46,7 @@ const NAV_SECTIONS: Array<{ section: string; items: Array<{ to: string; icon: st
   },
   {
     section: "Safety & Intelligence",
+    sectionKey: "ux.sidebar.analyze",
     items: [
       { to: "/risk", icon: "⛨", label: "Risk" },
       { to: "/ml", icon: "Σ", label: "ML / 70D" },
@@ -58,13 +64,38 @@ function ageSecToMs(sec: number | null | undefined): number | null {
   return sec === null || sec === undefined || !Number.isFinite(sec) ? null : sec * 1000;
 }
 
+/** Language picker (sidebar foot) — UI preference shared with the legacy
+ *  dashboard (localStorage['nexus.ui.lang']). Never a system setting. */
+function LangRow() {
+  const lang = useI18n((s) => s.lang);
+  const setLang = useI18n((s) => s.setLang);
+  const t = useI18n((s) => s.t);
+  return (
+    <div className="side-row">
+      <span>{t("ux.lang.label", "LANGUAGE")}</span>
+      <select
+        className="select"
+        style={{ padding: "2px 4px", fontSize: 11 }}
+        value={lang}
+        onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
+        aria-label="Language"
+      >
+        {LANGUAGES.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export function AppShell() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const dense = useUiStore((s) => s.dense);
   const toggleDense = useUiStore((s) => s.toggleDense);
-  const dismissedStaleBannerVersion = useUiStore((s) => s.dismissedStaleBannerVersion);
-  const dismissStaleBanner = useUiStore((s) => s.dismissStaleBanner);
+  const [helpOpen, setHelpOpen] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -80,12 +111,19 @@ export function AppShell() {
     document.body.classList.toggle("dense", dense);
   }, [dense]);
 
-  // Alt+1..7 route jump, Alt+B sidebar (skipped while typing in inputs).
+  // Alt+1..7 route jump, Alt+B sidebar, R = refresh (skipped while typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
-      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.ctrlKey || e.metaKey) return;
+      if (!e.altKey) {
+        if ((e.key === "r" || e.key === "R") && queryClient.getQueryData(["engine-snapshot"]) !== undefined) {
+          e.preventDefault();
+          void queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
+        }
+        return;
+      }
       const digit = Number(e.key);
       if (Number.isInteger(digit) && digit >= 1 && digit <= NAV_ROUTES.length) {
         e.preventDefault();
@@ -119,9 +157,6 @@ export function AppShell() {
     snapshotQuery.error instanceof ApiError && snapshotQuery.error.isAuthError
       ? (snapshotQuery.error as ApiError)
       : null;
-  const feedStale = isFeedStale(realtimeStatus, nowMs);
-  const engineStale = snapshot?.is_stale === true;
-  const staleDismissed = snapshot !== undefined && dismissedStaleBannerVersion === snapshot.state_version;
   const lf = snapshot?.live_freshness ?? null;
 
   return (
@@ -159,8 +194,9 @@ export function AppShell() {
               onClick={toggleDense}
             />
           </div>
+          <LangRow />
           <div className="side-row" title="Keyboard shortcuts">
-            <span><kbd>alt</kbd> 1–7 · <kbd>alt</kbd> B</span>
+            <span><kbd>alt</kbd> 1–7 · <kbd>ctrl</kbd>K</span>
           </div>
           <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)">
             {collapsed ? "»" : "«"}
@@ -200,28 +236,10 @@ export function AppShell() {
           />
         </header>
 
+        {!authError && <AttentionStrip snapshot={snapshot} feed={realtimeStatus} nowMs={nowMs} />}
         {authError && (
           <div className="banner auth">
             <span>⛔ Backend requires a web-auth token (WEB-AUTH-P0). Open this console as <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span> — the token is kept in sessionStorage only.</span>
-          </div>
-        )}
-        {!authError && feedStale && !snapshotQuery.isPending && (
-          <div className="banner stale">
-            <span>
-              ⏸ Live feed {realtimeStatus.state.toUpperCase()} — values on screen are from {realtimeStatus.lastMessageAt ? new Date(realtimeStatus.lastMessageAt).toLocaleTimeString("en-GB", { hour12: false }) : "—"} and may be outdated.
-            </span>
-          </div>
-        )}
-        {!authError && !feedStale && engineStale && !staleDismissed && (
-          <div className="banner stale">
-            <span>⚠ Backend reports <span className="inline-mono">live_freshness=STALE</span> — the engine process is up but its intelligence pipeline is not fresh (frozen tick/feature/inference chain).</span>
-            <button
-              className="dismiss-btn"
-              title="Dismiss until the next snapshot version"
-              onClick={() => snapshot && dismissStaleBanner(snapshot.state_version)}
-            >
-              ✕
-            </button>
           </div>
         )}
 
@@ -249,6 +267,24 @@ export function AppShell() {
         </main>
       </div>
       <ToastHost />
+      <CommandPalette onOpenHelp={() => setHelpOpen(true)} />
+      {helpOpen && (
+        <ConfirmModal
+          title="Keyboard shortcuts"
+          danger={false}
+          confirmLabel="OK"
+          onCancel={() => setHelpOpen(false)}
+          onConfirm={() => setHelpOpen(false)}
+        >
+          <div className="kv" style={{ gridTemplateColumns: "max-content 1fr", fontSize: 12 }}>
+            <dt>Ctrl / Cmd + K</dt><dd style={{ textAlign: "left" }}>Command palette</dd>
+            <dt>Alt + 1–7</dt><dd style={{ textAlign: "left" }}>Jump to page</dd>
+            <dt>Alt + B</dt><dd style={{ textAlign: "left" }}>Toggle sidebar</dd>
+            <dt>R</dt><dd style={{ textAlign: "left" }}>Refresh data (not while typing)</dd>
+            <dt>Esc</dt><dd style={{ textAlign: "left" }}>Close dialogs</dd>
+          </div>
+        </ConfirmModal>
+      )}
     </div>
   );
 }

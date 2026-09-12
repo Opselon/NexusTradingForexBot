@@ -45,6 +45,8 @@ function writePref(key: string, value: string): void {
 }
 
 let toastSeq = 0;
+/** Non-spam dedupe (4s window) — parity with legacy NX.toast (Web/ux.js). */
+const toastGuard = new Map<string, number>();
 
 export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: readPref("nse.altui.sidebar") === "1",
@@ -63,6 +65,13 @@ export const useUiStore = create<UiState>((set) => ({
   dismissStaleBanner: (version: number) => set({ dismissedStaleBannerVersion: version }),
   toasts: [],
   pushToast: (kind, text) =>
-    set((s) => ({ toasts: [...s.toasts.slice(-3), { id: ++toastSeq, kind, text }] })),
+    set((s) => {
+      const key = `${kind}|${text}`;
+      const now = Date.now();
+      const last = toastGuard.get(key);
+      if (last !== undefined && now - last < 4000) return s; // dedupe repeated toast
+      toastGuard.set(key, now);
+      return { toasts: [...s.toasts.slice(-3), { id: ++toastSeq, kind, text }] };
+    }),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));

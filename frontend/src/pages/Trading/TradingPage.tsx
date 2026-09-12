@@ -11,6 +11,11 @@
  *
  * NOT implemented (no backend route exists): manual order placement, order
  * cancel. The UI refuses to fake such actions.
+ *
+ * Pro UX: the mode-switch now runs through the legacy dashboard's typed-
+ * confirmation gate (Web/ux.js confirmModeChange port: ACTION/CURRENT/IMPACT/
+ * RECOVERY + type-LIVE-to-arm), commands surface as toasts, and every verdict
+ * still comes from the backend response — never assumed locally.
  */
 
 import { useState } from "react";
@@ -18,7 +23,8 @@ import { useQuery } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import type { EngineSnapshot } from "@/types/domain";
-import { EmptyState, MetricCard, Panel, StatusBadge } from "@/components/primitives";
+import { ConfirmModal, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { formatNumber, formatPct, formatPrice, formatTime } from "@/lib/format";
 
 interface Props {
@@ -28,12 +34,20 @@ interface Props {
 
 const LIVE_CONFIRM_TEXT = "LIVE";
 
+const MODE_IMPACT: Record<string, string> = {
+  PAPER: "Simulated fills only — no real orders reach the broker.",
+  SHADOW: "Signals are computed but never dispatched as orders.",
+  LIVE: "The engine will dispatch REAL orders to the connected broker account.",
+};
+
 export default function TradingPage({ snapshot }: Props) {
   const engineCmd = useMutationFeedback();
   const modeCmd = useMutationFeedback();
+  const t = useI18n((s) => s.t);
   const [modeTarget, setModeTarget] = useState("");
   const [liveConfirm, setLiveConfirm] = useState("");
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
+  const [stopConfirm, setStopConfirm] = useState(false);
 
   const mt5Query = useQuery({
     queryKey: ["mt5-status"],
@@ -42,7 +56,13 @@ export default function TradingPage({ snapshot }: Props) {
   });
 
   if (!snapshot) {
-    return <EmptyState message="Waiting for backend state…" />;
+    return (
+      <div>
+        <Panel title="Trading">
+          <Skeleton count={5} />
+        </Panel>
+      </div>
+    );
   }
 
   const running = snapshot.engine_running;
@@ -81,12 +101,12 @@ export default function TradingPage({ snapshot }: Props) {
       </div>
 
       <div className="grid cols-2" style={{ marginTop: 14 }}>
-        <Panel title="Engine commands">
+        <Panel title="Engine commands" accent>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn primary" disabled={engineCmd.state.running || running} onClick={() => void toggleEngine(true)}>
               ▶ Start engine
             </button>
-            <button className="btn danger" disabled={engineCmd.state.running || !running} onClick={() => void toggleEngine(false)}>
+            <button className="btn danger" disabled={engineCmd.state.running || !running} onClick={() => setStopConfirm(true)}>
               ■ Stop engine
             </button>
           </div>
@@ -100,7 +120,7 @@ export default function TradingPage({ snapshot }: Props) {
           </div>
         </Panel>
 
-        <Panel title="Execution mode (PAPER ⇄ LIVE)">
+        <Panel title="Execution mode (PAPER ⇄ LIVE)" accent>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <select className="select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
               <option value="">select mode…</option>
@@ -119,13 +139,15 @@ export default function TradingPage({ snapshot }: Props) {
           {showLiveConfirm && modeTarget === "LIVE" && (
             <div className="confirm-box">
               <div>
-                <b>LIVE places real orders on the connected broker account.</b> The backend performs adapter realignment and refuses unsafe transitions; this switch is persisted by the engine.
+                <b>{t("ux.mode.live_warning", "Real money is at risk. This affects your live broker account.")}</b>{" "}
+                {t("ux.mode.body", "This changes how the engine executes orders.")}{" "}
+                <span className="muted">{MODE_IMPACT.LIVE}</span>
               </div>
               <div className="row">
                 <input
                   className="input"
-                  style={{ width: 160 }}
-                  placeholder={`type ${LIVE_CONFIRM_TEXT} to confirm`}
+                  style={{ width: 200 }}
+                  placeholder={t("ux.confirm.type", "Type {w} to enable confirmation", { w: LIVE_CONFIRM_TEXT })}
                   value={liveConfirm}
                   onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
                 />
@@ -186,7 +208,7 @@ export default function TradingPage({ snapshot }: Props) {
               </table>
             </div>
           ) : mt5Query.isPending ? (
-            <div className="state-block"><div className="spinner" /></div>
+            <div style={{ padding: 14 }}><Skeleton count={3} /></div>
           ) : mt5Query.isError ? (
             <EmptyState message="Pending orders unavailable (MT5 status endpoint failed)." />
           ) : (
@@ -204,6 +226,26 @@ export default function TradingPage({ snapshot }: Props) {
           Manual order placement / order cancellation are not implemented: the NSE web layer exposes no such operator routes (execution is engine-owned; BUG-242 INV-004 keeps broker mutations inside the OrderLifecycleManager). Adding fake buttons here would violate the backend-as-source-of-truth rule.
         </div>
       </Panel>
+
+      {stopConfirm && (
+        <ConfirmModal
+          title={t("ux.confirm.title", "Confirm action") + " — STOP ENGINE"}
+          confirmLabel="■ Stop engine"
+          busy={engineCmd.state.running}
+          onCancel={() => setStopConfirm(false)}
+          onConfirm={() => {
+            setStopConfirm(false);
+            void toggleEngine(false);
+          }}
+        >
+          <div>
+            <b>Impact:</b> the engine loop stops — no new proposals, no new executions. Open positions stay on the broker until you act there.
+            <div className="small muted" style={{ marginTop: 8 }}>
+              Recovery: Start engine re-attaches the loop; the backend refuses the command if the runtime state forbids it.
+            </div>
+          </div>
+        </ConfirmModal>
+      )}
     </div>
   );
 }
