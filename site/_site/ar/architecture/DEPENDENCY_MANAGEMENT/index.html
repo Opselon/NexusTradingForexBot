@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Dependency Management &amp; Supply-Chain Governance · نكسوس سكالب إنجين</title>
+<meta name='description' content='Dependency Management &amp; Supply-Chain Governance — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/'>
+<meta property='og:title' content='Dependency Management &amp; Supply-Chain Governance'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta name='twitter:card' content='summary'>
+<meta name='twitter:title' content='Dependency Management &amp; Supply-Chain Governance'>
+<meta name='twitter:description' content='Dependency Management &amp; Supply-Chain Governance — Nexus Scalp Engine documentation'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/DEPENDENCY_MANAGEMENT/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/DEPENDENCY_MANAGEMENT/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/DEPENDENCY_MANAGEMENT/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/DEPENDENCY_MANAGEMENT/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/DEPENDENCY_MANAGEMENT/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Dependency Management & Supply-Chain Governance", "description": "Dependency Management & Supply-Chain Governance — Nexus Scalp Engine documentation", "inLanguage": "ar", "url": "https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>الانتقال إلى المحتوى</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='القائمة' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../ar/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.11</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
+    <details class='theme-picker'>
+      <summary aria-label='المظهر' title='المظهر'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ فاتح</button>
+        <button type='button' data-theme-set='dark'>☾ داكن</button>
+        <button type='button' data-theme-set='system'>🖥 النظام</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='اللغة'>🌐 العربية</summary>
+      <div class='lang-menu'><a href='../../../architecture/DEPENDENCY_MANAGEMENT/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../ar/'>الرئيسية</a>
+<div class='nav-section'><a class='' href='../../../ar/getting-started/'>البداية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/getting-started/installation/'>التثبيت</a></li>
+<li><a class='' href='../../../ar/getting-started/quickstart/'>البداية السريعة</a></li>
+<li><a class='' href='../../../ar/getting-started/first-run/'>التشغيل الأول</a></li>
+<li><a class='' href='../../../ar/getting-started/configuration/'>الإعداد</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/project/'>المشروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/project/vision/'>الرؤية والغاية</a></li>
+<li><a class='' href='../../../ar/project/scope/'>النطاق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/status/'>حالة المشروع</a></li>
+<li><a class='' href='../../../ar/project/capabilities/'>مصفوفة القدرات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/roadmap/'>خارطة الطريق</a></li>
+<li><a class='' href='../../../ar/project/milestones/'>المحطات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../ar/architecture/'>البنية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/architecture/overview/'>نظرة عامة</a></li>
+<li><a class='' href='../../../ar/architecture/system-map/'>خريطة النظام</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/data-flow/'>تدفق البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/runtime/'>وقت التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/research-stack/'>منظومة البحث</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/model-pipeline/'>خط أنابيب النموذج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/execution-pipeline/'>خط أنابيب التنفيذ</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/observability/'>قابلية المراقبة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/database/'>قاعدة البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/research/'>البحث</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/research/methodology/'>المنهجية</a></li>
+<li><a class='' href='../../../ar/research/datasets/'>مجموعات البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/backtesting/'>الاختبار الرجعي</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/out-of-sample/'>بوابة OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/replay/'>إعادة التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/counterfactuals/'>المضاد للواقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/validation/'>التحقق</a></li>
+<li><a class='' href='../../../ar/research/reproducibility/'>قابلية إعادة الإنتاج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/engineering/'>الهندسة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/engineering/quality/'>الجودة والاختبار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/ci/'>بنية CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/release-process/'>عملية الإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/workflow-test-build-release/'>سير عمل الاختبار والبناء والإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/security/'>الأمان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/guides/'>أدلة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/guides/cli/'>دليل CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/troubleshooting/'>استكشاف الأخطاء</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/common-workflows/'>سير العمل الشائعة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/contributing/'>المساهمة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/contributing/contribution-guide/'>دليل المساهمة</a></li>
+<li><a class='' href='../../../ar/contributing/documentation/'>سير عمل التوثيق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/contributing/add-language/'>إضافة لغة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/glossary/'>المسرد</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/terminology/'>المصطلحات والترجمات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/faq/'>الأسئلة الشائعة</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/releases/'>الإصدارات</a></div>
+<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.11 &amp; التاريخ</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../architecture/DEPENDENCY_MANAGEMENT/'>الإنجليزية</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../ar/architecture/'>البنية</a> / <span class='crumb-current' aria-current='page'>DEPENDENCY MANAGEMENT</span></nav>
+<h1 id='dependency-management--supply-chain-governance'>Dependency Management &amp; Supply-Chain Governance</h1>
+<blockquote><p>SSOT for how dependencies are declared, updated, audited, and merged in this</p><p>repository. Established by TASK-DEVOPS-DEPENDABOT-HARDENING (2026-09-11).</p><p>Every claim below is backed by CI evidence or a verified GitHub API read;</p><p>commands marked with a source line are the repository's own verified tooling.</p></blockquote>
+<h2 id='1-dependency-sources-what-is-authoritative'>1. Dependency sources (what is authoritative)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Ecosystem</th><th>Manifest (hand-edited SSOT)</th><th>Generated artifacts (DO NOT EDIT)</th><th>Production runtime?</th></tr></thead><tbody>
+<tr><td>Python</td><td><code>pyproject.toml</code></td><td><code>requirements.lock</code>, <code>requirements.txt</code> (both <code># GENERATED - DO NOT EDIT</code>)</td><td>Yes — the engine runs from the lock (see <code>ci.yml</code> "Install via lock")</td></tr>
+<tr><td>Frontend (<code>/frontend</code>)</td><td><code>package.json</code></td><td><code>package-lock.json</code> (npm-managed, in lockstep)</td><td><strong>No — build/dev-time only.</strong> Node never runs the production engine; <code>frontend/</code> is compiled to static assets. Do not introduce Node into the runtime path.</td></tr>
+<tr><td>GitHub Actions</td><td><code>.github/workflows/*</code></td><td>—</td><td>n/a (CI supply chain)</td></tr>
+</tbody></table></div>
+<p><code>uv.lock</code> exists as a resolution artifact referenced by <code>lockfile-diff.yml</code>,</p>
+<p><code>osv-scanner.yml</code>, and <code>scripts/ci/classify_changes.py</code>; the install/drift</p>
+<p>contract below runs through <code>requirements.lock</code>.</p>
+<h2 id='2-python-lockfile-synchronization-verified-contract'>2. Python lockfile synchronization (verified contract)</h2>
+<p>Source of truth: <code>scripts/ci/check_dependency_drift.py</code> and the header of the</p>
+<p>generated artifacts. The authoritative regeneration command is:</p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>python scripts/ci/check_dependency_drift.py --regen
+# = uv pip compile pyproject.toml --all-extras --universal --generate-hashes</code></pre></div>
+<p>Rules (enforced fail-closed by the required check **"Dependency drift (lock vs</p>
+<p>pyproject)"**):</p>
+<ol>
+<li><code>pyproject.toml</code> is the ONLY hand-maintained dependency definition.</li>
+<li>Any PR that changes <code>pyproject.toml</code> MUST regenerate <code>requirements.lock</code></li>
+</ol>
+<p>AND <code>requirements.txt</code> in the SAME PR. A hand-edited generated artifact is</p>
+<p>a CI red by design.</p>
+<ol>
+<li>The resolver must see a Python 3.11 interpreter (project floor</li>
+</ol>
+<p><code>requires-python &gt;=3.11</code>); the CI job pins 3.11 and uv <strong>0.12.10</strong></p>
+<p>(<code>dependency-lock.yml</code> comment block documents why both sides move</p>
+<p>together). Do not bump uv on one side only.</p>
+<ol>
+<li><code>requirements.txt</code> is a generated thin compatibility artifact parsed from</li>
+</ol>
+<p><code>requirements.lock</code> — regenerate it via the same script, never by hand.</p>
+<p>Dependabot pip PRs modify only the version pins inside the generated</p>
+<p>artifacts. That is allowed (the artifacts are regenerated outputs), but the</p>
+<p>PR must still leave <code>pyproject.toml</code> and the artifacts mutually consistent —</p>
+<p>the drift check passes iff the resolution matches, regardless of which file</p>
+<p>Dependabot edited.</p>
+<h2 id='3-frontend-npm-lockfile-synchronization'>3. Frontend (npm) lockfile synchronization</h2>
+<p><code>package.json</code> and <code>package-lock.json</code> must move together. Verification before</p>
+<p>merge — use the scripts that actually exist in <code>frontend/package.json</code></p>
+<p>(<code>dev</code>, <code>build</code>, <code>preview</code>, <code>typecheck</code>; there is **no <code>test</code> script — do not</p>
+<p>invent one**):</p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>cd frontend
+npm ci           # clean install strictly from package-lock.json (lockstep proof)
+npm run typecheck
+npm run build    # tsc -b &amp;&amp; vite build</code></pre></div>
+<p><code>npm ci</code> failing = lockfile out of sync = the PR does not merge. Never accept a</p>
+<p>PR where only <code>package.json</code> changed.</p>
+<h2 id='4-dependabot-configuration-githubdependabotyml'>4. Dependabot configuration (<code>.github/dependabot.yml</code>)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Ecosystem</th><th>Directory</th><th>Schedule (Etc/UTC)</th><th>PR limit</th><th>Groups</th></tr></thead><tbody>
+<tr><td>pip</td><td><code>/</code></td><td>weekly, Sunday 04:00</td><td>5</td><td><code>python-production</code>, <code>python-dev-tools</code></td></tr>
+<tr><td>npm</td><td><code>/frontend</code></td><td>weekly, Sunday 04:30</td><td>5</td><td><code>frontend-framework</code>, <code>frontend-build-tools</code></td></tr>
+<tr><td>github-actions</td><td><code>/</code></td><td>weekly, Sunday 05:00</td><td>5</td><td><code>github-actions</code></td></tr>
+</tbody></table></div>
+<p>Commit-message prefixes: <code>chore(deps-py)</code>, <code>chore(deps-fe)</code>, <code>ci(actions)</code></p>
+<p>(all with scope). Labels: <code>dependencies</code> + <code>python</code> / <code>javascript</code> (both</p>
+<p>labels exist on the repo) / <code>github-actions</code>.</p>
+<h2 id='5-security-update-policy-security-first'>5. Security-update policy (security-first)</h2>
+<ul>
+<li><strong>Groups apply to version updates only</strong> (<code>applies-to: version-updates</code>).</li>
+</ul>
+<p>Dependabot security-update PRs are never grouped and never suppressed — they</p>
+<p>arrive individually and are triaged ahead of routine bumps.</p>
+<ul>
+<li><strong>There are deliberately no <code>ignore</code> rules.</strong> A broad ignore (e.g. "ignore</li>
+</ul>
+<p>all torch updates") would also suppress security remediation. Do not add</p>
+<p>blanket ignores.</p>
+<ul>
+<li>Risky packages (torch, polars, numpy, pydantic, ...) are bounded by the</li>
+</ul>
+<p>pyproject.toml <strong>version ranges</strong> (e.g. <code>torch&gt;=2.2.0,&lt;3.0.0</code>,</p>
+<p><code>polars&gt;=0.20.0,&lt;2.0.0</code>). Dependabot respects those ranges, so ordinary</p>
+<p>updates stay inside the tested compatibility window while a genuine security</p>
+<p>fix inside the window still flows. Changing a range is an architectural</p>
+<p>decision, not a governance flip.</p>
+<ul>
+<li>Severity classification used for triage: CRITICAL / HIGH / MODERATE / LOW</li>
+</ul>
+<p>security vs ORDINARY version. Security remediation must not wait behind</p>
+<p>grouped freshness PRs.</p>
+<h2 id='6-grouping-policy-and-noise-control'>6. Grouping policy and noise control</h2>
+<ul>
+<li>One PR per ecosystem per weekly window (plus security PRs as they arise):</li>
+</ul>
+<p>maximum routine load ≈ 3 grouped PRs/week, capped at 5 open PRs per</p>
+<p>ecosystem.</p>
+<ul>
+<li>Python production and dev tooling are separate groups; a broken dev-tool</li>
+</ul>
+<p>bump can be reverted without touching the runtime group.</p>
+<ul>
+<li>Frontend framework (<code>react*</code>, <code>@tanstack/*</code>, <code>zustand</code>) and build tools</li>
+</ul>
+<p>(<code>vite</code>, <code>typescript</code>, <code>@types/<em></code>, <code>@vitejs/</em></code>) are separate for the same</p>
+<p>reason.</p>
+<ul>
+<li>No cross-ecosystem grouping (GitHub <code>multi-ecosystem-groups</code> is available but</li>
+</ul>
+<p>intentionally unused): Python, npm, and Actions have different validation</p>
+<p>paths, and separate PRs keep rollback and CI diagnosis deterministic.</p>
+<h2 id='7-github-actions-sha-pinning'>7. GitHub Actions SHA pinning</h2>
+<p>Every external <code>uses:</code> reference in <code>.github/workflows/</code> is pinned to a full</p>
+<p>40-character commit SHA with a human-readable version comment:</p>
+<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button><pre dir='ltr' class='code-ltr has-copy'><code>uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0</code></pre></div>
+<ul>
+<li>Resolved 2026-09-11 from the upstream repos (tag→SHA via <code>git ls-remote</code></li>
+</ul>
+<p>/ GitHub API; SHA is authoritative, the comment is a label).</p>
+<ul>
+<li>Floating tags (<code>@v4</code>) are mutable references and are NOT accepted as pins.</li>
+<li><code>uses: ./local-action</code> and <code>docker://</code> references follow separate rules;</li>
+</ul>
+<p>there are currently none in production workflows.</p>
+<ul>
+<li>The pinned Actions ecosystem in Dependabot keeps the pins current — bumping</li>
+</ul>
+<p>a pin = update SHA + version comment together.</p>
+<ul>
+<li>Enforcement: a deterministic scan over <code>uses:</code> lines (fail on any non-40-hex</li>
+</ul>
+<p>external ref) was run at implementation time; keep it green. Local actions</p>
+<p>and <code>secrets</code>/<code>vars</code> usage are out of scope of the scan.</p>
+<h2 id='8-required-ci-before-merge-dependency-prs'>8. Required CI before merge (dependency PRs)</h2>
+<p>Branch protection on <code>main</code> requires (relevant subset):</p>
+<ul>
+<li><strong>Python PRs:</strong> <code>Dependency drift (lock vs pyproject)</code> + `Code Quality &amp;</li>
+</ul>
+<p>Tests<code> + </code>Py Tests (macos-latest)<code> + </code>Py Tests (windows-latest)`.</p>
+<ul>
+<li><strong>Frontend PRs:</strong> <code>Frontend JS Unit Tests</code> (Web/ JS suite) — plus run the</li>
+</ul>
+<p>§3 commands locally; they are not (yet) all CI-required for <code>frontend/</code>.</p>
+<ul>
+<li><strong>Actions PRs:</strong> <code>CI Integrity and Change Classification</code> + `Validate</li>
+</ul>
+<p>documentation` (workflows are classified as CI changes) — and CI green on</p>
+<p>the PR itself.</p>
+<ul>
+<li>Advisory-but-expected: <code>Lockfile Diff</code> job summary shows reviewers exactly</li>
+</ul>
+<p>which dependency manifests moved (it never fails the build; the drift gate</p>
+<p>is the enforcing control).</p>
+<p>Never weaken, skip, or context-swap a required check to land a dependency PR.</p>
+<h2 id='9-security-pr-priority-manual-overrides-exceptions-rollback'>9. Security PR priority, manual overrides, exceptions, rollback</h2>
+<ol>
+<li>Security remediation &gt; grouped freshness. A security PR may land with</li>
+</ol>
+<p>routine grouped PRs still open (limits are per-ecosystem and independent).</p>
+<ol>
+<li>Manual override: a maintainer may pause Dependabot version updates</li>
+</ol>
+<p>(repo settings) during a release freeze without disabling alerts or</p>
+<p>security updates. Record the freeze window in this file.</p>
+<ol>
+<li>Exceptions to grouping (e.g. pin a package out of a group) go here with the</li>
+</ol>
+<p>reason and removal condition.</p>
+<ol>
+<li>Rollback: dependency PRs squash-merge (the repo's merge method — merge</li>
+</ol>
+<p>commits are 405-disallowed on this repository); revert the squash commit on</p>
+<p><code>main</code> via a normal PR. The grouped-PR shape (one ecosystem, one area) makes</p>
+<p>a revert surgical; if a grouped PR must be partially rolled back, revert the</p>
+<p>whole group and re-open the good packages in the next window.</p>
+<h2 id='10-github-security-posture-verified-2026-09-11'>10. GitHub security posture (verified 2026-09-11)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Control</th><th>State</th><th>Evidence</th></tr></thead><tbody>
+<tr><td>Dependency graph</td><td>ENABLED</td><td>SBOM endpoint <code>GET /dependency-graph/sbom</code> → HTTP 200</td></tr>
+<tr><td>Dependabot alerts</td><td>ENABLED, 0 open</td><td><code>GET /vulnerability-alerts</code> → 204; <code>GET /dependabot/alerts?state=open</code> → []</td></tr>
+<tr><td>Dependabot security updates</td><td>ENABLED, not paused</td><td><code>GET /automated-security-fixes</code> → <code>{"enabled": true, "paused": false}</code></td></tr>
+<tr><td>Grouped security updates</td><td>UI-only toggle; repo-level API does not expose it (404)</td><td>API 404 on <code>automated-security-fixes/grouped</code>; operator verifies/sets in Security → Dependabot if UI shows the toggle</td></tr>
+<tr><td>Malware (dev-environment) alerts</td><td>Not exposed by repository admin API</td><td>No repo-level endpoint; not configurable by this credential/plan</td></tr>
+<tr><td>Secret scanning + push protection</td><td>ENABLED</td><td><code>security_and_analysis</code> in repo metadata</td></tr>
+<tr><td>Code scanning (CodeQL) / Trivy / OSV-Scanner / Dependency Review</td><td>Present as CI workflows (<code>security.yml</code>, <code>osv-scanner.yml</code>, <code>lockfile-diff.yml</code>) with required contexts</td><td><code>.github/workflows/</code></td></tr>
+<tr><td>Dependabot rules (org-level policy rules)</td><td>No repository-visible API (404); no org policy rule interacts with <code>.github/dependabot.yml</code></td><td>API evidence as above</td></tr>
+</tbody></table></div>
+<h2 id='11-operatorowner-notes'>11. Operator/owner notes</h2>
+<ul>
+<li>The <code>python</code> label did not exist before this task; Dependabot creates missing</li>
+</ul>
+<p>labels itself on first use. The <code>github-actions</code> label likewise.</p>
+<ul>
+<li>Grouped security updates, malware alerts, and org Dependabot rules are</li>
+</ul>
+<p>org/UI-scoped controls — see the final audit report for the exact evidence</p>
+<p>and remaining operator actions.</p>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/architecture/DEPENDENCY_MANAGEMENT.md'>تعديل هذه الصفحة على جيت هب</a> · الإصدار v9.0.11 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/cb90e17'>cb90e17</a></span>
+    <span><a href='../../../ar/project/status/'>حالة المشروع</a> · <a href='../../../ar/reference/faq/'>الأسئلة الشائعة</a> · <a href='../../../ar/releases/'>كل الإصدارات</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../ar/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='ابحث في التوثيق… — ⌘K' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>ابحث في التوثيق……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "ابحث في التوثيق…", "home": "الرئيسية", "repo": "جيت هب", "skip": "الانتقال إلى المحتوى", "language": "اللغة", "partial": "المصدر الإنجليزي — الترجمة قيد الانتظار", "english": "الإنجليزية", "version": "الإصدار", "next": "التالي", "prev": "السابق", "on_github": "تعديل هذه الصفحة على جيت هب", "menu": "القائمة", "whats_new": "الجديد", "all_releases": "كل الإصدارات", "get_started": "ابدأ", "view_architecture": "البنية", "view_roadmap": "خارطة الطريق", "close": "إغلاق", "theme": "المظهر", "theme_light": "فاتح", "theme_dark": "داكن", "theme_system": "النظام", "copy": "نسخ", "copied": "تم النسخ", "copy_error": "فشل النسخ", "no_results": "لا نتائج", "loading": "جارٍ التحميل…", "section": "القسم", "search_results": "نتائج البحث", "explore_docs": "استكشف التوثيق", "full_matrix": "المصفوفة الكاملة", "release_timeline": "الجدول الزمني للإصدارات", "hero_kicker": "منصة بحث وتنفيذ للتداول الكمي", "hero_title_a": "نكسوس", "hero_title_b": "سكالب إنجين", "hero_sub": "منصة سكالب قائمة على البحث، سداسية البنية ومدفوعة بالأحداث لميتاتريدر 5 — خصائص سببية، نماذج عميقة محوكم، محرك مخاطر ثابت، أدوات بحث حتمية وقابلية مراقبة جنائية في خط أنابيب واحد قابل للتدقيق.", "chip_released": "منشور", "chip_rev": "مراجعة", "chip_research": "بحث: 50D حي · 70D مرشح", "released_history": "التاريخ", "release_history_kicker": "سجل الإصدارات", "releases_intro": "كل إصدار مع أبرز ملامحه الحقيقية، مستمدة من بيانات إصدارات جيت هب وقت البناء. المصدر الوحيد للإصدار:", "nf404_title": "٤٠٤", "nf404_lead": "صفحة التوثيق هذه غير موجودة.", "nf404_home": "الرئيسية", "footer_prefix": "", "brand": "نكسوس", "brand_dim": "سكالب إنجين", "github_release": "الإصدار على جيت هب", "back_home": "العودة للرئيسية", "quickstart_label": "البداية السريعة", "status_label": "حالة المشروع", "faq_label": "الأسئلة الشائعة", "cap_engine": "محرك الخصائص السببية 50D", "cap_risk": "محرك المخاطر + قيود التنفيذ", "cap_oos": "Walk-Forward + بوابة OOS الصارمة", "cap_factory": "مصنع النماذج المبني على المصنوعات", "cap_70d": "عقد 70D (القاعدة+الأخبار+السيولة)", "cap_cf": "محرك المضاد للواقع (مشي NO_TRADE)", "pillar_evidence_t": "🧭 الأدلة قبل الادعاءات", "pillar_evidence_b": "المقاييس بلا أدلة تظهر n/a — وليس أصفارًا مزيفة أبدًا. النتائج السلبية تُنشر: مرشحنا البحثي 70D رفضه بوابة OOS لدينا.", "pillar_safety_t": "🔒 السلامة بالتصميم", "pillar_safety_b": "PAPER افتراضيًا · SHADOW بلا صلاحية أوامر · LIVE خلف تأكيد صريح · قيود مخاطر صارمة (HARD_MAX_LOTS، هامش ≤20%) مفروضة في مسار التنفيذ.", "pillar_research_t": "🔬 بحث حتمي", "pillar_research_b": "Walk-Forward مع التطهير والحجر، إعادة تشغيل مطابقة بت-بت، بيانات/نماذج ببصمة، مصدر لكل تشغيل — عقد خصائص واحد للحياة وإعادة التشغيل والتدريب.", "pillar_truth_t": "👁️ حقيقة وقت التشغيل", "pillar_truth_b": "قابلية مراقبة جنائية: سجلات مفصولة بالخطورة، ارتباط الحوادث، بوابة النشر. حقيقة الوسيط تتفوق على الحالة القديمة؛ البوابات مرجع، والإعدادات نية.", "capability": "القدرة", "status": "الحالة", "chip_certified": "مُصادق", "chip_implemented": "مُنفَّذ", "chip_experimental": "تجريبي", "chip_research_l": "بحثي", "cap_highlights": "أبرز القدرات", "callout_important": "مهم", "callout_note": "ملاحظة", "callout_warning": "تحذير", "how_it_works": "كيف يعمل نكسوس", "reading_time": "دقائق قراءة", "toc_title": "في هذه الصفحة", "toc_empty": "لا عناوين", "last_updated": "آخر تحديث", "share": "مشاركة", "edit_page": "تعديل هذه الصفحة", "related_title": "تابع الاستكشاف", "related_sub": "التالي في هذا القسم", "up_next": "التالي", "also_read": "اقرأ أيضًا", "prev_page": "السابق", "next_page": "التالي", "breadcrumb_home": "الرئيسية", "hero_eyebrow_project": "المشروع", "hero_eyebrow_architecture": "البنية", "hero_eyebrow_research": "البحث", "hero_eyebrow_engineering": "الهندسة", "hero_eyebrow_guides": "الأدلة", "hero_eyebrow_getting_started": "البداية", "hero_eyebrow_contributing": "المساهمة", "hero_eyebrow_reference": "المرجع", "hero_eyebrow_releases": "الإصدارات", "kpi_certified": "مُصادق", "kpi_experimental": "تجريبي", "kpi_coverage": "التغطية", "steps_title": "الخطوات", "copy_code": "نسخ", "diagram_title": "مخطط النظام", "diagram_sub": "عرض تفاعلي لخط الأنابيب", "stats_live": "العقد الحي", "callout_tip": "تلميح", "callout_info": "معلومة", "callout_success": "نجاح", "callout_danger": "خطر", "anchor_copy": "نسخ الرابط", "anchor_copied": "تم نسخ الرابط", "feedback_title": "هل كان مفيدًا؟", "feedback_yes": "نعم", "feedback_no": "لا", "feedback_thanks": "شكرًا لملاحظاتك", "prose_meta": "مقال", "word_count": "كلمات", "toc_toggle": "المحتويات", "hero_desc_project": "ما هو Nexus وما هو مُصادق مقابل تجريبي.", "hero_desc_architecture": "كيف بُني المحرك: الطبقات السداسية ومسار التيك إلى القرار.", "hero_desc_research": "كيف تتحول البيانات التاريخية إلى أدلة قابلة للتكذيب.", "hero_desc_engineering": "بوابات الجودة وبنية CI ووضعية الأمان.", "hero_desc_guides": "تشغيل المحرك يوميًا.", "hero_desc_getting_started": "تثبيت المحرك وتشغيله وضبطه.", "hero_desc_contributing": "العقد الهندسي وكيفية المساهمة.", "hero_desc_reference": "مرجع CLI والمسرد والإجابات الصادقة.", "hero_desc_releases": "كل إصدار مع أبرز ملامحه الحقيقية."};
+window.NEXUS_LANG = "ar";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+</body>
+</html>
