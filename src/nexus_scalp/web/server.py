@@ -1705,9 +1705,40 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     if _alt_ui_dir is not None:
         from fastapi.staticfiles import StaticFiles
 
+        class _AltSpaStaticFiles(StaticFiles):
+            """SPA fallback for the /alt React console (ALT-UI-PRO).
+
+            The console routes client-side (/alt/trading, /alt/audit, ...).
+            StaticFiles only resolves real files, so a deep link or refresh
+            404'd. Unknown NON-asset paths inside the mount fall back to
+            index.html (standard SPA hosting); missing asset files
+            (*.js/*.css/...) still 404 so typos are never masked. Static
+            only — the API under /api keeps full token auth (WEB-AUTH-P0).
+            """
+
+            async def get_response(self, path: str, scope):
+                from starlette.exceptions import HTTPException
+
+                try:
+                    return await super().get_response(path, scope)
+                except HTTPException as exc:
+                    if exc.status_code != 404:
+                        raise
+                    name = path.rsplit("/", 1)[-1]
+                    if "." in name and not name.lower().endswith(".html"):
+                        raise  # missing asset: honest 404, never a fake index
+                    import stat as _stat
+
+                    full, st = self.lookup_path("index.html")
+                    if full and st is not None and _stat.S_ISREG(st.st_mode):
+                        resp = self.file_response(full, st, scope)
+                        resp.headers["Cache-Control"] = "no-store"
+                        return resp
+                    raise
+
         app.mount(
             "/alt",
-            StaticFiles(directory=str(_alt_ui_dir), html=True),
+            _AltSpaStaticFiles(directory=str(_alt_ui_dir), html=True),
             name="alt_ui",
         )
         logger.info("[ALT-UI] serving alternative React console from %s", _alt_ui_dir)
