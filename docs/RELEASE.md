@@ -42,6 +42,7 @@ installer bundles the complete Python runtime via PyInstaller.
 | Windows 10/11 | x64 | **SUPPORTED** | torch/polars/pyarrow/MetaTrader5 x64 wheels |
 | Windows | ARM64 | **UNSUPPORTED** | no Windows ARM64 wheels for torch/polars/MetaTrader5 |
 | Linux | x64 | developer/Docker only | remote-gateway adapter; no packaged release |
+| Linux (WSL2, Kali) | x64 | **TEST/PAPER platform (verified 2026-09-11)** | MT5 build 6191 under Wine 10.0 in isolated prefix + Xvfb; lifecycle via `scripts/linux/mt5_runtime.sh`; direct Python `MetaTrader5` IPC **unsupported** under Wine (`-10005 IPC timeout`, pipe forensics) — supported Nexus path is `RemoteMT5GatewayAdapter`; WSL2→Windows-host TCP firewalled by default. Full entry: `docs/linux_wsl2_mt5_platform.md` |
 
 Only **windows-x64** is published. ARM64 is explicitly and loudly reported
 unsupported (evaluator BLOCKED, update planner refuses ARM64 artifacts).
