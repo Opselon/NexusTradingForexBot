@@ -1,0 +1,178 @@
+/* Pro indicator primitives (components/pro/Indicators.tsx).
+   Additive namespace: every selector is prefixed `pi-`, so nothing here can
+   restyle an existing console surface (same contract as pro-risk.css).
+   Colours encode SERIES only — a gap is drawn as an absence of geometry, never
+   as a line to zero. Reuses theme.css custom properties (surfaces,
+   --green/--amber/--red, --mono, tabular numerals). */
+
+.pi-chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-inset));
+  box-shadow: 0 1px 0 var(--elevate-hi) inset;
+  padding: 8px 10px 6px;
+}
+
+/* fixed-unit viewBox scaled to the container width: geometry is authored in
+   100 x height units, so a component never needs to measure the DOM. */
+.pi-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* ------------------------------- series ------------------------------- */
+
+.pi-line {
+  fill: none;
+  stroke: var(--accent-strong);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pi-line--overlay {
+  stroke: var(--violet);
+  stroke-dasharray: 3 2;
+}
+.pi-line--osc {
+  stroke: var(--amber);
+}
+.pi-line--atr {
+  stroke: var(--green);
+}
+.pi-line__dot,
+.pi-line--overlay__dot,
+.pi-line--osc__dot,
+.pi-line--atr__dot {
+  stroke: none;
+}
+.pi-line__dot { fill: var(--accent-strong); }
+.pi-line--overlay__dot { fill: var(--violet); }
+.pi-line--osc__dot { fill: var(--amber); }
+.pi-line--atr__dot { fill: var(--green); }
+
+.pi-baseline {
+  stroke: var(--border);
+  stroke-dasharray: 2 3;
+}
+
+.pi-last {
+  fill: var(--accent-strong);
+  stroke: var(--bg);
+}
+
+/* ----------------------------- price band ----------------------------- */
+
+.pi-band {
+  fill: rgba(65, 166, 242, 0.14);
+  stroke: rgba(108, 192, 255, 0.45);
+  stroke-width: 0.6;
+}
+.pi-band--single {
+  fill: none;
+  stroke: rgba(108, 192, 255, 0.6);
+}
+
+.pi-lastmark circle {
+  fill: var(--amber);
+  stroke: var(--bg);
+}
+.pi-lastmark__rule {
+  stroke: var(--amber);
+  stroke-dasharray: 4 2;
+}
+/* an absent last price draws nothing but keeps the group for styling hooks */
+.pi-lastmark--unknown { display: none; }
+
+/* --------------------------- spread columns --------------------------- */
+
+.pi-spread__bar {
+  fill: rgba(65, 166, 242, 0.5);
+  stroke: none;
+}
+.pi-spread__bar--over {
+  fill: var(--red);
+}
+
+/* ------------------------------ guides ------------------------------- */
+
+.pi-guide__line {
+  stroke: var(--border-strong);
+  stroke-dasharray: 3 3;
+}
+.pi-guide--mid .pi-guide__line { stroke: var(--text-faint); }
+.pi-guide--ref .pi-guide__line { stroke: var(--green); opacity: 0.7; }
+/* RSI's own thresholds read as risk bands, not decoration */
+.pi-guide[data-level="70"] .pi-guide__line,
+.pi-guide[data-level="30"] .pi-guide__line { stroke: var(--amber); }
+
+/* ------------------------------ captions ----------------------------- */
+
+.pi-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.pi-caption__gaps {
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+/* ----------------------------- stats row ----------------------------- */
+
+.pi-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+  gap: 2px 8px;
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.pi-stats__cell { display: flex; justify-content: space-between; gap: 6px; min-width: 0; }
+.pi-stats dt { color: var(--text-faint); text-transform: lowercase; }
+.pi-stats dd { margin: 0; color: var(--text); }
+.pi-stats__unit {
+  grid-column: 1 / -1;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+/* a series with holes must not look complete */
+.pi-stats[data-complete="no"] { border-top-style: dashed; }
+
+/* ---------------------------- UNKNOWN state --------------------------- */
+
+.pi-unknown {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 9px 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-inset);
+  color: var(--text-faint);
+}
+.pi-unknown__word {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.pi-unknown__subject { font-size: 11px; color: var(--text); }
+.pi-unknown__reason { font-size: 10px; font-family: var(--mono); color: var(--text-faint); }
