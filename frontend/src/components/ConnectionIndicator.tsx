@@ -41,6 +41,36 @@ export function ConnectionIndicator({
   );
 }
 
+/** Freshness meter — visualizes the age of one backend freshness stage against
+ *  a 15s display budget. State words are the BACKEND's (FRESH/STALE/UNKNOWN);
+ *  the bar length is derived from backend-reported age_ms only. */
+export function FreshnessMeter({
+  label,
+  state,
+  ageMs,
+}: {
+  label: string;
+  state: string | null | undefined;
+  ageMs: number | null | undefined;
+}) {
+  const s = (state ?? "UNKNOWN").toUpperCase();
+  const level = s === "FRESH" ? "" : s === "STALE" ? "bad" : "warn";
+  const pct =
+    ageMs === null || ageMs === undefined || !Number.isFinite(ageMs)
+      ? 0
+      : Math.max(4, Math.min(100, 100 - (Math.max(0, ageMs) / 15_000) * 100));
+  return (
+    <span className={`freshness ${level}`} title={`${label}: ${s}${ageMs !== null && ageMs !== undefined ? ` · age ${formatAgeMs(ageMs)}` : ""}`}>
+      <span className="lab">
+        {label} {s === "UNKNOWN" ? "—" : s}
+      </span>
+      <span className="bar" aria-hidden="true">
+        <i style={{ width: `${pct}%` }} />
+      </span>
+    </span>
+  );
+}
+
 /** True when the connection is not currently delivering fresh frames. */
 export function isFeedStale(status: RealtimeStatus, nowMs: number, maxAgeMs = 15_000): boolean {
   if (status.state !== "connected") return true;

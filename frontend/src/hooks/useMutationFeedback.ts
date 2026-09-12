@@ -5,11 +5,16 @@
  * the outcome. Legacy endpoints return {success: bool} / HTTP errors; both are
  * normalized into {ok, message}. The message includes the backend's own words
  * so refusals (e.g. simulation blocked in LIVE mode) surface verbatim.
+ *
+ * Pro UX layer: every settled command (accepted or refused) is also mirrored
+ * into the corner toast stack. Toasts are a VISUAL MIRROR only — they never
+ * replace the inline backend-verdict rendering.
  */
 
 import { useState } from "react";
 import { ApiError } from "@/types/api";
 import type { LegacyMutationResult } from "@/types/api";
+import { useUiStore } from "@/stores/uiStore";
 
 export interface CommandState {
   running: boolean;
@@ -23,6 +28,7 @@ export function useMutationFeedback(): {
   run: (fn: () => Promise<LegacyMutationResult>) => Promise<boolean>;
 } {
   const [state, setState] = useState<CommandState>({ running: false, lastResult: null, lastMessage: null });
+  const pushToast = useUiStore((s) => s.pushToast);
 
   const run = async (fn: () => Promise<LegacyMutationResult>): Promise<boolean> => {
     setState({ running: true, lastResult: null, lastMessage: null });
@@ -32,6 +38,7 @@ export function useMutationFeedback(): {
       const ok = res.ok && res.success !== false;
       const message = res.message ?? (ok ? "Command accepted by backend." : "Backend refused the command.");
       setState({ running: false, lastResult: ok, lastMessage: message });
+      pushToast(ok ? "ok" : "fail", message);
       return ok;
     } catch (e) {
       const message =
@@ -41,6 +48,7 @@ export function useMutationFeedback(): {
             ? e.message
             : "Command failed.";
       setState({ running: false, lastResult: false, lastMessage: message });
+      pushToast("fail", message);
       return false;
     }
   };

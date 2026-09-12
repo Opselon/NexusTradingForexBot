@@ -13,7 +13,7 @@ import { positionsApi } from "@/api/positionsApi";
 import { tradingApi } from "@/api/tradingApi";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import type { EngineSnapshot, Position } from "@/types/domain";
-import { DataTable, EmptyState, LoadingState, ErrorState, Panel } from "@/components/primitives";
+import { ConfirmModal, DataTable, EmptyState, LoadingState, ErrorState, Panel } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPnl, formatPrice } from "@/lib/format";
 import { ApiError } from "@/types/api";
 
@@ -59,29 +59,22 @@ export default function PositionsPage({ snapshot }: Props) {
   return (
     <div>
       {closeDialog && (
-        <div className="panel" style={{ borderColor: "rgba(240,86,79,0.6)" }}>
-          <div className="panel-header"><span>Confirm close — backend-validated</span></div>
-          <div className="panel-body">
-            <div className="confirm-box" style={{ marginTop: 0 }}>
-              <div>
-                Close position <b className="inline-mono">#{closeDialog.ticket}</b> at market via the OrderLifecycleManager. The backend may refuse (guardian, state, connectivity) — the response decides.
-              </div>
-              <div className="row">
-                <button className="btn danger" disabled={closeCmd.state.running} onClick={() => void confirmClose()}>
-                  {closeCmd.state.running ? "sending…" : "Confirm close"}
-                </button>
-                <button className="btn" disabled={closeCmd.state.running} onClick={() => setCloseDialog(null)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-            {closeCmd.state.lastMessage && (
-              <div className={`cmd-result ${closeCmd.state.lastResult ? "ok" : "fail"}`}>
-                {closeCmd.state.lastResult ? "✓" : "✕"} {closeCmd.state.lastMessage}
-              </div>
-            )}
+        <ConfirmModal
+          title={`Close position #${closeDialog.ticket}`}
+          confirmLabel="Confirm close"
+          busy={closeCmd.state.running}
+          onConfirm={() => void confirmClose()}
+          onCancel={() => setCloseDialog(null)}
+        >
+          <div>
+            Close position <b className="inline-mono">#{closeDialog.ticket}</b> at market via the OrderLifecycleManager. The backend may refuse (guardian, state, connectivity) — the response decides.
           </div>
-        </div>
+          {closeCmd.state.lastMessage && (
+            <div className={`cmd-result ${closeCmd.state.lastResult ? "ok" : "fail"}`}>
+              {closeCmd.state.lastResult ? "✓" : "✕"} {closeCmd.state.lastMessage}
+            </div>
+          )}
+        </ConfirmModal>
       )}
 
       <Panel
