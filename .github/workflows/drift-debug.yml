@@ -17,7 +17,11 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: false
-          version: "0.12.10"
+          # setup-uv RENAMED the input from `version` to `uv-version` in v7
+          # (see dependency-lock.yml input-name history note): with the v10
+          # bump landed by #164, `version:` is silently IGNORED and this lane
+          # would run the action's default uv, not the pinned 0.12.10.
+          uv-version: "0.12.10"
 
       - name: Resolver environment
         run: |
