@@ -102,21 +102,38 @@ def assert_not_champion_path(
     paths (never arbitrary artifacts/models/scalp/** locations). Any other
     path that resolves under the serving tree (including via symlink) is
     rejected regardless of the flag.
+
+    BUG-257 hardening (writer governance): the check is BY-NAME-PREFIX based
+    on the RESOLVED parent directory, not exact-name equality. A sibling file
+    inside a champion bundle directory (model.pt.tmp, model.pt.corrupt,
+    model.pt.bak_*) resolves into the canonical bundle dir and can be
+    renamed onto model.pt by ANY in-process writer afterwards (rename is not
+    interceptable). Such staging-adjacent paths are therefore refused for
+    producers, and an allow_champion_save opt-in is honored ONLY for the
+    exact documented variant file paths (never siblings, never new dirs).
     """
     p = _real(path)
     name = p.name
     if name not in _MODEL_PT_TAIL:
         # sidecars (model.scaler.npz / model.meta.json) map to their model.pt
         name = "model.pt" if ".pt" in name else name
-    if is_champion_path(p):
-        if allow_champion_save and is_canonical_variant_path(p):
-            return  # explicit operator opt-in for a documented variant
+    champion_dirs = {_real(Path(repo_root()) / rel).parent for rel in CANONICAL_CHAMPION_PATHS}
+    exact_canonical = p in canonical_champion_realpaths()
+    # Any path INSIDE the serving bundle tree (exact file, sibling, tmp,
+    # staging-adjacent, or new subdir) is a producer target the guard must
+    # see: a sibling/subdir file can be renamed onto model.pt afterwards by
+    # ANY writer, and rename is not interceptable in-process.
+    in_champion_tree = any(p == cd or cd in p.parents for cd in champion_dirs)
+    if exact_canonical or in_champion_tree:
+        if allow_champion_save and exact_canonical and is_canonical_variant_path(p):
+            return  # explicit operator opt-in for the documented variant FILE only
         raise ChampionPathError(
             f"CHAMPION_GUARD_ABORT{' in ' + context if context else ''}: "
-            f"refusing to write canonical serving bundle {p}. Training, tests, "
-            f"probes and candidates must target an isolated path under "
-            f"artifacts/model_generation/models/. Pass allow_champion_save=True "
-            f"only via the governed producer for a documented variant path."
+            f"refusing to write inside canonical serving bundle {p.parent} "
+            f"(target {p.name}). Training, tests, probes and candidates must "
+            f"target an isolated path under artifacts/model_generation/models/. "
+            f"Pass allow_champion_save=True only via the governed producer for "
+            f"a documented variant path."
         )
 
 
