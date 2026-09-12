@@ -18,6 +18,7 @@ DO-NOT-PUT-HERE: verification/atomic-write logic (release/), doctor/forensic com
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -236,6 +237,12 @@ def update_cmd(
     manifest: Path | None = typer.Option(
         None, "--manifest", help="Path to available-release manifest (JSON) — offline mode."
     ),
+    signed_manifest: Path | None = typer.Option(
+        None,
+        "--signed-manifest",
+        help="Path to update-manifest.signed.json (Ed25519-signed trust root) — "
+        "offline companion of --manifest; requires --manifest.",
+    ),
     channel: str = typer.Option(
         "stable", "--channel", help="stable | beta | nightly (never silently switches)."
     ),
@@ -305,6 +312,13 @@ def update_cmd(
 
     # Offline manifest mode (build pipeline / tests): routed through the
     # SAME discovery/plan core (no duplicate update implementation, spec 55).
+    if signed_manifest is not None and manifest is None:
+        msg = "--signed-manifest is the offline companion of --manifest; pass --manifest too"
+        if json_mode:
+            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(_error_panel("Invalid option", msg, exit_code=xc.EXIT_USAGE))
+        raise typer.Exit(xc.EXIT_USAGE) from None
     if manifest is not None:
         if not manifest.exists():
             msg = f"manifest not found: {manifest}"
@@ -335,7 +349,35 @@ def update_cmd(
                 "tag_name": available.get("tag_name") or f"v{info['version']}",
                 "prerelease": bool(available.get("prerelease")),
                 "body": str(available.get("body") or ""),
+                # S1: keep any update_manifest the offline feed already carries
+                # (the descriptor rebuild used to drop it — silent dead-end).
+                "update_manifest": available.get("update_manifest") or {},
             }
+        # --signed-manifest: explicit offline trust root (S1 symmetric path).
+        # Malformed/unreadable JSON is fail-soft here exactly like discovery's
+        # SignedManifestResolver: nothing is attached, §6b blocks the plan.
+        if signed_manifest is not None:
+            if not signed_manifest.exists():
+                msg = f"signed manifest not found: {signed_manifest}"
+                if json_mode:
+                    _emit({"error": msg, "exit_code": xc.EXIT_RUNTIME}, True)
+                else:
+                    console.print(
+                        _error_panel(
+                            "Signed manifest not found",
+                            msg,
+                            hint=f"Pass the release asset {rupdater.SIGNED_MANIFEST_ASSET}",
+                            exit_code=xc.EXIT_RUNTIME,
+                        )
+                    )
+                raise typer.Exit(xc.EXIT_RUNTIME) from None
+            if isinstance(available, dict):
+                try:
+                    doc = json.loads(signed_manifest.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    doc = None
+                if isinstance(doc, dict) and doc:
+                    available["update_manifest"] = doc
         plan = rupdater.UpdatePlanBuilder(
             installed_version=info["version"],
             channel=channel,

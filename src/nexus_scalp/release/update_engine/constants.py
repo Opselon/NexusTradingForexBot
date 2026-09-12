@@ -79,6 +79,13 @@ _CHECKSUM_ASSET_RE = re.compile(
     r"sha256sums?\.txt$|sha256\.txt$|\.sha256$|checksums?\.txt$|digests?\.txt$", re.I
 )
 
+#: Exact release-asset name of the Ed25519-signed update manifest produced by
+#: scripts/release/sign_update_manifest.py (S1: the discovery layer must FETCH
+#: this asset and attach it as ``release["update_manifest"]`` so the fail-closed
+#: §6b signature gate in UpdatePlanBuilder is satisfiable in production).
+#: Exact match — this name deliberately matches NO checksum regex above.
+SIGNED_MANIFEST_ASSET = "update-manifest.signed.json"
+
 #: Revocation markers in release body/notes (spec 47). A release explicitly
 #: marked revoked must NEVER install, even if newer.
 _REVOKED_MARKER_RE = re.compile(r"(?i)\b(REVOKED|REVOKE)\b")

@@ -23,6 +23,7 @@ from nexus_scalp.release.update_engine.constants import (
     _REVOKED_MARKER_RE,
     _SOURCE_ASSET_RE,
     DEFAULT_CHANNEL,
+    SIGNED_MANIFEST_ASSET,
     STATE_CHECKING,
     STATUS_DIRECT_UPDATE_UNSUPPORTED,
     STATUS_GITHUB_UNAVAILABLE,
@@ -374,6 +375,132 @@ class DigestResolver:
             return json.loads(resp.read().decode("utf-8"))
 
 
+def _discovery_log(level: str, msg: str) -> None:
+    """Failure-isolated WARNING/INFO logging for discovery fetches (S1).
+
+    Same stdlib logger the orchestrator uses for the update lifecycle so
+    records route through the severity tree under the engine and stay off
+    stdout under the bare CLI (``--json`` machine contract). NEVER logs
+    secrets or payloads — only asset names, HTTP codes and exception types.
+    """
+    try:
+        import logging
+
+        logging.getLogger("nexus_scalp.release.update").log(
+            getattr(logging, level.upper(), logging.WARNING), "[UPDATE] %s", msg
+        )
+    except Exception:
+        pass
+
+
+class SignedManifestResolver:
+    """Fetches the Ed25519-signed update-manifest asset of a GitHub release.
+
+    S1 (release-security): the release pipeline publishes
+    ``update-manifest.signed.json`` (scripts/release/sign_update_manifest.py,
+    .github/workflows/release.yml) but the releases API payload never carries
+    its content — without this fetch, ``release["update_manifest"]`` is set by
+    nobody in production and the fail-closed signature gate in
+    ``UpdatePlanBuilder.build`` (§6b) rejects EVERY release
+    (SECURITY_BLOCKED forever: the gate was satisfiable only by tests).
+
+    Contract (deliberately narrow and fail-closed):
+      * Only fetches when ``release`` has no ``update_manifest`` yet (explicit
+        offline/fixture-provided manifests are respected, never overwritten).
+      * Transport is the SAME plumbing as ``DigestResolver._fetch_checksum_text``.
+      * Missing asset, non-200/HTTP error, empty body, malformed JSON, or a
+        non-object JSON document => NOTHING is set.  The §6b gate then yields
+        its existing SECURITY_BLOCKED reason; this resolver only adds a
+        distinguishing decision line naming ``update-manifest.signed.json``
+        and a WARNING log.  No parallel status enum is invented.
+    """
+
+    @classmethod
+    def find_asset(cls, release: dict[str, Any]) -> dict[str, Any] | None:
+        """The release's ``update-manifest.signed.json`` asset, if published."""
+        for a in release.get("assets", []):
+            if str(a.get("name", "")).strip().lower() == SIGNED_MANIFEST_ASSET:
+                return a
+        return None
+
+    @classmethod
+    def attach_signed_manifest(
+        cls,
+        release: dict[str, Any],
+        *,
+        timeout: int = 60,
+    ) -> list[str]:
+        """Fetch + attach the signed manifest; return decision strings.
+
+        Mutates ``release['update_manifest']`` ONLY on a JSON-parsable object
+        document. Never raises: a broken/absent fetch leaves the release
+        unsigned so §6b blocks it (fail-closed, no silent fallback).
+        """
+        decisions: list[str] = []
+        if not isinstance(release, dict):
+            return decisions
+        provided = release.get("update_manifest")
+        if isinstance(provided, dict) and provided:
+            # Already supplied (offline --signed-manifest / test fixture /
+            # pre-attached feed): respect it, fetch nothing.
+            decisions.append("signed update manifest supplied with release descriptor")
+            return decisions
+        asset = cls.find_asset(release)
+        if asset is None:
+            decisions.append(
+                f"signed update manifest asset {SIGNED_MANIFEST_ASSET} is not published for "
+                f"{release.get('tag_name') or 'this release'} — no trust root to verify, "
+                "update remains fail-closed (SECURITY_BLOCKED)"
+            )
+            _discovery_log("warning", f"signed manifest asset {SIGNED_MANIFEST_ASSET} absent")
+            return decisions
+        name = str(asset.get("name", SIGNED_MANIFEST_ASSET))
+        try:
+            text = DigestResolver._fetch_checksum_text(asset, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            reason = f"HTTP {e.code}"
+        except Exception as e:  # network/timeout/decode — classify, never propagate
+            reason = type(e).__name__
+        else:
+            reason = ""
+        if reason:
+            decisions.append(
+                f"signed update manifest asset {name} could not be fetched ({reason}) "
+                "— treating the trust root as absent (fail-closed)"
+            )
+            _discovery_log("warning", f"signed manifest fetch failed asset={name} reason={reason}")
+            return decisions
+        if not text.strip():
+            decisions.append(
+                f"signed update manifest asset {name} is EMPTY — treating the trust root "
+                "as absent (fail-closed)"
+            )
+            _discovery_log("warning", f"signed manifest asset empty: {name}")
+            return decisions
+        try:
+            doc = json.loads(text)
+        except ValueError as e:
+            decisions.append(
+                f"signed update manifest asset {name} is not valid JSON ({type(e).__name__}) "
+                "— treating the trust root as absent (fail-closed)"
+            )
+            _discovery_log("warning", f"signed manifest asset malformed JSON: {name}")
+            return decisions
+        if not isinstance(doc, dict):
+            decisions.append(
+                f"signed update manifest asset {name} is not a JSON object — treating the "
+                "trust root as absent (fail-closed)"
+            )
+            _discovery_log("warning", f"signed manifest asset not an object: {name}")
+            return decisions
+        release["update_manifest"] = doc
+        decisions.append(
+            f"signed update manifest asset {name} fetched; signature is verified next "
+            "against the embedded Ed25519 trust root"
+        )
+        return decisions
+
+
 class ManifestVerifier:
     """Release-manifest verification (artifact list + hashes)."""
 
@@ -674,6 +801,10 @@ class UpdatePlanBuilder:
         #     a valid signed manifest is SECURITY_BLOCKED: payload+checksum
         #     replacement by a compromised publisher account can NEVER
         #     authorize an install (no silent unsigned fallback).
+        #     S1: the gate is only meaningful if production FETCHES the
+        #     signed asset — do it here (no-op when the descriptor already
+        #     carries an update_manifest, e.g. offline/fixture feeds).
+        decisions.extend(SignedManifestResolver.attach_signed_manifest(release))
         signed_manifest = release.get("update_manifest") or {}
         try:
             sig_verdict = verify_payload_against_manifest(
