@@ -9,8 +9,9 @@ WHAT IT ENFORCES
 
 1.  **No raw-HTML sinks.** ``dangerouslySetInnerHTML``, ``innerHTML``,
     ``outerHTML``, ``insertAdjacentHTML``, ``document.write``/``writeln``,
-    ``createContextualFragment``, ``DOMParser``-as-HTML and the ``srcdoc``
-    attribute are banned outright: text may reach the DOM only through
+ ``createContextualFragment``, ``DOMParser`` and the ``srcdoc``
+ attribute are banned outright (the console parses no HTML — if a lane
+ ever needs a real DOMParser, that is a design review, not a whitelist): text may reach the DOM only through
     React-managed text nodes, which escape by construction.
 2.  **No code-from-string sinks.** ``eval(``, ``new Function``, string-first
     ``setTimeout``/``setInterval``/``requestAnimationFrame``, ``new Worker``
@@ -216,7 +217,11 @@ RAW_HTML_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("insert-adjacent-html", re.compile(r"\binsertAdjacentHTML\b")),
     ("document-write", re.compile(r"\bdocument\s*\.\s*(?:write|writeln)\s*\(")),
     ("contextual-fragment", re.compile(r"\bcreateContextualFragment\b")),
-    ("domparser-html", re.compile(r"\bDOMParser\b[\s\S]{0,80}?parseFromString")),
+    # Bare ``DOMParser`` is banned, not only ``new DOMParser().parseFromString``:
+    # the console has no legitimate HTML-parsing use, and a line-based rule that
+    # required both tokens on one line would be evaded by a line break (the
+    # pattern runs per line, not per file).
+    ("domparser", re.compile(r"\bDOMParser\b")),
     ("srcdoc", re.compile(r"\bsrcdoc\s*=")),
 )
 
