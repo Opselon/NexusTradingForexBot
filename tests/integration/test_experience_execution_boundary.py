@@ -38,6 +38,7 @@ from nexus_scalp.experience.quality import compute_behavior_metrics
 from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.scalp_features import BarData, ScalpFeatureEngine
 from nexus_scalp.risk.risk_engine import RiskEngine
+from tests.unit.maintenance_time_helpers import outside_maintenance_utc
 
 
 @pytest.fixture
@@ -90,10 +91,16 @@ def feature_vector():
 
 
 def _proposal(request_id: str, confidence: float = 0.85) -> TradeProposal:
+    # BUG-264-FOLLOWUP-1: dispatch goes through the MAINTENANCE_WINDOW entry
+    # guard (execution/lifecycle/dispatch.py, reads generated_at), so a raw
+    # wall-clock `now` makes this test depend on WHEN CI runs it: between
+    # 19:30 and 22:30 UTC (buffered window at the canonical GMT+3 offset)
+    # BUY_MARKET is ENTRY_BLOCKED and the dispatch asserts go red. Pin the
+    # same provable-stepping way the unit lanes do (BUG-264).
     return TradeProposal(
         request_id=request_id,
         symbol="XAUUSD",
-        generated_at=datetime.now(UTC),
+        generated_at=outside_maintenance_utc(datetime.now(UTC)),
         action=ActionType.BUY_MARKET,
         confidence=confidence,
         proposed_entry=2000.0,
@@ -308,11 +315,18 @@ def test_all_experience_tables_and_indexes_exist(tmp_path):
         assert index in indexes, f"missing index {index}"
 
 
-def test_experience_rest_endpoints_expose_real_state(tmp_path):
+def test_experience_rest_endpoints_expose_real_state(tmp_path, monkeypatch):
     """
     The Phase 08 REST surface must report ACTUAL persisted state, and the
     self-heal endpoint must rebuild derived intelligence without touching raw
     experience rows.
+
+    BUG-264-FOLLOWUP-1: WEB-AUTH-P0 gates every non-allowlisted path, so this
+    client authenticates exactly like production consumers (pin
+    NSE_WEB_AUTH_TOKEN via monkeypatch BEFORE create_app resolves the token —
+    env-wins, so the DPAPI SecureSecretStore is never consulted or written on
+    a test machine). Unauthenticated probes 401 for reasons unrelated to the
+    contract under test.
     """
     from unittest.mock import MagicMock
 
@@ -320,6 +334,8 @@ def test_experience_rest_endpoints_expose_real_state(tmp_path):
 
     from nexus_scalp.web.server import create_app
 
+    monkeypatch.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "experience-boundary-test-token")
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'api.db'}")
     try:
         ledger = ExperienceLedger(audit_repo=repo)
@@ -353,6 +369,7 @@ def test_experience_rest_endpoints_expose_real_state(tmp_path):
         engine_ref.rebuild_experience_intelligence = lambda: len(engine.self_heal())
 
         client = TestClient(create_app(engine_ref=engine_ref))
+        client.headers.update({"Authorization": "Bearer experience-boundary-test-token"})
 
         summary = client.get("/api/experience/summary")
         assert summary.status_code == 200
