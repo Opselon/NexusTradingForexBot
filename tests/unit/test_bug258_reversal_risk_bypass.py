@@ -45,6 +45,7 @@ from nexus_scalp.execution.lifecycle.dispatch import DispatchEngine
 from nexus_scalp.execution.order_manager import OrderLifecycleManager, _FastReversalDecision
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.signals.policy import AI_REVERSAL_REASON
+from tests.unit.maintenance_time_helpers import outside_maintenance_utc
 
 # ---------------------------------------------------------------------------
 # Real-component harness
@@ -134,7 +135,7 @@ def _reversal_decision(ticket: int = 42, reversal_action: ActionType = ActionTyp
     return TradeProposal(
         request_id=f"rev-{ticket}",
         symbol="XAUUSD",
-        generated_at=datetime.now(UTC) + timedelta(minutes=180),
+        generated_at=outside_maintenance_utc(datetime.now(UTC)),
         action=ActionType.CLOSE_POSITION,
         confidence=0.9,
         proposed_entry=entry,
@@ -172,13 +173,10 @@ def _manager(
 
 
 def _outside_maintenance(ts: datetime) -> datetime:
-    from nexus_scalp.adapters.mt5.providers import BROKER_SERVER_UTC_OFFSET_MINUTES
-    from nexus_scalp.research.economics import in_maintenance_window
-
-    candidate = ts + timedelta(minutes=180)
-    if in_maintenance_window(candidate, BROKER_SERVER_UTC_OFFSET_MINUTES / 60.0):
-        candidate = candidate + timedelta(minutes=180)
-    return candidate
+    """Back-compat alias: BUG-264 replaced the '+180, retry +180 once' shape
+    (which can land on the inclusive 19:30/22:30 UTC window edges) with the
+    provable-step helper in tests/unit/maintenance_time_helpers.py."""
+    return outside_maintenance_utc(ts)
 
 
 class _Exec:
