@@ -582,49 +582,18 @@ jobs:
           PY
 
       # -------- Final gate: root failure vs blocked vs real failure (CHG-0052) -------
-      # Status vocabulary: passed | failed | errored | skipped | blocked.
-      #   failed/errored -> real failure of that check
-      #   blocked        -> check never ran: an upstream gate failed (root cause)
-      #   skipped        -> check not required / never ran with no named failure
-      # A missing result JSON is NOT an error: after the blocked classifier ran,
-      # absent files mean the step was legitimately not executed upstream.
-      - name: Fail job if any check failed
+      # Fail-closed extraction of the previous inline heredoc (Agent-10 CI/CD
+      # gate integrity): the heredoc treated a MISSING result JSON as skipped
+      # and went green when mypy/pytest/coverage/runtime_gate never ran (lost
+      # RUFF_FORMAT_RC, runner crash, skipped-if misfire) — "ALL CHECKS
+      # PASSED" with zero tests executed. scripts/ci/ci_final_gate.py keeps
+      # the same status vocabulary but a missing record FAILS the run; only
+      # explicit status=blocked records (per-step fallback / classify-gate)
+      # are legitimate non-runs. Regression net:
+      # tests/unit/test_ci_final_gate_fail_closed.py
+      - name: Fail job if any check failed (fail-closed)
         if: always()
-        run: |
-          python - <<'PY'
-          import json, os
-          root = os.environ["CI_RESULTS_DIR"]
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "critical_coverage", "runtime_gate", "layered_smoke"]
-          statuses = {}
-          for name in checks:
-              p = os.path.join(root, "run-info", f"{name}.json")
-              try:
-                  with open(p, encoding="utf-8") as fh:
-                      statuses[name] = json.load(fh).get("status", "skipped")
-              except FileNotFoundError:
-                  # Missing JSON = step did not run (blocked upstream). Never
-                  # invent an "errored" failure for a check that never executed.
-                  statuses[name] = "skipped"
-              except Exception as e:
-                  statuses[name] = "errored"
-                  print(f"UNREADABLE CHECK JSON: {p} -> {e}")
-          failed = [k for k, v in statuses.items() if v in ("failed", "errored")]
-          blocked = [k for k, v in statuses.items() if v == "blocked"]
-          repair = os.environ.get("RUFF_REPAIR_STATUS", "")
-          print(" | ".join(f"{k}={v}" for k, v in statuses.items()))
-          if repair == "repaired":
-              print("AUTO_REPAIRED_BUT_SOURCE_DIRTY: ruff format repaired the CHECKOUT;"
-                    " the COMMITTED tree remains malformed and ruff_format stays failed.")
-          if blocked:
-              print(f"BLOCKED (never ran - upstream root failure): {', '.join(blocked)}")
-          if failed:
-              print(f"FAILING CHECKS: {', '.join(failed)}")
-              # Emit a workflow command so the failure lands in the check-run
-              # annotations (visible on the commit/PR page without log access).
-              print(f"::error::CI gate failed on: {', '.join(failed)} | " + " | ".join(f"{k}={v}" for k, v in statuses.items()))
-              raise SystemExit(1)
-          print("ALL CHECKS PASSED")
-          PY
+        run: python scripts/ci/ci_final_gate.py
 
   # ---------------------------------------------------------------------------
   # Heavy testing (integration, E2E, research/backtest, model validation)

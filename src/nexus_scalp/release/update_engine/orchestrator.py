@@ -61,6 +61,9 @@ from nexus_scalp.release.update_engine.discovery import (
 from nexus_scalp.release.update_engine.downloader import (
     SafeDownloader,
 )
+from nexus_scalp.release.update_engine.signed_manifest_fetch import (
+    attach_signed_manifest,
+)
 from nexus_scalp.release.update_engine.health import (
     PostUpdateHealth,
 )
@@ -186,6 +189,15 @@ class UpdateOrchestrator:
             }
             self.state.mark_failed(f"{status}: {e.message}")
             return plan
+        # SIGNED UPDATE MANIFEST FETCH (Finding 1): the release pipeline
+        # publishes update-manifest.signed.json as a release asset; attach it
+        # to the release object so the plan builder can verify the Ed25519
+        # signature against the trust root. Fail-closed: when the asset is
+        # absent/unreachable/corrupt it is NOT attached and the plan builder
+        # blocks with MISSING_SIGNATURE / SIGNED_MANIFEST_ASSET_UNREACHABLE.
+        # This is evidence GATHERING only — every trust decision stays in the
+        # plan builder / signing module.
+        attach_signed_manifest(release, timeout=timeout * 3)
         plan = UpdatePlanBuilder(
             installed_version=self.installed_version,
             channel=self.channel,

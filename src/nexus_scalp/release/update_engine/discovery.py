@@ -18,6 +18,9 @@ from nexus_scalp.release.signing import (
     UpdateManifestError,
     verify_payload_against_manifest,
 )
+from nexus_scalp.release.update_engine.signed_manifest_fetch import (
+    find_signed_manifest_asset,
+)
 from nexus_scalp.release.update_engine.constants import (
     _CHECKSUM_ASSET_RE,
     _REVOKED_MARKER_RE,
@@ -674,7 +677,53 @@ class UpdatePlanBuilder:
         #     a valid signed manifest is SECURITY_BLOCKED: payload+checksum
         #     replacement by a compromised publisher account can NEVER
         #     authorize an install (no silent unsigned fallback).
+        #
+        #     Release-wave Finding 1: the signed manifest is published as a
+        #     release ASSET. A pure plan builder cannot fetch it, so the
+        #     orchestrator (check/run) attaches release["update_manifest"]
+        #     via signed_manifest_fetch.attach_signed_manifest() BEFORE
+        #     calling build(). When it is absent here, the release is
+        #     unprovisioned for the trust root: block with a precise reason
+        #     (missing asset == missing signature; never a silent skip).
         signed_manifest = release.get("update_manifest") or {}
+        if not signed_manifest:
+            asset_present = find_signed_manifest_asset(release) is not None
+            reason = (
+                "SIGNED_MANIFEST_ASSET_UNREACHABLE"
+                if asset_present
+                else "MISSING_SIGNATURE"
+            )
+            decisions.append(
+                "signed update manifest NOT ATTACHED "
+                f"({reason}) — the signature is the trust root; refusing without it"
+            )
+            base["status"] = STATUS_SECURITY_BLOCKED
+            base["signature_status"] = reason
+            return base
+        # Release/artifact identity binding: the signed manifest must name
+        # THIS release version and THIS selected artifact. A validly signed
+        # manifest for a DIFFERENT payload/version must never authorize an
+        # install of this one (signature covers the identity, but only a
+        # cross-check against the discovery-selected asset enforces it).
+        tag = str(release.get("tag_name", "")).lstrip("v")
+        if str(signed_manifest.get("version", "")).lstrip("v") != tag:
+            decisions.append(
+                f"signed update manifest version "
+                f"{signed_manifest.get('version')!r} != release tag {tag!r} — "
+                "refusing (identity mismatch)"
+            )
+            base["status"] = STATUS_SECURITY_BLOCKED
+            base["signature_status"] = "VERSION_MISMATCH"
+            return base
+        if str(signed_manifest.get("artifact_name", "")) != str(asset.get("name", "")):
+            decisions.append(
+                f"signed update manifest artifact_name "
+                f"{signed_manifest.get('artifact_name')!r} != selected asset "
+                f"{asset.get('name')!r} — refusing (payload mismatch)"
+            )
+            base["status"] = STATUS_SECURITY_BLOCKED
+            base["signature_status"] = "ARTIFACT_MISMATCH"
+            return base
         try:
             sig_verdict = verify_payload_against_manifest(
                 signed_manifest,
