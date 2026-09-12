@@ -22,7 +22,7 @@ pyarrow==25.0.1
 pydantic-settings==2.15.0
 pydantic==2.13.5
 pygments==2.21.0
-pyinstaller==6.22.2
+pyinstaller==6.22.3
 pynacl==1.6.2
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
