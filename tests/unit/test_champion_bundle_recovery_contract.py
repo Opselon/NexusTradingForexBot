@@ -29,6 +29,35 @@ from nexus_scalp.model_lifecycle.load_integrity import (
 )
 
 
+def _train_briefly(model, num_features: int, classes: int) -> None:
+    """Take 30 AdamW steps on a fixed synthetic batch (same recipe as
+    ``test_promotion_rejects_degenerate_model.test_thresholds_hold_...``).
+
+    The P0 serving gate in ModelBundleStore refuses fresh-init and
+    behavioral-degenerate weights on the load path, so hermetic fixtures that
+    boot the engine must mint a genuinely TRAINED artifact — fix the
+    fixture, not the gate (precedent: ab9db747 / AGENT-12 c004 repair).
+
+    BUG-154: the caller must ``torch.manual_seed(999)`` BEFORE constructing
+    the model — ``ScalpNet.__init__`` draws the initial weights from the
+    AMBIENT RNG, so construct-then-seed mints machine-dependent weights
+    whose behavioral probe can fail on CI workers (LOAD_REJECTED boot
+    refusal) while passing on dev hosts.
+    """
+    torch.manual_seed(999)
+    model.train()
+    gen = torch.Generator().manual_seed(1234)
+    X = torch.randn(256, num_features, generator=gen)
+    y = torch.randint(0, classes, (256,), generator=gen)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    for _ in range(30):
+        opt.zero_grad()
+        loss = torch.nn.functional.cross_entropy(model(X, return_logits=True), y)
+        loss.backward()
+        opt.step()
+    model.eval()
+
+
 def _write_verified_bundle(directory, num_features: int = 70, classes: int = 3):
     """Emit model.pt + manifest.json as ONE coherent trust-chain pair.
 
@@ -40,8 +69,12 @@ def _write_verified_bundle(directory, num_features: int = 70, classes: int = 3):
 
     directory.mkdir(parents=True, exist_ok=True)
     model_path = directory / "model.pt"
+    # BUG-154: seed BEFORE construction — __init__ draws the initial weights
+    # from the ambient RNG; construct-then-seed minted machine-dependent
+    # bundles whose behavioral probe could fail on CI workers.
+    torch.manual_seed(999)
     model = ScalpNet(num_features=num_features, num_classes=classes)
-    model.eval()
+    _train_briefly(model, num_features, classes)
     torch.save(model.state_dict(), model_path)
 
     digest = hashlib.sha256(model_path.read_bytes()).hexdigest()

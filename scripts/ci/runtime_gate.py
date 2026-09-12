@@ -705,19 +705,58 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
     artifact = REPO_ROOT / AppConfig().model.model_artifact_path
     if not artifact.exists():
         # CI runners never carry the private champion artifact. Provision a
-        # REAL fresh artifact (ScalpNet 70D/3-class) via the engine's own
+        # REAL TRAINED artifact (ScalpNet 70D/3-class) via the engine's own
         # atomic saver so the P1 verify-on-load trust gate finds a valid
         # servable file instead of fail-closing the boot (run #982/#983:
         # MODEL_LOAD_REJECTED -> L3 stages skipped -> smoke check-count floor
         # missed). Honest evidence of the provisioning is recorded.
+        # The P0 serving gate refuses fresh-init / behavioral-degenerate
+        # weights on the load path, so a provisioned stand-in must be a
+        # TRAINED model or L3 boots fail closed (RUNTIME-01 FAIL -> the five
+        # L3 runtime checks are never recorded -> smoke check-count floor
+        # 40 missed; CI-1151: only 37 checks). Deterministic 30-step AdamW
+        # recipe (mirrors test_promotion_rejects_degenerate_model).
+        # CRITICAL (BUG-154 repair): torch.manual_seed MUST run BEFORE the
+        # ScalpNet construction. __init__ draws the initial weights from the
+        # ambient process RNG, so constructing first (61058ca3) made the
+        # minted bundle's behavioral health machine-dependent: on the linux
+        # CI worker the ambient draw produced margin_sensitivity 0.003 < 0.02
+        # -> LOAD_REJECTED (a 150-state local sweep of the old order fails
+        # ~3% of draws), while dev boxes drew healthy weights and stayed
+        # green. Seed-then-construct makes the artifact byte-stable on every
+        # host (seed 999 -> sensitivity 0.608, probe-passing everywhere).
         import torch
 
         from nexus_scalp.models.scalp_net import ScalpNet
 
         artifact.parent.mkdir(parents=True, exist_ok=True)
+        torch.manual_seed(999)
         _fresh = ScalpNet(num_features=70, num_classes=3)
+        _fresh.train()
+        _gen = torch.Generator().manual_seed(1234)
+        _X = torch.randn(256, 70, generator=_gen)
+        _y = torch.randint(0, 3, (256,), generator=_gen)
+        _opt = torch.optim.AdamW(_fresh.parameters(), lr=1e-3)
+        for _ in range(30):
+            _opt.zero_grad()
+            _loss = torch.nn.functional.cross_entropy(_fresh(_X, return_logits=True), _y)
+            _loss.backward()
+            _opt.step()
         _fresh.eval()
         torch.save(_fresh.state_dict(), artifact)
+        # Fail LOUDLY at the provisioning seam if the mint is not servable:
+        # a future torch/RNG-semantic shift must surface as a provisioning
+        # error with probe metrics here, never as a mysterious LOAD_REJECTED
+        # deep in the boot. The serving gate itself stays untouched.
+        from nexus_scalp.model_lifecycle.integrity import check_model_behavioral_health
+
+        _mh_ok, _mh_detail, _mh_metrics = check_model_behavioral_health(artifact, None)
+        if not _mh_ok:
+            raise RuntimeError(
+                "runtime_gate PROVISIONING_ERROR: deterministic mint failed the "
+                f"behavioral probe ({_mh_detail}, metrics={_mh_metrics}) — fix the "
+                "provisioner recipe; never relax the serving gate."
+            )
         # P1 trust-gate parity: the engine's verify-on-load gate rejects an
         # artifact with no integrity metadata (LEGACY_UNVERIFIED -> boot
         # fail-closed -> RUNTIME-01 FAIL -> smoke check-count floor missed;

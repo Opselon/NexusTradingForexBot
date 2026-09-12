@@ -71,6 +71,8 @@ class ModelBundleStore:
         if not force_fresh:
             from nexus_scalp.model_lifecycle.load_integrity import (
                 ArtifactIntegrityError,
+                ArtifactIntegrityStatus,
+                IntegrityVerdict,
                 verify_artifact_integrity,
             )
 
@@ -86,6 +88,50 @@ class ModelBundleStore:
                     integ_err.verdict.artifact,
                 )
                 raise
+            # P0-REMEDIATION (learning-audit 2026-09-11): a self-consistent
+            # bundle whose weights are the CANONICAL FRESH INIT (or behavioral-
+            # degenerate) must never serve. The historical bb1f0afe incident
+            # class shipped byte-equal-to-fresh weights; the registry trust
+            # anchor only catches fingerprint drift — it cannot catch an
+            # attacker/bug that rewrites BOTH weights and manifest. The
+            # behavioral probe is content-based and cannot be fooled by a
+            # sidecar refresh. Fail closed: REJECTED, never served.
+            from nexus_scalp.model_lifecycle.integrity import (
+                check_model_behavioral_health,
+                detect_untrained_fresh_init,
+            )
+
+            is_fresh, fresh_detail = detect_untrained_fresh_init(model_path, None)
+            if is_fresh:
+                logger.critical(
+                    "[MODEL_LOAD_REJECTED] event=FRESH_INIT_ARTIFACT detail=%s artifact=%s",
+                    fresh_detail,
+                    model_path.name,
+                )
+                raise ArtifactIntegrityError(
+                    IntegrityVerdict(
+                        status=ArtifactIntegrityStatus.LOAD_REJECTED,
+                        reason=(
+                            "weights are byte-identical to the canonical fresh "
+                            f"init ({fresh_detail}) — untrained model refused"
+                        ),
+                        artifact=model_path.name,
+                    )
+                )
+            healthy, health_detail, _metrics = check_model_behavioral_health(model_path, None)
+            if not healthy:
+                logger.critical(
+                    "[MODEL_LOAD_REJECTED] event=BEHAVIORAL_HEALTH_FAIL detail=%s artifact=%s",
+                    health_detail,
+                    model_path.name,
+                )
+                raise ArtifactIntegrityError(
+                    IntegrityVerdict(
+                        status=ArtifactIntegrityStatus.LOAD_REJECTED,
+                        reason=f"behavioral health gate failed: {health_detail}",
+                        artifact=model_path.name,
+                    )
+                )
         model = self._load_or_initialize_model_weights(
             model_path=model_path, force_fresh=force_fresh
         )

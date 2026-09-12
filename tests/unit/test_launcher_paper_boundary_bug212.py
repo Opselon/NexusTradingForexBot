@@ -50,7 +50,28 @@ def _write_verified_bundle(directory, num_features: int = 50):
 
     directory.mkdir(parents=True, exist_ok=True)
     model_path = directory / "model.pt"
+    # The P0 serving gate refuses fresh-init / behavioral-degenerate weights,
+    # so boot fixtures must mint TRAINED artifacts (fix the fixture, not the
+    # gate — precedent ab9db747 / AGENT-12 c004). Deterministic recipe — and
+    # BUG-154: manual_seed MUST precede construction, because __init__ draws
+    # the initial weights from the AMBIENT RNG; constructing first makes the
+    # minted bundle's behavioral health machine-dependent (linux CI drew a
+    # 0.003-sensitivity net -> LOAD_REJECTED while dev boxes stayed green).
+    import torch as _torch
+
+    _torch.manual_seed(999)
     model = ScalpNet(num_features=num_features)
+    model.train()
+    gen = _torch.Generator().manual_seed(1234)
+    n_cls = int(model.classifier.weight.shape[0])
+    X = _torch.randn(256, num_features, generator=gen)
+    y = _torch.randint(0, n_cls, (256,), generator=gen)
+    opt = _torch.optim.AdamW(model.parameters(), lr=1e-3)
+    for _ in range(30):
+        opt.zero_grad()
+        loss = _torch.nn.functional.cross_entropy(model(X, return_logits=True), y)
+        loss.backward()
+        opt.step()
     model.eval()
     torch.save(model.state_dict(), model_path)
 
