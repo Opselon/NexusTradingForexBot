@@ -37,6 +37,7 @@ from nexus_scalp.domain.models import (
 )
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.risk.risk_engine import RiskEngine
+from tests.unit.maintenance_time_helpers import outside_maintenance_utc
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -284,7 +285,12 @@ class TestBug241SafeModePrimaryPath:
     def test_three_primary_refusals_open_the_breaker(self) -> None:
         _paper, _audit, manager = _make_manager(_RefusingAdapter())
         manager.global_state = "NORMAL"
-        now = datetime.now(UTC)
+        # BUG-264 class: a wall-clock `now` inside the buffered maintenance
+        # window (server 22:30..01:30 == UTC 19:30..22:30 at the canonical
+        # +180min offset) makes the MAINTENANCE_WINDOW guard refuse BEFORE
+        # the broker is reached, so the consecutive-failure counter never
+        # moves and the breaker never trips. Pin outside the window.
+        now = outside_maintenance_utc(datetime.now(UTC))
         for i in range(3):
             ok = manager.dispatch_order(_proposal(now, request_id=f"brk-{i}"), volume=0.5)
             assert ok is False
@@ -296,7 +302,7 @@ class TestBug241SafeModePrimaryPath:
         paper, _audit, manager = _make_manager()
         manager.global_state = "NORMAL"
         manager._consecutive_failures = 2
-        now = datetime.now(UTC)
+        now = outside_maintenance_utc(datetime.now(UTC))
         ok = manager.dispatch_order(_proposal(now, request_id="reset-1"), volume=0.5)
         assert ok is True
         assert manager._consecutive_failures == 0
@@ -351,12 +357,17 @@ class TestBug242ManualActionAuthority:
         pos = next(p for p in paper.get_positions() if p.ticket == ticket)
         assert pos.sl == pytest.approx(1998.0)
 
-    def test_web_layer_never_calls_adapter_directly(self) -> None:
+    def test_web_layer_never_calls_adapter_directly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Black-box: /api/positions/* reach the manager, never engine.adapter."""
         from fastapi.testclient import TestClient
 
         from nexus_scalp.web.server import create_app
 
+        # WEB-AUTH-P0: local PAPER fixture — documented auth opt-out
+        # (test_rule_matrix::test_api_endpoints precedent; the auth gate
+        # landed after this test was written and 401s every endpoint
+        # without it — pre-existing red, BUG-264 wave fix-in-passing).
+        monkeypatch.setenv("NSE_WEB_AUTH_DISABLE", "1")
         app = create_app()
         om = MagicMock()
         om.modify_position_manual.return_value = True

@@ -280,23 +280,22 @@ class _OM:
 
 class TestDispatchIdempotency:
     def test_primary_path_duplicate_request_id_blocked(self) -> None:
-        from nexus_scalp.adapters.mt5.providers import BROKER_SERVER_UTC_OFFSET_MINUTES
-        from nexus_scalp.research.economics import in_maintenance_window
+        from tests.unit.maintenance_time_helpers import outside_maintenance_utc
 
         om = _OM()
         de = DispatchEngine(om)
-        # CI-DETERMINISM (NSE-Swarm 2026-09-11): the first dispatch ran into
-        # the nightly MAINTENANCE_WINDOW guard whenever the wall clock sat in
-        # the buffered break (server 00:30..01:30 -> UTC 21:30..22:30 +30m
-        # spread buffer) — the duplicate assertion then compared against a
-        # maintenance-blocked False, failing every run in that window (CI
-        # 1072/1073 all platforms). Pin the decision timestamp OUTSIDE the
-        # window so the test exercises the DUPLICATE guard, not the clock.
-        outside = datetime.now(UTC) + timedelta(minutes=180)
-        if in_maintenance_window(
-            outside, server_utc_offset_hours=BROKER_SERVER_UTC_OFFSET_MINUTES / 60.0
-        ):
-            outside = outside + timedelta(minutes=180)
+        # CI-DETERMINISM (NSE-Swarm 2026-09-11 / BUG-264 2026-09-12): the first
+        # dispatch runs into the nightly MAINTENANCE_WINDOW guard whenever the
+        # decision timestamp sits in the buffered break (server 22:30..01:30
+        # INCLUSIVE == UTC 19:30..22:30 at the canonical +180min offset), and
+        # the duplicate assertion then compares against a maintenance-blocked
+        # False (CI 1072/1073 all platforms; CI 1085 windows-latest at
+        # 16:30:01.944Z — the single "+180 once more" retry landed EXACTLY on
+        # the inclusive 22:30 edge because the window is 181 minutes wide).
+        # outside_maintenance_utc() advances in provably-clearing steps, so no
+        # wall-clock minute can re-open the collision and the test exercises
+        # the DUPLICATE guard, not the clock.
+        outside = outside_maintenance_utc(datetime.now(UTC))
         # TradeProposal is a frozen model -> rebuild with the pinned timestamp.
         p1 = _proposal("DUP-1").model_copy(update={"generated_at": outside})
         p2 = _proposal("DUP-1").model_copy(update={"generated_at": outside})

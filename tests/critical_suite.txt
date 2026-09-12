@@ -173,3 +173,8 @@ tests/unit/test_perf_exec_trace_throttle.py
 tests/unit/test_bug256_dispatch_halt_wiring.py
 tests/unit/test_bug261_terminal_outcome_tick_domain.py
 tests/unit/test_bug262_close_time_evidence.py
+
+# BUG-264 (NSE-Swarm CI/GitOps, 2026-09-12): maintenance-window test-pin
+# collision — pins a provably-outside-window timestamp so the dispatch
+# idempotency / safe-mode batteries can never re-flake at a wall-clock minute.
+tests/unit/test_bug264_maintenance_pin_collision.py

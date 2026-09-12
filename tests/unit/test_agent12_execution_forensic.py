@@ -23,6 +23,7 @@ from nexus_scalp.execution.order_manager import (
 )
 from nexus_scalp.execution.position_states import PositionState
 from nexus_scalp.execution.recovery_budget import RecoveryBudgetLedger
+from tests.unit.maintenance_time_helpers import outside_maintenance_utc
 
 
 def _proposal(action: ActionType, rid: str, now: datetime) -> TradeProposal:
@@ -63,7 +64,10 @@ class TestAgent12Clamps:
 
     def test_max_total_exposure_blocks_second_dispatch(self, paper_om):
         om, adapter = paper_om
-        now = datetime.now(UTC)
+        # BUG-264 class: pin OUTSIDE the buffered maintenance window or the
+        # FIRST dispatch returns False at the guard and the exposure
+        # assertion compares against a maintenance-blocked False.
+        now = outside_maintenance_utc(datetime.now(UTC))
         tick = TickData(symbol="XAUUSD", timestamp=now, bid=4400.0, ask=4400.30, volume=10)
         assert om.dispatch_order(_proposal(ActionType.BUY, "RID-A", now), 0.10) is True
         adapter.get_positions()
@@ -81,7 +85,7 @@ class TestAgent12Clamps:
 class TestAgent12Idempotency:
     def test_duplicate_request_id_never_reaches_broker(self, paper_om):
         om, adapter = paper_om
-        now = datetime.now(UTC)
+        now = outside_maintenance_utc(datetime.now(UTC))  # BUG-264 class pin
         tick = TickData(symbol="XAUUSD", timestamp=now, bid=4400.0, ask=4400.30, volume=10)
         assert om.dispatch_order(_proposal(ActionType.BUY, "RID-IDEM", now), 0.10) is True
         adapter.close_position(ticket=adapter.get_positions()[0].ticket)
@@ -96,7 +100,10 @@ class TestAgent12SafeMode:
         om, adapter = paper_om
         om._consecutive_failures = 0
         om.global_state = "NORMAL"
-        now = datetime.now(UTC)
+        # BUG-264 class: inside the maintenance window the guard refuses
+        # BEFORE the broker, the failure counter never moves, SAFE_MODE
+        # never trips.
+        now = outside_maintenance_utc(datetime.now(UTC))
         orig = om.mt5_adapter.execute_market_order
         called: list[str] = []
 
@@ -116,7 +123,7 @@ class TestAgent12SafeMode:
 
     def test_success_resets_breaker(self, paper_om):
         om, _ = paper_om
-        now = datetime.now(UTC)
+        now = outside_maintenance_utc(datetime.now(UTC))  # BUG-264 class pin
         om.global_state = "NORMAL"
         om._consecutive_failures = 2
         assert om.dispatch_order(_proposal(ActionType.BUY, "RID-OK", now), 0.10) is True
