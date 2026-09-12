@@ -4,7 +4,18 @@
  */
 
 export { ApiError } from "@/types/api";
-export { getAuthToken, clearAuthToken, getV1, getLegacy, send } from "./client";
+export {
+  getAuthToken,
+  clearAuthToken,
+  request,
+  getV1,
+  getLegacy,
+  send,
+  normalizeErrorEnvelope,
+  DEFAULT_READ_TIMEOUT_MS,
+  DEFAULT_MUTATION_TIMEOUT_MS,
+} from "./client";
+export type { RequestOptions } from "./client";
 export { engineApi } from "./engineApi";
 export { marketApi } from "./marketApi";
 export { tradingApi, SUPPORTED_ACTIONS } from "./tradingApi";

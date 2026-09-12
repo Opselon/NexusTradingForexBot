@@ -34,7 +34,18 @@ export interface V1ErrorEnvelope {
   error: V1ErrorBody;
 }
 
-/** Normalized error every caller can rely on. */
+/** Normalized error every caller can rely on.
+ *
+ * requestId fidelity (client.ts precedence, backend facts first):
+ *  1. envelope `error.request_id` — the id the backend actually logged,
+ *  2. the echoed `X-Request-ID` response header (web/errors.py middleware
+ *     reuses the client-sent header value when present),
+ *  3. the client correlation id attached to the outgoing request — so even a
+ *     pure network failure / local timeout still carries a typed, greppable
+ *     requestId (never a fabricated backend id).
+ * Codes produced ONLY by the transport layer (never by the backend):
+ * {@link NETWORK_ERROR}, {@link TIMEOUT}, {@link INVALID_RESPONSE}.
+ */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
