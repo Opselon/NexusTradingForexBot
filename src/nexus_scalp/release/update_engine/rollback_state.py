@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.release import packaging
 from nexus_scalp.release.update_engine.backup_migrate import (
     ApplicationInstaller,
 )
@@ -24,6 +25,24 @@ from nexus_scalp.release.update_engine.safety_guards import (
     UpdateBlockedError,
 )
 
+#: Restore-time integrity verdicts (BUG-263).  A snapshot is UNTRUSTED until
+#: its embedded release-manifest.json re-verifies; refusal never touches the
+#: live app tree.
+ERROR_SNAPSHOT_NO_MANIFEST = "SNAPSHOT_NO_MANIFEST"
+ERROR_SNAPSHOT_INTEGRITY_FAILED = "SNAPSHOT_INTEGRITY_FAILED"
+
+
+def _log_restore(event: str, msg: str, *args: Any) -> None:
+    """Structured restore logging via the stdlib logger (same policy as the
+    orchestrator's ``_update_log``: under the bare CLI INFO records must never
+    pollute ``--json`` stdout).  Failure-isolated."""
+    try:
+        import logging
+
+        logging.getLogger("nexus_scalp.release.rollback").warning(event + " " + msg, *args)
+    except Exception:
+        pass
+
 
 class RollbackEngine:
     """Rollback restores the PRIOR application; user data is version-aware.
@@ -33,15 +52,109 @@ class RollbackEngine:
     selection (section 25).  The app-tree runtime dirs (artifacts/data/logs)
     are NOT restored from the previous snapshot: they hold live user data
     and stay as-is.
+
+    BUG-263 (P0 trust-chain): the snapshot itself is re-verified BEFORE a
+    single byte is copied back.  A ``.previous-*`` tree captures the state of
+    the install at swap time; anything that happened to it afterwards (malware,
+    mistaken rsync, disk corruption, a hand-edited file) is invisible to the
+    update trust chain unless restore re-hashes it against the
+    ``release-manifest.json`` the release pipeline embedded in the tree
+    (BUG-166 pre-stage / ``release.yml`` "Embed release manifest in portable
+    bundle").  Verification reuses the canonical manifest reader and hasher in
+    :mod:`nexus_scalp.release.packaging` — the same parsing/hashing contract
+    ``verify-release`` and the in-payload gate use — so rollback cannot become
+    an integrity bypass around the chain that produced the snapshot.  Nothing
+    is ever copied unless the WHOLE verification passes (no partial restore);
+    on any refusal the live app tree is byte-unchanged.
     """
 
     def __init__(self, app_root: Path, backup_dir: Path | None = None) -> None:
         self.app_root = app_root
         self.backup_dir = backup_dir
 
+    def _integrity_refusal(self, reason: str, detail: str) -> dict[str, Any]:
+        """Uniform fail-closed refusal report (never a partial restore)."""
+        _log_restore(
+            "SNAPSHOT_INTEGRITY_REFUSED",
+            "reason=%s snapshot=%s detail=%s",
+            reason,
+            str(self.backup_dir),
+            detail[:400],
+        )
+        return {
+            "restored": False,
+            "error_code": reason,
+            "error_message": detail,
+            "snapshot": str(self.backup_dir),
+            "restored_items": 0,
+            "skipped_user_data_items": 0,
+        }
+
+    def verify_snapshot(self) -> dict[str, Any]:
+        """Read-only re-verification of the snapshot (BUG-263 gate).
+
+        Locates the embedded release manifest (portable-root copy, or the
+        CI-staged ``manifests/`` spelling), then delegates to the canonical
+        packaging verifier: parse → structural path guard (traversal /
+        absolute / malformed digests rejected BEFORE any file is read) →
+        SHA-256 of every listed file recomputed from the snapshot bytes →
+        identity cross-check against the tree's own build-info.  Never
+        fabricates or copies hashes; never trusts a manifest that merely
+        exists.  ``reason`` is the public verdict code:
+        ``SNAPSHOT_NO_MANIFEST`` or ``SNAPSHOT_INTEGRITY_FAILED`` (spec
+        contract), with the granular packaging reason kept in
+        ``integrity_reason`` for diagnostics.
+        """
+        snapshot = self.backup_dir
+        assert snapshot is not None
+        manifest_path = packaging.locate_embedded_manifest(snapshot)
+        if manifest_path is None:
+            return {
+                "valid": False,
+                "reason": ERROR_SNAPSHOT_NO_MANIFEST,
+                "integrity_reason": "MANIFEST_MISSING",
+                "problems": [
+                    f"{packaging.MANIFEST_FILE_NAME} absent from snapshot "
+                    f"(root and {packaging.MANIFEST_SUBDIR}/)"
+                ],
+            }
+        result = dict(
+            packaging.verify_snapshot_integrity(
+                snapshot,
+                manifest_path=manifest_path,
+                not_restored_prefixes=tuple(ApplicationInstaller.USER_DATA_DIRS),
+            )
+        )
+        granular = str(result.get("reason") or "MANIFEST_MALFORMED")
+        result["integrity_reason"] = granular
+        if not result.get("valid"):
+            result["reason"] = (
+                ERROR_SNAPSHOT_NO_MANIFEST
+                if granular == "MANIFEST_MISSING"
+                else ERROR_SNAPSHOT_INTEGRITY_FAILED
+            )
+        return result
+
     def restore_application(self, reason: str = "update-failure") -> dict[str, Any]:
         if self.backup_dir is None or not self.backup_dir.exists():
             raise UpdateBlockedError("no previous application backup available for rollback")
+        # --- BUG-263: full verification completes BEFORE the first copy. ---
+        gate = self.verify_snapshot()
+        if not gate.get("valid"):
+            code = str(gate.get("reason") or "MANIFEST_MALFORMED")
+            if code == ERROR_SNAPSHOT_NO_MANIFEST:
+                detail = (
+                    "rollback snapshot carries no release-manifest.json — its bytes "
+                    "cannot be verified against the release trust chain; refusing to "
+                    "activate it (live app tree untouched)"
+                )
+            else:
+                problems = ", ".join(str(p) for p in (gate.get("problems") or [])[:3])
+                detail = (
+                    f"rollback snapshot failed integrity re-verification "
+                    f"({code}): {problems or 'see log'} — live app tree untouched"
+                )
+            return self._integrity_refusal(code, detail)
         restored = 0
         skipped_data = 0
         for child in self.backup_dir.iterdir():
@@ -61,12 +174,15 @@ class RollbackEngine:
             "restored_items": restored,
             "skipped_user_data_items": skipped_data,
             "reason": reason,
+            "integrity_verified_files": int(gate.get("verified_files") or 0),
+            "integrity_verified_bytes": int(gate.get("verified_bytes") or 0),
         }
 
 
 # ---------------------------------------------------------------------------
 # Concurrency + crash recovery (sections 33/34/63)
 # ---------------------------------------------------------------------------
+
 
 class UpdateState:
     """Persisted update state machine (every transition observable, section 26)."""
@@ -119,7 +235,6 @@ class UpdateState:
         else:
             recovery = "RESUME_SAFE"
         return {"crashed": True, "previous_state": previous, "recovery": recovery}
-
 
 
 class UpdateHistory:
@@ -182,6 +297,7 @@ class UpdateHistory:
 # ---------------------------------------------------------------------------
 # Credential preservation (sections 16/42)
 # ---------------------------------------------------------------------------
+
 
 class ReleaseLocalState:
     """Persisted record of the release actually installed (installed-release.json).

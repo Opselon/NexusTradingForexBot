@@ -816,17 +816,32 @@ class UpdateOrchestrator:
                     )
                     prev_dir = prev_dirs[-1] if prev_dirs else None
                 if prev_dir is not None:
-                    RollbackEngine(app_root=self.app_root, backup_dir=prev_dir).restore_application(
-                        reason="post-update version verification failed"
-                    )
+                    restore_res = RollbackEngine(
+                        app_root=self.app_root, backup_dir=prev_dir
+                    ).restore_application(reason="post-update version verification failed")
                     report["state"] = STATE_ROLLED_BACK
                     report["status"] = "UPDATE_VERIFICATION_FAILED"
                     report["error_code"] = "UPDATE_VERIFICATION_FAILED"
-                    report["error_message"] = (
-                        f"running {running or '?'} != target {plan['target_version']} — "
-                        "previous version restored"
-                    )
-                    report["rollback_completed"] = True
+                    if restore_res.get("restored"):
+                        report["error_message"] = (
+                            f"running {running or '?'} != target {plan['target_version']} — "
+                            "previous version restored"
+                        )
+                        report["rollback_completed"] = True
+                    else:
+                        # BUG-263: the snapshot refused integrity re-verification,
+                        # so nothing was restored. Never claim a recovery that did
+                        # not happen — the live tree still holds the unverified new
+                        # build and the operator must intervene.
+                        report["state"] = STATE_FAILED
+                        report["rollback_completed"] = False
+                        report["rollback_refused_code"] = str(
+                            restore_res.get("error_code") or "SNAPSHOT_INTEGRITY_FAILED"
+                        )
+                        report["error_message"] = (
+                            f"running {running or '?'} != target {plan['target_version']} — "
+                            f"rollback REFUSED: {restore_res.get('error_message') or 'snapshot failed integrity verification'}"
+                        )
                 else:
                     report["state"] = STATE_FAILED
                     report["status"] = "UPDATE_VERIFICATION_FAILED"
@@ -958,6 +973,32 @@ class UpdateOrchestrator:
                 }
             rb = RollbackEngine(app_root=self.app_root, backup_dir=prev_dir)
             res = rb.restore_application(reason=reason)
+            if not res.get("restored"):
+                # BUG-263: the snapshot failed integrity re-verification. The
+                # live tree was NOT touched, so this is a safe refusal — never
+                # report ROLLED_BACK for a rollback that did not happen.
+                self.state.set_state(STATE_FAILED_SAFE, self._correlation_id)
+                _update_log(
+                    "error",
+                    "ROLLBACK_REFUSED",
+                    "correlation_id=%s reason=%s error_code=%s",
+                    self._correlation_id,
+                    reason,
+                    str(res.get("error_code") or "UNKNOWN"),
+                )
+                self.history_store.append(
+                    from_version=self.installed_version,
+                    to_version=self.installed_version,
+                    channel=self.channel,
+                    result="ROLLBACK_REFUSED",
+                    rollback=f"{reason} ({res.get('error_code')})",
+                    correlation_id=self._correlation_id,
+                )
+                return {
+                    "state": STATE_FAILED_SAFE,
+                    "restored": False,
+                    **res,
+                }
             self.state.set_state(STATE_ROLLED_BACK, self._correlation_id)
             _update_log(
                 "warning",
