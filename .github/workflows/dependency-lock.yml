@@ -54,11 +54,15 @@ jobs:
           # CI. Newer uv releases changed universal-resolution output in the
           # past (numpy arm merging), which would flag a committed lock as
           # stale. Bump BOTH sides (this pin + local uv) together.
-          # Input-name history (both directions bit us): setup-uv@v5 used
-          # `version` (writing `uv-version` was silently ignored -> CI
-          # drifted to 0.12.11); setup-uv@v7 (PR #109) RENAMED the input to
-          # `uv-version` — `version` is now the one silently ignored.
-          uv-version: "0.12.10"
+          # Input-name history (THREE directions have now bitten us):
+          # setup-uv@v5 used `version` (writing `uv-version` silently ignored
+          # -> CI drifted to 0.12.11); setup-uv@v7/v8 accepted BOTH;
+          # setup-uv@v10 (#164 bump) REMOVED the `uv-version` alias -> with
+          # `uv-version:` here the pin is SILENTLY IGNORED and CI runs the
+          # action default (0.12.13), proven by the "Unexpected input(s)
+          # 'uv-version'" warning annotation on every Dependency-drift run
+          # since 059cb23a. v10's valid input is `version` again.
+          version: "0.12.10"
 
       - name: Drift check (regenerates nothing; fails on stale artifacts)
         run: |
