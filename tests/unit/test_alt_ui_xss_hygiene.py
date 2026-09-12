@@ -9,10 +9,11 @@ WHAT IT ENFORCES
 
 1.  **No raw-HTML sinks.** ``dangerouslySetInnerHTML``, ``innerHTML``,
     ``outerHTML``, ``insertAdjacentHTML``, ``document.write``/``writeln``,
- ``createContextualFragment``, ``DOMParser`` and the ``srcdoc``
- attribute are banned outright (the console parses no HTML — if a lane
- ever needs a real DOMParser, that is a design review, not a whitelist): text may reach the DOM only through
-    React-managed text nodes, which escape by construction.
+    ``createContextualFragment``, ``DOMParser`` and the ``srcdoc`` attribute
+    are banned outright — the console parses no markup, so if a lane ever
+    wants a real DOMParser that is a design review, not a whitelist entry.
+    Text may reach the DOM only through React-managed text nodes, which
+    escape by construction.
 2.  **No code-from-string sinks.** ``eval(``, ``new Function``, string-first
     ``setTimeout``/``setInterval``/``requestAnimationFrame``, ``new Worker``
     with an inline string, and bare ``Function(``.
@@ -514,6 +515,36 @@ def test_06_console_shell_has_no_injected_markup() -> None:
     assert INDEX_HTML.is_file(), f"missing {INDEX_HTML}"
     hits = _index_html_violations(INDEX_HTML)
     assert not hits, "index.html shell violations:\n" + "\n".join(v.render() for v in hits)
+
+
+#: Audited whitelist for router ``to={...}`` sinks (see module docstring): the
+#: only file allowed to hand a variable to ``to=`` today, because its routes
+#: come from the module-level literal ``NAV_SECTIONS`` registry.
+ROUTER_TO_SINK_FILES = {"app/AppShell.tsx"}
+
+
+def test_06b_router_to_sinks_stay_in_the_audited_registry_files() -> None:
+    """``to={variable}`` is the one sink this gate does not guard by value.
+
+    A line regex cannot tell AppShell's static ``NAV_SECTIONS`` literals from a
+    payload-derived path, so instead of guessing we pin WHICH files may do it.
+    New router sink in a new file = red: either wrap the value in
+    ``safeInternalPath()`` (then it belongs in the guarded href rule anyway) or
+    add the file to ROUTER_TO_SINK_FILES with a written reason in the PR.
+    """
+    offenders: list[str] = []
+    for f in _iter_source_files(SRC_DIR):
+        rel = f.relative_to(SRC_DIR).as_posix()
+        if rel in ROUTER_TO_SINK_FILES:
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        for i, line in enumerate(_code_lines(text), start=1):
+            if re.search(r"\bto\s*=\s*\{", line):
+                offenders.append(f"{rel}:{i}: {line.strip()[:120]}")
+    assert not offenders, (
+        "unguarded router to={{...}} sink outside the audited nav registry — "
+        "route it through safeInternalPath() or document the addition:\n" + "\n".join(offenders)
+    )
 
 
 def test_07_csp_meta_documented_not_asserted() -> None:
