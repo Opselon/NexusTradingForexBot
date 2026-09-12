@@ -1841,6 +1841,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_forensic() -> FileResponse:
         return FileResponse(WEB_DIR / "forensic_console.js")
 
+    # WEB-UI-BOOTSTRAP (2026-09-11): index.html loads marketplace.js via a
+    # script tag but no route served it — the browser got 404 (pre-existing
+    # asset-serving gap, exposed by the auth-allowlist completeness pass).
+    @app.get("/marketplace.js")
+    def serve_marketplace() -> FileResponse:
+        return FileResponse(WEB_DIR / "marketplace.js")
+
     @app.get("/tv_widget.html")
     def serve_tv_widget_html() -> FileResponse:
         return FileResponse(WEB_DIR / "tv_widget.html")

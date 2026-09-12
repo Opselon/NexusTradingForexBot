@@ -32,8 +32,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture()
 def client() -> TestClient:
+    """TestClient for the PROTECTED surface (WEB-AUTH-P0 contract).
+
+    create_app installs token auth unconditionally (audit B1, 7c14451a), so
+    API/dashboard probes authenticate exactly like an operator browser with
+    an explicit credential (Bearer transport over the NSE_WEB_AUTH_TOKEN env
+    contract — same pattern as test_node_runtime_role).
+    """
+    import os
+
+    os.environ.setdefault("NSE_WEB_AUTH_TOKEN", "phase14-test-token")
     app = create_app(engine_ref=None)
-    return TestClient(app)
+    c = TestClient(app)
+    c.headers.update({"Authorization": "Bearer " + os.environ["NSE_WEB_AUTH_TOKEN"]})
+    return c
 
 
 # ---------------------------------------------------------------------------
@@ -185,12 +197,17 @@ class TestLocalAssetsServed:
         ],
     )
     def test_webfont_traversal_attempts_404(self, client: TestClient, malicious: str) -> None:
+        # WEB-AUTH-P0: traversal candidates are NEVER public (is_public_path
+        # hard-rejects ".." and "\\"), so they are refused at the middleware
+        # (401) OR by the route's own CodeQL path guard (404). Both codes mean
+        # the traversal was rejected without content — the original security
+        # intent (never 200, never serves a file) is preserved.
         r = client.get(f"/vendor/webfonts/{malicious}")
-        assert r.status_code == 404, f"traversal {malicious!r} must 404"
+        assert r.status_code in (401, 404), f"traversal {malicious!r} must be refused"
 
     def test_webfont_unknown_name_404(self, client: TestClient) -> None:
         r = client.get("/vendor/webfonts/../server.py")
-        assert r.status_code == 404
+        assert r.status_code in (401, 404)  # WEB-AUTH-P0: refused (never 200)
         r2 = client.get("/vendor/webfonts/no-such-font.woff2")
         assert r2.status_code == 404
 
@@ -224,6 +241,87 @@ class TestDomContract:
         ids_defined = set(re.findall(r'id="([^"]+)"', index_html))
         missing = sorted(ids_used - ids_defined)
         assert not missing, f"app.js references missing DOM ids: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# 4b. feature-delta-view placement contract (additive; never edit TestDomContract)
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureDeltaViewHubContract:
+    """Regression pin for the 8710ce4a aftermath.
+
+    8710ce4a deleted the always-visible chart-header ``feature-delta-view`` box and
+    stated the live-feature read-out belongs on the AI Intel Hub — but only removed
+    the DOM node; it never added the container to the hub, so
+    ``Web/app.js renderFeatureDeltas()`` (called from handleIncomingLiveTick on every
+    feature payload) silently no-opped (box null -> early return) and the operator
+    feature was lost while TestDomContract went red. The fix re-parented the
+    container into the hub section. This class pins that contract structurally so a
+    future hub restructure fails loudly instead of silently dead-ending the panel:
+
+    * the container exists in index.html (JS renderFeatureDeltas() keeps its target),
+    * it lives INSIDE <section id="tab-ai-analysis"> (the AI Intel Hub), and
+    * it does NOT live inside <section id="tab-monitoring"> (8710ce4a's pollution
+      complaint must not regress).
+    """
+
+    @staticmethod
+    def _section_span(html: str, section_id: str) -> tuple[int, int]:
+        """Return the (start, end) char span of a tab-content <section>, tracking
+        nested <section> opens/closes so the span ends at ITS OWN </section>."""
+        m = re.search(rf'<section\s+id="{re.escape(section_id)}"[^>]*>', html)
+        assert m, f"section #{section_id} missing from index.html"
+        depth = 1
+        pos = m.end()
+        while depth > 0 and pos < len(html):
+            nxt_open = html.find("<section", pos)
+            nxt_close = html.find("</section>", pos)
+            if nxt_close == -1:
+                raise AssertionError(f"unclosed <section> for #{section_id}")
+            if nxt_open != -1 and nxt_open < nxt_close:
+                depth += 1
+                pos = nxt_open + len("<section")
+            else:
+                depth -= 1
+                pos = nxt_close + len("</section>")
+        return m.start(), pos
+
+    def test_feature_delta_view_container_lives_in_ai_intel_hub(self) -> None:
+        """ONE deterministic pin: the JS render path stays wired AND the container
+        lives inside the hub — never 'fixed' by deleting the app.js feature, never
+        re-polluting Monitoring."""
+        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        assert "function renderFeatureDeltas()" in app_js, (
+            "renderFeatureDeltas() was deleted — the DOM contract must be fixed by "
+            "re-parenting the container (per 8710ce4a intent), not by dropping the "
+            "operator-facing live-feature read-out"
+        )
+        assert "renderFeatureDeltas();" in app_js, (
+            "renderFeatureDeltas() call site removed from the live-tick path"
+        )
+        assert "getElementById('feature-delta-view')" in app_js
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        hub_start, hub_end = self._section_span(html, "tab-ai-analysis")
+        mon_start, mon_end = self._section_span(html, "tab-monitoring")
+        containers = [m.start() for m in re.finditer(r'<div\s+id="feature-delta-view"[^>]*>', html)]
+        assert containers, (
+            "feature-delta-view container deleted from index.html again — "
+            "Web/app.js renderFeatureDeltas() would silently no-op (8710ce4a regression)"
+        )
+        assert len(containers) == 1, (
+            f"feature-delta-view must exist exactly once, found {len(containers)}"
+        )
+        pos = containers[0]
+        assert hub_start < pos < hub_end, (
+            "feature-delta-view must live INSIDE the AI Intel Hub section "
+            '(<section id="tab-ai-analysis">) — the hub restructure moved it out '
+            "and renderFeatureDeltas() would dead-end outside the panel it belongs to"
+        )
+        assert not (mon_start < pos < mon_end), (
+            "feature-delta-view must NOT be re-added to the Monitoring chart panel "
+            "(8710ce4a removed it there as chart-header pollution)"
+        )
 
 
 # ---------------------------------------------------------------------------
