@@ -10,7 +10,7 @@
  * Ordering here == sidebar order == Alt+<n> order (after the 7 legacy pages).
  */
 
-import type { FeatureComponent } from "@/app/featureModule";
+import type { FeatureComponent, FeatureModule } from "@/app/featureModule";
 import type { LazyExoticComponent } from "react";
 import researchMeta from "@/features/research";
 import aiAnalysisMeta from "@/features/ai-analysis";
@@ -29,52 +29,77 @@ import commandCenterMeta from "@/features/command-center";
 import controlCenterMeta from "@/features/control-center";
 import factoryMeta from "@/features/factory";
 
+export type FeatureSectionName = "OPERATIONS" | "MARKET & RESEARCH" | "SAFETY & GOVERNANCE" | "PLATFORM";
+
 export interface FeatureMeta {
   /** Sidebar-visible metadata. */
   route: string;
   label: string;
   icon: string;
-  section: "OPERATIONS" | "MARKET & RESEARCH" | "SAFETY & GOVERNANCE" | "PLATFORM";
+  section: FeatureSectionName;
   /** Legacy parity: which Web/index.html tab id this feature replaces. */
   legacyTab: string;
+  /** i18n key for the sidebar/palette label (optional; falls back to label). */
+  labelKey?: string;
+  /** Search keywords for the command palette. */
+  keywords?: string;
 }
 
 export interface RegisteredFeature extends FeatureMeta {
   lazy: LazyExoticComponent<FeatureComponent>;
 }
 
-/** One entry per legacy tab not yet covered by the 7 legacy React pages. */
-const FEATURES: RegisteredFeature[] = [
-  { ...newsMeta, lazy: newsMeta.lazy },
-  { ...aiAnalysisMeta, lazy: aiAnalysisMeta.lazy },
-  { ...researchMeta, lazy: researchMeta.lazy },
-  { ...marketplaceMeta, lazy: marketplaceMeta.lazy },
-  { ...factoryMeta, lazy: factoryMeta.lazy },
-  { ...accountMeta, lazy: accountMeta.lazy },
-  { ...healthMeta, lazy: healthMeta.lazy },
-  { ...rulesMeta, lazy: rulesMeta.lazy },
-  { ...configMeta, lazy: configMeta.lazy },
-  { ...debugMeta, lazy: debugMeta.lazy },
-  { ...governanceMeta, lazy: governanceMeta.lazy },
-  { ...liquidityMeta, lazy: liquidityMeta.lazy },
-  { ...incidentsMeta, lazy: incidentsMeta.lazy },
-  { ...commandCenterMeta, lazy: commandCenterMeta.lazy },
-  { ...controlCenterMeta, lazy: controlCenterMeta.lazy },
-  { ...databaseMeta, lazy: databaseMeta.lazy },
+/** Sidebar render order for the registry sections. */
+export const FEATURE_SECTION_ORDER: FeatureSectionName[] = [
+  "OPERATIONS",
+  "MARKET & RESEARCH",
+  "SAFETY & GOVERNANCE",
+  "PLATFORM",
 ];
 
-export const FEATURE_REGISTRY = FEATURES;
+/**
+ * One entry per legacy tab not yet covered by the 7 legacy React pages.
+ * `toFeature()` flattens the module's `meta` (features export `{meta, lazy}`)
+ * — the registry stays the only place that knows the module shape.
+ */
+function toFeature(mod: FeatureModule): RegisteredFeature {
+  return { ...mod.meta, lazy: mod.lazy };
+}
 
-/** Sidebar sections in render order (legacy pages prepended by AppShell). */
-export const FEATURE_SECTIONS: Array<{ section: FeatureMeta["section"]; items: RegisteredFeature[] }> = FEATURES.reduce(
-  (acc, f) => {
-    let bucket = acc.find((b) => b.section === f.section);
-    if (!bucket) {
-      bucket = { section: f.section, items: [] };
-      acc.push(bucket);
-    }
-    bucket.items.push(f);
-    return acc;
-  },
-  [] as Array<{ section: FeatureMeta["section"]; items: RegisteredFeature[] }>,
-);
+const FEATURES: RegisteredFeature[] = [
+  newsMeta,
+  aiAnalysisMeta,
+  researchMeta,
+  marketplaceMeta,
+  factoryMeta,
+  accountMeta,
+  healthMeta,
+  rulesMeta,
+  configMeta,
+  debugMeta,
+  governanceMeta,
+  liquidityMeta,
+  incidentsMeta,
+  commandCenterMeta,
+  controlCenterMeta,
+  databaseMeta,
+].map(toFeature);
+
+export const FEATURE_REGISTRY: RegisteredFeature[] = FEATURES;
+
+/** Grouped by section, in FEATURE_SECTION_ORDER (not first-seen order). */
+export const FEATURE_SECTIONS: Array<{ section: FeatureSectionName; items: RegisteredFeature[] }> =
+  FEATURE_SECTION_ORDER.map((section) => ({
+    section,
+    items: FEATURES.filter((f) => f.section === section),
+  })).filter((bucket) => bucket.items.length > 0);
+
+/** i18n key for a feature's nav label (lanes can translate per feature). */
+export function featureLabelKey(route: string): string {
+  return `nav.feature.${route.replace(/^\//, "") || "home"}`;
+}
+
+/** Lookup by route (palette + deep-link validation). */
+export function findFeature(route: string): RegisteredFeature | undefined {
+  return FEATURES.find((f) => f.route === route);
+}
