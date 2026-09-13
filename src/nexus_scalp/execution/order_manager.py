@@ -2414,7 +2414,12 @@ class OrderLifecycleManager:
                 # Rate-limited loud WARNING + conservative 0.0 (inside the
                 # 60s grace window) instead of a wall-clock-derived age.
                 now_mono = time.monotonic()
-                if (now_mono - getattr(self, "_hold_age_fallback_warned_at", 0.0)) >= 300.0:
+                # Throttle-sentinel fix (BUG-273): the 0.0 default compared
+                # against time.monotonic() skipped the FIRST warning on hosts
+                # with uptime < 300s (fresh CI runner / just-restarted engine).
+                # None = "never ran" -> first check always due.
+                _last_warn = getattr(self, "_hold_age_fallback_warned_at", None)
+                if _last_warn is None or (now_mono - _last_warn) >= 300.0:
                     self._hold_age_fallback_warned_at = now_mono
                     logger.warning(
                         "[POSITION] event=HOLD_AGE_FALLBACK "
