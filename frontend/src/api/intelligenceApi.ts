@@ -8,7 +8,7 @@
  *  GET /api/intelligence/autopsies — bounded trade autopsies
  */
 
-import { getLegacy } from "./client";
+import { getLegacy } from "@/core/transport";
 import type { NewsState, NewsHealth, NewsArticle, IntelligenceSummary, AutopsyRow } from "@/types/domain";
 
 export const intelligenceApi = {

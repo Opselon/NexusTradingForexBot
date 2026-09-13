@@ -10,7 +10,7 @@
  *  GET /api/v1/features/status    — warmup + last vector + missing features
  */
 
-import { getV1, getLegacy } from "./client";
+import { getV1, getLegacy } from "@/core/transport";
 import type { V1ModelStatus, V1ModelIdentity, V1FeaturesStatus, Shadow70State, ModelIntegrity } from "@/types/domain";
 
 export const mlApi = {
