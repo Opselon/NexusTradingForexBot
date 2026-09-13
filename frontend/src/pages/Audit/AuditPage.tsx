@@ -15,6 +15,13 @@ import { useQuery } from "@tanstack/react-query";
 import { auditApi } from "@/api/auditApi";
 import type { AuditEventRow, AuditLedgerRow, IncidentRow } from "@/types/domain";
 import { DataTable, EmptyState, ErrorState, LoadingState, MetricCard, Panel, Segmented, SeverityBadge } from "@/components/primitives";
+import {
+  CsvExportButton,
+  PayloadInspector,
+  SeverityMatrix,
+  TimelineStrip,
+} from "@/components/pro/AuditTools";
+import { payloadSummary } from "@/lib/forensicsMath";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
 import { useI18n } from "@/stores/i18nStore";
 import { ApiError } from "@/types/api";
@@ -23,15 +30,6 @@ const PAGE_SIZE = 25;
 
 type Tab = "events" | "ledger" | "incidents" | "db";
 
-function parsePayload(payload: AuditEventRow["payload"]): Record<string, unknown> | null {
-  if (!payload) return null;
-  if (typeof payload === "object") return payload;
-  try {
-    return JSON.parse(payload) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
 
 export default function AuditPage() {
   const t = useI18n((s) => s.t);
@@ -123,6 +121,12 @@ export default function AuditPage() {
           tight
           right={
             <>
+              <CsvExportButton
+                label={t("alt.audit.export_csv", "Export CSV")}
+                filename={`audit-events-p${eventPage}`}
+                headers={["ID", "Time", "Type", "Payload"]}
+                rows={(eventsQuery.data?.items ?? []).map((r) => [r.id, r.created_at ?? "", r.event_type ?? "", payloadSummary(r.payload, 400, 3)])}
+              />
               <input className="input" placeholder={t("alt.audit.filter_event_type", "event_type filter…")} value={eventTypeFilter} onChange={(e) => { setEventTypeFilter(e.target.value); setEventPage(1); }} style={{ width: 180 }} />
               {pager(eventPage, eventsQuery.data?.has_more ?? false, setEventPage)}
             </>
@@ -135,21 +139,29 @@ export default function AuditPage() {
           ) : (eventsQuery.data?.items.length ?? 0) === 0 ? (
             <EmptyState message={t("alt.audit.empty_events", "No audit events match.")} hint={t("alt.audit.empty_events_hint", "Adjust the event_type filter or wait for engine activity.")} />
           ) : (
+            <>
+            <div style={{ padding: "12px 14px 0" }}>
+              <TimelineStrip
+                rows={eventsQuery.data?.items ?? []}
+                gapThresholdSec={300}
+                labelFor={(i) => eventsQuery.data?.items[i]?.event_type}
+              />
+            </div>
             <DataTable headers={[{ label: t("alt.common.col_id", "ID") }, { label: t("alt.common.col_time", "Time") }, { label: t("alt.common.col_type", "Type") }, { label: t("alt.audit.col_payload", "Payload (summary)") }]}>
               {(eventsQuery.data?.items ?? []).map((row: AuditEventRow) => {
-                const payload = parsePayload(row.payload);
                 return (
                   <tr key={String(row.id)}>
                     <td>{String(row.id)}</td>
                     <td>{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
                     <td>{row.event_type ?? "—"}</td>
-                    <td className="small" style={{ maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {payload ? Object.entries(payload).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 40)}`).join(" ") : "—"}
+                    <td className="small" style={{ maxWidth: 520 }}>
+                      <PayloadInspector title={row.id} payload={row.payload} />
                     </td>
                   </tr>
                 );
               })}
             </DataTable>
+            </>
           )}
         </Panel>
       )}
@@ -203,10 +215,21 @@ export default function AuditPage() {
                 <option value="MEDIUM">MEDIUM</option>
                 <option value="LOW">LOW</option>
               </select>
+              <CsvExportButton
+                label={t("alt.audit.export_csv", "Export CSV")}
+                filename={`incidents-p${incidentPage}`}
+                headers={["ID", "Severity", "Status", "Category", "Component", "Title", "Created"]}
+                rows={(incidentsQuery.data?.items ?? []).map((r) => [String(r.incident_id ?? r.id ?? ""), r.severity ?? "", r.status ?? "", r.category ?? "", r.component ?? "", r.title ?? "", r.created_at ?? ""])}
+              />
               {pager(incidentPage, incidentsQuery.data?.has_more ?? false, setIncidentPage)}
             </>
           }
         >
+          {incidentsQuery.data && incidentsQuery.data.items.length > 0 && (
+            <div style={{ padding: "12px 14px 0" }}>
+              <SeverityMatrix incidents={incidentsQuery.data.items} />
+            </div>
+          )}
           {incidentsQuery.isPending && !incidentsQuery.data ? (
             <LoadingState />
           ) : incidentsQuery.isError && !incidentsQuery.data ? (
