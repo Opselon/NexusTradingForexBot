@@ -1,43 +1,87 @@
 /**
- * Dashboard — the operator's first answer surface.
+ * Dashboard — the operator's first answer surface (legacy tab-monitoring).
  *
  * Answers immediately, from backend data only:
  *  Is NSE running? LIVE or PAPER? MT5 connected? Trading enabled?
- *  Engine healthy? Market state? Positions/orders? Guardian blocking?
- *  ML/70D state?
+ *  What does the price chart say RIGHT NOW (broker-native bars, SMC/ICT
+ *  overlays)? What did the model decide, with what probabilities, from what
+ *  provenance? Can the operator start/stop the engine, switch mode, and run
+ *  a bounded historical replay — all confirmed by the backend, never faked?
  *
- * All values are the canonical `get_system_state()` snapshot (REST seed +
- * WebSocket live merge). Nulls render as "—" (UNKNOWN), never fabricated.
+ * Data sources:
+ *  - canonical get_system_state() snapshot (REST seed + SSE live merge) —
+ *    props, never re-fetched here
+ *  - /api/chart/history?count= — authoritative MT5 rate history + visual
+ *    overlays (BROKER_NATIVE with explicit ENGINE_STATE fallback)
+ *  - /api/v1/runtime/mode — replay flag mirror for the control deck
+ *  - /api/replay/* — REPLAY_API v1 session/transport (ReplayPanel)
+ *
+ * Every section carries its own skeleton/error+retry/empty state; nulls
+ * render "—" (UNKNOWN). Command outcomes come from the backend reply only.
  */
 
+import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { riskApi } from "@/api/riskApi";
-import type { EngineSnapshot } from "@/types/domain";
-import type { RuntimeRiskState } from "@/types/domain";
+import { chartApi, replayApi, runtimeApi } from "@/pages/_shared/edgeApi";
+import type { EngineSnapshot, RuntimeRiskState } from "@/types/domain";
 import {
+  ConfirmModal,
   DataTable,
   EmptyState,
+  ErrorState,
   MetricCard,
   Panel,
   PositionSideBadge,
+  ProbBar,
+  Skeleton,
   StatusBadge,
 } from "@/components/primitives";
+import { AgeNote, SectionState, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
+import { InfoChip } from "@/pages/_shared/widgets";
+import { ReplayPanel } from "./ReplayPanel";
+import { PriceChart } from "./PriceChart";
+import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatMoney, formatNumber, formatPct, formatPnl, formatPrice, formatTime } from "@/lib/format";
+import { ApiError } from "@/types/api";
+import type { VisualOverlays } from "@/pages/_shared/contracts";
+import "@/pages/_shared/pages.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
   nowMs: number;
 }
 
-function fmtAge(sec: number | null | undefined): string {
-  if (sec === null || sec === undefined) return "—";
-  if (sec < 90) return `${sec.toFixed(1)}s`;
-  if (sec < 7200) return `${Math.floor(sec / 60)}m ${Math.floor(sec % 60)}s`;
-  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+const LIVE_CONFIRM_TEXT = "LIVE";
+
+/** Feature value classifier for the grid: the backend already sends a
+ *  per-feature `status` (VALID/NAN/UNAVAILABLE); we only pick a CSS class. */
+function featureCellClass(status: string): string {
+  const s = (status ?? "").toUpperCase();
+  if (s === "VALID") return "";
+  if (s === "NAN") return "nan";
+  return "unavailable";
 }
 
-export default function DashboardPage({ snapshot }: Props) {
+function fmtFeature(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  const a = Math.abs(value);
+  if (a >= 1000) return value.toFixed(0);
+  if (a >= 10) return value.toFixed(2);
+  return value.toFixed(3);
+}
+
+export default function DashboardPage({ snapshot, nowMs }: Props) {
+  const engineCmd = useMutationFeedback();
+  const modeCmd = useMutationFeedback();
+  const [stopConfirm, setStopConfirm] = useState(false);
+  const [modeTarget, setModeTarget] = useState("");
+  const [liveConfirm, setLiveConfirm] = useState("");
+  const [replayConfirm, setReplayConfirm] = useState<boolean | null>(null);
+  const [replayCmd, setReplayCmd] = useState<{ busy: boolean; msg: string | null; ok: boolean | null }>({ busy: false, msg: null, ok: null });
+  const [replayCursor, setReplayCursor] = useState<string | null>(null);
+
   const mt5Query = useQuery({
     queryKey: ["mt5-status"],
     queryFn: ({ signal }) => engineApi.mt5Status(signal),
@@ -51,8 +95,31 @@ export default function DashboardPage({ snapshot }: Props) {
     retry: false,
   });
 
+  const chartQuery = useQuery({
+    queryKey: ["chart-history", snapshot?.symbol ?? ""],
+    queryFn: ({ signal }) => chartApi.history(900, signal),
+    refetchInterval: 60_000,
+    retry: 1,
+    enabled: Boolean(snapshot),
+  });
+
+  const runtimeModeQuery = useQuery({
+    queryKey: ["runtime-mode"],
+    queryFn: ({ signal }) => runtimeApi.mode(signal),
+    refetchInterval: 10_000,
+    retry: false,
+  });
+
+  const onCursorMove = useCallback((iso: string | null) => setReplayCursor(iso), []);
+
   if (!snapshot) {
-    return <EmptyState message="Waiting for backend state…" hint="The dashboard renders only real NSE state." />;
+    return (
+      <div>
+        <Panel title="Dashboard">
+          <Skeleton count={6} />
+        </Panel>
+      </div>
+    );
   }
 
   const acct = snapshot.account;
@@ -60,10 +127,59 @@ export default function DashboardPage({ snapshot }: Props) {
   const positions = snapshot.positions ?? [];
   const haltState: RuntimeRiskState | null = riskStateQuery.data ?? null;
   const guardianBlocking = haltState?.kill_switch_active === true || (haltState?.runtime_risk_state_effective ?? "").toUpperCase() === "HALTED";
+  const currentMode = (snapshot.runtime_mode ?? snapshot.execution_mode ?? "").toUpperCase();
+  const replaying = runtimeModeQuery.data?.replaying ?? null;
+
+  // Chart: prefer the dedicated history endpoint (deeper window, broker
+  // provenance); fall back to snapshot bars while it loads. Nulls stay null.
+  const useServerBars = Boolean(chartQuery.data?.bars?.length);
+  const chartBars = useServerBars ? chartQuery.data!.bars : snapshot.bars ?? [];
+  const chartSource = useServerBars ? chartQuery.data!.source : snapshot.bars?.length ? "SNAPSHOT" : null;
+  const chartBusy = chartQuery.isPending && !chartQuery.data && !snapshot.bars?.length;
+  const chartErr = !useServerBars && chartQuery.isError && !snapshot.bars?.length
+    ? chartQuery.error instanceof ApiError
+      ? chartQuery.error.message
+      : "history endpoint failed"
+    : null;
+  // snapshot.generated_at is the backend's own wall-clock stamp; the 1s UI
+  // ticker (nowMs) turns it into an age. Unparseable stamp → "—", never 0s.
+  const genMs = Date.parse(snapshot.generated_at);
+  const dataAgeSec = Number.isFinite(genMs) ? Math.max(0, (nowMs - genMs) / 1000) : null;
+
+  const toggleEngine = async (active: boolean): Promise<void> => {
+    await engineCmd.run(() => engineApi.toggleEngine(active));
+  };
+
+  const submitMode = async (): Promise<void> => {
+    if (!modeTarget) return;
+    if (modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT) return;
+    const ok = await modeCmd.run(() => engineApi.setMode(modeTarget));
+    if (ok) {
+      setModeTarget("");
+      setLiveConfirm("");
+    }
+  };
+
+  const runReplayToggle = async (active: boolean): Promise<void> => {
+    setReplayConfirm(null);
+    setReplayCmd({ busy: true, msg: null, ok: null });
+    try {
+      const res = await replayApi.toggle(active, 1);
+      const refused = res.success === false;
+      setReplayCmd({
+        busy: false,
+        msg: res.message ?? (refused ? "Backend refused the replay toggle." : `replay ${active ? "engaged" : "released"}.`),
+        ok: !refused,
+      });
+      void runtimeModeQuery.refetch();
+    } catch (e) {
+      setReplayCmd({ busy: false, msg: e instanceof ApiError ? e.message : "replay toggle failed", ok: false });
+    }
+  };
 
   return (
     <div>
-      {/* Top strip — the six critical answers */}
+      {/* Top strip — the eight critical answers */}
       <div className="grid cols-4">
         <MetricCard
           label="Engine"
@@ -73,8 +189,8 @@ export default function DashboardPage({ snapshot }: Props) {
         />
         <MetricCard
           label="Mode (backend)"
-          value={snapshot.runtime_mode ?? snapshot.execution_mode ?? "—"}
-          tone={String(snapshot.runtime_mode ?? "").startsWith("LIVE") ? "neg" : "dim"}
+          value={currentMode || "—"}
+          tone={currentMode.startsWith("LIVE") ? "neg" : "dim"}
           sub={`data_source: ${snapshot.data_source ?? "—"}${snapshot.mode_source_mismatch ? " · MISMATCH!" : ""}`}
         />
         <MetricCard
@@ -95,17 +211,8 @@ export default function DashboardPage({ snapshot }: Props) {
           sub={`balance ${formatMoney(acct.balance)} · floating ${formatPnl(acct.floating)}`}
           tone={acct.floating !== null && acct.floating < 0 ? "neg" : acct.floating !== null ? "pos" : undefined}
         />
-        <MetricCard
-          label="Drawdown"
-          value={formatPct(acct.drawdown)}
-          sub={`peak-equity based (backend computed)`}
-          tone={acct.drawdown !== null && acct.drawdown > 5 ? "neg" : undefined}
-        />
-        <MetricCard
-          label="Positions / Orders"
-          value={`${acct.open_positions ?? "—"} / ${acct.pending_orders ?? "—"}`}
-          sub={`open / pending (account snapshot)`}
-        />
+        <MetricCard label="Drawdown" value={formatPct(acct.drawdown)} sub="peak-equity based (backend computed)" tone={acct.drawdown !== null && acct.drawdown > 5 ? "neg" : undefined} />
+        <MetricCard label="Positions / Orders" value={`${acct.open_positions ?? "—"} / ${acct.pending_orders ?? "—"}`} sub="open / pending (account snapshot)" />
         <MetricCard
           label="AI decision"
           value={snapshot.ai_decision ?? "—"}
@@ -114,12 +221,71 @@ export default function DashboardPage({ snapshot }: Props) {
         />
       </div>
 
-      <div className="grid cols-2" style={{ marginTop: 14 }}>
-        {/* Market state */}
+      {/* Provenance strip — where every class of value on this page came from */}
+      <div className="l4-toolbar l4-section-gap" aria-label="value provenance">
+        <span className="l4-prov">price <b>{snapshot.provenance.price}</b></span>
+        <span className="l4-prov">features <b>{snapshot.provenance.features}</b></span>
+        <span className="l4-prov">model <b>{snapshot.provenance.model}</b></span>
+        <span className="l4-prov">accounting <b>{snapshot.provenance.accounting}</b></span>
+        <AgeNote label="tick age" ageSec={snapshot.diagnostics.tick_age_sec} suffix={snapshot.tick_stale ? "STALE" : undefined} />
+        <span className="timestamp-note" title="state age computed from snapshot.generated_at vs the 1s UI ticker">
+          state age {fmtAge(dataAgeSec)} · v{snapshot.state_version}
+        </span>
+        <span style={{ marginInlineStart: "auto" }} className="l4-chip-row">
+          <InfoChip k="replay" v={replaying === null ? "—" : replaying ? "ENGAGED" : "OFF"} tone={replaying ? "warn" : ""} />
+        </span>
+      </div>
+
+      {/* Price chart — the center of the monitoring tab */}
+      <div className="l4-section-gap">
         <Panel
-          title="Market"
-          right={<span className="timestamp-note">tick age {fmtAge(snapshot.diagnostics.tick_age_sec)}{snapshot.tick_stale ? " · STALE" : ""}</span>}
+          title="Price · XAUUSD"
+          accent
+          right={
+            <>
+              <span className="timestamp-note">
+                {chartBars.length ? `${chartBars.filter((b) => b.is_complete === false).length} forming · ${chartBars.length} bars` : "no bars"}
+                {chartQuery.data?.generated_at ? ` · history ${formatTime(chartQuery.data.generated_at)}` : ""}
+              </span>
+              <button className="btn small ghost" onClick={() => void chartQuery.refetch()} disabled={chartQuery.isFetching}>
+                ⟳ resync
+              </button>
+            </>
+          }
+          tight
         >
+          <div style={{ padding: 10 }}>
+            <PriceChart
+              bars={chartBars}
+              digits={snapshot.price_digits ?? 2}
+              source={chartSource ?? (chartBars.length ? "UNKNOWN" : "UNAVAILABLE")}
+              symbol={chartQuery.data?.symbol ?? snapshot.symbol}
+              timeframe={chartQuery.data?.timeframe ?? "M1"}
+              overlays={chartQuery.data?.visual_overlays ?? (snapshot.visual_overlays as VisualOverlays)}
+              liveBid={snapshot.bid}
+              cursorIso={replayCursor}
+              stale={snapshot.tick_stale}
+              busy={Boolean(chartBusy)}
+              error={chartErr}
+              onRetry={() => void chartQuery.refetch()}
+              caption={chartBars.length && !chartQuery.data?.bars?.length ? "source: canonical snapshot bars (shallow window)" : undefined}
+            />
+            {snapshot.tick_stale && (
+              <div className="confirm-box" style={{ borderColor: "rgba(235,161,63,0.5)" }}>
+                <span>
+                  Backend marks the tick stream <b>stale</b> (freshness{" "}
+                  {snapshot.tick_freshness_ms === null ? "—" : `${(snapshot.tick_freshness_ms / 1000).toFixed(1)}s`}) — prices and candles above may be frozen at the
+                  last real tick.
+                </span>
+              </div>
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid cols-2 l4-section-gap">
+        {/* Market state */}
+        <Panel title="Market" right={<AgeNote label="tick age" ageSec={snapshot.diagnostics.tick_age_sec} />}>
           <div className="grid cols-3">
             <MetricCard label="Bid" value={formatPrice(snapshot.bid, snapshot.price_digits ?? 2)} />
             <MetricCard label="Ask" value={formatPrice(snapshot.ask, snapshot.price_digits ?? 2)} />
@@ -128,9 +294,175 @@ export default function DashboardPage({ snapshot }: Props) {
             <MetricCard label="Regime" value={snapshot.regime ?? "—"} tone="dim" />
             <MetricCard label="Price source" value={snapshot.provenance.price} tone="dim" />
           </div>
-          {snapshot.tick_stale && (
+        </Panel>
+
+        {/* Prediction panel — decision-card + probability meters */}
+        <Panel
+          title="Model prediction"
+          right={<AgeNote label="inference age" ageSec={snapshot.diagnostics.inference_age_sec} />}
+        >
+          <div className="decision-card">
+            <div className={`big ${snapshot.ai_decision === "BUY" ? "buy" : snapshot.ai_decision === "SELL" ? "sell" : "hold"}`}>
+              {snapshot.ai_decision ?? "—"}
+            </div>
+            <div>
+              <div className="why">
+                {snapshot.ai_confidence !== null ? `${formatPct(snapshot.ai_confidence * 100, 1)} confidence · ` : "confidence — · "}
+                {snapshot.ai_reason ?? "no reason code sent"}
+              </div>
+              <div className="why-detail">
+                proposal {snapshot.timestamps.proposal ? formatTime(snapshot.timestamps.proposal) : "—"} · regime {snapshot.regime ?? "—"} · model{" "}
+                {snapshot.model.model_id ?? "—"}
+              </div>
+              <div className="meta">
+                <span className={`l4-chip ${snapshot.probs.available ? "good" : "warn"}`}>probs {snapshot.probs.available ? "LIVE" : "UNAVAILABLE"}</span>
+                <span className="l4-chip">inference {snapshot.probs.inference_timestamp ? formatTime(snapshot.probs.inference_timestamp) : "—"}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            {snapshot.probs.available ? (
+              <ProbBar
+                rows={[
+                  { label: "P(NO_TRADE)", value: snapshot.probs.no_trade, tone: "flat" },
+                  { label: "P(BUY)", value: snapshot.probs.buy, tone: "buy" },
+                  { label: "P(SELL)", value: snapshot.probs.sell, tone: "sell" },
+                ]}
+              />
+            ) : (
+              <EmptyState message="No live inference yet." hint="probs.available=false — warming up, stopped, or inference blocked. Not rendered as zeros." />
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      {/* Engine control deck + replay mode */}
+      <div className="grid cols-2 l4-section-gap">
+        <Panel title="Engine control" accent>
+          <div className="l4-transport">
+            <button className="btn primary" disabled={engineCmd.state.running || snapshot.engine_running} onClick={() => void toggleEngine(true)}>
+              ▶ Start engine
+            </button>
+            <button className="btn danger" disabled={engineCmd.state.running || !snapshot.engine_running} onClick={() => setStopConfirm(true)}>
+              ■ Stop engine
+            </button>
+          </div>
+          {engineCmd.state.lastMessage && (
+            <div className={`cmd-result ${engineCmd.state.lastResult ? "ok" : "fail"}`}>
+              {engineCmd.state.lastResult ? "✓" : "✕"} {engineCmd.state.lastMessage}
+            </div>
+          )}
+          <div className="section-title" style={{ marginTop: 10 }}>Execution mode</div>
+          <div className="l4-transport">
+            <select className="select" value={modeTarget} onChange={(e) => setModeTarget(e.target.value)} aria-label="execution mode target">
+              <option value="">select mode…</option>
+              <option value="PAPER">PAPER (simulation adapter)</option>
+              <option value="SHADOW">SHADOW (no execution)</option>
+              <option value="LIVE">LIVE (real capital)</option>
+            </select>
+            <button
+              className={`btn ${modeTarget === "LIVE" ? "danger" : "primary"}`}
+              disabled={!modeTarget || modeCmd.state.running || modeTarget === currentMode || (modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT)}
+              onClick={() => void submitMode()}
+            >
+              Apply mode
+            </button>
+          </div>
+          {modeTarget === "LIVE" && (
             <div className="confirm-box">
-              <span>Backend marks the tick stream <b>stale</b> (freshness {snapshot.tick_freshness_ms === null ? "—" : `${(snapshot.tick_freshness_ms / 1000).toFixed(1)}s`}). Prices above may be frozen.</span>
+              <div>
+                <b>Real money is at risk.</b> <span className="muted">The engine will dispatch REAL orders to the connected broker account.</span>
+              </div>
+              <div className="row">
+                <input
+                  className="input"
+                  style={{ width: 200 }}
+                  placeholder="Type LIVE to arm confirmation"
+                  value={liveConfirm}
+                  onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
+                />
+                <span className="note">the backend validates the transition too — the UI only relays</span>
+              </div>
+            </div>
+          )}
+          {modeCmd.state.lastMessage && (
+            <div className={`cmd-result ${modeCmd.state.lastResult ? "ok" : "fail"}`}>
+              {modeCmd.state.lastResult ? "✓" : "✕"} {modeCmd.state.lastMessage}
+            </div>
+          )}
+          <div className="small muted" style={{ marginTop: 10 }}>
+            Verdicts come from the backend response; the authoritative state above updates with the next snapshot — the UI never assumes success.
+          </div>
+        </Panel>
+
+        <Panel title="Historical replay mode" right={<TriBadge value={replaying} on="ENGAGED" off="OFF" />}>
+          <div className="l4-transport">
+            <button
+              className={`btn ${replaying ? "danger" : "primary"}`}
+              disabled={replayCmd.busy || replaying === null}
+              onClick={() => setReplayConfirm(!replaying)}
+            >
+              {replaying ? "⏏ Leave replay" : "⏪ Enter replay"}
+            </button>
+            <span className="l4-note">
+              speed <input className="input" style={{ inlineSize: 48 }} defaultValue={1} aria-label="replay speed" type="number" min={1} max={10} />
+            </span>
+          </div>
+          {replayCmd.msg && (
+            <div className={`cmd-result ${replayCmd.ok ? "ok" : "fail"}`}>
+              {replayCmd.ok ? "✓" : "✕"} {replayCmd.msg}
+            </div>
+          )}
+          <div className="small muted" style={{ marginTop: 8 }}>
+            The replay flag is INDEPENDENT of the execution mode (SEC-AUDIT-9): entering replay on a simulation boundary restores PAPER on exit, and the
+            backend <b>refuses replay outright while mode=LIVE</b>. The decision-visible replay-on-chart pipeline below (REPLAY_API v1) is a separate,
+            research-only surface.
+          </div>
+          <div className="section-title" style={{ marginTop: 10 }}>Runtime mode (v1)</div>
+          <SectionState
+            query={runtimeModeQuery}
+            skeletonRows={2}
+            emptyMessage="Runtime mode unavailable."
+            emptyHint="Engine offline or /api/v1/runtime/mode refused."
+            errorFallback="Runtime mode endpoint failed."
+          >
+            {(rm) => (
+              <dl className="kv">
+                <dt>mode</dt>
+                <dd>{rm.mode ?? "—"}</dd>
+                <dt>effective</dt>
+                <dd>{rm.effective_mode ?? "—"}</dd>
+                <dt>engine attached</dt>
+                <dd>{rm.engine_attached ? "YES" : "NO"}</dd>
+                <dt>replaying</dt>
+                <dd>{rm.replaying === null ? "—" : rm.replaying ? "YES" : "NO"}</dd>
+              </dl>
+            )}
+          </SectionState>
+        </Panel>
+      </div>
+
+      {/* Replay-on-chart pipeline (ported from Web/replay_panel.js) */}
+      <div className="l4-section-gap">
+        <ReplayPanel onCursorMove={onCursorMove} />
+      </div>
+
+      <div className="grid cols-2 l4-section-gap">
+        {/* Feature grid — all effective-schema values, honest per-status */}
+        <Panel
+          title={`Features (${snapshot.features.length}${snapshot.model.feature_dimension ? ` · ${snapshot.model.feature_dimension}D` : ""})`}
+          right={<AgeNote label="age" ageSec={snapshot.diagnostics.features_age_sec} />}
+        >
+          {snapshot.features.length === 0 ? (
+            <EmptyState message="No feature vector yet." hint="The engine has not published features this session." />
+          ) : (
+            <div className="l4-features">
+              {snapshot.features.map((f) => (
+                <div key={`${f.index}-${f.name}`} className={`l4-feature ${featureCellClass(f.status)}`} title={`${f.name} · ${f.status}`}>
+                  <div className="n">{f.index} {f.name}</div>
+                  <div className="v">{fmtFeature(f.value)}</div>
+                </div>
+              ))}
             </div>
           )}
         </Panel>
@@ -146,9 +478,7 @@ export default function DashboardPage({ snapshot }: Props) {
             ))}
             <div style={{ display: "contents" }}>
               <dt>overall</dt>
-              <dd>
-                <StatusBadge status={health.overall} />
-              </dd>
+              <dd><StatusBadge status={health.overall} /></dd>
             </div>
             <div style={{ display: "contents" }}>
               <dt>freshness</dt>
@@ -162,7 +492,9 @@ export default function DashboardPage({ snapshot }: Props) {
         {/* Guardian / kill switch */}
         <Panel title="Guardian / runtime risk">
           {riskStateQuery.isPending ? (
-            <div className="muted small">loading guardian state…</div>
+            <Skeleton count={4} />
+          ) : riskStateQuery.isError ? (
+            <ErrorState message="Guardian state endpoint failed." onRetry={() => void riskStateQuery.refetch()} />
           ) : haltState ? (
             <dl className="kv">
               <dt>kill switch</dt>
@@ -181,12 +513,12 @@ export default function DashboardPage({ snapshot }: Props) {
               <dd className={haltState.audit_dead_letter_rows > 0 ? "pnl-neg" : undefined}>{haltState.audit_dead_letter_rows}</dd>
             </dl>
           ) : (
-            <div className="muted small">guardian state unavailable (backend /api/debug/state offline) — shown as UNKNOWN, not inferred.</div>
+            <EmptyState message="Guardian state unavailable (backend /api/debug/state offline)." hint="Shown as UNKNOWN — never inferred." />
           )}
         </Panel>
 
         {/* ML / 70D snapshot strip */}
-        <Panel title="ML / 70D">
+        <Panel title="ML / 70D" right={<span className="l4-chip">{snapshot.model.feature_schema_id ?? "schema —"}</span>}>
           <dl className="kv">
             <dt>model</dt>
             <dd><StatusBadge status={health.subsystems.model ?? null} /></dd>
@@ -196,12 +528,6 @@ export default function DashboardPage({ snapshot }: Props) {
             <dd>{snapshot.model.feature_schema_id ?? "—"} ({snapshot.model.feature_dimension ?? "?"}D)</dd>
             <dt>scaler</dt>
             <dd>{snapshot.model.scaler_ready === null ? "—" : snapshot.model.scaler_ready ? "READY" : "NOT FITTED"}</dd>
-            <dt>probs N/B/S</dt>
-            <dd>
-              {snapshot.probs.available
-                ? `${(snapshot.probs.no_trade ?? 0).toFixed(2)} / ${(snapshot.probs.buy ?? 0).toFixed(2)} / ${(snapshot.probs.sell ?? 0).toFixed(2)}`
-                : "—"}
-            </dd>
             <dt>inference latency</dt>
             <dd>{snapshot.model.latency_ms === null ? "—" : `${snapshot.model.latency_ms.toFixed(1)} ms`}</dd>
             <dt>model id</dt>
@@ -225,7 +551,7 @@ export default function DashboardPage({ snapshot }: Props) {
               { label: "Action" },
               { label: "Confidence", num: true },
               { label: "Regime" },
-              { label: "P(NO) ", num: true },
+              { label: "P(NO)", num: true },
               { label: "P(BUY)", num: true },
               { label: "P(SELL)", num: true },
               { label: "Reason" },
@@ -247,58 +573,102 @@ export default function DashboardPage({ snapshot }: Props) {
         )}
       </Panel>
 
-      {/* Open positions preview */}
-      <Panel title={`Open positions (${positions.length})`} tight>
-        {positions.length === 0 ? (
-          <EmptyState message="No open positions." />
-        ) : (
-          <DataTable
-            headers={[
-              { label: "Ticket" },
-              { label: "Symbol" },
-              { label: "Side" },
-              { label: "Volume", num: true },
-              { label: "Entry", num: true },
-              { label: "Current", num: true },
-              { label: "PnL", num: true },
-            ]}
-          >
-            {positions.slice(0, 8).map((p, i) => (
-              <tr key={p.ticket ?? i}>
-                <td>{p.ticket ?? "—"}</td>
-                <td>{p.symbol ?? "—"}</td>
-                <td><PositionSideBadge type={p.type} /></td>
-                <td className="num">{formatNumber(p.volume)}</td>
-                <td className="num">{formatPrice(p.price_open)}</td>
-                <td className="num">{formatPrice(p.price_current)}</td>
-                <td className={`num ${p.profit !== null && p.profit >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatPnl(p.profit)}</td>
-              </tr>
-            ))}
-          </DataTable>
-        )}
-      </Panel>
+      {/* Open positions preview + MT5 detail */}
+      <div className="grid cols-2">
+        <Panel title={`Open positions (${positions.length})`} tight>
+          {positions.length === 0 ? (
+            <EmptyState message="No open positions." hint="Broker adapter snapshot is empty — nothing hidden, nothing estimated." />
+          ) : (
+            <DataTable
+              headers={[
+                { label: "Ticket" },
+                { label: "Symbol" },
+                { label: "Side" },
+                { label: "Volume", num: true },
+                { label: "Entry", num: true },
+                { label: "Current", num: true },
+                { label: "PnL", num: true },
+              ]}
+            >
+              {positions.slice(0, 8).map((p, i) => (
+                <tr key={p.ticket ?? i}>
+                  <td>{p.ticket ?? "—"}</td>
+                  <td>{p.symbol ?? "—"}</td>
+                  <td><PositionSideBadge type={p.type} /></td>
+                  <td className="num">{formatNumber(p.volume)}</td>
+                  <td className="num">{formatPrice(p.price_open)}</td>
+                  <td className="num">{formatPrice(p.price_current)}</td>
+                  <td className={`num ${p.profit !== null && p.profit >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatPnl(p.profit)}</td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </Panel>
 
-      {/* MT5 detail from the dedicated status endpoint */}
-      <Panel title="MT5 status detail" tight>
-        {mt5Query.isPending ? (
-          <div className="state-block"><div className="spinner" /></div>
-        ) : mt5Query.isError ? (
-          <EmptyState message="MT5 status unavailable (backend endpoint failed)." hint="Rendered as UNKNOWN — never inferred." />
-        ) : mt5Query.data ? (
-          <dl className="kv" style={{ padding: "10px 14px" }}>
-            <dt>connection</dt>
-            <dd><StatusBadge status={String((mt5Query.data.connection as { state?: string } | undefined)?.state ?? null)} /></dd>
-            <dt>terminal version</dt>
-            <dd>{String((mt5Query.data.connection as { terminal_version?: string } | undefined)?.terminal_version ?? "—")}</dd>
-            <dt>account</dt>
-            <dd>{mt5Query.data.account?.available ? `${mt5Query.data.account.company ?? "—"} · ${mt5Query.data.account.server ?? "—"}` : "—"}</dd>
-            <dt>pending orders (broker)</dt>
-            <dd>{mt5Query.data.orders?.length ?? 0}</dd>
-            <dt>positions (broker)</dt>
-            <dd>{mt5Query.data.positions?.length ?? 0}</dd>
-          </dl>
-        ) : null}
-      </Panel>
+        <Panel title="MT5 status detail" tight>
+          {mt5Query.isPending ? (
+            <div style={{ padding: 12 }}><Skeleton count={4} /></div>
+          ) : mt5Query.isError ? (
+            <ErrorState message="MT5 status unavailable (backend endpoint failed)." requestId={mt5Query.error instanceof ApiError ? mt5Query.error.requestId : null} onRetry={() => void mt5Query.refetch()} />
+          ) : mt5Query.data ? (
+            <dl className="kv" style={{ padding: "10px 14px" }}>
+              <dt>connection</dt>
+              <dd><StatusBadge status={String((mt5Query.data.connection as { state?: string } | undefined)?.state ?? null)} /></dd>
+              <dt>terminal version</dt>
+              <dd>{String((mt5Query.data.connection as { terminal_version?: string } | undefined)?.terminal_version ?? "—")}</dd>
+              <dt>account</dt>
+              <dd>{mt5Query.data.account?.available ? `${mt5Query.data.account.company ?? "—"} · ${mt5Query.data.account.server ?? "—"}` : "—"}</dd>
+              <dt>pending orders (broker)</dt>
+              <dd>{mt5Query.data.orders?.length ?? 0}</dd>
+              <dt>positions (broker)</dt>
+              <dd>{mt5Query.data.positions?.length ?? 0}</dd>
+            </dl>
+          ) : null}
+        </Panel>
+      </div>
+
+      {/* Confirmations */}
+      {stopConfirm && (
+        <ConfirmModal
+          title="Confirm action — STOP ENGINE"
+          confirmLabel="■ Stop engine"
+          busy={engineCmd.state.running}
+          onCancel={() => setStopConfirm(false)}
+          onConfirm={() => {
+            setStopConfirm(false);
+            void toggleEngine(false);
+          }}
+        >
+          <div>
+            <b>Impact:</b> the engine loop stops — no new proposals, no new executions. Open positions stay on the broker until you act there.
+            <div className="small muted" style={{ marginTop: 8 }}>Recovery: Start engine re-attaches the loop; the backend refuses the command if the runtime state forbids it.</div>
+          </div>
+        </ConfirmModal>
+      )}
+      {replayConfirm !== null && (
+        <ConfirmModal
+          title={`Confirm — ${replayConfirm ? "ENTER" : "LEAVE"} HISTORICAL REPLAY`}
+          danger={replayConfirm ? false : true}
+          confirmLabel={replayConfirm ? "⏪ Enter replay" : "⏏ Leave replay"}
+          busy={replayCmd.busy}
+          onCancel={() => setReplayConfirm(null)}
+          onConfirm={() => void runReplayToggle(replayConfirm)}
+        >
+          <div>
+            {replayConfirm ? (
+              <>
+                <b>Impact:</b> the engine switches to the historical replay stream on the simulation boundary. The backend refuses this while mode=LIVE.
+                <div className="small muted" style={{ marginTop: 8 }}>Recovery: Leave replay restores the pre-replay mode captured at entry (never a hardcoded LIVE).</div>
+              </>
+            ) : (
+              <>
+                <b>Impact:</b> leaves replay; the pre-replay mode is restored by the backend and live ticks resume.
+                <div className="small muted" style={{ marginTop: 8 }}>The decision-visible session below (REPLAY_API v1) is unaffected by this flag.</div>
+              </>
+            )}
+          </div>
+        </ConfirmModal>
+      )}
     </div>
   );
 }
