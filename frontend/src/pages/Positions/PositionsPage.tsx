@@ -127,6 +127,7 @@ export default function PositionsPage({ snapshot }: Props) {
                 <td className={`num ${p.profit !== null && p.profit >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatPnl(p.profit)}</td>
                 <td className="num">{formatNumber(p.swap)}</td>
                 <td>{formatDateTime(p.time)}</td>
+                <td>{p.ticket !== null && <SlTpEditor position={p} priceDigits={snapshot?.price_digits ?? null} />}</td>
                 <td>
                   {p.ticket !== null && (
                     <button className="btn small danger" onClick={() => setCloseDialog({ ticket: p.ticket as number })}>
