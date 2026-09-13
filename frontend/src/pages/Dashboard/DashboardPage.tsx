@@ -79,6 +79,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   const [modeTarget, setModeTarget] = useState("");
   const [liveConfirm, setLiveConfirm] = useState("");
   const [replayConfirm, setReplayConfirm] = useState<boolean | null>(null);
+  const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayCmd, setReplayCmd] = useState<{ busy: boolean; msg: string | null; ok: boolean | null }>({ busy: false, msg: null, ok: null });
   const [replayCursor, setReplayCursor] = useState<string | null>(null);
 
@@ -164,7 +165,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
     setReplayConfirm(null);
     setReplayCmd({ busy: true, msg: null, ok: null });
     try {
-      const res = await replayApi.toggle(active, 1);
+      const res = await replayApi.toggle(active, replaySpeed);
       const refused = res.success === false;
       setReplayCmd({
         busy: false,
@@ -239,7 +240,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
       {/* Price chart — the center of the monitoring tab */}
       <div className="l4-section-gap">
         <Panel
-          title="Price · XAUUSD"
+          title={`Price · ${snapshot.symbol ?? "symbol —"} ${chartQuery.data?.timeframe ?? "M1"}`}
           accent
           right={
             <>
@@ -405,7 +406,17 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
               {replaying ? "⏏ Leave replay" : "⏪ Enter replay"}
             </button>
             <span className="l4-note">
-              speed <input className="input" style={{ inlineSize: 48 }} defaultValue={1} aria-label="replay speed" type="number" min={1} max={10} />
+              speed{" "}
+              <input
+                className="input"
+                style={{ inlineSize: 48 }}
+                value={replaySpeed}
+                onChange={(e) => setReplaySpeed(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                aria-label="replay speed"
+                type="number"
+                min={1}
+                max={10}
+              />
             </span>
           </div>
           {replayCmd.msg && (
