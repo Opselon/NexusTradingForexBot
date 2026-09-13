@@ -420,7 +420,10 @@ def test_sentinel_uses_real_repository_end_to_end(monkeypatch: Any, env: Any) ->
 def test_champion_sentinel_import_stays_light() -> None:
     """Maintenance-path gating lesson: nothing reachable from the cycle may
     drag the torch/polars import chain (the slim-venv gate + tick-path safety).
+    Subprocess keeps the host environment (only PYTHONPATH is pinned): a
+    stripped PATH broke interpreter launch on windows-latest.
     """
+    import os
     import subprocess
     import sys
 
@@ -432,7 +435,7 @@ def test_champion_sentinel_import_stays_light() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        env={"PYTHONPATH": "src:.", "PATH": "/usr/bin:/bin"},
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(["src", "."])},
         cwd=str(Path(__file__).resolve().parents[2]),
         timeout=120,
         check=False,
