@@ -14,6 +14,7 @@ import { tradingApi } from "@/api/tradingApi";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import type { EngineSnapshot, Position } from "@/types/domain";
 import { ConfirmModal, DataTable, EmptyState, LoadingState, ErrorState, Panel } from "@/components/primitives";
+import { SlTpEditor } from "@/components/pro/SlTpEditor";
 import { formatDateTime, formatNumber, formatPnl, formatPrice } from "@/lib/format";
 import { useI18n } from "@/stores/i18nStore";
 import { ApiError } from "@/types/api";
@@ -109,6 +110,7 @@ export default function PositionsPage({ snapshot }: Props) {
               { label: t("alt.common.col_pnl", "PnL"), num: true },
               { label: t("alt.common.col_swap", "Swap"), num: true },
               { label: t("alt.common.col_opened", "Opened") },
+              { label: "SL/TP" },
               { label: "" },
             ]}
           >

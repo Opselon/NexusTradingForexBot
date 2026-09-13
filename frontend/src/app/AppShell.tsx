@@ -19,6 +19,8 @@ import { ConnectionIndicator, FreshnessMeter } from "@/components/ConnectionIndi
 import { ModeIndicator } from "@/components/ModeIndicator";
 import { AttentionStrip } from "@/components/AttentionStrip";
 import { CommandPalette } from "@/components/CommandPalette";
+import { FeedQualityChip } from "@/components/FeedQualityChip";
+import { Watermark } from "@/components/pro/OpsChrome";
 import { ConfirmModal, ToastHost } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
 import { useI18n } from "@/stores/i18nStore";
@@ -33,6 +35,7 @@ import RiskPage from "@/pages/Risk/RiskPage";
 import MLPage from "@/pages/ML/MLPage";
 import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
 import AuditPage from "@/pages/Audit/AuditPage";
+import SettingsPage from "@/pages/Settings/SettingsPage";
 
 const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ to: string; icon: string; label: string }> }> = [
   {
@@ -52,6 +55,7 @@ const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ 
       { to: "/ml", icon: "Σ", label: "ML / 70D" },
       { to: "/intelligence", icon: "≈", label: "Intelligence" },
       { to: "/audit", icon: "☰", label: "Audit" },
+      { to: "/settings", icon: "⚙", label: "Settings" },
     ],
   },
 ];
@@ -95,6 +99,7 @@ export function AppShell() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const dense = useUiStore((s) => s.dense);
   const toggleDense = useUiStore((s) => s.toggleDense);
+  const t = useI18n((s) => s.t);
   const [helpOpen, setHelpOpen] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -148,6 +153,7 @@ export function AppShell() {
 
   const { snapshot, connectionState, realtimeStatus } = useRealtimeSnapshot(snapshotQuery.data);
 
+
   // Track feed state to harden rendering decisions.
   useEffect(() => {
     // noop — keeps hook shape stable for future re-subscription semantics
@@ -172,7 +178,7 @@ export function AppShell() {
         <nav className="nav">
           {NAV_SECTIONS.map((sec) => (
             <div key={sec.section}>
-              <div className="nav-section">{sec.section}</div>
+              <div className="nav-section">{t(sec.sectionKey, sec.section)}</div>
               {sec.items.map((item) => (
                 <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} title={item.label}>
                   <span className="icon">{item.icon}</span>
@@ -227,6 +233,7 @@ export function AppShell() {
           <span className="timestamp-note" title="Local wall clock (visual aid)">
             {new Date(nowMs).toLocaleTimeString("en-GB", { hour12: false })} · v{snapshot?.state_version ?? "—"}
           </span>
+          <FeedQualityChip nowMs={nowMs} />
           <ConnectionIndicator
             status={realtimeStatus}
             nowMs={nowMs}
@@ -261,10 +268,12 @@ export function AppShell() {
               <Route path="/ml" element={<MLPage snapshot={snapshot} />} />
               <Route path="/intelligence" element={<IntelligencePage snapshot={snapshot} />} />
               <Route path="/audit" element={<AuditPage />} />
+              <Route path="/settings" element={<SettingsPage snapshot={snapshot} />} />
               <Route path="*" element={<ErrorState message="Unknown route" />} />
             </Routes>
           )}
         </main>
+        <Watermark stale={snapshot?.is_stale === true || snapshot?.tick_stale === true} feedDown={realtimeStatus.state === "disconnected" || realtimeStatus.state === "failed"} />
       </div>
       <ToastHost />
       <CommandPalette onOpenHelp={() => setHelpOpen(true)} />
