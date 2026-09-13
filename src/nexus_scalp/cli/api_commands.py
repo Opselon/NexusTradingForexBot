@@ -2,8 +2,9 @@
 
 CONTRACT RULE: consumes the SAME HTTP contracts as external clients through
 ``nexus_scalp.api_client.NexusApiClient`` — no business logic duplicated here.
-Default base URL is the running dashboard (http://127.0.0.1:8080); override via
-``--base-url`` or the ``NEXUS_API_BASE`` environment variable.
+Default base URL is the running dashboard: the engine's RECORDED actual port
+(BUG-267 — .env NSE_WEB_ACTUAL_PORT / NSE_WEB_PORT, falling back to 8080);
+override via ``--base-url`` or the ``NEXUS_API_BASE`` environment variable.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from typing import Any
 
 import typer
 
-from nexus_scalp.api_client import DEFAULT_BASE_URL, NexusApiClient, NexusApiError
+from nexus_scalp.api_client import NexusApiClient, NexusApiError
 
 api_app = typer.Typer(
     help="Query the Nexus API platform (/api/v1) of a running engine.",
@@ -24,7 +25,15 @@ api_app = typer.Typer(
 
 
 def _client(base_url: str | None) -> NexusApiClient:
-    resolved = base_url or os.environ.get("NEXUS_API_BASE") or DEFAULT_BASE_URL
+    resolved = base_url or os.environ.get("NEXUS_API_BASE")
+    if not resolved:
+        # BUG-267: the engine auto-increments past occupied ports (8080 ->
+        # 8081...) and records the actual bind; probing a literal :8080
+        # while the console runs on 8081 is the "nexus api says connection
+        # refused / UNAUTHORIZED but the browser works" trap.
+        from nexus_scalp.web.auth_boot import resolved_web_port
+
+        resolved = f"http://127.0.0.1:{resolved_web_port()}"
     return NexusApiClient(resolved)
 
 
