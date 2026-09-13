@@ -50,12 +50,26 @@ logger = get_logger("nexus_scalp.web.auth")
 #: them and a tokenless first visit could never render. This completes the
 #: list to cover exactly the repo-root STATIC bundle files + the /vendor font
 #: subtree. Every /api route and everything unknown still 401s (fail-closed).
+#: BUG-266 (2026-09-13): the bootstrap cookie rode ONLY /app.js +
+#: /api_client.js, but a browser's FIRST request is the document. "/" and
+#: "/alt" (the React console shell) were gated, so a fresh profile / expired
+#: cookie / token rotation rendered the raw 401 JSON envelope and the page
+#: could never self-heal (app.js never loaded → cookie never issued → the
+#: "UNAUTHORIZED" the operator saw on BOTH consoles). The index DOCUMENTS are
+#: static shells with no state and no credentials: they become public entry
+#: points that ISSUE the bootstrap cookie, exactly like the script assets.
+#: Every data route (/api/**, SSE included) keeps full token enforcement.
 PUBLIC_PATHS: frozenset[str] = frozenset(
     {
         "/api/health",
         "/health",
         "/healthz",
         "/favicon.ico",
+        # BUG-266: cookie-bootstrap entry documents (see header note).
+        "/",
+        "/index.html",
+        "/alt",
+        "/alt/",
         "/app.js",
         "/app.js.map",
         "/api_client.js",
@@ -80,7 +94,12 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
     }
 )
 #: /vendor/ = fontawesome webfonts (static binaries, no credentials).
-PUBLIC_PREFIXES: tuple[str, ...] = ("/static/", "/assets/", "/vendor/")
+#: /alt/ (BUG-266) = the built React console: static SPA shell, hashed assets
+#: and client-side deep links (/alt/trading, /alt/audit …) — none of which
+#: carry state or credentials. A TRAILING SLASH is mandatory so the prefix can
+#: never match anything outside the console mount (e.g. /alternative-api).
+#: Every API call the console makes goes to /api/**, still fully gated.
+PUBLIC_PREFIXES: tuple[str, ...] = ("/static/", "/assets/", "/vendor/", "/alt/")
 PUBLIC_JS_ASSETS: frozenset[str] = frozenset(
     {
         "ux_i18n.js",
@@ -122,6 +141,14 @@ _TOKEN_BYTES = 32
 WEB_AUTH_COOKIE_NAME = "nse_web_auth"
 #: Cookie acceptance opt-out (header-only auth for operators behind proxies).
 WEB_AUTH_COOKIE_DISABLE_ENV = "NSE_WEB_AUTH_COOKIE_DISABLE"
+#: BUG-266: public paths whose response carries the bootstrap Set-Cookie.
+#: The two script assets (WEB-UI-BOOTSTRAP) plus the index DOCUMENTS — the
+#: browser's first request. Every entry here is public by construction
+#: (a gated path can never be reached tokenless, so setting a cookie on it
+#: would be dead code); pinned by tests/unit/test_web_auth_bootstrap_bug266.py.
+COOKIE_BOOTSTRAP_PATHS: frozenset[str] = frozenset(
+    {"/", "/index.html", "/app.js", "/api_client.js", "/alt", "/alt/"}
+)
 
 
 def _generate_token() -> str:
@@ -196,6 +223,19 @@ def current_web_auth_token() -> str | None:
     return None
 
 
+#: The token the INSTALLED middleware layer resolved for this process
+#: (set by install_web_auth's resolver — env, store, or generated). BUG-266:
+#: web_auth_token_in_process() lets auth_boot.publish() export/persist the
+#: authoritative value even when resolution happened in-process (generated
+#: branch) and was never written anywhere an operator tool can read.
+_LIVE_WEB_AUTH_TOKEN: str | None = None
+
+
+def web_auth_token_in_process() -> str | None:
+    """Token resolved by install_web_auth in THIS process (never generates)."""
+    return _LIVE_WEB_AUTH_TOKEN
+
+
 class WebAuthMiddleware:
     """Pure ASGI middleware: bearer/X-NSE-Token/query-token enforcement.
 
@@ -260,9 +300,11 @@ class WebAuthMiddleware:
     # ------------------------------------------------------------- internals
     @staticmethod
     def _is_public(path: str) -> bool:
-        if path in PUBLIC_PATHS:
-            return True
-        return any(path.startswith(p) for p in PUBLIC_PREFIXES)
+        # BUG-266: routes through is_public_path — the single source of
+        # truth. The previous inline copy skipped the traversal guard, so
+        # this (test-facing) layer and the installed layer disagreed on
+        # paths like /assets/../api/x. One rule, one implementation.
+        return is_public_path(path)
 
     @staticmethod
     def _extract_token(scope) -> str | None:
@@ -337,16 +379,21 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
         async def dispatch(self, request: StarletteRequest, call_next):
             if self._is_public(request.url.path):
                 response = await call_next(request)
-                # WEB-UI-BOOTSTRAP: / sits BEHIND auth, so a tokenless first
-                # visit can never reach it. The browser fetches /app.js +
-                # /api_client.js on every load (script tags) BEFORE or
-                # alongside the page — issue the HttpOnly bootstrap cookie
-                # there so /, /api/* and the EventSource authenticate. The
-                # token value never appears in page source or JS; removing
-                # the cookie re-locks. Only the ACCEPTED transport set is
-                # widened for first-party same-origin clients.
+                # WEB-UI-BOOTSTRAP + BUG-266: the cookie rides EVERY public
+                # entry surface — the legacy bundle's /app.js +
+                # /api_client.js script tags AND the index documents ("/",
+                # "/index.html", "/alt", "/alt/"). The documents matter
+                # because they are the browser's FIRST request: a fresh
+                # profile / expired cookie / token rotation used to hit a
+                # gated "/" and render the raw 401 JSON with no way to
+                # recover (app.js never loaded → cookie never issued).
+                # Same-origin fetch() and EventSource then send this cookie
+                # automatically, so BOTH consoles authenticate without a
+                # hand-pasted token. The token value never appears in page
+                # source or JS; removing the cookie re-locks. Data routes
+                # (/api/**) stay fail-closed — only the transport widened.
                 if (
-                    request.url.path in ("/app.js", "/api_client.js")
+                    request.url.path in COOKIE_BOOTSTRAP_PATHS
                     and self._token is not None
                     and not os.environ.get(WEB_AUTH_COOKIE_DISABLE_ENV, "").strip()
                 ):
@@ -408,7 +455,12 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
             return qp or None
 
     def _resolve() -> str:
+        # BUG-266: remember what THIS process enforced so auth_boot.publish()
+        # (and any first-party tooling) can retrieve the generated token
+        # without re-minting one. The middleware instance stays the authority.
         token, _src = _resolve_token()
+        global _LIVE_WEB_AUTH_TOKEN
+        _LIVE_WEB_AUTH_TOKEN = token
         return token
 
     app.add_middleware(_TokenAuthMiddleware, token_resolver=_resolve)
