@@ -22,6 +22,7 @@ export {
   getV1,
   getLegacy,
   send,
+  sendV1,
   drop,
   raw,
 } from "./transport";

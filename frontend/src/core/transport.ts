@@ -61,6 +61,13 @@ export async function send<T>(path: string, body?: unknown, method: "POST" | "PU
   return requestRaw<T>(path, { method, body: body ?? {} });
 }
 
+/** POST to a v1 route, returning the FULL envelope ({data,meta}) — v1
+ *  mutations also wrap success (web/api_v1/common.py ok()). Callers that
+ *  only want the payload unwrap `env.data` themselves (see api/marketplace). */
+export async function sendV1<E = unknown>(path: string, body?: unknown, method: "POST" | "PUT" = "POST"): Promise<E> {
+  return requestRaw<E>(path, { method, body: body ?? {} });
+}
+
 /** DELETE helper (backend has few; db console api-key revoke). */
 export async function drop<T>(path: string): Promise<T> {
   return requestRaw<T>(path, { method: "DELETE" as HttpMethod });
