@@ -248,6 +248,206 @@ class ModelLifecycleRegistry:
         rows = self.list_models(status=ModelStatus.CHAMPION, limit=10)
         return rows[0] if rows else None
 
+    def supersede_champion_on_governed_replace(
+        self,
+        *,
+        model_id: str,
+        model_version: str,
+        artifact_path: str,
+        new_fingerprint: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """BUG-271: repoint the governed CHAMPION fingerprint after a
+        GOVERNED in-place replacement of the serving artifact.
+
+        The async-retrain persist, collapse recovery, promotion/rollback
+        activation and hot-swap paths all rewrite ``model.pt`` IN PLACE at the
+        champion path and re-register provenance under the new fingerprint.
+        The lifecycle CHAMPION stamp, however, stays on the OLD row (the new
+        row lands with the column default CANDIDATE), which orphans the
+        governed fingerprint. The next cold boot then compares serving bytes
+        against that stale fingerprint and the P0-2 trust anchor
+        (application/live/model_bundle_store) refuses to load — trading dies
+        permanently after a legitimate retrain, with no self-heal path.
+
+        Semantics (evidence-preserving, append-only):
+          * the stale champion row goes ARCHIVED with its ORIGINAL fingerprint
+            intact (history of what bytes were governed is never rewritten);
+          * the row carrying the new fingerprint becomes CHAMPION;
+          * both transitions are ONE queued statement, so the write-queue
+            worker can never expose a state with zero or two champions;
+          * only rows already in CHAMPION/CANDIDATE participate — a REJECTED /
+            INVALID / ARCHIVED row is never resurrected by a persist.
+
+        Refusals are explicit and observable (never silent):
+          EMPTY_FINGERPRINT     caller has no governed identity for the bytes
+          NO_CHAMPION_ROW       nothing to supersede (registry read failed)
+          NO_SUPERSESSION_NEEDED champion already carries the new fingerprint,
+                                or governs a DIFFERENT artifact path (that is
+                                champion_sync's registry-truth decision, not a
+                                persist's business), or carries no path
+        This is NOT an operator override: only the governed persist paths call
+        it, and an unauthorized (out-of-process) rewrite of the artifact still
+        fails closed at boot — the fingerprint on disk will not match any row.
+        """
+        out: dict[str, Any] = {"ok": True, "reason": "NO_SUPERSESSION_NEEDED"}
+        if not self.audit_repo._is_sqlite:
+            out["reason"] = "NOT_SQLITE"
+            return out
+        new_fp = str(new_fingerprint or "").strip().lower()
+        if not new_fp:
+            return {"ok": False, "reason": "EMPTY_FINGERPRINT"}
+        self.ensure_schema()
+
+        def _norm(p: Any) -> str:
+            return str(p or "").replace("\\", "/")
+
+        serving = _norm(artifact_path)
+        try:
+            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                champion = conn.execute(
+                    "SELECT * FROM experience_model_registry "
+                    "WHERE lifecycle_status=? ORDER BY registered_at DESC LIMIT 1;",
+                    (ModelStatus.CHAMPION.value,),
+                ).fetchone()
+                new_row = conn.execute(
+                    "SELECT lifecycle_status FROM experience_model_registry "
+                    "WHERE model_id=? AND model_version=? AND artifact_fingerprint=? "
+                    "ORDER BY registered_at DESC LIMIT 1;",
+                    (model_id, model_version, new_fp),
+                ).fetchone()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[MODEL_REGISTRY] supersession read failed", error=str(e))
+            return {"ok": False, "reason": "REGISTRY_READ_FAILED", "detail": str(e)[:200]}
+        if champion is None:
+            out["reason"] = "NO_CHAMPION_ROW"
+            return out
+        # PROMOTABILITY is refused EARLY when the successor row is already
+        # visible and non-promotable: a row in REJECTED/INVALID must never
+        # become CHAMPION by merely being persisted. An ABSENT successor row is
+        # NOT a refusal — the provenance INSERT is queued on the same FIFO
+        # audit worker as this statement (the write may simply not be durable
+        # yet), so the SQL EXISTS guard below is the authority and decides the
+        # outcome after the insert has applied.
+        promotable = {
+            ModelStatus.CHAMPION.value,
+            ModelStatus.CANDIDATE.value,
+            ModelStatus.ARCHIVED.value,
+        }
+        if new_row is not None and str(new_row["lifecycle_status"]) not in promotable:
+            return {
+                **out,
+                "champion_row": _row_identity(dict(champion)),
+                "successor_status": str(new_row["lifecycle_status"]),
+            }
+        row = dict(champion)
+        old_fp = str(row.get("artifact_fingerprint", "") or "").strip().lower()
+        row_path = _norm(row.get("artifact_path", ""))
+        if str(row.get("model_id", "") or "") != str(model_id or "") or (
+            str(row.get("model_version", "") or "") != str(model_version or "")
+        ):
+            # A different identity is champion (cross-contract promotion /
+            # registry-truth shape): the governed activation path and
+            # champion_sync own that transition, not a persist.
+            return {**out, "champion_row": _row_identity(row)}
+        if not row_path or not serving:
+            out["reason"] = "NO_SUPERSESSION_NEEDED_NO_PATH"
+            return out
+        if old_fp == new_fp:
+            # Champion already governs the on-disk bytes: idempotent no-op
+            # (the boot anchor compares fingerprints, so a stale PATH on the
+            # row is champion_sync's business, not a reason to re-write).
+            return {**out, "champion_row": _row_identity(row), "fingerprint": new_fp}
+        if not old_fp:
+            out["reason"] = "CHAMPION_ROW_HAS_NO_FINGERPRINT"
+            return out
+
+        # ONE statement, two transitions (see docstring): the new-fingerprint
+        # row becomes CHAMPION, the stale champion goes ARCHIVED. Runs after
+        # the provenance INSERT because the audit write queue is FIFO. The
+        # EXISTS guard makes the statement all-or-nothing: promotion requires
+        # a PROMOTABLE row (CHAMPION/CANDIDATE/ARCHIVED — ARCHIVED covers the
+        # rollback-to-previously-governed-bytes shape, because provenance
+        # re-registration ON CONFLICT refreshes the old row in place instead
+        # of creating a new one). A REJECTED/INVALID row is never resurrected
+        # by a persist; if nothing is promotable, the stale champion stays put
+        # and the next boot fails closed exactly as before the fix.
+        _promotable = (
+            ModelStatus.CHAMPION.value,
+            ModelStatus.CANDIDATE.value,
+            ModelStatus.ARCHIVED.value,
+        )
+        query = """
+            UPDATE experience_model_registry
+            SET lifecycle_status = CASE
+                    WHEN artifact_fingerprint=? THEN ?
+                    ELSE ?
+                END,
+                promotion_reason = ?
+            WHERE model_id=? AND model_version=?
+              AND (
+                    (artifact_fingerprint=? AND lifecycle_status IN (?,?,?))
+                    OR (artifact_fingerprint=? AND lifecycle_status=?)
+              )
+              AND EXISTS (
+                    SELECT 1 FROM experience_model_registry
+                    WHERE model_id=? AND model_version=?
+                      AND artifact_fingerprint=? AND lifecycle_status IN (?,?,?)
+              );
+        """
+        args = (
+            new_fp,
+            ModelStatus.CHAMPION.value,
+            ModelStatus.ARCHIVED.value,
+            reason or "governed in-place artifact replacement",
+            model_id,
+            model_version,
+            new_fp,
+            _promotable[0],
+            _promotable[1],
+            _promotable[2],
+            old_fp,
+            ModelStatus.CHAMPION.value,
+            model_id,
+            model_version,
+            new_fp,
+            _promotable[0],
+            _promotable[1],
+            _promotable[2],
+        )
+        try:
+            self.audit_repo._queue.put_nowait((query, args))
+        except Exception as e:
+            logger.error("[MODEL_REGISTRY] supersession persist failed", error=str(e))
+            return {
+                "ok": False,
+                "reason": "QUEUE_FAILED",
+                "detail": str(e)[:200],
+                "stale_fingerprint": old_fp,
+                "new_fingerprint": new_fp,
+            }
+        logger.warning(
+            "[MODEL] event=CHAMPION_FINGERPRINT_SUPERSEDED "
+            "model_id=%s version=%s stale_sha16=%s new_sha16=%s reason=%s",
+            model_id,
+            model_version,
+            old_fp,
+            new_fp,
+            reason or "governed_in_place_replace",
+        )
+        return {
+            "ok": True,
+            "reason": "SUPERSEDED",
+            "model_id": model_id,
+            "model_version": model_version,
+            "stale_fingerprint": old_fp,
+            "new_fingerprint": new_fp,
+        }
+
     def summary(self) -> dict[str, Any]:
         """Counts by status for the dashboard."""
         out: dict[str, Any] = {"available": False, "by_status": {}}
