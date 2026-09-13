@@ -57,12 +57,15 @@ export function MetricCard({
 
 export function Panel({
   title,
+  subtitle,
   right,
   children,
   tight,
   accent,
 }: {
   title: string;
+  /** Optional second line under the panel title (feature stubs use it). */
+  subtitle?: ReactNode;
   right?: ReactNode;
   children: ReactNode;
   tight?: boolean;
@@ -73,7 +76,14 @@ export function Panel({
     <section className="panel">
       <div className="panel-header">
         {accent && <span className="dot-accent" aria-hidden="true" />}
-        <span>{title}</span>
+        <span>
+          {title}
+          {subtitle !== undefined && subtitle !== null && subtitle !== "" && (
+            <span className="panel-subtitle muted" style={{ display: "block", fontSize: 11, fontWeight: 400 }}>
+              {subtitle}
+            </span>
+          )}
+        </span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{right}</span>
       </div>
       <div className={`panel-body ${tight ? "tight" : ""}`}>{children}</div>

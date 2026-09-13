@@ -9,7 +9,7 @@
  *  GET  /api/v1/system/status  — health verdict + version + mode
  */
 
-import { getLegacy, getV1, send } from "./client";
+import { getLegacy, getV1, send } from "@/core/transport";
 import type { EngineSnapshot, MT5Status } from "@/types/domain";
 import type { LegacyMutationResult } from "@/types/api";
 

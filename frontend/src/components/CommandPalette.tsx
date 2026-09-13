@@ -12,6 +12,8 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useI18n } from "@/stores/i18nStore";
 import { useUiStore } from "@/stores/uiStore";
+import { FEATURE_REGISTRY, featureLabelKey } from "@/app/featureRegistry";
+import { runtimeConfig } from "@/core/config";
 
 interface Command {
   id: string;
@@ -21,6 +23,17 @@ interface Command {
   keywords: string;
   run: () => void;
 }
+
+/** Legacy static pages (registry covers every other tab). */
+const LEGACY_NAV: Array<{ route: string; label: string; icon: string; keywords: string }> = [
+  { route: "/", label: "Dashboard", icon: "◈", keywords: "dashboard home signal overview" },
+  { route: "/trading", label: "Trading", icon: "⇅", keywords: "trading engine start stop mode live paper shadow" },
+  { route: "/positions", label: "Positions", icon: "▤", keywords: "positions close tickets exposure ledger" },
+  { route: "/risk", label: "Risk", icon: "⛨", keywords: "risk guardian halt kill switch circuit breaker" },
+  { route: "/ml", label: "ML / 70D", icon: "Σ", keywords: "model ml shadow70 integrity features inference" },
+  { route: "/intelligence", label: "Intelligence", icon: "≈", keywords: "news intelligence autopsies calendar sentiment" },
+  { route: "/audit", label: "Audit", icon: "☰", keywords: "audit events ledger incidents database integrity" },
+];
 
 export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
   const [open, setOpen] = useState(false);
@@ -36,14 +49,26 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
     const nav = (id: string, path: string, label: string, icon: string, keywords: string): Command => ({
       id, group: "nav", label, icon, keywords, run: () => navigate(path),
     });
+    // Legacy pages (stable ids) + EVERY registered feature route — the
+    // registry is the single source, so a new feature is palette-visible
+    // without touching this file.
+    const legacy = LEGACY_NAV.map((p) =>
+      nav(
+        `goto_${p.route === "/" ? "home" : p.route.slice(1)}`,
+        p.route,
+        t(`nav.page.${p.route === "/" ? "dashboard" : p.route.slice(1)}`, p.label),
+        p.icon,
+        p.keywords,
+      ),
+    );
+    const features = runtimeConfig.flags.paletteAllRoutes !== false
+      ? FEATURE_REGISTRY.map((f) =>
+          nav(`goto_${f.route.slice(1)}`, f.route, t(featureLabelKey(f.route), f.label), f.icon, `${f.route} ${f.section} ${f.label} ${f.legacyTab} ${f.keywords ?? ""}`),
+        )
+      : [];
     return [
-      nav("goto_home", "/", t("ux.action.goto_home", "Go to Dashboard"), "◈", "dashboard home signal overview"),
-      nav("goto_trading", "/trading", t("ux.action.goto_signals", "Trading / engine commands"), "⇅", "trading engine start stop mode live paper shadow"),
-      nav("goto_positions", "/positions", t("ux.action.goto_positions", "Positions"), "▤", "positions close tickets exposure ledger"),
-      nav("goto_risk", "/risk", t("ux.action.goto_health", "Risk / guardian"), "⛨", "risk guardian halt kill switch circuit breaker"),
-      nav("goto_ml", "/ml", "ML / 70D model", "Σ", "model ml shadow70 integrity features inference"),
-      nav("goto_intel", "/intelligence", "Intelligence / news", "≈", "news intelligence autopsies calendar sentiment"),
-      nav("goto_audit", "/audit", t("ux.action.goto_diagnostics", "Audit / diagnostics"), "☰", "audit events ledger incidents database integrity"),
+      ...legacy,
+      ...features,
       {
         id: "refresh",
         group: "actions",
@@ -67,7 +92,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
     const list = !q
       ? commands
       : commands.filter((c) => `${c.label} ${c.keywords} ${c.group}`.toLowerCase().includes(q));
-    return list.slice(0, 12);
+    return list.slice(0, 30);
   }, [query, commands]);
 
   useEffect(() => setSelected(0), [query]);

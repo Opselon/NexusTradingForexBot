@@ -8,7 +8,7 @@
  *                              state, not client-side heuristics)
  */
 
-import { getV1, getLegacy } from "./client";
+import { getV1, getLegacy } from "@/core/transport";
 import type { V1RiskStatus, V1RiskSummary, RuntimeRiskState } from "@/types/domain";
 
 interface DebugStateShape {

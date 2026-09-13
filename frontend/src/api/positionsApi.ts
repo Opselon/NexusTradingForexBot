@@ -7,7 +7,7 @@
  *  GET /api/mt5/status              — includes pending orders snapshot
  */
 
-import { getV1, getLegacy } from "./client";
+import { getV1, getLegacy } from "@/core/transport";
 import type { Position, OrderRow, AuditLedgerRow, ExecutionHistoryRow, V1Page } from "@/types/domain";
 
 interface RawPositionEnvelope {

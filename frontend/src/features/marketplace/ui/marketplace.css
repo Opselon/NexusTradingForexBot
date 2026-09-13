@@ -1,0 +1,50 @@
+/* Marketplace feature — scoped styles (tokens only, logical props). */
+
+.mkt-packs {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px;
+}
+.mkt-pack {
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-panel);
+}
+.mkt-pack .name { font-size: 12.5px; font-weight: 700; }
+.mkt-pack .desc { font-size: 11px; color: var(--text-dim); flex: 1; min-block-size: 30px; }
+.mkt-pack .foot { display: flex; align-items: center; gap: 8px; border-block-start: 1px solid var(--border); padding-block-start: 6px; font-size: 10px; color: var(--text-faint); font-family: var(--mono); }
+.mkt-pack .foot .btn { margin-inline-start: auto; }
+
+.mkt-score-cell { font-variant-numeric: tabular-nums; }
+.mkt-score-cell.na { color: var(--text-faint); }
+
+/* seed drawer — reuses .news-drawer geometry via mkt- classes */
+.mkt-drawer-overlay {
+  position: fixed; inset: 0; z-index: 80; background: rgba(4, 7, 11, 0.6);
+  display: flex; justify-content: flex-end;
+}
+.mkt-drawer {
+  inline-size: min(620px, 96vw); block-size: 100%;
+  background: var(--bg-panel); border-inline-start: 1px solid var(--border-strong);
+  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column;
+}
+.mkt-drawer header {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-block-end: 1px solid var(--border); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+}
+.mkt-drawer .body { padding: 12px 14px; overflow-y: auto; flex: 1; display: grid; gap: 12px; align-content: start; }
+.mkt-drawer pre {
+  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; margin: 0; font-size: 10.5px; overflow-x: auto; font-family: var(--mono);
+  max-block-size: 260px; overflow-y: auto;
+}
+.mkt-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+.mkt-json {
+  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--text-dim);
+  max-block-size: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+}
+
+.mkt-field-error { color: var(--red); font-size: 10.5px; font-family: var(--mono); margin-block-start: 6px; }
+.input.invalid { border-color: var(--red); }

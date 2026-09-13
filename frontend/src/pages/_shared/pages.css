@@ -1,0 +1,482 @@
+/* Lane-4 page kit — additive styles for the seven operator pages.
+ *
+ * Only tokens from styles/theme.css are consumed (no hardcoded colours):
+ * the chart, gauges and drawer below encode backend state, so every fill and
+ * border goes through an existing custom property. Logical properties
+ * (margin-inline, inset-inline, padding-inline) keep the layout RTL-correct;
+ * the price chart itself is pinned LTR because its axis is time, not text. */
+
+/* ------------------------------ Section shells ------------------------------ */
+.l4-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.l4-section-gap {
+  margin-block-start: 14px;
+}
+.l4-note {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.l4-note.warn {
+  color: var(--amber);
+}
+.l4-chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.l4-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+}
+.l4-chip.good {
+  border-color: rgba(62, 207, 142, 0.45);
+  color: var(--green);
+}
+.l4-chip.bad {
+  border-color: rgba(242, 86, 77, 0.45);
+  color: #ff8f89;
+}
+.l4-chip.warn {
+  border-color: rgba(235, 161, 63, 0.45);
+  color: var(--amber);
+}
+.l4-chip.accent {
+  border-color: rgba(65, 166, 242, 0.45);
+  color: var(--accent-strong);
+}
+
+/* Provenance badges — where a value came from, never a decoration. */
+.l4-prov {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  border: 1px dashed var(--border-strong);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.l4-prov b {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+/* ------------------------------ Price chart ------------------------------ */
+.l4-chart {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 40%),
+    var(--bg-inset);
+  overflow: hidden;
+}
+.l4-chart__canvas {
+  display: block;
+  width: 100%;
+  /* time axis stays LTR even in RTL locales — the axis is chronological */
+  direction: ltr;
+}
+.l4-chart__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.l4-chart__grid-label {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.l4-chart__candle-up {
+  fill: var(--green);
+  stroke: var(--green);
+}
+.l4-chart__candle-down {
+  fill: var(--red);
+  stroke: var(--red);
+}
+.l4-chart__candle-forming {
+  opacity: 0.55;
+}
+.l4-chart__zone {
+  stroke-width: 1;
+}
+.l4-chart__zone--fvg-bull {
+  fill: rgba(62, 207, 142, 0.16);
+  stroke: rgba(62, 207, 142, 0.4);
+}
+.l4-chart__zone--fvg-bear {
+  fill: rgba(242, 86, 77, 0.16);
+  stroke: rgba(242, 86, 77, 0.4);
+}
+.l4-chart__zone--ob {
+  fill: rgba(255, 255, 255, 0.07);
+  stroke: rgba(255, 255, 255, 0.28);
+}
+.l4-chart__zone--sweep {
+  fill: rgba(235, 161, 63, 0.18);
+  stroke: rgba(235, 161, 63, 0.45);
+}
+.l4-chart__zone-label {
+  fill: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.l4-chart__bos {
+  stroke: var(--amber);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 3;
+  opacity: 0.85;
+}
+.l4-chart__mid {
+  stroke: var(--violet);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 3;
+  opacity: 0.9;
+}
+.l4-chart__order {
+  stroke-width: 1.4;
+}
+.l4-chart__order--entry {
+  stroke: var(--accent);
+}
+.l4-chart__order--sl {
+  stroke: var(--red);
+}
+.l4-chart__order--tp {
+  stroke: var(--green);
+}
+.l4-chart__marker {
+  fill: var(--amber);
+  stroke: none;
+}
+.l4-chart__cursor {
+  stroke: var(--accent-strong);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+}
+.l4-chart__future {
+  fill: rgba(2, 6, 23, 0.62);
+}
+.l4-chart__cursor-label {
+  fill: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.l4-chart__cross {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.l4-chart__tick {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.l4-chart__tip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 3;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  box-shadow: 0 8px 24px var(--elevate-lo);
+  white-space: pre;
+}
+.l4-chart__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-block-end: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.l4-chart__state {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 180px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* ------------------------------ Feature grid ------------------------------ */
+.l4-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 6px;
+  max-block-size: 320px;
+  overflow-y: auto;
+  padding-inline-end: 4px;
+}
+.l4-feature {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  padding: 5px 8px;
+}
+.l4-feature .n {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.l4-feature .v {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.l4-feature.nan {
+  border-color: rgba(235, 161, 63, 0.4);
+}
+.l4-feature.nan .v {
+  color: var(--amber);
+}
+.l4-feature.unavailable {
+  border-color: var(--border);
+  opacity: 0.6;
+}
+.l4-feature.unavailable .v {
+  color: var(--text-faint);
+}
+
+/* ------------------------------ Gauges / bars ------------------------------ */
+.l4-meter {
+  display: grid;
+  gap: 4px;
+}
+.l4-meter__row {
+  display: grid;
+  grid-template-columns: minmax(90px, 26%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.l4-meter__lab {
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 9.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l4-meter__val {
+  text-align: end;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.l4-meter__track {
+  block-size: 7px;
+  border-radius: 5px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+}
+.l4-meter__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.l4-meter__fill.ok {
+  background: linear-gradient(90deg, rgba(62, 207, 142, 0.45), var(--green));
+}
+.l4-meter__fill.warn {
+  background: linear-gradient(90deg, rgba(235, 161, 63, 0.45), var(--amber));
+}
+.l4-meter__fill.bad {
+  background: linear-gradient(90deg, rgba(242, 86, 77, 0.45), var(--red));
+}
+.l4-meter__fill.unknown {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--border-strong),
+    var(--border-strong) 3px,
+    transparent 3px,
+    transparent 7px
+  );
+  width: 100% !important;
+  opacity: 0.5;
+}
+.l4-meter__caption {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ------------------------------ Tables (sort / filter) ------------------------------ */
+.l4-th-sort {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.l4-th-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.l4-th-sort .dir {
+  color: var(--accent-strong);
+  font-family: var(--mono);
+}
+.l4-table--scroll {
+  max-block-size: 460px;
+  overflow-y: auto;
+}
+.l4-row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.l4-clickable {
+  cursor: pointer;
+}
+
+/* ------------------------------ Drawer ------------------------------ */
+.l4-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(4, 7, 11, 0.6);
+  animation: fadeIn 0.12s ease-out;
+}
+.l4-drawer {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 81;
+  inline-size: min(560px, 94vw);
+  background: var(--bg-panel);
+  border-inline-start: 1px solid var(--border-strong);
+  box-shadow: -18px 0 48px var(--elevate-lo);
+  display: flex;
+  flex-direction: column;
+  animation: drawerIn 0.16s ease-out;
+}
+@keyframes drawerIn {
+  from {
+    transform: translateX(14px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.l4-drawer__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-block-end: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.l4-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+.l4-drawer__foot {
+  border-block-start: 1px solid var(--border);
+  background: var(--bg-inset);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.l4-json {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-block-size: 320px;
+  overflow: auto;
+}
+
+/* ------------------------------ Replay panel ------------------------------ */
+.l4-replay {
+  display: grid;
+  gap: 12px;
+}
+.l4-replay__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 16px;
+}
+.l4-replay__field {
+  display: grid;
+  gap: 3px;
+}
+.l4-replay__field > label {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.l4-transport {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.l4-known {
+  display: flex;
+  gap: 2px;
+  block-size: 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.l4-known__known {
+  background: var(--accent);
+}
+.l4-known__unknown {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--border-strong),
+    var(--border-strong) 3px,
+    transparent 3px,
+    transparent 7px
+  );
+}

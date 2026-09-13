@@ -9,7 +9,7 @@
  *  GET /api/v1/database/integrity    — quick_check + bounded row counts
  */
 
-import { getV1 } from "./client";
+import { getV1 } from "@/core/transport";
 import type {
   AuditEventRow,
   AuditLedgerRow,
