@@ -347,7 +347,7 @@ async def _stream_head(app, path: str, headers: dict) -> dict:
     }
     try:
         await asyncio.wait_for(app(scope, receive, send), timeout=10)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         seen["timed_out"] = True
     return seen
 
