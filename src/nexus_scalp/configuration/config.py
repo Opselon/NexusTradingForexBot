@@ -203,6 +203,36 @@ class FreshnessConfig(BaseModel):
     max_age_sec: float = 30.0
 
 
+class PaperDataConfig(BaseModel):
+    """BUG-266 (audit K2): PAPER market-data substrate selection.
+
+    The paper adapter ships two explicit modes (P0 phase 4, a5f38467):
+      * ``SYNTHETIC`` (default) — AR(1) random walk around the per-instrument
+        seed. Deterministic, CI-friendly, but a FICTIONAL world: experience
+        learned here carries synthetic distribution statistics.
+      * ``REPLAY`` — the REAL historical chronology (dataset cache preferred,
+        committed ``data/raw`` M1 export as fallback), attached via
+        :func:`nexus_scalp.adapters.paper.paper_data.build_paper_adapter`.
+
+    The shipped REPLAY mode had no construction path until this section was
+    wired into every PAPER boot/re-alignment site, so real-market paper
+    training was impossible in production regardless of configuration.
+
+    BOOT-TIME ONLY by design: changing the data substrate mid-session would
+    cross the BUG-232 cross-mode invalidation contract (bars, price caches and
+    proposals are derived from the old stream), so this block is intentionally
+    NOT part of the runtime-config snapshot — a change requires a restart.
+    """
+
+    mode: str = "SYNTHETIC"
+    #: Preferred REPLAY source: an ``MT5TickDataset`` cache id
+    #: (fingerprint-verified ticks/bars with full provenance).
+    dataset_id: str = ""
+    #: Allow the committed real M1 bar CSV when no dataset_id is supplied.
+    allow_raw_fallback: bool = True
+    raw_bars_path: str = "data/raw/XAUUSD_M1.csv"
+
+
 class AppConfig(BaseSettings):
     """
     Root application settings holding configuration sections.
@@ -216,6 +246,10 @@ class AppConfig(BaseSettings):
 
     execution: ExecutionConfig = ExecutionConfig()
     risk: RiskConfig = RiskConfig()
+    #: BUG-266 (audit K2): PAPER market-data substrate (SYNTHETIC default /
+    #: REPLAY over real recorded data). BOOT-TIME ONLY — deliberately not part
+    #: of the runtime-config snapshot (see PaperDataConfig docstring).
+    paper_data: PaperDataConfig = PaperDataConfig()
     # [EXPANDED] Telegram Section
     telegram: TelegramConfig = TelegramConfig()
     mt5: MT5Config = MT5Config()

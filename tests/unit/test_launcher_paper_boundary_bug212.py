@@ -203,8 +203,15 @@ def test_engine_constructor_aligns_adapter_at_boot(tmp_path) -> None:
 
 def test_launcher_source_binds_paper_adapter_for_paper_boot() -> None:
     """The canonical launcher must mirror the engine_boot.py BUG-148 guard:
-    a PAPER boot binds PaperMT5Adapter BEFORE the real-adapter branch, and
-    the real branch is only reachable for non-PAPER modes."""
+    a PAPER boot binds the SIMULATION adapter BEFORE the real-adapter branch,
+    and the real branch is only reachable for non-PAPER modes.
+
+    BUG-266 (audit K2): the PAPER bind may be a DIRECT PaperMT5Adapter(...) or
+    the paper-data FACTORY build_paper_adapter(...) (which constructs the
+    PaperMT5Adapter and is the only path that can honor the configured
+    SYNTHETIC/REPLAY substrate). Both satisfy the boundary contract; a raw
+    DirectMT5Adapter under a PAPER guard never does.
+    """
     import ast
     from pathlib import Path
 
@@ -212,7 +219,7 @@ def test_launcher_source_binds_paper_adapter_for_paper_boot() -> None:
     tree = ast.parse(src)
     main_fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "main")
 
-    # Order check: the PaperMT5Adapter bind must appear before the
+    # Order check: the PAPER-mode simulation bind must appear before the
     # DirectMT5Adapter bind in main()'s line order.
     paper_bind_line = None
     direct_bind_line = None
@@ -228,12 +235,16 @@ def test_launcher_source_binds_paper_adapter_for_paper_boot() -> None:
             if "adapter" in names and node.value is not None:
                 call = node.value
                 call_src = ast.unparse(call)
-                if "PaperMT5Adapter(" in call_src and paper_bind_line is None:
+                is_paper_bind = "PaperMT5Adapter(" in call_src or "build_paper_adapter(" in call_src
+                if is_paper_bind and paper_bind_line is None:
                     paper_bind_line = node.lineno
                 if "DirectMT5Adapter(" in call_src and direct_bind_line is None:
                     direct_bind_line = node.lineno
     assert paper_guard_seen, "launcher must guard the adapter bind on ExecutionMode.PAPER"
-    assert paper_bind_line is not None, "launcher must bind PaperMT5Adapter for PAPER boots"
+    assert paper_bind_line is not None, (
+        "launcher must bind the simulation adapter (direct or via the "
+        "BUG-266 paper-data factory) for PAPER boots"
+    )
     assert direct_bind_line is not None, "launcher keeps the real adapter branch for LIVE"
     assert paper_bind_line < direct_bind_line, (
         "the PAPER simulation bind must be checked BEFORE the real-adapter branch"

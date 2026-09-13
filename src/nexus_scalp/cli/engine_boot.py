@@ -444,15 +444,40 @@ def _run_engine(
     # starts use the simulation adapter so a double-click/bare `start` can
     # NEVER touch the real broker even when MT5 credentials are configured.
     if mode_override == ExecutionMode.PAPER and not gateway:
-        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+        # BUG-266 (audit K2): PAPER boots route through the paper-data
+        # factory so the configured market-data substrate (SYNTHETIC default,
+        # REPLAY over real recorded data) is actually honored. Fail-closed:
+        # an operator who asked for REPLAY with no available data is refused
+        # loudly, never served a synthetic walk that masquerades as evidence.
+        from nexus_scalp.adapters.paper.paper_data import build_paper_adapter
+        from nexus_scalp.adapters.paper.replay_source import ReplayDataUnavailableError
 
+        try:
+            adapter = build_paper_adapter(
+                symbol=cfg.execution.symbol,
+                paper_data=getattr(cfg, "paper_data", None),
+            )
+        except ReplayDataUnavailableError as replay_err:
+            msg = f"PAPER REPLAY requested but no historical data is available: {replay_err}"
+            console.print(
+                _error_panel(
+                    "Paper REPLAY data missing",
+                    msg,
+                    hint=(
+                        "acquire a dataset first (research MT5TickDataset), export "
+                        "data/raw M1 bars, or set paper_data.mode: SYNTHETIC"
+                    ),
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
         console.print(
             Panel(
-                "[green]PAPER mode — simulation adapter (no broker connection)[/green]",
+                "[green]PAPER mode — simulation adapter (no broker connection) "
+                f"[{getattr(adapter, 'market_data_mode', 'SYNTHETIC')}][/green]",
                 border_style="green",
             )
         )
-        adapter = PaperMT5Adapter(symbol=cfg.execution.symbol)
     elif gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
         console.print(
             Panel("[yellow]Using Remote MT5 Gateway Adapter[/yellow]", border_style="yellow")

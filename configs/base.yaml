@@ -10,6 +10,17 @@ execution:
   enabled_symbols:
     - "XAUUSD"
 
+# BUG-266 (audit K2): PAPER market-data substrate. SYNTHETIC (default) is the
+# deterministic AR(1) simulation; REPLAY serves the REAL recorded chronology
+# (dataset cache id preferred, data/raw M1 export as fallback) so paper
+# experience carries real-market statistics. BOOT-TIME ONLY - a data-substrate
+# change crosses the BUG-232 invalidation contract, so restart to apply.
+paper_data:
+  mode: "SYNTHETIC"
+  dataset_id: ""
+  allow_raw_fallback: true
+  raw_bars_path: "data/raw/XAUUSD_M1.csv"
+
 risk:
   max_account_drawdown_pct: 2.0
   risk_per_trade_pct: 0.5
