@@ -675,6 +675,17 @@ class TestCli:
     ) -> None:
         captured: dict = {}
 
+        # BUG-266: the backend default now consults the launcher's recorded
+        # actual bind (.env NSE_WEB_ACTUAL_PORT). Pin it to the historical
+        # 8080 so this test keeps asserting the DEFAULT, not this machine's
+        # last boot; the recorded-port behavior has its own tests below.
+        from nexus_scalp.web import auth_boot
+
+        monkeypatch.delenv(auth_boot.ENV_ACTUAL_PORT, raising=False)
+        monkeypatch.delenv("NSE_WEB_PORT", raising=False)
+        monkeypatch.delenv("NSE_API_ORIGIN", raising=False)
+        monkeypatch.setattr(auth_boot, "_dotenv_path", lambda: None)
+
         class _Fake:
             def __init__(self, addr):
                 self.server_address = addr
@@ -713,6 +724,38 @@ class TestCli:
     def test_main_missing_dist_is_actionable(self, tmp_path: Path) -> None:
         rc = alt.main(["--dist", str(tmp_path / "nope")])
         assert rc == 2
+
+    def test_backend_default_uses_recorded_actual_port(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BUG-266: after the launcher auto-incremented (8080 busy -> 8081),
+        the standalone host must proxy to the RECORDED bind, not :8080."""
+        from nexus_scalp.web import auth_boot
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("NSE_WEB_ACTUAL_PORT=8081\n", encoding="utf-8")
+        monkeypatch.delenv(auth_boot.ENV_ACTUAL_PORT, raising=False)
+        monkeypatch.delenv("NSE_WEB_PORT", raising=False)
+        monkeypatch.delenv("NSE_API_ORIGIN", raising=False)
+        monkeypatch.setattr(auth_boot, "_dotenv_path", lambda: env_file)
+        assert alt._default_backend_origin() == "http://127.0.0.1:8081"
+
+    def test_backend_default_falls_back_without_engine(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Import failure (script outside the repo venv) must never crash
+        the host — historical :8080 default is preserved."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def boom(name, *a, **k):
+            if name.startswith("nexus_scalp"):
+                raise ImportError("no engine package")
+            return real_import(name, *a, **k)
+
+        monkeypatch.setattr(builtins, "__import__", boom)
+        assert alt._default_backend_origin() == "http://127.0.0.1:8080"
 
 
 if __name__ == "__main__":  # standalone probe (no pytest needed)

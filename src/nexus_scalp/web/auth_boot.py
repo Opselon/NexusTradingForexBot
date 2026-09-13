@@ -22,10 +22,11 @@ Contract (fail-closed preserved)
   (the caller decides; generation stays owned by ``_resolve_token``).
 * ``publish`` runs at SERVER BOOT ONLY (launcher / ``nexus start`` web
   co-boot — never CLI subcommands like ``doctor``/``status``): exports
-  ``NSE_WEB_AUTH_TOKEN`` + ``NSE_WEB_PORT`` to the PROCESS env (children
-  inherit the authoritative value) and persists both to the repo-root
-  ``.env`` (gitignored; the same file the docker-compose contract already
-  reads ``NSE_WEB_AUTH_TOKEN`` from).
+  ``NSE_WEB_AUTH_TOKEN`` + ``NSE_WEB_ACTUAL_PORT`` to the PROCESS env
+  (children inherit the authoritative value) and persists both to the
+  repo-root ``.env`` (gitignored; the same file the docker-compose contract
+  already reads ``NSE_WEB_AUTH_TOKEN`` from). The docker ``NSE_WEB_PORT``
+  mapping key is operator-owned and NEVER written by the launcher.
 * The token value is printed ONLY by the 127.0.0.1-bound launcher banner via
   an explicit caller-supplied sink. This module never prints or logs it.
 * Opt-out: ``NSE_WEB_AUTH_DOTENV_DISABLE=1`` skips the .env write (the env
@@ -37,8 +38,9 @@ Contract (fail-closed preserved)
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
 
@@ -46,7 +48,13 @@ logger = get_logger("nexus_scalp.web.auth_boot")
 
 #: Process-env keys published at server boot.
 ENV_ACTIVE_TOKEN = "NSE_WEB_AUTH_TOKEN"
-ENV_WEB_PORT = "NSE_WEB_PORT"
+#: BUG-266: the port the WEB SERVER ACTUALLY bound (after auto-increment).
+#: Deliberately NOT NSE_WEB_PORT: docker-compose uses that key as the HOST
+#: side of its port mapping (``${NSE_WEB_PORT:-9090}:9090``) — overwriting
+#: it from a local launcher boot would change the container mapping and can
+#: collide (compose up failing on a busy host port). The local bind truth
+#: gets its own key; NSE_WEB_PORT remains purely operator-configured.
+ENV_ACTUAL_PORT = "NSE_WEB_ACTUAL_PORT"
 #: Opt-out for the .env persistence (env export still applies).
 DOTENV_DISABLE_ENV = "NSE_WEB_AUTH_DOTENV_DISABLE"
 
@@ -57,8 +65,11 @@ _ENV_FILE_HEADER = (
     "# Keep this file private (gitignored). Both web consoles bootstrap cookie\n"
     "# auth automatically (BUG-266); this token is the operator copy for\n"
     "# header/query auth (?token=...), scripts and docker-compose.\n"
-    "#   legacy console:  http://127.0.0.1:$NSE_WEB_PORT/\n"
-    "#   React  console:  http://127.0.0.1:$NSE_WEB_PORT/alt/\n"
+    "# NSE_WEB_ACTUAL_PORT is the port the web server ACTUALLY bound at last\n"
+    "# boot (after auto-increment past occupied ports). NSE_WEB_PORT stays\n"
+    "# the operator/compose mapping key — never written by the launcher.\n"
+    "#   legacy console:  http://127.0.0.1:$NSE_WEB_ACTUAL_PORT/\n"
+    "#   React  console:  http://127.0.0.1:$NSE_WEB_ACTUAL_PORT/alt/\n"
 )
 
 
@@ -103,7 +114,9 @@ def update_env_file(path: Path, updates: dict[str, str]) -> None:
     os.replace(tmp, path)
 
 
-def publish(port: int | None = None, *, print_token_to: Callable[[str], None] | None = None) -> dict[str, Any]:
+def publish(
+    port: int | None = None, *, print_token_to: Callable[[str], None] | None = None
+) -> dict[str, Any]:
     """Server-boot token/port handoff. Returns {"token", "port", "dotenv"}.
 
     ``print_token_to``: caller-supplied sink for the launcher's LOCAL banner
@@ -127,8 +140,8 @@ def publish(port: int | None = None, *, print_token_to: Callable[[str], None] | 
             "auth middleware owns generation+persistence for this process"
         )
     if port is not None:
-        os.environ[ENV_WEB_PORT] = str(port)
-        env[ENV_WEB_PORT] = str(port)
+        os.environ[ENV_ACTUAL_PORT] = str(port)
+        env[ENV_ACTUAL_PORT] = str(port)
     dotenv_written = False
     if env and not os.environ.get(DOTENV_DISABLE_ENV, "").strip():
         path = _dotenv_path()
@@ -141,3 +154,57 @@ def publish(port: int | None = None, *, print_token_to: Callable[[str], None] | 
     if token and print_token_to is not None:
         print_token_to(token)
     return {"token": token, "port": port, "dotenv": dotenv_written}
+
+
+def read_env_file() -> dict[str, str]:
+    """Parse the repo-root .env (KEY=VALUE lines; comments/blanks ignored).
+
+    Best-effort: unreadable/absent file resolves to {} — callers fall back
+    to their own defaults. Used by first-party tooling (doctor's web probe,
+    the launcher's port choice) so the values publish() persisted at boot
+    are visible WITHOUT importing the secret into unrelated process env.
+    """
+    path = _dotenv_path()
+    if path is None:
+        return {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    out: dict[str, str] = {}
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        out[key.strip()] = value.strip().strip('"').strip("'")
+    return out
+
+
+def resolved_web_port(default: int = 8080) -> int:
+    """The port first-party tooling should probe/publish.
+
+    Precedence: NSE_WEB_ACTUAL_PORT env > .env NSE_WEB_ACTUAL_PORT (written
+    by publish() at the last real boot — the port the web server ACTUALLY
+    bound after auto-increment) > NSE_WEB_PORT (operator-configured, the
+    docker-compose mapping key) > ``default``. This is what makes
+    `nexus doctor` and the launcher stop contradicting the running engine
+    when 8080 was occupied and the server drifted to 8081+: the FIRST boot
+    records the actual port, every later tool reads it. A malformed value
+    at any level falls through to the next (never crashes a CLI probe).
+    """
+    file_env = read_env_file()
+    candidates = (
+        os.environ.get(ENV_ACTUAL_PORT, ""),
+        file_env.get(ENV_ACTUAL_PORT, ""),
+        os.environ.get("NSE_WEB_PORT", ""),
+        file_env.get("NSE_WEB_PORT", ""),
+    )
+    for raw in candidates:
+        try:
+            port = int(raw.strip())
+        except ValueError:
+            continue
+        if 1 <= port <= 65535:
+            return port
+    return default

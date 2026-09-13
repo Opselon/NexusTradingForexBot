@@ -73,7 +73,12 @@ LOGGER.addHandler(logging.NullHandler())
 
 #: Path prefixes ALWAYS proxied to the backend — never served locally, never
 #: SPA-fallback'd, never cached (mirrors frontend/vite.config.ts proxy keys).
-API_PREFIXES: tuple[str, ...] = ("/api", "/health", "/healthz")
+#: BUG-266: /app.js + /api_client.js ride the proxy too — they are the
+#: backend's bootstrap-Cookie carriers (WEB-UI-BOOTSTRAP Set-Cookie on the
+#: public asset). Serving them from disk here would strand a tokenless
+#: browser with no cookie jar and re-create the "every /api call 401s" trap
+#: behind a proxy that answers 200 for the bundle.
+API_PREFIXES: tuple[str, ...] = ("/api", "/health", "/healthz", "/app.js", "/api_client.js")
 
 #: The realtime route (detection is content-type driven; this is a path
 #: override so an empty/streaming-starting upstream is still relayed raw).
@@ -726,6 +731,26 @@ def _default_dist() -> Path:
     return Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
+def _default_backend_origin() -> str:
+    """BUG-266: the engine's REAL bound port when the launcher recorded one.
+
+    The web server auto-increments past occupied ports (8080 -> 8081 on
+    boxes where NVIDIA Broadcast holds 8080) and auth_boot.publish() writes
+    the actual bind into .env (NSE_WEB_ACTUAL_PORT). A standalone host that
+    keeps proxying to a literal :8080 gets connection refusals and the
+    operator sees 502/UNAUTHORIZED ghosts — read the recorded truth first.
+    Engine-import failure (script run outside the repo venv) falls back to
+    the historical 8080 default, never crashes.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+        from nexus_scalp.web.auth_boot import resolved_web_port
+
+        return f"http://127.0.0.1:{resolved_web_port(default=8080)}"
+    except Exception:
+        return "http://127.0.0.1:8080"
+
+
 _REMOTE_WARNING = """\
 ********************************************************************************
 * NSE ALT-UI HOST IS BOUND TO A NON-LOCALHOST ADDRESS ({host})
@@ -781,7 +806,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    backend_url = args.backend or os.environ.get("NSE_API_ORIGIN") or "http://127.0.0.1:8080"
+    backend_url = args.backend or os.environ.get("NSE_API_ORIGIN") or _default_backend_origin()
     dist_arg = args.dist or os.environ.get("NEXUS_ALT_UI_DIR") or str(_default_dist())
     try:
         backend = parse_backend_url(backend_url)

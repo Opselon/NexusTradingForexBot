@@ -228,12 +228,13 @@ def current_web_auth_token() -> str | None:
 #: web_auth_token_in_process() lets auth_boot.publish() export/persist the
 #: authoritative value even when resolution happened in-process (generated
 #: branch) and was never written anywhere an operator tool can read.
-_LIVE_WEB_AUTH_TOKEN: str | None = None
+#: Mutable container (ruff PLW0603 pattern precedent: tests/conftest).
+_LIVE_WEB_AUTH_TOKEN: dict[str, str | None] = {"token": None}
 
 
 def web_auth_token_in_process() -> str | None:
     """Token resolved by install_web_auth in THIS process (never generates)."""
-    return _LIVE_WEB_AUTH_TOKEN
+    return _LIVE_WEB_AUTH_TOKEN["token"]
 
 
 class WebAuthMiddleware:
@@ -459,8 +460,7 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
         # (and any first-party tooling) can retrieve the generated token
         # without re-minting one. The middleware instance stays the authority.
         token, _src = _resolve_token()
-        global _LIVE_WEB_AUTH_TOKEN
-        _LIVE_WEB_AUTH_TOKEN = token
+        _LIVE_WEB_AUTH_TOKEN["token"] = token
         return token
 
     app.add_middleware(_TokenAuthMiddleware, token_resolver=_resolve)

@@ -16,7 +16,7 @@ venv python.
 | Port / bind | `--port` (default **8088**), binds **127.0.0.1** unless `--host`/`--allow-remote` |
 | Static | serves `--dist` (default `<repo>/frontend/dist`, `NEXUS_ALT_UI_DIR` fallback); the vite `base:"/alt/"` prefix is accepted and transparently stripped (`/alt/assets/x.js` → `dist/assets/x.js`) |
 | SPA fallback | unknown non-API path + `Accept: text/html` → `index.html` (deep links like `/positions` work); otherwise 404 JSON envelope |
-| Proxy | `/api`, `/health`, `/healthz` (+ subpaths) → `--backend` (default `http://127.0.0.1:8080`, `NSE_API_ORIGIN` fallback). Methods GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS, body (1 MiB `Content-Length` guard), query string |
+| Proxy | `/api`, `/health`, `/healthz` (+ subpaths) → `--backend` (default: the launcher-recorded `NSE_WEB_ACTUAL_PORT` from the repo `.env`, else `http://127.0.0.1:8080`; `NSE_API_ORIGIN` overrides). BUG-266: `/app.js` + `/api_client.js` are proxied too — they carry the backend's bootstrap `Set-Cookie`. Methods GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS, body (1 MiB `Content-Length` guard), query string |
 | Header passthrough | **only** `content-type`, `accept`, `x-nse-token`, `cookie`, `authorization` + `X-Request-ID` + a corrected `Host`. Everything else is dropped |
 | Response relay | upstream status/headers/body; hop-by-hop headers stripped (`connection`, `keep-alive`, `transfer-encoding`, …); `Content-Length` corrected to the relayed body |
 | SSE | any upstream `text/event-stream` (primary route `/api/ticks/stream`) is relayed **unbuffered**: `read1(≤64 KiB)` → write → `flush`, per chunk; `X-Accel-Buffering: no` + `Connection: close`; client disconnect tears the upstream down immediately |
