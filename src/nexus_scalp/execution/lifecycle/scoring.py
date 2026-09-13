@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from nexus_scalp.domain.enums import OrderType
@@ -506,15 +506,34 @@ class PositionScoringEngine:
         # loop. Never derive age from the host wall clock: the broker/server clock
         # can be hours ahead of the host, which produced negative ages
         # (e.g. "Age: -10781.6s") and suppressed every time-based exit.
+        # BUG-268 (clock-domain parity with G3/BUG-259/BUG-260): the
+        # no-threaded-now branch used to fall back to the HOST WALL CLOCK,
+        # mixing it with the broker-domain
+        # entry anchor. A host clock AHEAD of the tick domain opened the 60s
+        # grace gate instantly on a fresh position (the MIN_LOSS exit cluster
+        # can fire before the trade has breathed); a host clock BEHIND kept the
+        # gate shut for the true grace plus the skew. Now: duration is computed
+        # ONLY when both stamps share one tz domain; otherwise conservative
+        # 0.0 (grace stays closed) + a rate-limited loud WARNING, exactly the
+        # G3 HOLD_AGE_FALLBACK pattern.
         entry_time = self.om._entry_timestamps.get(ticket)
-        if entry_time:
-            if now is not None:
+        duration_sec = 0.0
+        if entry_time is not None:
+            if now is not None and (entry_time.tzinfo is None) == (now.tzinfo is None):
                 duration_sec = (now - entry_time).total_seconds()
             else:
-                now_ref = datetime.now(UTC) if entry_time.tzinfo else datetime.now()
-                duration_sec = (now_ref - entry_time).total_seconds()
-        else:
-            duration_sec = 0.0
+                now_mono = time.monotonic()
+                if (now_mono - getattr(self, "_hold_age_fallback_warned_at", 0.0)) >= 300.0:
+                    self._hold_age_fallback_warned_at = now_mono
+                    logger.warning(
+                        "[POSITION] event=HOLD_AGE_FALLBACK "
+                        "mode=no_tick_timestamp_conservative_zero "
+                        "ticket=%s entry_time_present=%s "
+                        "(tick timestamp missing/unusable in minimum-loss call; "
+                        "wall-clock duration suppressed — BUG-268)",
+                        ticket,
+                        True,
+                    )
 
         # 60-Second Spread Overcome Grace Period (Prevent instant exit due to spread costs at open)
         if duration_sec < 60.0:
