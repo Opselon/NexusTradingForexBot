@@ -18,6 +18,8 @@ import { useQuery } from "@tanstack/react-query";
 import { mlApi } from "@/api/mlApi";
 import type { EngineSnapshot } from "@/types/domain";
 import { EmptyState, MetricCard, Panel, ProbBar, StatusBadge } from "@/components/primitives";
+import { FeatureContributionChart, LatencySplitBar, ProbTriple, Shadow70Strip } from "@/components/pro/MLViz";
+import { PayloadInspector } from "@/components/pro/AuditTools";
 import { formatNumber, formatPct } from "@/lib/format";
 import { useI18n } from "@/stores/i18nStore";
 import { ErrorState } from "@/components/primitives";
@@ -95,6 +97,7 @@ export default function MLPage({ snapshot }: Props) {
 
       <div className="grid cols-2" style={{ marginTop: 14 }}>
         <Panel title={t("alt.ml.panel_probs", "Live probabilities (engine)")} accent>
+          <ProbTriple probs={snapshot?.probs} decision={snapshot?.ai_decision} reason={snapshot?.ai_reason} confidence={snapshot?.ai_confidence} ageSec={snapshot?.diagnostics.inference_age_sec ?? null} />
           {snapshot?.probs.available ? (
             <ProbBar
               rows={[
@@ -139,11 +142,15 @@ export default function MLPage({ snapshot }: Props) {
           ) : (
             <ErrorState message={t("alt.ml.err_identity", "Identity endpoint failed.")} onRetry={() => identityQuery.refetch()} />
           )}
+          <div style={{ marginTop: 12 }}>
+            <LatencySplitBar model={snapshot?.model} />
+          </div>
         </Panel>
       </div>
 
       <div className="grid cols-2">
         <Panel title={t("alt.ml.panel_pipeline", "Feature pipeline")}>
+          <FeatureContributionChart features={snapshot?.features} topN={12} missingFeatures={featuresQuery.data?.missing_features ?? null} featureDimension={snapshot?.model.feature_dimension ?? null} warmupState={featuresQuery.data?.warmup_state ?? null} ageSec={snapshot?.diagnostics.features_age_sec ?? null} />
           {featuresQuery.data ? (
             <dl className="kv">
               <dt>{t("alt.ml.dt_warmup", "warmup")}</dt>
@@ -166,6 +173,7 @@ export default function MLPage({ snapshot }: Props) {
           title={t("alt.ml.panel_shadow", "70D shadow runtime")}
           right={s70?.runtime?.state ? <StatusBadge status={String(s70.runtime.state)} /> : undefined}
         >
+          <Shadow70Strip observations={s70?.store?.recent_observations ?? null} counts={s70?.store?.disagreement_counts ?? null} runtimeState={s70?.runtime?.state ? String(s70.runtime.state) : null} available={s70?.available ?? false} limit={8} />
           {shadow70Query.isPending ? (
             <div className="muted small">{t("alt.common.loading", "loading…")}</div>
           ) : s70?.available === false || !s70 ? (
@@ -184,6 +192,9 @@ export default function MLPage({ snapshot }: Props) {
               <dd>{s70.store?.disagreement_counts ? Object.entries(s70.store.disagreement_counts).map(([k, v]) => `${k}:${v}`).join(" · ") || "—" : "—"}</dd>
             </dl>
           )}
+          <div style={{ marginTop: 10 }}>
+            <PayloadInspector title="GET /api/models/shadow70/summary" payload={s70} summaryMaxLen={140} />
+          </div>
         </Panel>
       </div>
 
