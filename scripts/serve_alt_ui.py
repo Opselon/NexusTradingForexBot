@@ -94,6 +94,20 @@ FORWARD_REQUEST_HEADERS: frozenset[str] = frozenset(
 #: echoed on responses (same plumbing/shape as web/errors.request_id_from_request).
 REQUEST_ID_HEADER = "X-Request-ID"
 
+#: BUG-270 (CodeQL py/http-response-splitting): conservative charset for a
+#: client-supplied correlation id. The stdlib email parser PRESERVES obs-fold
+#: continuations inside a header value (``X-Request-ID: a\n\tb`` parses to
+#: ``"a\n\tb"``) and ``BaseHTTPRequestHandler.send_header`` writes the buffer
+#: raw with zero validation — unlike h11 (uvicorn) or http.client.putheader.
+#: So any non-charset value (anything carrying CR/LF or a control char) is
+#: rejected and a fresh id is minted instead of being echoed back.
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,64}\Z")
+
+#: RFC 9110 field-name token chars (the same shape http.client.putheader
+#: enforces on the request side). Upstream header names outside it (spaces,
+#: underscores, smuggled content) are never re-emitted by this host.
+_FIELD_NAME_RE = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+\Z")
+
 #: Hop-by-hop response headers that are never re-emitted (RFC 9110 §7.6.1):
 #: this host re-frames every response itself (content-length, or close-delimited
 #: for SSE).
@@ -175,6 +189,20 @@ def redact_header_value(name: str, value: str) -> str:
     if n in ("authorization", "cookie", "x-nse-token", "proxy-authorization"):
         return f"[REDACTED:{n} len={len(value)}]"
     return value
+
+
+def header_safe(value: str) -> str:
+    """BUG-270: strip CR and LF from anything destined for a response header.
+
+    ``BaseHTTPRequestHandler.send_header`` writes its buffer with ZERO
+    validation (unlike h11/uvicorn or ``http.client.putheader``), and the
+    stdlib email parser PRESERVES obs-fold continuations inside a header
+    value — so a smuggled ``X: a\\nSet-Cookie: ...`` line would be relayed
+    verbatim by every echo/relay sink in this class. Every value (and name)
+    this host emits passes through here; the request-id path is additionally
+    allowlisted by :data:`_REQUEST_ID_RE` before being stored.
+    """
+    return value.replace("\n", "").replace("\r", "")
 
 
 def _is_sse_content_type(value: str | None) -> bool:
@@ -261,7 +289,13 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
     def _dispatch(self, method: str) -> None:
         raw_path = self.path or "/"
         raw_only, _, query = raw_path.partition("?")
-        self._request_id = (self.headers.get("x-request-id") or "").strip()[:64] or new_request_id()
+        raw_rid = (self.headers.get("x-request-id") or "").strip()[:64]
+        # BUG-270: echo ONLY a charset-safe correlation id. The stdlib email
+        # parser keeps obs-fold continuations inside a value (CR/LF survive
+        # parsing), and send_header writes its buffer raw — so anything with a
+        # control char (or oversized/garbage) gets a freshly minted id instead
+        # of being echoed back on every later response of this request.
+        self._request_id = raw_rid if _REQUEST_ID_RE.fullmatch(raw_rid) else new_request_id()
 
         # Traversal guard applies to EVERY route (proxy included): a path
         # containing '..' (literal or encoded) or backslashes is a scan/bypass
@@ -383,7 +417,7 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header(REQUEST_ID_HEADER, self._request_id)
+        self.send_header(REQUEST_ID_HEADER, header_safe(self._request_id))
         self.end_headers()
         if not head_only:
             self.wfile.write(body)
@@ -516,10 +550,14 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
 
     def _relay(self, resp, *, stream: bool) -> None:  # resp: HTTPResponse
         """Relay the upstream response, re-framed for HTTP/1.1."""
+        # BUG-270: upstream names must be RFC 9110 tokens. The stdlib email
+        # parser preserves obs-fold (embedded CR/LF) inside a header value AND
+        # can yield names with embedded whitespace; this host never re-emits
+        # such a line. Values are additionally CR/LF-stripped at every sink.
         headers: list[tuple[str, str]] = [
-            (name, value)
+            (header_safe(name), header_safe(value))
             for name, value in resp.getheaders()
-            if name.lower() not in HOP_BY_HOP_RESPONSE_HEADERS
+            if name.lower() not in HOP_BY_HOP_RESPONSE_HEADERS and _FIELD_NAME_RE.fullmatch(name)
         ]
         names_lower = {n.lower() for n, _ in headers}
 
@@ -528,12 +566,12 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
             for name, value in headers:
                 if name.lower() in ("content-length", "date", "server"):
                     continue  # this host re-frames; body ends at connection close
-                self.send_header(name, value)
+                self.send_header(header_safe(name), header_safe(value))
             if "cache-control" not in names_lower:
                 self.send_header("Cache-Control", "no-cache")
             if "x-accel-buffering" not in names_lower:
                 self.send_header("X-Accel-Buffering", "no")
-            self.send_header(REQUEST_ID_HEADER, self._request_id)
+            self.send_header(REQUEST_ID_HEADER, header_safe(self._request_id))
             # close-delimited body (we stripped transfer-encoding)
             self.send_header("Connection", "close")
             self.close_connection = True
@@ -546,17 +584,19 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
         for name, value in headers:
             if name.lower() in ("content-length", "date", "server"):
                 continue  # re-emitted/corrected by this host
-            self.send_header(name, value)
+            self.send_header(header_safe(name), header_safe(value))
         if self.command == "HEAD":
-            # No body to measure: keep the upstream's declared length.
-            upstream_len = resp.getheader("content-length")
-            if upstream_len is not None:
-                self.send_header("Content-Length", upstream_len)
+            # No body to measure: keep the upstream's declared length, but ONLY
+            # when it is a clean integer (BUG-270: never echo a raw upstream
+            # string into a framing header).
+            upstream_len = (resp.getheader("content-length") or "").strip()
+            if upstream_len.isdigit():
+                self.send_header("Content-Length", header_safe(upstream_len))
         elif resp.status not in (204, 304):
             # 204/304 must not carry content-length (RFC 9110 §15.3.2/§15.4.5)
             self.send_header("Content-Length", str(len(body)))
         if REQUEST_ID_HEADER.lower() not in names_lower:
-            self.send_header(REQUEST_ID_HEADER, self._request_id)
+            self.send_header(REQUEST_ID_HEADER, header_safe(self._request_id))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -649,12 +689,23 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            self.send_header(REQUEST_ID_HEADER, rid)
+            self.send_header(REQUEST_ID_HEADER, header_safe(rid))
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
         except OSError:  # pragma: no cover - client already gone
             self.close_connection = True
+
+    def send_header(self, keyword: str, value: str) -> None:
+        """BUG-270 choke point: this host NEVER writes a raw CR/LF into a header.
+
+        ``BaseHTTPRequestHandler.send_header`` buffers ``"%s: %s\\r\\n" % (kw, val)``
+        and encodes it with zero validation. CodeQL flags every echo/relay
+        sink fed from parsed request/upstream bytes. Stripping here backs up
+        the per-sink ``header_safe()`` calls: no future echo can reintroduce
+        response splitting through this handler.
+        """
+        super().send_header(header_safe(str(keyword)), header_safe(str(value)))
 
     def log_request(self, code: str | int = "-", size: str | int = "-") -> None:
         """One access line per response — WITHOUT any credential material.
