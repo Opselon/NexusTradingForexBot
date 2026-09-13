@@ -101,12 +101,31 @@ REQUEST_ID_HEADER = "X-Request-ID"
 #: raw with zero validation — unlike h11 (uvicorn) or http.client.putheader.
 #: So any non-charset value (anything carrying CR/LF or a control char) is
 #: rejected and a fresh id is minted instead of being echoed back.
-_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,64}\Z")
+#: Validators below are deliberately PLAIN string checks, not regexes: a
+#: regex fed attacker-controlled bytes is itself a scanning target
+#: (py/polynomial-redos flags per-char class matching on unbounded input),
+#: and set membership + length caps are linear and provably safe.
+_REQUEST_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-")
+_REQUEST_ID_MAX = 64
 
 #: RFC 9110 field-name token chars (the same shape http.client.putheader
-#: enforces on the request side). Upstream header names outside it (spaces,
-#: underscores, smuggled content) are never re-emitted by this host.
-_FIELD_NAME_RE = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+\Z")
+#: enforces on the request side; underscore IS a valid tchar). Names outside it
+#: (spaces, colons, smuggled content) are never re-emitted by this host.
+_FIELD_NAME_CHARS = frozenset(
+    "!#$%&'*+-.^_`|~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+)
+_FIELD_NAME_MAX = 128  # practical header-name cap, keeps the scan bounded
+
+
+def request_id_is_safe(value: str) -> bool:
+    """Charset + length check for a client-supplied correlation id."""
+    return bool(value) and len(value) <= _REQUEST_ID_MAX and set(value) <= _REQUEST_ID_CHARS
+
+
+def field_name_is_safe(name: str) -> bool:
+    """RFC 9110 token check for a header name destined for the wire."""
+    return bool(name) and len(name) <= _FIELD_NAME_MAX and set(name) <= _FIELD_NAME_CHARS
+
 
 #: Hop-by-hop response headers that are never re-emitted (RFC 9110 §7.6.1):
 #: this host re-frames every response itself (content-length, or close-delimited
@@ -200,7 +219,7 @@ def header_safe(value: str) -> str:
     value — so a smuggled ``X: a\\nSet-Cookie: ...`` line would be relayed
     verbatim by every echo/relay sink in this class. Every value (and name)
     this host emits passes through here; the request-id path is additionally
-    allowlisted by :data:`_REQUEST_ID_RE` before being stored.
+    allowlisted by :func:`request_id_is_safe` before being stored.
     """
     return value.replace("\n", "").replace("\r", "")
 
@@ -295,7 +314,7 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
         # parsing), and send_header writes its buffer raw — so anything with a
         # control char (or oversized/garbage) gets a freshly minted id instead
         # of being echoed back on every later response of this request.
-        self._request_id = raw_rid if _REQUEST_ID_RE.fullmatch(raw_rid) else new_request_id()
+        self._request_id = raw_rid if request_id_is_safe(raw_rid) else new_request_id()
 
         # Traversal guard applies to EVERY route (proxy included): a path
         # containing '..' (literal or encoded) or backslashes is a scan/bypass
@@ -557,7 +576,7 @@ class AltUIRequestHandler(BaseHTTPRequestHandler):
         headers: list[tuple[str, str]] = [
             (header_safe(name), header_safe(value))
             for name, value in resp.getheaders()
-            if name.lower() not in HOP_BY_HOP_RESPONSE_HEADERS and _FIELD_NAME_RE.fullmatch(name)
+            if name.lower() not in HOP_BY_HOP_RESPONSE_HEADERS and field_name_is_safe(name)
         ]
         names_lower = {n.lower() for n, _ in headers}
 

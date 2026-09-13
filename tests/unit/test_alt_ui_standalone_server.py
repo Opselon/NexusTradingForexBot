@@ -689,9 +689,20 @@ class TestHeaderInjectionDefense:
         ok = ["req_browser_supplied", "a", "A:b-c_1.2", "req_" + "d" * 60]
         bad = ["", "a b", "req\ninjected", "x" * 65, "id\ttab", "id;inject"]
         for v in ok:
-            assert alt._REQUEST_ID_RE.fullmatch(v), v
+            assert alt.request_id_is_safe(v), v
         for v in bad:
-            assert not alt._REQUEST_ID_RE.fullmatch(v), v
+            assert not alt.request_id_is_safe(v), v
+        # BUG-270: validators are LINEAR set checks, never regexes on attacker bytes
+        assert not hasattr(alt, "_REQUEST_ID_RE")
+        assert not hasattr(alt, "_FIELD_NAME_RE")
+
+    def test_field_name_validator_pure_unit(self) -> None:
+        ok = ["Content-Type", "ETag", "X-Request-ID", "a"]
+        bad = ["", "X-Bad Name", "X:Fold", "x" * 129, "a\nb"]
+        for v in ok:
+            assert alt.field_name_is_safe(v), v
+        for v in bad:
+            assert not alt.field_name_is_safe(v), v
 
     def test_send_header_override_is_the_choke_point(self) -> None:
         h = alt.AltUIRequestHandler.__new__(alt.AltUIRequestHandler)
