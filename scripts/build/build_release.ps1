@@ -62,7 +62,13 @@ Pass "Canonical version: $Version (channel: $Channel)"
 # 2. Git state + secret guard
 # ---------------------------------------------------------------------------
 Write-Step "2/10 Repository audit (git state + secret guard)"
-$GitCommit = (& git rev-parse --short HEAD).Trim()
+# Release-wave Finding 2: the build identity binds to the FULL 40-hex commit
+# SHA. Short SHAs are presentation-only (the Pass line below may display it).
+$GitCommitFull = (& git rev-parse HEAD).Trim()
+if ($GitCommitFull -notmatch '^[0-9a-fA-F]{40}$') {
+    Fail "RELEASE_IDENTITY_FULL_SHA_REQUIRED: got '$GitCommitFull'"
+}
+$GitCommit = $GitCommitFull
 $Dirty = (& git status --porcelain) -ne $null -and (& git status --porcelain | Measure-Object).Count -gt 0
 $Tag = try { (& git describe --tags --exact-match 2>$null) } catch { $null }
 if ($Dirty) {

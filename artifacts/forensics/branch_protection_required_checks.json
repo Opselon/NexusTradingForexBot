@@ -1,0 +1,17 @@
+{
+  "source": "GET /repos/Opselon/NexusTradingForexBot/branches/main/protection",
+  "captured_at": "2026-09-11",
+  "contexts": [
+    "Dependency drift (lock vs pyproject)",
+    "Migration safety (fail-loud + version postconditions)",
+    "Frontend JS Unit Tests",
+    "CodeQL Analysis",
+    "Trivy Vulnerability Scan",
+    "OSV Scanner / osv-scan",
+    "Py Tests (macos-latest)",
+    "Py Tests (windows-latest)",
+    "Validate documentation",
+    "CI Integrity and Change Classification",
+    "Code Quality & Tests"
+  ]
+}
