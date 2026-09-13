@@ -178,6 +178,7 @@
     "reproducibility": "Reproducibility",
     "quality": "Quality & Testing",
     "ci": "CI Architecture",
+    "workflow-test-build-release": "Test, Build & Release Workflow",
     "release-process": "Release Process",
     "security": "Security",
     "cli": "CLI Guide",

@@ -178,6 +178,7 @@
     "reproducibility": "بازتولیدپذیری",
     "quality": "کیفیت و تست",
     "ci": "معماری CI",
+    "workflow-test-build-release": "گردش کار تست، ساخت و انتشار",
     "release-process": "فرایند انتشار",
     "security": "امنیت",
     "cli": "راهنمای CLI",

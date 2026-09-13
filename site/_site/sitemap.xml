@@ -10,6 +10,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/data-flow/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/dependency-map/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/model-pipeline/</loc></url>
@@ -32,6 +33,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/security/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/workflow-test-build-release/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/getting-started/configuration/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/getting-started/first-run/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/getting-started/installation/</loc></url>
@@ -76,6 +78,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/data-flow/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/dependency-map/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/model-pipeline/</loc></url>
@@ -98,6 +101,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/security/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/workflow-test-build-release/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/getting-started/configuration/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/getting-started/first-run/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/getting-started/installation/</loc></url>
@@ -143,6 +147,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/data-flow/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/dependency-map/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/model-pipeline/</loc></url>
@@ -165,6 +170,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/security/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/workflow-test-build-release/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/getting-started/configuration/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/getting-started/first-run/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/getting-started/installation/</loc></url>
@@ -210,6 +216,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/data-flow/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/dependency-map/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/model-pipeline/</loc></url>
@@ -232,6 +239,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/security/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/workflow-test-build-release/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/getting-started/configuration/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/getting-started/first-run/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/getting-started/installation/</loc></url>
@@ -277,6 +285,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/data-flow/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/dependency-map/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/model-pipeline/</loc></url>
@@ -299,6 +308,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/security/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/workflow-test-build-release/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/getting-started/configuration/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/getting-started/first-run/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/getting-started/installation/</loc></url>
