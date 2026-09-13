@@ -122,7 +122,7 @@ export default function AuditPage() {
           right={
             <>
               <CsvExportButton
-                label={t("alt.audit.export_csv", "Export CSV")}
+                label={t("alt.common.export_csv", "Export CSV")}
                 filename={`audit-events-p${eventPage}`}
                 headers={["ID", "Time", "Type", "Payload"]}
                 rows={(eventsQuery.data?.items ?? []).map((r) => [r.id, r.created_at ?? "", r.event_type ?? "", payloadSummary(r.payload, 400, 3)])}
@@ -216,7 +216,7 @@ export default function AuditPage() {
                 <option value="LOW">LOW</option>
               </select>
               <CsvExportButton
-                label={t("alt.audit.export_csv", "Export CSV")}
+                label={t("alt.common.export_csv", "Export CSV")}
                 filename={`incidents-p${incidentPage}`}
                 headers={["ID", "Severity", "Status", "Category", "Component", "Title", "Created"]}
                 rows={(incidentsQuery.data?.items ?? []).map((r) => [String(r.incident_id ?? r.id ?? ""), r.severity ?? "", r.status ?? "", r.category ?? "", r.component ?? "", r.title ?? "", r.created_at ?? ""])}
