@@ -4,7 +4,7 @@
  * Contract:
  *  - ALL backend communication goes through here (no scattered fetch()).
  *  - Auth: the backend enforces WEB-AUTH-P0 token auth (Bearer / X-NSE-Token /
- *    ?token=). BUG-266: the primary transport is now the HttpOnly bootstrap
+ *    ?token=). BUG-267: the primary transport is now the HttpOnly bootstrap
  *    cookie the backend sets on the public document/assets — every request
  *    is sent with credentials:"same-origin" so it rides automatically, and
  *    a 401 self-heals ONCE by re-fetching /app.js (the cookie-issuing asset)
@@ -130,7 +130,7 @@ async function _rawRequest<T>(path: string, opts: RequestOptions, allowHeal: boo
         ...(opts.headers ?? {}),
       },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-      // BUG-266: explicit same-origin credential ride — the HttpOnly
+      // BUG-267: explicit same-origin credential ride — the HttpOnly
       // nse_web_auth bootstrap cookie authenticates the console without a
       // hand-pasted token (default fetch already does this; pinned so a
       // future RequestInfo refactor cannot silently drop it).
@@ -142,7 +142,7 @@ async function _rawRequest<T>(path: string, opts: RequestOptions, allowHeal: boo
     throw new ApiError(0, "NETWORK_ERROR", "Network request failed — backend unreachable.", rid, true);
   }
 
-  // BUG-266 one-shot self-heal: cookie expired/absent (host swap between
+  // BUG-267 one-shot self-heal: cookie expired/absent (host swap between
   // localhost and 127.0.0.1 has separate cookie jars) — re-fetch a public
   // cookie-issuing asset and retry exactly once. Mutations never retry.
   if (res.status === 401 && allowHeal && method === "GET" && (await refreshBootstrapCookie())) {

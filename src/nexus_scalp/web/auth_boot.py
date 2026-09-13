@@ -1,4 +1,4 @@
-"""BUG-266: web-auth bootstrap handoff (operator token → env → .env).
+"""BUG-267: web-auth bootstrap handoff (operator token → env → .env).
 
 Why this exists
 ---------------
@@ -48,7 +48,7 @@ logger = get_logger("nexus_scalp.web.auth_boot")
 
 #: Process-env keys published at server boot.
 ENV_ACTIVE_TOKEN = "NSE_WEB_AUTH_TOKEN"
-#: BUG-266: the port the WEB SERVER ACTUALLY bound (after auto-increment).
+#: BUG-267: the port the WEB SERVER ACTUALLY bound (after auto-increment).
 #: Deliberately NOT NSE_WEB_PORT: docker-compose uses that key as the HOST
 #: side of its port mapping (``${NSE_WEB_PORT:-9090}:9090``) — overwriting
 #: it from a local launcher boot would change the container mapping and can
@@ -60,10 +60,10 @@ DOTENV_DISABLE_ENV = "NSE_WEB_AUTH_DOTENV_DISABLE"
 
 _DOTENV_NAME = ".env"
 _ENV_FILE_HEADER = (
-    "# NSE operator environment — managed by nexus (BUG-266 bootstrap handoff).\n"
+    "# NSE operator environment — managed by nexus (BUG-267 bootstrap handoff).\n"
     "# NSE_WEB_AUTH_TOKEN is the control-plane credential enforced by WEB-AUTH-P0.\n"
     "# Keep this file private (gitignored). Both web consoles bootstrap cookie\n"
-    "# auth automatically (BUG-266); this token is the operator copy for\n"
+    "# auth automatically (BUG-267); this token is the operator copy for\n"
     "# header/query auth (?token=...), scripts and docker-compose.\n"
     "# NSE_WEB_ACTUAL_PORT is the port the web server ACTUALLY bound at last\n"
     "# boot (after auto-increment past occupied ports). NSE_WEB_PORT stays\n"

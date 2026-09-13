@@ -13,7 +13,7 @@ import path from "node:path";
 // override with NSE_API_ORIGIN) so cookies/tokens and SSE/WebSockets work
 // without CORS games. The backend stays the single source of truth.
 //
-// BUG-266: when the engine auto-incremented past an occupied port (8080 ->
+// BUG-267: when the engine auto-incremented past an occupied port (8080 ->
 // 8081), the launcher records the ACTUAL bind in the repo-root .env
 // (NSE_WEB_ACTUAL_PORT, gitignored). Read it so `npm run dev` proxies to the
 // engine that is actually running instead of a dead :8080 (the "React
@@ -50,7 +50,7 @@ export default defineConfig({
       "/api": { target: backendOrigin, changeOrigin: true },
       "/health": { target: backendOrigin, changeOrigin: true },
       "/healthz": { target: backendOrigin, changeOrigin: true },
-      // BUG-266: cookie bootstrap in dev — the client's one-shot 401 heal
+      // BUG-267: cookie bootstrap in dev — the client's one-shot 401 heal
       // fetches /app.js (the engine's Set-Cookie carrier). Without proxying
       // it, vite answers from its own SPA and no cookie ever lands.
       "/app.js": { target: backendOrigin, changeOrigin: true },

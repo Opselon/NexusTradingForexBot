@@ -630,15 +630,37 @@ def main() -> None:
 
     adapter: IMT5Port
     if config.execution.mode == ExecutionMode.PAPER and not args.gateway:
-        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+        # BUG-266 (audit K2): route the launcher through the same paper-data
+        # factory as `nexus start`, so the configured substrate (SYNTHETIC
+        # default / REPLAY over real recorded data) is honored on the
+        # double-click path too. Fail-closed on a missing REPLAY source.
+        from nexus_scalp.adapters.paper.paper_data import build_paper_adapter
+        from nexus_scalp.adapters.paper.replay_source import ReplayDataUnavailableError
+
+        try:
+            adapter = build_paper_adapter(
+                symbol=config.execution.symbol,
+                paper_data=getattr(config, "paper_data", None),
+            )
+        except ReplayDataUnavailableError as replay_err:
+            console.print(
+                Panel(
+                    f"[bold red]PAPER REPLAY requested but no historical data is "
+                    f"available:[/bold red]\n{replay_err}\n\n"
+                    "Acquire a dataset (research MT5TickDataset), export data/raw M1 "
+                    "bars, or set paper_data.mode: SYNTHETIC.",
+                    border_style="red",
+                )
+            )
+            raise SystemExit(2) from None
 
         console.print(
             Panel(
-                "[green]Execution Adapter → Paper Simulation (no broker connection)[/green]",
+                "[green]Execution Adapter → Paper Simulation (no broker connection) "
+                f"[{getattr(adapter, 'market_data_mode', 'SYNTHETIC')}][/green]",
                 border_style="green",
             )
         )
-        adapter = PaperMT5Adapter(symbol=config.execution.symbol)
     elif args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
         console.print(
             Panel(
@@ -676,7 +698,7 @@ def main() -> None:
     # guard. Removed here; realignment intent fully preserved.
 
     # 6. Instantiate & Launch Live Trading Engine Event Loop Concurrently with Web Server
-    # BUG-266: stable port across restarts. The FIRST boot auto-increments
+    # BUG-267: stable port across restarts. The FIRST boot auto-increments
     # past occupied ports (NVIDIA Broadcast owns 8080 on this box → 8081)
     # and publish() records the ACTUAL port in .env/NSE_WEB_ACTUAL_PORT;
     # every later boot starts there, so saved bookmarks, the doctor probe,
@@ -709,7 +731,7 @@ def main() -> None:
 
         app = create_app(engine_ref=engine)
         engine.server_state = app.state.server_state
-        # BUG-266: server-boot auth handoff. Export/persist the token the
+        # BUG-267: server-boot auth handoff. Export/persist the token the
         # middleware actually enforced (env > secret store > generated) plus
         # the ACTUAL bound port into NSE_WEB_ACTUAL_PORT, so `nexus doctor`,
         # standalone alt-console host (scripts/serve_alt_ui.py), docker
@@ -726,7 +748,7 @@ def main() -> None:
                 Panel(
                     "[yellow]Web auth token is being generated for this process[/yellow]\n"
                     "[dim]It persists via the secure secret store; both consoles "
-                    "self-bootstrap in the browser (BUG-266 cookie).[/dim]",
+                    "self-bootstrap in the browser (BUG-267 cookie).[/dim]",
                     border_style="yellow",
                     box=box.ROUNDED,
                 )

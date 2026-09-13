@@ -1,4 +1,4 @@
-"""BUG-266: auth_boot contract — boot handoff WITHOUT token generation.
+"""BUG-267: auth_boot contract — boot handoff WITHOUT token generation.
 
 Pins:
 * publish() resolves without minting (no env, no store -> token None, no

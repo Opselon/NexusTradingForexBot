@@ -99,13 +99,25 @@ class RuntimeModeService:
                 old_adapter = self.adapter
                 if hasattr(old_adapter, "disconnect"):
                     old_adapter.disconnect()
-                new_adapter = PaperMT5Adapter(
+                # BUG-266: the hot-swap must land on the CONFIGURED paper data
+                # substrate, not always synthetic. Degrade loudly (never raise):
+                # a failed REPLAY build must not turn a PAPER switch into
+                # ADAPTER_SWAP_FAILED (which would leave the real adapter bound).
+                from nexus_scalp.adapters.paper.paper_data import (
+                    ON_REPLAY_UNAVAILABLE_SYNTHETIC,
+                    build_paper_adapter,
+                )
+
+                new_adapter = build_paper_adapter(
                     initial_balance=float(getattr(self, "_last_balance", 0.0) or 0.0) or 10000.0,
                     # BUG-232: the simulation must track the ACTIVE symbol.
                     # The old hot-swap built the paper adapter without a
                     # symbol, so it fell back to EURUSD conventions while the
                     # engine traded XAUUSD (wrong digits/spread/seed).
                     symbol=self.config.execution.symbol,
+                    paper_data=getattr(self.config, "paper_data", None),
+                    allow_replay=mode == ExecutionMode.PAPER,
+                    on_replay_unavailable=ON_REPLAY_UNAVAILABLE_SYNTHETIC,
                 )
                 self.adapter = new_adapter
                 self.order_manager.adapter = new_adapter

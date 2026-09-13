@@ -239,7 +239,7 @@ export function AppShell() {
         {!authError && <AttentionStrip snapshot={snapshot} feed={realtimeStatus} nowMs={nowMs} />}
         {authError && (
           <div className="banner auth">
-            <span>⛔ Backend rejected the web-auth credential (WEB-AUTH-P0). The console self-bootstraps via the first-party cookie (BUG-266) — if this persists, reload once, or open as <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span> (token kept in sessionStorage only).</span>
+            <span>⛔ Backend rejected the web-auth credential (WEB-AUTH-P0). The console self-bootstraps via the first-party cookie (BUG-267) — if this persists, reload once, or open as <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span> (token kept in sessionStorage only).</span>
           </div>
         )}
 

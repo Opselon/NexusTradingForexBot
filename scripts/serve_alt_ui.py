@@ -73,7 +73,7 @@ LOGGER.addHandler(logging.NullHandler())
 
 #: Path prefixes ALWAYS proxied to the backend — never served locally, never
 #: SPA-fallback'd, never cached (mirrors frontend/vite.config.ts proxy keys).
-#: BUG-266: /app.js + /api_client.js ride the proxy too — they are the
+#: BUG-267: /app.js + /api_client.js ride the proxy too — they are the
 #: backend's bootstrap-Cookie carriers (WEB-UI-BOOTSTRAP Set-Cookie on the
 #: public asset). Serving them from disk here would strand a tokenless
 #: browser with no cookie jar and re-create the "every /api call 401s" trap
@@ -732,7 +732,7 @@ def _default_dist() -> Path:
 
 
 def _default_backend_origin() -> str:
-    """BUG-266: the engine's REAL bound port when the launcher recorded one.
+    """BUG-267: the engine's REAL bound port when the launcher recorded one.
 
     The web server auto-increments past occupied ports (8080 -> 8081 on
     boxes where NVIDIA Broadcast holds 8080) and auth_boot.publish() writes

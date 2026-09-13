@@ -675,7 +675,7 @@ class TestCli:
     ) -> None:
         captured: dict = {}
 
-        # BUG-266: the backend default now consults the launcher's recorded
+        # BUG-267: the backend default now consults the launcher's recorded
         # actual bind (.env NSE_WEB_ACTUAL_PORT). Pin it to the historical
         # 8080 so this test keeps asserting the DEFAULT, not this machine's
         # last boot; the recorded-port behavior has its own tests below.
@@ -728,7 +728,7 @@ class TestCli:
     def test_backend_default_uses_recorded_actual_port(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """BUG-266: after the launcher auto-incremented (8080 busy -> 8081),
+        """BUG-267: after the launcher auto-incremented (8080 busy -> 8081),
         the standalone host must proxy to the RECORDED bind, not :8080."""
         from nexus_scalp.web import auth_boot
 

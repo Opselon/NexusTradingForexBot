@@ -583,7 +583,7 @@ class HealthEngine:
         import urllib.request
 
         host = _os.getenv("NSE_WEB_HOST", "127.0.0.1")
-        # BUG-266: the launcher auto-increments when a port is occupied
+        # BUG-267: the launcher auto-increments when a port is occupied
         # (NVIDIA Broadcast owns 8080 on dev boxes) and publish() records the
         # ACTUAL bound port in .env/NSE_WEB_ACTUAL_PORT — read it instead of
         # probing a stale 8080 and reporting a false "engine not reachable".
@@ -599,7 +599,7 @@ class HealthEngine:
                     f"web/A2A bound to routable host {host} without A2A_BEARER_TOKEN",
                     "Set A2A_BEARER_TOKEN or bind to 127.0.0.1.",
                 )
-        # BUG-266: probe /health (the registered public liveness route —
+        # BUG-267: probe /health (the registered public liveness route —
         # diagnostics_state_routes). The previous /api/health URL is an
         # allowlist entry with NO route behind it: every probe 404'd, so a
         # perfectly healthy running engine reported "not reachable" forever.

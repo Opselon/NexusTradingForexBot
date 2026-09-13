@@ -1,4 +1,4 @@
-"""BUG-266: web-auth bootstrap contract (React /alt console + legacy dashboard).
+"""BUG-267: web-auth bootstrap contract (React /alt console + legacy dashboard).
 
 Pins the fail-open-free bootstrap behavior that lets BOTH consoles render
 from a tokenless first navigation while every data route stays gated:
@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from nexus_scalp.web import auth as web_auth
 
-TOKEN = "bug266-test-token-12345"
+TOKEN = "bug267-test-token-12345"
 
 
 @pytest.fixture()
@@ -59,7 +59,7 @@ def _cookie(client: TestClient) -> str:
     "path", ["/", "/index.html", "/alt", "/alt/", "/alt/assets/x.js", "/alt/trading", "/app.js"]
 )
 def test_bootstrap_entry_surfaces_are_public(path: str) -> None:
-    assert web_auth.is_public_path(path), f"{path} must be public (BUG-266)"
+    assert web_auth.is_public_path(path), f"{path} must be public (BUG-267)"
 
 
 @pytest.mark.parametrize(
@@ -85,7 +85,7 @@ def test_bootstrap_paths_are_all_public() -> None:
 
 
 def test_shadow_layer_agrees_with_single_source_of_truth() -> None:
-    """WebAuthMiddleware._is_public must equal is_public_path (BUG-266:
+    """WebAuthMiddleware._is_public must equal is_public_path (BUG-267:
     the shadow layer used to carry a divergent inline copy)."""
     for path in (
         "/",
@@ -154,7 +154,7 @@ def test_wrong_token_never_passes(client: TestClient) -> None:
 
 
 def test_mutation_routes_keep_web_ui_bootstrap_contract(client: TestClient) -> None:
-    """WEB-UI-BOOTSTRAP contract preserved (BUG-266 does not touch it): the
+    """WEB-UI-BOOTSTRAP contract preserved (BUG-267 does not touch it): the
     cookie rides mutations too — the legacy dashboard posts via raw fetch()
     without headers. CSRF exposure is bounded by HttpOnly + SameSite=strict
     (no cross-site replay) and the 127.0.0.1 bind; operators who want
