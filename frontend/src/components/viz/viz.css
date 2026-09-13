@@ -1,0 +1,89 @@
+/* Shared SVG visualization kit — tokens only, RTL-safe (logical props).
+   Charts never hardcode colors; series map to semantic tokens. */
+
+.viz {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.viz-frame {
+  position: relative;
+  inline-size: 100%;
+}
+.viz-axis {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.viz-grid { stroke: var(--border); stroke-width: 1; }
+.viz-zero { stroke: var(--border-strong); stroke-width: 1; }
+.viz-line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.viz-line.pos { stroke: var(--green); }
+.viz-line.neg { stroke: var(--red); }
+.viz-line.neu { stroke: var(--accent); }
+.viz-line.dim { stroke: var(--text-faint); }
+.viz-area.pos { fill: var(--green-dim); }
+.viz-area.neg { fill: var(--red-dim); }
+.viz-area.neu { fill: rgba(65, 166, 242, 0.10); }
+.viz-bar.pos { fill: var(--green); }
+.viz-bar.neg { fill: var(--red); }
+.viz-bar.neu { fill: var(--text-faint); }
+.viz-dot { stroke: var(--bg-panel); stroke-width: 1; }
+.viz-empty {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-block-size: 72px; color: var(--text-faint); font-size: 11px; font-family: var(--mono);
+  border: 1px dashed var(--border); border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 0 12px; text-align: center;
+}
+.viz-legend {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin-block-start: 6px; font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+}
+.viz-legend .sw {
+  display: inline-block; inline-size: 8px; block-size: 8px; border-radius: 2px;
+  margin-inline-end: 5px; vertical-align: middle;
+}
+.viz-legend .sw.pos { background: var(--green); }
+.viz-legend .sw.neg { background: var(--red); }
+.viz-legend .sw.neu { background: var(--accent); }
+.viz-legend .sw.warn { background: var(--amber); }
+.viz-legend .sw.flat { background: var(--text-faint); }
+
+/* gauge */
+.gauge-track { stroke: var(--bg-panel-2); }
+.gauge-value { stroke-width: 7; stroke-linecap: round; }
+.gauge-value.pos { stroke: var(--green); }
+.gauge-value.warn { stroke: var(--amber); }
+.gauge-value.bad { stroke: var(--red); }
+.gauge-value.neu { stroke: var(--accent); }
+.gauge-center {
+  font-family: var(--mono); font-weight: 700; fill: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.gauge-label { font-family: var(--mono); font-size: 8.5px; fill: var(--text-faint); letter-spacing: 0.12em; }
+
+/* heat bar */
+.heatbar { display: grid; gap: 3px; }
+.heatbar .row { display: grid; grid-template-columns: max-content 1fr max-content; align-items: center; gap: 10px; }
+.heatbar .lab { font-size: 10px; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.heatbar .track { height: 14px; border-radius: 4px; background: var(--bg-inset); border: 1px solid var(--border); overflow: hidden; display: flex; }
+.heatbar .cell { block-size: 100%; }
+.heatbar .val { font-size: 10px; color: var(--text-dim); font-family: var(--mono); min-inline-size: 42px; text-align: end; }
+.heatbar-scale {
+  display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px;
+  color: var(--text-faint); margin-block-start: 4px;
+}
+
+/* waterfall connector */
+.viz-step-label { font-family: var(--mono); font-size: 8.5px; fill: var(--text-faint); }
+.viz-step-value { font-family: var(--mono); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+.viz-step-value.pos { fill: var(--green); }
+.viz-step-value.neg { fill: var(--red); }
+.viz-step-value.neu { fill: var(--text-dim); }
+
+/* sparkline inline cell */
+.spark-cell { display: flex; align-items: center; gap: 8px; }
+.spark-cell .viz { inline-size: 96px; block-size: 22px; flex: 0 0 auto; }
