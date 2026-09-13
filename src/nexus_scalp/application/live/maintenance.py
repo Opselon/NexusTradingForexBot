@@ -19,6 +19,7 @@ Every stage is failure-isolated: a maintenance fault never disturbs ticks.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,14 @@ class MaintenanceCycle:
         )
         self._last_parity_export_time: float = getattr(om, "_last_parity_export_time", 0.0)
         self._last_parity_snapshot_time: float = getattr(om, "_last_parity_snapshot_time", 0.0)
+        # BUG-257 (remainder): out-of-process champion-drift sentinel. Throttle
+        # state lives on the CYCLE (like the parity stamps); the None
+        # "never ran" sentinel means the FIRST check is always due — a
+        # 0.0-vs-monotonic comparison silently skips the first pass on any
+        # host with uptime < interval.
+        self._champion_sentinel_interval_sec: float = 900.0
+        self._last_champion_sentinel_time: float | None = None
+        self._champion_sentinel_failures: int = 0
 
     async def run_cycle(self, *, now_t: float) -> None:
         """Runs one maintenance pass (all stages internally throttled)."""
@@ -111,6 +120,87 @@ class MaintenanceCycle:
                 )
             except Exception as snap_err:
                 logger.warning("[PARITY] event=SNAPSHOT_FAILED (isolated)", error=str(snap_err))
+
+        # BUG-257 (remainder): champion-drift SENTINEL (ALERT-ONLY, off the
+        # tick path). The P0-2 boot trust anchor compares serving bytes vs the
+        # governed CHAMPION fingerprint at BOOT only; a foreign process that
+        # re-lands drifted weights while the engine runs (the exact 09-11
+        # bb1f0afe re-publication shape) would otherwise serve poisoned bytes
+        # until the next refusal. This stage detects it between boots:
+        #   * two consecutive DRIFT sightings before one alarm (absorbs the
+        #     governed-writer window: the supersession lands on the FIFO audit
+        #     worker after the file write — one sighting may be mid-flight);
+        #   * CRITICAL structured log + Telegram on confirmation, then a
+        #     RE-ALARM every 4th cycle while the drift persists, and a
+        #     resolution notice when the bytes (or the registry) come back
+        #     into agreement;
+        #   * can NEVER mutate, halt, or block trading — pure observer
+        #     (INV-015 enforcement stays the boot anchor).
+        _sentinel_due = (
+            self._last_champion_sentinel_time is None
+            or now_t - self._last_champion_sentinel_time >= self._champion_sentinel_interval_sec
+        )
+        if _sentinel_due:
+            self._last_champion_sentinel_time = now_t
+            try:
+                from nexus_scalp.model_lifecycle.champion_sentinel import (
+                    STATUS_DRIFT,
+                    STATUS_MATCH,
+                    probe_champion_drift,
+                )
+
+                verdict = await asyncio.to_thread(probe_champion_drift, self.om)
+                status = str(verdict.get("status", ""))
+                if status == STATUS_DRIFT:
+                    self._champion_sentinel_failures += 1
+                    if self._champion_sentinel_failures == 2 or (
+                        self._champion_sentinel_failures > 2
+                        and (self._champion_sentinel_failures - 2) % 4 == 0
+                    ):
+                        logger.critical(
+                            "[CHAMPION_SENTINEL] event=CHAMPION_DRIFT_CONFIRMED "
+                            "serving_sha16=%s governed_sha16=%s champion_row=%s "
+                            "path=%s sightings=%d "
+                            "(out-of-process rewrite suspected: the boot trust "
+                            "anchor would REFUSE this artifact right now)",
+                            verdict.get("serving_sha16"),
+                            verdict.get("governed_sha16"),
+                            verdict.get("champion_row_model_id"),
+                            verdict.get("serving_path"),
+                            self._champion_sentinel_failures,
+                        )
+                        with contextlib.suppress(Exception):
+                            if getattr(self.om, "notifier", None) is not None and getattr(
+                                self.om.notifier, "enabled", False
+                            ):
+                                self.om.notifier.send(
+                                    "🚨 [CHAMPION SENTINEL] serving model.pt drifted from the "
+                                    f"governed CHAMPION: on-disk {verdict.get('serving_sha16')} "
+                                    f"!= governed {verdict.get('governed_sha16')} "
+                                    f"(row {verdict.get('champion_row_model_id')}). Trading "
+                                    "continues, but the NEXT boot will refuse this artifact. "
+                                    "Investigate the writer (see agents/bugs.md BUG-257/271).",
+                                    severity="CRITICAL",
+                                    event_type="CHAMPION_DRIFT_CONFIRMED",
+                                )
+                elif status == STATUS_MATCH:
+                    if self._champion_sentinel_failures >= 2:
+                        logger.warning(
+                            "[CHAMPION_SENTINEL] event=CHAMPION_DRIFT_CLEARED "
+                            "sighting=%s governed_sha16=%s (after %d confirmed cycles)",
+                            verdict.get("serving_sha16"),
+                            verdict.get("governed_sha16"),
+                            self._champion_sentinel_failures,
+                        )
+                    self._champion_sentinel_failures = 0
+                # INERT (cold start / no champion row / unreadable registry)
+                # resets the streak WITHOUT alarming — a normal posture.
+                elif status != STATUS_DRIFT:
+                    self._champion_sentinel_failures = 0
+            except Exception as sent_err:
+                logger.warning(
+                    "[CHAMPION_SENTINEL] event=CYCLE_FAILED (isolated)", error=str(sent_err)
+                )
 
         # MISSION 5: compact OPERATIONAL digest (one message — mode,
         # protections, drift, parity, rollbacks) alongside the existing deep
