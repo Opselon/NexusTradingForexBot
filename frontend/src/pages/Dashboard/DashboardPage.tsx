@@ -33,6 +33,11 @@ import {
   StatusBadge,
 } from "@/components/primitives";
 import { FeedQualityChip } from "@/components/FeedQualityChip";
+import { GuardianHero, BreakerTiles } from "@/components/pro/RiskViz";
+import { LatencySplitBar, ProbTriple } from "@/components/pro/MLViz";
+import { QuoteTape } from "@/components/pro/OpsChrome";
+import { AtrStrip, IndicatorUnknown, PriceBand, RsiStrip, SparkLine } from "@/components/pro/Indicators";
+import { atr, closes, highs, lows, rsi, sma } from "@/lib/indicatorMath";
 import { formatMoney, formatNumber, formatPct, formatPnl, formatPrice } from "@/lib/format";
 import { HeroKpiRow } from "./pro/HeroKpiRow";
 import { PipelineAgeChain } from "./pro/PipelineAgeChain";
@@ -137,9 +142,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           right={<span className="timestamp-note">tick age {fmtAge(snapshot.diagnostics.tick_age_sec)}{snapshot.tick_stale ? " · STALE" : ""}</span>}
         >
           <div className="grid cols-3">
-            <MetricCard label="Bid" value={formatPrice(snapshot.bid, snapshot.price_digits ?? 2)} />
-            <MetricCard label="Ask" value={formatPrice(snapshot.ask, snapshot.price_digits ?? 2)} />
-            <MetricCard label="Spread" value={snapshot.spread === null ? "—" : `${formatNumber(snapshot.spread)} pts`} />
+            <QuoteTape symbol={snapshot.symbol} bid={snapshot.bid} ask={snapshot.ask} spread={snapshot.spread} priceDigits={snapshot.price_digits} dataAgeMs={snapshot.tick_freshness_ms ?? (snapshot.diagnostics.tick_age_sec === null || snapshot.diagnostics.tick_age_sec === undefined ? null : snapshot.diagnostics.tick_age_sec * 1000)} tickFlashKey={snapshot.state_version} tickStale={snapshot.tick_stale} />
             <MetricCard label="ATR" value={formatNumber(snapshot.atr)} />
             <MetricCard label="Regime" value={snapshot.regime ?? "—"} tone="dim" />
             <MetricCard label="Price source" value={snapshot.provenance.price} tone="dim" />
@@ -148,6 +151,30 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
             <div className="confirm-box">
               <span>Backend marks the tick stream <b>stale</b> (freshness {snapshot.tick_freshness_ms === null ? "—" : `${(snapshot.tick_freshness_ms / 1000).toFixed(1)}s`}). Prices above may be frozen.</span>
             </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* 3b — Client-side indicator charts (pure math over snapshot.bars; gaps stay gaps) */}
+      <div className="grid cols-2" style={{ marginTop: 14 }}>
+        <Panel title="Price structure (M1 bars)" right={<span className="timestamp-note">SMA-20 overlay · math in indicatorMath.ts</span>}>
+          {snapshot.bars.length > 1 ? (
+            <>
+              <PriceBand highs={highs(snapshot.bars)} lows={lows(snapshot.bars)} closes={closes(snapshot.bars)} lastPrice={snapshot.bid} lastPriceLabel="bid" />
+              <SparkLine values={closes(snapshot.bars)} overlay={sma(closes(snapshot.bars), 20)} overlayLabel="SMA-20" />
+            </>
+          ) : (
+            <IndicatorUnknown subject="PRICE CHARTS" reason="snapshot.bars is empty (no broker history in this payload)" />
+          )}
+        </Panel>
+        <Panel title="Momentum / volatility" right={<span className="timestamp-note">RSI-14 · ATR-14 (engine TR-mean)</span>}>
+          {snapshot.bars.length > 1 ? (
+            <>
+              <RsiStrip values={rsi(closes(snapshot.bars))} />
+              <AtrStrip values={atr(snapshot.bars)} flavour="engine-mean" reference={snapshot.atr} referenceLabel="snapshot.atr" />
+            </>
+          ) : (
+            <IndicatorUnknown subject="RSI / ATR" reason="needs bar history from snapshot.bars" />
           )}
         </Panel>
       </div>
@@ -161,51 +188,31 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
 
       {/* 5 — Guardian + ML detail (unchanged semantics: UNKNOWN stays UNKNOWN) */}
       <div className="grid cols-2" style={{ marginTop: 14 }}>
-        {/* Guardian / kill switch */}
+        {/* Guardian / kill switch (pro: words echo the backend payload only) */}
         <Panel title="Guardian / runtime risk">
           {riskStateQuery.isPending ? (
             <div className="muted small">loading guardian state…</div>
-          ) : haltState ? (
-            <dl className="kv">
-              <dt>kill switch</dt>
-              <dd>{haltState.kill_switch_active ? <span className="badge bad">ACTIVE</span> : <span className="badge good">DISENGAGED</span>}</dd>
-              <dt>runtime risk state</dt>
-              <dd><span className={`badge ${haltState.runtime_risk_state_effective.toUpperCase() === "RUNNING" ? "good" : "bad"}`}>{haltState.runtime_risk_state_effective}</span></dd>
-              <dt>halt reason</dt>
-              <dd>{haltState.halt_reason || "—"}</dd>
-              <dt>survival mode</dt>
-              <dd>{haltState.survival_mode ? <span className="badge warn">ACTIVE</span> : "—"}</dd>
-              <dt>account freshness</dt>
-              <dd><StatusBadge status={haltState.account_freshness} /></dd>
-              <dt>consecutive losses</dt>
-              <dd>{haltState.consecutive_losses}</dd>
-              <dt>audit dead-letter rows</dt>
-              <dd className={haltState.audit_dead_letter_rows > 0 ? "pnl-neg" : undefined}>{haltState.audit_dead_letter_rows}</dd>
-            </dl>
           ) : (
-            <div className="muted small">guardian state unavailable (backend /api/debug/state offline) — shown as UNKNOWN, not inferred.</div>
+            <>
+              <GuardianHero state={haltState} />
+              <BreakerTiles state={haltState} />
+            </>
           )}
         </Panel>
 
         {/* ML / 70D snapshot strip */}
         <Panel title="ML / 70D">
-          <dl className="kv">
+          <ProbTriple probs={snapshot.probs} decision={snapshot.ai_decision} reason={snapshot.ai_reason} confidence={snapshot.ai_confidence} ageSec={snapshot.diagnostics.inference_age_sec} />
+          <LatencySplitBar model={snapshot.model} />
+          <dl className="kv" style={{ marginTop: 10 }}>
             <dt>model</dt>
             <dd><StatusBadge status={health.subsystems.model ?? null} /></dd>
             <dt>inference freshness</dt>
             <dd><StatusBadge status={health.subsystems.inference_freshness ?? null} /></dd>
             <dt>bundle schema</dt>
-            <dd>{snapshot.model.feature_schema_id ?? "—"} ({snapshot.model.feature_dimension ?? "?"}D)</dd>
+            <dd>{snapshot.model.feature_schema_id ?? "—"} ({snapshot.model.feature_dimension ?? "??"}D)</dd>
             <dt>scaler</dt>
             <dd>{snapshot.model.scaler_ready === null ? "—" : snapshot.model.scaler_ready ? "READY" : "NOT FITTED"}</dd>
-            <dt>probs N/B/S</dt>
-            <dd>
-              {snapshot.probs.available
-                ? `${(snapshot.probs.no_trade ?? 0).toFixed(2)} / ${(snapshot.probs.buy ?? 0).toFixed(2)} / ${(snapshot.probs.sell ?? 0).toFixed(2)}`
-                : "—"}
-            </dd>
-            <dt>inference latency</dt>
-            <dd>{snapshot.model.latency_ms === null ? "—" : `${snapshot.model.latency_ms.toFixed(1)} ms`}</dd>
             <dt>model id</dt>
             <dd>{snapshot.model.model_id ?? "—"}</dd>
           </dl>
