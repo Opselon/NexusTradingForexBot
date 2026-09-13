@@ -1,0 +1,52 @@
+# CODEOWNERS — integration-surface ownership registry (NexusTradingForexBot)
+#
+# Governance note: this fleet currently operates as a SINGLE GitHub account
+# (Opselon) across all agent sessions, so server-side *required review* cannot
+# be satisfied (GitHub forbids author self-approval). Until agent identities
+# are separated into distinct accounts, this file is the authoritative
+# OWNER-MAP for conflict arbitration + a ready-made ruleset input:
+# enabling required_reviews then becomes a settings-only change.
+#
+# Owners below are the roles declared in agents/ (A2A roster), mapped to the
+# account that can act on their behalf today.
+
+# Default integration authority (Merge Commander lane)
+*                       @Opselon
+
+# CI/CD + workflow triggers + release gates (Agent-10 / GitReleaseGuardian)
+/.github/workflows/     @Opselon
+/scripts/ci/            @Opselon
+/installer/             @Opselon
+
+# Dependency governance (dependabot lane + drift gate owner)
+/.github/dependabot.yml @Opselon
+/pyproject.toml         @Opselon
+/requirements.lock      @Opselon
+/requirements.txt       @Opselon
+/uv.lock                @Opselon
+
+# Risk & capital protection core (Agent-15 lane)
+/src/nexus_scalp/risk/  @Opselon
+
+# Order execution / dispatch / lifecycle (Agent-6 / Agent-7 lanes)
+/src/nexus_scalp/execution/ @Opselon
+/src/nexus_scalp/application/live/ @Opselon
+/src/nexus_scalp/application/live_engine.py @Opselon
+
+# Model lifecycle / artifact trust / training (Agent-3 / Agent-4 / ML lanes)
+/src/nexus_scalp/model_generation/ @Opselon
+/src/nexus_scalp/signals/          @Opselon
+
+# Self-update trust root (updater lives under release/)
+/src/nexus_scalp/release/ @Opselon
+
+# Persistence / audit DB (Agent-17 lane)
+/src/nexus_scalp/adapters/database/ @Opselon
+/src/nexus_scalp/database/          @Opselon
+
+# Security-sensitive surfaces (Agent-9 / WEB-AUTH lane)
+/src/nexus_scalp/web/auth.py @Opselon
+/scripts/security/           @Opselon
+
+# Multi-agent contract + taskboard/bug ledger (Coordinator)
+/agents/ @Opselon
