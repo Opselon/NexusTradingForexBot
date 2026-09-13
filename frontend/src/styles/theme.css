@@ -96,7 +96,7 @@ body {
   width: 216px;
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--bg-panel), #0b1119);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   transition: width 0.14s ease;
@@ -122,10 +122,14 @@ body {
 .brand-text { font-weight: 700; letter-spacing: 0.06em; font-size: 13px; white-space: nowrap; }
 .brand-text .sub { display: block; font-size: 9px; color: var(--text-dim); letter-spacing: 0.16em; }
 
-.nav { flex: 1; padding: 8px 6px; overflow-y: auto; }
+.nav { flex: 1; padding: 8px 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.nav::-webkit-scrollbar { width: 8px; }
+.nav::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
 .nav-section {
+  position: sticky; top: 0; z-index: 1;
   font-size: 9px; letter-spacing: 0.16em; color: var(--text-faint);
   padding: 12px 10px 4px; text-transform: uppercase; white-space: nowrap;
+  background: linear-gradient(180deg, var(--bg-panel) 70%, transparent);
 }
 .nav-item {
   position: relative;
@@ -142,7 +146,7 @@ body {
   border-color: var(--border-strong);
 }
 .nav-item.active::before {
-  content: ""; position: absolute; left: -7px; top: 20%; bottom: 20%;
+  content: ""; position: absolute; inset-inline-start: -7px; top: 20%; bottom: 20%;
   width: 3px; border-radius: 3px;
   background: linear-gradient(180deg, var(--accent), var(--violet));
   box-shadow: 0 0 8px rgba(65, 166, 242, 0.6);

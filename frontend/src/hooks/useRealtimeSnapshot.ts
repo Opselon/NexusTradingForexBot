@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { realtimeClient } from "@/websocket/realtimeSocket";
+import { realtimeClient } from "@/core/realtime";
 import type { ConnectionState, RealtimeStatus } from "@/types/realtime";
 import type { EngineSnapshot } from "@/types/domain";
 

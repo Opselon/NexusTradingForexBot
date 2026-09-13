@@ -2,7 +2,7 @@
  * marketApi — market data + market state (/api/v1/market, /api/v1/runtime).
  */
 
-import { getV1 } from "./client";
+import { getV1 } from "@/core/transport";
 
 export interface MarketQuote {
   symbol?: string | null;

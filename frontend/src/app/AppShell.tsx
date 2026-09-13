@@ -1,31 +1,21 @@
 /**
- * App shell: routing, providers, top status bar, banners.
+ * App shell: routing, providers, top status bar, banners, navigation.
  *
  * Server state baseline comes from TanStack Query (`/api/status` snapshot);
- * the realtime layer merges live updates on top. LIVE/PAPER and every
- * authoritative value render from backend data only.
+ * the realtime layer (core/realtime SSE) merges live updates on top. LIVE/PAPER
+ * and every authoritative value render from backend data only.
  *
  * Pro UX layer (presentation only): persistent sidebar/topbar, density mode,
- * freshness meters, keyboard navigation (Alt+1..7, Alt+B), dismissible stale
+ * freshness meters, keyboard navigation (Alt+1..9, Alt+B), dismissible stale
  * banners, and the command-result toast host. No state decisions live here.
+ *
+ * Auth banner is driven by core/auth (getAuthState + auth:expired events) —
+ * never by ad-hoc token probing.
  */
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { engineApi } from "@/api/engineApi";
-import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
-import { ConnectionIndicator, FreshnessMeter } from "@/components/ConnectionIndicator";
-import { ModeIndicator } from "@/components/ModeIndicator";
-import { AttentionStrip } from "@/components/AttentionStrip";
-import { CommandPalette } from "@/components/CommandPalette";
-import { ConfirmModal, ToastHost } from "@/components/primitives";
-import { useUiStore } from "@/stores/uiStore";
-import { useI18n } from "@/stores/i18nStore";
-import { LANGUAGES } from "@/lib/i18n";
-import { getAuthToken } from "@/api/client";
-import { ApiError } from "@/types/api";
-import { ErrorState, LoadingState } from "@/components/primitives";
 import DashboardPage from "@/pages/Dashboard/DashboardPage";
 import TradingPage from "@/pages/Trading/TradingPage";
 import PositionsPage from "@/pages/Positions/PositionsPage";
@@ -33,31 +23,71 @@ import RiskPage from "@/pages/Risk/RiskPage";
 import MLPage from "@/pages/ML/MLPage";
 import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
 import AuditPage from "@/pages/Audit/AuditPage";
+import type { EngineSnapshot } from "@/types/domain";
+import { engineApi } from "@/api/engineApi";
+import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
+import { ConnectionIndicator, FreshnessMeter } from "@/components/ConnectionIndicator";
+import { ModeIndicator } from "@/components/ModeIndicator";
+import { AttentionStrip } from "@/components/AttentionStrip";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ConfirmModal, ToastHost, ErrorState, LoadingState } from "@/components/primitives";
+import { useUiStore } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
+import { LANGUAGES } from "@/lib/i18n";
+import { ApiError } from "@/types/api";
+import {
+  FEATURE_SECTIONS,
+  featureLabelKey,
+  type FeatureSectionName,
+} from "@/app/featureRegistry";
+import { getAuthState, hasAccessToken } from "@/core/auth";
+import { onCore } from "@/core/events";
 
-const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ to: string; icon: string; label: string }> }> = [
+/** Max Alt+<n> digit (spec: 1..9 capped). */
+const MAX_ALT_ROUTES = 9;
+
+const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ to: string; icon: string; label: string; labelKey: string }> }> = [
   {
     section: "Operations",
     sectionKey: "ux.sidebar.operate",
     items: [
-      { to: "/", icon: "◈", label: "Dashboard" },
-      { to: "/trading", icon: "⇅", label: "Trading" },
-      { to: "/positions", icon: "▤", label: "Positions" },
+      { to: "/", icon: "◈", label: "Dashboard", labelKey: "nav.page.dashboard" },
+      { to: "/trading", icon: "⇅", label: "Trading", labelKey: "nav.page.trading" },
+      { to: "/positions", icon: "▤", label: "Positions", labelKey: "nav.page.positions" },
     ],
   },
   {
     section: "Safety & Intelligence",
     sectionKey: "ux.sidebar.analyze",
     items: [
-      { to: "/risk", icon: "⛨", label: "Risk" },
-      { to: "/ml", icon: "Σ", label: "ML / 70D" },
-      { to: "/intelligence", icon: "≈", label: "Intelligence" },
-      { to: "/audit", icon: "☰", label: "Audit" },
+      { to: "/risk", icon: "⛨", label: "Risk", labelKey: "nav.page.risk" },
+      { to: "/ml", icon: "Σ", label: "ML / 70D", labelKey: "nav.page.ml" },
+      { to: "/intelligence", icon: "≈", label: "Intelligence", labelKey: "nav.page.intelligence" },
+      { to: "/audit", icon: "☰", label: "Audit", labelKey: "nav.page.audit" },
     ],
   },
 ];
 
+/** Section -> i18n key for the registry groups (4 groups, featureRegistry order). */
+const SECTION_KEYS: Record<FeatureSectionName, string> = {
+  OPERATIONS: "ux.sidebar.features.operations",
+  "MARKET & RESEARCH": "ux.sidebar.features.market",
+  "SAFETY & GOVERNANCE": "ux.sidebar.features.safety",
+  PLATFORM: "ux.sidebar.features.platform",
+};
+
+/** Registry-driven sections (lazy features) mapped into the sidebar shape. */
+const FEATURE_NAV = FEATURE_SECTIONS.map((sec) => ({
+  section: sec.section,
+  sectionKey: SECTION_KEYS[sec.section],
+  items: sec.items.map((f) => ({ to: f.route, icon: f.icon, label: f.label, labelKey: featureLabelKey(f.route) })),
+}));
+
+/** Full nav = legacy pages first (stable Alt+1..7), then feature registry. */
+const ALL_NAV_SECTIONS = [...NAV_SECTIONS, ...FEATURE_NAV];
+
 /** Flat route list for Alt+<n> keyboard navigation (visual shortcut only). */
-const NAV_ROUTES = NAV_SECTIONS.flatMap((s) => s.items).map((i) => i.to);
+const NAV_ROUTES = ALL_NAV_SECTIONS.flatMap((s) => s.items).map((i) => i.to);
 
 /** Backend age (seconds) -> ms for the freshness meter; null stays null. */
 function ageSecToMs(sec: number | null | undefined): number | null {
@@ -98,7 +128,13 @@ export function AppShell() {
   const [helpOpen, setHelpOpen] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const t = useI18n((s) => s.t);
   const [nowMs, setNowMs] = useState(() => Date.now());
+
+  // Auth state (core/auth is the source of truth; bus keeps the banner live).
+  const [authExpiredAt, setAuthExpiredAt] = useState<number | null>(() => getAuthState().lastUnauthorizedAt);
+  useEffect(() => onCore("auth:expired", ({ at }) => setAuthExpiredAt(at)), []);
+  useEffect(() => onCore("auth:changed", () => setAuthExpiredAt(getAuthState().lastUnauthorizedAt)), []);
 
   // 1s ticker for data-age display (visual only).
   useEffect(() => {
@@ -111,7 +147,7 @@ export function AppShell() {
     document.body.classList.toggle("dense", dense);
   }, [dense]);
 
-  // Alt+1..7 route jump, Alt+B sidebar, R = refresh (skipped while typing).
+  // Alt+1..9 route jump, Alt+B sidebar, R = refresh (skipped while typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -125,7 +161,7 @@ export function AppShell() {
         return;
       }
       const digit = Number(e.key);
-      if (Number.isInteger(digit) && digit >= 1 && digit <= NAV_ROUTES.length) {
+      if (Number.isInteger(digit) && digit >= 1 && digit <= Math.min(MAX_ALT_ROUTES, NAV_ROUTES.length)) {
         e.preventDefault();
         const route = NAV_ROUTES[digit - 1];
         if (route) navigate(route);
@@ -146,17 +182,13 @@ export function AppShell() {
     retry: 1,
   });
 
-  const { snapshot, connectionState, realtimeStatus } = useRealtimeSnapshot(snapshotQuery.data);
-
-  // Track feed state to harden rendering decisions.
-  useEffect(() => {
-    // noop — keeps hook shape stable for future re-subscription semantics
-  }, [connectionState]);
+  const { snapshot, realtimeStatus } = useRealtimeSnapshot(snapshotQuery.data);
 
   const authError =
     snapshotQuery.error instanceof ApiError && snapshotQuery.error.isAuthError
       ? (snapshotQuery.error as ApiError)
       : null;
+  const showAuthBanner = authError !== null || authExpiredAt !== null;
   const lf = snapshot?.live_freshness ?? null;
 
   return (
@@ -169,14 +201,20 @@ export function AppShell() {
             <span className="sub">PRO CONSOLE</span>
           </div>
         </div>
-        <nav className="nav">
-          {NAV_SECTIONS.map((sec) => (
+        <nav className="nav" aria-label="Primary">
+          {ALL_NAV_SECTIONS.map((sec) => (
             <div key={sec.section}>
-              <div className="nav-section">{sec.section}</div>
+              <div className="nav-section">{t(sec.sectionKey, sec.section)}</div>
               {sec.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} title={item.label}>
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+                  title={t(item.labelKey, item.label)}
+                >
                   <span className="icon">{item.icon}</span>
-                  <span className="nav-label">{item.label}</span>
+                  <span className="nav-label">{t(item.labelKey, item.label)}</span>
                 </NavLink>
               ))}
             </div>
@@ -184,7 +222,7 @@ export function AppShell() {
         </nav>
         <div className="sidebar-foot">
           <div className="side-row">
-            <span>DENSITY</span>
+            <span>{t("ux.density.label", "DENSITY")}</span>
             <button
               className={`switch ${dense ? "on" : ""}`}
               role="switch"
@@ -195,8 +233,8 @@ export function AppShell() {
             />
           </div>
           <LangRow />
-          <div className="side-row" title="Keyboard shortcuts">
-            <span><kbd>alt</kbd> 1–7 · <kbd>ctrl</kbd>K</span>
+          <div className="side-row" title={t("ux.shortcut.help", "Keyboard shortcuts")}>
+            <span><kbd>alt</kbd> 1–9 · <kbd>ctrl</kbd>K</span>
           </div>
           <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)">
             {collapsed ? "»" : "«"}
@@ -236,10 +274,19 @@ export function AppShell() {
           />
         </header>
 
-        {!authError && <AttentionStrip snapshot={snapshot} feed={realtimeStatus} nowMs={nowMs} />}
-        {authError && (
-          <div className="banner auth">
-            <span>⛔ Backend rejected the web-auth credential (WEB-AUTH-P0). The console self-bootstraps via the first-party cookie (BUG-267) — if this persists, reload once, or open as <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span> (token kept in sessionStorage only).</span>
+        {!showAuthBanner && <AttentionStrip snapshot={snapshot} feed={realtimeStatus} nowMs={nowMs} />}
+        {showAuthBanner && (
+          <div className="banner auth" role="alert">
+            <span>
+              {t("ux.auth.banner", "⛔ Backend rejected the web-auth credential (WEB-AUTH-P0). The console self-bootstraps via the first-party cookie (BUG-267) — if this persists, reload once, or open as")}{" "}
+              <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span>
+              {t("ux.auth.banner.suffix", "(token kept in sessionStorage only).")}
+              {!hasAccessToken() && (
+                <span className="muted" style={{ marginInlineStart: 8 }}>
+                  {t("ux.auth.mode.cookie", "Mode: cookie-only (no bearer token).")}
+                </span>
+              )}
+            </span>
           </div>
         )}
 
@@ -254,13 +301,24 @@ export function AppShell() {
             />
           ) : (
             <Routes>
-              <Route path="/" element={<DashboardPage snapshot={snapshot} nowMs={nowMs} />} />
-              <Route path="/trading" element={<TradingPage snapshot={snapshot} nowMs={nowMs} />} />
-              <Route path="/positions" element={<PositionsPage snapshot={snapshot} />} />
-              <Route path="/risk" element={<RiskPage snapshot={snapshot} />} />
-              <Route path="/ml" element={<MLPage snapshot={snapshot} />} />
-              <Route path="/intelligence" element={<IntelligencePage snapshot={snapshot} />} />
-              <Route path="/audit" element={<AuditPage />} />
+              <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
+              <Route path="/trading" element={<TradingRoute snapshot={snapshot} nowMs={nowMs} />} />
+              <Route path="/positions" element={<PositionsRoute snapshot={snapshot} />} />
+              <Route path="/risk" element={<RiskRoute snapshot={snapshot} />} />
+              <Route path="/ml" element={<MlRoute snapshot={snapshot} />} />
+              <Route path="/intelligence" element={<IntelRoute snapshot={snapshot} />} />
+              <Route path="/audit" element={<AuditRoute />} />
+              {FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
+                <Route
+                  key={f.route}
+                  path={f.route}
+                  element={
+                    <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
+                      <f.lazy snapshot={snapshot} nowMs={nowMs} />
+                    </Suspense>
+                  }
+                />
+              ))}
               <Route path="*" element={<ErrorState message="Unknown route" />} />
             </Routes>
           )}
@@ -270,18 +328,18 @@ export function AppShell() {
       <CommandPalette onOpenHelp={() => setHelpOpen(true)} />
       {helpOpen && (
         <ConfirmModal
-          title="Keyboard shortcuts"
+          title={t("ux.shortcut.help", "Keyboard shortcuts")}
           danger={false}
-          confirmLabel="OK"
+          confirmLabel={t("ux.confirm.ok", "OK")}
           onCancel={() => setHelpOpen(false)}
           onConfirm={() => setHelpOpen(false)}
         >
           <div className="kv" style={{ gridTemplateColumns: "max-content 1fr", fontSize: 12 }}>
-            <dt>Ctrl / Cmd + K</dt><dd style={{ textAlign: "left" }}>Command palette</dd>
-            <dt>Alt + 1–7</dt><dd style={{ textAlign: "left" }}>Jump to page</dd>
-            <dt>Alt + B</dt><dd style={{ textAlign: "left" }}>Toggle sidebar</dd>
-            <dt>R</dt><dd style={{ textAlign: "left" }}>Refresh data (not while typing)</dd>
-            <dt>Esc</dt><dd style={{ textAlign: "left" }}>Close dialogs</dd>
+            <dt>Ctrl / Cmd + K</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.palette", "Command palette")}</dd>
+            <dt>Alt + 1–9</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.jump", "Jump to page")}</dd>
+            <dt>Alt + B</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.sidebar", "Toggle sidebar")}</dd>
+            <dt>R</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.refresh", "Refresh data (not while typing)")}</dd>
+            <dt>Esc</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.esc", "Close dialogs")}</dd>
           </div>
         </ConfirmModal>
       )}
@@ -289,6 +347,31 @@ export function AppShell() {
   );
 }
 
+/* Legacy page routes are statically imported (parity guarantee — they must
+ * keep working while feature pages lazy-load). Wrappers keep the JSX terse. */
+function DashboardRoute({ snapshot, nowMs }: { snapshot: EngineSnapshot | undefined; nowMs: number }) {
+  return <DashboardPage snapshot={snapshot} nowMs={nowMs} />;
+}
+function TradingRoute({ snapshot, nowMs }: { snapshot: EngineSnapshot | undefined; nowMs: number }) {
+  return <TradingPage snapshot={snapshot} nowMs={nowMs} />;
+}
+function PositionsRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <PositionsPage snapshot={snapshot} />;
+}
+function RiskRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <RiskPage snapshot={snapshot} />;
+}
+function MlRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <MLPage snapshot={snapshot} />;
+}
+function IntelRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <IntelligencePage snapshot={snapshot} />;
+}
+function AuditRoute() {
+  return <AuditPage />;
+}
+
+/** Back-compat helper (other lanes import it from AppShell). */
 export function authConfigured(): boolean {
-  return getAuthToken() !== null;
+  return hasAccessToken();
 }

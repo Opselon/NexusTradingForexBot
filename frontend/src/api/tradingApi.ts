@@ -11,7 +11,7 @@
  * web layer — the UI deliberately does not expose one (never fake actions).
  */
 
-import { send } from "./client";
+import { send } from "@/core/transport";
 import type { LegacyMutationResult } from "@/types/api";
 
 export interface ModifyPositionPayload {

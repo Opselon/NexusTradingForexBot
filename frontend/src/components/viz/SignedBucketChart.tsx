@@ -1,0 +1,89 @@
+/**
+ * SignedBucketChart — signed bullish/bearish/neutral bars per time bucket.
+ *
+ * Purpose-built for the news impact timeline (backend buckets) but generic:
+ * any "signed contributions per time bucket" payload renders here. Bars are the
+ * backend's own sums; nothing is smoothed or extrapolated.
+ */
+
+import { extent, fmtCompact, scaleLinear } from "./geometry";
+import "./viz.css";
+
+export interface SignedBucket {
+  bucket_start?: string;
+  bucket_ts?: number;
+  bullish: number | null;
+  bearish: number | null;
+  neutral?: number | null;
+  article_count?: number;
+  top_title?: string;
+}
+
+export interface SignedBucketChartProps {
+  buckets: SignedBucket[];
+  height?: number;
+  emptyHint?: string;
+  /** Caption for hovered/annotated bucket count. */
+  bucketLabel?: (b: SignedBucket) => string;
+}
+
+const W = 640;
+
+export function SignedBucketChart({ buckets, height = 180, emptyHint = "no timeline buckets from the backend", bucketLabel }: SignedBucketChartProps) {
+  if (buckets.length === 0) return <div className="viz-empty">{emptyHint}</div>;
+  const ups = buckets.map((b) => Math.max(0, b.bullish ?? 0));
+  const downs = buckets.map((b) => Math.max(0, b.bearish ?? 0));
+  const neut = buckets.map((b) => Math.max(0, b.neutral ?? 0));
+  const ext = extent([...ups, ...downs, ...neut, 0]) ?? [0, 1];
+  const maxAbs = Math.max(ext[1], 1e-9);
+  const padT = 10;
+  const padB = 20;
+  const toY = scaleLinear(-maxAbs, maxAbs, height - padB, padT);
+  const step = W / buckets.length;
+  const barW = Math.max(3, Math.min(26, step * 0.6));
+  const fmt = (v: number) => fmtCompact(v, 2);
+  const label = bucketLabel ?? ((b: SignedBucket) => (b.bucket_start ? new Date(b.bucket_start).toLocaleString("en-GB", { hour12: false }) : ""));
+  return (
+    <div className="viz-frame">
+      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`impact timeline, ${buckets.length} buckets`}>
+        <line className="viz-zero" x1={0} x2={W} y1={toY(0)} y2={toY(0)} />
+        {buckets.map((b, i) => {
+          const x = i * step + (step - barW) / 2;
+          const bull = Math.max(0, b.bullish ?? 0);
+          const bear = Math.max(0, b.bearish ?? 0);
+          const neu = Math.max(0, b.neutral ?? 0);
+          const zero = toY(0);
+          const neuH = Math.abs(toY(neu / 2) - zero);
+          return (
+            <g key={i}>
+              <title>{`${label(b)} · bull ${fmt(bull)} · bear ${fmt(bear)} · neutral ${fmt(neu)} · ${b.article_count ?? 0} articles${b.top_title ? ` · ${b.top_title}` : ""}`}</title>
+              {neu > 0 && <rect className="viz-bar neu" x={x - 1} y={zero - neuH} width={barW + 2} height={Math.max(1, neuH * 2)} opacity={0.25} />}
+              {bull > 0 && <rect className="viz-bar pos" x={x} y={toY(bull)} width={barW} height={Math.max(1, zero - toY(bull))} rx={1} />}
+              {bear > 0 && <rect className="viz-bar neg" x={x} y={zero} width={barW} height={Math.max(1, toY(-bear) - zero)} rx={1} />}
+            </g>
+          );
+        })}
+        <text className="viz-axis" x={0} y={height - 6}>
+          {label(buckets[0] ?? { bullish: 0, bearish: 0 })}
+        </text>
+        <text className="viz-axis" x={W} y={height - 6} textAnchor="end">
+          {label(buckets[buckets.length - 1] ?? { bullish: 0, bearish: 0 })}
+        </text>
+      </svg>
+      <div className="viz-legend">
+        <span>
+          <i className="sw pos" />
+          bullish
+        </span>
+        <span>
+          <i className="sw neg" />
+          bearish
+        </span>
+        <span>
+          <i className="sw flat" />
+          neutral
+        </span>
+      </div>
+    </div>
+  );
+}

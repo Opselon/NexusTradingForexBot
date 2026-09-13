@@ -8,6 +8,7 @@
  */
 
 import { create } from "zustand";
+import { STORAGE_KEYS } from "@/core/config";
 
 export interface ToastItem {
   id: number;
@@ -49,16 +50,16 @@ let toastSeq = 0;
 const toastGuard = new Map<string, number>();
 
 export const useUiStore = create<UiState>((set) => ({
-  sidebarCollapsed: readPref("nse.altui.sidebar") === "1",
+  sidebarCollapsed: readPref(STORAGE_KEYS.sidebar) === "1",
   toggleSidebar: () =>
     set((s) => {
-      writePref("nse.altui.sidebar", s.sidebarCollapsed ? "0" : "1");
+      writePref(STORAGE_KEYS.sidebar, s.sidebarCollapsed ? "0" : "1");
       return { sidebarCollapsed: !s.sidebarCollapsed };
     }),
-  dense: readPref("nse.altui.dense") === "1",
+  dense: readPref(STORAGE_KEYS.density) === "1",
   toggleDense: () =>
     set((s) => {
-      writePref("nse.altui.dense", s.dense ? "0" : "1");
+      writePref(STORAGE_KEYS.density, s.dense ? "0" : "1");
       return { dense: !s.dense };
     }),
   dismissedStaleBannerVersion: null,
