@@ -183,3 +183,8 @@ tests/unit/test_bug264_maintenance_pin_collision.py
 # mode had zero production wiring (audit K2) - pins the paper-data factory as
 # the single PAPER construction path + fail-closed / loud-degrade semantics.
 tests/unit/test_bug266_paper_data_wiring.py
+
+# BUG-268 (NSE-Swarm role 2 Backend/Domain, 2026-09-13): minimum-loss grace
+# gate must never fall back to the host wall clock (clock-domain parity with
+# G3/BUG-259/BUG-260) - conservative zero + rate-limited HOLD_AGE_FALLBACK.
+tests/unit/test_bug268_min_loss_grace_clock.py
