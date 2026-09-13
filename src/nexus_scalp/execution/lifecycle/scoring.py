@@ -432,7 +432,13 @@ class PositionScoringEngine:
             holding_duration = (now - entry_time).total_seconds()
         elif entry_time is not None:
             now_mono = time.monotonic()
-            if (now_mono - getattr(self, "_hold_age_fallback_warned_at", 0.0)) >= 300.0:
+            # Throttle-sentinel fix (BUG-273): a 0.0 default compared against
+            # time.monotonic() suppresses the FIRST warning on any host with
+            # uptime < 300s (monotonic starts at 0 on boot) — the fresh-CI-
+            # runner and engine-boot-after-restart cases, exactly when the
+            # fallback fires. None = "never ran" -> first check always due.
+            _last_warn = getattr(self, "_hold_age_fallback_warned_at", None)
+            if _last_warn is None or (now_mono - _last_warn) >= 300.0:
                 self._hold_age_fallback_warned_at = now_mono
                 logger.warning(
                     "[POSITION] event=HOLD_AGE_FALLBACK "
@@ -523,7 +529,12 @@ class PositionScoringEngine:
                 duration_sec = (now - entry_time).total_seconds()
             else:
                 now_mono = time.monotonic()
-                if (now_mono - getattr(self, "_hold_age_fallback_warned_at", 0.0)) >= 300.0:
+                # Throttle-sentinel fix (BUG-273): 0.0 default vs time.monotonic()
+                # suppresses the FIRST warning on any host with uptime < 300s
+                # (fresh CI runner — proven by the windows/ubuntu red on the
+                # BUG-268 rate-limit pin). None = never ran -> first check due.
+                _last_warn = getattr(self, "_hold_age_fallback_warned_at", None)
+                if _last_warn is None or (now_mono - _last_warn) >= 300.0:
                     self._hold_age_fallback_warned_at = now_mono
                     logger.warning(
                         "[POSITION] event=HOLD_AGE_FALLBACK "

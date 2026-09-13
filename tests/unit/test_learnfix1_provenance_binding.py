@@ -37,13 +37,13 @@ def _labeled_frame(rows: int = 240) -> pl.DataFrame:
     )
 
 
-def _trainer(tmp_path: Path, **kwargs: object) -> WalkForwardTrainer:
+def _trainer(tmp_path: Path, *, smoke: bool = True, **kwargs: object) -> WalkForwardTrainer:
     return WalkForwardTrainer(
         num_folds=2,
         epochs_per_fold=1,
         artifact_save_path=tmp_path / "cand" / "model.pt",
         feature_schema_id="scalp_v1",
-        smoke=True,
+        smoke=smoke,
         **kwargs,  # type: ignore[arg-type]
     )
 
@@ -99,8 +99,15 @@ def test_unknown_lineage_stays_unbound(tmp_path: Path) -> None:
 def test_publication_metadata_carries_bound_provenance(tmp_path: Path) -> None:
     """50D/scalp_v1 geometry is legitimately rejected by the canonical 70D
     emission gate — but the STAGED metadata must already carry the bound
-    provenance (the fix under test), and staging must be cleaned up."""
-    tr = _trainer(tmp_path)
+    provenance (the fix under test), and staging must be cleaned up.
+
+    LEARNFIX1-TRIV-1 (2026-09-13): b1eb5b94 (BUG-244) smoke-scoped the
+    geometry/provenance canonical checks — a smoke=True drill at 50D now
+    PUBLISHES (that is the designed quarantine, not a defect). The gate is
+    hard for NON-smoke publication candidates, so this pin must run with
+    smoke=False or it asserts against an exemption that shipped after it.
+    """
+    tr = _trainer(tmp_path, smoke=False)
     df = _labeled_frame().with_columns(
         pl.lit("ds_e2e").alias("dataset_id"),
         pl.lit("a" * 64).alias("dataset_sha256"),
@@ -126,8 +133,12 @@ def test_publication_metadata_carries_bound_provenance(tmp_path: Path) -> None:
 def test_geometry_gate_still_enforced_for_wrong_width(tmp_path: Path) -> None:
     """The provenance fix must NOT weaken the emission gate: a 50D frame on
     the canonical 70D gate is still rejected loudly (LEARNFIX-1 binds
-    identity, never lowers contracts)."""
-    tr = _trainer(tmp_path)
+    identity, never lowers contracts).
+
+    LEARNFIX1-TRIV-1: smoke=False — the BUG-244 quarantine deliberately
+    exempts smoke drills from the canonical width contract; the NON-smoke
+    publication path is what must stay hard."""
+    tr = _trainer(tmp_path, smoke=False)
     df = _labeled_frame().with_columns(
         pl.lit("CLEAN_HISTORICAL").alias("label_origin"),
         pl.lit("ds_w").alias("dataset_id"),

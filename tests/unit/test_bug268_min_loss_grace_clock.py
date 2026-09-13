@@ -189,6 +189,41 @@ def test_missing_entry_anchor_no_exit_no_warning(
     assert probe.warnings == []
 
 
+def test_fresh_host_monotonic_uptime_first_fallback_still_warns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BUG-273 (throttle-sentinel class): the 300s rate limiter compared
+    ``time.monotonic()`` against a 0.0 getattr default, so on any host with
+    uptime < 300s (a fresh CI runner — proven red on ubuntu quality job CI
+    1255 / macOS run at 4dea144b: 'expected exactly 1 rate-limited warning,
+    got 0') the FIRST HOLD_AGE_FALLBACK warning was silently suppressed —
+    exactly when the fallback matters (just-restarted engine). None =
+    'never ran' -> first check always due; the 300s window still throttles."""
+    probe = _LogProbe()
+    monkeypatch.setattr(scoring_module, "logger", probe)
+    clock = {"t": 120.0}  # pretend the host booted 2 minutes ago
+
+    class _Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return clock["t"]
+
+    monkeypatch.setattr(scoring_module, "time", _Clock())
+    om = _make_om()
+    om._entry_timestamps[5006] = datetime.now(UTC) - timedelta(seconds=3600)
+    should_exit, _reason = _call(om, 5006, now=None)
+    assert should_exit is False
+    assert len(probe.warnings) == 1, "fresh-host first fallback warning suppressed"
+    # still rate-limited: more calls inside the same 300s window add nothing
+    for _ in range(4):
+        _call(om, 5006, now=None)
+    assert len(probe.warnings) == 1
+    # past the window the warning re-arms
+    clock["t"] = 421.0
+    _call(om, 5006, now=None)
+    assert len(probe.warnings) == 2
+
+
 # ---------------------------------------------------------------------------
 # 3. static guards: the BUG-260 sweep must now cover this method too
 # ---------------------------------------------------------------------------
