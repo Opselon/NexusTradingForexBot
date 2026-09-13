@@ -61,6 +61,7 @@ jobs:
           # no operator .env — generate a throwaway PAPER-mode token here
           # (never echoed, single-run, torn down in the always() step).
           echo "NSE_WEB_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+          echo "NSE_PG_PASSWORD=ci-nopg" >> .env
           docker compose up -d --build core
           docker compose ps
 
