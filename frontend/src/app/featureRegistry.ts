@@ -43,24 +43,27 @@ export interface RegisteredFeature extends FeatureMeta {
   lazy: LazyExoticComponent<FeatureComponent>;
 }
 
-/** One entry per legacy tab not yet covered by the 7 legacy React pages. */
+/** One entry per legacy tab not yet covered by the 7 legacy pages.
+ *  (Idempotent lane-3 fix 2026-09-13: the scaffold spread `index.ts` defaults
+ *  directly, but defineFeature() returns `{meta, lazy}` — every entry now
+ *  flattens `...X.meta`; without it NO feature route renders for ANY lane.) */
 const FEATURES: RegisteredFeature[] = [
-  { ...newsMeta, lazy: newsMeta.lazy },
-  { ...aiAnalysisMeta, lazy: aiAnalysisMeta.lazy },
-  { ...researchMeta, lazy: researchMeta.lazy },
-  { ...marketplaceMeta, lazy: marketplaceMeta.lazy },
-  { ...factoryMeta, lazy: factoryMeta.lazy },
-  { ...accountMeta, lazy: accountMeta.lazy },
-  { ...healthMeta, lazy: healthMeta.lazy },
-  { ...rulesMeta, lazy: rulesMeta.lazy },
-  { ...configMeta, lazy: configMeta.lazy },
-  { ...debugMeta, lazy: debugMeta.lazy },
-  { ...governanceMeta, lazy: governanceMeta.lazy },
-  { ...liquidityMeta, lazy: liquidityMeta.lazy },
-  { ...incidentsMeta, lazy: incidentsMeta.lazy },
-  { ...commandCenterMeta, lazy: commandCenterMeta.lazy },
-  { ...controlCenterMeta, lazy: controlCenterMeta.lazy },
-  { ...databaseMeta, lazy: databaseMeta.lazy },
+  { ...newsMeta.meta, lazy: newsMeta.lazy },
+  { ...aiAnalysisMeta.meta, lazy: aiAnalysisMeta.lazy },
+  { ...researchMeta.meta, lazy: researchMeta.lazy },
+  { ...marketplaceMeta.meta, lazy: marketplaceMeta.lazy },
+  { ...factoryMeta.meta, lazy: factoryMeta.lazy },
+  { ...accountMeta.meta, lazy: accountMeta.lazy },
+  { ...healthMeta.meta, lazy: healthMeta.lazy },
+  { ...rulesMeta.meta, lazy: rulesMeta.lazy },
+  { ...configMeta.meta, lazy: configMeta.lazy },
+  { ...debugMeta.meta, lazy: debugMeta.lazy },
+  { ...governanceMeta.meta, lazy: governanceMeta.lazy },
+  { ...liquidityMeta.meta, lazy: liquidityMeta.lazy },
+  { ...incidentsMeta.meta, lazy: incidentsMeta.lazy },
+  { ...commandCenterMeta.meta, lazy: commandCenterMeta.lazy },
+  { ...controlCenterMeta.meta, lazy: controlCenterMeta.lazy },
+  { ...databaseMeta.meta, lazy: databaseMeta.lazy },
 ];
 
 export const FEATURE_REGISTRY = FEATURES;
