@@ -441,14 +441,37 @@ def test_champion_sentinel_import_stays_light() -> None:
     assert out.stdout.strip().endswith("False"), out.stdout
 
 
-def test_logging_severity_routes_critical(capsys: Any, env: Any, monkeypatch: Any) -> None:
-    """The confirmed-drift alarm must be CRITICAL-severity observable in the
-    structured log stream. structlog is unconfigured under pytest (PrintLogger
-    -> stdout), so the severity token is captured from the emitted line — the
-    same evidence shape the docker/alert consumers parse."""
+def test_logging_severity_routes_critical(env: Any, monkeypatch: Any) -> None:
+    """The confirmed-drift alarm must go out at CRITICAL severity. Captured by
+    replacing the maintenance module's logger with a recorder — deterministic
+    under xdist regardless of structlog configuration (the PrintLogger->stdout
+    shape a capsys pin depends on is host-dependent; CI proved it by seeing
+    '' where the local slim venv saw the line)."""
+    from nexus_scalp.application.live import maintenance as maint_mod
+
     notifier = _Notifier()
     cycle = _cycle(_base_om(env.repo, notifier))
     drift = {"status": cs.STATUS_DRIFT, "serving_sha16": "f" * 16, "governed_sha16": "a" * 16}
+
+    logged: list[tuple[str, str]] = []
+
+    class _Rec:
+        def critical(self, fmt: str, *args: Any, **kw: Any) -> None:
+            logged.append(("critical", fmt % args if args else fmt))
+
+        def warning(self, fmt: str, *args: Any, **kw: Any) -> None:
+            logged.append(("warning", fmt % args if args else fmt))
+
+        def info(self, fmt: str, *args: Any, **kw: Any) -> None:
+            logged.append(("info", fmt % args if args else fmt))
+
+        def debug(self, fmt: str, *args: Any, **kw: Any) -> None:
+            logged.append(("debug", fmt % args if args else fmt))
+
+        def error(self, fmt: str, *args: Any, **kw: Any) -> None:
+            logged.append(("error", fmt % args if args else fmt))
+
+    monkeypatch.setattr(maint_mod, "logger", _Rec())
 
     def fake_probe(_om: Any) -> dict[str, Any]:
         return drift
@@ -457,6 +480,7 @@ def test_logging_severity_routes_critical(capsys: Any, env: Any, monkeypatch: An
     cycle._champion_sentinel_failures = 1  # pre-arm: next sighting confirms
     asyncio.run(cycle.run_cycle(now_t=time.time()))
     assert ("CRITICAL", "CHAMPION_DRIFT_CONFIRMED") in notifier.sent
-    out = capsys.readouterr().out
-    assert "CHAMPION_SENTINEL" in out and "CHAMPION_DRIFT_CONFIRMED" in out
-    assert "[critical" in out, out[-600:]
+    crit = [m for lvl, m in logged if lvl == "critical"]
+    assert any(
+        "CHAMPION_SENTINEL" in m and "CHAMPION_DRIFT_CONFIRMED" in m and "ffff" in m for m in crit
+    ), logged
