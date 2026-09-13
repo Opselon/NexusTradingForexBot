@@ -192,3 +192,8 @@ tests/unit/test_bug268_min_loss_grace_clock.py
 # untrained weights that pass the digest gate then die on the P0 serving
 # probe -> fresh-volume container restart loop. Servability-gated re-mint.
 tests/unit/test_bug269_docker_starter_servable.py
+# BUG-271 (NSE-Swarm role 4, 2026-09-13): governed in-place serving-artifact
+# persist (async retrain / collapse recovery / hot-swap) orphans the CHAMPION
+# fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
+# dies permanently after a legitimate retrain. Champion supersession seam.
+tests/unit/test_bug271_champion_retrain_fingerprint.py
