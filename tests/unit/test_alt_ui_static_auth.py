@@ -45,9 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _WT_SRC = str(REPO_ROOT / "src")
 if (_WT_SRC not in sys.path) or (
     "nexus_scalp.web.server" in sys.modules
-    and not str(Path(sys.modules["nexus_scalp.web.server"].__file__)).startswith(
-        str(REPO_ROOT)
-    )
+    and not str(Path(sys.modules["nexus_scalp.web.server"].__file__)).startswith(str(REPO_ROOT))
 ):
     sys.path.insert(0, _WT_SRC)
     for _m in [_k for _k in list(sys.modules) if _k.startswith("nexus_scalp")]:
@@ -96,12 +94,8 @@ def _write_dist(root: Path) -> Path:
         f"<html><head><title>alt</title></head><body>{ALT_CANARY}</body></html>",
         encoding="utf-8",
     )
-    (dist / "assets" / "index-TESTHASH1.js").write_text(
-        "export const alt = 1;\n", encoding="utf-8"
-    )
-    (dist / "assets" / "index-TESTHASH2.css").write_text(
-        ":root{--bg:#000}\n", encoding="utf-8"
-    )
+    (dist / "assets" / "index-TESTHASH1.js").write_text("export const alt = 1;\n", encoding="utf-8")
+    (dist / "assets" / "index-TESTHASH2.css").write_text(":root{--bg:#000}\n", encoding="utf-8")
     # Secret one level above the served root: the traversal target.
     (root / "secrets.enc").write_text(SECRET_CANARY, encoding="utf-8")
     return dist
@@ -394,9 +388,7 @@ def test_repo_dist_index_and_bundle_serve_with_expected_types(repo_dist_client) 
     refs = re.findall(r'(?:src|href)="(/alt/assets/[^"]+)"', idx.text)
     assert refs, "dist/index.html references no /alt/assets/* — build drift"
     for ref in refs:
-        r = repo_dist_client.get(
-            ref, headers={"Authorization": f"Bearer {TOKEN}"}
-        )
+        r = repo_dist_client.get(ref, headers={"Authorization": f"Bearer {TOKEN}"})
         assert r.status_code == 200, f"SEC-2: referenced asset 404s: {ref}"
         assert SECRET_CANARY not in r.text
 
