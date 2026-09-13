@@ -73,11 +73,16 @@ def _repo_root() -> Path | None:
 
 
 def _git_commit(rev: str = "HEAD") -> str | None:
+    # Release-wave Finding 2: return the FULL 40-hex immutable commit SHA.
+    # Short SHAs remain presentation-only in human-facing logs; every
+    # machine-consumed identity surface (build-info.json, release-manifest,
+    # update manifest, artifact metadata, updater identity checks) must bind
+    # to the full SHA so artifact identity is unambiguous and verifiable.
     try:
         root = _repo_root()
         cwd = str(root) if root is not None else None
         out = subprocess.run(
-            ["git", "rev-parse", "--short", rev],
+            ["git", "rev-parse", rev],
             capture_output=True,
             text=True,
             timeout=3,
