@@ -33,6 +33,9 @@ import RiskPage from "@/pages/Risk/RiskPage";
 import MLPage from "@/pages/ML/MLPage";
 import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
 import AuditPage from "@/pages/Audit/AuditPage";
+import { Suspense } from "react";
+import { FEATURE_SECTIONS } from "@/app/featureRegistry";
+import { LoadingState } from "@/components/primitives";
 
 const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ to: string; icon: string; label: string }> }> = [
   {
@@ -56,8 +59,18 @@ const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ 
   },
 ];
 
+/** Registry-driven sections (lazy features) mapped into the sidebar shape. */
+const FEATURE_NAV = FEATURE_SECTIONS.map((sec) => ({
+  section: sec.section,
+  sectionKey: "ux.sidebar.features",
+  items: sec.items.map((f) => ({ to: f.route, icon: f.icon, label: f.label })),
+}));
+
+/** Full nav = legacy pages first (stable Alt+1..7), then feature registry. */
+const ALL_NAV_SECTIONS = [...NAV_SECTIONS, ...FEATURE_NAV];
+
 /** Flat route list for Alt+<n> keyboard navigation (visual shortcut only). */
-const NAV_ROUTES = NAV_SECTIONS.flatMap((s) => s.items).map((i) => i.to);
+const NAV_ROUTES = ALL_NAV_SECTIONS.flatMap((s) => s.items).map((i) => i.to);
 
 /** Backend age (seconds) -> ms for the freshness meter; null stays null. */
 function ageSecToMs(sec: number | null | undefined): number | null {
@@ -125,7 +138,7 @@ export function AppShell() {
         return;
       }
       const digit = Number(e.key);
-      if (Number.isInteger(digit) && digit >= 1 && digit <= NAV_ROUTES.length) {
+      if (Number.isInteger(digit) && digit >= 1 && digit <= Math.min(9, NAV_ROUTES.length)) {
         e.preventDefault();
         const route = NAV_ROUTES[digit - 1];
         if (route) navigate(route);
@@ -170,7 +183,7 @@ export function AppShell() {
           </div>
         </div>
         <nav className="nav">
-          {NAV_SECTIONS.map((sec) => (
+          {ALL_NAV_SECTIONS.map((sec) => (
             <div key={sec.section}>
               <div className="nav-section">{sec.section}</div>
               {sec.items.map((item) => (
@@ -261,6 +274,17 @@ export function AppShell() {
               <Route path="/ml" element={<MLPage snapshot={snapshot} />} />
               <Route path="/intelligence" element={<IntelligencePage snapshot={snapshot} />} />
               <Route path="/audit" element={<AuditPage />} />
+              {FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
+                <Route
+                  key={f.route}
+                  path={f.route}
+                  element={
+                    <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
+                      <f.lazy snapshot={snapshot} nowMs={nowMs} />
+                    </Suspense>
+                  }
+                />
+              ))}
               <Route path="*" element={<ErrorState message="Unknown route" />} />
             </Routes>
           )}
