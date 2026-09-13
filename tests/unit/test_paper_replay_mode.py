@@ -102,6 +102,16 @@ def test_missing_raw_fallback_fails_closed() -> None:
 
 
 def test_raw_bars_source_loads_chronological_real_data() -> None:
+    # BUG-266 note: data/raw is gitignored (operator-exported broker data), so
+    # this is an ENVIRONMENT-GATED honesty test — it must assert on real data
+    # when present and skip loudly when not, never fake a pass and never fail
+    # a machine that simply has no export.
+    from pathlib import Path
+
+    from nexus_scalp.adapters.paper.replay_source import RAW_M1_BARS_PATH
+
+    if not Path(RAW_M1_BARS_PATH).exists():
+        pytest.skip(f"{RAW_M1_BARS_PATH} not exported on this host (gitignored operator data)")
     src = ReplayTickSource(symbol="XAUUSD", allow_raw_fallback=True)
     prov = src.identity()
     assert prov["market_data_mode"] == "REPLAY"
