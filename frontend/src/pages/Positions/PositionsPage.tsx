@@ -45,6 +45,13 @@ interface CloseDialog {
   summary: string;
 }
 
+interface ModifyDialog {
+  ticket: number;
+  summary: string;
+  sl: string;
+  tp: string;
+}
+
 function posKey(p: Position, i: number): string {
   return String(p.ticket ?? `${p.symbol}-${i}`);
 }
@@ -56,7 +63,9 @@ function ledgerMatches(a: { ticket: number | null }, b: Position): boolean {
 export default function PositionsPage({ snapshot }: Props) {
   const queryClient = useQueryClient();
   const closeCmd = useMutationFeedback();
+  const modifyCmd = useMutationFeedback();
   const [closeDialog, setCloseDialog] = useState<CloseDialog | null>(null);
+  const [modifyDialog, setModifyDialog] = useState<ModifyDialog | null>(null);
   const [ledgerStatus, setLedgerStatus] = useState("");
 
   const positionsQuery = useQuery({
@@ -124,18 +133,32 @@ export default function PositionsPage({ snapshot }: Props) {
         label: "",
         render: (p) =>
           p.ticket !== null ? (
-            <button
-              className="btn small danger"
-              onClick={(e) => {
-                e.stopPropagation();
-                setCloseDialog({
-                  ticket: p.ticket as number,
-                  summary: `${p.symbol ?? "?"} ${Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "?"} ${formatNumber(p.volume)} lots @ ${formatPrice(p.price_open)} · floating ${formatPnl(p.profit)}`,
-                });
-              }}
-            >
-              Close
-            </button>
+            <span className="l4-row-actions" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="btn small"
+                onClick={() =>
+                  setModifyDialog({
+                    ticket: p.ticket as number,
+                    summary: `${p.symbol ?? "?"} ${Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "?"} ${formatNumber(p.volume)} lots @ ${formatPrice(p.price_open)}`,
+                    sl: p.sl !== null && p.sl !== undefined && p.sl !== 0 ? String(p.sl) : "",
+                    tp: p.tp !== null && p.tp !== undefined && p.tp !== 0 ? String(p.tp) : "",
+                  })
+                }
+              >
+                SL/TP
+              </button>
+              <button
+                className="btn small danger"
+                onClick={() =>
+                  setCloseDialog({
+                    ticket: p.ticket as number,
+                    summary: `${p.symbol ?? "?"} ${Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "?"} ${formatNumber(p.volume)} lots @ ${formatPrice(p.price_open)} · floating ${formatPnl(p.profit)}`,
+                  })
+                }
+              >
+                Close
+              </button>
+            </span>
           ) : (
             <span className="faint small">no ticket</span>
           ),
@@ -149,6 +172,24 @@ export default function PositionsPage({ snapshot }: Props) {
     const ok = await closeCmd.run(() => tradingApi.closePosition(closeDialog.ticket));
     if (ok) {
       setCloseDialog(null);
+      void queryClient.invalidateQueries({ queryKey: ["v1-positions"] });
+      void queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
+    }
+  };
+
+  /** SL/TP edit — the backend OrderLifecycleManager owns validation (and may
+   *  refuse a level that violates the enforce_stop_loss gate). */
+  const confirmModify = async (): Promise<void> => {
+    if (!modifyDialog) return;
+    const sl = modifyDialog.sl.trim() === "" ? 0 : Number(modifyDialog.sl);
+    const tp = modifyDialog.tp.trim() === "" ? 0 : Number(modifyDialog.tp);
+    if (!Number.isFinite(sl) || !Number.isFinite(tp)) {
+      // local guard only — not a validation verdict, just "this can't be sent"
+      return;
+    }
+    const ok = await modifyCmd.run(() => tradingApi.modifyPosition({ ticket: modifyDialog.ticket, stop_loss: sl, take_profit: tp }));
+    if (ok) {
+      setModifyDialog(null);
       void queryClient.invalidateQueries({ queryKey: ["v1-positions"] });
       void queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
     }
@@ -214,6 +255,40 @@ export default function PositionsPage({ snapshot }: Props) {
               {closeCmd.state.lastResult ? "✓" : "✕"} {closeCmd.state.lastMessage}
             </div>
           )}
+        </ConfirmModal>
+      )}
+
+      {modifyDialog && (
+        <ConfirmModal
+          title={`Modify SL/TP · position #${modifyDialog.ticket}`}
+          danger={false}
+          confirmLabel="Send modify"
+          busy={modifyCmd.state.running}
+          onConfirm={() => void confirmModify()}
+          onCancel={() => setModifyDialog(null)}
+        >
+          <div>
+            <div className="small">{modifyDialog.summary}</div>
+            <div className="row" style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <label className="l4-replay__field" style={{ display: "grid", gap: 3 }}>
+                <span className="l4-note">stop loss (0 = clear)</span>
+                <input className="input" style={{ inlineSize: 130 }} inputMode="decimal" value={modifyDialog.sl} onChange={(e) => setModifyDialog((d) => (d ? { ...d, sl: e.target.value } : d))} />
+              </label>
+              <label className="l4-replay__field" style={{ display: "grid", gap: 3 }}>
+                <span className="l4-note">take profit (0 = clear)</span>
+                <input className="input" style={{ inlineSize: 130 }} inputMode="decimal" value={modifyDialog.tp} onChange={(e) => setModifyDialog((d) => (d ? { ...d, tp: e.target.value } : d))} />
+              </label>
+            </div>
+            <div className="small muted" style={{ marginTop: 8 }}>
+              Sent as {`{ticket, stop_loss, take_profit}`} to POST /api/positions/modify — the OrderLifecycleManager validates against the broker symbol spec and the
+              enforce_stop_loss gate and may refuse; the reply decides.
+            </div>
+            {modifyCmd.state.lastMessage && (
+              <div className={`cmd-result ${modifyCmd.state.lastResult ? "ok" : "fail"}`}>
+                {modifyCmd.state.lastResult ? "✓" : "✕"} {modifyCmd.state.lastMessage}
+              </div>
+            )}
+          </div>
         </ConfirmModal>
       )}
 
