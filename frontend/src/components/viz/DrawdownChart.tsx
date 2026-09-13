@@ -57,7 +57,7 @@ export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint 
         <path className="viz-line neg" d={line} />
         {maxDrawdownPct !== null && maxDrawdownPct !== undefined && (
           <text className="viz-axis" x={W} y={toY(Math.min(maxDrawdownPct, ext[1])) - 3} textAnchor="end" style={{ fill: "var(--amber)" }}>
-            max {maxDrawdownPct.toFixed(2)}% (backend)
+            max {maxDrawdownPct.toFixed(2)}%
           </text>
         )}
       </svg>
