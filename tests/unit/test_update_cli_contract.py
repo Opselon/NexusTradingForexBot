@@ -31,36 +31,43 @@ import pytest
 
 from nexus_scalp.cli.update_cli import _update_exit_code
 from nexus_scalp.release import exit_codes as xc
+from nexus_scalp.release.metadata import get_version_info
 from nexus_scalp.release.update_engine.orchestrator import UpdateOrchestrator
 from nexus_scalp.release.update_engine.rollback_state import ReleaseLocalState
 
 
 @pytest.fixture()
 def installed_client(tmp_path: Path) -> tuple[UpdateOrchestrator, Path]:
-    """A minimal honest installed-client fixture (app root + update home)."""
+    """A minimal honest installed-client fixture (app root + update home).
+
+    Version literals are derived from the canonical repo version, NOT pinned:
+    verify() compares against get_version_info(), so a hand-pinned value
+    drifts on every routine version bump (same lesson as
+    tests/unit/test_state_truth_parity.py)."""
     app = tmp_path / "app"
     user = tmp_path / "user"
+    version = get_version_info()["version"]
     (app / "bin").mkdir(parents=True)
     user.mkdir()
     (app / "NexusScalpEngine.exe").write_bytes(b"MZ-nexus-engine-fixture")
     (app / "build-info.json").write_text(
-        json.dumps({"version": "9.0.11", "platform": "windows-x64"})
+        json.dumps({"version": version, "platform": "windows-x64"})
     )
     return UpdateOrchestrator(
         app_root=app,
         user_root=user,
         update_home=user / "update",
-        installed_version="9.0.11",
+        installed_version=version,
     ), app
 
 
 def _stage(orch: UpdateOrchestrator, payload: bytes) -> None:
     orch.cache_dir.mkdir(parents=True, exist_ok=True)
-    artifact = orch.cache_dir / "NexusScalpEngine-9.0.11-win-x64.zip"
+    artifact = orch.cache_dir / f"NexusScalpEngine-{orch.installed_version}-win-x64.zip"
     artifact.write_bytes(payload)
     ReleaseLocalState(orch.update_home).write(
         {
-            "target_version": "9.0.11",
+            "target_version": orch.installed_version,
             "artifact_name": artifact.name,
             "artifact_sha256": hashlib.sha256(payload).hexdigest(),
             "channel": "stable",
@@ -89,7 +96,7 @@ def test_verify_passes_after_cache_prune(installed_client) -> None:
 def test_verify_fails_on_tampered_staged_artifact(installed_client) -> None:
     orch, _app = installed_client
     _stage(orch, b"PK\x05\x06" + b"payload" * 50)
-    artifact = orch.cache_dir / "NexusScalpEngine-9.0.11-win-x64.zip"
+    artifact = orch.cache_dir / f"NexusScalpEngine-{orch.installed_version}-win-x64.zip"
     artifact.write_bytes(b"tampered-bytes")
     rep = orch.verify()
     assert rep["status"] == "VERIFICATION_FAILED"
