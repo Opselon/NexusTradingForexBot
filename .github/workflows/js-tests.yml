@@ -62,7 +62,7 @@ jobs:
       - name: Run JS unit tests
         run: |
           shopt -s nullglob
-          files=(tests/js/*.test.js)
+          files=(tests/js/*.test.js tests/js/*.test.mjs)
           if [ ${#files[@]} -eq 0 ]; then
             echo "No JS tests found; skipping."
             exit 0

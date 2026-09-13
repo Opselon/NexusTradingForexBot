@@ -256,13 +256,9 @@ def test_no_directory_listing_on_indexless_dir(auth) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="FINDING SEC-2/C1 (observed on disk): the /alt app shell served as a "
-    "REAL file (StaticFiles directory=/alt root) carries NO Cache-Control, so "
-    "a proxy or browser may pin a stale shell over a new hashed bundle. The "
-    "SPA-fallback path does set no-store. Fix belongs in server.py, not here.",
-)
+# SEC-2/C1 CLOSED (ALT-UI-PRO integration): _AltSpaStaticFiles.get_response now pins
+# no-store on the REAL-file HTML shell path and immutable on hashed /alt/assets/*.
+# The assertion below is a plain (non-xfail) regression pin.
 def test_index_shell_cache_control_prevents_stale_shell(auth) -> None:
     r = auth.get("/alt/index.html")
     assert r.status_code == 200

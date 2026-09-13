@@ -1720,7 +1720,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 from starlette.exceptions import HTTPException
 
                 try:
-                    return await super().get_response(path, scope)
+                    resp = await super().get_response(path, scope)
                 except HTTPException as exc:
                     if exc.status_code != 404:
                         raise
@@ -1731,10 +1731,20 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
                     full, st = self.lookup_path("index.html")
                     if full and st is not None and _stat.S_ISREG(st.st_mode):
-                        resp = self.file_response(full, st, scope)
-                        resp.headers["Cache-Control"] = "no-store"
-                        return resp
+                        fb = self.file_response(full, st, scope)
+                        fb.headers["Cache-Control"] = "no-store"
+                        return fb
                     raise
+                # SEC-2/C1: cache policy on the REAL-file path too — the HTML
+                # shell must never be pinned over a new hashed bundle, and
+                # content-hashed /assets/* files are immutable by definition.
+                sub = (path or "").lstrip("/")
+                leaf = sub.rsplit("/", 1)[-1]
+                if sub.startswith("assets/"):
+                    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                elif leaf in ("", "index.html") or leaf.endswith(".html"):
+                    resp.headers["Cache-Control"] = "no-store"
+                return resp
 
         app.mount(
             "/alt",
