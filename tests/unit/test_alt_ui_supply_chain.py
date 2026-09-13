@@ -245,7 +245,12 @@ class TestDependencyAllowlist:
         )
 
     def test_no_optional_or_bundled_dep_channels(self, pkg: dict) -> None:
-        for key in ("optionalDependencies", "bundledDependencies", "bundleDependencies", "overrides"):
+        for key in (
+            "optionalDependencies",
+            "bundledDependencies",
+            "bundleDependencies",
+            "overrides",
+        ):
             assert key not in pkg, f"frontend/package.json must not declare {key}"
 
     def test_no_file_or_git_or_link_specs(self, pkg: dict) -> None:
@@ -427,16 +432,28 @@ class TestDistIsNotCommitted:
 # ---------------------------------------------------------------------------
 
 SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("aws_access_key", re.compile(r"(?i)\baws_access_key(?:_id|_secret)?\b[\"']?\s*[:=]\s*[\"']?[A-Z0-9+/]{12,}")),
+    (
+        "aws_access_key",
+        re.compile(r"(?i)\baws_access_key(?:_id|_secret)?\b[\"']?\s*[:=]\s*[\"']?[A-Z0-9+/]{12,}"),
+    ),
     ("private_key_block", re.compile(r"-----BEGIN\s+(?:[A-Z]+\s+)?PRIVATE\s+KEY-----")),
     ("password_literal", re.compile(r"(?i)\bpassword\b[\"']?\s*[:=]\s*[\"'][^\"'\n]{6,}[\"']")),
-    ("secret_literal", re.compile(r"(?i)\b(?:client_)?secret\b[\"']?\s*[:=]\s*[\"'][A-Za-z0-9+/=_\-]{8,}[\"']")),
+    (
+        "secret_literal",
+        re.compile(r"(?i)\b(?:client_)?secret\b[\"']?\s*[:=]\s*[\"'][A-Za-z0-9+/=_\-]{8,}[\"']"),
+    ),
     (
         "token_literal",
         re.compile(r"(?i)\b[a-z_]*token\b[\"']?\s*[:=]\s*[\"'][A-Za-z0-9+/=_\-]{20,}[\"']"),
     ),
-    ("bearer_literal", re.compile(r"(?i)\bauthorization\b[\"']?\s*[:=]\s*[\"']\s*bearer\s+[A-Za-z0-9+_.\-]{20,}")),
-    ("nse_token_env_value", re.compile(r"(?i)NSE_WEB_AUTH_TOKEN\s*=\s*[\"']?[A-Za-z0-9+/=_\-]{16,}")),
+    (
+        "bearer_literal",
+        re.compile(r"(?i)\bauthorization\b[\"']?\s*[:=]\s*[\"']\s*bearer\s+[A-Za-z0-9+_.\-]{20,}"),
+    ),
+    (
+        "nse_token_env_value",
+        re.compile(r"(?i)NSE_WEB_AUTH_TOKEN\s*=\s*[\"']?[A-Za-z0-9+/=_\-]{16,}"),
+    ),
 )
 
 
@@ -459,7 +476,9 @@ class TestDistHygiene:
             "vite.config.ts must keep build.sourcemap:false — source maps ship the "
             "operator console's source to any browser client"
         )
-        assert not re.search(r"sourcemap\s*:\s*(true|\{)", cfg), "no sourcemap mode may be re-enabled"
+        assert not re.search(r"sourcemap\s*:\s*(true|\{)", cfg), (
+            "no sourcemap mode may be re-enabled"
+        )
         assert re.search(r'base\s*:\s*"/alt/"', cfg), "alt console must stay mounted under /alt/"
 
     def test_vite_config_declares_no_dev_only_leak_into_build(self) -> None:
@@ -486,12 +505,17 @@ class TestDistHygiene:
         offenders = [
             _rel(p)
             for p in files
-            if not re.fullmatch(r"(index\.html|assets/[A-Za-z0-9._-]+\.(js|css))", p.relative_to(DIST_DIR).as_posix())
+            if not re.fullmatch(
+                r"(index\.html|assets/[A-Za-z0-9._-]+\.(js|css))",
+                p.relative_to(DIST_DIR).as_posix(),
+            )
         ]
         assert not offenders, f"unexpected files in dist (over-release surface): {offenders}"
 
     def test_no_secret_material_in_src(self) -> None:
-        hits = _secret_hits([*_source_files(SRC_DIR), *([INDEX_HTML] if INDEX_HTML.is_file() else []), VITE_CONFIG])
+        hits = _secret_hits(
+            [*_source_files(SRC_DIR), *([INDEX_HTML] if INDEX_HTML.is_file() else []), VITE_CONFIG]
+        )
         assert not hits, f"possible secret material in UI source: {hits}"
 
     @pytest.mark.skipif(not DIST_DIR.is_dir(), reason="frontend/dist not built on this host")
@@ -516,7 +540,9 @@ class TestDistHygiene:
 
     def test_repo_env_files_are_not_in_the_bundle_lane(self) -> None:
         """frontend/ must not carry its own .env (a secret-sink next to a build)."""
-        leaks = [p for p in FRONTEND.rglob(".env*") if p.is_file() and "node_modules" not in p.parts]
+        leaks = [
+            p for p in FRONTEND.rglob(".env*") if p.is_file() and "node_modules" not in p.parts
+        ]
         assert not leaks, f"env files inside frontend/ tree: {[_rel(p) for p in leaks]}"
 
 
@@ -603,7 +629,7 @@ class TestNoCdnRule:
                 if sink.search(line):
                     offenders.append(f"{_rel(path)}:{lineno}")
         assert not offenders, f"absolute-URL network sink in built bundle: {offenders}"
-        assert any('/api' in _read(p) for p in _source_files(DIST_DIR)), (
+        assert any("/api" in _read(p) for p in _source_files(DIST_DIR)), (
             "built bundle lost its relative /api paths — serving contract broken"
         )
 
@@ -640,9 +666,9 @@ class TestOperatorPayloadStaysOnOrigin:
         assert re.search(r"fetch\(\s*path\b", text), (
             "client.ts must fetch the caller-supplied path verbatim — no base-URL concat"
         )
-        assert not re.search(r"(https?://)[A-Za-z0-9.\-]+\s*\+|baseUrl\s*=\s*[\"']https?://", text), (
-            "transport layer must not carry an absolute base URL"
-        )
+        assert not re.search(
+            r"(https?://)[A-Za-z0-9.\-]+\s*\+|baseUrl\s*=\s*[\"']https?://", text
+        ), "transport layer must not carry an absolute base URL"
         offenders: list[str] = []
         for path in _source_files(FRONTEND / "src" / "api"):
             stripped = _strip_comments(_read(path))
@@ -662,7 +688,9 @@ class TestOperatorPayloadStaysOnOrigin:
             wanted |= set(re.findall(r"""["'](/api[A-Za-z0-9/_.\-{}]*)["']""", _read(path)))
         wanted |= {"/api/ticks/stream"}
         unknown = sorted(
-            w for w in wanted if w not in served and not any(s.startswith(w) or w.startswith(s) for s in served)
+            w
+            for w in wanted
+            if w not in served and not any(s.startswith(w) or w.startswith(s) for s in served)
         )
         assert not unknown, f"UI calls backend routes that do not exist: {unknown}"
 
@@ -734,7 +762,7 @@ class TestOperatorPayloadStaysOnOrigin:
         )
         client = _read(FRONTEND / "src" / "api" / "client.ts")
         assert f'"{TOKEN_STORAGE_KEY}"' in client or f"'{TOKEN_STORAGE_KEY}'" in client
-        assert "searchParams.delete(\"token\")" in client, "token must be scrubbed from the URL"
+        assert 'searchParams.delete("token")' in client, "token must be scrubbed from the URL"
 
     def test_localstorage_writes_are_visual_prefs_only(self) -> None:
         offenders: list[str] = []
@@ -752,12 +780,21 @@ class TestOperatorPayloadStaysOnOrigin:
         # to allowlisted literals.
         consts: dict[str, str] = {}
         for path in _source_files(SRC_DIR):
-            consts.update(dict(re.findall(r"const\s+([A-Z0-9_]+)\s*=\s*[\"']([A-Za-z0-9._]+)[\"']", _read(path))))
+            consts.update(
+                dict(
+                    re.findall(
+                        r"const\s+([A-Z0-9_]+)\s*=\s*[\"']([A-Za-z0-9._]+)[\"']", _read(path)
+                    )
+                )
+            )
         for path in _source_files(SRC_DIR):
             for lineno, line in enumerate(_read(path).splitlines(), 1):
                 if re.search(r"localStorage\.(setItem|getItem)\(", line):
                     for name, value in consts.items():
-                        if re.search(rf"\b{re.escape(name)}\b", line) and value not in ALLOWED_LOCALSTORAGE_KEYS:
+                        if (
+                            re.search(rf"\b{re.escape(name)}\b", line)
+                            and value not in ALLOWED_LOCALSTORAGE_KEYS
+                        ):
                             offenders.append(f"{_rel(path)}:{lineno}:{name}={value}")
         assert not offenders, f"non-preference localStorage key constant: {offenders}"
         # The store uses a key-variable helper; enumerate the literal keys it passes.
@@ -778,7 +815,9 @@ class TestOperatorPayloadStaysOnOrigin:
                 if re.search(r"(localStorage|sessionStorage)\.(setItem|getItem)\(", line):
                     low = line.lower()
                     for n in needles:
-                        if n in low and "token" not in (TOKEN_STORAGE_KEY.lower() if n == "token" else ""):
+                        if n in low and "token" not in (
+                            TOKEN_STORAGE_KEY.lower() if n == "token" else ""
+                        ):
                             if n == "token" and TOKEN_STORAGE_KEY.lower() not in low:
                                 offenders.append(f"{_rel(path)}:{lineno}:{n}")
                             elif n != "token":
