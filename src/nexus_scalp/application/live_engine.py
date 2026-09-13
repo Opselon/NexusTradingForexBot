@@ -1710,6 +1710,44 @@ class LiveEngine:
             self.experience_engine.set_provenance(provenance)
         except Exception as e:
             logger.error("[MODEL] provenance registration failed (isolated)", error=str(e))
+            return
+        # BUG-271: a GOVERNED in-place replacement (async retrain persist,
+        # collapse recovery, promotion/rollback activation, hot-swap) rewrote
+        # the serving artifact at the champion path. The provenance row above
+        # carries the NEW fingerprint but lands with the column default
+        # (CANDIDATE), while the lifecycle CHAMPION stamp stays on the OLD
+        # row — orphaning the governed fingerprint. The P0-2 boot trust anchor
+        # then compares serving bytes against that stale row and REFUSES the
+        # next cold boot (trading dies permanently after a legitimate
+        # retrain). Supersession repoints the stamp; it is evidence-preserving
+        # (stale row -> ARCHIVED) and an out-of-process rewrite still fails
+        # closed at boot because no row carries the attacker's fingerprint.
+        if not replaced:
+            return
+        try:
+            from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
+
+            lifecycle = ModelLifecycleRegistry(
+                audit_repo=self.audit, model_registry=self.model_registry
+            )
+            outcome = lifecycle.supersede_champion_on_governed_replace(
+                model_id=str(provenance.model_id),
+                model_version=str(provenance.model_version),
+                artifact_path=str(model_path),
+                new_fingerprint=str(provenance.artifact_fingerprint or ""),
+                reason="governed in-place artifact replacement",
+            )
+            if not outcome.get("ok"):
+                logger.error(
+                    "[MODEL] event=CHAMPION_SUPERSESSION_REFUSED reason=%s detail=%s",
+                    outcome.get("reason"),
+                    str(outcome.get("detail", ""))[:200],
+                )
+        except Exception as sup_err:
+            logger.error(
+                "[MODEL] event=CHAMPION_SUPERSESSION_FAILED (isolated)",
+                error=str(sup_err),
+            )
 
     # ------------------------------------------------------------------
     # P1 seam L9: model-bundle load/verify/persist delegates. Implementation
