@@ -105,6 +105,18 @@ class _StubHandler(BaseHTTPRequestHandler):
         if path in ("/health", "/healthz"):
             self._json(200, {"status": "ok", "path": path})
             return
+        if path == "/api/smuggle":
+            # BUG-270 fixture: raw literal response whose folded value and
+            # illegal header NAME must never reach the client as extra lines.
+            self.wfile.write(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: 2\r\n"
+                b"X-Fold: a\n\tSet-Cookie: evil=1\r\n"
+                b"X-Bad Name: v\r\n"
+                b"\r\n{}"
+            )
+            return
         self._json(404, {"ok": False, "error": {"code": "RESOURCE_NOT_FOUND"}})
 
     def do_HEAD(self) -> None:
@@ -656,6 +668,106 @@ class TestLogRedaction:
         assert "super-secret" not in alt.redact_header_value("Authorization", "Bearer super-secret")
         assert "super-secret" not in alt.redact_header_value("cookie", "session=super-secret")
         assert alt.redact_header_value("accept", "text/html") == "text/html"
+
+
+# ---------------------------------------------------------------------------
+# BUG-270: HTTP response splitting (CodeQL py/http-response-splitting)
+# ---------------------------------------------------------------------------
+class TestHeaderInjectionDefense:
+    """The stdlib email parser PRESERVES obs-fold (embedded CR/LF) inside a
+    header value and ``BaseHTTPRequestHandler.send_header`` writes its buffer
+    raw — unlike h11/uvicorn. The handler therefore validates the correlation
+    id at the source, filters relayed upstream names to RFC 9110 tokens,
+    CR/LF-strips every relayed value, and overrides ``send_header`` as a
+    choke point. These pins lock each layer."""
+
+    def test_header_safe_pure_unit(self) -> None:
+        assert alt.header_safe("a\nb\rc\r\nd") == "abcd"
+        assert alt.header_safe("clean value") == "clean value"
+
+    def test_request_id_charset_pure_unit(self) -> None:
+        ok = ["req_browser_supplied", "a", "A:b-c_1.2", "req_" + "d" * 60]
+        bad = ["", "a b", "req\ninjected", "x" * 65, "id\ttab", "id;inject"]
+        for v in ok:
+            assert alt.request_id_is_safe(v), v
+        for v in bad:
+            assert not alt.request_id_is_safe(v), v
+        # BUG-270: validators are LINEAR set checks, never regexes on attacker bytes
+        assert not hasattr(alt, "_REQUEST_ID_RE")
+        assert not hasattr(alt, "_FIELD_NAME_RE")
+
+    def test_field_name_validator_pure_unit(self) -> None:
+        ok = ["Content-Type", "ETag", "X-Request-ID", "a"]
+        bad = ["", "X-Bad Name", "X:Fold", "x" * 129, "a\nb"]
+        for v in ok:
+            assert alt.field_name_is_safe(v), v
+        for v in bad:
+            assert not alt.field_name_is_safe(v), v
+
+    def test_send_header_override_is_the_choke_point(self) -> None:
+        h = alt.AltUIRequestHandler.__new__(alt.AltUIRequestHandler)
+        h.request_version = "HTTP/1.1"
+        h._headers_buffer = []
+        h.send_header("X-A\nEvil: 1", "v\rvalue")
+        assert h._headers_buffer == [b"X-AEvil: 1: vvalue\r\n"]
+
+    def test_folded_request_id_never_echoed(self, env: _Env) -> None:
+        # continuation line folds "\tevil" INTO the x-request-id value
+        raw = env.raw(b"GET /api/status HTTP/1.1\r\nHost: x\r\nX-Request-ID: abc\n\tevil\r\n\r\n")
+        head = raw.split(b"\r\n\r\n", 1)[0]
+        rid_lines = [ln for ln in head.split(b"\r\n") if ln.lower().startswith(b"x-request-id")]
+        assert len(rid_lines) == 1, head
+        assert rid_lines[0].lower().startswith(b"x-request-id: req_"), rid_lines
+        assert b"evil" not in rid_lines[0]
+        # upstream must have received the SAME clean id (never a CR/LF value —
+        # http.client.putheader would have raised and failed closed)
+        seen = env.requests[-1]["headers"].get("x-request-id", "")
+        assert seen.startswith("req_") and "\n" not in seen and "evil" not in seen
+
+    def test_spacey_request_id_mints_replacement(self, env: _Env) -> None:
+        status, headers, body = env.fetch("/api/status", headers={"X-Request-ID": "bad id!! 123"})
+        assert status == 200
+        assert headers["x-request-id"].startswith("req_")
+        assert json.loads(body)["request_id"].startswith("req_")
+
+    def test_upstream_fold_and_illegal_name_never_split_relay(self, env: _Env) -> None:
+        # one recv() can land before the body write — accumulate until the
+        # re-framed 2-byte body is on the wire (host corrected Content-Length).
+        hostport = env.base.split("://", 1)[1]
+        h, port = hostport.rsplit(":", 1)
+        sock = socket.create_connection((h, int(port)), timeout=10)
+        try:
+            sock.sendall(b"GET /api/smuggle HTTP/1.1\r\nHost: x\r\n\r\n")
+            raw = b""
+            while b"{}" not in raw:
+                part = sock.recv(65536)
+                if not part:
+                    break
+                raw += part
+        finally:
+            sock.close()
+        assert raw.startswith(b"HTTP/1.1 200"), raw[:40]
+        head = raw.split(b"\r\n\r\n", 1)[0]
+        lines = head.split(b"\r\n")
+        # no continuation lines survived: nothing starts with whitespace...
+        assert not [ln for ln in lines if ln[:1] in (b" ", b"\t")], lines
+        # ...no smuggled Set-Cookie HEADER line (it may only ride as inert
+        # text inside the single neutralized X-Fold value)...
+        assert not [ln for ln in lines if ln.lower().startswith(b"set-cookie")], lines
+        fold = [ln for ln in lines if ln.lower().startswith(b"x-fold")]
+        assert len(fold) == 1 and b"\n" not in fold[0], lines
+        # ...an illegal (space-bearing) upstream name is dropped, never echoed
+        assert not [ln for ln in lines if b"Bad Name" in ln], lines
+        # body intact (content-length re-framed by this host)
+        assert raw.endswith(b"\r\n\r\n{}") or raw.endswith(b"{}"), raw[-20:]
+
+    def test_head_relay_echoes_only_numeric_length(self, env: _Env) -> None:
+        status, headers, body = env.fetch("/api/status", method="HEAD")
+        assert status == 200
+        assert body == b""
+        # stub declares Content-Length 11 ({"ok":true}) for the HEAD body; the relay
+        # keeps it verbatim (it is a clean integer — BUG-270 allows only that)
+        assert headers.get("content-length") == "11"
 
 
 # ---------------------------------------------------------------------------
