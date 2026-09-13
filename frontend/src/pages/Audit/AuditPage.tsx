@@ -11,6 +11,7 @@
  */
 
 import { useState } from "react";
+import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { auditApi } from "@/api/auditApi";
 import type { AuditEventRow, AuditLedgerRow, IncidentRow } from "@/types/domain";

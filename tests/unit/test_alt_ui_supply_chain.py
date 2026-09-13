@@ -124,6 +124,7 @@ ALLOWED_DIST_URL_HOSTS = {
     "localhost",  # react-router's URL-parsing probe base (never fetched)
     "www.w3.org",  # XML/MathML/SVG/XHTML namespace identifiers
     "reactjs.org",  # React error-decoder doc link
+    "react.dev",  # React 19 error-decoder doc link (reactjs.org successor)
     "reactrouter.com",  # router warning doc link
 }
 

@@ -15,7 +15,7 @@
  */
 
 import { useMemo, useState } from "react";
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { JSX, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import {
   buildCsv,
   eventGaps,
