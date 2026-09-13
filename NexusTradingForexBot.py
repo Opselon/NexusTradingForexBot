@@ -630,15 +630,37 @@ def main() -> None:
 
     adapter: IMT5Port
     if config.execution.mode == ExecutionMode.PAPER and not args.gateway:
-        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+        # BUG-266 (audit K2): route the launcher through the same paper-data
+        # factory as `nexus start`, so the configured substrate (SYNTHETIC
+        # default / REPLAY over real recorded data) is honored on the
+        # double-click path too. Fail-closed on a missing REPLAY source.
+        from nexus_scalp.adapters.paper.paper_data import build_paper_adapter
+        from nexus_scalp.adapters.paper.replay_source import ReplayDataUnavailableError
+
+        try:
+            adapter = build_paper_adapter(
+                symbol=config.execution.symbol,
+                paper_data=getattr(config, "paper_data", None),
+            )
+        except ReplayDataUnavailableError as replay_err:
+            console.print(
+                Panel(
+                    f"[bold red]PAPER REPLAY requested but no historical data is "
+                    f"available:[/bold red]\n{replay_err}\n\n"
+                    "Acquire a dataset (research MT5TickDataset), export data/raw M1 "
+                    "bars, or set paper_data.mode: SYNTHETIC.",
+                    border_style="red",
+                )
+            )
+            raise SystemExit(2) from None
 
         console.print(
             Panel(
-                "[green]Execution Adapter → Paper Simulation (no broker connection)[/green]",
+                "[green]Execution Adapter → Paper Simulation (no broker connection) "
+                f"[{getattr(adapter, 'market_data_mode', 'SYNTHETIC')}][/green]",
                 border_style="green",
             )
         )
-        adapter = PaperMT5Adapter(symbol=config.execution.symbol)
     elif args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
         console.print(
             Panel(

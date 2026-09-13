@@ -4203,9 +4203,21 @@ class LiveEngine:
             return replacement_real
 
         if wants_simulation and not is_simulation:
-            replacement: IMT5Port = PaperMT5Adapter(
+            # BUG-266: boot re-alignment must honor the configured paper data
+            # substrate. Degrade LOUDLY (never raise) — the execution boundary
+            # (simulation adapter) outranks the data-truth boundary here, and
+            # a failed REPLAY build must not brick the PAPER boot contract.
+            from nexus_scalp.adapters.paper.paper_data import (
+                ON_REPLAY_UNAVAILABLE_SYNTHETIC,
+                build_paper_adapter,
+            )
+
+            replacement: IMT5Port = build_paper_adapter(
                 symbol=self.config.execution.symbol,
                 initial_balance=float(getattr(self, "_last_balance", 0.0) or 0.0) or 10000.0,
+                paper_data=getattr(self.config, "paper_data", None),
+                allow_replay=effective == ExecutionMode.PAPER,
+                on_replay_unavailable=ON_REPLAY_UNAVAILABLE_SYNTHETIC,
             )
             logger.warning(
                 "[MODE] BUG-212 adapter realigned to simulation boundary "
