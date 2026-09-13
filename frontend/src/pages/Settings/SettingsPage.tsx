@@ -83,35 +83,35 @@ function removeUiPrefKeys(keys: string[]): string[] {
 /*  - Esc closes dialogs (ConfirmModal, palette) and only cancels.     */
 /* ------------------------------------------------------------------ */
 
-const SHORTCUTS: Array<{ keys: string[]; action: string; note: string }> = [
+const shortcutEntries = (t: (k: string, f: string) => string): Array<{ keys: string[]; action: string; note: string }> => [
   {
     keys: ["Ctrl", "K"],
-    action: "Open / close the command palette",
+    action: t("alt.settings.kbd_palette", "Open / close the command palette"),
     note: "Cmd+K on macOS — bound in CommandPalette.tsx; palette commands only navigate or re-run existing queries.",
   },
   {
     keys: ["Alt", "1–7"],
-    action: "Jump to sidebar page by position",
-    note: "Dynamic: one slot per NAV item — becomes 1–8 once the /settings NAV entry lands. Disabled while typing.",
+    action: t("alt.settings.kbd_nav", "Jump to sidebar page by position"),
+    note: "Dynamic: one slot per NAV item — 8 slots today (incl. /settings). Disabled while typing.",
   },
   {
     keys: ["Alt", "B"],
-    action: "Collapse / expand the sidebar",
+    action: t("alt.settings.kbd_sidebar", "Collapse / expand the sidebar"),
     note: "Same action as the sidebar-foot toggle and the Sidebar switch below.",
   },
   {
     keys: ["R"],
-    action: "Refresh the engine snapshot",
+    action: t("alt.settings.kbd_refresh", "Refresh the engine snapshot"),
     note: "Plain R (no modifier), ignored while typing, and only acts after a first snapshot has loaded.",
   },
   {
     keys: ["↑", "↓", "Enter"],
-    action: "Move / run inside the palette",
+    action: t("alt.settings.kbd_move", "Move / run inside the palette"),
     note: "Only while the palette input is focused.",
   },
   {
     keys: ["Esc"],
-    action: "Close palette / dialog",
+    action: t("alt.settings.kbd_esc", "Close palette / dialog"),
     note: "Cancel only — Esc never confirms an action.",
   },
 ];
@@ -139,6 +139,7 @@ export default function SettingsPage({ snapshot }: Props) {
   const lang = useI18n((s) => s.lang);
   const setLang = useI18n((s) => s.setLang);
   const t = useI18n((s) => s.t);
+  const SHORTCUTS = shortcutEntries(t);
 
   const [clearOpen, setClearOpen] = useState(false);
   const [keysAtOpen, setKeysAtOpen] = useState<string[]>([]);
@@ -159,7 +160,7 @@ export default function SettingsPage({ snapshot }: Props) {
     const removed = removeUiPrefKeys(listUiPrefKeys());
     setClearedCount(removed.length);
     setClearOpen(false);
-    pushToast("ok", `Local UI prefs cleared (${removed.length} key${removed.length === 1 ? "" : "s"})`);
+    pushToast("ok", t("alt.settings.cleared", "Local UI prefs cleared ({n} keys)", { n: removed.length }));
   };
 
   const versioningEntries = Object.entries(snapshot?.versioning ?? {});
@@ -167,9 +168,9 @@ export default function SettingsPage({ snapshot }: Props) {
   return (
     <div className="set-wrap">
       <div className="page-head">
-        <h1>Settings</h1>
+        <h1>{t("alt.settings.title", "Settings")}</h1>
         <span className="crumb">ALT CONSOLE</span>
-        <span className="desc">{t("ux.sidebar.system", "System")} — visual preferences only</span>
+        <span className="desc">{t("ux.sidebar.system", "System")} — {t("alt.settings.desc", "visual preferences only")}</span>
       </div>
 
       <div className="set-note">
@@ -179,7 +180,7 @@ export default function SettingsPage({ snapshot }: Props) {
       </div>
 
       <div className="set-grid">
-        <Panel title="Appearance" accent>
+        <Panel title={t("alt.settings.appearance", "Appearance")} accent>
           <div className="set-row">
             <div>
               <div className="lab">{t("ux.settings.density", "Row density")}</div>
@@ -190,8 +191,8 @@ export default function SettingsPage({ snapshot }: Props) {
             </div>
             <Segmented
               options={[
-                { id: "comfortable", label: "Comfortable" },
-                { id: "dense", label: "Dense" },
+                { id: "comfortable", label: t("alt.settings.comfortable", "Comfortable") },
+                { id: "dense", label: t("alt.settings.dense", "Dense") },
               ]}
               value={dense ? "dense" : "comfortable"}
               onChange={(v) => {
@@ -210,8 +211,8 @@ export default function SettingsPage({ snapshot }: Props) {
             </div>
             <Segmented
               options={[
-                { id: "expanded", label: "Expanded" },
-                { id: "collapsed", label: "Collapsed" },
+                { id: "expanded", label: t("alt.settings.expanded", "Expanded") },
+                { id: "collapsed", label: t("alt.settings.collapsed", "Collapsed") },
               ]}
               value={collapsed ? "collapsed" : "expanded"}
               onChange={(v) => {
@@ -222,7 +223,7 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
           <div className="set-row">
             <div>
-              <div className="lab">Toast dedupe</div>
+              <div className="lab">{t("alt.settings.toast_dedupe", "Toast dedupe")}</div>
               <div className="sub">
                 Identical toasts inside a 4&nbsp;second window are merged once (uiStore toastGuard — parity with
                 legacy NX.toast). Display behaviour, always on, not a backend setting.
@@ -232,7 +233,7 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
         </Panel>
 
-        <Panel title="Language" accent>
+        <Panel title={t("alt.settings.lang", "Language")} accent>
           <div className="set-row">
             <div>
               <div className="lab">{t("ux.lang.label", "Language")}</div>
@@ -246,7 +247,7 @@ export default function SettingsPage({ snapshot }: Props) {
               className="select"
               value={lang}
               onChange={(e) => setLang(e.target.value as Lang)}
-              aria-label="Language"
+              aria-label={t("alt.settings.lang", "Language")}
             >
               {LANGUAGES.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -257,7 +258,7 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
           <div className="set-row">
             <div>
-              <div className="lab">Direction</div>
+              <div className="lab">{t("alt.settings.direction", "Direction")}</div>
               <div className="sub">
                 <code className="inline-mono">&lt;html lang&gt;</code> = {lang} ·{" "}
                 <code className="inline-mono">&lt;html dir&gt;</code> = {["fa", "ar"].includes(lang) ? "rtl" : "ltr"}{" "}
@@ -267,7 +268,7 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
         </Panel>
 
-        <Panel title="Keyboard shortcuts">
+        <Panel title={t("alt.settings.kbd", "Keyboard shortcuts")}>
           <div className="set-kbd-list">
             {SHORTCUTS.map((s) => (
               <div className="set-kbd-row" key={s.action}>
@@ -290,7 +291,7 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
         </Panel>
 
-        <Panel title="Theme tokens" right={<span className="timestamp-note">{THEME_TOKENS.length} vars · :root</span>}>
+        <Panel title={t("alt.settings.tokens", "Theme tokens")} right={<span className="timestamp-note">{THEME_TOKENS.length} vars · :root</span>}>
           <div className="sub" style={{ marginBottom: 8 }}>
             Names as declared in <code className="inline-mono">src/styles/theme.css</code> :root — the stylesheet
             owns the values. <code className="inline-mono">body.dense</code> overrides --row-pad, --card-pad,
@@ -303,7 +304,7 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
         </Panel>
 
-        <Panel title="About" accent>
+        <Panel title={t("alt.settings.about", "About")} accent>
           <dl className="kv">
             <dt>console build</dt>
             <dd>v{UI_VERSION} (frontend/package.json)</dd>
@@ -328,7 +329,7 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
         </Panel>
 
-        <Panel title="Local data">
+        <Panel title={t("alt.settings.local", "Local data")}>
           <div className="set-row">
             <div>
               <div className="lab">Stored UI preferences</div>
@@ -340,7 +341,7 @@ export default function SettingsPage({ snapshot }: Props) {
               </div>
             </div>
             <button className="btn danger" onClick={openClearDialog}>
-              Clear local UI prefs…
+              {t("alt.settings.clear_btn", "Clear local UI prefs…")}
             </button>
           </div>
           {clearedCount !== null && (
@@ -355,9 +356,9 @@ export default function SettingsPage({ snapshot }: Props) {
 
       {clearOpen && (
         <ConfirmModal
-          title="Clear local UI preferences"
+          title={t("alt.settings.clear_title", "Clear local UI preferences")}
           danger
-          confirmLabel="Clear prefs"
+          confirmLabel={t("alt.settings.clear_confirm", "Clear prefs")}
           onCancel={() => setClearOpen(false)}
           onConfirm={confirmClear}
         >
@@ -375,7 +376,7 @@ export default function SettingsPage({ snapshot }: Props) {
                   </span>
                 ))
               ) : (
-                <span className="muted">No nse.altui.* / nexus.ui.lang keys are currently stored.</span>
+                <span className="muted">{t("alt.settings.no_keys", "No nse.altui.* / nexus.ui.lang keys are currently stored.")}</span>
               )}
             </div>
           </div>

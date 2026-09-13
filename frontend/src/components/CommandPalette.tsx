@@ -44,6 +44,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
       nav("goto_ml", "/ml", t("ux.action.goto_ml", "ML / 70D model"), "Σ", "model ml shadow70 integrity features inference"),
       nav("goto_intel", "/intelligence", t("ux.action.goto_intel", "Intelligence / news"), "≈", "news intelligence autopsies calendar sentiment"),
       nav("goto_audit", "/audit", t("ux.action.goto_diagnostics", "Audit / diagnostics"), "☰", "audit events ledger incidents database integrity"),
+      nav("goto_settings", "/settings", t("ux.action.goto_settings", "Settings"), "⚙", "settings preferences language density shortcuts theme palette"),
       {
         id: "refresh",
         group: "actions",

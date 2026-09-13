@@ -202,7 +202,7 @@ export function AppShell() {
           </div>
           <LangRow />
           <div className="side-row" title="Keyboard shortcuts">
-            <span><kbd>alt</kbd> 1–7 · <kbd>ctrl</kbd>K</span>
+            <span><kbd>alt</kbd> 1–8 · <kbd>ctrl</kbd>K</span>
           </div>
           <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)">
             {collapsed ? "»" : "«"}
@@ -287,7 +287,7 @@ export function AppShell() {
         >
           <div className="kv" style={{ gridTemplateColumns: "max-content 1fr", fontSize: 12 }}>
             <dt>Ctrl / Cmd + K</dt><dd style={{ textAlign: "left" }}>Command palette</dd>
-            <dt>Alt + 1–7</dt><dd style={{ textAlign: "left" }}>Jump to page</dd>
+            <dt>Alt + 1–8</dt><dd style={{ textAlign: "left" }}>Jump to page</dd>
             <dt>Alt + B</dt><dd style={{ textAlign: "left" }}>Toggle sidebar</dd>
             <dt>R</dt><dd style={{ textAlign: "left" }}>Refresh data (not while typing)</dd>
             <dt>Esc</dt><dd style={{ textAlign: "left" }}>Close dialogs</dd>
