@@ -698,7 +698,15 @@ def main() -> None:
     # guard. Removed here; realignment intent fully preserved.
 
     # 6. Instantiate & Launch Live Trading Engine Event Loop Concurrently with Web Server
-    web_port = find_available_port(start_port=8080)
+    # BUG-267: stable port across restarts. The FIRST boot auto-increments
+    # past occupied ports (NVIDIA Broadcast owns 8080 on this box → 8081)
+    # and publish() records the ACTUAL port in .env/NSE_WEB_ACTUAL_PORT;
+    # every later boot starts there, so saved bookmarks, the doctor probe,
+    # and the standalone alt-console host stop pointing at a port that
+    # drifted.
+    from nexus_scalp.web.auth_boot import resolved_web_port as _resolved_web_port
+
+    web_port = find_available_port(start_port=_resolved_web_port())
     try:
         # BUG-232: pass the launcher-resolved mode as the EXPLICIT operator
         # override so the engine cannot re-derive a different mode from the
@@ -723,6 +731,28 @@ def main() -> None:
 
         app = create_app(engine_ref=engine)
         engine.server_state = app.state.server_state
+        # BUG-267: server-boot auth handoff. Export/persist the token the
+        # middleware actually enforced (env > secret store > generated) plus
+        # the ACTUAL bound port into NSE_WEB_ACTUAL_PORT, so `nexus doctor`,
+        # standalone alt-console host (scripts/serve_alt_ui.py), docker
+        # helpers and the operator all converge on one truth instead of
+        # probing a port that auto-incremented away from 8080. The token
+        # VALUE is never printed (OBS-TRACE-2: stdout may be redirected to a
+        # log — credentials do not belong there); it lives in the DPAPI
+        # secret store and, for same-user tooling, in the gitignored .env.
+        from nexus_scalp.web.auth_boot import publish as _publish_auth_boot
+
+        _boot = _publish_auth_boot(port=web_port)
+        if not _boot["dotenv"] and _boot["token"] is None:
+            console.print(
+                Panel(
+                    "[yellow]Web auth token is being generated for this process[/yellow]\n"
+                    "[dim]It persists via the secure secret store; both consoles "
+                    "self-bootstrap in the browser (BUG-267 cookie).[/dim]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
         print_startup_banner(
             port=web_port, mode=config.execution.mode.value, symbol=config.execution.symbol
         )

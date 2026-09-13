@@ -579,10 +579,17 @@ class HealthEngine:
         it is unreachable.
         """
         import os as _os
+        import urllib.error
         import urllib.request
 
         host = _os.getenv("NSE_WEB_HOST", "127.0.0.1")
-        port = _os.getenv("NSE_WEB_PORT", "8080")
+        # BUG-267: the launcher auto-increments when a port is occupied
+        # (NVIDIA Broadcast owns 8080 on dev boxes) and publish() records the
+        # ACTUAL bound port in .env/NSE_WEB_ACTUAL_PORT — read it instead of
+        # probing a stale 8080 and reporting a false "engine not reachable".
+        from nexus_scalp.web.auth_boot import resolved_web_port
+
+        port = str(resolved_web_port())
         # If the host is explicitly routable and no token is configured, flag exposure.
         if host not in ("127.0.0.1", "localhost", "::1"):
             if not _os.getenv("A2A_BEARER_TOKEN"):
@@ -592,11 +599,31 @@ class HealthEngine:
                     f"web/A2A bound to routable host {host} without A2A_BEARER_TOKEN",
                     "Set A2A_BEARER_TOKEN or bind to 127.0.0.1.",
                 )
-        url = f"http://{host}:{port}/api/health"
+        # BUG-267: probe /health (the registered public liveness route —
+        # diagnostics_state_routes). The previous /api/health URL is an
+        # allowlist entry with NO route behind it: every probe 404'd, so a
+        # perfectly healthy running engine reported "not reachable" forever.
+        url = f"http://{host}:{port}/health"
         try:
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=3):
                 return HealthEntry("A2A_GATEWAY", "PASS", f"reachable ({url})")
+        except urllib.error.HTTPError as e:
+            # /health answers 503 for DEGRADED/NOT READY verdicts (docker
+            # healthcheck documents the same shape): the web process IS up
+            # and authenticated-free — report that truthfully, not "unreachable".
+            if e.code == 503:
+                return HealthEntry(
+                    "A2A_GATEWAY",
+                    "WARNING",
+                    f"web reachable, verdict non-READY (HTTP 503) at {url}",
+                )
+            return HealthEntry(
+                "A2A_GATEWAY",
+                "WARNING",
+                f"engine gateway not reachable at {url} (HTTP {e.code})",
+                "Engine not running yet, or gateway disabled.",
+            )
         except Exception as e:
             return HealthEntry(
                 "A2A_GATEWAY",

@@ -4,9 +4,13 @@
  * Contract:
  *  - ALL backend communication goes through here (no scattered fetch()).
  *  - Auth: the backend enforces WEB-AUTH-P0 token auth (Bearer / X-NSE-Token /
- *    ?token=). The token is supplied by the operator at runtime (query param
- *    `?token=` on first load is kept ONLY in sessionStorage so a page refresh
- *    keeps working; it never lands in localStorage or the repo).
+ *    ?token=). BUG-267: the primary transport is now the HttpOnly bootstrap
+ *    cookie the backend sets on the public document/assets — every request
+ *    is sent with credentials:"same-origin" so it rides automatically, and
+ *    a 401 self-heals ONCE by re-fetching /app.js (the cookie-issuing asset)
+ *    and retrying. An explicit ?token= / sessionStorage token still wins
+ *    (header auth, operator-launched scripts) — the cookie is the zero-
+ *    configuration path for a browser opening /alt/ directly.
  *  - Errors normalize to ApiError (both v1 `{error:{...}}` and legacy
  *    `{error:{code,message,request_id}}` envelopes).
  *  - No retries on mutations; GET retries are handled by TanStack Query.
@@ -107,6 +111,10 @@ function extractError(status: number, body: unknown): ApiError {
 }
 
 async function rawRequest<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  return _rawRequest<T>(path, opts, true);
+}
+
+async function _rawRequest<T>(path: string, opts: RequestOptions, allowHeal: boolean): Promise<T> {
   requestSeq += 1;
   const rid = `altui_${Date.now().toString(36)}_${requestSeq.toString(36)}`;
   const method = opts.method ?? "GET";
@@ -122,6 +130,11 @@ async function rawRequest<T>(path: string, opts: RequestOptions = {}): Promise<T
         ...(opts.headers ?? {}),
       },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      // BUG-267: explicit same-origin credential ride — the HttpOnly
+      // nse_web_auth bootstrap cookie authenticates the console without a
+      // hand-pasted token (default fetch already does this; pinned so a
+      // future RequestInfo refactor cannot silently drop it).
+      credentials: "same-origin",
       signal: opts.signal,
     });
   } catch (e) {
@@ -129,11 +142,34 @@ async function rawRequest<T>(path: string, opts: RequestOptions = {}): Promise<T
     throw new ApiError(0, "NETWORK_ERROR", "Network request failed — backend unreachable.", rid, true);
   }
 
+  // BUG-267 one-shot self-heal: cookie expired/absent (host swap between
+  // localhost and 127.0.0.1 has separate cookie jars) — re-fetch a public
+  // cookie-issuing asset and retry exactly once. Mutations never retry.
+  if (res.status === 401 && allowHeal && method === "GET" && (await refreshBootstrapCookie())) {
+    return _rawRequest<T>(path, opts, false);
+  }
+
   const body = await parseBody(res);
   if (!res.ok) {
     throw extractError(res.status, body);
   }
   return body as T;
+}
+
+let lastHealMs = 0;
+
+async function refreshBootstrapCookie(): Promise<boolean> {
+  // Throttle: many queries can 401 simultaneously on page load; one heal
+  // refetch per second is enough (the retry below rides the fresh cookie).
+  const now = Date.now();
+  if (now - lastHealMs < 1000) return false;
+  lastHealMs = now;
+  try {
+    const r = await fetch("/app.js", { method: "GET", credentials: "same-origin", cache: "no-store" });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** GET a v1 envelope and return the unwrapped payload (meta dropped). */
