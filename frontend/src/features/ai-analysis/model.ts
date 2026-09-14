@@ -87,10 +87,13 @@ export interface DecisionExplanationDto {
   explanation: string;
 }
 
+/** Indicator row: backend emits EXACTLY {name, value, action} (ports.py
+ *  IndicatorResult.as_api_dict). value null = insufficient history — render
+ *  "—", never a guess. action ∈ Buy/Sell/Neutral/Strong buy/Strong sell. */
 export interface IndicatorRowDto {
-  name?: string;
-  value?: number | null;
-  action?: string;
+  name: string;
+  value: number | null;
+  action: string;
 }
 
 export interface GaugeDto {
@@ -118,7 +121,7 @@ export interface IndicatorSummaryDto {
 }
 
 export interface PivotsDto {
-  pivots?: { levels?: Row; columns?: string[]; rows?: Row[] };
+  pivots?: { levels?: string[]; columns?: string[]; rows?: Record<string, Record<string, number | null>> };
 }
 
 export interface Shadow70dDto {
@@ -128,6 +131,16 @@ export interface Shadow70dDto {
   feature_health?: Row[] | null;
   generated_at?: string;
 }
+
+/** Snapshot DTOs consumed by the indicators console: re-exported from the
+ *  canonical feature-types file so the console imports inside its module.
+ *  (Backend truth: types/features.ts documents ports.py + service.py shapes.) */
+export type { IndicatorGauge, IndicatorPivots, IndicatorReading, IndicatorsSnapshot } from "@/types/features";
+
+/** Verdict vocabulary the backend gauges/actions use (service.py
+ *  _gauge_from_rating labels). Display-classification union only: labels map
+ *  verbatim; an unrecognized label is handled as unknown, never guessed. */
+export type GaugeVerdict = "strong sell" | "sell" | "neutral" | "buy" | "strong buy";
 
 /** Signal -> probability-bar tone for the action (backend action decides). */
 export function actionTone(action: string | null | undefined): "buy" | "sell" | "flat" {

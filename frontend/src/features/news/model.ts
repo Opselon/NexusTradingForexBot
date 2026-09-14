@@ -20,6 +20,15 @@ import type {
   NewsStateResponse,
   NewsTimelineBucket,
 } from "./types";
+import type {
+  NewsAutoPruneResponse,
+  NewsProAnalyzeAllResponse,
+  NewsProAnswersResponse,
+  NewsProConsoleResponse,
+  NewsProPurgeResponse,
+  NewsProStatusResponse,
+  ProConsoleEntry,
+} from "./proTypes";
 
 /** Thrown when a legacy news route honestly reports the subsystem as off. */
 export class NewsUnavailableError extends Error {
@@ -184,18 +193,201 @@ export function selfHealVerdict(res: NewsSelfHealResult): { ok: boolean; message
   return { ok: res.status === "SUCCESS", message: `Self-heal ${res.status ?? "UNKNOWN"}${parts.length ? ` · ${parts.join(" · ")}` : ""}` };
 }
 
+/** Flatten either error shape (safe-envelope object or legacy string) to text. */
+export function errorText(e: { code?: string; message?: string; request_id?: string } | string | undefined): string {
+  if (!e) return "unknown";
+  if (typeof e === "string") return e;
+  return [e.code, e.message].filter(Boolean).join(" — ") || "unknown";
+}
+
 export function batchVerdict(res: BatchAnalyzeResult): { ok: boolean; message: string } {
-  if (res.error) return { ok: false, message: `Batch analysis refused: ${res.error}` };
+  if (res.error) return { ok: false, message: `Batch analysis refused: ${errorText(res.error)}` };
+  if (res.available === false) return { ok: false, message: "Batch analysis refused: news subsystem unavailable (available=false)." };
   return {
     ok: true,
     message: `Batch AI analysis — completed ${res.completed ?? 0}, failed ${res.failed ?? 0}, skipped ${res.skipped ?? 0}.`,
   };
 }
 
-/** Timeline buckets arrive oldest->newest from the backend; keep the order. */
+/**
+ * Timeline buckets arrive oldest->newest from the backend; keep the order.
+ */
 export function timelineWindow(buckets: NewsTimelineBucket[]): { from: string | null; to: string | null; articles: number } {
   const first = buckets[0]?.bucket_start ?? null;
   const last = buckets[buckets.length - 1]?.bucket_start ?? null;
   const articles = buckets.reduce((acc, b) => acc + (b.article_count ?? 0), 0);
   return { from: first, to: last, articles };
+}
+
+/**
+ * news_ai_analysis.key_facts / .uncertainties arrive as JSON array STRINGS
+ * from the raw SQLite rows (db_analysis.insert_ai_analysis json.dumps; verified
+ * in db_analysis.py L359-377) but as real arrays inside analyze responses.
+ * Decode JSON only — a non-array or unparsable value yields [] (never a guess).
+ */
+export function decodeStringList(v: string[] | string | null | undefined): string[] {
+  if (Array.isArray(v)) return v.map((x) => String(x));
+  if (typeof v === "string" && v.trim() !== "") {
+    try {
+      const parsed: unknown = JSON.parse(v);
+      return Array.isArray(parsed) ? parsed.map((x) => String(x)) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PRO CONSOLE view models (round 2) — legacy Web/news_intelligence.js parity.
+ * The safe error envelope arrives at HTTP 200 (web/errors.py
+ * safe_error_payload), so the transport does NOT throw for refusals: every
+ * guard below converts available:false into a real error the UI renders
+ * honestly (NEWS_UNAVAILABLE / COOLDOWN / INTERNAL_ERROR codes included).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** One safe-envelope refusal: code + message + request_id, backend-text only. */
+export class NewsProRefusedError extends Error {
+  readonly code: string;
+  readonly requestId: string | null;
+  constructor(code: string, message: string | undefined, requestId: string | null) {
+    super(message ? `${code} — ${message}` : code);
+    this.name = "NewsProRefusedError";
+    this.code = code;
+    this.requestId = requestId;
+  }
+}
+
+type ProEnvelope = {
+  available?: boolean;
+  success?: boolean;
+  error?: { code?: string; message?: string; request_id?: string } | string;
+};
+
+/** Pull a human-readable code/message/request_id out of either error shape. */
+function describeRefusal(res: ProEnvelope): NewsProRefusedError {
+  const e = res.error;
+  if (e && typeof e === "object") {
+    return new NewsProRefusedError(e.code ?? "UNAVAILABLE", e.message, e.request_id ?? null);
+  }
+  return new NewsProRefusedError(typeof e === "string" ? e : "UNAVAILABLE", undefined, null);
+}
+
+function requirePro<T extends ProEnvelope>(res: T): T {
+  if (res.available === false || res.success === false) throw describeRefusal(res);
+  return res;
+}
+
+/** GET /api/news/pro/status — throws on the safe-envelope refusal shape. */
+export function requireProStatus(res: NewsProStatusResponse): NewsProStatusResponse {
+  return requirePro(res);
+}
+
+/** GET /api/news/pro/console — keeps backend ring order (ascending seq). */
+export function requireProConsole(res: NewsProConsoleResponse): ProConsoleEntry[] {
+  return requirePro(res).entries ?? [];
+}
+
+/** GET /api/news/pro/latest-answers — verbatim rows, no normalization. */
+export function requireProAnswers(res: NewsProAnswersResponse): NonNullable<NewsProAnswersResponse["answers"]> {
+  return requirePro(res).answers ?? [];
+}
+
+/** Purge / analyze-all result text — built ONLY from the backend's numbers. */
+export function purgeVerdict(res: NewsProPurgeResponse): { ok: boolean; message: string } {
+  if (!res || res.available === false) {
+    const r = describeRefusal(res || {});
+    return { ok: false, message: `Purge refused: ${r.message}` };
+  }
+  return res.hard_delete
+    ? { ok: true, message: `Hard purge: deleted ${res.deleted ?? 0} of ${res.candidates ?? 0} candidates (${res.total_irrelevant ?? 0} IRRELEVANT total).` }
+    : { ok: true, message: `IRRELEVANT: ${res.total_irrelevant ?? 0} total, ${res.candidates ?? 0} candidates in this limit window (soft count — nothing deleted).` };
+}
+
+export function analyzeAllVerdict(res: NewsProAnalyzeAllResponse): { ok: boolean; message: string } {
+  if (!res || res.available === false) {
+    const r = describeRefusal(res || {});
+    return { ok: false, message: `Analyze ALL refused: ${r.message}` };
+  }
+  const s = res.summary ?? {};
+  return {
+    ok: true,
+    message: `PRO drain — pending ${s.total_pending ?? 0}, analyzed ${s.analyzed ?? 0}, skipped ${s.skipped ?? 0}, failed ${s.failed ?? 0} (llm ${s.via_llm ?? 0} / local ${s.via_local ?? 0}), junk marked ${s.junk?.marked_irrelevant ?? 0}, console seq ${s.console_seq ?? "—"}.`,
+  };
+}
+
+export function autoPruneSafeVerdict(res: NewsAutoPruneResponse): { ok: boolean; message: string } {
+  if (!res || res.available === false) {
+    const r = describeRefusal(res || {});
+    return { ok: false, message: `Auto-prune refused: ${r.message}` };
+  }
+  return {
+    ok: true,
+    message: `Pruning complete — ${res.marked_irrelevant ?? 0} marked irrelevant, ${res.preserved ?? 0} preserved (${res.already_irrelevant ?? 0} already, ${res.failed ?? 0} failed, rule ${res.rule_version ?? "—"}).`,
+  };
+}
+
+/** Ring-kind -> console label (legacy _proKindLabel map, verbatim semantics). */
+const KIND_LABEL: Record<string, string> = {
+  cycle_start: "CYCLE",
+  cycle_done: "DONE",
+  analysis_ok: "ANALYSIS",
+  analysis_failed: "FAIL",
+  ai_ok: "LLM ANSWER",
+  ai_failed: "LLM FAIL",
+  ai_retry_ok: "LLM RETRY OK",
+  ai_persist_failed: "LLM PERSIST FAIL",
+  fallback: "FALLBACK",
+  skip: "SKIP",
+  error: "ERROR",
+  deterministic_skip: "DET SKIP",
+  budget_exhausted: "BUDGET",
+  junk_prune: "JUNK",
+  junk_failed: "JUNK FAIL",
+  llm_purge: "LLM PURGE",
+  llm_purge_failed: "LLM PURGE FAIL",
+  llm_mark_irrelevant: "LLM MARK",
+  purge: "PURGE",
+};
+
+export function proKindLabel(kind: string | undefined): string {
+  return (kind && KIND_LABEL[kind]) || String(kind ?? "log").toUpperCase();
+}
+
+/** Row tone class from the kind ONLY (legacy color map translated to tokens). */
+export function proKindTone(kind: string | undefined): "ok" | "info" | "bad" | "warn" | "muted" {
+  switch (kind) {
+    case "ai_ok":
+    case "ai_retry_ok":
+    case "analysis_ok":
+      return "ok";
+    case "cycle_start":
+    case "cycle_done":
+      return "info";
+    case "error":
+    case "analysis_failed":
+    case "ai_failed":
+    case "ai_persist_failed":
+    case "junk_failed":
+    case "llm_purge_failed":
+    case "budget_exhausted":
+      return "bad";
+    case "junk_prune":
+    case "purge":
+    case "llm_mark_irrelevant":
+    case "deterministic_skip":
+      return "warn";
+    default:
+      return "muted";
+  }
+}
+
+/** Highest seq in a batch (poll cursor) — never synthesised when absent. */
+export function maxConsoleSeq(entries: ProConsoleEntry[]): number | null {
+  let best: number | null = null;
+  for (const e of entries) {
+    const s = Number(e.seq ?? NaN);
+    if (Number.isFinite(s) && (best === null || s > best)) best = s;
+  }
+  return best;
 }

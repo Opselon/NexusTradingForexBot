@@ -5,6 +5,7 @@
  * fill a gap a backend call didn't answer.
  */
 
+import { indicatorsApi } from "@/api/indicatorsApi";
 import { aiAnalysisApi, type IndicatorParams } from "./api";
 import type { SignalDto } from "./model";
 
@@ -19,6 +20,11 @@ export const aiAnalysisQueries = {
   decisionEvidence: (id: string, signal?: AbortSignal) => aiAnalysisApi.decisionEvidence(id, signal),
   decisionExplanation: (id: string, signal?: AbortSignal) => aiAnalysisApi.decisionExplanation(id, signal),
   indicatorsSummary: (p: IndicatorParams, signal?: AbortSignal) => aiAnalysisApi.indicatorsSummary(p, signal),
+  /** Full snapshot (the indicators console's ONLY data source) via the
+   *  dedicated read-model client @/api/indicatorsApi. Legacy widget parity:
+   *  limit 20000 M1 bars resampled server-side. */
+  indicatorsSnapshot: (timeframe: string, signal?: AbortSignal) =>
+    indicatorsApi.snapshot({ timeframe, limit: 20_000, signal }),
   indicatorsOscillators: (p: IndicatorParams, signal?: AbortSignal) => aiAnalysisApi.indicatorsOscillators(p, signal),
   indicatorsMovingAverages: (p: IndicatorParams, signal?: AbortSignal) => aiAnalysisApi.indicatorsMovingAverages(p, signal),
   indicatorsPivots: (p: IndicatorParams, signal?: AbortSignal) => aiAnalysisApi.indicatorsPivots(p, signal),

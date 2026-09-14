@@ -15,7 +15,7 @@
  * shared skeleton/error+retry/empty state machine on every tab.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { auditApi } from "@/api/auditApi";
 import type { AuditEventRow, AuditLedgerRow, IncidentRow } from "@/types/domain";

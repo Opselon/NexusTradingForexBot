@@ -10,9 +10,15 @@ Replaces legacy `tab-news` (Web/app.js news block + Web/news_intelligence.js).
   never an empty list; unanalyzed => `PENDING` (never defaulted to NEUTRAL).
 - **useCases.ts / hooks.ts** — reads through guards, commands invalidate
   `["news", …]`; the backend response is the only verdict source.
+- **proTypes.ts** — DTOs for `/api/news/pro/*` verified against
+  `news_intelligence_routes.py` handler bodies (safe-envelope errors included).
 - **ui/** — state panel (engine + auto-analysis toggles, fetch, confirm-guarded
-  self-heal), feed + article drawer, impact timeline, sources/health, keywords,
-  trade linkage.
+  self-heal), feed + article drawer (verbatim AI verdict via feed row or
+  latest-answers match), **Pro Auto Console** (status counts, 1.5s cursor-polled
+  live trace, latest-answers table, analyze-all/purge/auto-prune behind
+  ConfirmModal — progress only from real polled responses), impact timeline on
+  `NewsImpactCanvas` (DPR canvas port of legacy `drawNewsImpactChart`, backend
+  buckets rendered 1:1), sources/health, keywords, trade linkage.
 
 Invariants: news is bounded (informs, never forces a trade); refresh has a
 60s server bandwidth guard; self-heal only rebuilds DERIVED tables.

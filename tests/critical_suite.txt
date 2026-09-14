@@ -219,6 +219,10 @@ tests/unit/test_bug275_hygiene_cadence_clock.py
 # BUG-276 (NSE-Swarm role 7, 2026-09-14): baseline-skeleton CONSTRAINT shadow -
 # gate-first fresh DBs dead-letter every ON CONFLICT producer forever (15 of 17
 # targets). Unique-index heal at baseline + boot + class-wide ON-CONFLICT guard.
+# (reconstruction 2026-09-14: the battery itself moved to tests/extended_suite.txt
+#  — measured 1252s aggregate; it now runs on main push + release SHA, and the
+#  CR-007 registry entry records its protection. The comment above stays as the
+#  historical provenance the role-7 wave wrote into this file.)
 
 # ---------------------------------------------------------------------------
 # TIER 1 — PR/PUSH CRITICAL GATE (NSE radical test reconstruction 2026-09-14)
@@ -258,3 +262,8 @@ tests/unit/test_label_integrity.py
 tests/unit/test_agent16_walkforward_purge_embargo_leakage.py
 tests/unit/test_economic_parity_harness.py
 tests/unit/test_market_data_integrity_ag13.py
+# BUG-277 (NSE-Swarm role 9, 2026-09-14): doctor WARNING-actions filter matched
+# the rendered label "WARN" against the producer vocabulary "WARNING" -> the
+# USER ACTION / NEXT guidance surface was permanently dead. Filter fix +
+# vocabulary contract + class-wide verdict=="WARN" comparison guard.
+tests/unit/test_bug277_doctor_warning_vocabulary.py

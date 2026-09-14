@@ -1,0 +1,180 @@
+/* Shell chrome (Lane P): command palette glass modal, connection/mode/attention
+   token polish. Additive classes only (cp-, conn-, mode-, banner- extensions);
+   existing theme.css rules stay untouched and keep their semantics. */
+
+/* ------------------------------ Command palette ------------------------------ */
+.cp-overlay {
+  z-index: var(--z-palette, 120);
+  background: radial-gradient(900px 400px at 50% 0%, rgba(65, 166, 242, 0.08), transparent 60%),
+    rgba(4, 7, 11, 0.66);
+  backdrop-filter: blur(5px);
+}
+.cp-modal {
+  width: min(600px, calc(100vw - 40px));
+  border-color: rgba(65, 166, 242, 0.35);
+  box-shadow: var(--elev-pop), 0 0 42px rgba(65, 166, 242, 0.12);
+  /* subtle 3D entrance: perspective tilt settling flat */
+  transform-style: preserve-3d;
+  animation: cpIn 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  overflow: hidden;
+}
+@keyframes cpIn {
+  from { opacity: 0; transform: perspective(900px) rotateX(6deg) translateY(-8px) scale(0.985); }
+  to { opacity: 1; transform: perspective(900px) rotateX(0) translateY(0) scale(1); }
+}
+.cp-searchrow {
+  display: flex; align-items: center; gap: 10px;
+  padding-inline: 14px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent);
+}
+.cp-glyph { color: var(--accent-strong); font-family: var(--mono); font-size: 14px; opacity: 0.8; }
+.cp-input { border-bottom: none !important; flex: 1; background: transparent !important; }
+.cp-count { min-width: 22px; text-align: right; }
+
+.cp-list { max-height: 380px; }
+.cp-group {
+  display: flex; align-items: center; gap: 8px;
+  position: sticky; top: 0;
+  background: linear-gradient(180deg, var(--bg-panel) 75%, transparent);
+}
+.cp-group::after {
+  content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+.cp-item { position: relative; gap: 10px; border-radius: 7px; margin-inline: 5px; padding-inline: 11px; }
+.cp-item.selected {
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.16), rgba(65, 166, 242, 0.06));
+  box-shadow: inset 0 0 0 1px rgba(65, 166, 242, 0.35);
+}
+.cp-item .cp-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-section {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.12em;
+  color: var(--text-faint); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; white-space: nowrap;
+}
+.cp-run { margin-left: auto; }
+.cp-foot { font-family: var(--mono); letter-spacing: 0.04em; }
+
+/* ------------------------------ Connection chip ------------------------------ */
+/* Semantic states are kept verbatim from the realtime layer; these classes
+   only restyle them. .conn-word-<state> is the display word container. */
+.conn-chip {
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 60%), var(--bg-inset);
+  box-shadow: var(--elev-1);
+  transition: border-color 0.15s ease;
+}
+.conn-chip.ok { border-color: rgba(62, 207, 142, 0.45); }
+.conn-chip.warn { border-color: rgba(235, 161, 63, 0.5); color: var(--amber); }
+.conn-chip.err { border-color: rgba(242, 86, 77, 0.55); color: #ff9a94; }
+.conn-dot.big-glow { box-shadow: 0 0 10px currentColor; }
+
+/* ------------------------------ Mode badge ------------------------------ */
+/* The badge itself keeps its classes (live/paper/shadow/unknown); this pass
+   deepens the LIVE treatment with a guarded inner frame so a red state is
+   impossible to miss at a glance. */
+.mode-badge {
+  position: relative;
+  text-shadow: 0 0 14px rgba(0, 0, 0, 0.6);
+}
+.mode-badge.live {
+  background:
+    repeating-linear-gradient(-45deg, rgba(242, 86, 77, 0.08) 0 6px, transparent 6px 12px),
+    var(--live-red-bg);
+  box-shadow: var(--glow-red), inset 0 0 0 1px rgba(242, 86, 77, 0.25);
+}
+.mode-badge.paper { box-shadow: var(--glow-blue); }
+.mode-badge.shadow { box-shadow: var(--glow-amber); }
+.mode-badge.unknown { text-shadow: none; }
+
+/* ------------------------------ Attention strip ------------------------------ */
+.banner.attention-calm {
+  background:
+    linear-gradient(90deg, rgba(62, 207, 142, 0.10), transparent 45%),
+    rgba(62, 207, 142, 0.05);
+}
+.banner.attention-action {
+  background: linear-gradient(90deg, rgba(235, 161, 63, 0.14), transparent 55%), var(--amber-dim);
+}
+.banner.attention-critical {
+  background: linear-gradient(90deg, rgba(242, 86, 77, 0.18), transparent 55%), var(--red-dim);
+  box-shadow: inset 0 1px 0 rgba(242, 86, 77, 0.25);
+}
+.attention-rows { display: grid; gap: 2px; min-width: 0; }
+.attention-rows .a-row {
+  white-space: normal;
+  display: flex; align-items: baseline; gap: 7px;
+}
+.attention-rows .a-glyph { font-family: var(--mono); flex-shrink: 0; }
+.attention-tag {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* ------------------------------ Typed-confirm (LIVE gate) ---------------- */
+/* Blocking money-path escalation: heavier frame + hazard rail so a typed
+   LIVE confirm can never be mistaken for a plain confirm. */
+.tc-modal {
+  border-color: rgba(242, 86, 77, 0.5);
+  box-shadow: var(--elev-pop), var(--glow-red);
+  animation: tcIn 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+@keyframes tcIn {
+  from { opacity: 0; transform: perspective(900px) rotateX(7deg) translateY(-10px) scale(0.98); }
+  to { opacity: 1; transform: perspective(900px) rotateX(0) translateY(0) scale(1); }
+}
+.tc-overlay { z-index: var(--z-typed-confirm, 140); }
+.tc-header { color: #ff938c; }
+.tc-modal:not(.tc-typed) .tc-header { color: var(--text-dim); }
+.tc-body { color: var(--text); }
+.tc-impact {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-inline-start: 2px solid var(--border-strong);
+  padding-inline-start: 10px;
+}
+.tc-live-warn {
+  display: block;
+  margin-top: 6px;
+  color: #ff938c;
+  font-weight: 700;
+  text-shadow: 0 0 16px rgba(242, 86, 77, 0.35);
+}
+.tc-type-row { margin-top: 12px; display: grid; gap: 6px; }
+.tc-type-row .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.tc-token-ref {
+  color: var(--red);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  border: 1px dashed rgba(242, 86, 77, 0.55);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.tc-input {
+  width: 170px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  border-color: rgba(242, 86, 77, 0.45);
+}
+.tc-input:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(242, 86, 77, 0.18); }
+
+/* mode badge LIVE source sub-chip */
+.mode-badge .mode-src {
+  display: inline-block;
+  margin-inline-start: 8px;
+  padding: 0 5px;
+  border: 1px solid rgba(242, 86, 77, 0.55);
+  border-radius: 4px;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: #ff938c;
+  vertical-align: 2px;
+}
+.mode-badge.mismatch { border-style: dashed; }
