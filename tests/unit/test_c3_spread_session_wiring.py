@@ -55,7 +55,7 @@ def _paper_engine(tmp_path) -> tuple[LiveEngine, AuditRepository]:
     cfg = AppConfig.model_validate(
         {
             "execution": {"symbol": "XAUUSD", "mode": "PAPER", "magic_number": 888301},
-            # BUG-276: force_fresh below must mint into an ISOLATED path —
+            # BUG-278: force_fresh below must mint into an ISOLATED path —
             # the production artifact default is now refused fail-closed.
             "model": {"model_artifact_path": str(tmp_path / "model.pt")},
             "telegram": {"enabled": False, "bot_token": "x", "admin_id": "y"},

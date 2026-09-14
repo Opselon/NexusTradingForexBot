@@ -129,7 +129,7 @@ def _engine_and_client(
 ):  # type: ignore[no-untyped-def]
     """Build a LiveEngine + TestClient pair (paper mock, no MT5, no file IO).
 
-    BUG-276: force_fresh mints weights to the configured artifact path — the
+    BUG-278: force_fresh mints weights to the configured artifact path — the
     pair must mint into a per-test tmp dir, never the production bundle.
     """
     from nexus_scalp.application.live_engine import LiveEngine

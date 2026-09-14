@@ -108,7 +108,7 @@ def client_with_engine():
         },
         model=ModelConfig(
             confidence_threshold=0.35,
-            # BUG-276: isolate force_fresh minting away from the production bundle.
+            # BUG-278: isolate force_fresh minting away from the production bundle.
             model_artifact_path=os.path.join(tmpdir, "model.pt"),
         ),
         algo={
