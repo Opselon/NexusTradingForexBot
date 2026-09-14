@@ -64,7 +64,50 @@ class ModelBundleStore:
         # argument (see module docstring), so no per-instance state here.
         self.om = om
 
+    def _refuse_force_fresh_on_production_artifact(self, model_path: Path) -> None:
+        """BUG-276 fail-closed guard: force_fresh mints UNTRAINED weights and
+        WRITES them over the target path. A test harness that sets
+        ``force_fresh_model=True`` while the config still points at the
+        production artifact destroyed the governed champion bytes once
+        (2026-09-14: c9982ddd -> bb1f0afe via repo-root pytest).
+
+        Rule (evidence-based, not config-based): minting is legitimate for
+        isolated/nonexistent paths; it is REFUSED when the target is a
+        PROTECTED artifact — one that already exists inside the canonical
+        governed model tree (``release.paths.get_models_dir()``, i.e. the
+        production artifacts/models root) or is bound by a registry CHAMPION
+        row. A test that isolates its config path into a tmp dir therefore
+        keeps working unchanged, while any attempt to overwrite the real
+        bundle fails loudly before the write.
+        """
+        try:
+            target = Path(model_path)
+            if not target.exists():
+                return
+            try:
+                from nexus_scalp.release.paths import get_models_dir
+
+                models_root = get_models_dir().resolve()
+                if target.resolve().is_relative_to(models_root):
+                    raise RuntimeError(
+                        "BUG276_FORCE_FRESH_PROD_ARTIFACT_REFUSED: force_fresh_model=True "
+                        f"targets an existing artifact inside the governed model tree "
+                        f"({models_root}): {target}. Point the test config's "
+                        "model.model_artifact_path at an isolated tmp path."
+                    )
+            except ImportError:
+                pass
+        except RuntimeError:
+            raise
+        except Exception:  # guard must never mask unrelated surfaces
+            return
+
     def _load_or_create_bundle(self, model_path: Path, force_fresh: bool) -> ModelBundle:
+        if force_fresh:
+            # Unbound-delegation pattern (module contract): this seam is also
+            # invoked with a LiveEngine as the state surface, which does NOT
+            # carry the guard method on its own class body.
+            ModelBundleStore._refuse_force_fresh_on_production_artifact(self, model_path)
         # P1 ARTIFACT TRUST: verify the EXACT on-disk artifact against its
         # integrity metadata BEFORE the weights become the serving model.
         # force_fresh cold-start skips this (nothing on disk to verify yet).

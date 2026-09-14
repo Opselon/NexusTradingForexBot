@@ -197,6 +197,12 @@ tests/unit/test_bug269_docker_starter_servable.py
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
 # dies permanently after a legitimate retrain. Champion supersession seam.
 tests/unit/test_bug271_champion_retrain_fingerprint.py
+#   BUG-276 (2026-09-14 wave): repo-root pytest clobbered the PRODUCTION
+#   champion bundle (force_fresh mint + load_database_config ignoring the
+#   BUG-223 NEXUS_AUDIT_DB seam -> tmp-path rows stamped CHAMPION). Pins:
+#   env-seam precedence, governed-tree force_fresh refusal, quarantine
+#   migration row-scoping + idempotency, src call-site ban.
+tests/unit/test_bug276_test_harness_artifact_isolation.py
 # BUG-257 remainder (NSE-Swarm role 5, 2026-09-13): the P0-2 trust anchor
 # fires at BOOT only; a foreign process re-landing drifted bytes while the
 # engine runs (the 09-11 bb1f0afe shape) serves poisoned weights silently

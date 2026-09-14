@@ -106,7 +106,11 @@ def client_with_engine():
             "max_allowed_lots": 2.0,
             "enforce_stop_loss": True,
         },
-        model=ModelConfig(confidence_threshold=0.35),
+        model=ModelConfig(
+            confidence_threshold=0.35,
+            # BUG-276: isolate force_fresh minting away from the production bundle.
+            model_artifact_path=os.path.join(tmpdir, "model.pt"),
+        ),
         algo={
             "atr_sl_buffer_multiplier": 1.5,
             "min_risk_reward_ratio": 1.8,
