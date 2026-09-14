@@ -90,6 +90,14 @@ jobs:
         run: |
           python scripts/ci/classify_changes.py --files "src/nexus_scalp/risk/risk_engine.py Web/app.js Dockerfile .github/workflows/ci.yml"
 
+      # NOTE (2026-09-14 reconstruction): lane gating is applied in
+      # tests-os.yml (OS matrix) — where a skip is an explicit, auditable
+      # SKIP-REPORT. It is deliberately NOT applied to the quality job's
+      # pytest step: scripts/ci/ci_final_gate.py is FAIL-CLOSED on a MISSING
+      # pytest record, and no docs-only PR is worth trading that contract
+      # against a ~6-minute ubuntu lane (false negatives are worse than
+      # wasted CI — brief 21).
+
   # ---------------------------------------------------------------------------
   # Fast, essential checks — run on every push/PR to main|develop.
   # Every validation step follows the same pattern:
@@ -271,6 +279,7 @@ jobs:
                     pytest "${CRIT_FILES[@]}" \
                            -n auto \
                            --dist loadgroup \
+                           --durations=25 \
                            --cov=src \
                  --cov-report=term-missing \
                  --cov-report=xml:"$CI_RESULTS_DIR/pytest/coverage.xml" \
@@ -596,6 +605,82 @@ jobs:
         run: python scripts/ci/ci_final_gate.py
 
   # ---------------------------------------------------------------------------
+  # TIER 2 — EXTENDED validation (brief section 19). Runs on MAIN PUSH
+  # (post-merge evidence) and explicit dispatch, never on the PR lane. Holds
+  # the production-truth tests whose MEASURED wall cost (bug276 1252s,
+  # perf_deadletter 730s, news_truncation 428s aggregate worker-seconds) does
+  # not earn a spot in the sub-5-minute PR gate — but they are NOT dropped;
+  # the old design silently gave them no lane at all.
+  # ---------------------------------------------------------------------------
+  extended:
+    name: Extended Validation (Tier 2)
+    if: always() && (github.ref_name == 'main' || inputs.full == true || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 45
+
+    env:
+      CI_RESULTS_DIR: ci-results-extended
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Initialize results tree
+        run: |
+          python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR"
+          mkdir -p "$CI_RESULTS_DIR/pytest"
+
+      - name: Run extended suite
+        id: ext
+        run: |
+          set +e
+          EXT_FILES=()
+          while IFS= read -r line || [[ -n "$line" ]]; do line="${line%%#*}"; line="$(echo "$line" | xargs)"; [[ -n "$line" ]] && EXT_FILES+=("$line"); done < tests/extended_suite.txt
+          pytest "${EXT_FILES[@]}" \
+                 -n auto --dist loadgroup -q --tb=short \
+                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" \
+                 > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
+          rc=$?
+          { echo "EXT_RC=$rc"; } >> "$GITHUB_ENV"
+          # NOTE: intentionally NOT make_ci_results.py check ... extended — the
+          # quality job's ci_final_gate CHECKS tuple is the shared run-info
+          # vocabulary and test_ci_final_gate_fail_closed enforces sync. The
+          # gate only runs in `quality`; extended runs in a SEPARATE job on a
+          # SEPARATE results dir (ci-results-extended), so it self-verdicts via
+          # the EXT_RC fail step below and never enters the quality gate's tree.
+          tail -40 "$CI_RESULTS_DIR/pytest/pytest.txt"
+
+      - name: Fail job if extended suite failed
+        if: always()
+        run: |
+          if [ "${EXT_RC:-1}" -ne 0 ]; then
+            echo "::error::Tier-2 extended validation failed (rc=$EXT_RC)"
+            exit 1
+          fi
+          echo "EXTENDED PASSED"
+
+      - name: Upload extended results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-results-extended-${{ github.run_number }}-${{ github.sha }}
+          path: ci-results-extended/
+          if-no-files-found: warn
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
+
+  # ---------------------------------------------------------------------------
   # Heavy testing (integration, E2E, research/backtest, model validation)
   # — does NOT run on every push. Executes only:
   #   * pushes to the dedicated ci-tests branch, or
@@ -686,21 +771,23 @@ jobs:
               # model_generation_phase13) were removed - the quality job
               # already executes them on every push; re-running them in this
               # arm duplicated identical behavior for zero extra signal.
-              # Coverage moved: none (dedup only). Remaining: the 3 files
-              # NOT covered by the critical-suite manifest.
+              # 2026-09-14 dedup (heavy-vs-heavy): test_research_api.py lives
+              # under tests/integration/ which the integration arm runs whole
+              # in the SAME matrix run - re-listing it duplicated execution
+              # within one heavy run. Remaining: the 2 non-integration files.
               pytest tests/unit/test_research_registry_null_score_bug075.py \
                     tests/unit/test_research_task4_validation.py \
-                    tests/integration/test_research_api.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             model-validation)
               # 2026-09-03 dedup: 70d_model_validation_task4,
               # model_governance_phase16 and model_lifecycle_phase10 are all
               # members of tests/critical_suite.txt (quality job runs them on
-              # every push) - dropped here as duplicate execution. Remaining:
-              # train_model_cli + model_lifecycle_api (not in the manifest).
+              # every push) - dropped here as duplicate execution.
+              # 2026-09-14 dedup: tests/integration/test_model_lifecycle_api.py
+              # is covered by the integration arm (same run). Remaining:
+              # train_model_cli (unit, not in the manifest).
               pytest tests/unit/test_train_model_cli.py \
-                    tests/integration/test_model_lifecycle_api.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
           esac

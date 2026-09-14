@@ -1,0 +1,84 @@
+{
+  "_comment": "Actionable classification overrides from the forensic lanes (unit A/B + non-unit agents). Machine facts (n_tests, mocks, durations, imports) come from scripts/testing/inventory_tests.py; this file carries the judgment layer. Every DELETE-CHECK entry lists the replacement protection that must exist before deletion. PROMOTE-GATE entries already applied to tests/critical_suite.txt are marked promoted:true.",
+  "promote_gate_applied": [
+    "tests/unit/test_risk_circuit_breakers.py",
+    "tests/unit/test_bug260_margin_usage_enforcement.py",
+    "tests/unit/test_bug258_reversal_risk_bypass.py",
+    "tests/unit/test_bug259_breaker_anchor_restart.py",
+    "tests/unit/test_agent11_execution_risk_forensic.py",
+    "tests/unit/test_confidence_calibration.py",
+    "tests/unit/test_order_write_uncertainty.py",
+    "tests/unit/test_pending_recovery_cause_aware.py",
+    "tests/unit/test_agent6_execution_contract.py",
+    "tests/unit/test_bug185_terminal_state_resolver.py",
+    "tests/unit/test_maintenance_dispatch_guard.py",
+    "tests/unit/test_gate_convergence_evidence.py",
+    "tests/unit/test_persistence_boot_trust.py",
+    "tests/unit/test_persistence_durability_guarantees.py",
+    "tests/unit/test_bug254_executions_idempotency_migration.py",
+    "tests/unit/test_promotion_economic_integrity.py",
+    "tests/unit/test_zero_friction_guard_e1.py",
+    "tests/unit/test_paper_live_training_lineage.py",
+    "tests/unit/test_replay_toggle_guard.py",
+    "tests/unit/test_marketplace_backend.py",
+    "tests/unit/test_bug232_mode_boundary.py",
+    "tests/unit/test_paper_persistence.py",
+    "tests/unit/test_paper_replay_mode.py",
+    "tests/unit/test_p0_producer_regression.py",
+    "tests/unit/test_champion_writer_governance.py",
+    "tests/unit/test_label_integrity.py",
+    "tests/unit/test_agent16_walkforward_purge_embargo_leakage.py",
+    "tests/unit/test_economic_parity_harness.py",
+    "tests/unit/test_market_data_integrity_ag13.py"
+  ],
+  "tier1_demoted_measured_cost": [
+    {"file": "tests/unit/test_bug276_unique_constraint_shadow.py", "measured_worker_s": 1252, "to": "tests/extended_suite.txt", "why": "strong production-truth test; cost is the parametrized ON CONFLICT battery — belongs on main-push lane, not PR lane"},
+    {"file": "tests/unit/test_perf_deadletter_skeleton_repro.py", "measured_worker_s": 730, "to": "tests/extended_suite.txt", "why": "same DB-boot family"},
+    {"file": "tests/unit/test_news_db_truncation_honesty.py", "measured_worker_s": 428, "to": "tests/extended_suite.txt", "why": "module-scoped real-DB fixture cost; content authoritative"}
+  ],
+  "delete_evidence_driven": [
+    {"file": "tests/unit/test_p2a_report_queries_golden.py", "action": "DELETE", "why": "refactor-completed golden; writes cross-run file under LOCALAPPDATA; skips=2 in CI (proven by baseline run)"},
+    {"file": "tests/unit/news/test_pro_auto.py", "action": "DELETE", "why": "mock-return asserts; exact overlap with test_news_pro_auto_console.py; 3/3 baseline run showed failing on mock shape"},
+    {"file": "tests/unit/test_no_future_leakage.py", "action": "DELETE", "why": "all 3 tests skip in CI (needs gitignored local parquet) = silent no-op; causality already pinned by test_gap_safe_sequences + test_70d_replay_parity_task3 (critical) + qa_deep_metamorphic_replay"},
+    {"file": "tests/integration/test_engine_runtime_launch.py", "action": "DELETE", "why": "not a launch test (log+source grep), skips in CI, writes repo artifacts on failure; startup certification owned by scripts/ci/runtime_gate.py + test_runtime_gate_e2e"},
+    {"file": "tests/unit/test_hist_sim_golden.py", "action": "DELETE", "why": "COLLECTION ERROR at origin/main: imports src/nexus_scalp/research/historical/bars.py which never existed on main (git log --all: no history). Test targets deleted functionality; breaks every full-suite run."},
+    {"file": "tests/integration/test_playwright_e2e.py", "action": "MOVE-OUT-TIER1", "why": "fixed port 9091 + sleep-paced selectors; superseded by tests/e2e_client journeys wired to nightly-e2e. Moved to tests/manual/ (kept, never deleted without replacement proof)"}
+  ],
+  "convert_runtime_or_lint": [
+    {"file": "tests/unit/test_decision_id_integrity.py", "why": "git-tree scan; moved to scripts/ci (check_decision_ids already runs in ci-integrity job)"},
+    {"file": "tests/unit/test_node_runtime_role.py", "action": "CONVERT-RUNTIME", "why": "repo-layout absence probes (no node runtime) -> lint job, not unit CI"},
+    {"file": "tests/unit/test_wsl2_platform_registry.py", "action": "CONVERT-RUNTIME", "why": "CRLF/eol hygiene -> pre-commit/CI lint; keep the docs-claim pin in docs lane"},
+    {"file": "tests/unit/test_agent16_hotpath_perf.py", "action": "T4-BENCHMARK", "why": "timing assertions flake under CI load; move to scheduled benchmark"},
+    {"file": "tests/cli/test_docs_consistency.py", "action": "CONVERT-RUNTIME", "why": "zero test_ functions -> silently collected nothing; main() moved to scripts/ci/check_docs_cli.py invoked by docs job"}
+  ],
+  "merge_groups": [
+    {"group": "accounting-aggregation", "members": ["test_accounting_core.py(87)", "test_accounting_hedging.py", "test_accounting_normalize.py"], "anchor": "test_accounting_pnl_regression.py + test_accounting_deduplication.py (both critical)", "status": "DEFERRED-MERGE: content valuable, consolidation requires per-case triage beyond this branch's budget — recorded for next wave"},
+    {"group": "news_bridge", "members": ["test_news_bridge_phase13b.py(11)"], "anchor": "test_news_bridge_contract_phase13b.py + _finalize (both critical)", "status": "DEFERRED-MERGE"},
+    {"group": "shadow70", "members": ["test_shadow_phase11.py", "test_shadow_replay_evidence_chg0047.py", "test_shadow70_news_family.py"], "anchor": "test_shadow70_runtime.py + test_shadow70_safety.py", "status": "DEFERRED-MERGE"},
+    {"group": "obs_contract", "members": ["test_operational_log_hygiene.py", "test_qa_deep_observability_evidence.py"], "anchor": "test_observability_guardrails.py + test_observability_contract_freeze.py (critical)", "status": "DEFERRED-MERGE"},
+    {"group": "golden_characterization", "members": ["test_s2_state_machine_golden.py", "test_s3_recovery_budget_golden.py"], "anchor": "test_qa_deep_state_machines.py (critical)", "status": "DEFERRED-MERGE (characterization parity already achieved post-extraction)"},
+    {"group": "incidents", "members": ["test_incident_runtime_task13.py", "test_incident_response_task12.py(66)"], "anchor": "test_incidents.py(92, critical)", "status": "DEFERRED-MERGE"}
+  ],
+  "rewrite_required": [
+    {"file": "tests/unit/test_packaged_db_and_mode_bug146_149.py", "defect": "PROMOTION REVERTED (measured 2026-09-15): two engine-boot tests build a REAL LiveEngine against the machine's artifacts/models/.../model.pt; a pre-trust-chain LEGACY_UNVERIFIED artifact on the dev box makes the boot refuse (ArtifactIntegrityError) — environment-dependent, non-CI-safe. The mode-isolation invariant itself is carried by test_bug232_mode_boundary.py + test_replay_toggle_guard.py (promoted).", "fix": "rewrite onto a provisioned starter bundle (bug269 provisioner pattern) before re-promoting", "tier": "T2"},
+    {"file": "tests/integration/test_database_execution_audit.py", "defect": "writes fixed artifacts/test_audit.db — xdist-unsafe + pollutes the repo tree", "fix": "tmp_path (production paths still exercised)", "tier": "T1"},
+    {"file": "tests/integration/test_signal_pipeline_health.py", "defect": "same fixed-path DB pollution; near-duplicate of the file above", "fix": "tmp_path + merge the two into one pipeline-audit file", "tier": "T1"},
+    {"file": "tests/integration/test_model_lifecycle_api.py", "defect": "test_engine_mode_apply_and_persist writes the machine REAL settings DB (load_settings_service without NEXUS_SETTINGS_DB isolation) + 25 LiveEngine boots", "fix": "isolate + shared engine fixture", "tier": "T2"},
+    {"file": "tests/unit/test_perf02_account_refresh_throttle.py", "defect": "zero production imports — tests a hand-copied mirror of live_engine code", "fix": "rewrite against the real refresh gate", "tier": "T1"},
+    {"file": "tests/unit/test_rule_matrix.py", "defect": "mocks policy/order-manager hooks — the internals it claims to verify", "fix": "rewrite with real SignalPolicy on rule chain", "tier": "T2"},
+    {"file": "tests/integration/test_news_api.py", "defect": "one test performs a real network fetch attempt (ingest_cycle) — nondeterministic/offline-slow", "fix": "inject fetcher boundary", "tier": "T2"},
+    {"file": "tests/integration/test_runtime_70d_contract_probe.py", "defect": "one test asserts against machine-configured artifact with NO skipif -> red on clean clones", "fix": "honest skip when artifact absent", "tier": "T2"}
+  ],
+  "delete_check_flagged_needs_second_look": [
+    {"file": "tests/unit/test_agent11_scenario_coverage_contract.py", "why": "regex-on-source scenario enumeration, never executes the router; behavior covered by agent12/bug258 suites — candidate DELETE next wave"},
+    {"file": "tests/unit/test_bug222_esc_sinks.py", "why": "brittle regex innerHTML grep; replace with runtime render-escaping test"},
+    {"file": "tests/unit/test_docker_release_lane.py", "why": "5 read_text YAML regex snapshot asserts"},
+    {"file": "tests/unit/test_liveengine_init_order_bug130.py", "why": "source-scan + compile check; replace with construction-time smoke"},
+    {"file": "tests/unit/test_cli_pro_ux.py + test_cli_onboarding_ux.py", "why": "cosmetic string snapshots"},
+    {"file": "tests/unit/test_spatial_layout.py", "why": "view-placement determinism, zero economic value"},
+    {"file": "tests/unit/test_web_marketplace_contract.py", "why": "static text probes; keep only the innerHTML grep as lint"},
+    {"file": "tests/unit/test_statistical_gate_policy_pins.py", "why": "constant echo asserts (behavior in gate suites)"},
+    {"file": "tests/unit/test_train_model_cli.py", "why": "protects a legacy CLI — confirm cli/train_model.py still shipped, else DELETE"},
+    {"file": "tests/unit/test_news_pro_auto_console.py", "why": "mock-return asserts on trivial mapper"}
+  ]
+}
