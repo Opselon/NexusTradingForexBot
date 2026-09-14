@@ -586,4 +586,55 @@ APP_REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 
-__all__ = ["APP_REQUIRED_COLUMNS"]
+#: =====================================================================
+#: BUG-276 (NSE-Swarm role 7, 2026-09-14): constraint SHADOW half of the
+#: same baseline-skeleton class. ``APP_REQUIRED_COLUMNS`` heals skeleton
+#: tables to the app's COLUMN contract, but the manifest skeletons replace
+#: the application's UNIQUE constraints with a plain ``id INTEGER PRIMARY
+#: KEY`` — and neither the app bootstrap (CREATE TABLE IF NOT EXISTS =
+#: no-op) nor ADD COLUMN can restore a missing unique index. Every
+#: producer INSERT whose ``ON CONFLICT(<cols>)`` target has no matching
+#: UNIQUE/PK index then fails with
+#:   "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"
+#: and the audit worker dead-letters EVERY row of that table forever.
+#: Reproduced on a fresh gate-first install (this repo, 2026-09-14):
+#: 15 of the 17 ON CONFLICT targets in src/ are dead on such a database;
+#: the nightly Client E2E container proves it live (audit_guard_telemetry
+#: dead-lettering ~19 rows/second from TICK_DUPLICATE_SUPPRESSED, and
+#: ExperienceLedger.record_experience / strategy_registry / research_runs
+#: / research_worker_state / intelligence workers all fail their
+#: idempotent upserts). audit_signals, audit_orders and audit_executions
+#: already self-heal their unique indexes inside the app bootstrap — the
+#: other 15 had no such repair path.
+#:
+#: CONTRACT: table -> tuple of ON CONFLICT target column tuples, copied
+#: from the producers' SQL (source of truth = the failing corpus). A
+#: unique index over EXACTLY these columns makes the upsert resolve again
+#: without touching existing rows. Healed idempotently
+#: (CREATE UNIQUE INDEX IF NOT EXISTS) by BOTH:
+#:   * engine._create_baseline_tables (fresh gate-first DBs, fail-loud), and
+#:   * AuditRepository._ensure_unique_constraint_heal (repairs existing
+#:     skeleton-shadowed databases on every engine boot; a database whose
+#:     data already violates the constraint logs an error and is left
+#:     untouched — never crash-boot, never silent).
+#: Import-safety: stdlib-only, same rule as APP_REQUIRED_COLUMNS.
+#: =====================================================================
+APP_UNIQUE_TARGETS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "audit_guard_telemetry": (("window_start", "symbol", "reason_code"),),
+    "audit_experiences": (("idempotency_key",),),
+    "audit_experience_outcomes": (("idempotency_key",),),
+    "experience_model_registry": (("model_id", "model_version", "artifact_fingerprint"),),
+    "strategy_registry": (("strategy_id", "strategy_version"),),
+    "research_runs": (("run_id",),),
+    "research_worker_state": (("scope",),),
+    "strategy_intelligence_registry": (("strategy_id",),),
+    "position_lifecycle_events": (("event_key",),),
+    "trade_autopsies": (("ticket",),),
+    "behavior_analysis": (("analysis_key",),),
+    "behavior_detections": (("behavior_key",),),
+    "anomaly_events": (("anomaly_id",),),
+    "strategy_evolution_candidates": (("candidate_id",),),
+    "intelligence_worker_state": (("scope",),),
+}
+
+__all__ = ["APP_REQUIRED_COLUMNS", "APP_UNIQUE_TARGETS"]
