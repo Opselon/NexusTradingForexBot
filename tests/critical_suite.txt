@@ -197,6 +197,12 @@ tests/unit/test_bug269_docker_starter_servable.py
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
 # dies permanently after a legitimate retrain. Champion supersession seam.
 tests/unit/test_bug271_champion_retrain_fingerprint.py
+#   BUG-280 (2026-09-14 wave): the early-return order-frequency throttle was a
+#   HARDCODED 60s floor pre-empting the configured cooldown_seconds=4.0 that
+#   the post-policy COOLDOWN gate reads (same _last_signal_time field): 78,798
+#   swallowed evaluations vs 1,469 decisions (96:1, RC-4). One authoritative
+#   cooldown policy; pins strict-config still blocks, no magic literal.
+tests/unit/test_bug280_frequency_throttle_unification.py
 #   BUG-279 (2026-09-14 wave): feed-stall FAIL-LOUD — the 09-11 20:00Z freeze
 #   ran 2.5 days: watchdog warned 1828x + re-emitted a HIGH incident every 15s
 #   while runtime_risk_state() kept claiming RUNNING and the BUG-169
