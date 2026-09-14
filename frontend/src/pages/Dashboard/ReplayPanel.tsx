@@ -29,6 +29,7 @@ import { ApiError } from "@/types/api";
 import { formatMoney, formatNumber, formatPct } from "@/lib/format";
 import { useUiStore } from "@/stores/uiStore";
 import "@/pages/_shared/pages.css";
+import "./market-console.css";
 
 /** Naive local ISO for <input type=datetime-local> (legacy panel parity). */
 function localIso(d: Date): string {
@@ -255,7 +256,7 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
         </>
       }
     >
-      <div className="l4-replay">
+      <div className="l4-replay mc-replay">
         {/* Session contract row */}
         <div className="l4-replay__grid">
           <div className="l4-replay__field">
