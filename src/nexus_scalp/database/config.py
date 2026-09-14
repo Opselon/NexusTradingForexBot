@@ -247,6 +247,20 @@ def load_database_config(
     envd = env if env is not None else os.environ
     provider_env = envd.get("NSE_DATABASE__PROVIDER", "").strip()
 
+    # BUG-278: the BUG-223 test-isolation seam (NEXUS_AUDIT_DB) must reach
+    # THIS resolver too — LiveEngine's implicit audit construction goes
+    # through load_database_config("audit"), which previously anchored to the
+    # PRODUCTION artifacts/audit.db regardless of the env (the seam was only
+    # honored inside AuditRepository's legacy implicit default). Precedence
+    # matches BUG-223 exactly: it applies ONLY to the implicit sqlite default
+    # — an explicit NSE_DATABASE__PROVIDER / NSE_DATABASE__SQLITE_PATH or a
+    # persisted PostgreSQL setting still wins, and non-audit domains ignore
+    # the variable entirely.
+    if domain == "audit" and not provider_env:
+        env_audit_db = envd.get("NEXUS_AUDIT_DB", "").strip()
+        if env_audit_db and not envd.get("NSE_DATABASE__SQLITE_PATH", "").strip():
+            cfg = DatabaseConfig.for_sqlite(domain, path=env_audit_db)
+
     # --- persisted settings (authoritative for interactive installs) -------
     db = None
     if settings_db_path is not None or not provider_env:

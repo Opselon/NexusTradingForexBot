@@ -623,3 +623,29 @@ file::memory:*
 # UI wave: React feature folders must never be eaten by the [Dd]ebug/ MSBuild rule
 !frontend/src/features/debug/
 !frontend/src/features/debug/**
+
+# NSE master wave 2026-09-14: local ruflo/claude tool state (not shared config)
+.claude/
+.claude-flow/
+.swarm/
+
+# === Master-wave 2026-09-14: shell-redirect host-leak guards (same class as
+# the "-" and file::memory rules above). A cmd.exe hook layer eating a bare
+# '<' comparison in a command string creates a zero-byte file NAMED AFTER THE
+# TOKEN. These words have appeared at the repo root; none may ever be tracked.
+0
+REJECT
+QUARANTINED
+CHOP
+FREEZE
+FREEZE_ALL
+TRENDING
+RANGING
+PAPER
+LIVE
+UNKNOWN
+INGEST_TIME
+FEED
+DEGRADED
+RUNNING
+weekend-suppressed

@@ -413,6 +413,17 @@ class LiveEngine:
             spread=spread,
             atr_m1=fv.atr_m1,
         )
+        # BUG-283: carry the CURRENT regime label so downstream consumers
+        # (hunter StrategyFactory, evaluation_regime_performance) see the
+        # producer vocabulary instead of an implicit UNKNOWN. Width check above
+        # is feat_*-scoped; these metadata keys never affect the tensor. When
+        # no regime state exists yet the key stays 'UNKNOWN' — the hunter gate
+        # fails closed on it (never fabricate eligibility).
+        try:
+            rs = self._last_regime_state
+            rec["regime"] = str(rs.regime_type.value) if rs is not None else "UNKNOWN"
+        except Exception:  # pragma: no cover - defensive; record-building never dies on metadata
+            rec["regime"] = "UNKNOWN"
         return rec
 
     def _rebind_trainer_to_bundle(self) -> None:
@@ -698,6 +709,20 @@ class LiveEngine:
         self._runtime_risk_detail: str = ""
         self._halt_reason: str = ""
         self._halt_triggered_at: str = ""
+        # BUG-279 (2026-09-14 wave): feed-stall fail-loud state. The tick
+        # watchdog (live/runtime_loop.py) feeds these; the STALL EPISODE is
+        # owned by the engine so a frozen feed escalates into the canonical
+        # risk state instead of rotting in a warning log (production: the
+        # 09-11 20:00Z freeze ran 2.5 days with state RUNNING and 1,828
+        # identical warnings). Wall-clock of the last NEW (non-duplicate)
+        # tick; grace before escalation; episode flags for once-per-episode
+        # telemetry.
+        self._last_fresh_tick_at: float = time.time()
+        self._feed_stall_grace_sec: float = float(
+            getattr(getattr(config, "freshness", None), "stall_grace_sec", 900.0) or 900.0
+        )
+        self._feed_stall_escalated: bool = False
+        self._feed_stall_episode_started: bool = False
         self._hot_path_circuit = HotPathErrorCircuit()
         # Same config-derived default as the G29 freshness block below (which
         # assigns _freshness_max_age_sec later in __init__ — init-order safe).
@@ -2255,16 +2280,16 @@ class LiveEngine:
         Initializes the MarketRegimeClassifier with XAUUSD-evidenced calibration.
 
         Thresholds were recalibrated from 100k real XAUUSD M1 bars (2026-05..08)
-        in BUG-132. The classifier defaults already encode those values, so we
-        only override the two that differ from the constructor defaults
-        (spread hysteresis band + hold/markup margins) to keep a single source of
-        truth in the classifier module.
+        in BUG-132 and AGAIN from the LIVE broker window in BUG-281 (2026-09-14).
+        The classifier defaults are the SINGLE source of truth for the spread
+        band (and every other threshold), so we only override the two timing
+        margins that differ from the constructor defaults; re-smuggling spread
+        literals here is a THRESHOLD-OWNERSHIP violation (pinned by
+        tests/unit/test_bug281_chop_boundary_recalibration.py).
         """
         try:
             return MarketRegimeClassifier(
                 symbol=symbol,
-                spread_chop_enter_usd=0.25,
-                spread_chop_exit_usd=0.18,
                 min_regime_hold_sec=4.0,
                 switch_prob_margin=0.10,
             )
@@ -4476,7 +4501,8 @@ class LiveEngine:
         """Observable canonical safety state (UI/health surface).
 
         DEGRADED (session-local: hot-path circuit / stale account / loss
-        freeze) is derived on the fly and never overrides a persisted halt.
+        freeze / BUG-279 escalated feed stall) is derived on the fly and
+        never overrides a persisted halt.
         """
         if self._runtime_risk_state in ("HALTED", "KILL_SWITCH"):
             return self._runtime_risk_state
@@ -4484,9 +4510,90 @@ class LiveEngine:
             self._loss_freeze_active
             or self._hot_path_circuit.is_tripped(time.time())
             or (self._account_freshness == AccountFreshness.STALE.value)
+            or getattr(self, "_feed_stall_escalated", False)
         ):
             return "DEGRADED"
         return self._runtime_risk_state
+
+    # ------------------------------------------------------------------
+    # BUG-279: feed-stall FAIL-LOUD escalation (invoked from the tick
+    # watchdog on the composition root; unbound-delegation compatible).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _feed_stall_in_weekend(now_wall: float) -> bool:
+        """Forex-convention closed window (Fri 22:00 .. Sun 22:00 UTC), same
+        semantics as accounting/market_calendar. A closed market is quiet,
+        not stalled — escalation must never fire there."""
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+
+        now = _dt.fromtimestamp(now_wall, _UTC)
+        wd = now.weekday()  # Mon=0..Sun=6
+        return (wd == 4 and now.hour >= 22) or wd in (5, 6) or (wd == 6 and now.hour < 22)
+
+    def note_tick_stream_stall(self, *, age_sec: float, adapter_connected: bool = True) -> None:
+        """Called by the tick watchdog every stall pass with the WALL-CLOCK
+        age of the last NEW tick. Keeps the existing 15s remediation cadence
+        (resubscribe/reconnect) but owns the EPISODE: one START incident per
+        episode (the production anti-pattern was one HIGH incident every 15s
+        for days), and a single CRITICAL escalation past the grace window
+        that flips the canonical risk state to DEGRADED (new entries blocked
+        by the existing DEGRADED consumers; protective exits unaffected)."""
+        now_wall = getattr(self, "_now_wall", None)
+        now_wall = now_wall() if callable(now_wall) else time.time()
+        grace = float(getattr(self, "_feed_stall_grace_sec", 900.0) or 900.0)
+        if not getattr(self, "_feed_stall_episode_started", False):
+            self._feed_stall_episode_started = True
+            self._feed_stall_escalated = False
+            self.emit_incident_telemetry(
+                event_type=("MT5_TICK_STREAM_STALLED" if adapter_connected else "MT5_DISCONNECTED"),
+                component="mt5",
+                severity="HIGH",
+                correlation_id="tick-stream",
+            )
+            logger.warning(
+                "[FEED_STALL] event=EPISODE_OPEN age_sec=%.0f connected=%s",
+                age_sec,
+                adapter_connected,
+            )
+        if self._feed_stall_escalated or age_sec < grace:
+            return
+        if LiveEngine._feed_stall_in_weekend(now_wall):
+            # Quiet because the market is CLOSED: no escalation, episode stays
+            # open but benign (next Monday's first stall pass re-evaluates).
+            return
+        self._feed_stall_escalated = True
+        detail = (
+            f"market feed stalled {age_sec / 60.0:.0f} min (grace {grace / 60.0:.0f} min "
+            f"exceeded, adapter_connected={adapter_connected}); new entries BLOCKED "
+            "(DEGRADED) until a fresh tick arrives"
+        )
+        logger.critical("[FEED_STALL] event=ESCALATED %s", detail)
+        self.emit_incident_telemetry(
+            event_type="MT5_TICK_STREAM_STALLED_ESCALATED",
+            component="mt5",
+            severity="CRITICAL",
+            correlation_id="tick-stream",
+        )
+        with contextlib.suppress(Exception):
+            self.notifier.notify_generic_message(
+                "FEED STALL — TRADING DEGRADED", detail, severity="CRITICAL"
+            )
+
+    def note_tick_stream_recovered(self) -> None:
+        """A NEW (non-duplicate) tick closes the stall episode."""
+        if getattr(self, "_feed_stall_episode_started", False):
+            was = getattr(self, "_feed_stall_escalated", False)
+            self._feed_stall_episode_started = False
+            self._feed_stall_escalated = False
+            self.emit_incident_telemetry(
+                event_type="MT5_TICK_STREAM_RECOVERED",
+                component="mt5",
+                severity="INFO",
+                correlation_id="tick-stream",
+            )
+            logger.info("[FEED_STALL] event=RECOVERED escalated_was=%s", was)
 
     def release_persisted_safety_state(self, *, actor: str, note: str = "") -> bool:
         """In-process explicit release (audited, durable, observable).
@@ -4511,8 +4618,18 @@ class LiveEngine:
         return released
 
     def _trading_blocked_by_safety_state(self) -> bool:
-        """True when the persisted safety state refuses new trading."""
-        return self._runtime_risk_state in ("HALTED", "KILL_SWITCH")
+        """True when the safety state refuses new trading.
+
+        Persisted HALTED/KILL_SWITCH (operator halt, BUG-256 chain) plus
+        BUG-279: an ESCALATED feed stall (past the grace window, market
+        provably closed-in-time with no fresh ticks) is treated as entry-
+        blocking too — a proposal that somehow reaches dispatch from a
+        background path must not place NEW entries on stale market truth.
+        Protective exits/management use different seams and stay unaffected;
+        the flag self-clears on the first fresh tick (recovery event)."""
+        return self._runtime_risk_state in ("HALTED", "KILL_SWITCH") or bool(
+            getattr(self, "_feed_stall_escalated", False)
+        )
 
     def _update_survival_state(self, account: AccountInfo, current_pos_count: int) -> None:
         # RUNTIME CONFIG (BUG-132): the survival guard must use the SAME

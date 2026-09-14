@@ -45,6 +45,7 @@ _SCHEMA_SQL: list[str] = [
         source_id TEXT DEFAULT '',
         source_name TEXT DEFAULT '',
         published_at TEXT NOT NULL,
+        published_at_source TEXT NOT NULL DEFAULT 'UNKNOWN',
         updated_at TEXT DEFAULT '',
         raw_categories TEXT DEFAULT '[]',
         entities TEXT DEFAULT '[]',
@@ -311,4 +312,13 @@ class SchemaMixin(_NewsDbCoreProto):
         if "article_status" not in cols:
             conn.execute(
                 "ALTER TABLE news_articles ADD COLUMN article_status TEXT NOT NULL DEFAULT 'ACTIVE'"
+            )
+        # BUG-282: publication-time provenance. Legacy rows were all written
+        # by the ISO-only parser, so their published_at is overwhelmingly the
+        # fabricated ingest stamp — but per-row certainty is impossible after
+        # the fact, so existing rows are marked UNKNOWN (never retro-guessed).
+        if "published_at_source" not in cols:
+            conn.execute(
+                "ALTER TABLE news_articles ADD COLUMN published_at_source "
+                "TEXT NOT NULL DEFAULT 'UNKNOWN'"
             )

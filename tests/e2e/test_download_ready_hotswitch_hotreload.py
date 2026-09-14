@@ -123,12 +123,27 @@ def _app_config_paper() -> AppConfig:
     )
 
 
-def _engine_and_client(monkeypatch: pytest.MonkeyPatch | None = None):  # type: ignore[no-untyped-def]
-    """Build a LiveEngine + TestClient pair (paper mock, no MT5, no file IO)."""
+def _engine_and_client(
+    monkeypatch: pytest.MonkeyPatch | None = None,
+    tmp_path: Path | None = None,
+):  # type: ignore[no-untyped-def]
+    """Build a LiveEngine + TestClient pair (paper mock, no MT5, no file IO).
+
+    BUG-278: force_fresh mints weights to the configured artifact path — the
+    pair must mint into a per-test tmp dir, never the production bundle.
+    """
     from nexus_scalp.application.live_engine import LiveEngine
     from nexus_scalp.web.server import create_app
 
     cfg = _app_config_paper()
+    if tmp_path is not None:
+        cfg = cfg.model_copy(
+            update={
+                "model": cfg.model.model_copy(
+                    update={"model_artifact_path": str(tmp_path / "model.pt")}
+                )
+            }
+        )
     adapter = _PaperPort()
     engine = LiveEngine(config=cfg, adapter=adapter, force_fresh_model=True)
     app = create_app(engine_ref=engine)
@@ -290,10 +305,12 @@ class TestDownloadReadyNoConfig:
 
 
 class TestHotSwitchE2E:
-    def test_mode_switch_paper_to_live_and_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_mode_switch_paper_to_live_and_back(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         """Hot-switch PAPER -> LIVE -> PAPER via set_execution_mode keeps the
         same process; runtime_mode follows config and adapter boundaries swap."""
-        engine, client, _ = _engine_and_client(monkeypatch)
+        engine, client, _ = _engine_and_client(monkeypatch, tmp_path)
         pid_before = os.getpid()
 
         # Baseline: paper
@@ -357,9 +374,9 @@ class TestHotSwitchE2E:
 
 
 class TestHotReloadE2E:
-    def test_algo_tuner_hot_reload_via_api(self) -> None:
+    def test_algo_tuner_hot_reload_via_api(self, tmp_path: Path) -> None:
         """PUT /api/algo/config changes runtime behavior without restart."""
-        engine, client, _ = _engine_and_client()
+        engine, client, _ = _engine_and_client(tmp_path=tmp_path)
         pid_before = os.getpid()
 
         r0 = client.get("/api/algo/config")
@@ -389,9 +406,9 @@ class TestHotReloadE2E:
         r2 = client.get("/api/algo/config")
         assert r2.json()["atr_sl_buffer_multiplier"] == 2.0
 
-    def test_risk_config_hot_reload_via_api(self) -> None:
+    def test_risk_config_hot_reload_via_api(self, tmp_path: Path) -> None:
         """POST /api/config hot-reloads risk fields without restart."""
-        engine, client, _ = _engine_and_client()
+        engine, client, _ = _engine_and_client(tmp_path=tmp_path)
         pid_before = os.getpid()
 
         r = client.post(
@@ -404,9 +421,9 @@ class TestHotReloadE2E:
         assert r.status_code in (200, 422)
         assert os.getpid() == pid_before
 
-    def test_invalid_hot_reload_leaves_last_known_good(self) -> None:
+    def test_invalid_hot_reload_leaves_last_known_good(self, tmp_path: Path) -> None:
         """An invalid PUT must be rejected and the old snapshot stays."""
-        engine, client, _ = _engine_and_client()
+        engine, client, _ = _engine_and_client(tmp_path=tmp_path)
         v_before = client.get("/api/algo/config").json()["configuration_version"]
         r = client.put(
             "/api/algo/config",
