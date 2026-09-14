@@ -146,6 +146,15 @@ class RuntimeCleanupScheduler:
     # ------------------------------------------------------------------
     # cadence
     # ------------------------------------------------------------------
+    # BUG-275 (clock-domain): the PRODUCTION caller (MaintenanceCycle) passes
+    # time.time() (wall) into these gates, while run_cycle() historically
+    # stamped _last_light/_last_deep with time.monotonic(). On every real host
+    # wall >> monotonic (epoch ~1.79e9 vs uptime), so `is_deep_due(now_wall)`
+    # was PERMANENTLY True — the DEEP index-scan branch ran on EVERY 30-min
+    # light cycle instead of once per 6h (status()/next_light_in() likewise
+    # mixed the domains). Contract now: ALL cadence stamps + comparisons use
+    # the wall clock, the domain the engine's maintenance tick supplies.
+    # (Duration measurement inside run_cycle stays monotonic — correct there.)
     def is_light_due(self, now: float) -> bool:
         return (now - self._last_light) >= self.light_interval_sec
 
@@ -156,7 +165,7 @@ class RuntimeCleanupScheduler:
         return (now - self._last_telegram) >= self.settings.telegram_min_interval_sec
 
     def next_light_in(self, now: float | None = None) -> float:
-        now = now or time.monotonic()
+        now = now or time.time()
         return max(0.0, self.light_interval_sec - (now - self._last_light))
 
     # ------------------------------------------------------------------
@@ -220,9 +229,12 @@ class RuntimeCleanupScheduler:
             index_report = self._index_health_report()
         telemetry["index_health"] = index_report
 
-        self._last_light = time.monotonic()
+        # BUG-275: cadence stamps move to the WALL domain (see cadence block
+        # above): the production caller compares against its time.time()
+        # now_t, so monotonic stamps made is_deep_due permanently True.
+        self._last_light = time.time()
         if deep:
-            self._last_deep = time.monotonic()
+            self._last_deep = time.time()
         return {"cycle": self._cycle_number, "telemetry": telemetry, "result": result}
 
     # ------------------------------------------------------------------
@@ -380,13 +392,15 @@ class RuntimeCleanupScheduler:
         return build_telegram_initial_report_text(report)
 
     def mark_telegram_sent(self, now: float | None = None) -> None:
-        self._last_telegram = now or time.monotonic()
+        # BUG-275: wall domain, matching is_telegram_due callers (maintenance
+        # passes its time.time() now_t).
+        self._last_telegram = now or time.time()
 
     # ------------------------------------------------------------------
     # status
     # ------------------------------------------------------------------
     def status(self) -> dict[str, Any]:
-        now = time.monotonic()
+        now = time.time()  # BUG-275: same wall domain as the cadence stamps
         return {
             "enabled": self.settings.enabled,
             "dry_run": self.settings.dry_run,
