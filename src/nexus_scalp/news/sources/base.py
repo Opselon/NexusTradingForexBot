@@ -60,7 +60,15 @@ class NewsSourceAdapter(ABC):
         raise NotImplementedError
 
     @staticmethod
-    def _parse_dt(value: Any) -> datetime:
+    def _parse_dt(value: Any) -> datetime | None:
+        """Parses RFC-3339/ISO-8601 *and* RFC-822 feed timestamps to UTC.
+
+        BUG-282: returns None when the feed carried no parseable publication
+        time — the old contract silently fabricated ``now()``, which broke
+        decay/staleness semantics for 88% of rows and (via the 60-s publish
+        bucket in the article hash) defeated dedup identity on every re-poll.
+        Callers must decide the fallback explicitly.
+        """
         if isinstance(value, datetime):
             return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
         if isinstance(value, str) and value:
@@ -71,7 +79,22 @@ class NewsSourceAdapter(ABC):
                 )
             except ValueError:
                 pass
-        return _utc_now()
+            # RFC-822 (RSS 2.0 pubDate) and common variants: "Mon, 14 Sep 2026
+            # 00:05:00 GMT" / "+0000" / "EST". parsedate_to_datetime accepts
+            # the 2-/4-digit-year and named-zone forms used by real feeds.
+            try:
+                from email.utils import parsedate_to_datetime
+
+                parsed = parsedate_to_datetime(value)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is not None:
+                if parsed.tzinfo is None:
+                    # RFC-822 timestamps without an explicit zone are local to
+                    # the publisher; per RSS best practice treat as UTC.
+                    parsed = parsed.replace(tzinfo=UTC)
+                return parsed.astimezone(UTC)
+        return None
 
 
 class RSSNewsSourceAdapter(NewsSourceAdapter):
@@ -310,8 +333,8 @@ class JSONManifestSourceAdapter(NewsSourceAdapter):
                     "url": str(base),
                     "summary": str(row.get("description") or row.get("excerpt") or ""),
                     "body": "",
-                    "published_at": self._parse_dt(published) if published else _utc_now(),
-                    "updated_at": self._parse_dt(published) if published else _utc_now(),
+                    "published_at": self._parse_dt(published) if published else None,
+                    "updated_at": None,
                     "categories": [],
                 }
             )

@@ -18,6 +18,15 @@ def _utc(v: datetime) -> datetime:
     return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
 
 
+#: BUG-282 provenance vocabulary for news_articles.published_at:
+#: 'FEED' = genuinely parsed from the source; 'INGEST_TIME' = feed carried no
+#: parseable publication time, the stored stamp is the ingest wall clock;
+#: 'UNKNOWN' = legacy rows written before the provenance column existed.
+PUBLISHED_AT_SOURCE_FEED = "FEED"
+PUBLISHED_AT_SOURCE_INGEST = "INGEST_TIME"
+PUBLISHED_AT_SOURCE_UNKNOWN = "UNKNOWN"
+
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------

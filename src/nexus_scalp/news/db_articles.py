@@ -201,10 +201,11 @@ class ArticlesMixin(_NewsDbCoreProto):
                 """
                 INSERT OR IGNORE INTO news_articles
                     (article_id, article_hash, canonical_url, title, summary, body,
-                     language, source_id, source_name, published_at, updated_at,
-                     raw_categories, entities, topics, importance, importance_score,
-                     novelty, is_duplicate, duplicate_of, evidence_sources, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     language, source_id, source_name, published_at, published_at_source,
+                     updated_at, raw_categories, entities, topics, importance,
+                     importance_score, novelty, is_duplicate, duplicate_of,
+                     evidence_sources, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["article_id"],
@@ -217,6 +218,7 @@ class ArticlesMixin(_NewsDbCoreProto):
                     row.get("source_id", ""),
                     row.get("source_name", ""),
                     row.get("published_at", self._now()),
+                    row.get("published_at_source", "UNKNOWN"),
                     row.get("updated_at", ""),
                     json.dumps(row.get("raw_categories", [])),
                     json.dumps(row.get("entities", []), default=str),

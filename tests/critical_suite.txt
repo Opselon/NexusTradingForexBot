@@ -197,6 +197,14 @@ tests/unit/test_bug269_docker_starter_servable.py
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
 # dies permanently after a legitimate retrain. Champion supersession seam.
 tests/unit/test_bug271_champion_retrain_fingerprint.py
+#   BUG-282 (2026-09-14 wave): RSS pubDate is RFC-822 but the parser accepted
+#   only ISO-8601 and silently fabricated now() on failure (88.1% of rows).
+#   The 60-s publish bucket inside the article-hash identity therefore
+#   re-minted per poll -> dedup/tombstone guards structurally unable to fire
+#   (26,161 byte-identical rows, ~80 MB news.db, lane-04 RC2 + lane-06 §3).
+#   Pins: RFC-822 parses to true event time, honest None + published_at_source
+#   provenance, poll-stable timeless identity, legacy-DB column heal.
+tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
 #   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
 #   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
 #   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
