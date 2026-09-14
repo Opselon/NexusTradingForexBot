@@ -89,11 +89,29 @@ jobs:
           if [ "$MODE" != "SKIP-REPORT" ]; then
             # Canonical classifier: no Python in the diff -> nothing to run.
             # Fail-open on uncertainty (empty diff / classifier error => run).
+            # ROBUSTNESS (first-run failure 34908840443): the default checkout
+            # has no local origin/<base> ref, and bash -e/pipefail made an
+            # unresolvable `git diff main...HEAD` (exit 128) kill this step
+            # BEFORE mode was written. Every git probe below is ||-guarded.
             PY=python; command -v python >/dev/null 2>&1 || PY=python3
             BASE="${GITHUB_BASE_REF:-}"
-            if [ -n "$BASE" ]; then REF="$BASE...HEAD"; else REF="HEAD~1...HEAD"; fi
-            NAMES=$(git diff --name-only "$REF" 2>/dev/null | tr '\n' ' ')
-            if [ -z "${NAMES// /}" ]; then NAMES="src/force_python_lane.py"; fi
+            NAMES=""
+            if [ -n "$BASE" ]; then
+              git fetch -q --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
+              NAMES=$(git diff --name-only "origin/$BASE...HEAD" 2>/dev/null | tr '\n' ' ' || true)
+            fi
+            if [ -z "${NAMES// /}" ]; then
+              BEFORE="${{ github.event.before }}"
+              for REF in "$BEFORE...HEAD" "HEAD~1...HEAD" "HEAD^...HEAD"; do
+                case "$REF" in "...HEAD") continue;; esac
+                NAMES=$(git diff --name-only "$REF" 2>/dev/null | tr '\n' ' ' || true)
+                [ -n "${NAMES// /}" ] && break
+              done
+            fi
+            if [ -z "${NAMES// /}" ]; then
+              # every discovery failed => fail OPEN (force the python lane)
+              NAMES="src/force_python_lane.py"
+            fi
             LANES=$($PY scripts/ci/classify_changes.py --files "$NAMES" 2>/dev/null || echo '{}')
             echo "lanes=$LANES"
             if ! echo "$LANES" | grep -Eq '"python": *true'; then
