@@ -38,18 +38,24 @@ export interface NewsAnalysisRow {
 export interface NewsAiAnalysisRow {
   ai_analysis_id?: string;
   article_id?: string;
+  run_id?: string;
+  status?: string;
   provider?: string;
   model?: string;
   analysis_version?: string;
+  prompt_version?: string;
   analysis_status?: string;
   summary?: string;
   sentiment?: string;
   market_relevance?: string;
   xauusd_relevance?: string;
+  importance_assessment?: string;
   potential_market_impact?: string;
   insufficient_evidence?: boolean;
-  key_facts?: string[] | null;
-  uncertainties?: string[] | null;
+  error_detail?: string;
+  /** SQLite column: the writer may store a JSON array STRING (news_ai_analysis.key_facts). */
+  key_facts?: string[] | string | null;
+  uncertainties?: string[] | string | null;
   analyzed_at?: string;
 }
 
@@ -329,19 +335,29 @@ export interface NewsAiStatusResponse {
 
 export type NewsFilter = "ACTIVE" | "ALL" | "IRRELEVANT";
 
-/** POST /api/news/analyze/batch */
+/** POST /api/news/analyze/batch — safe envelope (news_intelligence_routes.py
+ *  news_analyze_batch): per-item results + counts; refusals carry an error
+ *  OBJECT ({code,message,request_id}), not a string. */
 export interface BatchAnalyzeResult {
   available?: boolean;
   completed?: number;
   failed?: number;
   skipped?: number;
-  error?: string;
+  total?: number;
+  results?: NewsAiAnalysisRow[];
+  error?: { code?: string; message?: string; request_id?: string } | string;
 }
 
-/** POST /api/news/auto-prune */
+/** POST /api/news/auto-prune — PruneResult.to_dict() on success; refusal uses
+ *  the same error-object envelope. */
 export interface PruneResult {
+  available?: boolean;
+  processed?: number;
   marked_irrelevant?: number;
   preserved?: number;
   already_irrelevant?: number;
-  error?: string;
+  failed?: number;
+  actor?: string;
+  rule_version?: string;
+  error?: { code?: string; message?: string; request_id?: string } | string;
 }
