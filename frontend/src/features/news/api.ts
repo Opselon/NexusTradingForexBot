@@ -29,6 +29,14 @@ import type {
   NewsToggleState,
   NewsTradeLinksResponse,
 } from "./types";
+import type {
+  NewsAutoPruneResponse,
+  NewsProAnalyzeAllResponse,
+  NewsProAnswersResponse,
+  NewsProConsoleResponse,
+  NewsProPurgeResponse,
+  NewsProStatusResponse,
+} from "./proTypes";
 
 function qs(params: Record<string, string | number | boolean | undefined>): string {
   const sp = new URLSearchParams();
@@ -120,4 +128,50 @@ export const newsApi = {
 
   /** POST /api/news/{id}/restore — IRRELEVANT -> ACTIVE. */
   restore: (articleId: string) => send<{ ok?: boolean; status?: string; error?: string }>(`/api/news/${id(articleId)}/restore`, {}),
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * PRO AUTO CONSOLE — legacy Web/news_intelligence.js parity. Routes live in
+   * src/nexus_scalp/web/news_intelligence_routes.py (@router prefix /api/news,
+   * mounted AFTER the inline routes; READ-ONLY reference). Every response is
+   * the safe envelope: success => {available:true, ...}, refusal => 
+   * {available:false, error:{code,message,request_id}} at HTTP 200 — the
+   * transport never throws for those, so the model guards below decide.
+   * ──────────────────────────────────────────────────────────────────────── */
+
+  /** GET /api/news/pro/status — console ring telemetry + counts + provider + latest AI row. */
+  proStatus: (signal?: AbortSignal) => getLegacy<NewsProStatusResponse>("/api/news/pro/status", signal),
+
+  /**
+   * GET /api/news/pro/console?limit&since_seq — live pass/answer/error ring
+   * (server clamps limit to 1..500, returns only entries with seq > since_seq).
+   */
+  proConsole: (opts: { limit?: number; sinceSeq?: number }, signal?: AbortSignal) =>
+    getLegacy<NewsProConsoleResponse>(`/api/news/pro/console${qs({ limit: opts.limit ?? 200, since_seq: opts.sinceSeq ?? 0 })}`, signal),
+
+  /** GET /api/news/pro/latest-answers?limit — newest news_ai_analysis rows (cap 100). */
+  proLatestAnswers: (limit = 8, signal?: AbortSignal) =>
+    getLegacy<NewsProAnswersResponse>(`/api/news/pro/latest-answers${qs({ limit })}`, signal),
+
+  /**
+   * POST /api/news/pro/analyze-all — manual full drain (run_pro_cycle).
+   * 15s server-side cooldown unless `force:true`; limit clamped 10..2000.
+   */
+  proAnalyzeAll: (opts: { limit?: number; force?: boolean } = {}) =>
+    send<NewsProAnalyzeAllResponse>("/api/news/pro/analyze-all", { limit: opts.limit ?? 200, ...(opts.force ? { force: true } : {}) }),
+
+  /** POST /api/news/pro/purge — soft IRRELEVANT report (default) or bounded hard delete. */
+  proPurge: (opts: { hardDelete?: boolean; olderThanHours?: number | null; limit?: number } = {}) =>
+    send<NewsProPurgeResponse>("/api/news/pro/purge", {
+      hard_delete: !!opts.hardDelete,
+      older_than_hours: opts.olderThanHours ?? null,
+      limit: opts.limit ?? 5000,
+    }),
+
+  /**
+   * POST /api/news/auto-prune (safe-envelope variant, §27): marks unrelated
+   * articles IRRELEVANT — recoverable, idempotent. Kept separate from the
+   * wave-1 `autoPrune` (typed against the older bare-PruneResult view) so the
+   * pro console can honour `available:false` refusals without touching siblings.
+   */
+  autoPruneSafe: (actor = "pro_user") => send<NewsAutoPruneResponse>("/api/news/auto-prune", { actor }),
 };

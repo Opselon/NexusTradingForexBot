@@ -42,11 +42,15 @@ import { AgeNote, SectionState, fmtAge, TriBadge } from "@/pages/_shared/Section
 import { InfoChip } from "@/pages/_shared/widgets";
 import { ReplayPanel } from "./ReplayPanel";
 import { PriceChart } from "./PriceChart";
+import { MarketRadarPanel } from "./MarketRadarPanel";
+import { FeaturesGrid } from "./FeaturesGrid";
+import { PredictionsTable } from "./PredictionsTable";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatMoney, formatNumber, formatPct, formatPnl, formatPrice, formatTime } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import type { VisualOverlays } from "@/pages/_shared/contracts";
 import "@/pages/_shared/pages.css";
+import "./market-console.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -54,23 +58,6 @@ interface Props {
 }
 
 const LIVE_CONFIRM_TEXT = "LIVE";
-
-/** Feature value classifier for the grid: the backend already sends a
- *  per-feature `status` (VALID/NAN/UNAVAILABLE); we only pick a CSS class. */
-function featureCellClass(status: string): string {
-  const s = (status ?? "").toUpperCase();
-  if (s === "VALID") return "";
-  if (s === "NAN") return "nan";
-  return "unavailable";
-}
-
-function fmtFeature(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "—";
-  const a = Math.abs(value);
-  if (a >= 1000) return value.toFixed(0);
-  if (a >= 10) return value.toFixed(2);
-  return value.toFixed(3);
-}
 
 export default function DashboardPage({ snapshot, nowMs }: Props) {
   const engineCmd = useMutationFeedback();
@@ -284,18 +271,39 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
         </Panel>
       </div>
 
+      {/* Quote strip — the six market answers under the hero chart (all
+          backend fields; nulls stay em-dash, never zero-filled) */}
+      <div className="mc-quote l4-section-gap" aria-label="market quote strip">
+        <div className="mc-quote__item">
+          <span className="k">Bid</span>
+          <span className="v">{formatPrice(snapshot.bid, snapshot.price_digits ?? 2)}</span>
+        </div>
+        <div className="mc-quote__item">
+          <span className="k">Ask</span>
+          <span className="v">{formatPrice(snapshot.ask, snapshot.price_digits ?? 2)}</span>
+        </div>
+        <div className="mc-quote__item">
+          <span className="k">Spread</span>
+          <span className="v">{snapshot.spread === null ? "—" : `${formatNumber(snapshot.spread)} pts`}</span>
+        </div>
+        <div className="mc-quote__item">
+          <span className="k">ATR</span>
+          <span className="v">{formatNumber(snapshot.atr)}</span>
+        </div>
+        <div className="mc-quote__item">
+          <span className="k">Regime</span>
+          <span className="v dim">{snapshot.regime ?? "—"}</span>
+        </div>
+        <div className="mc-quote__item">
+          <span className="k">Price source</span>
+          <span className="v dim">{snapshot.provenance.price}</span>
+        </div>
+        <AgeNote label="tick age" ageSec={snapshot.diagnostics.tick_age_sec} />
+      </div>
+
       <div className="grid cols-2 l4-section-gap">
-        {/* Market state */}
-        <Panel title="Market" right={<AgeNote label="tick age" ageSec={snapshot.diagnostics.tick_age_sec} />}>
-          <div className="grid cols-3">
-            <MetricCard label="Bid" value={formatPrice(snapshot.bid, snapshot.price_digits ?? 2)} />
-            <MetricCard label="Ask" value={formatPrice(snapshot.ask, snapshot.price_digits ?? 2)} />
-            <MetricCard label="Spread" value={snapshot.spread === null ? "—" : `${formatNumber(snapshot.spread)} pts`} />
-            <MetricCard label="ATR" value={formatNumber(snapshot.atr)} />
-            <MetricCard label="Regime" value={snapshot.regime ?? "—"} tone="dim" />
-            <MetricCard label="Price source" value={snapshot.provenance.price} tone="dim" />
-          </div>
-        </Panel>
+        {/* Market Radar — verbatim snapshot.radar (legacy renderMarketRadar) */}
+        <MarketRadarPanel radar={snapshot.radar} nowMs={nowMs} />
 
         {/* Prediction panel — decision-card + probability meters */}
         <Panel
@@ -459,24 +467,14 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
       </div>
 
       <div className="grid cols-2 l4-section-gap">
-        {/* Feature grid — all effective-schema values, honest per-status */}
-        <Panel
-          title={`Features (${snapshot.features.length}${snapshot.model.feature_dimension ? ` · ${snapshot.model.feature_dimension}D` : ""})`}
-          right={<AgeNote label="age" ageSec={snapshot.diagnostics.features_age_sec} />}
-        >
-          {snapshot.features.length === 0 ? (
-            <EmptyState message="No feature vector yet." hint="The engine has not published features this session." />
-          ) : (
-            <div className="l4-features">
-              {snapshot.features.map((f) => (
-                <div key={`${f.index}-${f.name}`} className={`l4-feature ${featureCellClass(f.status)}`} title={`${f.name} · ${f.status}`}>
-                  <div className="n">{f.index} {f.name}</div>
-                  <div className="v">{fmtFeature(f.value)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
+        {/* Feature grid — all effective-schema values, honest per-status
+            (ported FeaturesGrid: category filters, delta pulse, dim header) */}
+        <FeaturesGrid
+          features={snapshot.features}
+          featureDimension={snapshot.model.feature_dimension}
+          ageSec={snapshot.diagnostics.features_age_sec}
+          pulseKey={snapshot.state_version}
+        />
 
         {/* Subsystem health */}
         <Panel title="Subsystem health" right={<span className="timestamp-note">checked {formatTime(health.checked_at)}</span>}>
@@ -547,42 +545,9 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
         </Panel>
       </div>
 
-      {/* Recent audit events = latest predictions (audit_signals passthrough) */}
-      <Panel
-        title="Recent model decisions (audit_signals)"
-        right={<span className="timestamp-note">real rows from the audit DB — never fabricated</span>}
-        tight
-      >
-        {snapshot.predictions.length === 0 ? (
-          <EmptyState message="No model decisions recorded yet." hint="Rows appear once the engine records audit_signals entries." />
-        ) : (
-          <DataTable
-            headers={[
-              { label: "Time" },
-              { label: "Action" },
-              { label: "Confidence", num: true },
-              { label: "Regime" },
-              { label: "P(NO)", num: true },
-              { label: "P(BUY)", num: true },
-              { label: "P(SELL)", num: true },
-              { label: "Reason" },
-            ]}
-          >
-            {snapshot.predictions.slice(0, 12).map((p, i) => (
-              <tr key={p.request_id ?? i}>
-                <td>{p.time ?? "—"}</td>
-                <td>{p.action ?? "—"}</td>
-                <td className="num">{p.confidence === null ? "—" : formatPct(p.confidence * 100, 1)}</td>
-                <td>{p.regime ?? "—"}</td>
-                <td className="num">{p.probabilities.no_trade?.toFixed(3) ?? "—"}</td>
-                <td className="num">{p.probabilities.buy?.toFixed(3) ?? "—"}</td>
-                <td className="num">{p.probabilities.sell?.toFixed(3) ?? "—"}</td>
-                <td>{p.reason ?? "—"}</td>
-              </tr>
-            ))}
-          </DataTable>
-        )}
-      </Panel>
+      {/* Recent audit events = latest predictions — ported PredictionsTable
+          (prob bars from backend softmax values, honest empty state) */}
+      <PredictionsTable predictions={snapshot.predictions} />
 
       {/* Open positions preview + MT5 detail */}
       <div className="grid cols-2">

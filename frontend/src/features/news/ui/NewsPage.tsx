@@ -15,6 +15,7 @@ import { useNewsAiStatus } from "../hooks";
 import { ArticleAiStatusLine } from "./AiStatusLine";
 import { NewsFeedSection } from "./NewsFeedSection";
 import { NewsKeywordsPanel } from "./NewsKeywordsPanel";
+import { NewsProConsolePanel } from "./NewsProConsolePanel";
 import { NewsSourcesPanel } from "./NewsSourcesPanel";
 import { NewsStatePanel } from "./NewsStatePanel";
 import { NewsTimelinePanel } from "./NewsTimelinePanel";
@@ -37,6 +38,7 @@ export default function NewsPage() {
 
       <NewsStatePanel />
       <NewsFeedSection />
+      <NewsProConsolePanel />
       <NewsTimelinePanel />
       <NewsSourcesPanel />
       <NewsKeywordsPanel />

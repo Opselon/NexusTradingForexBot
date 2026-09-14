@@ -4,33 +4,55 @@
  * shows each block only when the backend provided it (no placeholder rows).
  */
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { DataTable, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { HeatBar } from "@/components/viz";
-import { useNewsAnalysis, useNewsArticle } from "../hooks";
-import type { NewsFeedArticle } from "../types";
+import { useNewsAnalysis, useNewsArticle, useNewsProAnswers } from "../hooks";
+import { decodeStringList } from "../model";
+import type { NewsAiAnalysisRow, NewsFeedArticle } from "../types";
 import { asErrorText } from "./shared";
 
 function ratio(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : formatPct(v * 100, 0);
 }
 
+/** Verbatim cell: only backend text, null/undefined/'' all render as "—". */
+function verbatim(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  const s = String(v);
+  return s.trim() === "" ? "—" : s;
+}
+
 export function ArticleDrawer({
   articleId,
   fallback,
   busy,
+  analyzeNote,
   onClose,
   onAnalyze,
 }: {
   articleId: string;
   fallback?: NewsFeedArticle;
   busy?: boolean;
+  /** Last backend verdict for the analyze command (QUEUED / SKIPPED / refusal). */
+  analyzeNote?: string | null;
   onClose: () => void;
   onAnalyze: (force: boolean) => void;
 }) {
   const detail = useNewsArticle(articleId);
   const analysis = useNewsAnalysis(articleId);
+  /* GET /api/news/{id} carries no ai_analysis block (verified in
+   * news_liquidity_mslie_routes.py get_news_detail), so the drawer's LLM verdict
+   * comes from the feed row the list already loaded, or — when the feed row has
+   * none yet — from the newest rows of /api/news/pro/latest-answers that match
+   * this article_id. Both are backend reads; nothing is synthesized. */
+  const proAnswers = useNewsProAnswers(100);
+
+  const aiFromAnswers = useMemo<NewsAiAnalysisRow | null>(() => {
+    const rows = proAnswers.data ?? [];
+    return rows.find((r) => r.article_id === articleId) ?? null;
+  }, [proAnswers.data, articleId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -42,7 +64,7 @@ export function ArticleDrawer({
 
   const art = detail.data?.article ?? null;
   const ana = detail.data?.analysis ?? analysis.data?.analysis ?? null;
-  const ai = fallback?.ai_analysis ?? null;
+  const ai = fallback?.ai_analysis ?? aiFromAnswers ?? null;
   const impacts = detail.data?.impacts ?? [];
   const consensus = detail.data?.consensus ?? fallback?.consensus ?? null;
   const tradeLinks = detail.data?.trade_links ?? [];
@@ -86,7 +108,7 @@ export function ArticleDrawer({
                 ) : null}
                 <div className="news-actions">
                   <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy}>
-                    Analyze with AI
+                    {busy ? "analyzing…" : "Analyze with AI"}
                   </button>
                   <button className="btn small" onClick={() => onAnalyze(true)} disabled={busy}>
                     Force re-analyze
@@ -95,6 +117,7 @@ export function ArticleDrawer({
                     Reload detail
                   </button>
                 </div>
+                {analyzeNote && <div className="news-status-line" style={{ marginTop: 6 }}>{analyzeNote}</div>}
               </section>
 
               <section>
@@ -144,27 +167,63 @@ export function ArticleDrawer({
                 )}
               </section>
 
-              {ai && (
+              {ai ? (
                 <section>
-                  <div className="section-title">AI analysis (LLM)</div>
+                  <div className="section-title">AI analysis (LLM) — verdict fields verbatim</div>
                   <div className="news-ai-card">
                     <div className="statline">
-                      <StatusBadge status={ai.analysis_status ?? "COMPLETE"} />
+                      <StatusBadge status={ai.analysis_status ?? "UNKNOWN"} />
                       {ai.sentiment && <span>sentiment {ai.sentiment}</span>}
                       {ai.provider && <span>{ai.provider}{ai.model ? ` ${ai.model}` : ""}</span>}
                       {ai.analysis_version && <span>v{ai.analysis_version}</span>}
                     </div>
-                    {ai.summary && <div style={{ marginTop: 6 }}>{ai.summary}</div>}
-                    {ai.market_relevance && <div className="tiny muted" style={{ marginTop: 4 }}>market rel: {ai.market_relevance}</div>}
-                    {ai.xauusd_relevance && <div className="tiny muted">XAUUSD rel: {ai.xauusd_relevance}</div>}
-                    {ai.potential_market_impact && <div className="tiny muted">potential impact: {ai.potential_market_impact}</div>}
-                    {ai.key_facts?.map((f) => (
-                      <span className="fact" key={f}>{f}</span>
-                    ))}
-                    {ai.uncertainties && ai.uncertainties.length > 0 && (
-                      <div className="unc">uncertainties: {ai.uncertainties.join("; ")}</div>
+                    <dl className="kv" style={{ marginTop: 6 }}>
+                      <dt>verdict (summary)</dt>
+                      <dd style={{ textAlign: "start" }}>{verbatim(ai.summary)}</dd>
+                      <dt>impact</dt>
+                      <dd style={{ textAlign: "start" }}>{verbatim(ai.potential_market_impact)}</dd>
+                      <dt>confidence</dt>
+                      <dd>{ana?.confidence != null ? formatPct(ana.confidence * 100, 0) : "—"}</dd>
+                      <dt>sentiment / importance</dt>
+                      <dd>
+                        {verbatim(ai.sentiment)} / {verbatim(ai.importance_assessment)}
+                      </dd>
+                      <dt>market / XAUUSD relevance</dt>
+                      <dd style={{ textAlign: "start" }}>
+                        {verbatim(ai.market_relevance)} / {verbatim(ai.xauusd_relevance)}
+                      </dd>
+                      <dt>analyzed_at · provider/model</dt>
+                      <dd>
+                        {ai.analyzed_at ? formatDateTime(ai.analyzed_at) : "—"} ·{" "}
+                        {[ai.provider, ai.model].filter(Boolean).join(" ") || "—"}
+                      </dd>
+                    </dl>
+                    {ai.analysis_status === "failed" && ai.error_detail && (
+                      <div className="tiny" style={{ color: "var(--red)", marginTop: 4 }}>{ai.error_detail}</div>
+                    )}
+                    {ai.insufficient_evidence && <div className="badge warn" style={{ marginTop: 4 }}>INSUFFICIENT EVIDENCE</div>}
+                    {decodeStringList(ai.key_facts).length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        {decodeStringList(ai.key_facts).map((f) => (
+                          <span className="fact" key={f}>{f}</span>
+                        ))}
+                      </div>
+                    )}
+                    {decodeStringList(ai.uncertainties).length > 0 && (
+                      <div className="unc">uncertainties: {decodeStringList(ai.uncertainties).join("; ")}</div>
                     )}
                   </div>
+                  {proAnswers.isPending && !fallback?.ai_analysis && (
+                    <div className="tiny faint" style={{ marginTop: 4 }}>reading latest AI answers…</div>
+                  )}
+                </section>
+              ) : (
+                <section>
+                  <div className="section-title">AI analysis (LLM)</div>
+                  <EmptyState
+                    message="No AI analysis stored for this article."
+                    hint='Press "Analyze with AI" above — the feed/drawer refresh with whatever the backend returns (queued jobs fill in on the next worker pass).'
+                  />
                 </section>
               )}
 

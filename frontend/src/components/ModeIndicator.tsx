@@ -1,15 +1,19 @@
 /**
  * ModeIndicator — LIVE / PAPER / SHADOW mode display.
  *
- * Safety contract:
+ * Safety contract (unchanged):
  *  - The mode shown is ALWAYS the backend's `runtime_mode` / `execution_mode`.
  *  - A backend-reported `mode_source_mismatch` (BUG-232) renders as a hard
  *    error state — a LIVE badge is never trusted without a matching
  *    MT5_LIVE data source.
  *  - This component NEVER infers or defaults the mode client-side.
+ *
+ * Wave-2 pass (Lane P): token-driven depth, LIVE hazard frame, and an honest
+ * source sub-chip built only from fields the snapshot itself carries.
  */
 
 import type { EngineSnapshot } from "@/types/domain";
+import "./shell.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -24,7 +28,7 @@ export function ModeIndicator({ snapshot }: Props) {
   if (snapshot.mode_source_mismatch) {
     return (
       <span
-        className="mode-badge live"
+        className="mode-badge live mismatch"
         title={`MODE-SOURCE MISMATCH: runtime_mode=${mode} but data_source=${snapshot.data_source ?? "UNKNOWN"} (BUG-232 guard). Do not trust this as real broker state.`}
       >
         ⚠ {mode} (SOURCE MISMATCH)
@@ -34,8 +38,12 @@ export function ModeIndicator({ snapshot }: Props) {
 
   const cls = mode.startsWith("LIVE") ? "live" : mode === "PAPER" ? "paper" : mode === "SHADOW" ? "shadow" : "unknown";
   return (
-    <span className={`mode-badge ${cls}`} title={`execution_mode=${snapshot.execution_mode ?? "—"} · data_source=${snapshot.data_source ?? "—"} · adapter=${snapshot.adapter_class ?? "—"}`}>
+    <span
+      className={`mode-badge ${cls}`}
+      title={`execution_mode=${snapshot.execution_mode ?? "—"} · data_source=${snapshot.data_source ?? "—"} · adapter=${snapshot.adapter_class ?? "—"}`}
+    >
       {mode === "UNKNOWN" ? "MODE —" : mode}
+      {mode.startsWith("LIVE") && <span className="mode-src tiny" aria-hidden="true">REAL ORDERS</span>}
     </span>
   );
 }

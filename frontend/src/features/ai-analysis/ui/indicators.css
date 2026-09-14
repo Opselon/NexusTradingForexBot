@@ -1,0 +1,645 @@
+/* ==========================================================================
+   Indicators console (lane I, wave 2) — modern port of the legacy
+   Nexus Technicals widget (Web/tv_widget.js + tv_widget_styles.css,
+   REFERENCE ONLY). Scope: `.ic-console` subtree only — nothing outside the
+   indicators tab is touched.
+
+   Design language: same terminal density rules as legacy (color is never the
+   only signal — every state carries a word + glyph; one accent per meaning)
+   rendered with the React theme tokens (--green buy, --red sell, slate
+   neutral) plus light glassmorphism, subtle CSS-3D card lift and restrained
+   glow accents. No CSS framework, no new deps.
+   ========================================================================== */
+
+.ic-console {
+  --ic-bg: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  --ic-bg2: var(--bg-inset);
+  --ic-line: var(--border);
+  --ic-line2: var(--border-strong);
+  --ic-text: var(--text);
+  --ic-muted: var(--text-dim);
+  --ic-dim: var(--text-faint);
+  --ic-buy: var(--green);
+  --ic-sell: var(--red);
+  --ic-neu: #7f93ab;
+  --ic-arc-idle: #2c3a52;
+  --ic-glow-buy: rgba(62, 207, 142, 0.35);
+  --ic-glow-sell: rgba(242, 86, 77, 0.35);
+  --ic-glow-accent: rgba(65, 166, 242, 0.28);
+
+  display: grid;
+  gap: var(--panel-gap);
+  perspective: 1200px; /* enables the preserve-3d lift on cards */
+}
+
+/* ── glass card base + subtle 3D hover lift ─────────────────────────────── */
+.ic-card {
+  position: relative;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 42%),
+    var(--ic-bg);
+  border: 1px solid var(--ic-line);
+  border-radius: 14px;
+  padding: 10px 12px 12px;
+  color: var(--ic-text);
+  transform-style: preserve-3d;
+  transition:
+    transform 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+  box-shadow:
+    0 1px 0 var(--elevate-hi) inset,
+    0 10px 26px -18px var(--elevate-lo);
+}
+.ic-card:hover {
+  transform: translateY(-2px) rotateX(1.2deg) translateZ(6px);
+  border-color: var(--ic-line2);
+  box-shadow:
+    0 1px 0 var(--elevate-hi) inset,
+    0 0 0 1px rgba(65, 166, 242, 0.07),
+    0 16px 34px -20px var(--elevate-lo);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ic-console *,
+  .ic-card {
+    transition: none;
+  }
+  .ic-card:hover {
+    transform: none;
+  }
+}
+
+/* ── 1) market context strip ────────────────────────────────────────────── */
+.ic-context {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+}
+.ic-idbox {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.ic-flag {
+  color: var(--accent);
+  filter: drop-shadow(0 0 6px var(--ic-glow-accent));
+  font-size: 13px;
+}
+.ic-symbol {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+.ic-tfchip {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.12);
+  border: 1px solid rgba(65, 166, 242, 0.35);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.ic-bars {
+  font-size: 11px;
+  color: var(--ic-dim);
+  font-family: var(--mono);
+}
+.ic-pricewrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-inline-start: auto;
+  min-width: 0;
+}
+.ic-plabel {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ic-muted);
+}
+.ic-price {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 800;
+}
+.ic-updated {
+  font-size: 10.5px;
+  color: var(--ic-dim);
+  font-family: var(--mono);
+}
+.ic-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  border: 1px solid var(--ic-line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--ic-muted);
+}
+.ic-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ic-dim);
+}
+.ic-live-live {
+  color: var(--ic-buy);
+  border-color: rgba(62, 207, 142, 0.4);
+  background: var(--green-dim);
+}
+.ic-live-live .ic-live-dot {
+  background: var(--ic-buy);
+  box-shadow: 0 0 8px var(--ic-glow-buy);
+  animation: ic-pulse 2.4s ease-in-out infinite;
+}
+.ic-live-stale {
+  color: var(--amber);
+  border-color: rgba(235, 161, 63, 0.4);
+  background: var(--amber-dim);
+}
+.ic-live-stale .ic-live-dot {
+  background: var(--amber);
+}
+.ic-live-error {
+  color: var(--ic-sell);
+  border-color: rgba(242, 86, 77, 0.45);
+  background: var(--red-dim);
+}
+.ic-live-error .ic-live-dot {
+  background: var(--ic-sell);
+  box-shadow: 0 0 8px var(--ic-glow-sell);
+}
+.ic-live-loading {
+  color: var(--ic-muted);
+}
+@keyframes ic-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ── stale/error banner ─────────────────────────────────────────────────── */
+.ic-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--ic-line2);
+  font-size: 12px;
+  padding: 8px 12px;
+}
+.ic-banner.is-stale {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-color: rgba(235, 161, 63, 0.35);
+}
+.ic-banner.is-error {
+  color: var(--ic-sell);
+  background: var(--red-dim);
+  border-color: rgba(242, 86, 77, 0.4);
+}
+.ic-banner-ico {
+  font-size: 9px;
+}
+.ic-banner-text {
+  min-width: 0;
+}
+.ic-retry {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ic-text);
+  background: var(--ic-bg2);
+  border: 1px solid var(--ic-line2);
+  border-radius: 7px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.ic-retry:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px -2px var(--ic-glow-accent);
+}
+
+/* ── 2) timeframe toolbar ───────────────────────────────────────────────── */
+.ic-tfbar {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 4px;
+  border: 1px solid var(--ic-line);
+  border-radius: 10px;
+  background: var(--ic-bg2);
+  width: max-content;
+  max-width: 100%;
+}
+.ic-tf {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ic-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.ic-tf:hover {
+  color: var(--ic-text);
+  background: rgba(255, 255, 255, 0.04);
+}
+.ic-tf.active {
+  color: #fff;
+  background: linear-gradient(180deg, var(--accent), #2a7fc2);
+  box-shadow: 0 0 12px -3px var(--ic-glow-accent);
+}
+
+/* ── 3) gauge cards ─────────────────────────────────────────────────────── */
+.ic-cycles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--panel-gap);
+}
+.ic-cycle {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.ic-cycle-name {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ic-muted);
+  align-self: start;
+}
+.ic-cycle.is-hero {
+  border-color: rgba(65, 166, 242, 0.35);
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgba(65, 166, 242, 0.1), transparent 60%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 42%),
+    var(--ic-bg);
+}
+.ic-cycle-svg {
+  width: min(230px, 100%);
+  height: auto;
+  margin-top: 2px;
+}
+.ic-arc-idle {
+  stroke: var(--ic-arc-idle);
+}
+.ic-needle {
+  stroke: #e6edf7;
+}
+.ic-hub {
+  fill: var(--ic-bg2);
+  stroke: #cdd8e6;
+}
+.ic-arc-label {
+  font-family: var(--sans);
+  font-weight: 600;
+  fill: #8ea0bd;
+}
+.ic-arc-label.is-active {
+  font-weight: 800;
+}
+.ic-arc-label.is-active.is-sell {
+  fill: var(--ic-sell);
+}
+.ic-arc-label.is-active.is-buy {
+  fill: #5fb3ff;
+}
+.ic-arc-label.is-active.is-neutral {
+  fill: #ffffff;
+}
+.ic-cycle-verdict {
+  margin-top: -6px;
+}
+.ic-cycle-counts {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+}
+.ic-cycle-meta {
+  font-size: 10.5px;
+  color: var(--ic-dim);
+  margin-top: 4px;
+  font-family: var(--mono);
+}
+
+/* count chips (legacy .tv-cycle-count / .tv-count) */
+.ic-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ic-dim);
+}
+.ic-count-v {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ic-text);
+}
+.ic-count.is-sell .ic-count-v {
+  color: var(--ic-sell);
+}
+.ic-count.is-neutral .ic-count-v {
+  color: var(--ic-neu);
+}
+.ic-count.is-buy .ic-count-v {
+  color: var(--ic-buy);
+}
+
+/* ── verdict pills ─────────────────────────────────────────────────────── */
+.ic-verdict,
+.ic-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 800;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.ic-verdict {
+  font-size: 12px;
+  padding: 3px 12px;
+}
+.ic-verdict.is-big {
+  font-size: 14px;
+  padding: 4px 16px;
+}
+.ic-verdict i,
+.ic-pill i {
+  font-style: normal;
+  font-size: 0.72em;
+}
+.ic-verdict.is-buy,
+.ic-pill.is-buy {
+  color: var(--ic-buy);
+  background: var(--green-dim);
+  border-color: rgba(62, 207, 142, 0.4);
+}
+.ic-verdict.is-buy.is-strong,
+.ic-pill.is-buy.is-strong {
+  background: rgba(62, 207, 142, 0.24);
+  box-shadow: 0 0 10px -3px var(--ic-glow-buy);
+}
+.ic-verdict.is-sell,
+.ic-pill.is-sell {
+  color: var(--ic-sell);
+  background: var(--red-dim);
+  border-color: rgba(242, 86, 77, 0.45);
+}
+.ic-verdict.is-sell.is-strong,
+.ic-pill.is-sell.is-strong {
+  background: rgba(242, 86, 77, 0.24);
+  box-shadow: 0 0 10px -3px var(--ic-glow-sell);
+}
+.ic-verdict.is-neutral,
+.ic-pill.is-neutral {
+  color: var(--ic-neu);
+  background: rgba(127, 147, 171, 0.1);
+  border-color: var(--ic-line2);
+  opacity: 0.88;
+}
+.ic-verdict.is-unknown,
+.ic-pill.is-unknown {
+  color: var(--ic-dim);
+  background: transparent;
+  border-color: var(--ic-line);
+}
+
+/* ── 4) distribution signal bar ─────────────────────────────────────────── */
+.ic-signalbar {
+  display: grid;
+  gap: 8px;
+}
+.ic-signal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ic-signal-name {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ic-muted);
+}
+.ic-signal-meta {
+  font-size: 11px;
+  color: var(--ic-dim);
+  font-family: var(--mono);
+  margin-inline-start: auto;
+}
+.ic-gauge-track {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--ic-bg2);
+  border: 1px solid var(--ic-line);
+}
+.ic-gauge-track.is-empty {
+  align-items: center;
+  justify-content: center;
+}
+.ic-gauge-empty {
+  font-size: 9.5px;
+  color: var(--ic-dim);
+  font-family: var(--mono);
+}
+.ic-gseg {
+  min-width: 6px;
+  flex-basis: 0;
+  transition: flex-grow 0.45s ease;
+}
+.ic-gseg.is-sell {
+  background: linear-gradient(90deg, #dc2626, var(--ic-sell));
+}
+.ic-gseg.is-neutral {
+  background: #3d4c6e;
+}
+.ic-gseg.is-buy {
+  background: linear-gradient(90deg, #2fbf8f, var(--ic-buy));
+}
+.ic-counts {
+  display: flex;
+  gap: 16px;
+}
+
+/* ── 5) reading tables + 6) pivot matrix ───────────────────────────────── */
+.ic-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--panel-gap);
+}
+.ic-panel-h {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ic-panel-t {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+.ic-panel-sub {
+  font-size: 10.5px;
+  color: var(--ic-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ic-panel-chip {
+  margin-inline-start: auto;
+}
+.ic-scroll {
+  overflow: auto;
+  max-height: 420px;
+  border-radius: 8px;
+}
+.ic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ic-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: start;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ic-dim);
+  background: var(--ic-bg2);
+  border-bottom: 1px solid var(--ic-line2);
+  padding: 6px 8px;
+}
+.ic-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(28, 40, 54, 0.6);
+}
+.ic-table tr:last-child td {
+  border-bottom: none;
+}
+.ic-table tbody tr {
+  transition: background 0.15s ease;
+}
+.ic-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.028);
+}
+.ic-table .ta-r {
+  text-align: end;
+}
+.ic-name {
+  color: var(--ic-text);
+  white-space: nowrap;
+}
+.ic-val {
+  text-align: end;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ic-muted);
+  white-space: nowrap;
+}
+.ic-act {
+  text-align: end;
+  white-space: nowrap;
+}
+.ic-pill {
+  font-size: 11px;
+  padding: 1px 9px;
+}
+.ic-empty {
+  padding: 18px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ic-dim);
+}
+
+/* pivot matrix tints: resistance above P, support below, P neutral */
+.ic-pivot-table th[scope="row"] {
+  position: static;
+  background: transparent;
+  border-bottom: none;
+}
+.ic-pivotlvl {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 12px;
+  color: var(--ic-muted);
+  text-align: start;
+  padding: 5px 8px;
+}
+.ic-pivot-table tr.is-res .ic-pivotlvl {
+  color: var(--ic-sell);
+}
+.ic-pivot-table tr.is-sup .ic-pivotlvl {
+  color: var(--ic-buy);
+}
+.ic-pivot-table tr.is-res {
+  background: linear-gradient(90deg, rgba(242, 86, 77, 0.07), transparent 70%);
+}
+.ic-pivot-table tr.is-sup {
+  background: linear-gradient(90deg, rgba(62, 207, 142, 0.07), transparent 70%);
+}
+.ic-pivot-table tr.is-pivot {
+  background: rgba(65, 166, 242, 0.06);
+}
+.ic-pivot-table tr.is-pivot .ic-pivotlvl {
+  color: var(--accent-strong);
+  text-shadow: 0 0 10px var(--ic-glow-accent);
+}
+.ic-pivot-table tr.is-pivot td {
+  border-top: 1px solid rgba(65, 166, 242, 0.25);
+  border-bottom: 1px solid rgba(65, 166, 242, 0.25);
+}
+
+/* loading block reuses the global .skeleton shimmer */
+.ic-loading {
+  display: grid;
+  gap: var(--panel-gap);
+}
+
+body.dense .ic-console {
+  --panel-gap: 10px;
+}
+body.dense .ic-card {
+  padding: 7px 10px 9px;
+  border-radius: 10px;
+}
+body.dense .ic-price {
+  font-size: 17px;
+}
+body.dense .ic-table td,
+body.dense .ic-table th {
+  padding: 3px 6px;
+}
