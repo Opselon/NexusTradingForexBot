@@ -305,7 +305,12 @@ class TickPipeline:
         # or on the first tick; between bars the series cannot change, so
         # the O(n) extraction + 900-bar serialization is CACHED (measured
         # ~6-7ms/tick at 900 bars vs ~0 for the cached path).
-        if getattr(self, "server_state", None) is not None:
+        # BUG-274 (wrapper-state leak): server_state is assigned on the
+        # composition root (LiveEngine boot); the wrapper-local read was
+        # permanently None, so the cached SMC overlay refresh (10s cadence +
+        # bar-close) never ran from this path — the UI chart lost live visuals
+        # except via the manual sync_chart_state callers.
+        if getattr(self.om, "server_state", None) is not None:
             snapshot_key = completed_bars[-1].timestamp if completed_bars else None
             # Also refresh on a 10s cadence so the forming bar's live
             # OHLC updates reach the UI even without a bar close.

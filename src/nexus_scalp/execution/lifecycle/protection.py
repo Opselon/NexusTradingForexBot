@@ -718,7 +718,11 @@ class ProtectionEngine:
         )
         if is_vol_expansion and breakeven_locked and not state.close_requested:
             # Reference for the "price crossed below breakeven" check.
-            ref = getattr(self, "_last_tick_for_ticket", {}).get(pos.ticket)
+            # BUG-274 (wrapper-state leak): _last_tick_for_ticket is an
+            # OrderManager property; on the BOUND ProtectionEngine wrapper the
+            # self.* read always yielded {} — the breach check could never see
+            # a price, so the market-close branch below was permanently dead.
+            ref = getattr(self.om, "_last_tick_for_ticket", {}).get(pos.ticket)
             # Determine whether price has already breached the locked protective stop.
             price_below_be = False
             if pos.type == OrderType.BUY:

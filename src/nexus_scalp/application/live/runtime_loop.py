@@ -325,7 +325,13 @@ class RuntimeLoop:
                 # last snapshot to avoid a per-tick remote RPC (~4ms at
                 # loopback, more over a real gateway).
                 _now = time.time()
-                if getattr(self, "_last_account_refresh", 0.0) + 5.0 < _now:
+                # BUG-274 (wrapper-state leak): the PERF-02 throttle stamps are
+                # WRITTEN to the composition root (self.om._last_account_*);
+                # reading them through `getattr(self, ...)` on the bound
+                # RuntimeLoop wrapper always returned the default, so the 5s
+                # cache NEVER engaged — the exact BUG-169 md7 shape (fixed for
+                # the duplicate-tick guard only, this sibling left behind).
+                if getattr(self.om, "_last_account_refresh", 0.0) + 5.0 < _now:
                     try:
                         live_account = self.om.adapter.get_account_info()
                     except Exception:
@@ -335,7 +341,7 @@ class RuntimeLoop:
                         # _account_age_max_sec (same policy as the G29
                         # live-freshness model). Stale equity must never
                         # silently drive fresh position sizing.
-                        live_account = getattr(self, "_last_account_info", None)
+                        live_account = getattr(self.om, "_last_account_info", None)  # BUG-274
                         if live_account is not None:
                             fresh = classify_account_freshness(
                                 snapshot=live_account,
@@ -371,8 +377,9 @@ class RuntimeLoop:
                     self.om._last_account_refresh = _now
                 else:
                     # Cache hit: reuse last successful account info (the tick
-                    # still advances every iteration).
-                    live_account = getattr(self, "_last_account_info", None)
+                    # still advances every iteration). BUG-274: read the engine
+                    # surface the writer above actually sets.
+                    live_account = getattr(self.om, "_last_account_info", None)
                 tick = self.om.adapter.get_last_tick(symbol)
 
                 # P1 ACCOUNT FRESHNESS GATE: with a STALE account snapshot
@@ -390,7 +397,7 @@ class RuntimeLoop:
 
                 # PHASE 14: periodically refresh the typed broker-aware account
                 # snapshot + REAL runtime mode (throttled - never per tick).
-                if getattr(self, "_last_snapshot_refresh", 0.0) + 5.0 < time.time():
+                if getattr(self.om, "_last_snapshot_refresh", 0.0) + 5.0 < time.time():  # BUG-274
                     with contextlib.suppress(Exception):
                         self.om._account_snapshot = self.om.adapter.get_account_snapshot()
                     self.om._update_runtime_mode()
