@@ -24,12 +24,15 @@ tests/unit/test_bug197_news_count_bounds.py
 tests/unit/test_shadow70_news_family.py
 tests/unit/test_three_model_pipeline.py
 tests/unit/test_news_pro_auto_console.py
+# 2026-09-14 test-recon: tests/unit/news/test_pro_auto.py REMOVED — 3/3 mock-return
+# asserts on a trivial dict mapper, exact overlap with test_news_pro_auto_console.py
+# above; baseline run showed it red-on-mock-shape (evidence: docs/testing/test_inventory.json).
+
 tests/unit/test_s6_hold_score_ownership_golden.py
 tests/unit/test_domain_models.py
 tests/unit/test_s6_telemetry_throttle_golden.py
 tests/unit/test_accounting_retention.py
 tests/ci/test_classify_changes.py
-tests/unit/news/test_pro_auto.py
 tests/unit/news/ingest/test_deduplicator.py
 tests/unit/test_time_machine.py
 tests/unit/test_ai_attribution.py
