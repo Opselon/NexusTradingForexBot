@@ -17,7 +17,6 @@ tests/unit/test_news_bridge_finalize_phase13b.py
 # BUG-258 (Hermes-Swarm, 2026-09-11): news DB list caps silently truncated
 # explicit caller limits (newest-500) -> dataset news-frame export lost the
 # oldest analyzed history; windowed exports dropped rows INSIDE the window.
-tests/unit/test_news_db_truncation_honesty.py
 tests/unit/test_accounting_advanced_metrics.py
 tests/unit/test_performance_metric_truth.py
 tests/unit/test_risk_engine.py
@@ -161,7 +160,6 @@ tests/unit/test_capital_protection_a15.py
 # PERF-DEADLETTER / PERF-HEALTH / PERF-EXEC-TRACE wave (2026-09-10):
 #   gate-first skeleton heal -> dead-letter bounded retention -> /health TTL
 #   cache -> EXEC_TRACE rate limit; plus fail-closed / LIVE-PAPER guard pins.
-tests/unit/test_perf_deadletter_skeleton_repro.py
 tests/unit/test_dead_letter_retention_cap.py
 tests/unit/test_perf_safety_contract_pins.py
 tests/unit/test_perf_health_probe_cache.py
@@ -197,6 +195,56 @@ tests/unit/test_bug269_docker_starter_servable.py
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
 # dies permanently after a legitimate retrain. Champion supersession seam.
 tests/unit/test_bug271_champion_retrain_fingerprint.py
+#   BUG-282 (2026-09-14 wave): RSS pubDate is RFC-822 but the parser accepted
+#   only ISO-8601 and silently fabricated now() on failure (88.1% of rows).
+#   The 60-s publish bucket inside the article-hash identity therefore
+#   re-minted per poll -> dedup/tombstone guards structurally unable to fire
+#   (26,161 byte-identical rows, ~80 MB news.db, lane-04 RC2 + lane-06 §3).
+#   Pins: RFC-822 parses to true event time, honest None + published_at_source
+#   provenance, poll-stable timeless identity, legacy-DB column heal.
+tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
+#   BUG-283 (2026-09-14 wave): the hunter regime gate spoke ("TRENDING",
+#   "RANGING") while every producer emits RegimeType values or nothing at all
+#   -> ALL 14 setup families permanently NO_GO(REGIME_NOT_OK(UNKNOWN)) on
+#   real data (lane-03 §3, verified 500 elite rows -> 0 GO). Pure vocabulary
+#   adapter + regime stamped into retrain records; UNKNOWN/CHOP/FREEZE stay
+#   ineligible (fail-closed); adapter domain pinned against the enum.
+tests/unit/test_bug283_hunter_regime_adapter.py
+tests/unit/test_hunter_metadata_persistence.py
+#   BUG-284 (2026-09-14 wave): Phase-09 suitability REJECT fired on 1-4 sample
+#   families - the evidence contract was inverted (zero evidence passes, ONE
+#   loss blocks): 473/1373 decisions (34.5%) died at SUITABILITY_BELOW_THRESHOLD
+#   (experience-paralysis, lane-08 §4). REJECT demotes to WARN below the shared
+#   EVALUATING floor (5, = StrategyEvaluator.min_samples_evaluating); at/above
+#   the floor the full NO_TRADE rejection semantics are pinned UNCHANGED.
+tests/unit/test_bug284_suitability_micro_sample_floor.py
+#   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
+#   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
+#   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
+#   Recalibrated to $0.45/$0.30 from the live broker window with machine
+#   evidence JSON pinned against the code defaults; extreme spreads still
+#   FREEZE_ALL (fail-closed direction kept).
+tests/unit/test_bug281_chop_boundary_recalibration.py
+#   BUG-280 (2026-09-14 wave): the early-return order-frequency throttle was a
+#   HARDCODED 60s floor pre-empting the configured cooldown_seconds=4.0 that
+#   the post-policy COOLDOWN gate reads (same _last_signal_time field): 78,798
+#   swallowed evaluations vs 1,469 decisions (96:1, RC-4). One authoritative
+#   cooldown policy; pins strict-config still blocks, no magic literal.
+tests/unit/test_bug280_frequency_throttle_unification.py
+#   BUG-279 (2026-09-14 wave): feed-stall FAIL-LOUD — the 09-11 20:00Z freeze
+#   ran 2.5 days: watchdog warned 1828x + re-emitted a HIGH incident every 15s
+#   while runtime_risk_state() kept claiming RUNNING and the BUG-169
+#   duplicate-tick early-return skipped the whole pipeline. Pins: engine-owned
+#   stall episode (one START, one CRITICAL escalation past 900s grace ->
+#   DEGRADED via runtime_risk_state), weekend suppression, recovery reset,
+#   watchdog wiring reads (last-fresh stamp only on NEW ticks).
+tests/unit/test_bug279_feed_stall_fail_loud.py
+#   BUG-278 (2026-09-14 wave): repo-root pytest clobbered the PRODUCTION
+#   champion bundle (force_fresh mint + load_database_config ignoring the
+#   BUG-223 NEXUS_AUDIT_DB seam -> tmp-path rows stamped CHAMPION). Pins:
+#   env-seam precedence, governed-tree force_fresh refusal, quarantine
+#   migration row-scoping + idempotency, src call-site ban.
+tests/unit/test_bug278_test_harness_artifact_isolation.py
 # BUG-257 remainder (NSE-Swarm role 5, 2026-09-13): the P0-2 trust anchor
 # fires at BOOT only; a foreign process re-landing drifted bytes while the
 # engine runs (the 09-11 bb1f0afe shape) serves poisoned weights silently
@@ -221,15 +269,57 @@ tests/unit/test_bug275_hygiene_cadence_clock.py
 # BUG-276 (NSE-Swarm role 7, 2026-09-14): baseline-skeleton CONSTRAINT shadow -
 # gate-first fresh DBs dead-letter every ON CONFLICT producer forever (15 of 17
 # targets). Unique-index heal at baseline + boot + class-wide ON-CONFLICT guard.
-tests/unit/test_bug276_unique_constraint_shadow.py
+# (reconstruction 2026-09-14: the battery itself moved to tests/extended_suite.txt
+#  — measured 1252s aggregate; it now runs on main push + release SHA, and the
+#  CR-007 registry entry records its protection. The comment above stays as the
+#  historical provenance the role-7 wave wrote into this file.)
+
+# ---------------------------------------------------------------------------
+# TIER 1 — PR/PUSH CRITICAL GATE (NSE radical test reconstruction 2026-09-14)
+# Membership is evidence-driven: every file answers "what real defect does it
+# catch?" and runs deterministic + fast. Measured cost outliers moved to
+# tests/extended_suite.txt (Tier 2, main-push). P0 safety domains (risk math,
+# PAPER/LIVE isolation, duplicate execution, DB economic integrity, model
+# artifact contract) are mutation-validated: scripts/testing/mutation_check.py
+# Registry of protected regressions: docs/testing/critical_regressions.md
+# ---------------------------------------------------------------------------
+tests/unit/test_risk_circuit_breakers.py
+tests/unit/test_bug260_margin_usage_enforcement.py
+tests/unit/test_bug258_reversal_risk_bypass.py
+tests/unit/test_bug259_breaker_anchor_restart.py
+tests/unit/test_agent11_execution_risk_forensic.py
+tests/unit/test_confidence_calibration.py
+tests/unit/test_order_write_uncertainty.py
+tests/unit/test_pending_recovery_cause_aware.py
+tests/unit/test_agent6_execution_contract.py
+tests/unit/test_bug185_terminal_state_resolver.py
+tests/unit/test_maintenance_dispatch_guard.py
+tests/unit/test_gate_convergence_evidence.py
+tests/unit/test_persistence_boot_trust.py
+tests/unit/test_persistence_durability_guarantees.py
+tests/unit/test_bug254_executions_idempotency_migration.py
+tests/unit/test_promotion_economic_integrity.py
+tests/unit/test_zero_friction_guard_e1.py
+tests/unit/test_paper_live_training_lineage.py
+tests/unit/test_replay_toggle_guard.py
+tests/unit/test_marketplace_backend.py
+tests/unit/test_bug232_mode_boundary.py
+tests/unit/test_paper_persistence.py
+tests/unit/test_paper_replay_mode.py
+tests/unit/test_p0_producer_regression.py
+tests/unit/test_champion_writer_governance.py
+tests/unit/test_label_integrity.py
+tests/unit/test_agent16_walkforward_purge_embargo_leakage.py
+tests/unit/test_economic_parity_harness.py
+tests/unit/test_market_data_integrity_ag13.py
 # BUG-277 (NSE-Swarm role 9, 2026-09-14): doctor WARNING-actions filter matched
 # the rendered label "WARN" against the producer vocabulary "WARNING" -> the
 # USER ACTION / NEXT guidance surface was permanently dead. Filter fix +
 # vocabulary contract + class-wide verdict=="WARN" comparison guard.
 tests/unit/test_bug277_doctor_warning_vocabulary.py
 
-# BUG-278 (NSE-Swarm role 10, 2026-09-15): durable financial-overflow was write-only
+# BUG-285 (NSE-Swarm role 10, 2026-09-15) — ID renumbered: swarm reserved BUG-278 mid-PR, Hermes wave took it: durable financial-overflow was write-only
 # (perf-wave R2) — stranded rows never returned to the ledger, dir grew unbounded.
 # Worker idle-pass drain + file cap + poison dead-letter + recovery observability.
-tests/unit/test_bug278_overflow_drain.py
-tests/unit/test_bug278_overflow_wiring.py
+tests/unit/test_bug285_overflow_drain.py
+tests/unit/test_bug285_overflow_wiring.py

@@ -1,15 +1,17 @@
-"""BUG-227 Wave B2 regression — pin the 60s order-frequency throttle.
+"""BUG-227 Wave B2 regression — pin the order-frequency throttle behavior.
 
-Census gap: the hard 60s order-interval throttle in
-``SignalPolicy._evaluate_frequency_throttle`` (policy.py:1538-1553) had no
-direct behavioral pin — a mutation of the 60.0s constant (or deletion of the
-early return) would silently change trade frequency.
+Census gap: the order-interval throttle in
+``SignalPolicy._evaluate_frequency_throttle`` had no direct behavioral pin —
+a deletion of the early return would silently change trade frequency.
 
-Pinned behavior (constant read as the module's contract, not a literal):
-  1. A second evaluation within 60s of the last signal returns NO_TRADE with
-     reason ORDER_FREQUENCY_THROTTLED.
-  2. After the window expires the throttle passes (returns None / lets the
-     normal flow proceed).
+BUG-280 (2026-09-14 wave): the window was a HARDCODED 60.0s floor that
+pre-empted the configured cooldown (engine passes cooldown_seconds=4.0;
+production evidence: 78,798 swallowed evaluations vs 1,469 decisions). The
+throttle now reads the ONE configured policy. Pinned behavior (window read
+as policy.cooldown_seconds, never a literal):
+  1. A second evaluation within cooldown_seconds of the last signal returns
+     NO_TRADE with reason ORDER_FREQUENCY_THROTTLED.
+  2. After the window expires the throttle passes (normal flow proceeds).
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ import torch
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.signals.policy import SignalPolicy
 
-THROTTLE_SECONDS = 60.0
+THROTTLE_SECONDS_DEFAULT = 3.0  # SignalPolicy class default (configured cooldown)
 
 
 def _feature_vector() -> FeatureVector:
@@ -43,7 +45,8 @@ def test_order_throttle_blocks_within_60s() -> None:
     policy = SignalPolicy()
     fv = _feature_vector()
     now = datetime.now(UTC)
-    policy._last_signal_time = now - timedelta(seconds=10.0)  # inside window
+    assert policy.cooldown_seconds == THROTTLE_SECONDS_DEFAULT
+    policy._last_signal_time = now - timedelta(seconds=policy.cooldown_seconds - 1.0)  # inside
 
     proposal = policy.evaluate_probabilities(
         probabilities=torch.tensor([[0.65, 0.04, 0.24, 0.07]]),
@@ -58,9 +61,9 @@ def test_order_throttle_releases_after_window() -> None:
     policy = SignalPolicy()
     fv = _feature_vector()
     now = datetime.now(UTC)
-    # 61s after the last signal: throttle window expired. The decision path
+    # window+1s after the last signal: throttle expired. The decision path
     # must NOT be blocked by the throttle (any other gate may still reject).
-    policy._last_signal_time = now - timedelta(seconds=THROTTLE_SECONDS + 1.0)
+    policy._last_signal_time = now - timedelta(seconds=policy.cooldown_seconds + 1.0)
 
     proposal = policy.evaluate_probabilities(
         probabilities=torch.tensor([[0.65, 0.04, 0.24, 0.07]]),

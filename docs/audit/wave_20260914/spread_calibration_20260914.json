@@ -1,0 +1,49 @@
+{
+ "bug": "BUG-281",
+ "purpose": "Machine-readable evidence for the HIGH_SPREAD_CHOP boundary recalibration (2026-09-14 wave). Code defaults and hysteresis MUST agree with this file (pinned by tests/unit/test_bug281_chop_boundary_recalibration.py::test_calibration_evidence_file_agrees_with_code).",
+ "live_window": {
+  "source": "artifacts/audit.db audit_signals.spread_usd (broker ticks on the live account, PAPER decisions)",
+  "window_utc": "2026-09-06T23:45 .. 2026-09-11T19:59",
+  "n": 1406,
+  "p10": 0.14,
+  "p25": 0.17,
+  "p50": 0.23,
+  "p75": 0.3,
+  "p90": 0.36,
+  "p95": 0.42,
+  "p99": 0.47,
+  "max": 0.74
+ },
+ "guardian_rows": {
+  "source": "same table, blocked_by=REGIME_GUARDIAN (HIGH_SPREAD_CHOP FREEZE_ALL kills)",
+  "n": 356,
+  "min": 0.18,
+  "p10": 0.23,
+  "p50": 0.3,
+  "max": 0.63,
+  "share_below_old_enter_0p25": 0.1264
+ },
+ "old_calibration": {
+  "source": "BUG-132 (2026-05..08, 100k real M1 bars): p50=$0.04, p90=$0.20, p95=$0.24, p99=$0.34, max=$6.22",
+  "enter_usd": 0.25,
+  "exit_usd": 0.18,
+  "note": "configs/execution_assumptions.json already records BOTH distributions and flags the ~3.7x p50 disagreement between windows; the live broker window is the authoritative substrate for the live engine."
+ },
+ "bar_plane_census": {
+  "source": "artifacts/candle_intel.db market_regimes (frozen 2026-09-07, dead subsystem)",
+  "HIGH_SPREAD_CHOP": 2228,
+  "RANGING_MEAN_REVERSION": 1827,
+  "TRENDING_MOMENTUM": 390,
+  "UNKNOWN": 33,
+  "VOLATILITY_EXPANSION": 32,
+  "chop_share_pct": 49.4
+ },
+ "chosen": {
+  "enter_usd": 0.45,
+  "exit_usd": 0.3,
+  "band_usd": 0.15,
+  "rationale": "enter ~p98 of the live window (genuine widening, e.g. session rolls/news, begins ~0.50 as the 09-11 19:59 tail shows); exit ~p75 keeps a WIDE hysteresis band so the Schmitt trigger cannot oscillate around normal noise; release is always immediate-safe (the guard is on the FREEZE side). Coherent veto ORDERING: candidate-relative gates (spread/ATR 0.18, spread/TP 0.15) evaluate entry COST vs setup geometry and stay; risk hard ceiling max_spread_points=60 == $0.60 USD (XAUUSD point=$0.01) remains ABOVE chop-enter: chop fires first, hard reject is the outer bound.",
+  "domain_note": "ALL chop boundaries are USD (classifier rounds spread to cents, regime_classifier.py:243); risk max_spread_points is POINTS ($0.01/pt for XAUUSD). The unit mix was part of the original confusion; the ordering pin test converts to USD before comparing."
+ },
+ "red_before": "tests/unit/test_bug281_chop_boundary_recalibration.py under the OLD band: test_normal_live_spread_not_chop[0.30/0.36/0.42] RED (frozen), test_chop_boundary_exact RED, test_schmitt_exit_band RED; after defaults 0.45/0.30 all GREEN while test_extreme_spread_still_chop_freeze_all stays GREEN (fail-closed direction preserved)."
+}

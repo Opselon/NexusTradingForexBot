@@ -220,7 +220,7 @@ class AuditRepository:
         self.financial_queue_backpressure: int = 0
         self.financial_events_overflowed: int = 0
         self.financial_events_failed: int = 0
-        # BUG-278: durable-overflow RECOVERY surface. The overflow file was
+        # BUG-285: durable-overflow RECOVERY surface. The overflow file was
         # the last line of defense AND a dead end (no reader existed — the
         # 2026-09-14 perf wave R2): a stranded financial row stayed stranded
         # and the directory grew unbounded. recovered = rows re-inserted by
@@ -2143,7 +2143,7 @@ class AuditRepository:
                 pass
 
             if not batch:
-                # BUG-278 (perf wave R2): idle pass — the writer has capacity
+                # BUG-285 (perf wave R2): idle pass — the writer has capacity
                 # again, so recover financial rows stranded by a past
                 # saturation. Bounded by cadence + batch width and confined
                 # to THIS worker thread (never the tick path, INV-001).
@@ -2274,13 +2274,13 @@ class AuditRepository:
 
     _FINANCIAL_OVERFLOW_DIR = "artifacts/audit_overflow"
 
-    #: BUG-278 (perf wave R2): HARD cap on pending overflow files. Queue
+    #: BUG-285 (perf wave R2): HARD cap on pending overflow files. Queue
     #: saturation that outlives the recovery cadence must never fill the
     #: disk; past the cap a row goes to the bounded dead-letter table
     #: (counted, loud) instead of spawning another file.
     _FINANCIAL_OVERFLOW_MAX_FILES = 5000
 
-    #: BUG-278: recovery cadence + per-pass batch width. The drain runs on
+    #: BUG-285: recovery cadence + per-pass batch width. The drain runs on
     #: the audit worker thread (idle passes only) — never on the tick path.
     OVERFLOW_RECOVERY_INTERVAL_SEC: float = 60.0
     OVERFLOW_RECOVERY_BATCH: int = 500
@@ -2355,7 +2355,7 @@ class AuditRepository:
         try:
             overflow_dir = self._overflow_dir()
             overflow_dir.mkdir(parents=True, exist_ok=True)
-            # BUG-278: bounded pending volume. The cap check is a cheap
+            # BUG-285: bounded pending volume. The cap check is a cheap
             # directory count on the (already exceptional) overflow path —
             # never on the normal enqueue route. At the cap the row goes to
             # the dead-letter store (bounded retention owns it) and the loss
@@ -2370,7 +2370,7 @@ class AuditRepository:
                     query=query,
                     args=args,
                     error=error or RuntimeError("QUEUE_SATURATED"),
-                    payload_note="overflow file cap reached (BUG-278)",
+                    payload_note="overflow file cap reached (BUG-285)",
                 )
                 logger.critical(
                     "FINANCIAL AUDIT OVERFLOW CAP — %d pending overflow files; row routed to "
@@ -2410,7 +2410,7 @@ class AuditRepository:
             )
 
     def _drain_financial_overflow_due(self, conn: sqlite3.Connection) -> None:
-        """BUG-278: cadence-gated recovery of stranded overflow rows.
+        """BUG-285: cadence-gated recovery of stranded overflow rows.
 
         The durable overflow file used to be terminal: every producer path
         (audit worker batch-retry, saturated-queue overflow) that needed it
@@ -2511,7 +2511,7 @@ class AuditRepository:
                         query=str(payload.get("query") or ""),
                         args=tuple(fail_args) if isinstance(fail_args, list) else (),
                         error=row_err,
-                        payload_note=f"overflow drain replay failure (BUG-278) file={path.name}",
+                        payload_note=f"overflow drain replay failure (BUG-285) file={path.name}",
                     )
                 except Exception:
                     pass
@@ -2541,7 +2541,7 @@ class AuditRepository:
 
     def overflow_pending_count(self) -> int:
         """Public recovery surface: how many stranded overflow rows are
-        still waiting on disk right now (BUG-278). -1 = unreadable."""
+        still waiting on disk right now (BUG-285). -1 = unreadable."""
         if not self._is_sqlite:
             return 0
         try:

@@ -52,6 +52,26 @@ import urllib.request
 #:   'Code Quality & Tests']
 #: Aggregate/Heavy-CI legs are NOT required on main pushes (they run on the
 #: ci-tests branch / manual dispatch) and are intentionally absent here.
+#:
+#: 2026-09-14 test reconstruction NOTE: the required-context SET is
+#: deliberately UNCHANGED (protection untouched). What changed is what the
+#: contexts actually EXECUTE on each event (tests-os.yml):
+#:   * 'Py Tests (windows-latest)' — PR: OS-skewed subset (fast);
+#:     main push: FULL critical suite (product runtime).
+#:   * 'Py Tests (macos-latest)' — PR: always-report green-with-reason
+#:     (DEC-0008 pattern, ~1min, no torch install); main push / Monday
+#:     schedule / platform-path changes: FULL critical suite (advisory truth;
+#:     nothing ships for macOS, but a real regression still colors the context
+#:     red on main where it is re-required for the NEXT merge — honest drift
+#:     detection without paying 5x per PR).
+#:   * Tier 2 (tests/extended_suite.txt) runs on main push as the
+#:     'Extended Validation (Tier 2)' job of CI and is executed ON THE RELEASE
+#:     SHA by release.yml's gates job (replacing the duplicated ruff/mypy/
+#:     critical re-run there). A red Tier-2 on the release SHA blocks the tag.
+#: If the macOS PR-lane report is ever made non-green by design, protection
+#: must be edited atomically with this tuple (drift test:
+#: tests/unit/test_release_auth_gate.py::
+#: test_required_list_matches_live_branch_protection).
 REQUIRED_MAIN_CI_CHECKS: tuple[str, ...] = (
     "CI Integrity and Change Classification",
     "Code Quality & Tests",

@@ -1,4 +1,4 @@
-"""BUG-278 (NSE-Swarm role 10, 2026-09-15): durable financial-overflow was WRITE-ONLY.
+"""BUG-285 (NSE-Swarm role 10, 2026-09-15): durable financial-overflow was WRITE-ONLY.
 
 The criticality-aware enqueue keeps financial audit rows durable through queue
 saturation by writing them to ``artifacts/audit_overflow/`` — and that was the
@@ -242,7 +242,7 @@ def test_unreplayable_overflow_is_dead_lettered_not_retried(ovf, payload) -> Non
     assert repo.financial_overflow_recovered == 0
     # durably recorded in the dead-letter table (the new terminal home)
     dl = repo.get_dead_letter_rows()
-    assert any("BUG-278" in str(r.get("payload_note", "")) for r in dl), dl
+    assert any("BUG-285" in str(r.get("payload_note", "")) for r in dl), dl
     # retired: no longer pending, no longer in the dir (no forever-retry loop)
     assert not p.exists()
     assert repo.overflow_pending_count() == 0

@@ -1899,18 +1899,29 @@ class SignalPolicy:
         regime_conf: float,
         execution_id: str = "",
     ) -> TradeProposal | None:
-        # 1. Enforce ORDER_FREQUENCY_THROTTLED check (MIN_ORDER_INTERVAL_SECONDS = 60)
-        if self._last_signal_time is not None:
-            elapsed = (now - self._last_signal_time).total_seconds()
-            if elapsed < 60.0:
-                return self._build_no_trade(
-                    tick=current_tick,
-                    confidence=0.0,
-                    reason="ORDER_FREQUENCY_THROTTLED",
-                    regime_str=regime_str,
-                    regime_conf=regime_conf,
-                    execution_id=execution_id,
-                )
+        # BUG-280 (2026-09-14 wave): the ONLY entry-frequency policy is the
+        # configured ``cooldown_seconds`` (engine passes 4.0; class default
+        # 3.0). This seam previously carried a HARDCODED 60-second floor that
+        # pre-empted the post-policy COOLDOWN_ACTIVE gate at policy.py:1276
+        # (which reads the same state field): production evidence — 78,798
+        # evaluations swallowed vs 1,469 persisted decisions across ~45
+        # active hours, a 96:1 ratio, entry-rate capped at 1/min while the
+        # operator-visible configuration said 4s. Two timers, one physical
+        # fact = one veto must own it. The strictest configured value wins;
+        # no threshold is loosened below what the composition root passes —
+        # the hardcoded magic constant is what dies.
+        if (
+            self._last_signal_time is not None
+            and (now - self._last_signal_time).total_seconds() < self.cooldown_seconds
+        ):
+            return self._build_no_trade(
+                tick=current_tick,
+                confidence=0.0,
+                reason="ORDER_FREQUENCY_THROTTLED",
+                regime_str=regime_str,
+                regime_conf=regime_conf,
+                execution_id=execution_id,
+            )
         return None
 
     def _expected_live_ticket_identity(self, current_tick: TickData) -> tuple[str | None, int]:

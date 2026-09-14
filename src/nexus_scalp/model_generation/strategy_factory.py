@@ -24,6 +24,24 @@ from nexus_scalp.model_generation.setup_detector import SetupDetection
 
 HUNTER_VERSION = "2.0.0"
 
+# BUG-283 (2026-09-14 wave, lane-03 §3): the live regime producer emits
+# RegimeType values (TRENDING_MOMENTUM / RANGING_MEAN_REVERSION /
+# VOLATILITY_EXPANSION / HIGH_SPREAD_CHOP / MACRO_NEWS_FREEZE), but every hunter
+# strategy gates on the short MSLIE-style vocabulary ("TRENDING"/"RANGING").
+# The intersection was EMPTY, so every row on every production dataset died at
+# REGIME_NOT_OK(UNKNOWN) and all 14 setup families were permanently NO_GO — the
+# "9 dead families unblocked" claim was nominal only. This pure adapter maps
+# the producer vocabulary onto the hunter contract; UNKNOWN is NOT mapped, so
+# an unlabeled row stays NO_GO (never fabricate eligibility — INV: fail-closed).
+_REGIME_NORMALIZE: dict[str, str] = {
+    "TRENDING_MOMENTUM": "TRENDING",
+    "VOLATILITY_EXPANSION": "TRENDING",
+    "RANGING_MEAN_REVERSION": "RANGING",
+    "MIXED": "RANGING",  # per governance: mixed is treated as ranging
+    "HIGH_SPREAD_CHOP": "CHOP",
+    "MACRO_NEWS_FREEZE": "FREEZE",
+}
+
 
 @dataclass(frozen=True)
 class HunterStrategy:
@@ -300,6 +318,10 @@ class StrategyFactory:
             reasons.append(f"SPREAD_TOO_WIDE({spread / atr:.3f}>{strat.max_spread_atr})")
 
         regime = str(row.get("regime", "UNKNOWN")).upper()
+        # BUG-283: normalize producer vocabulary (TRENDING_MOMENTUM -> TRENDING...)
+        # before the membership gate. Unmapped values (incl. UNKNOWN) pass through
+        # unchanged and stay NO_GO.
+        regime = _REGIME_NORMALIZE.get(regime, regime)
         if regime not in strat.regime_ok:
             reasons.append(f"REGIME_NOT_OK({regime})")
 
@@ -308,9 +330,14 @@ class StrategyFactory:
             if not session_hit:
                 reasons.append(f"SESSION_GATE({strat.session_gate})")
 
-        if strat.direction_alignment and setup.factors.get("direction", 0) == 0:
+        if strat.direction_alignment and not setup.factors.get("direction", 0):
             reasons.append("NO_DIRECTION_ALIGNMENT")
 
+        setup_direction = setup.factors.get("direction")
+        if setup_direction not in (1.0, -1.0, 1, -1):
+            # Directionless setup: never fabricate a side. Persist None so
+            # downstream readers can distinguish "unknown" from SELL.
+            setup_direction = None
         stop_dist = setup.factors.get("stop_hunt_depth_atr") or 0.0
         if stop_dist == 0.0:
             stop_dist = atr * strat.atr_stop_mult
@@ -326,7 +353,11 @@ class StrategyFactory:
                 reasons=tuple(reasons),
                 stop_distance=round(stop_dist, 4),
                 tp_distance=round(tp_dist, 4),
-                direction=("BUY" if setup.factors.get("direction", 0) > 0 else "SELL"),
+                direction=(
+                    "BUY"
+                    if setup_direction is not None and setup_direction > 0
+                    else ("SELL" if setup_direction is not None else None)
+                ),
             )
 
         return EntryDecision(
@@ -336,7 +367,11 @@ class StrategyFactory:
             reasons=("HUNTER_QUALIFIED",),
             stop_distance=round(stop_dist, 4),
             tp_distance=round(tp_dist, 4),
-            direction=("BUY" if setup.factors.get("direction", 0) > 0 else "SELL"),
+            direction=(
+                "BUY"
+                if setup_direction is not None and setup_direction > 0
+                else ("SELL" if setup_direction is not None else None)
+            ),
         )
 
     @staticmethod

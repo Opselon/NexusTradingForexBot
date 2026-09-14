@@ -10,12 +10,15 @@ name: QA Deep Assurance
 # A weekly full-repo pytest-mutation sweep is NOT practical (the engine's
 # honest runner takes ~3min for 9 anchor mutations; whole-repo would be
 # hours); the anchor catalog IS the tracked critical production surface.
+#
+# 2026-09-14 test reconstruction: PR/push triggers REMOVED. This lane is not
+# a required check, yet it fired a windows-latest runner with a full torch
+# install on EVERY PR/main push to run an ~8-second fast battery — pure waste
+# (measured in the CI cost report). The weekly schedule + manual dispatch
+# cover it honestly; a cheaper scoped mutation pass (--changed) already runs
+# per-PR via dependency-lock.yml's migration-safety job.
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
   schedule:
     # weekly, Sundays 03:30 UTC (off-peak; Iran local ~07:00)
     - cron: "30 3 * * 0"

@@ -24,6 +24,11 @@ import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.news.models import (
+    PUBLISHED_AT_SOURCE_FEED,
+    PUBLISHED_AT_SOURCE_INGEST,
+)
+
 _TITLE_CLEAN_RE = re.compile(r"[^a-z0-9\s]")
 _WS_RE = re.compile(r"\s+")
 
@@ -121,7 +126,7 @@ def compute_article_hash(
     url: str,
     title: str,
     source_id: str,
-    published_at: datetime,
+    published_at: datetime | None,
     summary: str = "",
     body: str = "",
 ) -> str:
@@ -129,21 +134,23 @@ def compute_article_hash(
 
     Published time is bucketed to 60s so identical stories published seconds
     apart still merge, while genuinely different coverage stays distinct.
+
+    BUG-282: ``published_at=None`` means the feed carried NO parseable
+    publication time. The time bucket is then omitted entirely, making the
+    identity stable across re-polls. Previously the caller fabricated
+    ``now()`` per poll, which re-minted a fresh hash every ~40 minutes for
+    feeds without ISO timestamps (88% of rows) and defeated the
+    article_hash/tombstone dedup guards structurally (26,161 byte-identical
+    rows, ~80 MB in the production news.db — wave lane-04 RC2 / lane-06 §3).
     """
-    if published_at.tzinfo is None:
-        published_at = published_at.replace(tzinfo=UTC)
-    time_bucket = int(published_at.timestamp()) // 60
+    fields = [normalize_url(url), normalize_title(title), source_id]
+    if published_at is not None:
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=UTC)
+        fields.append(str(int(published_at.timestamp()) // 60))
+    fields.append(_content_fingerprint(summary, body, title))
     digest = hashlib.sha256()
-    payload = "|".join(
-        [
-            normalize_url(url),
-            normalize_title(title),
-            source_id,
-            str(time_bucket),
-            _content_fingerprint(summary, body, title),
-        ]
-    )
-    digest.update(payload.encode("utf-8"))
+    digest.update("|".join(fields).encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -151,13 +158,17 @@ def canonicalize_item(item: dict[str, Any], source_id: str, source_name: str) ->
     """Normalizes one raw feed item into the canonical article dict shape.
 
     ``published_at`` / ``updated_at`` are returned as datetime objects
-    (UTC); consumers serialize for persistence.
+    (UTC) or ``None`` when the feed carried no real publication time —
+    BUG-282: never silently fabricated to wall clock. ``published_at_source``
+    records the provenance ('FEED' vs 'INGEST_TIME') so decay/staleness
+    consumers can distinguish a genuine event time from an ingest stamp.
+    Consumers serialize for persistence.
     """
     title = (item.get("title") or "").strip()
     url = (item.get("url") or "").strip()
     summary = (item.get("summary") or "").strip()
     body = (item.get("body") or "").strip()
-    published = item.get("published_at") or datetime.now(UTC)
+    published = item.get("published_at")
     updated = item.get("updated_at")
     published_dt = _as_dt(published)
     updated_dt = _as_dt(updated) if updated else None
@@ -175,6 +186,9 @@ def canonicalize_item(item: dict[str, Any], source_id: str, source_name: str) ->
         "summary": summary,
         "body": body,
         "published_at": published_dt,
+        "published_at_source": PUBLISHED_AT_SOURCE_FEED
+        if published_dt
+        else PUBLISHED_AT_SOURCE_INGEST,
         "updated_at": updated_dt,
         "source_id": source_id,
         "source_name": source_name,
@@ -184,8 +198,13 @@ def canonicalize_item(item: dict[str, Any], source_id: str, source_name: str) ->
     }
 
 
-def _as_dt(value: Any):
-    """Coerces a datetime | ISO string | None to a UTC datetime."""
+def _as_dt(value: Any) -> datetime | None:
+    """Coerces a datetime | ISO string | None to a UTC datetime.
+
+    BUG-282: returns None (instead of fabricating now()) when the value is
+    absent/unparseable, so the article identity and the persisted provenance
+    both record the missing event time honestly.
+    """
     if isinstance(value, datetime):
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
     if isinstance(value, str) and value:
@@ -194,7 +213,19 @@ def _as_dt(value: Any):
             return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
         except ValueError:
             pass
-    return datetime.now(UTC)
+        # RFC-822 (RSS pubDate) forms reaching the dedup layer from any
+        # producer, not just the RSS adapter.
+        try:
+            from email.utils import parsedate_to_datetime
+
+            dt = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if dt is not None:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
+    return None
 
 
 class NewsDeduplicator:

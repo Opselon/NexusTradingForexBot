@@ -981,7 +981,7 @@ def _risk_section(engine: Any) -> dict[str, Any]:
             getattr(audit, "financial_events_overflowed", 0) or 0
         )
         out["financial_events_failed"] = int(getattr(audit, "financial_events_failed", 0) or 0)
-        # BUG-278: overflow RECOVERY visibility — an overflowed row is only
+        # BUG-285: overflow RECOVERY visibility — an overflowed row is only
         # durable if something reads it back. recovered = rows returned to
         # the ledger by the audit worker's drain; failed = replay rejects +
         # cap refusals; pending = files still stranded on disk right now.

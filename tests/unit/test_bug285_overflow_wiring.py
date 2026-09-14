@@ -1,4 +1,4 @@
-"""NSE-Swarm role-10 wiring pin: the BUG-278 financial-overflow drain must be
+"""NSE-Swarm role-10 wiring pin: the BUG-285 financial-overflow drain must be
 hooked to the audit worker's idle pass (the boot-only retention trap)."""
 
 from __future__ import annotations

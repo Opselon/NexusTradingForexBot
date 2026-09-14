@@ -86,7 +86,9 @@ def test_degraded_inference_proposal_carries_execution_id(policy) -> None:
 
 def test_frequency_throttled_proposal_carries_execution_id(policy) -> None:
     base = datetime.now(UTC)
-    policy._last_signal_time = base - timedelta(seconds=10.0)  # inside 60s window
+    # BUG-280: one configured cooldown policy (class default 3.0s) — inside
+    # the window is now <cooldown_seconds, not the retired hardcoded 60s.
+    policy._last_signal_time = base - timedelta(seconds=1.0)  # inside window
     proposal = policy.evaluate_probabilities(
         probabilities=torch.tensor([[0.65, 0.04, 0.24, 0.07]]),
         current_tick=_tick(base, seq=1),

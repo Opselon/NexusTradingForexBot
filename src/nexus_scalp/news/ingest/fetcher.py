@@ -292,6 +292,11 @@ class NewsIngestor:
             # Brand-new canonical article.
             article_id = f"news_{uuid.uuid4().hex[:12]}"
             published = normalize_datetime(_parse_dt(canonical["published_at"]))
+            # BUG-282: honest provenance. 'FEED' = parsed from the source;
+            # 'INGEST_TIME' = no parseable publication time existed and the
+            # stored stamp is the ingest wall clock (decay/staleness consumers
+            # must treat these as lower-confidence event times).
+            pub_source = canonical.get("published_at_source") or "UNKNOWN"
             updated_raw = canonical.get("updated_at")
             updated = normalize_datetime(_parse_dt(updated_raw)) if updated_raw else None
             self.db.insert_article(
@@ -306,6 +311,7 @@ class NewsIngestor:
                     "source_id": source_id,
                     "source_name": source_name,
                     "published_at": published.isoformat(),
+                    "published_at_source": pub_source,
                     "updated_at": updated.isoformat() if updated else "",
                     "raw_categories": canonical.get("raw_categories", []),
                     "entities": [],
