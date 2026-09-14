@@ -413,6 +413,17 @@ class LiveEngine:
             spread=spread,
             atr_m1=fv.atr_m1,
         )
+        # BUG-283: carry the CURRENT regime label so downstream consumers
+        # (hunter StrategyFactory, evaluation_regime_performance) see the
+        # producer vocabulary instead of an implicit UNKNOWN. Width check above
+        # is feat_*-scoped; these metadata keys never affect the tensor. When
+        # no regime state exists yet the key stays 'UNKNOWN' — the hunter gate
+        # fails closed on it (never fabricate eligibility).
+        try:
+            rs = self._last_regime_state
+            rec["regime"] = str(rs.regime_type.value) if rs is not None else "UNKNOWN"
+        except Exception:  # pragma: no cover - defensive; record-building never dies on metadata
+            rec["regime"] = "UNKNOWN"
         return rec
 
     def _rebind_trainer_to_bundle(self) -> None:

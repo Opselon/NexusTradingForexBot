@@ -205,6 +205,14 @@ tests/unit/test_bug271_champion_retrain_fingerprint.py
 #   Pins: RFC-822 parses to true event time, honest None + published_at_source
 #   provenance, poll-stable timeless identity, legacy-DB column heal.
 tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
+#   BUG-283 (2026-09-14 wave): the hunter regime gate spoke ("TRENDING",
+#   "RANGING") while every producer emits RegimeType values or nothing at all
+#   -> ALL 14 setup families permanently NO_GO(REGIME_NOT_OK(UNKNOWN)) on
+#   real data (lane-03 §3, verified 500 elite rows -> 0 GO). Pure vocabulary
+#   adapter + regime stamped into retrain records; UNKNOWN/CHOP/FREEZE stay
+#   ineligible (fail-closed); adapter domain pinned against the enum.
+tests/unit/test_bug283_hunter_regime_adapter.py
+tests/unit/test_hunter_metadata_persistence.py
 #   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
 #   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
 #   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
