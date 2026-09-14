@@ -19,6 +19,7 @@ Key Enterprise Features & Hidden MT5 Mechanisms:
 
 import contextlib
 import logging
+import math
 import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -909,9 +910,18 @@ class DirectMT5Adapter(IMT5Port):
 
         Delegates to the official get_rate_history() provider and maps onto
         the internal BarData contract (UTC timestamps preserved).
+
+        BUG-285 (L11-2, input-validation lane): get_rate_history already runs
+        validate_ohlc_bars but only REPORTS malformed rows; the mapping loop
+        then forwarded NaN/inf/inverted-OHLC bars into the canonical series
+        (corrupted price is a MUST-FAIL-CLOSED input class). Structurally
+        invalid bars are now dropped here, at the boundary — loudly, once per
+        call, so a broker/terminal fault becomes visible instead of poisoning
+        candles downstream (feature windows, replay, training).
         """
         rate_bars = self.get_rate_history(symbol=symbol, timeframe=timeframe, count=count)
         bars: list[BarData] = []
+        dropped = 0
         for r in rate_bars:
             if (
                 r.time_utc is None
@@ -921,18 +931,40 @@ class DirectMT5Adapter(IMT5Port):
                 or r.close is None
             ):
                 continue
+            o, h, low, c = (float(r.open), float(r.high), float(r.low), float(r.close))
+            if (
+                not all(math.isfinite(v) for v in (o, h, low, c))
+                or min(o, c) <= 0.0  # non-positive price: not a real quote
+                or h < low
+                or h < o
+                or h < c
+                or low > o
+                or low > c
+            ):
+                dropped += 1
+                continue
             bars.append(
                 BarData(
                     symbol=symbol,
                     timeframe=str(timeframe).upper(),
                     timestamp=r.time_utc,
-                    open=float(r.open),
-                    high=float(r.high),
-                    low=float(r.low),
-                    close=float(r.close),
+                    open=o,
+                    high=h,
+                    low=low,
+                    close=c,
                     tick_volume=int(r.tick_volume or 0),
                     is_complete=True,
                 )
+            )
+        if dropped:
+            logger.error(
+                "[MT5_CHART] event=HISTORY_INVALID_DROPPED symbol=%s timeframe=%s "
+                "received=%s dropped=%s kept=%s reason=non_finite_or_inverted_ohlc",
+                symbol,
+                str(timeframe).upper(),
+                len(rate_bars),
+                dropped,
+                len(bars),
             )
         return bars
 
