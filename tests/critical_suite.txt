@@ -203,3 +203,17 @@ tests/unit/test_bug271_champion_retrain_fingerprint.py
 # until the next refusal. Alert-only champion-drift sentinel wired into
 # MaintenanceCycle.run_cycle (2-sighting confirm, throttled, never blocks).
 tests/unit/test_bug257_champion_drift_sentinel.py
+
+# BUG-274 (NSE-Swarm role 6, 2026-09-14): bound-seam wrapper-state leak class.
+# P1/L5-L8/S10 extraction left 13 getattr(self, ...) reads in BOUND wrappers
+# (BarHandler/RuntimeLoop/TickPipeline/ProtectionEngine) targeting
+# composition-root attributes -> permanent defaults: PERF-02 5s throttles never
+# engage (per-tick gateway RPC), hourly online-train gates fire per bar,
+# candle-intel/MSIE bar feeds + live chart overlays + breakeven-breach check
+# unreachable. RED-BEFORE 10/10 proven at fd95a7b0.
+tests/unit/test_bug274_wrapper_state_leak.py
+
+# BUG-275 (NSE-Swarm role 6, 2026-09-14): hygiene cadence mixed clock domains
+# (monotonic stamps vs the caller's wall now_t) -> deep index scans every light
+# cycle (12x intended IO). Wall-domain contract + RED-before pins.
+tests/unit/test_bug275_hygiene_cadence_clock.py

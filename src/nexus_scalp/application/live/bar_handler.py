@@ -37,7 +37,11 @@ class BarHandler:
         # BUG-061: candle-close gate — feed the completed bar into the local
         # candle-intelligence subsystem and capture its decision (entry/hold/
         # fast-exit bias). Failure is isolated; never disturbs the tick path.
-        ci = getattr(self, "candle_intel", None)
+        # BUG-274 (wrapper-state leak): candle_intel lives on the composition
+        # root (LiveEngine.__init__). The pre-extraction body read self.*;
+        # inside the BOUND BarHandler that read is permanently None and the
+        # subsystem could never run even when the operator enabled it.
+        ci = getattr(self.om, "candle_intel", None)
         if ci is not None:
             try:
                 regime_name = getattr(self.om._last_regime_state, "regime_type", None)
@@ -137,7 +141,7 @@ class BarHandler:
                 )
                 _news_state_val = None
                 try:
-                    if getattr(self, "news_engine", None) is not None:
+                    if getattr(self.om, "news_engine", None) is not None:  # BUG-274
                         _nc = self.om.news_engine.current_context()
                         if _nc is not None:
                             _ns = getattr(_nc, "state", None)
@@ -159,7 +163,7 @@ class BarHandler:
                     ),
                     "news_state": _news_state_val,
                     "decision_reason": self.om._last_proposal.reason_code
-                    if getattr(self, "_last_proposal", None)
+                    if getattr(self.om, "_last_proposal", None)  # BUG-274
                     else None,
                     "updated_at": datetime.now(UTC).isoformat(),
                 }
@@ -172,7 +176,7 @@ class BarHandler:
         # MarketIntelligenceFeatureVectorV1 for the debug UI / AI models.
         # Failure is isolated: perception can never disturb the tick path.
         # =====================================================================
-        ms = getattr(self, "mslie_engine", None)
+        ms = getattr(self.om, "mslie_engine", None)  # BUG-274
         if ms is not None:
             try:
                 completed_bars = self.om.aggregator.get_completed_bars()
@@ -207,11 +211,18 @@ class BarHandler:
         # width is a CONTRACT SPLIT (buffer built 50D vs trainer bound 70D),
         # not a routine case - surface it loudly once per hour instead of
         # silently starving the 70D online-learning loop.
+        # BUG-274: BOTH throttle stamps live on the composition root (the
+        # engine writes self.om._online_train_width_warn_at). The pre-extraction
+        # gate read self.* on what is now a BOUND wrapper, so the wrapper
+        # default (missing -> falsy) short-circuited the rate limit OPEN and the
+        # line re-logged on EVERY completed bar past the retrain interval.
         if len(rec) - 6 != self.om.trainer.num_features or getattr(
-            self, "_online_train_disabled", False
+            self.om,
+            "_online_train_disabled",
+            False,  # BUG-274
         ):
             if self.om._bars_since_last_retrain >= self.om._retrain_interval_bars and (
-                not getattr(self, "_online_train_width_warn_at", 0.0)
+                not getattr(self.om, "_online_train_width_warn_at", 0.0)  # BUG-274
                 or time.time() - self.om._online_train_width_warn_at >= 3600.0
             ):
                 self.om._online_train_width_warn_at = time.time()
@@ -299,7 +310,7 @@ class BarHandler:
             # per-bar warning; the disabled state is the supported default).
             if not self.om._online_finetune_enabled:
                 if self.om._bars_since_last_retrain >= self.om._retrain_interval_bars and (
-                    not getattr(self, "_online_ft_disabled_log_at", 0.0)
+                    not getattr(self.om, "_online_ft_disabled_log_at", 0.0)  # BUG-274
                     or time.time() - self.om._online_ft_disabled_log_at >= 3600.0
                 ):
                     self.om._online_ft_disabled_log_at = time.time()
