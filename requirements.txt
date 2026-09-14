@@ -38,4 +38,4 @@ types-pyyaml==6.0.12.20260906
 types-requests==2.33.0.20260906
 types-setuptools==84.0.0.20260812
 tzdata==2026.4
-uvicorn==0.52.4
+uvicorn==0.53.0

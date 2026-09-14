@@ -696,6 +696,69 @@ class DatabaseMigrationEngine:
                     "[DB_MIGRATION] event=BASELINE_SKELETON_HEALED tables=%s",
                     ",".join(_healed_tables),
                 )
+            # ----------------------------------------------------------------
+            # BUG-276 (2026-09-14): constraint half of the skeleton shadow.
+            # The columns above make the app's INSERTs addressable, but the
+            # skeleton also REPLACED the app's UNIQUE constraints with a
+            # plain id PRIMARY KEY. An INSERT whose ON CONFLICT target has no
+            # matching UNIQUE/PK index fails outright
+            # ("ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+            # constraint") — so every idempotent upsert (guard telemetry,
+            # experience ledger, strategy registry, research worker state,
+            # intelligence) dead-letters forever on a gate-first database.
+            # Baseline tables are created empty in this same transaction, so
+            # the unique index can always be built — FAIL LOUD if it cannot
+            # (same migration-safety rule as the column heal).
+            # ----------------------------------------------------------------
+            try:
+                from nexus_scalp.database.app_columns import APP_UNIQUE_TARGETS
+            except ImportError as _uniq_err:  # pragma: no cover - slim tooling
+                logger.warning(
+                    "[DB_MIGRATION] event=UNIQUE_HEAL_SKIPPED reason=deps_missing error=%s",
+                    str(_uniq_err),
+                )
+                _UNIQUE_TARGETS: dict = {}
+            else:
+                _UNIQUE_TARGETS = APP_UNIQUE_TARGETS
+            _unique_healed: list[str] = []
+            for _uniq_table, _uniq_targets in _UNIQUE_TARGETS.items():
+                if not con.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (_uniq_table,),
+                ).fetchone():
+                    continue
+                for _cols in _uniq_targets:
+                    _cols_txt = ", ".join(f'"{c}"' for c in _cols)
+                    _idx = "idx_" + _uniq_table + "_uq_" + "_".join(_cols)
+                    # A baseline-built table is empty -> the index always
+                    # succeeds. A partially-populated database can still reach
+                    # this path (fewer than half the manifest tables present),
+                    # so pre-check the constraint over the EXISTING rows:
+                    # genuine legacy duplicates are logged LOUD and skipped
+                    # (the app boot heal + operator repair own that data;
+                    # aborting the whole migration over them would brick the
+                    # engine for a diagnostic-index nicety).
+                    _group = ", ".join(f'"{c}"' for c in _cols)
+                    _dup = con.execute(
+                        f"SELECT 1 FROM {_uniq_table} GROUP BY {_group} HAVING COUNT(*) > 1 LIMIT 1"
+                    ).fetchone()
+                    if _dup is not None:
+                        logger.error(
+                            "[DB_MIGRATION] event=BASELINE_UNIQUE_SKIPPED "
+                            "table=%s cols=%s reason=duplicate_rows_present",
+                            _uniq_table,
+                            _cols_txt,
+                        )
+                        continue
+                    con.execute(
+                        f"CREATE UNIQUE INDEX IF NOT EXISTS {_idx} ON {_uniq_table} ({_cols_txt})"
+                    )
+                    _unique_healed.append(f"{_uniq_table}({_cols_txt})")
+            if _unique_healed:
+                logger.warning(
+                    "[DB_MIGRATION] event=BASELINE_UNIQUE_HEALED targets=%d",
+                    len(_unique_healed),
+                )
         # Retype audit_ledger.ticket TEXT → INTEGER PRIMARY KEY when the
         # skeleton shape is present and the table is EMPTY (fresh install
         # only; any pre-existing row means a real DB we never rebuild).
