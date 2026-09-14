@@ -265,3 +265,8 @@ tests/unit/test_bug275_hygiene_cadence_clock.py
 # gate-first fresh DBs dead-letter every ON CONFLICT producer forever (15 of 17
 # targets). Unique-index heal at baseline + boot + class-wide ON-CONFLICT guard.
 tests/unit/test_bug276_unique_constraint_shadow.py
+# BUG-277 (NSE-Swarm role 9, 2026-09-14): doctor WARNING-actions filter matched
+# the rendered label "WARN" against the producer vocabulary "WARNING" -> the
+# USER ACTION / NEXT guidance surface was permanently dead. Filter fix +
+# vocabulary contract + class-wide verdict=="WARN" comparison guard.
+tests/unit/test_bug277_doctor_warning_vocabulary.py
