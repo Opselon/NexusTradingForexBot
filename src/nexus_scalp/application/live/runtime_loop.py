@@ -229,17 +229,25 @@ class RuntimeLoop:
             try:
                 # Tick Stagnation Watchdog: If no ticks/bars are processed for > 15 seconds, trigger healthcheck & reconnect.
                 current_time = time.time()
-                if (current_time - self.om._last_tick_processed_time) > 15.0:
+                # BUG-277: the stall CLOCK is wall-clock of the last NEW
+                # (non-duplicate) tick, stamped after the pipeline below —
+                # immune to the BUG-169 duplicate early-return and to the
+                # watchdog's own 15s timer resets.
+                if getattr(self.om, "_last_fresh_tick_at", None) is None:  # init-order safe
+                    self.om._last_fresh_tick_at = current_time
+                _stall_age_sec = current_time - self.om._last_fresh_tick_at
+                if _stall_age_sec > 15.0:
                     # Avoid spamming reconnects if connected but market is closed (e.g. weekend or holidays)
                     if not self.om.adapter.is_connected():
                         logger.warning(
                             "[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect"
                         )
-                        self.om.emit_incident_telemetry(
-                            event_type="MT5_DISCONNECTED",
-                            component="mt5",
-                            severity="HIGH",
-                            correlation_id="tick-stream",
+                        # BUG-277: episode state + escalation owned by the
+                        # engine (one START incident, CRITICAL escalation past
+                        # grace -> DEGRADED) instead of a HIGH incident every
+                        # 15s pass while state kept claiming RUNNING.
+                        self.om.note_tick_stream_stall(
+                            age_sec=_stall_age_sec, adapter_connected=False
                         )
                         try:
                             self.om.adapter.disconnect()
@@ -281,11 +289,11 @@ class RuntimeLoop:
                             "connected (is_connected=True). Forcing market-data "
                             "resubscribe / tick re-poll to restart ingestion."
                         )
-                        self.om.emit_incident_telemetry(
-                            event_type="MT5_TICK_STREAM_STALLED",
-                            component="mt5",
-                            severity="HIGH",
-                            correlation_id="tick-stream",
+                        # BUG-277: episode ownership + escalation into the
+                        # canonical risk state (was: one HIGH incident per
+                        # 15s pass, state kept claiming RUNNING for days).
+                        self.om.note_tick_stream_stall(
+                            age_sec=_stall_age_sec, adapter_connected=True
                         )
                         try:
                             # Re-subscribe symbols + re-poll fresh market state.
@@ -430,6 +438,13 @@ class RuntimeLoop:
                 self.om._pipeline_last_ask = float(tick.ask)
 
                 self.om._process_tick_pipeline(tick=tick, account=live_account)
+                # BUG-277: this is the ONLY stamp of the stall clock: a NEW
+                # (non-duplicate) tick completed the pipeline, so the feed is
+                # proven alive at this instant. The duplicate early-return
+                # above must NOT reach here — a frozen quote never resets the
+                # stall episode.
+                self.om._last_fresh_tick_at = time.time()
+                self.om.note_tick_stream_recovered()
                 self.om._last_tick_processed_time = time.time()
                 # PHASE 08: accounting worker kick (throttled internally). This
                 # is the ONLY touch point and it schedules bounded to_thread

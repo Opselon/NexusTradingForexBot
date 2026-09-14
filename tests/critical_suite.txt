@@ -197,6 +197,14 @@ tests/unit/test_bug269_docker_starter_servable.py
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
 # dies permanently after a legitimate retrain. Champion supersession seam.
 tests/unit/test_bug271_champion_retrain_fingerprint.py
+#   BUG-277 (2026-09-14 wave): feed-stall FAIL-LOUD — the 09-11 20:00Z freeze
+#   ran 2.5 days: watchdog warned 1828x + re-emitted a HIGH incident every 15s
+#   while runtime_risk_state() kept claiming RUNNING and the BUG-169
+#   duplicate-tick early-return skipped the whole pipeline. Pins: engine-owned
+#   stall episode (one START, one CRITICAL escalation past 900s grace ->
+#   DEGRADED via runtime_risk_state), weekend suppression, recovery reset,
+#   watchdog wiring reads (last-fresh stamp only on NEW ticks).
+tests/unit/test_bug277_feed_stall_fail_loud.py
 #   BUG-276 (2026-09-14 wave): repo-root pytest clobbered the PRODUCTION
 #   champion bundle (force_fresh mint + load_database_config ignoring the
 #   BUG-223 NEXUS_AUDIT_DB seam -> tmp-path rows stamped CHAMPION). Pins:
