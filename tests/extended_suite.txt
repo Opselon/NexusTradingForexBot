@@ -1,0 +1,13 @@
+# TIER 2 — EXTENDED VALIDATION (main push post-merge, merge candidates,
+# scheduled, explicit dispatch). Production-truth tests whose measured
+# wall cost does not earn a place in the sub-5-minute PR gate.
+
+# measured 1252s aggregate — BUG-276 boot-heal battery over every ON CONFLICT
+#   target x2 boot orders on real SQLite (protects dead-letter starvation).
+tests/unit/test_bug276_unique_constraint_shadow.py
+
+# measured 730s aggregate — gate-first fresh-install column contract repro.
+tests/unit/test_perf_deadletter_skeleton_repro.py
+
+# measured 428s aggregate — news DB export truncation honesty (dataset integrity).
+tests/unit/test_news_db_truncation_honesty.py
