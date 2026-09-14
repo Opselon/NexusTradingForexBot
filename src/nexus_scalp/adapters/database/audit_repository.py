@@ -96,6 +96,38 @@ def normalize_history_dt(value: Any) -> Any:
     return normalize_utc(value)
 
 
+def _unique_target_resolves(conn: sqlite3.Connection, table: str, cols: tuple[str, ...]) -> bool:
+    """True when ON CONFLICT(<cols>) resolves on <table> (PK or UNIQUE index).
+
+    Mirrors SQLite's conflict-target rule: the named columns must be exactly
+    the columns of a UNIQUE index (explicit, partial, or the app DDL's
+    implicit auto-index) or of the table's PRIMARY KEY.
+
+    BUG-276 helper — used by AuditRepository._ensure_unique_constraint_heal
+    to decide whether the migration baseline skeleton destroyed an ON
+    CONFLICT target. MUST stay module-level (pure sqlite3, no app deps).
+    """
+    want = [c.lower() for c in cols]
+    try:
+        for idx in conn.execute(f"PRAGMA index_list({table})").fetchall():
+            # idx: (seq, name, unique, origin, partial)
+            if not idx[2]:
+                continue
+            icols = [
+                (r[2] or "").lower()
+                for r in conn.execute(f"PRAGMA index_info({idx[1]})").fetchall()
+            ]
+            if icols == want:
+                return True
+        tcols = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        pk = [c for c in tcols if c[5] > 0]
+        if [c[1].lower() for c in pk] == want:
+            return True
+    except sqlite3.Error:
+        return False
+    return False
+
+
 class AuditRepository:
     """
     Append-only audit store. All writes are enqueued to a single background
@@ -675,6 +707,71 @@ class AuditRepository:
         # DeadLetterStore (same table, VERBATIM move) — created here on the
         # setup connection so schema timing is unchanged.
         self.dead_letter_store.create_table(conn)
+        # BUG-276: heal UNIQUE constraint targets shadowed by the migration
+        # baseline skeletons (see database/app_columns.APP_UNIQUE_TARGETS).
+        self._ensure_unique_constraint_heal(conn)
+
+    def _ensure_unique_constraint_heal(self, conn: sqlite3.Connection) -> None:
+        """Restores ON CONFLICT targets the baseline skeleton destroyed (BUG-276).
+
+        ``AuditRepository``'s bootstrap is CREATE TABLE IF NOT EXISTS: on a
+        database whose tables were pre-created as manifest skeletons by the
+        migration gate it no-ops, leaving the skeleton's ``id INTEGER PRIMARY
+        KEY`` as the ONLY uniqueness surface. Every producer INSERT with an
+        ``ON CONFLICT(<cols>)`` target then fails outright —
+        "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+        constraint" — and the audit worker dead-letters that table's rows
+        FOREVER (observed live in the nightly E2E container: guard telemetry
+        dead-lettering ~19 rows/s from tick one).
+
+        Repair contract:
+          * idempotent + additive: a matching UNIQUE index (explicit or the
+            app DDL's implicit auto-index) or a PRIMARY KEY covering exactly
+            the target columns means NOTHING is created — healthy databases
+            pay zero extra index maintenance;
+          * when the target is dead, build the index the application's own
+            canonical DDL declares (CREATE UNIQUE INDEX IF NOT EXISTS);
+          * an existing poisoned database may already hold rows that violate
+            the constraint (only possible for pre-skeleton legacy data): the
+            CREATE raises IntegrityError — log it LOUD (the table keeps
+            dead-lettering with a named reason) and never crash the boot.
+        """
+        try:
+            from nexus_scalp.database.app_columns import APP_UNIQUE_TARGETS
+        except ImportError:  # pragma: no cover - app_columns is stdlib-only
+            return
+        for table, targets in APP_UNIQUE_TARGETS.items():
+            if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone():
+                continue
+            for cols in targets:
+                if _unique_target_resolves(conn, table, cols):
+                    continue
+                cols_txt = ", ".join(f'"{c}"' for c in cols)
+                index_name = "idx_" + table + "_uq_" + "_".join(cols)
+                try:
+                    conn.execute(
+                        f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table} ({cols_txt})"
+                    )
+                    logger.warning(
+                        "BUG-276 skeleton-shadow heal: created missing UNIQUE index %s ON %s (%s)",
+                        index_name,
+                        table,
+                        cols_txt,
+                    )
+                except sqlite3.Error as e:
+                    # Fail LOUD but non-fatal: the constraint cannot be
+                    # enforced over the existing rows; producers keep
+                    # dead-lettering with an explicit reason in the log.
+                    logger.error(
+                        "BUG-276 skeleton-shadow heal FAILED for %s(%s): %s — "
+                        "ON CONFLICT producers for this table will keep "
+                        "dead-lettering until the duplicates are resolved",
+                        table,
+                        cols_txt,
+                        e,
+                    )
 
     # ---------------------------------------------------------------------
     # DEAD-LETTER COUNTER DELEGATION (A4). audit_dead_letter_rows and

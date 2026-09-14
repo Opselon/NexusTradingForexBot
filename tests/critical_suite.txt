@@ -231,3 +231,8 @@ tests/unit/test_bug274_wrapper_state_leak.py
 # (monotonic stamps vs the caller's wall now_t) -> deep index scans every light
 # cycle (12x intended IO). Wall-domain contract + RED-before pins.
 tests/unit/test_bug275_hygiene_cadence_clock.py
+
+# BUG-276 (NSE-Swarm role 7, 2026-09-14): baseline-skeleton CONSTRAINT shadow -
+# gate-first fresh DBs dead-letter every ON CONFLICT producer forever (15 of 17
+# targets). Unique-index heal at baseline + boot + class-wide ON-CONFLICT guard.
+tests/unit/test_bug276_unique_constraint_shadow.py
