@@ -197,6 +197,13 @@ tests/unit/test_bug269_docker_starter_servable.py
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
 # dies permanently after a legitimate retrain. Champion supersession seam.
 tests/unit/test_bug271_champion_retrain_fingerprint.py
+#   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
+#   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
+#   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
+#   Recalibrated to $0.45/$0.30 from the live broker window with machine
+#   evidence JSON pinned against the code defaults; extreme spreads still
+#   FREEZE_ALL (fail-closed direction kept).
+tests/unit/test_bug281_chop_boundary_recalibration.py
 #   BUG-280 (2026-09-14 wave): the early-return order-frequency throttle was a
 #   HARDCODED 60s floor pre-empting the configured cooldown_seconds=4.0 that
 #   the post-policy COOLDOWN gate reads (same _last_signal_time field): 78,798

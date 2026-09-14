@@ -2269,16 +2269,16 @@ class LiveEngine:
         Initializes the MarketRegimeClassifier with XAUUSD-evidenced calibration.
 
         Thresholds were recalibrated from 100k real XAUUSD M1 bars (2026-05..08)
-        in BUG-132. The classifier defaults already encode those values, so we
-        only override the two that differ from the constructor defaults
-        (spread hysteresis band + hold/markup margins) to keep a single source of
-        truth in the classifier module.
+        in BUG-132 and AGAIN from the LIVE broker window in BUG-281 (2026-09-14).
+        The classifier defaults are the SINGLE source of truth for the spread
+        band (and every other threshold), so we only override the two timing
+        margins that differ from the constructor defaults; re-smuggling spread
+        literals here is a THRESHOLD-OWNERSHIP violation (pinned by
+        tests/unit/test_bug281_chop_boundary_recalibration.py).
         """
         try:
             return MarketRegimeClassifier(
                 symbol=symbol,
-                spread_chop_enter_usd=0.25,
-                spread_chop_exit_usd=0.18,
                 min_regime_hold_sec=4.0,
                 switch_prob_margin=0.10,
             )
