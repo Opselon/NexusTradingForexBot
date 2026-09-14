@@ -130,14 +130,24 @@ class MarketRegimeClassifier:
         rolling_seconds: int = 300,
         max_ticks_buffer: int = 6000,
         # Spread Schmitt-trigger thresholds (hysteresis band).
-        # Calibrated for XAUUSD from 100k real M1 bars (2026-05-01..2026-08-17):
-        #   spread_usd p50=$0.04, p90=$0.20, p95=$0.24, p99=$0.34, max=$6.22.
-        # Enter chop (FREEZE_ALL guard) when spread >= $0.25 (≈p97 of normal Gold),
-        # exit only when spread <= $0.18 (hysteresis band of $0.07). This makes
-        # HIGH_SPREAD_CHOP reachable during genuine spread widening without firing
-        # on routine $0.04-0.24 quiet-session spreads. See BUG-132.
-        spread_chop_enter_usd: float = 0.25,
-        spread_chop_exit_usd: float = 0.18,
+        # BUG-281 (2026-09-14 wave) RECALIBRATED from the LIVE broker window
+        # (artifacts/audit.db audit_signals.spread_usd, 09-06..09-11, n=1406:
+        #   p25=$0.17 p50=$0.23 p75=$0.30 p90=$0.36 p95=$0.42 p99=$0.47,
+        #   machine evidence: docs/audit/wave_20260914/
+        #   spread_calibration_20260914.json).
+        # Enter chop (FREEZE_ALL guard) when spread >= $0.45 (~p98 of live):
+        # the previous $0.25 (calibrated on the 2026-05..08 era where p50 was
+        # $0.04) froze NORMAL conditions — 24.2% of decisions and 49% of the
+        # bar-plane census were HIGH_SPREAD_CHOP kills at $0.18-$0.63, the
+        # median killed spread ($0.30) being routine market. Exit at $0.30
+        # (~p75) keeps a WIDE ($0.15) band so the trigger cannot oscillate
+        # around noise. Coherent ordering: risk.max_spread_points=60 ($0.60
+        # USD at XAUUSD point=$0.01) remains the OUTER hard ceiling;
+        # candidate-relative gates (spread/ATR, spread/TP) cover entry cost
+        # vs setup geometry and are untouched. Prior BUG-132 note: band was
+        # $0.25/$0.18 on the 100k M1-bar 2026-05..08 distribution.
+        spread_chop_enter_usd: float = 0.45,
+        spread_chop_exit_usd: float = 0.30,
         # Volatility thresholds (PRICE-based only — tick_velocity removed as a
         # volatility proxy, see BUG-132 / VOLATILITY_EXPANSION below).
         # Calibrated from real XAUUSD 5-min realized vol (sqrt sum sq log-ret):

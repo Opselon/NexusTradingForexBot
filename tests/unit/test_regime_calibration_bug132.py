@@ -144,12 +144,22 @@ def test_high_spread_chop():
 
 
 def test_spread_schmitt_exit_band():
-    """Enter at >=0.25, stay CHOP until spread <=0.18 (hysteresis)."""
+    """Hysteresis MECHANISM pin (BUG-132 class), boundaries read from the
+    instance — recalibrated to $0.45/$0.30 by BUG-281; the literal pair was
+    moved out of this pin so a future calibration cannot rot two files."""
     clf = MarketRegimeClassifier()
+    enter, exit_ = clf.spread_chop_enter, clf.spread_chop_exit
     prices = _flat(40, 4619.0)
-    assert _feed(clf, prices, spread_usd=0.30)[-1].regime_type == RegimeType.HIGH_SPREAD_CHOP
-    assert _feed(clf, prices, spread_usd=0.20)[-1].regime_type == RegimeType.HIGH_SPREAD_CHOP
-    assert _feed(clf, prices, spread_usd=0.10)[-1].regime_type == RegimeType.RANGING_MEAN_REVERSION
+    assert (
+        _feed(clf, prices, spread_usd=enter + 0.03)[-1].regime_type == RegimeType.HIGH_SPREAD_CHOP
+    )
+    # mid-band: still CHOP (hysteresis holds until <= exit)
+    mid = (enter + exit_) / 2.0
+    assert _feed(clf, prices, spread_usd=mid)[-1].regime_type == RegimeType.HIGH_SPREAD_CHOP
+    assert (
+        _feed(clf, prices, spread_usd=exit_ - 0.08)[-1].regime_type
+        == RegimeType.RANGING_MEAN_REVERSION
+    )
 
 
 # --------------------------------------------------------------------------
@@ -242,13 +252,17 @@ def test_spread_boundary_around_enter():
     # Independent classifiers: Schmitt spread-enter is gated by the hysteresis
     # margin, so it is measured from a stable baseline, not chained after a
     # different-spread run on the same instance.
-    # spread just below enter ($0.24 < $0.25) -> not chop
+    # just below enter -> not chop (boundaries from the instance; BUG-281)
     clf_low = MarketRegimeClassifier()
-    assert RegimeType.HIGH_SPREAD_CHOP not in _regimes(clf_low, prices, spread_usd=0.24)
-    # spread at/above enter ($0.26 >= $0.25) -> chop (fresh instance so the
-    # margin gate compares against the warmup RANGING baseline, not a 1.0 prob)
+    assert RegimeType.HIGH_SPREAD_CHOP not in _regimes(
+        clf_low, prices, spread_usd=clf_low.spread_chop_enter - 0.01
+    )
+    # at/above enter -> chop (fresh instance so the margin gate compares
+    # against the warmup RANGING baseline, not a 1.0 prob)
     clf_high = MarketRegimeClassifier()
-    assert RegimeType.HIGH_SPREAD_CHOP in _regimes(clf_high, prices, spread_usd=0.26)
+    assert RegimeType.HIGH_SPREAD_CHOP in _regimes(
+        clf_high, prices, spread_usd=clf_high.spread_chop_enter + 0.01
+    )
 
 
 # --------------------------------------------------------------------------
@@ -349,9 +363,13 @@ def test_tick_velocity_field_retained_as_context():
 # 13. Recalibrated thresholds documented in code actually take effect
 # --------------------------------------------------------------------------
 def test_recalibrated_default_thresholds():
+    """This file records THAT defaults follow evidence; the live values moved
+    with BUG-281's recalibration (0.45/0.30) — exact constants + evidence
+    agreement are pinned in test_bug281_chop_boundary_recalibration.py."""
     clf = MarketRegimeClassifier()
-    assert clf.spread_chop_enter == 0.25
-    assert clf.spread_chop_exit == 0.18
+    assert clf.spread_chop_enter == 0.45  # BUG-281 (live-window p98)
+    assert clf.spread_chop_exit == 0.30  # BUG-281 (live-window p75)
+    assert clf.spread_chop_exit < clf.spread_chop_enter  # Schmitt band sane
     assert clf.rv_expand_enter == 0.0013
     assert clf.rv_expand_exit == 0.0010
     assert clf.tick_vel_expand_enter == 20.0  # far above any real XAUUSD feed rate

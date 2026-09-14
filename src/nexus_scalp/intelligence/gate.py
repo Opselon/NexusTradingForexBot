@@ -98,6 +98,7 @@ class PreTradeIntelligenceGate:
         severe_drawdown_r: float = 2.5,
         min_suitability_to_qualify: float = 0.40,
         warn_suitability_floor: float = 0.25,
+        min_samples_to_reject: int = 5,
     ) -> None:
         self.experience_engine = experience_engine
         self.warn_expectancy_threshold_r = warn_expectancy_threshold_r
@@ -105,6 +106,19 @@ class PreTradeIntelligenceGate:
         self.severe_drawdown_r = severe_drawdown_r
         self.min_suitability_to_qualify = min_suitability_to_qualify
         self.warn_suitability_floor = warn_suitability_floor
+        # BUG-284 (2026-09-14 wave, lane-08 §4): hard suitability REJECT needs
+        # at least the evaluator's EVALUATING floor of samples. Below it the
+        # expectancy estimate is noise (1 closed loss scored 0.05-0.25 ->
+        # REJECT), which inverted the evidence contract: zero evidence passes
+        # (INSUFFICIENT_EVIDENCE) while one loss blocked. 473/1373 production
+        # decisions (34.5%) died at SUITABILITY_BELOW_THRESHOLD — the largest
+        # rejection source after the policy gates, micro-sample-driven.
+        # REJECT below this floor demotes to WARN (proposal passes unchanged,
+        # distinct reason recorded for funnel attribution). Never an upgrade;
+        # Phase-08 lifecycle REJECTs (RETIRED/QUARANTINED) are upstream and
+        # unaffected. 5 == StrategyEvaluator.min_samples_evaluating (shared
+        # statistical basis for "evidence exists" in this subsystem).
+        self.min_samples_to_reject = max(1, int(min_samples_to_reject))
 
         #: Observability counters
         self.gate_allow = 0
@@ -203,22 +217,34 @@ class PreTradeIntelligenceGate:
 
         # Suitability below the qualify floor -> REJECT (a soft rejection).
         if score < self.min_suitability_to_qualify:
-            decision = SuitabilityTier.REJECT
-            qualifies = False
-            reason = (
-                f"SUITABILITY_BELOW_THRESHOLD ({score:.2f} < {self.min_suitability_to_qualify:.2f})"
-            )
-            adjusted_confidence = 0.0
-            proposal = proposal.model_copy(
-                update={
-                    "action": ActionType.NO_TRADE,
-                    "confidence": 0.0,
-                    "rejection_reason": reason,
-                    "final_action": "NO_TRADE",
-                    "decision_stage": "TRADE_INTELLIGENCE_GATE",
-                    "blocked_by": "SUITABILITY_GATE",
-                }
-            )
+            # BUG-284: micro-sample demotion. Below the shared EVALUATING
+            # floor the expectancy picture is noise, and rejecting there
+            # inverted the evidence contract (zero evidence passes, one loss
+            # blocks). Demote to WARN: proposal passes unchanged; the funnel
+            # still attributes the decision via reason + evidence.samples.
+            if (exp_decision.retrieved_sample_count or 0) < self.min_samples_to_reject:
+                decision = SuitabilityTier.WARN
+                qualifies = True
+                reason = (
+                    f"MICRO_SAMPLE_INSUFFICIENT_EVIDENCE (n="
+                    f"{exp_decision.retrieved_sample_count} "
+                    f"< {self.min_samples_to_reject})"
+                )
+            else:
+                decision = SuitabilityTier.REJECT
+                qualifies = False
+                reason = f"SUITABILITY_BELOW_THRESHOLD ({score:.2f} < {self.min_suitability_to_qualify:.2f})"
+                adjusted_confidence = 0.0
+                proposal = proposal.model_copy(
+                    update={
+                        "action": ActionType.NO_TRADE,
+                        "confidence": 0.0,
+                        "rejection_reason": reason,
+                        "final_action": "NO_TRADE",
+                        "decision_stage": "TRADE_INTELLIGENCE_GATE",
+                        "blocked_by": "SUITABILITY_GATE",
+                    }
+                )
 
         # Tally observability counters.
         if decision == SuitabilityTier.ALLOW:

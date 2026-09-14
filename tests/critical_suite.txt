@@ -197,6 +197,56 @@ tests/unit/test_bug269_docker_starter_servable.py
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
 # dies permanently after a legitimate retrain. Champion supersession seam.
 tests/unit/test_bug271_champion_retrain_fingerprint.py
+#   BUG-282 (2026-09-14 wave): RSS pubDate is RFC-822 but the parser accepted
+#   only ISO-8601 and silently fabricated now() on failure (88.1% of rows).
+#   The 60-s publish bucket inside the article-hash identity therefore
+#   re-minted per poll -> dedup/tombstone guards structurally unable to fire
+#   (26,161 byte-identical rows, ~80 MB news.db, lane-04 RC2 + lane-06 §3).
+#   Pins: RFC-822 parses to true event time, honest None + published_at_source
+#   provenance, poll-stable timeless identity, legacy-DB column heal.
+tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
+#   BUG-283 (2026-09-14 wave): the hunter regime gate spoke ("TRENDING",
+#   "RANGING") while every producer emits RegimeType values or nothing at all
+#   -> ALL 14 setup families permanently NO_GO(REGIME_NOT_OK(UNKNOWN)) on
+#   real data (lane-03 §3, verified 500 elite rows -> 0 GO). Pure vocabulary
+#   adapter + regime stamped into retrain records; UNKNOWN/CHOP/FREEZE stay
+#   ineligible (fail-closed); adapter domain pinned against the enum.
+tests/unit/test_bug283_hunter_regime_adapter.py
+tests/unit/test_hunter_metadata_persistence.py
+#   BUG-284 (2026-09-14 wave): Phase-09 suitability REJECT fired on 1-4 sample
+#   families - the evidence contract was inverted (zero evidence passes, ONE
+#   loss blocks): 473/1373 decisions (34.5%) died at SUITABILITY_BELOW_THRESHOLD
+#   (experience-paralysis, lane-08 §4). REJECT demotes to WARN below the shared
+#   EVALUATING floor (5, = StrategyEvaluator.min_samples_evaluating); at/above
+#   the floor the full NO_TRADE rejection semantics are pinned UNCHANGED.
+tests/unit/test_bug284_suitability_micro_sample_floor.py
+#   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
+#   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
+#   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
+#   Recalibrated to $0.45/$0.30 from the live broker window with machine
+#   evidence JSON pinned against the code defaults; extreme spreads still
+#   FREEZE_ALL (fail-closed direction kept).
+tests/unit/test_bug281_chop_boundary_recalibration.py
+#   BUG-280 (2026-09-14 wave): the early-return order-frequency throttle was a
+#   HARDCODED 60s floor pre-empting the configured cooldown_seconds=4.0 that
+#   the post-policy COOLDOWN gate reads (same _last_signal_time field): 78,798
+#   swallowed evaluations vs 1,469 decisions (96:1, RC-4). One authoritative
+#   cooldown policy; pins strict-config still blocks, no magic literal.
+tests/unit/test_bug280_frequency_throttle_unification.py
+#   BUG-279 (2026-09-14 wave): feed-stall FAIL-LOUD — the 09-11 20:00Z freeze
+#   ran 2.5 days: watchdog warned 1828x + re-emitted a HIGH incident every 15s
+#   while runtime_risk_state() kept claiming RUNNING and the BUG-169
+#   duplicate-tick early-return skipped the whole pipeline. Pins: engine-owned
+#   stall episode (one START, one CRITICAL escalation past 900s grace ->
+#   DEGRADED via runtime_risk_state), weekend suppression, recovery reset,
+#   watchdog wiring reads (last-fresh stamp only on NEW ticks).
+tests/unit/test_bug279_feed_stall_fail_loud.py
+#   BUG-278 (2026-09-14 wave): repo-root pytest clobbered the PRODUCTION
+#   champion bundle (force_fresh mint + load_database_config ignoring the
+#   BUG-223 NEXUS_AUDIT_DB seam -> tmp-path rows stamped CHAMPION). Pins:
+#   env-seam precedence, governed-tree force_fresh refusal, quarantine
+#   migration row-scoping + idempotency, src call-site ban.
+tests/unit/test_bug278_test_harness_artifact_isolation.py
 # BUG-257 remainder (NSE-Swarm role 5, 2026-09-13): the P0-2 trust anchor
 # fires at BOOT only; a foreign process re-landing drifted bytes while the
 # engine runs (the 09-11 bb1f0afe shape) serves poisoned weights silently
