@@ -5,9 +5,10 @@ Aggregates tick streams into complete OHLC candle bars across timeframes.
 Guarantees explicit separation between Completed Bars and Forming Bars.
 """
 
+import math
 from datetime import datetime, timedelta
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.observability.logging import get_logger
@@ -18,6 +19,16 @@ logger = get_logger("nexus_scalp.market_data.bar_aggregator")
 class BarData(BaseModel):
     """
     Immutable representation of an OHLC Bar.
+
+    BUG-285 (wave 2026-09-14, input-validation lane L11-1/L11-2): the bar is
+    the canonical price-truth object consumed by features, replay, training
+    and the UI. NaN/inf prices previously passed construction silently
+    (lane-11 probe: a NaN forming-bar seed flowed into the canonical series).
+    Corrupted price is MUST-FAIL-CLOSED: non-finite values are refused at the
+    model. OHLC *geometry* and plausibility (non-positive / scale-implausible,
+    the 2026-09-02 EUR-on-XAUUSD contamination class) are enforced at the
+    broker-boundary readers (mt5_adapter.get_historical_bars drops malformed
+    rows loudly), because only those sites know the symbol's price scale.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
@@ -31,6 +42,13 @@ class BarData(BaseModel):
     close: float
     tick_volume: int
     is_complete: bool
+
+    @field_validator("open", "high", "low", "close")
+    @classmethod
+    def _finite_price(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError(f"non-finite price: {v}")
+        return v
 
 
 class BarAggregator:

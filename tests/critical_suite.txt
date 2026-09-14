@@ -220,6 +220,14 @@ tests/unit/test_hunter_metadata_persistence.py
 #   EVALUATING floor (5, = StrategyEvaluator.min_samples_evaluating); at/above
 #   the floor the full NO_TRADE rejection semantics are pinned UNCHANGED.
 tests/unit/test_bug284_suitability_micro_sample_floor.py
+#   BUG-285 (2026-09-14 wave, input-validation lane L11-1/2): pydantic gt/ge
+#   ACCEPT infinity, so TickData(bid=1,ask=inf) -> spread inf and (inf,inf) ->
+#   NaN passed the MUST-FAIL-CLOSED price boundary; the broker-history reader
+#   forwarded NaN/inf/inverted-OHLC bars into the canonical series (validation
+#   was report-only). Pins: allow_inf_nan=False on all tick price/volume fields,
+#   non-finite BarData refused, get_historical_bars drops malformed rows loudly.
+tests/unit/test_domain_models.py
+tests/unit/test_bug285_price_boundaries_fail_closed.py
 #   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
 #   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
 #   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
