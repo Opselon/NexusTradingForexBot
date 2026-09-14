@@ -110,10 +110,12 @@ jobs:
           echo "No dev artifacts tracked."
 
   # ---------------------------------------------------------------------------
-  # B. GATES — ruff / mypy / pytest (Linux, mirror of beforePush)
+  # B. GATES — release-only additions on the proven SHA (Tier-2 extended +
+  # integration smoke). Main-CI already proved ruff/mypy/critical on this SHA
+  # (release-auth evidence gate, fail-closed); nothing is duplicated here.
   # ---------------------------------------------------------------------------
   gates:
-    name: Quality gates (ruff / mypy / pytest)
+    name: Quality gates (extended Tier 2 + release smoke)
     runs-on: ubuntu-latest
     needs: validate
     timeout-minutes: 45
@@ -141,27 +143,24 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           # pytest-cov ships in the [dev] extra installed above.
           pip install -e ".[dev,web]"
-      - name: Ruff lint
-        run: ruff check .
-      - name: Ruff format check
-        run: ruff format --check .
-      - name: Mypy
-        run: mypy src
-      # CI-measured evidence (run 33688059329): the serial critical suite took
-      # 13.3 min here and pushed the 25m job over its timeout together with the
-      # integration stage (cancelled mid-run). The identical gate in ci.yml runs
-      # the same manifest with `-n auto --dist loadgroup` in ~5.5 min — mirror
-      # that (pytest-xdist ships in the dev extra) and keep the same
-      # manifest-derived file list; no test contract is changed, only wall time.
-      - name: Unit tests (critical suite)
+      # 2026-09-14 test reconstruction (CI cost report P5): release-auth has
+      # ALREADY proven every required main-CI context — ruff, ruff format, mypy
+      # and the full critical suite (Code Quality & Tests) plus both OS legs —
+      # green on THIS EXACT 40-hex SHA. Re-running the identical gates here was
+      # ~8-10 min of pure duplication (and had its own timeout history, run
+      # 33688059329). What the release cut adds instead: the TIER-2 EXTENDED
+      # suite (tests/extended_suite.txt — the measured-cost DB boot-heal
+      # batteries), which no required PR check executes, and the fast
+      # integration smoke below. A red extended lane therefore blocks the tag.
+      - name: Extended validation (Tier 2 — first execution on the release SHA)
         shell: bash
         run: |
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short']).returncode)"
-      # Release lane keeps the fast, high-signal net (ruff/mypy/critical suite).
-      # Full integration coverage remains enforced by CI + QA Deep Assurance on
-      # the same SHA (run window ~10 min there); duplicating the 27-file
-      # integration stage in every release cut doubled gate runtime for no
-      # additional release-blocking signal.
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/extended_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short']).returncode)"
+      # Full integration coverage remains enforced by CI tiers on the same SHA;
+      # duplicating the 27-file integration stage in every release cut doubled
+      # gate runtime for no additional release-blocking signal. This smoke is
+      # the release-lane-only slice (installer protocol + hardening; MT5 probes
+      # skip cleanly without a terminal).
       - name: Integration smoke (fast subset, no MT5, no browser)
         run: pytest tests/release/test_release_hardening.py tests/installer/test_installer_protocol.py tests/integration/test_mt5_api_probes.py -q --tb=short
 

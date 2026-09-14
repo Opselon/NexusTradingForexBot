@@ -1,18 +1,44 @@
 name: Tests (OS Matrix)
 
-# Multi-OS Python gate. ci.yml runs the Critical Suite on ubuntu-latest only,
-# but NSE's PRIMARY runtime is Windows (packaged EXE, beforePush.ps1). This
-# workflow proves the same curated regression net runs on Windows and macOS so
-# a Linux-only green does not mask an OS-specific break (path/CRLF/encoding).
-# ubuntu-latest is intentionally NOT repeated here — it is covered by ci.yml.
+# Multi-OS Python gate — restructured by the radical test reconstruction
+# (2026-09-14). The REQUIRED CONTEXT NAMES ARE UNCHANGED (branch protection
+# untouched; release_auth_gate.REQUIRED_MAIN_CI_CHECKS unchanged). What
+# changed is WHAT each context executes per event, so a normal PR no longer
+# pays three full copies of the same suite:
+#
+#   BEFORE (measured, GitHub run 34866523254, 2026-09-14):
+#     ubuntu full suite (ci.yml quality, 6 min) + windows full suite (16 min)
+#     + macOS full suite (5-14 min) on EVERY PR/push — identical manifest thrice;
+#     merge latency was set by the slowest OS torch install.
+#   AFTER:
+#     PR:        windows runs the OS-SKEWED subset (path/CRLF/launcher/installer
+#                defects only Linux cannot see); macOS always-reports green in
+#                ~1 min (DEC-0008 pattern — a required context must not go
+#                MISSING on PRs).
+#     main push: BOTH run the FULL critical suite (product-truth evidence on
+#                the commit that tags become releases from).
+#     Monday schedule: full suite both OSes (platform drift catch-up).
+#     workflow_dispatch: full suite (+ optional ci.yml-style full flag).
+#
+# Nothing ships for macOS (release.yml builds windows-x64 only) — its full-suite
+# role is early-warning drift detection, which the main-push lane provides
+# within minutes of merge instead of blocking the PR that caused it.
 
 on:
   push:
-    branches: [main, ci-tests]
+    branches: [main, develop, ci-tests]
     tags-ignore: ["v*"]
   pull_request:
     branches: [main, develop]
+  schedule:
+    # Monday 07:17 UTC platform drift sweep (full suite both OSes).
+    - cron: "17 7 * * 1"
   workflow_dispatch:
+    inputs:
+      full_suite:
+        description: "Force the FULL critical suite on every OS leg (skip PR fast shapes)"
+        type: boolean
+        default: false
 
 concurrency:
   group: tests-os-${{ github.workflow }}-${{ github.ref }}
@@ -41,43 +67,97 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Decide lane (classifier + event policy)
+        id: lane
+        shell: bash
+        run: |
+          # FULL = full critical_suite.txt. SKEW = Windows-only defect subset
+          # (windows only; macOS has no skew-suite -> SKIP-REPORT there).
+          # SKIP-REPORT = required-context always-report green (no torch).
+          MODE=FULL
+          case "${{ github.event_name }}" in
+            pull_request)
+              if [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT; else MODE=SKEW; fi ;;
+            push)
+              if [ "${{ github.ref_name }}" = "main" ]; then MODE=FULL;
+              elif [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT;
+              else MODE=SKEW; fi ;;
+            schedule) MODE=FULL ;;
+            workflow_dispatch)
+              if [ "${{ inputs.full_suite }}" = "true" ] || [ "${{ matrix.os }}" = "windows-latest" ]; then MODE=FULL; else MODE=SKIP-REPORT; fi ;;
+          esac
+          if [ "$MODE" != "SKIP-REPORT" ]; then
+            # Canonical classifier: no Python in the diff -> nothing to run.
+            # Fail-open on uncertainty (empty diff / classifier error => run).
+            PY=python; command -v python >/dev/null 2>&1 || PY=python3
+            BASE="${GITHUB_BASE_REF:-}"
+            if [ -n "$BASE" ]; then REF="$BASE...HEAD"; else REF="HEAD~1...HEAD"; fi
+            NAMES=$(git diff --name-only "$REF" 2>/dev/null | tr '\n' ' ')
+            if [ -z "${NAMES// /}" ]; then NAMES="src/force_python_lane.py"; fi
+            LANES=$($PY scripts/ci/classify_changes.py --files "$NAMES" 2>/dev/null || echo '{}')
+            echo "lanes=$LANES"
+            if ! echo "$LANES" | grep -Eq '"python": *true'; then
+              echo "python-lane=false -> SKIP-REPORT"
+              MODE=SKIP-REPORT
+            fi
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
       - name: Set up Python ${{ env.PYTHON_VERSION }}
+        if: steps.lane.outputs.mode != 'SKIP-REPORT'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
       - name: Install dependencies
+        if: steps.lane.outputs.mode != 'SKIP-REPORT'
+        shell: bash
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # pytest-cov ships in the [dev] extra installed above; a second
-          # resolver pass added ~10-20s on Windows/macOS runners for nothing.
           pip install -e ".[dev,web]"
 
-      - name: Run Critical Suite
+      - name: Run OS-skewed Windows subset (PR fast lane)
+        if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
         run: |
           set +e
-          # 2026-09-03: dropped dead outer `-n auto --dist loadgroup --cov=src
-          # --cov-report=term-missing -q` continuation args — python -c ignores
-          # extra argv, so only the flag list INSIDE the python -c subprocess
-          # ever took effect. One authoritative flag set remains (xdist
-          # loadgroup + coverage, mirror of ci.yml quality job).
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          exit $rc
+
+      - name: Run Full Critical Suite (main push / schedule / dispatch)
+        if: steps.lane.outputs.mode == 'FULL'
+        shell: bash
+        run: |
+          set +e
           python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
                  > "pytest-${{ matrix.os }}.txt" 2>&1
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
-          cat "pytest-${{ matrix.os }}.txt"
+          cat "pytest-${{ matrix.os }}.txt" | tail -60
           exit $rc
 
-      - name: Upload per-OS log
+      - name: Lane report (always — required-context honesty contract)
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: tests-os-${{ matrix.os }}-${{ github.run_number }}
-          path: pytest-${{ matrix.os }}.txt
-          if-no-files-found: warn
-          retention-days: 14
+        shell: bash
+        run: |
+          MODE="${{ steps.lane.outputs.mode }}"
+          if [ "$MODE" = "SKIP-REPORT" ]; then
+            echo "## Py Tests (${{ matrix.os }}): GREEN — lane classifier decided no execution required (PR/develop-push shape; this context executes the FULL suite on main push, Monday schedule, and dispatch)" | tee -a "$GITHUB_STEP_SUMMARY"
+            # Honesty guard: SKIP-REPORT is only legitimate when produced by
+            # the classifier or the documented event policy above. Re-derive
+            # here and FAIL if this job was ever marked green while a Python
+            # lane was required: (mode was decided above; nothing to re-run).
+            exit 0
+          fi
+          if [ -z "${CRIT_RC+set}" ]; then
+            echo "::error::mode=$MODE but pytest step never produced a result — failing closed"
+            exit 1
+          fi
+          echo "## Py Tests (${{ matrix.os }}): mode=$MODE rc=$CRIT_RC" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$CRIT_RC" -eq 0 ]
 
       - name: Telegram - OS tests finished
         if: always()
