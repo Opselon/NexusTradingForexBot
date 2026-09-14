@@ -258,7 +258,7 @@ export function commandVerdict(res: unknown): { ok: boolean; message: string } {
     return { ok: false, message: str(o.reason) ?? str(o.error) ?? "Backend refused the command." };
   }
   if (available === true || success === true) {
-    const detail = str(o.status) ?? str(o.dataset_id) ?? (o.repaired !== undefined ? `repaired=${String(o.repaired)}` : "") ?? "";
+    const detail = str(o.status) ?? str(o.dataset_id) ?? (o.repaired !== undefined ? `repaired=${String(o.repaired)}` : "");
     return { ok: true, message: detail ? `Backend accepted: ${detail}` : "Backend accepted the command." };
   }
   return { ok: true, message: "Backend responded without an explicit verdict." };

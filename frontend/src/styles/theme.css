@@ -556,6 +556,34 @@ kbd {
 .page > div, .page > section { animation: pageIn 0.18s ease-out; }
 @keyframes pageIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
+/* ==========================================================================
+   Lane P additive tokens (wave 2) — glow / elevation / z-layer scale used by
+   the spatial canvas, command palette, typed-confirm LIVE gate and shell
+   chrome. APPENDED ONLY: nothing above this block was modified. Every token
+   has an in-place fallback in the consumers, so older bundles stay correct.
+   ========================================================================== */
+:root {
+  /* glow colors (canvas/selection + LIVE/PAPER/SHADOW semantics) */
+  --glow-accent: 0 0 18px rgba(65, 166, 242, 0.35);
+  --glow-green: 0 0 16px rgba(62, 207, 142, 0.35);
+  --glow-red: 0 0 22px rgba(242, 86, 77, 0.30);
+  --glow-blue: 0 0 14px rgba(65, 166, 242, 0.22);
+  --glow-amber: 0 0 14px rgba(235, 161, 63, 0.24);
+
+  /* elevation scale (1 = resting panel, 3 = floating card, pop = modal) */
+  --elev-1: 0 2px 8px -6px rgba(0, 0, 0, 0.6);
+  --elev-2: 0 8px 22px -14px rgba(0, 0, 0, 0.65);
+  --elev-3: 0 16px 40px -18px rgba(0, 0, 0, 0.7);
+  --elev-pop: 0 28px 70px -20px rgba(0, 0, 0, 0.75);
+
+  /* z-layer scale (above theme baselines: modal-overlay 90, toast 100) */
+  --z-canvas-tools: 5;
+  --z-canvas-tip: 6;
+  --z-canvas-empty: 7;
+  --z-palette: 120;
+  --z-typed-confirm: 140;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

@@ -11,7 +11,7 @@ import { useMemo, useState } from "react";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useAnalyzeArticle, useAutoPrune, useBatchAnalyze, useNewsAiStatus, useNewsFeed, useRestoreArticle } from "../hooks";
-import { directionOf, impactPct, NEWS_FILTERS, xauusdRelPct } from "../model";
+import { batchVerdict, directionOf, errorText, impactPct, NEWS_FILTERS, xauusdRelPct } from "../model";
 import type { NewsFeedArticle, NewsFilter } from "../types";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { FreshnessNote, asErrorText } from "./shared";
@@ -62,11 +62,10 @@ export function NewsFeedSection() {
       return;
     }
     batch.mutate(ids, {
-      onSuccess: (res) =>
-        setNote({
-          err: !!res.error,
-          text: res.error ? `Batch refused: ${res.error}` : `Batch AI analysis — completed ${res.completed ?? 0}, failed ${res.failed ?? 0}, skipped ${res.skipped ?? 0}.`,
-        }),
+      onSuccess: (res) => {
+        const v = batchVerdict(res);
+        setNote({ err: !v.ok, text: v.message });
+      },
       onError: (e) => setNote({ err: true, text: `Batch failed: ${asErrorText(e)}` }),
     });
   };
@@ -75,11 +74,13 @@ export function NewsFeedSection() {
     prune.mutate(undefined, {
       onSuccess: (res) => {
         setPruneOpen(false);
+        if (res.available === false || res.error) {
+          setNote({ err: true, text: `Auto-prune refused: ${errorText(res.error)}` });
+          return;
+        }
         setNote({
-          err: !!res.error,
-          text: res.error
-            ? `Auto-prune refused: ${res.error}`
-            : `Pruning complete — ${res.marked_irrelevant ?? 0} marked irrelevant, ${res.preserved ?? 0} preserved (${res.already_irrelevant ?? 0} already irrelevant). Recoverable via the Irrelevant filter.`,
+          err: false,
+          text: `Pruning complete — ${res.marked_irrelevant ?? 0} marked irrelevant, ${res.preserved ?? 0} preserved (${res.already_irrelevant ?? 0} already irrelevant, ${res.failed ?? 0} failed). Recoverable via the Irrelevant filter.`,
         });
       },
       onError: (e) => {
@@ -165,6 +166,7 @@ export function NewsFeedSection() {
           articleId={selected}
           fallback={articles.find((a) => a.article_id === selected)}
           busy={analyze.isPending}
+          analyzeNote={note?.text ?? null}
           onClose={() => setSelected(null)}
           onAnalyze={(force) => runAnalyze(selected, force)}
         />
@@ -191,7 +193,8 @@ export function NewsFeedSection() {
 function impClass(pct: number | null): string {
   if (pct === null) return "news-imp";
   if (pct >= 70) return "news-imp high";
-  if (pct >= 45) return "news-imp mid";
+  if (pct >= 50) return "news-imp mid";
+  if (pct >= 30) return "news-imp low";
   return "news-imp";
 }
 

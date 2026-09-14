@@ -14,7 +14,7 @@
  */
 
 import { Suspense, useEffect, useState } from "react";
-import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardPage from "@/pages/Dashboard/DashboardPage";
 import TradingPage from "@/pages/Trading/TradingPage";
@@ -30,6 +30,7 @@ import { ConnectionIndicator, FreshnessMeter } from "@/components/ConnectionIndi
 import { ModeIndicator } from "@/components/ModeIndicator";
 import { AttentionStrip } from "@/components/AttentionStrip";
 import { CommandPalette } from "@/components/CommandPalette";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmModal, ToastHost, ErrorState, LoadingState } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
 import { useI18n } from "@/stores/i18nStore";
@@ -130,6 +131,9 @@ export function AppShell() {
   const navigate = useNavigate();
   const t = useI18n((s) => s.t);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // Route path drives the ErrorBoundary reset key: navigating away from (or
+  // back to) a crashed page re-arms the boundary instead of wedging the tree.
+  const routePathname = useLocation().pathname;
 
   // Auth state (core/auth is the source of truth; bus keeps the banner live).
   const [authExpiredAt, setAuthExpiredAt] = useState<number | null>(() => getAuthState().lastUnauthorizedAt);
@@ -313,9 +317,11 @@ export function AppShell() {
                   key={f.route}
                   path={f.route}
                   element={
-                    <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
-                      <f.lazy snapshot={snapshot} nowMs={nowMs} />
-                    </Suspense>
+                    <ErrorBoundary label={f.label} resetKey={routePathname}>
+                      <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
+                        <f.lazy snapshot={snapshot} nowMs={nowMs} />
+                      </Suspense>
+                    </ErrorBoundary>
                   }
                 />
               ))}

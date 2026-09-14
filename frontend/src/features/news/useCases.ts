@@ -11,6 +11,9 @@ import {
   requireDetail,
   requireFeed,
   requireKeywords,
+  requireProAnswers,
+  requireProConsole,
+  requireProStatus,
   requireState,
   requireTimeline,
   toSourceVM,
@@ -72,6 +75,17 @@ export const newsQueries = {
   toggleState: (signal?: AbortSignal) => newsApi.toggleState(signal),
 
   autoState: (signal?: AbortSignal) => newsApi.autoState(signal),
+
+  /* ── PRO console reads (round 2). Refusals throw NewsProRefusedError from
+   * the model guards — an available:false render is NEVER an empty list. ── */
+
+  proStatus: (signal?: AbortSignal) => newsApi.proStatus(signal).then(requireProStatus),
+
+  proConsole: (opts: { limit?: number; sinceSeq?: number }, signal?: AbortSignal) =>
+    newsApi.proConsole(opts, signal).then(requireProConsole),
+
+  proLatestAnswers: (limit = 8, signal?: AbortSignal) =>
+    newsApi.proLatestAnswers(limit, signal).then(requireProAnswers),
 };
 
 export const newsCommands = {
@@ -83,4 +97,12 @@ export const newsCommands = {
   restore: (articleId: string) => newsApi.restore(articleId),
   setToggle: (enabled: boolean) => newsApi.setToggle(enabled),
   setAuto: (enabled: boolean) => newsApi.setAuto(enabled),
+
+  /* ── PRO console commands (round 2). Commands DO NOT throw on a safe-envelope
+   * refusal: they return it so the UI shows the backend's own code/message
+   * (COOLDOWN, NEWS_UNAVAILABLE, ...) — progress/state stay backend-owned. ── */
+
+  proAnalyzeAll: (opts: { limit?: number; force?: boolean } = {}) => newsApi.proAnalyzeAll(opts),
+  proPurge: (opts: { hardDelete?: boolean; olderThanHours?: number | null; limit?: number } = {}) => newsApi.proPurge(opts),
+  autoPruneSafe: (actor = "pro_user") => newsApi.autoPruneSafe(actor),
 };

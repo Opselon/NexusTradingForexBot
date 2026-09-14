@@ -14,6 +14,7 @@ export const commandCenterQueries = {
   overview: (signal?: AbortSignal) => commandCenterApi.overview(signal),
   fleet: (lifecycle: string | undefined, executionFilter: string | undefined, signal?: AbortSignal) =>
     commandCenterApi.fleet(lifecycle, executionFilter, signal),
+  spatial: (signal?: AbortSignal) => commandCenterApi.spatial(signal),
   inspector: (id: string, signal?: AbortSignal) => commandCenterApi.inspector(id, signal),
   safety: (id: string, signal?: AbortSignal) => commandCenterApi.executionSafety(id, signal),
   timeline: (id: string, signal?: AbortSignal) => commandCenterApi.timeline(id, signal),

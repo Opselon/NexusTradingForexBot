@@ -1,20 +1,45 @@
 /**
  * ConnectionIndicator + stale-aware status strip.
  *
- * Realtime states: connected / reconnecting / disconnected / failed.
- * When not connected, the last accepted snapshot's wall-clock age is shown so
- * stale data is never presented as current.
+ * Realtime truth source: useRealtimeStatus() (SSE client) — this component
+ * never infers connectivity from anything else. The four legacy display words
+ * keep their verbatim semantics (Web/ux_conn.js NXConn):
+ *   CONNECTING — feed open but no frame accepted yet (never claim OK early)
+ *   OK         — connected AND a fresh frame (legacy state UP)
+ *   STALE      — reconnecting / connected but past the age budget (DEGRADED)
+ *   ERROR      — disconnected / failed (DOWN)
+ * When not OK, the last accepted snapshot's wall-clock age is shown so stale
+ * data is never presented as current.
  */
 
 import type { RealtimeStatus } from "@/types/realtime";
 import { formatAgeMs } from "@/lib/format";
+import "./shell.css";
 
-const LABELS: Record<RealtimeStatus["state"], string> = {
-  connected: "LIVE FEED",
-  reconnecting: "RECONNECTING…",
-  disconnected: "DISCONNECTED",
-  failed: "FEED FAILED",
+export type ConnWord = "CONNECTING" | "OK" | "STALE" | "ERROR";
+
+/** Pure mapping (unit-testable): RealtimeStatus -> legacy display word. */
+export function connWord(status: RealtimeStatus, nowMs: number, maxAgeMs = 15_000): ConnWord {
+  if (status.state === "disconnected" || status.state === "failed") return "ERROR";
+  if (status.state === "reconnecting") return "STALE";
+  if (status.lastMessageAt === null) return "CONNECTING";
+  if (nowMs - status.lastMessageAt > maxAgeMs) return "STALE";
+  return "OK";
+}
+
+const WORD_CLASS: Record<ConnWord, string> = {
+  CONNECTING: "warn",
+  OK: "ok",
+  STALE: "warn",
+  ERROR: "err",
 };
+
+/** Dot class on the existing .conn-dot palette (connected/reconnecting/...). */
+function dotClass(status: RealtimeStatus, word: ConnWord): string {
+  if (word === "OK") return "connected";
+  if (word === "ERROR") return status.state === "failed" ? "failed" : "disconnected";
+  return "reconnecting";
+}
 
 export function ConnectionIndicator({
   status,
@@ -25,14 +50,19 @@ export function ConnectionIndicator({
   nowMs: number;
   onRetry?: () => void;
 }) {
+  const word = connWord(status, nowMs);
   const ageMs = status.lastMessageAt !== null ? Math.max(0, nowMs - status.lastMessageAt) : null;
-  const stale = status.state !== "connected";
   return (
-    <span className="conn-chip" title={`state_version=${status.lastVersion ?? "—"} · reconnects=${status.reconnectAttempts}`}>
-      <span className={`conn-dot ${status.state}`} />
-      <span>{LABELS[status.state]}</span>
+    <span
+      className={`conn-chip ${WORD_CLASS[word]}`}
+      title={`SSE state=${status.state} · state_version=${status.lastVersion ?? "—"} · reconnects=${status.reconnectAttempts}`}
+      role="status"
+      aria-live="polite"
+    >
+      <span className={`conn-dot ${dotClass(status, word)}`} aria-hidden="true" />
+      <span>{word === "OK" ? "LIVE FEED" : word}</span>
       {ageMs !== null && <span className="faint">· data age {formatAgeMs(ageMs)}</span>}
-      {stale && onRetry && (
+      {word !== "OK" && onRetry && (
         <button className="btn small" style={{ marginLeft: 6 }} onClick={onRetry}>
           Retry
         </button>

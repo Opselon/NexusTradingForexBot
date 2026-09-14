@@ -7,10 +7,10 @@
 
 import { useState } from "react";
 import { DataTable, EmptyState, ErrorState, Panel, Segmented } from "@/components/primitives";
-import { SignedBucketChart } from "@/components/viz";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { useNewsImpact, useNewsTimeline } from "../hooks";
 import { timelineWindow } from "../model";
+import { NewsImpactCanvas } from "./NewsImpactCanvas";
 import { FreshnessNote, asErrorText } from "./shared";
 
 type TfId = "15m" | "1h" | "4h" | "1d";
@@ -79,7 +79,7 @@ export function NewsTimelinePanel() {
       ) : timeline.isError ? (
         <ErrorState message={asErrorText(timeline.error)} onRetry={() => timeline.refetch()} />
       ) : (
-        <SignedBucketChart buckets={buckets} emptyHint={`No impact evidence bucketed in the last ${hours}h for ${asset}.`} />
+        <NewsImpactCanvas buckets={buckets} bucketSec={bucket} hoursBack={hours} emptyHint={`No ${asset} impact buckets in the last ${hours}h — try a wider timeframe.`} />
       )}
 
       <div className="section-title" style={{ marginTop: 14 }}>

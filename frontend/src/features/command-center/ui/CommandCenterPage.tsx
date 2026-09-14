@@ -1,10 +1,11 @@
 /**
  * Command Center — strategy fleet command view (legacy command_center_* parity).
  *
- * Sections: overview KPI strip · fleet grid (spatial-table sorted risk-first)
- * · inspector drawer (snapshot + ai attribution + debug intelligence +
- * evidence completeness) · execution-safety card · decision timeline per
- * strategy · time machine (bounds + debounced lazy frame slider).
+ * Sections: overview KPI strip · spatial 2.5D fleet map (Canvas2D port of
+ * Web/command_center_spatial.js) · fleet grid (risk-first) · inspector drawer
+ * (snapshot + ai attribution + debug intelligence + evidence completeness) ·
+ * execution-safety card · decision timeline per strategy · time machine
+ * (bounds + debounced lazy frame slider).
  */
 
 import { useMemo, useState } from "react";
@@ -24,13 +25,14 @@ import { formatDateTime, formatNumber, formatTime } from "@/lib/format";
 import { DistBars, Drawer, FreshnessCaption, GateStepper, InfoRow, JsonBlock, StatusPill, useDebounced, useNow } from "../../research/ui/lane5Kit";
 import { arr, num, obj, str, stuckRows, type CcFleetRowDto } from "../model";
 import { commandCenterQueries, commandCenterUseCases, useTimeMachineFrame } from "../useCases";
+import { SpatialFleetCanvas } from "./SpatialFleetCanvas";
 
-type View = "fleet" | "timemachine";
+type View = "spatial" | "fleet" | "timemachine";
 
 export default function CommandCenterPage(props: ShellPageProps) {
   void props;
   const nowMs = useNow(5000);
-  const [view, setView] = useState<View>("fleet");
+  const [view, setView] = useState<View>("spatial");
   const [lifecycle, setLifecycle] = useState("");
   const [executionFilter, setExecutionFilter] = useState("");
   const [inspectId, setInspectId] = useState<string | null>(null);
@@ -55,7 +57,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2>Command Center</h2>
-        <span className="muted small">strategy fleet · inspector · execution safety · time machine</span>
+        <span className="muted small">strategy fleet · spatial map · inspector · execution safety · time machine</span>
         <FreshnessCaption timestamp={null} source="research engine projection" isFetching={overviewQ.isFetching || fleetQ.isFetching} error={overviewQ.isError} />
       </div>
 
@@ -117,6 +119,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
       <div style={{ marginBlock: 12 }}>
         <Segmented
           options={[
+            { id: "spatial" as const, label: "Spatial 2.5D map" },
             { id: "fleet" as const, label: "Fleet grid" },
             { id: "timemachine" as const, label: "Time machine" },
           ]}
@@ -124,6 +127,18 @@ export default function CommandCenterPage(props: ShellPageProps) {
           onChange={setView}
         />
       </div>
+
+      {view === "spatial" && (
+        <Panel title="Spatial fleet map — lifecycle strata (Canvas2D 2.5D)" tight>
+          <div style={{ padding: 10 }}>
+            <SpatialFleetCanvas
+              selectedId={inspectId}
+              onSelect={(id) => setInspectId(id)}
+              onInspect={(id) => setInspectId(id)}
+            />
+          </div>
+        </Panel>
+      )}
 
       {view === "fleet" && (
         <Panel

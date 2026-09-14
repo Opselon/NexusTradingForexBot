@@ -54,6 +54,51 @@ export interface CcFleetDto {
   rows?: CcFleetRowDto[];
 }
 
+/** Transient evaluation pipeline projection on a spatial node (telemetry,
+ *  NOT lifecycle) — shape from web/command_center_routes.evaluation_detail. */
+export interface CcSpatialEvaluationDto {
+  gates?: Record<string, string>;
+  current_stage?: string | null;
+  passed_gates?: number;
+  resolved_gates?: number;
+  progress?: number;
+  is_running?: boolean;
+  running_stage?: string | null;
+}
+
+/** Node from GET /api/command-center/spatial (research/spatial_layout). */
+export interface CcSpatialNodeDto {
+  strategy_id?: string;
+  strategy_version?: string;
+  zone?: string;
+  x?: number;
+  y?: number;
+  z?: number;
+  size_hint?: number | null;
+  ring_count?: number | null;
+  elevation?: number | null;
+  confidence?: number | null;
+  eligibility_state?: string;
+  evaluation?: CcSpatialEvaluationDto | null;
+}
+
+export interface CcSpatialZoneDto {
+  zone?: string;
+  y_index?: number;
+  count?: number;
+  terminal?: boolean;
+}
+
+export interface CcSpatialDto {
+  available?: boolean;
+  reason?: string;
+  /** true only for historical replay frames (legacy NX.spatial.setHistorical). */
+  historical?: boolean;
+  zones?: CcSpatialZoneDto[];
+  nodes?: CcSpatialNodeDto[];
+  meta?: { zone_spacing?: number; node_spacing?: number; max_columns?: number; total_nodes?: number };
+}
+
 export interface CcInspectorDto extends Row {
   available?: boolean;
   error?: string;
@@ -102,6 +147,30 @@ export interface TimeMachineFrameDto {
   console_events?: Row[];
   as_of?: string;
   reason?: string;
+}
+
+/** Lifecycle zones that mean "live execution" (renderer pulse semantics). */
+export const SPATIAL_LIVE_ZONES = new Set(["ACTIVE"]);
+export const SPATIAL_TERMINAL_ZONES = new Set(["REJECTED", "DEGRADED", "RETIRED"]);
+
+/** Evaluation gates in pipeline order + result colors — presentation mirror of
+ *  the legacy Web/command_center_spatial.js constants (rendering only; the
+ *  gate VALUES always come from the backend payload). */
+export const EVAL_GATES = ["BACKTEST", "WALK_FORWARD", "OOS", "ROBUSTNESS", "SCORE"] as const;
+
+/** Honest empty-state facts for the spatial canvas (no fabricated counts):
+ *  exactly what the backend said vs. what the current filter shows. */
+export function spatialEmptyFacts(
+  payload: CcSpatialDto | undefined,
+  visibleCount: number,
+  filterLabel: string,
+): { backendTotal: string; filter: string; matching: string } {
+  const backendTotal = payload?.meta?.total_nodes ?? payload?.nodes?.length ?? "—";
+  return {
+    backendTotal: String(backendTotal),
+    filter: filterLabel || "ALL",
+    matching: String(visibleCount),
+  };
 }
 
 /** Risk-first sort for the fleet grid: BLOCKED first, then by ascending

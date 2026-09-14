@@ -111,10 +111,11 @@ function outcomeFrom(body: unknown, okMessage: string, failFallback: string, fie
   return {
     ok,
     message: ok ? okMessage : backendMessage(body, failFallback),
-    requestId:
-      (detail?.error && typeof detail.error === "object"
-        ? (detail.error as { request_id?: string }).request_id ?? null
-        : null) ?? null,
+    requestId: (() => {
+      const err = detail?.error;
+      if (!err || typeof err !== "object") return null;
+      return (err as { request_id?: string }).request_id ?? null;
+    })(),
     fieldErrors: fieldErrors ?? serverErrors,
     raw: body,
   };

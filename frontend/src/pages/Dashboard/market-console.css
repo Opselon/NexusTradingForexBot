@@ -1,0 +1,464 @@
+/*
+ * market-console.css — lane M (Dashboard market console) tokens & surfaces.
+ * Theme tokens only (bg / border / text / accent / green / red / amber /
+ * violet / mono / sans custom properties); light glassmorphism + depth via
+ * the elevate tokens; density follows body.dense from theme.css.
+ * No frameworks, no CDN.
+ */
+
+/* ------------------------------- quote strip ------------------------------- */
+.mc-quote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 12px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 50%),
+    var(--bg-panel);
+  box-shadow: inset 0 1px 0 var(--elevate-hi), 0 4px 14px var(--elevate-lo);
+}
+.mc-quote__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-inline-size: 0;
+}
+.mc-quote__item .k {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.mc-quote__item .v {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.mc-quote__item .v.dim { font-size: 11px; font-weight: 600; color: var(--text-dim); }
+.mc-quote .timestamp-note { margin-inline-start: auto; }
+
+/* ------------------------------- chart stage ------------------------------- */
+.mc-stage {
+  position: relative;
+  block-size: clamp(320px, 44vh, 520px);
+  cursor: crosshair;
+  user-select: none;
+}
+.mc-stage > canvas {
+  display: block;
+  /* time axis stays LTR even in RTL locales — the axis is chronological */
+  direction: ltr;
+}
+.mc-tip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;
+  min-inline-size: 172px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  box-shadow: 0 10px 28px var(--elevate-lo), inset 0 1px 0 var(--elevate-hi);
+}
+.mc-tip__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block-end: 3px;
+  border-block-end: 1px solid var(--border);
+}
+.mc-tip__row .up { color: var(--green); font-weight: 700; }
+.mc-tip__row .down { color: var(--red); font-weight: 700; }
+.mc-tip__ohlc {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 1px 14px;
+  margin-block-start: 4px;
+}
+.mc-tip__ohlc b { color: var(--text); font-weight: 700; }
+
+/* ------------------------------- market radar ------------------------------ */
+.mc-radar {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 42%),
+    var(--bg-inset);
+  box-shadow: inset 0 1px 0 var(--elevate-hi), 0 8px 22px var(--elevate-lo);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.mc-radar--ready {
+  border-color: rgba(235, 161, 63, 0.45);
+  box-shadow: inset 0 1px 0 var(--elevate-hi), 0 8px 26px var(--elevate-lo), 0 0 18px rgba(235, 161, 63, 0.12);
+}
+.mc-radar--watch {
+  border-color: rgba(65, 166, 242, 0.4);
+  box-shadow: inset 0 1px 0 var(--elevate-hi), 0 8px 26px var(--elevate-lo), 0 0 16px rgba(65, 166, 242, 0.10);
+}
+.mc-radar__state {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+}
+.mc-radar__state--ready { color: var(--amber); border-color: rgba(235, 161, 63, 0.45); background: var(--amber-dim); }
+.mc-radar__state--watch { color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.45); background: rgba(65, 166, 242, 0.10); }
+.mc-radar__state--none { color: var(--text-faint); }
+.mc-radar__state--idle { color: var(--text-faint); border-style: dashed; }
+
+.mc-radar__decision {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+}
+.mc-radar__decision-k {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.mc-radar__decision-v {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--amber);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-radar__hero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.mc-radar__k {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-block-end: 2px;
+}
+.mc-radar__v {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--accent-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mc-radar__v--gold { color: var(--amber); }
+
+.mc-radar__dir {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+}
+.mc-radar__dir--buy { color: var(--green); border-color: rgba(62, 207, 142, 0.45); background: var(--green-dim); }
+.mc-radar__dir--sell { color: var(--red); border-color: rgba(242, 86, 77, 0.45); background: var(--red-dim); }
+.mc-radar__dir--sm { font-size: 9px; padding: 0 6px; }
+
+.mc-radar__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px;
+}
+.mc-radar__fact {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+  min-inline-size: 0;
+}
+.mc-radar__fv {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mc-radar__fv--gold { color: var(--amber); }
+.mc-radar__fv--dim { color: var(--text-dim); font-size: 11px; }
+
+.mc-radar__news {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+}
+.mc-radar__news--bad { color: var(--red); border-color: rgba(242, 86, 77, 0.5); background: var(--red-dim); }
+.mc-radar__news--warn { color: var(--amber); border-color: rgba(235, 161, 63, 0.5); background: var(--amber-dim); }
+.mc-radar__news--good { color: var(--green); border-color: rgba(62, 207, 142, 0.5); background: var(--green-dim); }
+
+.mc-radar__strategies {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mc-radar__chips { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+.mc-radar__setups ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  max-block-size: 132px;
+  overflow-y: auto;
+}
+.mc-radar__setups li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: var(--bg-inset);
+}
+.mc-radar__setups li .rank { color: var(--text-faint); width: 14px; }
+.mc-radar__setups li .type { color: var(--text); font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-radar__setups li .q { color: var(--amber); font-weight: 700; }
+
+/* ------------------------------- features grid ----------------------------- */
+.mc-feat { display: grid; gap: 8px; }
+.mc-feat__groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.mc-feat__group {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+}
+.mc-feat__group--base { color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.35); background: rgba(65, 166, 242, 0.08); }
+.mc-feat__group--news { color: var(--amber); border-color: rgba(235, 161, 63, 0.35); background: var(--amber-dim); }
+.mc-feat__group--liq { color: var(--green); border-color: rgba(62, 207, 142, 0.35); background: var(--green-dim); }
+.mc-feat__scale {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.mc-feat__cats { display: flex; flex-wrap: wrap; gap: 4px; }
+.mc-feat__cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.mc-feat__cat i {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.mc-feat__cat:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+.mc-feat__cat.active { color: var(--text); background: var(--bg-panel-2); border-color: var(--accent); }
+.mc-feat__cat.active i { color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.4); }
+.mc-feat__cat:disabled { opacity: 0.4; cursor: not-allowed; }
+.mc-feat__cat--violet.active { border-color: var(--violet); }
+.mc-feat__cat--amber.active { border-color: var(--amber); }
+.mc-feat__cat--green.active { border-color: var(--green); }
+
+.mc-feat__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: 6px;
+  max-block-size: 380px;
+  overflow-y: auto;
+  padding-inline-end: 4px;
+}
+body.dense .mc-feat__grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); max-block-size: 300px; }
+
+.mc-feat__tile {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 55%),
+    var(--bg-inset);
+  padding: 5px 8px 6px;
+  transition: border-color 0.2s ease;
+}
+.mc-feat__tile:hover { border-color: var(--border-strong); }
+.mc-feat__tile .n {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-feat__tile .row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-block-start: 2px; }
+.mc-feat__tile .v {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.mc-feat__tile .v.hi { color: var(--green); }
+.mc-feat__tile .v.lo { color: var(--red); }
+.mc-feat__tile .v.mid { color: var(--accent-strong); }
+.mc-feat__tile .v.na { color: var(--text-faint); }
+.mc-feat__tile .d { font-family: var(--mono); font-size: 9px; color: var(--text-faint); }
+.mc-feat__tile .st {
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline-end: -1px;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 800;
+  padding: 0 5px;
+  border-radius: 0 7px 0 6px;
+}
+.mc-feat__tile.nan { border-color: rgba(235, 161, 63, 0.45); }
+.mc-feat__tile.nan .v { color: var(--amber); }
+.mc-feat__tile.nan .st { color: var(--amber); background: var(--amber-dim); }
+.mc-feat__tile.unavailable { opacity: 0.6; }
+.mc-feat__tile.unavailable .v { color: var(--text-faint); }
+.mc-feat__tile.unavailable .st { color: var(--text-faint); background: var(--bg-panel-2); }
+
+/* delta pulse — CSS only, keyed off the value change between SSE versions */
+@keyframes mc-pulse-up {
+  0% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.55); }
+  100% { box-shadow: 0 0 0 9px rgba(62, 207, 142, 0); }
+}
+@keyframes mc-pulse-down {
+  0% { box-shadow: 0 0 0 0 rgba(242, 86, 77, 0.55); }
+  100% { box-shadow: 0 0 0 9px rgba(242, 86, 77, 0); }
+}
+.mc-feat__tile.pulse-up { animation: mc-pulse-up 0.85s ease-out 1; }
+.mc-feat__tile.pulse-down { animation: mc-pulse-down 0.85s ease-out 1; }
+@media (prefers-reduced-motion: reduce) {
+  .mc-feat__tile.pulse-up, .mc-feat__tile.pulse-down { animation: none; border-color: var(--border-strong); }
+}
+
+/* ------------------------------ replay panel ------------------------------- */
+/* Visual pass only (lane M): lift the transport block off the flat panel
+   floor. No contract, no data path changes. */
+.mc-replay {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 40%),
+    var(--bg-inset);
+  box-shadow: inset 0 1px 0 var(--elevate-hi);
+}
+
+/* ------------------------------ predictions table -------------------------- */
+.mc-preds { display: grid; gap: 8px; }
+.mc-pred {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 7px 10px 9px;
+}
+.mc-pred__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.mc-pred__head .t { color: var(--text-faint); }
+.mc-pred__head .a { font-weight: 800; letter-spacing: 0.04em; }
+.mc-pred__head .a--buy { color: var(--green); }
+.mc-pred__head .a--sell { color: var(--red); }
+.mc-pred__head .a--flat { color: var(--text); }
+.mc-pred__head .c { color: var(--accent-strong); font-weight: 700; }
+.mc-pred__head .r { color: var(--text-faint); font-size: 9px; }
+.mc-pred__head .rsn {
+  margin-inline-start: auto;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: var(--bg-panel);
+  max-inline-size: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mc-pred .probbar { margin-block-start: 5px; }
+.mc-pred__noprobs {
+  margin-block-start: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+.mc-pred__more { font-family: var(--mono); font-size: 10px; }
+.mc-pred__note { font-size: 10.5px; color: var(--text-faint); }
