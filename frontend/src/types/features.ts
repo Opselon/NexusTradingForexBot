@@ -19,22 +19,32 @@ export interface V1List<T> {
 // Producer: src/nexus_scalp/web/api_v1/indicators.py + indicators/service.py
 // to_api_dict(). GET /api/v1/indicators* (v1 envelope).
 
-export type IndicatorBias = "BUY" | "SELL" | "NEUTRAL" | string;
-
+/**
+ * One computed indicator. Backend truth: ports.py `IndicatorResult.as_api_dict`
+ * emits EXACTLY {name, value, action} — no signal/kind/label/params fields
+ * ever arrive, so the phantom fields are removed (D5-wave fix, verified
+ * read-only against src/nexus_scalp/indicators/ports.py:42-43).
+ * action ∈ "Buy" | "Sell" | "Neutral" | "Strong buy" | "Strong sell";
+ * value is null when history is insufficient (never fabricated).
+ */
 export interface IndicatorReading {
-  name?: string;
-  kind?: string;
-  value?: number | null;
-  signal?: IndicatorBias;
-  label?: string;
-  params?: Record<string, unknown>;
-  [extra: string]: unknown;
+  name: string;
+  value: number | null;
+  action: string;
 }
 
+/**
+ * Pivot MATRIX (D5 fix). Producer: indicators/service.py `PivotMatrix` —
+ * `levels` is an ORDERED list of level names (["R3","R2","R1","P","S1","S2","S3"]),
+ * `columns` the family names the backend actually sends
+ * (["Classic","Fibonacci","Camarilla","Woodie","DM"]), and `rows` a dict
+ * keyed by LEVEL: rows[level][family] = number|null (not a flat levels map,
+ * not an array of row objects — the old DTO was wrong on both counts).
+ */
 export interface IndicatorPivots {
-  levels: Record<string, number | null>;
+  levels: string[];
   columns: string[];
-  rows: string[];
+  rows: Record<string, Record<string, number | null>>;
 }
 
 export interface IndicatorGauge {

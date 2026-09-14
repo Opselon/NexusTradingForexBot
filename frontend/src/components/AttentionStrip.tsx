@@ -18,6 +18,8 @@
 import type { EngineSnapshot } from "@/types/domain";
 import type { RealtimeStatus } from "@/types/realtime";
 import { useI18n } from "@/stores/i18nStore";
+import { connWord } from "./ConnectionIndicator";
+import "./shell.css";
 
 export interface AttentionRow {
   kind: "critical" | "action";
@@ -35,7 +37,8 @@ export function computeAttention(
   const items: AttentionRow[] = [];
 
   // Connection: the realtime layer is this app's truth source (SSE client).
-  const connDown = feed.state === "disconnected" || feed.state === "failed";
+  const word = connWord(feed, nowMs);
+  const connDown = word === "ERROR";
   const ageMs = feed.lastMessageAt !== null ? Math.max(0, nowMs - feed.lastMessageAt) : null;
   if (connDown) {
     const last =
@@ -65,7 +68,7 @@ export function computeAttention(
       items.push({ kind: "action", text: t("ux.attention.subsystem", "{s}: {v}", { s: k.toUpperCase(), v: st }) });
     }
   }
-  if (!connDown && feed.state === "reconnecting" && !snapshot.is_stale) {
+  if (!connDown && (word === "STALE" || word === "CONNECTING") && !snapshot.is_stale) {
     items.push({ kind: "action", text: t("ux.conn.stale_title", "Data may be stale — no live updates recently.") });
   }
   return items;
@@ -86,10 +89,11 @@ export function AttentionStrip({
 
   if (rows.length === 0) {
     return (
-      <div className="banner calm" role="status">
-        <span>✓ {t("ux.attention.allgood", "All systems normal. No action needed.")}</span>
+      <div className="banner calm attention-calm" role="status">
+        <span className="a-glyph" aria-hidden="true">✓</span>
+        <span>{t("ux.attention.allgood", "All systems normal. No action needed.")}</span>
         {feed.lastMessageAt !== null && (
-          <span className="tiny faint inline-mono" style={{ marginLeft: "auto" }}>
+          <span className="attention-tag tiny faint inline-mono">
             {t("ux.conn.last", "Last update: {t} ({s}s ago)", {
               t: new Date(feed.lastMessageAt).toLocaleTimeString("en-GB", { hour12: false }),
               s: Math.round((nowMs - feed.lastMessageAt) / 1000),
@@ -101,16 +105,17 @@ export function AttentionStrip({
   }
   const critical = rows.some((r) => r.kind === "critical");
   return (
-    <div className={`banner ${critical ? "down" : "stale"}`} role="region" aria-label="Attention summary">
-      <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+    <div className={`banner ${critical ? "down" : "stale"} ${critical ? "attention-critical" : "attention-action"}`} role="region" aria-label="Attention summary">
+      <div className="attention-rows">
         {rows.map((r, i) => (
-          <span key={i} style={{ whiteSpace: "normal" }}>
-            {r.kind === "critical" ? "⛔" : "⚠"} {r.text}
+          <span key={i} className="a-row">
+            <span className="a-glyph" aria-hidden="true">{r.kind === "critical" ? "⛔" : "⚠"}</span>
+            <span>{r.text}</span>
           </span>
         ))}
       </div>
       {critical && (
-        <span className="tiny" style={{ marginLeft: "auto", letterSpacing: "0.1em" }}>
+        <span className="attention-tag tiny">
           {t("ux.attention.critical", "ATTENTION REQUIRED")}
         </span>
       )}

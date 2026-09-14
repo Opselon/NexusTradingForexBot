@@ -20,6 +20,7 @@ import type {
   CcFleetDto,
   CcInspectorDto,
   CcOverviewDto,
+  CcSpatialDto,
   CcTimelineDto,
   TimeMachineBoundsDto,
   TimeMachineFrameDto,
@@ -37,6 +38,10 @@ export const commandCenterApi = {
 
   fleet: (lifecycle: string | undefined, executionFilter: string | undefined, signal?: AbortSignal): Promise<CcFleetDto> =>
     getLegacy<CcFleetDto>(`/api/command-center/fleet${qs({ lifecycle, execution_filter: executionFilter, limit: 2000 })}`, signal),
+
+  /** Backend-computed 2.5D layout (research/spatial_layout.SpatialLayout). */
+  spatial: (signal?: AbortSignal): Promise<CcSpatialDto> =>
+    getLegacy<CcSpatialDto>(`/api/command-center/spatial${qs({ max_columns: 6, limit: 2000 })}`, signal),
 
   inspector: (strategyId: string, signal?: AbortSignal): Promise<CcInspectorDto> =>
     getLegacy<CcInspectorDto>(`/api/command-center/inspector/${encodeURIComponent(strategyId)}`, signal),

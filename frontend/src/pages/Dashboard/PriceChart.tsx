@@ -1,29 +1,36 @@
 /**
- * PriceChart — hand-rolled SVG candle chart for the Dashboard (lane 4).
+ * PriceChart — DPR-aware Canvas-2D candlestick console (lane M).
+ *
+ * Port of legacy Web/app.js drawChart (~L4400-5214) + updateCrosshairTooltip
+ * (~L5220) with the React quality bar: devicePixelRatio backing store like
+ * Web/command_center_spatial.js resize(), requestAnimationFrame eased redraw
+ * on every new SSE state_version, ResizeObserver re-layout, hover crosshair
+ * with the legacy OHLC tooltip semantics. Frame drawing lives in
+ * ./chartPainter.ts (pure Canvas2D, no state).
  *
  * Data discipline:
  *  - Candles come from /api/chart/history (broker-native with explicit
  *    ENGINE_STATE fallback provenance) — NEVER synthesized, NEVER gap-filled.
  *  - Zones / BOS / midlines / liquidity sweeps / order lines render ONLY
  *    from the backend `visual_overlays` payload; the chart computes no SMC.
- *  - The replay cursor (KNOWN/UNKNOWN boundary, ported from
- *    Web/replay_panel.js drawKnownBoundary) dims everything right of the
+ *  - EMA/trend overlay lines: the canonical snapshot and chart history carry
+ *    NO indicator series (verified: server.py visual_overlays keys are
+ *    rectangles/bos_lines/midlines/liq_markers/order_lines). Client-side
+ *    indicator math is forbidden (audit lane-09), so none are drawn.
+ *  - The replay cursor (KNOWN/UNKNOWN boundary) dims everything right of the
  *    cursor and labels it FUTURE = UNKNOWN: decision-visible vs not.
  *
- * Presentation only: pure props in, SVG out, no fetch, no cache.
+ * Presentation only: pure props in, canvas out, no fetch, no cache.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Bar } from "@/types/domain";
 import type { OverlayLine, OverlayRect, OverlayOrderLines } from "../_shared/contracts";
-import { formatPrice, formatTime } from "@/lib/format";
+import { useRealtimeVersion } from "@/hooks/useRealtime";
+import { formatPrice } from "@/lib/format";
+import { AXIS_W, PAD_LEFT, paintChart, readPalette, type PainterScene } from "./chartPainter";
 import "@/pages/_shared/pages.css";
-
-const W = 1000;
-const H = 340;
-const PAD_TOP = 10;
-const PAD_BOTTOM = 26;
-const AXIS_W = 62;
+import "./market-console.css";
 
 export interface PriceChartProps {
   bars: Bar[];
@@ -52,13 +59,10 @@ export interface PriceChartProps {
   onRetry?: () => void;
 }
 
-function zoneClass(type: string | undefined): string {
-  const t = (type ?? "").toUpperCase();
-  if (t.includes("FVG") && t.includes("BULL")) return "l4-chart__zone--fvg-bull";
-  if (t.includes("FVG")) return "l4-chart__zone--fvg-bear";
-  if (t.includes("STOP_HUNT") || t.includes("SWEEP")) return "l4-chart__zone--sweep";
-  if (t.includes("ORDER_BLOCK")) return "l4-chart__zone--ob";
-  return "l4-chart__zone--ob";
+interface Hover {
+  idx: number;
+  x: number;
+  y: number;
 }
 
 export function PriceChart({
@@ -77,74 +81,197 @@ export function PriceChart({
   onRetry,
 }: PriceChartProps) {
   const [visible, setVisible] = useState(180);
-  const [hover, setHover] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<Hover | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const rtVersion = useRealtimeVersion();
 
-  const view = useMemo(() => {
-    const all = bars.filter((b) => b.time);
-    const shown = all.slice(-visible);
-    if (shown.length === 0) return null;
+  // ---- data window (pure slice of backend bars — no gap fill, no synthesis)
+  const shown = useMemo(() => bars.filter((b) => b.time).slice(-visible), [bars, visible]);
+
+  const { timeIndex, indexAtOrBefore } = useMemo(() => {
+    const m = new Map<string, number>();
+    shown.forEach((b, i) => m.set(b.time, i));
+    // index of the LAST bar at-or-before a time string (string compare works
+    // on ISO timestamps; mirrors Web/replay_panel.js cursor search)
+    const atOrBefore = (iso: string): number => {
+      const probe = iso.slice(0, 19);
+      for (let i = shown.length - 1; i >= 0; i--) {
+        if ((shown[i]?.time ?? "").slice(0, 19) <= probe) return i;
+      }
+      return -1;
+    };
+    return { timeIndex: m, indexAtOrBefore: atOrBefore };
+  }, [shown]);
+
+  // ---- target price scale (backend values + live bid + overlay extents only)
+  const target = useMemo(() => {
     let lo = Infinity;
     let hi = -Infinity;
     for (const b of shown) {
-      if (b.high !== null && b.high > hi) hi = b.high;
-      if (b.low !== null && b.low < lo) lo = b.low;
-      if (b.open !== null) {
-        lo = Math.min(lo, b.open);
-        hi = Math.max(hi, b.open);
-      }
-      if (b.close !== null) {
-        lo = Math.min(lo, b.close);
-        hi = Math.max(hi, b.close);
+      for (const p of [b.high, b.low, b.open, b.close]) {
+        if (typeof p === "number" && Number.isFinite(p)) {
+          if (p > hi) hi = p;
+          if (p < lo) lo = p;
+        }
       }
     }
-    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
     if (typeof liveBid === "number" && Number.isFinite(liveBid)) {
       lo = Math.min(lo, liveBid);
       hi = Math.max(hi, liveBid);
     }
-    // overlay prices extend the visible range so zones never clip silently
     for (const z of overlays?.rectangles ?? []) {
       if (Number.isFinite(z.price_low)) lo = Math.min(lo, z.price_low);
       if (Number.isFinite(z.price_high)) hi = Math.max(hi, z.price_high);
     }
-    const pad = (hi - lo) * 0.08 || 0.5;
-    lo -= pad;
-    hi += pad;
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+    const pad = (hi - lo) * 0.08 || 0.5; // legacy padding semantics
+    return { lo: lo - pad, hi: hi + pad };
+  }, [shown, liveBid, overlays]);
 
-    const plotW = W - AXIS_W;
-    const bw = plotW / shown.length;
-    const x = (i: number) => i * bw;
-    const y = (p: number) => PAD_TOP + ((hi - p) / (hi - lo)) * (H - PAD_TOP - PAD_BOTTOM);
-    const timeIndex = new Map<string, number>();
-    shown.forEach((b, i) => timeIndex.set(b.time, i));
-    // index of the LAST bar at-or-before a time string (string compare works
-    // on ISO timestamps; mirrors Web/replay_panel.js cursor search)
-    const indexAtOrBefore = (iso: string): number => {
-      const probe = iso.slice(0, 19);
-      for (let i = shown.length - 1; i >= 0; i--) {
-        const t = shown[i]?.time ?? "";
-        if (t.slice(0, 19) <= probe) return i;
+  // ---- ResizeObserver: CSS-pixel stage size drives the backing store
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r) {
+        setSize({ w: Math.max(120, r.width), h: Math.max(120, r.height) });
+        kickRef.current?.(60);
       }
-      return -1;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ---- scene consumed by the painter via refs (no RAF restart per frame)
+  const sceneRef = useRef<PainterScene | null>(null);
+  sceneRef.current = {
+    shown,
+    overlays,
+    liveBid,
+    cursorIso,
+    digits,
+    hoverIdx: hover?.idx ?? -1,
+    hoverY: hover?.y ?? null,
+    timeIndex,
+    indexAtOrBefore,
+  };
+  const scaleRef = useRef<{ lo: number; hi: number } | null>(null);
+  const targetRef = useRef(target);
+  targetRef.current = target;
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+
+  // ---- the RAF loop: eased scale glide (new SSE versions animate the price
+  // window like legacy pan easing), idle-when-clean to spare the CPU
+  const rafRef = useRef<number | null>(null);
+  const dirtyRef = useRef(true);
+  const animUntilRef = useRef(0);
+  const kickRef = useRef<((ms?: number) => void) | null>(null);
+
+  useEffect(() => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const pal = readPalette();
+    const mono = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim() || "monospace";
+
+    const draw = () => {
+      const { w, h } = sizeRef.current;
+      if (w <= 0 || h <= 0) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1); // spatial.js parity
+      const bwPix = Math.round(w * dpr);
+      const bhPix = Math.round(h * dpr);
+      if (cv.width !== bwPix || cv.height !== bhPix) {
+        cv.width = bwPix;
+        cv.height = bhPix;
+        cv.style.width = `${w}px`;
+        cv.style.height = `${h}px`;
+      }
+      const ctx = cv.getContext("2d");
+      const sc = sceneRef.current;
+      if (!ctx || !sc) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const scale = scaleRef.current;
+      if (!scale || sc.shown.length === 0) return;
+      paintChart(ctx, { w, h }, scale, sc, pal, mono);
     };
-    return { shown, lo, hi, bw, x, y, plotW, timeIndex, indexAtOrBefore };
-  }, [bars, visible, liveBid, overlays]);
+
+    const step = () => {
+      const tgt = targetRef.current;
+      if (tgt) {
+        const cur = scaleRef.current ?? { lo: tgt.lo, hi: tgt.hi };
+        const k = 0.22;
+        const nlo = cur.lo + (tgt.lo - cur.lo) * k;
+        const nhi = cur.hi + (tgt.hi - cur.hi) * k;
+        const span = Math.max(1e-9, tgt.hi - tgt.lo);
+        const done = Math.abs(nlo - tgt.lo) / span < 0.0004 && Math.abs(nhi - tgt.hi) / span < 0.0004;
+        scaleRef.current = done ? { lo: tgt.lo, hi: tgt.hi } : { lo: nlo, hi: nhi };
+      }
+      draw();
+      const stillAnimating = Date.now() < animUntilRef.current;
+      const t2 = targetRef.current;
+      const c2 = scaleRef.current;
+      const scaleMoving =
+        !!t2 &&
+        !!c2 &&
+        (Math.abs(c2.lo - t2.lo) / Math.max(1e-9, t2.hi - t2.lo) > 0.0004 ||
+          Math.abs(c2.hi - t2.hi) / Math.max(1e-9, t2.hi - t2.lo) > 0.0004);
+      if (dirtyRef.current || scaleMoving || stillAnimating) {
+        dirtyRef.current = false;
+        rafRef.current = window.requestAnimationFrame(step);
+      } else {
+        rafRef.current = null;
+      }
+    };
+    const kick = (ms = 0) => {
+      dirtyRef.current = true;
+      animUntilRef.current = Math.max(animUntilRef.current, Date.now() + ms);
+      if (rafRef.current === null) rafRef.current = window.requestAnimationFrame(step);
+    };
+    kickRef.current = kick;
+    kick(60);
+    return () => {
+      if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      kickRef.current = null;
+    };
+    // Rebinds when the canvas mounts/unmounts (empty-state <-> stage swap);
+    // palette/mono are read here, size + data flow through refs.
+  }, [shown.length > 0]);
+
+  // Monitor / zoom changes flip devicePixelRatio without a resize event —
+  // kick a repaint so the backing store stays crisp (draw() rescales itself).
+  useEffect(() => {
+    let alive = true;
+    const arm = () => {
+      if (!alive) return;
+      const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      const onChange = () => {
+        kickRef.current?.(60);
+        arm(); // re-arm for the new DPR value
+      };
+      mq.addEventListener("change", onChange, { once: true });
+    };
+    arm();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // new SSE version or any data change → one smooth redraw pass
+  useEffect(() => {
+    kickRef.current?.(260);
+  }, [rtVersion.version, shown, target, liveBid, overlays, cursorIso, hover]);
+
+  const hovered = hover && hover.idx >= 0 ? shown[hover.idx] : null;
 
   const headerNote = (
     <span className="l4-chip-row" style={{ marginInlineStart: "auto" }}>
-      {[
-        { id: 90, label: "90" },
-        { id: 180, label: "180" },
-        { id: 360, label: "360" },
-        { id: 720, label: "720" },
-      ].map((o) => (
-        <button
-          key={o.id}
-          className={`btn small ${visible === o.id ? "primary" : "ghost"}`}
-          onClick={() => setVisible(o.id)}
-          title={`show last ${o.id} bars`}
-        >
-          {o.label}
+      {[90, 180, 360, 720].map((o) => (
+        <button key={o} className={`btn small ${visible === o ? "primary" : "ghost"}`} onClick={() => setVisible(o)} title={`show last ${o} bars`}>
+          {o}
         </button>
       ))}
     </span>
@@ -167,7 +294,7 @@ export function PriceChart({
   ) : (
     <div className="l4-chart__state">
       <span className="glyph">∅</span>
-      <span>no candles yet — the chart renders only real MT5/engine bars, never synthetic ones.</span>
+      <span>Awaiting ticks — no candles yet. The chart renders only real MT5/engine bars, never synthetic ones.</span>
     </div>
   );
 
@@ -183,193 +310,41 @@ export function PriceChart({
         {caption && <span className="timestamp-note">{caption}</span>}
         {headerNote}
       </div>
-      {!view ? (
+      {shown.length === 0 ? (
         stateBlock
       ) : (
-        <>
-          <svg
-            className="l4-chart__canvas"
-            viewBox={`0 0 ${W} ${H}`}
-            role="img"
-            aria-label={`${view.shown.length} ${timeframe ?? ""} candles for ${symbol ?? "market"}`}
-            onMouseMove={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const px = ((e.clientX - rect.left) / rect.width) * W;
-              const idx = Math.max(0, Math.min(view.shown.length - 1, Math.floor(px / view.bw)));
-              setHover({ idx, x: e.clientX - rect.left, y: e.clientY - rect.top });
-            }}
-            onMouseLeave={() => setHover(null)}
-          >
-            {/* horizontal price gridlines + axis labels (5 bands) */}
-            {Array.from({ length: 5 }, (_, i) => {
-              const p = view.lo + ((view.hi - view.lo) * i) / 4;
-              const gy = view.y(p);
-              return (
-                <g key={i}>
-                  <line className="l4-chart__grid" x1={0} x2={view.plotW} y1={gy} y2={gy} />
-                  <text className="l4-chart__grid-label" x={W - AXIS_W + 6} y={gy + 3}>
-                    {formatPrice(p, digits)}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* SMC/ICT zones from the backend overlay payload */}
-            {(overlays?.rectangles ?? []).map((z, i) => {
-              const startIdx = z.time ? (view.timeIndex.get(z.time) ?? view.indexAtOrBefore(z.time)) : 0;
-              if (startIdx < 0) return null;
-              const zx = view.x(startIdx);
-              const zy = view.y(z.price_high);
-              const zh = Math.max(1, view.y(z.price_low) - view.y(z.price_high));
-              const label = z.type === "BULLISH_ORDER_BLOCK" || z.type === "BEARISH_ORDER_BLOCK"
-                ? `ob ${typeof z.ai_confidence === "number" ? `${Math.round(z.ai_confidence * 100)}%` : ""}`
-                : (z.type ?? "").toLowerCase();
-              return (
-                <g key={z.id ?? `z${i}`}>
-                  <rect className={`l4-chart__zone ${zoneClass(z.type)}`} x={zx} y={zy} width={Math.max(2, view.plotW - zx)} height={zh} />
-                  <text className="l4-chart__zone-label" x={zx + 3} y={Math.min(Math.max(zy + 9, 9), H - 30)}>
-                    {label}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* BOS lines (horizontal, backend-computed break levels) */}
-            {(overlays?.bos_lines ?? []).slice(-12).map((l, i) => {
-              const ly = view.y(l.price);
-              if (ly < PAD_TOP || ly > H - PAD_BOTTOM) return null;
-              return <line key={l.id ?? `b${i}`} className="l4-chart__bos" x1={0} x2={view.plotW} y1={ly} y2={ly} />;
-            })}
-
-            {/* 50% equilibrium midlines */}
-            {(overlays?.midlines ?? []).slice(-4).map((m, i) => {
-              const my = view.y(m.price);
-              if (my < PAD_TOP || my > H - PAD_BOTTOM) return null;
-              const fromIdx = m.time_start ? view.indexAtOrBefore(m.time_start) : 0;
-              return (
-                <g key={m.id ?? `m${i}`}>
-                  <line className="l4-chart__mid" x1={Math.max(0, view.x(fromIdx))} x2={view.plotW} y1={my} y2={my} />
-                  <text className="l4-chart__grid-label" x={Math.max(0, view.x(fromIdx)) + 3} y={my - 3}>
-                    {m.label ?? "50%"}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* liquidity sweep markers (triangles at the swept extreme) */}
-            {(overlays?.liq_markers ?? []).slice(-15).map((m, i) => {
-              const idx = m.time ? (view.timeIndex.get(m.time) ?? -1) : -1;
-              if (idx < 0) return null;
-              const mx = view.x(idx) + view.bw / 2;
-              const my = view.y(m.price);
-              const up = (m.type ?? "").includes("BUY_SIDE");
-              const pts = up
-                ? `${mx - 4},${my - 3} ${mx + 4},${my - 3} ${mx},${my + 4}`
-                : `${mx - 4},${my + 3} ${mx + 4},${my + 3} ${mx},${my - 4}`;
-              return <polygon key={m.id ?? `s${i}`} className="l4-chart__marker" points={pts} />;
-            })}
-
-            {/* candles */}
-            {view.shown.map((b, i) => {
-              if (b.open === null || b.close === null || b.high === null || b.low === null) return null;
-              const up = b.close >= b.open;
-              const cx = view.x(i) + view.bw / 2;
-              const bodyTop = view.y(Math.max(b.open, b.close));
-              const bodyH = Math.max(1, Math.abs(view.y(b.open) - view.y(b.close)));
-              const cw = Math.max(1, Math.min(view.bw * 0.68, 11));
-              return (
-                <g key={`${b.time}-${i}`} className={b.is_complete === false ? "l4-chart__candle-forming" : undefined}>
-                  <line className={up ? "l4-chart__candle-up" : "l4-chart__candle-down"} x1={cx} x2={cx} y1={view.y(b.high)} y2={view.y(b.low)} strokeWidth={1} />
-                  <rect className={up ? "l4-chart__candle-up" : "l4-chart__candle-down"} x={cx - cw / 2} y={bodyTop} width={cw} height={bodyH} />
-                </g>
-              );
-            })}
-
-            {/* live quote line */}
-            {typeof liveBid === "number" && Number.isFinite(liveBid) && (
-              <g>
-                <line className="l4-chart__order l4-chart__order--entry" x1={0} x2={view.plotW} y1={view.y(liveBid)} y2={view.y(liveBid)} strokeDasharray="1 0" opacity={0.75} />
-                <text className="l4-chart__grid-label" x={W - AXIS_W + 6} y={view.y(liveBid) + 3} fill="var(--accent-strong)">
-                  {formatPrice(liveBid, digits)}
-                </text>
-              </g>
-            )}
-
-            {/* open-position entry/SL/TP from the order_lines overlay */}
-            {overlays?.order_lines && (
-              <g>
-                {(
-                  [
-                    ["entry", overlays.order_lines.entry, "l4-chart__order--entry"],
-                    ["sl", overlays.order_lines.stop_loss, "l4-chart__order--sl"],
-                    ["tp", overlays.order_lines.take_profit, "l4-chart__order--tp"],
-                  ] as const
-                ).map(([k, v, cls]) =>
-                  typeof v === "number" && Number.isFinite(v) ? (
-                    <g key={k}>
-                      <line className={`l4-chart__order ${cls}`} x1={0} x2={view.plotW} y1={view.y(v)} y2={view.y(v)} strokeDasharray="6 4" />
-                      <text className="l4-chart__grid-label" x={4} y={view.y(v) - 3}>
-                        {k} {formatPrice(v, digits)}
-                      </text>
-                    </g>
-                  ) : null,
-                )}
-              </g>
-            )}
-
-            {/* replay KNOWN/UNKNOWN boundary */}
-            {cursorIso && (() => {
-              const ci = view.indexAtOrBefore(cursorIso);
-              if (ci < 0) return null;
-              const cx2 = view.x(ci) + view.bw / 2;
-              return (
-                <g>
-                  <rect className="l4-chart__future" x={cx2} y={0} width={Math.max(0, view.plotW - cx2)} height={H - PAD_BOTTOM} />
-                  <line className="l4-chart__cursor" x1={cx2} x2={cx2} y1={0} y2={H - PAD_BOTTOM} />
-                  <text className="l4-chart__cursor-label" x={Math.min(cx2 + 4, W - 130)} y={12}>
-                    REPLAY CURSOR (KNOWN)
-                  </text>
-                  <text className="l4-chart__cursor-label" x={Math.min(cx2 + 4, W - 130)} y={24}>
-                    FUTURE = UNKNOWN
-                  </text>
-                </g>
-              );
-            })()}
-
-            {/* time axis (4 labels) */}
-            {Array.from({ length: 4 }, (_, i) => {
-              const idx = Math.floor(((view.shown.length - 1) * i) / 3);
-              const b = view.shown[idx];
-              if (!b) return null;
-              return (
-                <text key={i} className="l4-chart__tick" x={Math.min(view.x(idx) + 2, W - AXIS_W - 52)} y={H - 8}>
-                  {formatTime(b.time)}
-                </text>
-              );
-            })}
-
-            {/* crosshair */}
-            {hover && view.shown[hover.idx] && (
-              <line className="l4-chart__cross" x1={view.x(hover.idx) + view.bw / 2} x2={view.x(hover.idx) + view.bw / 2} y1={0} y2={H - PAD_BOTTOM} />
-            )}
-          </svg>
-          {hover && view.shown[hover.idx] && (
-            <div
-              className="l4-chart__tip"
-              style={{
-                insetInlineStart: Math.min(hover.x + 12, 760),
-                insetBlockStart: Math.max(4, hover.y - 60),
-              }}
-            >
-              {(() => {
-                const b = view.shown[hover.idx]!;
-                return `time  ${b.time.replace("T", " ").slice(0, 19)}
-open  ${formatPrice(b.open, digits)}  high ${formatPrice(b.high, digits)}
-low   ${formatPrice(b.low, digits)}  close ${formatPrice(b.close, digits)}${b.is_complete === false ? "\n(forming bar)" : ""}`;
-              })()}
+        <div
+          ref={stageRef}
+          className="mc-stage"
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const plotW = rect.width - AXIS_W - PAD_LEFT;
+            if (plotW <= 0) return;
+            const idx = Math.max(0, Math.min(shown.length - 1, Math.floor(((px - PAD_LEFT) / plotW) * shown.length)));
+            setHover({ idx, x: px, y: e.clientY - rect.top });
+          }}
+          onMouseLeave={() => setHover(null)}
+        >
+          <canvas ref={canvasRef} aria-label={`${shown.length} ${timeframe ?? ""} candles for ${symbol ?? "market"}`} role="img" />
+          {hovered && hover && (
+            <div className="mc-tip" style={{ insetInlineStart: Math.min(hover.x + 15, Math.max(0, size.w - 190)), insetBlockStart: Math.min(hover.y + 15, Math.max(0, size.h - 96)) }}>
+              <div className="mc-tip__row">
+                <span>{hovered.time.replace("T", " ").slice(0, 19)}</span>
+                <span className={hovered.close !== null && hovered.open !== null && hovered.close >= hovered.open ? "up" : "down"}>
+                  {hovered.is_complete === false ? "Forming" : "Completed"}
+                </span>
+              </div>
+              <div className="mc-tip__ohlc">
+                <span>O <b>{formatPrice(hovered.open, digits)}</b></span>
+                <span>H <b>{formatPrice(hovered.high, digits)}</b></span>
+                <span>L <b>{formatPrice(hovered.low, digits)}</b></span>
+                <span>C <b>{formatPrice(hovered.close, digits)}</b></span>
+                <span>V <b>{hovered.tick_volume ?? hovered.volume ?? "—"}</b></span>
+              </div>
             </div>
           )}
-        </>
+        </div>
       )}
     </section>
   );

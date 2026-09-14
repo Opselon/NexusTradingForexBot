@@ -11,3 +11,9 @@ export default defineFeature({
   },
   lazy: featurePage(() => import("./ui/CommandCenterPage")),
 });
+
+/** Shared money-path escalation gate (Lane P): any feature that transitions
+ *  the engine into LIVE must route through this typed confirm, never a plain
+ *  click. Exported here so control-center (Lane X) can adopt it without
+ *  reaching into another lane's internals. */
+export { TypedConfirmModal, modeChangeSpec } from "./ui/TypedConfirmModal";

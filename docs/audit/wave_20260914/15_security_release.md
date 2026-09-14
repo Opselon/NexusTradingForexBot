@@ -14,7 +14,7 @@ Git write commands: none executed. Filesystem writes: this file only (lane scrat
 
 ### 1.2 Lane-run extended scan (gap coverage) — VERIFIED
 Same scanner regexes PLUS an extended set (`gh[opusr]_[A-Za-z0-9]{20,}`, `xox[baprs]-`, `AKIA…`, generic PEM, JWT-shaped strings) over **2,320 tracked files** in `scripts/ installer/ Web/ agents/ frontend/ tests/ .github/ docker/ configs/ docs/ src/ + main.py` (`git ls-files`-driven, binary/lock suffixes excluded):
-- 9 files match the scanner's own pattern — ALL under `tests/unit/`, ALL demonstrable fake fixtures (e.g. `bot_token="1234567890:ABCDEFGHIJKLMNOPQRSTUVWXyz"`, `api_key="***"` — redaction-shaped placeholder, `ghp_123456…` in incident-response tests). No live-format credential found.
+- 9 files match the scanner's own pattern — ALL under `tests/unit/`, ALL demonstrable fake fixtures (e.g. `bot_token="1234567890:ABCDEFGH…"` — truncated so this report does not itself match the bot-token regex, `api_key="***"` — redaction-shaped placeholder, `ghp_123456…` in incident-response tests). No live-format credential found.
 - **Verdict: gap is currently benign in content, but structurally real** — a future secret planted in `scripts/`/`installer/`/`Web/`/`agents/` would pass both the CI step and the release `validate` job (`release.yml` "Scan for secrets in source" runs the SAME narrow scanner).
 
 ### 1.3 Recommendation (extend, concrete)

@@ -129,9 +129,14 @@ Consequences:
 **M1 — Regime adapter (revives all 14 families; smallest possible seam).**
 Add one pure function in `strategy_factory.py`:
 ```python
-_REGIME_NORMALIZE = {"TRENDING_MOMENTUM": "TRENDING", "VOLATILITY_EXPANSION": "TRENDING",
-                     "RANGING_MEAN_REVERSION": "RANGING", "MIXED": "RANGING",  # per governance
-                     "HIGH_SPREAD_CHOP": "CHOP", "MACRO_NEWS_FREEZE": "FREEZE"}
+_REGIME_NORMALIZE = {
+    "TRENDING_MOMENTUM": "TRENDING",
+    "VOLATILITY_EXPANSION": "TRENDING",
+    "RANGING_MEAN_REVERSION": "RANGING",
+    "MIXED": "RANGING",  # per governance
+    "HIGH_SPREAD_CHOP": "CHOP",
+    "MACRO_NEWS_FREEZE": "FREEZE",
+}
 ```
 and use `regime = _REGIME_NORMALIZE.get(regime, regime)` at L302. *Plus* one line in `_build_retrain_record` (`rec["regime"] = regime_state.regime_type.value if regime_state else "UNKNOWN"` — caller already holds `self.om._last_regime_state`) so live/buffer rows carry the key; offline builders then inherit regime from any frame that has it. Preserves: `regime_ok` tuple contract, frozen dataclasses, hunter string taxonomy (optionally extend `regime_ok` membership from `RegimeType` via the adapter). Guard with one registry test that the adapter's domain covers all `RegimeType` values + one `UNKNOWN` fail-closed assertion (UNKNOWN stays NO_GO — never fabricate eligibility). This is the single change that makes the “9 dead families unblocked” claim finally true.
 Do **not** merge `hunter_range_v1` regime semantics beyond the map (RANGING-only stays).
