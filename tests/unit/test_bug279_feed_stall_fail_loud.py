@@ -1,4 +1,4 @@
-"""BUG-277 (wave 2026-09-14): feed-stall must be FAIL-LOUD, not a silent warning loop.
+"""BUG-279 (wave 2026-09-14): feed-stall must be FAIL-LOUD, not a silent warning loop.
 
 Production evidence (lane 02 funnel report): the market feed froze at
 2026-09-11T20:00Z. For 2.5 days the tick-stagnation watchdog logged

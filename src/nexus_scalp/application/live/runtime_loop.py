@@ -229,7 +229,7 @@ class RuntimeLoop:
             try:
                 # Tick Stagnation Watchdog: If no ticks/bars are processed for > 15 seconds, trigger healthcheck & reconnect.
                 current_time = time.time()
-                # BUG-277: the stall CLOCK is wall-clock of the last NEW
+                # BUG-279: the stall CLOCK is wall-clock of the last NEW
                 # (non-duplicate) tick, stamped after the pipeline below —
                 # immune to the BUG-169 duplicate early-return and to the
                 # watchdog's own 15s timer resets.
@@ -242,7 +242,7 @@ class RuntimeLoop:
                         logger.warning(
                             "[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect"
                         )
-                        # BUG-277: episode state + escalation owned by the
+                        # BUG-279: episode state + escalation owned by the
                         # engine (one START incident, CRITICAL escalation past
                         # grace -> DEGRADED) instead of a HIGH incident every
                         # 15s pass while state kept claiming RUNNING.
@@ -289,7 +289,7 @@ class RuntimeLoop:
                             "connected (is_connected=True). Forcing market-data "
                             "resubscribe / tick re-poll to restart ingestion."
                         )
-                        # BUG-277: episode ownership + escalation into the
+                        # BUG-279: episode ownership + escalation into the
                         # canonical risk state (was: one HIGH incident per
                         # 15s pass, state kept claiming RUNNING for days).
                         self.om.note_tick_stream_stall(
@@ -438,7 +438,7 @@ class RuntimeLoop:
                 self.om._pipeline_last_ask = float(tick.ask)
 
                 self.om._process_tick_pipeline(tick=tick, account=live_account)
-                # BUG-277: this is the ONLY stamp of the stall clock: a NEW
+                # BUG-279: this is the ONLY stamp of the stall clock: a NEW
                 # (non-duplicate) tick completed the pipeline, so the feed is
                 # proven alive at this instant. The duplicate early-return
                 # above must NOT reach here — a frozen quote never resets the

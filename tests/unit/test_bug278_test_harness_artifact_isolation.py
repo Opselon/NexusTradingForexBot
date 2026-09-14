@@ -1,4 +1,4 @@
-"""BUG-276: test-harness paths must never write production model artifacts or
+"""BUG-278: test-harness paths must never write production model artifacts or
 the production model registry.
 
 Incident (2026-09-14): a repo-root ``pytest tests/unit -n 4`` run rebuilt the
@@ -89,7 +89,7 @@ def test_load_database_config_other_domains_untouched(
 # 2. force_fresh must refuse the production artifact (fail closed)
 # ---------------------------------------------------------------------------
 
-_GUARD_EVENT = "BUG276_FORCE_FRESH_PROD_ARTIFACT_REFUSED"
+_GUARD_EVENT = "BUG278_FORCE_FRESH_PROD_ARTIFACT_REFUSED"
 
 
 class _NoSurface:
@@ -291,7 +291,7 @@ def test_quarantine_demotes_contaminated_rows_and_writes_evidence(
     ev = json.loads(evidence.read_text(encoding="utf-8"))
     ids = {e["id"] for e in ev["quarantined"]}
     assert ids == {row_tmp, row_drift}
-    assert all(e["reason"].startswith("BUG-276") for e in ev["quarantined"])
+    assert all(e["reason"].startswith("BUG-278") for e in ev["quarantined"])
 
     # Idempotent re-run: zero additional changes, same exit 0
     r2 = subprocess.run(  # noqa: PLW1510 - rc asserted below
@@ -339,7 +339,7 @@ def test_no_production_module_forces_fresh_model() -> None:
                 hits.append(f"{py.relative_to(src)}:{i}: {line.strip()}")
     assert not hits, (
         "production code must never mint fresh weights into a configured "
-        f"artifact path (BUG-276): {hits}"
+        f"artifact path (BUG-278): {hits}"
     )
 
 
@@ -401,5 +401,5 @@ def test_quarantine_reason_is_audit_trail_conform(tmp_path: Path) -> None:
     ).fetchone()
     con.close()
     assert status == "QUARANTINED"
-    assert reason and "BUG-276" in reason
+    assert reason and "BUG-278" in reason
     assert datetime

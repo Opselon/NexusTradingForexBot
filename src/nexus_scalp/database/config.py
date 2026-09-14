@@ -247,7 +247,7 @@ def load_database_config(
     envd = env if env is not None else os.environ
     provider_env = envd.get("NSE_DATABASE__PROVIDER", "").strip()
 
-    # BUG-276: the BUG-223 test-isolation seam (NEXUS_AUDIT_DB) must reach
+    # BUG-278: the BUG-223 test-isolation seam (NEXUS_AUDIT_DB) must reach
     # THIS resolver too — LiveEngine's implicit audit construction goes
     # through load_database_config("audit"), which previously anchored to the
     # PRODUCTION artifacts/audit.db regardless of the env (the seam was only

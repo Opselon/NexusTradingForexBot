@@ -65,7 +65,7 @@ class ModelBundleStore:
         self.om = om
 
     def _refuse_force_fresh_on_production_artifact(self, model_path: Path) -> None:
-        """BUG-276 fail-closed guard: force_fresh mints UNTRAINED weights and
+        """BUG-278 fail-closed guard: force_fresh mints UNTRAINED weights and
         WRITES them over the target path. A test harness that sets
         ``force_fresh_model=True`` while the config still points at the
         production artifact destroyed the governed champion bytes once
@@ -90,7 +90,7 @@ class ModelBundleStore:
                 models_root = get_models_dir().resolve()
                 if target.resolve().is_relative_to(models_root):
                     raise RuntimeError(
-                        "BUG276_FORCE_FRESH_PROD_ARTIFACT_REFUSED: force_fresh_model=True "
+                        "BUG278_FORCE_FRESH_PROD_ARTIFACT_REFUSED: force_fresh_model=True "
                         f"targets an existing artifact inside the governed model tree "
                         f"({models_root}): {target}. Point the test config's "
                         "model.model_artifact_path at an isolated tmp path."

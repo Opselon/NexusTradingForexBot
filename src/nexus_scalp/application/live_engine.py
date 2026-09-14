@@ -698,7 +698,7 @@ class LiveEngine:
         self._runtime_risk_detail: str = ""
         self._halt_reason: str = ""
         self._halt_triggered_at: str = ""
-        # BUG-277 (2026-09-14 wave): feed-stall fail-loud state. The tick
+        # BUG-279 (2026-09-14 wave): feed-stall fail-loud state. The tick
         # watchdog (live/runtime_loop.py) feeds these; the STALL EPISODE is
         # owned by the engine so a frozen feed escalates into the canonical
         # risk state instead of rotting in a warning log (production: the
@@ -4490,7 +4490,7 @@ class LiveEngine:
         """Observable canonical safety state (UI/health surface).
 
         DEGRADED (session-local: hot-path circuit / stale account / loss
-        freeze / BUG-277 escalated feed stall) is derived on the fly and
+        freeze / BUG-279 escalated feed stall) is derived on the fly and
         never overrides a persisted halt.
         """
         if self._runtime_risk_state in ("HALTED", "KILL_SWITCH"):
@@ -4505,7 +4505,7 @@ class LiveEngine:
         return self._runtime_risk_state
 
     # ------------------------------------------------------------------
-    # BUG-277: feed-stall FAIL-LOUD escalation (invoked from the tick
+    # BUG-279: feed-stall FAIL-LOUD escalation (invoked from the tick
     # watchdog on the composition root; unbound-delegation compatible).
     # ------------------------------------------------------------------
 
@@ -4610,7 +4610,7 @@ class LiveEngine:
         """True when the safety state refuses new trading.
 
         Persisted HALTED/KILL_SWITCH (operator halt, BUG-256 chain) plus
-        BUG-277: an ESCALATED feed stall (past the grace window, market
+        BUG-279: an ESCALATED feed stall (past the grace window, market
         provably closed-in-time with no fresh ticks) is treated as entry-
         blocking too — a proposal that somehow reaches dispatch from a
         background path must not place NEW entries on stale market truth.

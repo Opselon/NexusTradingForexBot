@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BUG-276 quarantine migration: test-harness-contaminated CHAMPION rows.
+"""BUG-278 quarantine migration: test-harness-contaminated CHAMPION rows.
 
 The repo-root pytest incident (2026-09-14) stamped the live model lifecycle
 registry with CHAMPION rows that are NOT governed production identity:
@@ -19,7 +19,7 @@ if the drift row is newest).
 
 Semantics (evidence-preserving; this is an AUDIT TRAIL, not a cleanup):
   * rows are never deleted; status flips CHAMPION -> QUARANTINED with a
-    promotion_reason documenting WHY (BUG-276 + window + rule);
+    promotion_reason documenting WHY (BUG-278 + window + rule);
   * only rows in the incident window (default: 2026-09-14T00:00Z .. now) that
     match one of two rules qualify:
       R1 artifact_path resolves OUTSIDE the production model tree but the row
@@ -48,7 +48,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-BUG_ID = "BUG-276"
+BUG_ID = "BUG-278"
 DEFAULT_WINDOW_START = "2026-09-14T00:00:00+00:00"
 DEFAULT_SERVING = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
 
@@ -213,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"PRECONDITION FAIL: db not found: {db}", file=sys.stderr)
         return 2
     workspace = Path(args.workspace).resolve()
-    # BUG-276 precondition: the serving artifact MUST exist at
+    # BUG-278 precondition: the serving artifact MUST exist at
     # workspace/serving-path (R2 compares rows against its CURRENT bytes).
     # --workspace pointing at the production root is the operator trust
     # boundary; no path-name heuristic (it would make the tool untestable).

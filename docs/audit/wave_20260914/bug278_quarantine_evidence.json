@@ -1,5 +1,5 @@
 {
- "bug": "BUG-276",
+ "bug": "BUG-278",
  "applied": true,
  "run_at": "2026-09-14T14:31:22.207072+00:00",
  "context": {
@@ -25,5 +25,6 @@
    "registered_at": "2026-09-14T03:14:02.088276+00:00",
    "reason": "BUG-276 R2: row governed bytes that were clobbered by test-harness minting; the governed artifact now on disk is a different fingerprint"
   }
- ]
+ ],
+ "id_collision_note": "Executed 2026-09-14 under pre-collision id BUG-276; renumbered to BUG-278 after PR #196 landed BUG-276 (unique-constraint shadow) on main mid-wave. Live registry rows 4073/4080 carry the original 'BUG-276 R1/R2' promotion_reason strings (immutable evidence)."
 }
