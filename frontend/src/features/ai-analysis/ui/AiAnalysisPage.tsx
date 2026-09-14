@@ -2,9 +2,10 @@
  * AI Analysis — signals, decisions, indicators, 70D shadow (legacy tab parity).
  *
  * Sections: live signal card · decision stats + NO_TRADE reason distribution ·
- * signal history (page through v1) · indicators wall (gauges/oscillators/MAs/
- * pivots as compact cards) · shadow-70d panel. Per-decision drilldown opens a
- * drawer wired to the gates/evidence/explanation endpoints.
+ * signal history (page through v1) · indicators console (gauges, distribution
+ * bar, tables, pivot matrix — ui/IndicatorsConsole.tsx, full-snapshot feed) ·
+ * shadow-70d panel. Per-decision drilldown opens a drawer wired to the
+ * gates/evidence/explanation endpoints.
  * No signal/decision is ever synthesized: RESOURCE_NOT_FOUND renders empty.
  */
 
@@ -24,14 +25,13 @@ import {
 import type { ShellPageProps } from "@/app/featureModule";
 import { ApiError } from "@/types/api";
 import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
-import { DistBars, FreshnessCaption, GateStepper, InfoRow, StatusPill } from "../../research/ui/lane5Kit";
+import { DistBars, FreshnessCaption, GateStepper, InfoRow } from "../../research/ui/lane5Kit";
 import { actionTone, confidence01, distRows, obj, str, type SignalDto } from "../model";
 import { aiAnalysisQueries, orderHistory } from "../useCases";
 import DecisionDrawer from "./DecisionDrawer";
+import IndicatorsConsole from "./IndicatorsConsole";
 
 type Tab = "signals" | "indicators" | "shadow";
-
-const TFS = ["M1", "M5", "M15", "H1", "H4", "D1"];
 
 export default function AiAnalysisPage(props: ShellPageProps) {
   void props;
@@ -65,31 +65,6 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     queryFn: ({ signal }) => aiAnalysisQueries.noTradeReasons(signal),
     retry: false,
     enabled: tab === "signals",
-  });
-  const indSummaryQ = useQuery({
-    queryKey: ["ai-analysis", "indicators", "summary", tf],
-    queryFn: ({ signal }) => aiAnalysisQueries.indicatorsSummary({ timeframe: tf }, signal),
-    retry: false,
-    enabled: tab === "indicators",
-    staleTime: 20_000,
-  });
-  const indOscQ = useQuery({
-    queryKey: ["ai-analysis", "indicators", "osc", tf],
-    queryFn: ({ signal }) => aiAnalysisQueries.indicatorsOscillators({ timeframe: tf }, signal),
-    retry: false,
-    enabled: tab === "indicators",
-  });
-  const indMaQ = useQuery({
-    queryKey: ["ai-analysis", "indicators", "ma", tf],
-    queryFn: ({ signal }) => aiAnalysisQueries.indicatorsMovingAverages({ timeframe: tf }, signal),
-    retry: false,
-    enabled: tab === "indicators",
-  });
-  const indPivotQ = useQuery({
-    queryKey: ["ai-analysis", "indicators", "pivots", tf],
-    queryFn: ({ signal }) => aiAnalysisQueries.indicatorsPivots({ timeframe: tf }, signal),
-    retry: false,
-    enabled: tab === "indicators",
   });
   const shadowQ = useQuery({
     queryKey: ["ai-analysis", "shadow70d"],
@@ -272,94 +247,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
         </div>
       )}
 
-      {tab === "indicators" && (
-        <div style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <span className="tiny muted">timeframe</span>
-            {TFS.map((t) => (
-              <button key={t} className={`btn small ${tf === t ? "primary" : "ghost"}`} onClick={() => setTf(t)}>
-                {t}
-              </button>
-            ))}
-            <FreshnessCaption timestamp={null} source={`${indSummaryQ.data?.symbol ?? ""} · ${String(indSummaryQ.data?.bar_count ?? 0)} bars`} isFetching={indSummaryQ.isFetching} error={indSummaryQ.isError} />
-          </div>
-          {indSummaryQ.isPending ? (
-            <Skeleton count={4} />
-          ) : indSummaryQ.isError ? (
-            <EmptyState
-              message={indSummaryQ.error instanceof Error ? indSummaryQ.error.message : "indicators unavailable"}
-              hint="ENGINE_UNAVAILABLE is a legitimate answer — no synthetic bars are ever generated."
-            />
-          ) : (
-            <>
-              <div className="grid cols-4">
-                <MetricCard label="last close" value={formatPrice(indSummaryQ.data?.last_close, 3)} sub={`${indSummaryQ.data?.symbol ?? "—"} ${tf} · ${String(indSummaryQ.data?.bar_count ?? 0)} bars`} />
-                <MetricCard
-                  label="verdicts"
-                  value={
-                    indSummaryQ.data?.summary
-                      ? `${indSummaryQ.data.summary.Buy ?? 0}B / ${indSummaryQ.data.summary.Neutral ?? 0}N / ${indSummaryQ.data.summary.Sell ?? 0}S`
-                      : "—"
-                  }
-                  tone="dim"
-                  sub="gauge summary counts (backend)"
-                />
-                {Object.entries(indSummaryQ.data?.gauges ?? {})
-                  .filter(([, g]) => typeof g === "object" && g !== null && (g as { label?: string }).label !== undefined)
-                  .slice(0, 2)
-                  .map(([k, g]) => (
-                    <MetricCard
-                      key={k}
-                      label={`gauge · ${k}`}
-                      value={<StatusPill status={g.label ?? "UNKNOWN"} />}
-                      sub={`sell ${formatNumber(g.sell ?? null, 1)} · neutral ${formatNumber(g.neutral ?? null, 1)} · buy ${formatNumber(g.buy ?? null, 1)} · ${formatNumber(g.angle_deg ?? null, 0)}°`}
-                    />
-                  ))}
-              </div>
-              <Panel title="Gauge wall (all backend gauges)" tight>
-                <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
-                  {Object.entries(indSummaryQ.data?.gauges ?? {}).map(([k, g]) => (
-                    <div key={k} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px" }}>
-                      <div className="tiny muted">{k}</div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
-                        <StatusPill status={g.label ?? "UNKNOWN"} />
-                        <span className="num tiny inline-mono">
-                          {formatNumber(g.sell ?? null, 1)} / {formatNumber(g.neutral ?? null, 1)} / {formatNumber(g.buy ?? null, 1)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                  {Object.keys(indSummaryQ.data?.gauges ?? {}).length === 0 && <EmptyState message="no gauges returned" />}
-                </div>
-              </Panel>
-              <div className="grid cols-2">
-                <IndicatorWallPanel title="Oscillators" query={indOscQ} />
-                <IndicatorWallPanel title="Moving averages" query={indMaQ} />
-              </div>
-              <Panel title="Pivots (Classic / Fibonacci / Camarilla / Woodie / DM)" tight>
-                {indPivotQ.isPending ? (
-                  <Skeleton count={2} />
-                ) : indPivotQ.isError || !indPivotQ.data?.pivots ? (
-                  <EmptyState message="pivot matrix not returned" />
-                ) : (
-                  <DataTable headers={[{ label: "level" }, ...(indPivotQ.data.pivots.columns ?? []).map((c) => ({ label: c })) ]}>
-                    {(indPivotQ.data.pivots.rows ?? []).slice(0, 20).map((r, i) => (
-                      <tr key={i}>
-                        <td className="small">{str(r.name) ?? str(r.label) ?? `row ${i}`}</td>
-                        {(indPivotQ.data!.pivots!.columns ?? []).map((c) => (
-                          <td key={c} className="num tiny">
-                            {formatNumber(typeof r[c] === "number" ? (r[c] as number) : NaN, 2)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </DataTable>
-                )}
-              </Panel>
-            </>
-          )}
-        </div>
-      )}
+      {tab === "indicators" && <IndicatorsConsole tf={tf} onTf={setTf} />}
 
       {tab === "shadow" && (
         <Panel title="Shadow 70D observer (health · disagreements · drift)" right={<FreshnessCaption timestamp={shadowQ.data?.generated_at} isFetching={shadowQ.isFetching} error={shadowQ.isError} />} tight>
@@ -407,50 +295,5 @@ export default function AiAnalysisPage(props: ShellPageProps) {
 
       {openDecision && <DecisionDrawer decisionId={openDecision} onClose={() => setOpenDecision(null)} />}
     </div>
-  );
-}
-
-/** Compact indicator-card wall (name/value/action rows from the backend). */
-function IndicatorWallPanel({
-  title,
-  query,
-}: {
-  title: string;
-  query: {
-    isPending: boolean;
-    isError: boolean;
-    error: unknown;
-    data?: { oscillators?: unknown; moving_averages?: unknown };
-  };
-}) {
-  const rows = (query.data?.oscillators ?? query.data?.moving_averages ?? []) as Array<{
-    name?: string;
-    value?: number | null;
-    action?: string;
-  }>;
-  return (
-    <Panel title={title} tight>
-      {query.isPending ? (
-        <Skeleton count={3} />
-      ) : query.isError ? (
-        <EmptyState message={query.error instanceof Error ? query.error.message : "endpoint failed"} />
-      ) : rows.length === 0 ? (
-        <EmptyState message="no rows returned" />
-      ) : (
-        <div style={{ display: "grid", gap: 4 }}>
-          {rows.map((r, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-              <span className="small" style={{ minWidth: 90 }}>
-                {r.name ?? "—"}
-              </span>
-              <span className="num inline-mono small" style={{ minWidth: 80, textAlign: "end" }}>
-                {r.value === null || r.value === undefined ? "—" : formatNumber(r.value, 3)}
-              </span>
-              <StatusBadge status={r.action ?? "UNKNOWN"} />
-            </div>
-          ))}
-        </div>
-      )}
-    </Panel>
   );
 }
