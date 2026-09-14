@@ -213,6 +213,13 @@ tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
 #   ineligible (fail-closed); adapter domain pinned against the enum.
 tests/unit/test_bug283_hunter_regime_adapter.py
 tests/unit/test_hunter_metadata_persistence.py
+#   BUG-284 (2026-09-14 wave): Phase-09 suitability REJECT fired on 1-4 sample
+#   families - the evidence contract was inverted (zero evidence passes, ONE
+#   loss blocks): 473/1373 decisions (34.5%) died at SUITABILITY_BELOW_THRESHOLD
+#   (experience-paralysis, lane-08 §4). REJECT demotes to WARN below the shared
+#   EVALUATING floor (5, = StrategyEvaluator.min_samples_evaluating); at/above
+#   the floor the full NO_TRADE rejection semantics are pinned UNCHANGED.
+tests/unit/test_bug284_suitability_micro_sample_floor.py
 #   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
 #   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
 #   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
