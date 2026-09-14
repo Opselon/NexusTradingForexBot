@@ -623,3 +623,8 @@ file::memory:*
 # UI wave: React feature folders must never be eaten by the [Dd]ebug/ MSBuild rule
 !frontend/src/features/debug/
 !frontend/src/features/debug/**
+
+# NSE master wave 2026-09-14: local ruflo/claude tool state (not shared config)
+.claude/
+.claude-flow/
+.swarm/
