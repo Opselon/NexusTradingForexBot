@@ -220,6 +220,19 @@ class AuditRepository:
         self.financial_queue_backpressure: int = 0
         self.financial_events_overflowed: int = 0
         self.financial_events_failed: int = 0
+        # BUG-278: durable-overflow RECOVERY surface. The overflow file was
+        # the last line of defense AND a dead end (no reader existed — the
+        # 2026-09-14 perf wave R2): a stranded financial row stayed stranded
+        # and the directory grew unbounded. recovered = rows re-inserted by
+        # the audit worker's bounded drain pass; failed = overflow files
+        # rejected by replay (durably dead-lettered) + writes refused
+        # because the pending-file cap was reached.
+        self.financial_overflow_recovered: int = 0
+        self.financial_overflow_failed: int = 0
+        # None = never ran (the first drain is ALWAYS due — a 0.0 sentinel
+        # compared against time.monotonic() silently skips the first pass on
+        # hosts with uptime < interval, the BUG-273 class).
+        self._last_overflow_drain: float | None = None
         self.telemetry_dropped: int = 0
         # BUG-226: execution provenance of the account feeding this audit
         # stream ('LIVE' / 'PAPER' / 'SHADOW'). The engine sets this from the
@@ -2129,6 +2142,13 @@ class AuditRepository:
             except queue.Empty:
                 pass
 
+            if not batch:
+                # BUG-278 (perf wave R2): idle pass — the writer has capacity
+                # again, so recover financial rows stranded by a past
+                # saturation. Bounded by cadence + batch width and confined
+                # to THIS worker thread (never the tick path, INV-001).
+                self._drain_financial_overflow_due(conn)
+
             if batch:
                 try:
                     with conn:
@@ -2254,6 +2274,27 @@ class AuditRepository:
 
     _FINANCIAL_OVERFLOW_DIR = "artifacts/audit_overflow"
 
+    #: BUG-278 (perf wave R2): HARD cap on pending overflow files. Queue
+    #: saturation that outlives the recovery cadence must never fill the
+    #: disk; past the cap a row goes to the bounded dead-letter table
+    #: (counted, loud) instead of spawning another file.
+    _FINANCIAL_OVERFLOW_MAX_FILES = 5000
+
+    #: BUG-278: recovery cadence + per-pass batch width. The drain runs on
+    #: the audit worker thread (idle passes only) — never on the tick path.
+    OVERFLOW_RECOVERY_INTERVAL_SEC: float = 60.0
+    OVERFLOW_RECOVERY_BATCH: int = 500
+
+    def _overflow_dir(self) -> Path:
+        """Canonical durable-overflow directory (single resolution site).
+
+        The writer and the recovery drainer MUST agree on this path or the
+        drain silently never sees what the writer produced.
+        """
+        from nexus_scalp.release.paths import get_runtime_workspace
+
+        return Path(get_runtime_workspace()) / self._FINANCIAL_OVERFLOW_DIR
+
     #: Bounded duplicate-repair scan width for the audit_orders idempotency
     #: index bootstrap (agent-17, 2026-09-10). One construction pass repairs
     #: at most this many duplicated identities; remaining duplicates (if any
@@ -2312,10 +2353,32 @@ class AuditRepository:
         dead-letter-counted and logged CRITICAL — never silently lost.
         """
         try:
-            from nexus_scalp.release.paths import get_runtime_workspace
-
-            overflow_dir = Path(get_runtime_workspace()) / self._FINANCIAL_OVERFLOW_DIR
+            overflow_dir = self._overflow_dir()
             overflow_dir.mkdir(parents=True, exist_ok=True)
+            # BUG-278: bounded pending volume. The cap check is a cheap
+            # directory count on the (already exceptional) overflow path —
+            # never on the normal enqueue route. At the cap the row goes to
+            # the dead-letter store (bounded retention owns it) and the loss
+            # of FILE-durable preservation is counted + logged CRITICAL.
+            try:
+                pending = sum(1 for _ in overflow_dir.glob("overflow_*.json"))
+            except OSError:
+                pending = 0
+            if pending >= self._FINANCIAL_OVERFLOW_MAX_FILES:
+                self.financial_overflow_failed += 1
+                self.record_dead_letter(
+                    query=query,
+                    args=args,
+                    error=error or RuntimeError("QUEUE_SATURATED"),
+                    payload_note="overflow file cap reached (BUG-278)",
+                )
+                logger.critical(
+                    "FINANCIAL AUDIT OVERFLOW CAP — %d pending overflow files; row routed to "
+                    "dead-letter instead (financial_overflow_failed=%d)",
+                    pending,
+                    self.financial_overflow_failed,
+                )
+                return
             ts = time.strftime("%Y%m%d_%H%M%S")
             fname = f"overflow_{ts}_{self._dead_letter_seq:08d}.json"
             self._dead_letter_seq += 1
@@ -2345,6 +2408,149 @@ class AuditRepository:
                 "FINANCIAL AUDIT EVENT COULD NOT BE DURABLY PRESERVED (overflow file failed): %s",
                 of_err,
             )
+
+    def _drain_financial_overflow_due(self, conn: sqlite3.Connection) -> None:
+        """BUG-278: cadence-gated recovery of stranded overflow rows.
+
+        The durable overflow file used to be terminal: every producer path
+        (audit worker batch-retry, saturated-queue overflow) that needed it
+        wrote the row out and NOTHING ever read it back — the perf-wave R2
+        finding. A financial row that overflowed was therefore lost to the
+        ledger forever despite being "durable", and the directory grew
+        unbounded.
+
+        Recovery contract (audit worker thread only, idle passes):
+          * throttle: at most one pass per OVERFLOW_RECOVERY_INTERVAL_SEC
+            (None sentinel — the FIRST pass is always due);
+          * batch: at most OVERFLOW_RECOVERY_BATCH files per pass, oldest
+            first (deterministic recovery order);
+          * replay: re-execute the stored query+args on the worker's own
+            connection (the SAME single writer — no cross-thread writes);
+          * idempotent by construction: every financial producer query is
+            ON CONFLICT DO NOTHING/UPDATE, so a duplicate replay of a row
+            that already landed is a no-op, never a double count;
+          * retire: a successfully replayed file moves to
+            ``overflow_recovered/.consumed-<name>`` before deletion (the
+            storage-hygiene rename-then-delete discipline — a crash between
+            replay and unlink can never lose the row twice);
+          * poison: a file that fails to parse or replay is dead-lettered
+            (durable, bounded retention) and renamed ``.rejected-<name>`` —
+            never retried forever, never silently dropped.
+        """
+        now = time.monotonic()
+        if (
+            self._last_overflow_drain is not None
+            and now - self._last_overflow_drain < self.OVERFLOW_RECOVERY_INTERVAL_SEC
+        ):
+            return
+        try:
+            overflow_dir = self._overflow_dir()
+        except Exception:
+            return
+        if not overflow_dir.is_dir():
+            self._last_overflow_drain = now
+            return
+        self._last_overflow_drain = now
+        try:
+            pending = sorted(
+                (p for p in overflow_dir.glob("overflow_*.json") if p.is_file()),
+                key=lambda p: p.name,
+            )[: self.OVERFLOW_RECOVERY_BATCH]
+        except OSError as scan_err:
+            logger.warning("FINANCIAL OVERFLOW DRAIN scan failed (isolated): %s", scan_err)
+            return
+        if not pending:
+            return
+        recovered = 0
+        rejected = 0
+        for path in pending:
+            payload: dict[str, Any] = {}
+            try:
+                parsed = json.loads(path.read_text(encoding="utf-8"))
+                payload = parsed if isinstance(parsed, dict) else {}
+                query = str(payload.get("query") or "")
+                raw_args = payload.get("args") or "[]"
+                if isinstance(raw_args, str):
+                    arg_list: list[Any] | None = json.loads(raw_args)
+                elif isinstance(raw_args, list):
+                    arg_list = raw_args
+                else:
+                    arg_list = None
+                if (
+                    not query
+                    or not query.upper().lstrip().startswith(("INSERT", "REPLACE"))
+                    or arg_list is None
+                    or not isinstance(arg_list, list)
+                ):
+                    raise ValueError("unreplayable overflow payload")
+                if any(isinstance(v, dict) and v.get("__unserializable__") for v in arg_list):
+                    # The writer's safe-envelope substitution means the REAL
+                    # value was not JSON-recoverable: replaying the envelope
+                    # would fabricate a corrupt row. Dead-letter it instead.
+                    raise ValueError("overflow args contain __unserializable__ envelope")
+                with conn:
+                    conn.execute(query, tuple(arg_list))
+                consumed_dir = overflow_dir / "overflow_recovered"
+                consumed_dir.mkdir(parents=True, exist_ok=True)
+                marker = consumed_dir / f".consumed-{path.name}"
+                path.replace(marker)
+                marker.unlink()
+                recovered += 1
+            except Exception as row_err:
+                rejected += 1
+                logger.error(
+                    "FINANCIAL OVERFLOW DRAIN — replay REJECTED %s (error=%s); "
+                    "durably dead-lettered instead (financial_overflow_failed=%d)",
+                    path.name,
+                    row_err,
+                    self.financial_overflow_failed + rejected,
+                )
+                try:
+                    fail_args = payload.get("args")
+                    self.record_dead_letter(
+                        query=str(payload.get("query") or ""),
+                        args=tuple(fail_args) if isinstance(fail_args, list) else (),
+                        error=row_err,
+                        payload_note=f"overflow drain replay failure (BUG-278) file={path.name}",
+                    )
+                except Exception:
+                    pass
+                # The dead-letter row is now the durable copy: retire the
+                # file the same way a recovered one is retired (rename then
+                # delete) so the directory stays bounded even when a row is
+                # permanently unreplayable.
+                try:
+                    consumed_dir = overflow_dir / "overflow_recovered"
+                    consumed_dir.mkdir(parents=True, exist_ok=True)
+                    marker = consumed_dir / f".rejected-{path.name}"
+                    path.replace(marker)
+                    marker.unlink()
+                except OSError:
+                    with contextlib.suppress(OSError):
+                        path.unlink()
+        if recovered:
+            self.financial_overflow_recovered += recovered
+            logger.warning(
+                "FINANCIAL AUDIT OVERFLOW DRAIN — recovered=%d rejected=%d "
+                "(stranded rows returned to the ledger)",
+                recovered,
+                rejected,
+            )
+        if rejected:
+            self.financial_overflow_failed += rejected
+
+    def overflow_pending_count(self) -> int:
+        """Public recovery surface: how many stranded overflow rows are
+        still waiting on disk right now (BUG-278). -1 = unreadable."""
+        if not self._is_sqlite:
+            return 0
+        try:
+            d = self._overflow_dir()
+            if not d.is_dir():
+                return 0
+            return sum(1 for p in d.glob("overflow_*.json") if p.is_file())
+        except Exception:
+            return -1
 
     def _enqueue_telemetry(self, query: str, args: tuple[Any, ...]) -> None:
         """Enqueue a NON-CRITICAL telemetry row: dropable by design.
