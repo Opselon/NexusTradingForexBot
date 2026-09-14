@@ -202,7 +202,10 @@ def doctor_cmd(
     # --fix path and the human path both consume it below.
     verdict, entries = _health_entries()
     if not json_mode:
-        console.print(_banner(subtitle="system doctor · 24 checks"))
+        # BUG-277 adjacency: the "24 checks" literal drifted from the engine
+        # (run_all() is the SSOT for how many checks exist — adding a
+        # category must not silently stale the banner).
+        console.print(_banner(subtitle=f"system doctor · {len(entries)} checks"))
         table = Table(title="NEXUS SYSTEM HEALTH", box=box.SIMPLE_HEAD, show_lines=False)
         table.add_column("Check", style="bold white", no_wrap=True)
         table.add_column("Status", style="bold", no_wrap=True)
@@ -232,7 +235,16 @@ def doctor_cmd(
         )
 
     fails = [e for e in entries if e.verdict == "FAIL"]
-    warns = [e for e in entries if e.verdict == "WARN"]
+    # BUG-277 vocabulary fix: HealthEntry.verdict is PASS | WARNING | FAIL
+    # (release/health.py:99); the RENDERED table label for WARNING is "WARN"
+    # (cli/styling.py:_verdict_style). The filter below the banner was
+    # matching the rendered label against the raw field, so `warns` was
+    # PERMANENTLY empty: actionable WARNING suggestions (run `nexus db
+    # migrate`, enable news, repair --database…) never reached USER ACTION /
+    # NEXT, and a DEGRADED install with pending guidance was told
+    # "nexus start (paper mode by default)". Match the producer vocabulary
+    # (legacy "WARN" kept in the tuple for any external entry source).
+    warns = [e for e in entries if e.verdict in ("WARNING", "WARN")]
     auto_fixables = {"CONFIGURATION", "DATABASE", "LOGGING"}
     fixable = [e for e in fails if e.category in auto_fixables]
     if fails and not json_mode:
