@@ -19,16 +19,21 @@ on:
     branches: [main]
     tags:
       - "v*"
-  release:
-    types: [published, edited]
   pull_request:
     branches: [main]
+  release:
+    types: [published, edited]
+  schedule:
+    # Self-updating site: even when no docs path changes, refresh release /
+    # repo metadata and redeploy so the landing "Project pulse" stays true.
+    - cron: "17 6,18 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read # landing project pulse reads latest CI run state
 
 # Allow one concurrent docs validation; deploys are serialized per ref.
 concurrency:
@@ -44,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      docs_changed: ${{ steps.filter.outputs.docs_changed }}
+      docs_changed: ${{ steps.changes.outputs.docs_changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,6 +58,7 @@ jobs:
 
       - name: Detect docs-affecting changes (DEC-0008 always-report)
         id: filter
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           # On PRs: diff against the PR base. On pushes: diff against the
@@ -68,54 +74,72 @@ jobs:
               - "pyproject.toml"
               - ".github/workflows/docs.yml"
 
+      # Scheduled / release / manual runs have no diff to filter: always
+      # rebuild so the landing project-pulse metadata refreshes even on a
+      # docs-silent repo.
+      - name: Resolve docs_changed for schedule/dispatch
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" != "push" ] && [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "docs_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_changed=${{ steps.filter.outputs.docs_changed }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fast no-op report (no docs changes)
-        if: steps.filter.outputs.docs_changed != 'true'
+        if: steps.changes.outputs.docs_changed != 'true'
         run: |
           echo "No documentation changes detected — skipping validation and reporting success."
           echo "context 'Validate documentation' still reports success on this push (DEC-0008)."
 
       - name: Setup Python
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install docs tooling
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install ruff mypy
 
       - name: Refresh release metadata (What's New / releases page)
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/docs/fetch_releases.py
 
+      - name: Refresh repo metadata (landing project pulse)
+        if: steps.changes.outputs.docs_changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/docs/fetch_repo.py
+
       - name: Lint docs tooling (ruff)
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         run: |
           ruff check scripts/docs/
           ruff format --check scripts/docs/
 
       - name: Type-check docs tooling (mypy)
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         run: mypy scripts/docs/
 
       - name: Secret scan (docs surface)
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         run: python scripts/ci/scan_secrets.py
 
       - name: Build site
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         run: python scripts/docs/build_site.py
 
       - name: Docs doctor (links, anchors, translations, RTL, drift)
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         run: python scripts/docs/check_docs.py
 
       - name: Translation audit
-        if: steps.filter.outputs.docs_changed == 'true'
+        if: steps.changes.outputs.docs_changed == 'true'
         run: python scripts/docs/check_translations.py
 
       - name: Live smoke (deployed site) — deploy job only
@@ -123,7 +147,7 @@ jobs:
         run: echo "smoke runs in deploy job after Pages propagation"
 
       - name: Upload site artifact
-        if: steps.filter.outputs.docs_changed == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.changes.outputs.docs_changed == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: docs-site
@@ -152,6 +176,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/docs/fetch_releases.py
+
+      - name: Refresh repo metadata (landing project pulse)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/docs/fetch_repo.py
 
       - name: Build site
         run: python scripts/docs/build_site.py
