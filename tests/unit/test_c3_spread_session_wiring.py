@@ -141,7 +141,9 @@ class TestConstructionInjection:
 
         The adapter ledger is parity-export SOURCE data; only the durable
         audit_paper_executions copy survives a restart, so the gate must
-        measure the same distribution across restarts.
+        measure the same distribution across restarts. BUG-292: the durable
+        copy reaches the read path through the sketch's off-loop refresh
+        (the same single source the SQL provider used).
         """
         engine, audit = _paper_engine(tmp_path)
         engine.adapter = _FakePaperAdapter([])  # even with an empty live ledger...
@@ -149,6 +151,7 @@ class TestConstructionInjection:
         for i in range(6):
             _seed_fill(audit, now - timedelta(minutes=15 - i), 0.20 + 0.05 * i)
         audit.flush(timeout_sec=5.0)
+        assert engine.refresh_spread_session_sketch()["refreshed"] is True
         p70 = engine.signal_policy.session_spread_percentile_fn("XAUUSD", now, 70.0)
         assert p70 is not None and p70 > 0.0
 
@@ -174,6 +177,9 @@ class TestInjectedProviderSemantics:
         for i in range(10):
             _seed_fill(audit, now - timedelta(minutes=30 - i * 2), 0.10 + 0.04 * i)
         audit.flush(timeout_sec=5.0)
+        # BUG-292: the read surface is RAM-only, so the off-loop refresh pass
+        # (what MaintenanceCycle drives every <= 60 s) has to run first.
+        assert engine.refresh_spread_session_sketch()["refreshed"] is True
         # Linear interpolation (numpy semantics): P70 of 0.10..0.46 => 0.352;
         # P50 => the median 0.28.
         p70 = engine.signal_policy.session_spread_percentile_fn("XAUUSD", now, 70.0)
@@ -200,6 +206,7 @@ class TestInjectedProviderSemantics:
         _seed_fill(audit, now - timedelta(days=1), 9.0)  # yesterday: outside window
         _seed_fill(audit, now, 9.0, symbol="EURUSD")  # other symbol
         audit.flush(timeout_sec=5.0)
+        assert engine.refresh_spread_session_sketch()["refreshed"] is True
         p50 = engine.signal_policy.session_spread_percentile_fn("XAUUSD", now, 50.0)
         assert p50 == pytest.approx(0.14)
 
@@ -220,6 +227,9 @@ class TestInjectedProviderSemantics:
         for i in range(6):
             _seed_fill(audit, now - timedelta(minutes=12 - i), 0.20 + 0.01 * i)
         audit.flush(timeout_sec=5.0)
+        # BUG-292: off-loop refresh is the only path from the durable copy to
+        # the gate's RAM read; MaintenanceCycle runs it every <= 60 s.
+        assert engine.refresh_spread_session_sketch()["refreshed"] is True
 
         from tests.unit.test_policy import _make_feature_vector, _make_tick
 

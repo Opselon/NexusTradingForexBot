@@ -937,6 +937,18 @@ def _policy_section(engine: Any) -> dict[str, Any]:
         if proposal and getattr(proposal, "generated_at", None)
         else None
     )
+    # BUG-292 (perf-wave R6): the C3 gate (b) session distribution now lives in
+    # an off-loop-refreshed sketch. Surface its state so an operator can tell
+    # "gate no-op because the session is thin" apart from "gate no-op because
+    # the maintenance refresh died" — the two used to be indistinguishable.
+    sketch = getattr(engine, "spread_session_sketch", None)
+    if sketch is not None:
+        try:
+            out["spread_session_sketch"] = sketch.snapshot_debug()
+        except Exception:
+            out["spread_session_sketch"] = {"available": False}
+    else:
+        out["spread_session_sketch"] = {"available": False}
     return out
 
 
