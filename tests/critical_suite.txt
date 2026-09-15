@@ -359,3 +359,8 @@ tests/unit/test_bug290_bounded_guard_maps.py
 # gate ran a per-call SQLite connect + same-day SELECT INSIDE policy evaluation (loop-thread
 # I/O). Now an off-loop-refreshed in-process sketch with SQL-parity guarantees.
 tests/unit/test_bug292_spread_sketch_offload.py
+
+# BUG-293 (NSE-Swarm input-validation lane, 2026-09-15): lane-11 L11-4 + L11-6
+# fail-open boundaries — paper_state.json partial-apply on corrupt reload and
+# gateway order payloads silently defaulting volume/price before broker dispatch.
+tests/unit/test_bug293_failopen_boundaries.py

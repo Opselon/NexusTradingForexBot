@@ -118,5 +118,11 @@ def test_known_offenders_ignored() -> None:
     lines = {
         ln.strip() for ln in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     }
-    missing = [n for n in ("the", "min_samples_to_reject") if n not in lines]
+    # BUG-293: the guard entries are ROOT-ANCHORED ('/the', not 'the').
+    # An unanchored single-segment pattern matches at any depth and on
+    # case-insensitive (Windows) filesystems shadows real source trees —
+    # pattern 'PAPER' was shadowing src/nexus_scalp/adapters/paper/
+    # directory-wide (git add of the TRACKED paper_adapter.py needed -f).
+    # Anchored form is REQUIRED here so a future re-unanchor fails CI.
+    missing = [n for n in ("/the", "/min_samples_to_reject") if n not in lines]
     assert not missing, f".gitignore lost sentinel-class guard entries: {missing}"
