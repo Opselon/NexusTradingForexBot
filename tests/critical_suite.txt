@@ -364,3 +364,9 @@ tests/unit/test_bug292_spread_sketch_offload.py
 # fail-open boundaries — paper_state.json partial-apply on corrupt reload and
 # gateway order payloads silently defaulting volume/price before broker dispatch.
 tests/unit/test_bug293_failopen_boundaries.py
+
+# BUG-294 (NSE perf-bounds lane, 2026-09-15): behavioral regression net for the
+# bounded-runtime class — eviction driven through the REAL dispatch seam, broken-
+# stdout log_signal pin, report-cache LRU under real browsing (pins the BUG-287/290/291
+# behavior, not just its structure).
+tests/unit/test_bug294_bounded_runtime_behavior.py
