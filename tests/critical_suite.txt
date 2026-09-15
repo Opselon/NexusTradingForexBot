@@ -226,6 +226,21 @@ tests/unit/test_bug284_suitability_micro_sample_floor.py
 #   non-finite BarData refused, get_historical_bars drops malformed rows loudly.
 tests/unit/test_domain_models.py
 tests/unit/test_bug285_price_boundaries_fail_closed.py
+#   BUG-286 FINDING-2 class guard (structural, role-11): no zero-byte
+#   identifier-shaped file may ever be TRACKED at repo root — three incidents
+#   of cmd-hook '<'-sweep sentinels reaching commits ('the',
+#   'min_samples_to_reject' via 94ecf2c7->#199; 'forwarded', 'non-finite' at
+#   the #204 head). Predicate unit pins + live-tree gate + .gitignore guard
+#   memory; RED-BEFORE proven at 701bc50c.
+tests/unit/test_bug286_sentinel_class_guard.py
+#   BUG-287 (role-11, 2026-09-15): PERF-WAVE R1 — the financial audit enqueue
+#   must never block the tick path longer than 100ms (old 2s floor), and R9 —
+#   no raw stdout print on the decision path. Behavior pins + source pins;
+#   RED-BEFORE 3/3 at 65d3cb50. test_obs_trace_chain (the OBS-TRACE decision
+#   contract battery incl. the re-pinned unknown-regime diagnostic) was found
+#   UNREGISTERED at main — gate gap closed with the same wave it now tests.
+tests/unit/test_perf_r1_blocking_put_bound.py
+tests/unit/test_obs_trace_chain.py
 #   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
 #   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
 #   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
