@@ -2101,21 +2101,58 @@ class AuditRepository:
             logger.error("Audit flush failed", error=str(e))
             return False
 
+    #: BUG-288: upper bound for the worker's queue-capture handshake. The
+    #: wait is on the CONSTRUCTION path only (never the tick path, INV-001);
+    #: a timeout is loud but non-fatal (warning + pre-fix semantics remain).
+    _WORKER_READY_TIMEOUT_SEC = 5.0
+
     def _start_background_worker(self) -> None:
-        """Starts the dedicated background thread for zero-latency database inserts."""
+        """Starts the dedicated background thread for zero-latency database inserts.
+
+        BUG-288 (windows-latest CI red at b1fe0137): the writer loop used to
+        capture its queue reference (``q = self._queue``) only AFTER the OS
+        scheduled the thread AND the sqlite connect returned, while
+        ``Thread.start()`` reports aliveness instantly. Any caller that
+        rebound ``self._queue`` (or relied on "the worker is bound to the
+        queue I can see") inside that window silently made the worker ADOPT
+        the new object — the exact shape that turned the BUG-140
+        deterministic-stall test into a flake (flush() returned True because
+        the still-unbound worker adopted the poisoned queue and drained it).
+        The constructor now blocks until the worker confirms capture, so
+        "repo object published" implies "writer bound to self._queue".
+        """
         self._running = True
+        ready = threading.Event()
         self._worker_thread = threading.Thread(
-            target=self._process_queue_worker, daemon=True, name="AuditDB_Worker"
+            target=self._process_queue_worker,
+            args=(ready,),
+            daemon=True,
+            name="AuditDB_Worker",
         )
         self._worker_thread.start()
+        if not ready.wait(timeout=self._WORKER_READY_TIMEOUT_SEC):
+            # Never brick construction on a pathological thread; the miss is
+            # observable and the previous (pre-fix) semantics simply remain.
+            logger.warning(
+                "AUDIT WORKER CAPTURE NOT CONFIRMED within %.1fs — queue-rebind "
+                "callers may race the writer adoption window",
+                self._WORKER_READY_TIMEOUT_SEC,
+            )
 
-    def _process_queue_worker(self) -> None:
+    def _process_queue_worker(self, ready: threading.Event | None = None) -> None:
         """Background loop flushing pending inserts to disk via Bulk Transactions."""
         if not self._is_sqlite:
+            if ready is not None:
+                ready.set()
             return
 
-        conn = self._connect_sqlite(10.0)
         q = self._queue  # local ref: never GC'd while the loop runs (BUG-058)
+        # BUG-288: publish the capture BEFORE the (potentially slow) connect —
+        # the handshake means "bound to the queue object", not "loop running".
+        if ready is not None:
+            ready.set()
+
+        conn = self._connect_sqlite(10.0)
 
         while self._running or not q.empty():
             batch: list[tuple[str, tuple]] = []
