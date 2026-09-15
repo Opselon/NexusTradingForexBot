@@ -1122,6 +1122,12 @@ def _execution_section(engine: Any) -> dict[str, Any]:
         out["global_state"] = getattr(om, "global_state", None)
         out["consecutive_failures"] = getattr(om, "_consecutive_failures", None)
         out["processed_orders_count"] = len(getattr(om, "_processed_orders", {}))
+        # BUG-290: the guard is LRU-bounded; evictions > 0 means entries left
+        # the same-session guard (durable audit idempotency still refuses a
+        # cross-boot replay, so this is a sizing signal, not a correctness one).
+        out["processed_orders_evictions"] = getattr(
+            getattr(om, "_processed_orders", None), "evictions", None
+        )
     try:
         out["adapter"] = type(engine.adapter).__name__
         conn = engine.adapter.connection_state()

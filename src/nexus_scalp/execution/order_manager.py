@@ -28,12 +28,13 @@ import contextlib
 import dataclasses
 import math
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, MutableMapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.bounded_map import BoundedLRUMap
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
@@ -177,6 +178,22 @@ TELEMETRY_CONSOLE_INTERVAL_SEC: float = 10.0
 #: TASK-EXIT-SEPARATION (c): minimum spacing between "AI flip exit suppressed"
 #: WARNINGs for the SAME ticket (log-spam guard only; never gates any action).
 _AI_FLIP_SUPPRESS_WARN_INTERVAL_SEC: float = 10.0
+
+#: BUG-290 (perf-wave R7/R9): hard caps for the two in-process guard dicts on
+#: the dispatch/exit path. Both are SAME-SESSION guards only:
+#:   * `_processed_orders` duplicate-dispatch protection across a process
+#:     lifetime is durable elsewhere (audit_executions UNIQUE identity, see
+#:     adapters/database/executions_idempotency.py + the BUG-276 lineage);
+#:     the in-memory guard is the fast pre-broker filter. Evicting an OLD
+#:     entry can therefore never re-open a same-boot duplicate the ledger
+#:     already refuses — and a boot-internal replay of a >1-day-old
+#:     request_id is not a real threat (policy request_ids are per-tick).
+#:   * `_ai_flip_warn_times` is a pure log-throttle stamp map; losing the
+#:     oldest stamps means at worst one repeated WARNING after eviction.
+#: 50_000 dispatch ids at ~40 bytes of dict payload each is well under a
+#: few MB — the pre-fix shape was unbounded growth in a long-lived process.
+PROCESSED_ORDERS_GUARD_MAX: int = 50_000
+AI_FLIP_WARN_STAMPS_MAX: int = 10_000
 
 
 # -----------------------------------------------------------------------------
@@ -507,10 +524,19 @@ class OrderLifecycleManager:
         # perform free-margin pre-checks. When absent, a local clamp still applies.
         self.risk_engine = risk_engine
         self.experience_engine = experience_engine
-        self._processed_orders: dict[str, bool] = {}
+        # BUG-290 (perf-wave R7): bounded LRU (was: unbounded dict, never
+        # pruned). Same-session duplicate-dispatch guard only — cross-boot
+        # idempotency is durable (audit_executions UNIQUE identity).
+        self._processed_orders: MutableMapping[str, bool] = BoundedLRUMap(
+            "processed_orders", maxsize=PROCESSED_ORDERS_GUARD_MAX
+        )
         # TASK-EXIT-SEPARATION (c): per-ticket last "AI flip suppressed"
-        # WARNING stamp (monotonic clock; log-spam guard only).
-        self._ai_flip_warn_times: dict[int, float] = {}
+        # WARNING stamp (monotonic clock; log-spam guard only). BUG-290:
+        # bounded — the docstring's "cleaned up with the ticket" was never
+        # true (no pop site existed), so the map grew for the process life.
+        self._ai_flip_warn_times: MutableMapping[int, float] = BoundedLRUMap(
+            "ai_flip_warn_stamps", maxsize=AI_FLIP_WARN_STAMPS_MAX
+        )
 
         import threading
 
