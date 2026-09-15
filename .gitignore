@@ -633,27 +633,33 @@ file::memory:*
 # the "-" and file::memory rules above). A cmd.exe hook layer eating a bare
 # '<' comparison in a command string creates a zero-byte file NAMED AFTER THE
 # TOKEN. These words have appeared at the repo root; none may ever be tracked.
-0
-REJECT
-QUARANTINED
-CHOP
-FREEZE
-FREEZE_ALL
-TRENDING
-RANGING
-PAPER
-LIVE
-UNKNOWN
-INGEST_TIME
-FEED
-DEGRADED
-RUNNING
-weekend-suppressed
+# EVERY entry is ROOT-ANCHORED (leading slash) on purpose: an unanchored
+# single-segment pattern matches at ANY depth, and on case-insensitive
+# (Windows) filesystems it silently shadows real source trees — BUG-293 hit
+# exactly this: pattern 'PAPER' matched src/nexus_scalp/adapters/paper/
+# directory-wide, so `git add` of the TRACKED paper_adapter.py demanded -f.
+# The leaks only ever land at the repo root; root-only is all we need.
+/0
+/REJECT
+/QUARANTINED
+/CHOP
+/FREEZE
+/FREEZE_ALL
+/TRENDING
+/RANGING
+/PAPER
+/LIVE
+/UNKNOWN
+/INGEST_TIME
+/FEED
+/DEGRADED
+/RUNNING
+/weekend-suppressed
 # BUG-286: second incident of the same class — 'the' and
 # 'min_samples_to_reject' were COMMITTED (not just leaked) in 94ecf2c7 and
 # reached main via the #199 squash. Words eaten from '<' comparisons in a
 # cmd-shell command line (git add -A then sweeps them in). None may ever be
 # tracked; sentinel pairs from 62920ac3 kept in place above.
-the
-min_samples_to_reject
-278)
+/the
+/min_samples_to_reject
+/278)
