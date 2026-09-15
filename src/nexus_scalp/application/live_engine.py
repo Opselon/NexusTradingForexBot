@@ -4522,15 +4522,21 @@ class LiveEngine:
 
     @staticmethod
     def _feed_stall_in_weekend(now_wall: float) -> bool:
-        """Forex-convention closed window (Fri 22:00 .. Sun 22:00 UTC), same
-        semantics as accounting/market_calendar. A closed market is quiet,
-        not stalled — escalation must never fire there."""
-        from datetime import UTC as _UTC
-        from datetime import datetime as _dt
+        """Broker-convention closed window, DELEGATED to
+        accounting/market_calendar.market_state (WEEKEND classification:
+        nominal reopen Sun 21:00 UTC, hour-check conservatively covers all of
+        Sunday). A closed market is quiet, not stalled — escalation must never
+        fire there.
 
-        now = _dt.fromtimestamp(now_wall, _UTC)
-        wd = now.weekday()  # Mon=0..Sun=6
-        return (wd == 4 and now.hour >= 22) or wd in (5, 6) or (wd == 6 and now.hour < 22)
+        BUG-286 (review follow-up, 2026-09-15): this used to inline its own
+        copy of the window while claiming calendar parity. The time
+        classification happened to agree, but a restated window is a second
+        source of truth that rots the day the calendar is recalibrated (the
+        next_open/reason math already diverges from the hour-check inside the
+        calendar itself). One calendar, one window: delegate."""
+        from nexus_scalp.accounting.market_calendar import market_state
+
+        return market_state(now_wall).get("state") == "WEEKEND"
 
     def note_tick_stream_stall(self, *, age_sec: float, adapter_connected: bool = True) -> None:
         """Called by the tick watchdog every stall pass with the WALL-CLOCK
@@ -4560,8 +4566,12 @@ class LiveEngine:
         if self._feed_stall_escalated or age_sec < grace:
             return
         if LiveEngine._feed_stall_in_weekend(now_wall):
-            # Quiet because the market is CLOSED: no escalation, episode stays
-            # open but benign (next Monday's first stall pass re-evaluates).
+            # Quiet because the market is CLOSED: no escalation. The calendar
+            # keeps WEEKEND through all of Sunday (conservative vs its own
+            # nominal Sun 21:00 reopen), so a feed still dead at reopen
+            # escalates on the first stall pass after midnight Sun->Mon; a
+            # HEALTHY reopen delivers a fresh tick first and closes the
+            # episode via note_tick_stream_recovered.
             return
         self._feed_stall_escalated = True
         detail = (
