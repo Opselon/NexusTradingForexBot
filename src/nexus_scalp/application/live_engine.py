@@ -41,7 +41,6 @@ from nexus_scalp.adapters.database.audit_repository import (
     AuditRepository,
     RuntimeRiskStateReadError,
 )
-from nexus_scalp.adapters.database.broker_history import session_spread_percentile
 from nexus_scalp.candle_intelligence import CandleIntelligenceEngine
 
 # RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
@@ -63,6 +62,7 @@ from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import PreTradeExperienceDecision
 from nexus_scalp.experience.provenance import ModelRegistry, fingerprint_artifact
 from nexus_scalp.experience.retriever import ExperienceRetriever
+from nexus_scalp.experience.spread_sketch import SpreadSessionSketch
 from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
@@ -1419,18 +1419,34 @@ class LiveEngine:
         # NOTHING ever set session_spread_percentile_fn — the gate was a
         # permanent no-op in production (dead wiring; the audit's "cheapest
         # remaining real-P&L win" was silently disabled). Contract honored:
-        #   * INV-001: the provider runs a bounded read-only SELECT inside
-        #     the policy's per-evaluation call ONLY when a candidate is
-        #     live-spread-positive — never a write, never a cached handle;
+        #   * INV-001: the provider performs ZERO I/O — it reads the
+        #     in-process session sketch (BUG-292 / perf-wave R6). Before this
+        #     wave the provider opened a SQLite connection and scanned
+        #     audit_paper_executions on the event-loop thread inside every
+        #     spread-positive candidate evaluation ("documented, bounded, but
+        #     still loop-thread I/O + per-call connect"). The sketch keeps the
+        #     SQL semantics byte-for-byte and moves the ONLY read off-loop
+        #     (MaintenanceCycle, <= 60 s, asyncio.to_thread);
         #   * honest-unknown: a thin session sample (< min_samples) returns
-        #     None and the policy treats the gate as a no-op (never 0.0);
-        #   * reads the DURABLE audit_paper_executions copy (survives
-        #     restarts), not the adapter's in-memory ledger (export source);
-        #   * failure-isolated: a provider exception would surface inside the
-        #     policy's evaluate — the broker_history implementation already
-        #     returns None on sqlite3.Error, and this wrapper additionally
-        #     clamps any unexpected fault to None so trading never breaks.
+        #     None and the policy treats the gate as a no-op (never 0.0), and
+        #     a stalled refresh degrades the same way instead of defending a
+        #     frozen distribution;
+        #   * substrate unchanged: the refresh reads the DURABLE
+        #     audit_paper_executions copy (survives restarts), not the
+        #     adapter's in-memory ledger (export source);
+        #   * failure-isolated: the wrapper clamps any unexpected fault to
+        #     None so a spread-gate fault never breaks a trading evaluation.
+        self.spread_session_sketch = SpreadSessionSketch()
         self.signal_policy.session_spread_percentile_fn = self._session_spread_percentile_provider  # type: ignore[assignment]
+        # BOOT WARM-UP (constructor, NOT the loop): hydrate the sketch from the
+        # durable copy before the first tick is evaluated. Without this the
+        # gate would silently no-op on the first tick after boot (the
+        # maintenance refresh runs after the pipeline call site), and the C3
+        # (b) stand-down protection would be missing exactly when a restart
+        # lands in a wide-quote session. Failure-isolated by design (the
+        # refresh stage never raises).
+        with contextlib.suppress(Exception):
+            self.refresh_spread_session_sketch()
         self.risk_engine = RiskEngine(
             config=config.risk,
             max_margin_usage_pct=config.risk.max_margin_usage_pct,
@@ -1655,39 +1671,63 @@ class LiveEngine:
         now_utc: datetime,
         percentile: float,
     ) -> float | None:
-        """TASK-AUDREV-C3 gate (b): read-only session spread-percentile provider.
+        """TASK-AUDREV-C3 gate (b): in-memory session spread-percentile provider.
 
-        Binds broker_history.session_spread_percentile to the audit DB the
-        engine already owns. Called by SignalPolicy ONLY when a candidate is
-        live-spread-positive (INV-001: still zero synchronous writes; a single
-        bounded SELECT over audit_paper_executions with a same-UTC-day 4h
-        window). Honest-unknown semantics: thin samples return None and the
-        policy treats the gate as a no-op (never 0.0 fail-open). Failure
-        isolation: any unexpected fault clamps to None — a spread-gate fault
-        must never break a trading evaluation.
+        BUG-292 (perf-wave R6): this used to open a SQLite connection and run
+        a bounded SELECT on EVERY call, inside policy evaluation — i.e. on the
+        event-loop thread (``live_engine.py:1627-1640`` in the perf wave's
+        numbering: "documented, bounded, but still loop-thread I/O + per-call
+        connect"). The identical distribution is now maintained off-loop by
+        :class:`SpreadSessionSketch` (refreshed from the durable
+        ``audit_paper_executions`` copy by the maintenance cycle at <= 60 s),
+        so the tick path becomes a pure RAM read.
+
+        Contract preserved verbatim:
+          * honest-unknown: a thin session sample (< min_samples) returns None
+            and the policy treats the gate as a NO-OP (never 0.0, which would
+            fail open on an empty distribution);
+          * failure isolation: any unexpected fault clamps to None — a
+            spread-gate fault must never break a trading evaluation;
+          * no writes, no locks, no connection on this path (INV-001).
         """
-        if not self.audit._is_sqlite or not self.audit._db_path:
-            return None
         try:
-            # Same connection surface the repository itself uses (URI-aware,
-            # bounded timeout); the SELECT is read-only and sub-millisecond
-            # on the indexed audit_paper_executions table.
-            conn = self.audit._connect_sqlite(5.0)
-            try:
-                return session_spread_percentile(
-                    conn,
-                    symbol,
-                    now_utc,
-                    percentile,
-                )
-            finally:
-                conn.close()
+            return self.spread_session_sketch.percentile(symbol, now_utc, percentile)
         except Exception as spread_err:
             logger.warning(
                 "[SPREAD_GATE] event=SESSION_PCT_PROVIDER_FAILED (isolated) error=%s",
                 spread_err,
             )
             return None
+
+    def refresh_spread_session_sketch(self) -> dict[str, Any]:
+        """BUG-292: the sketch's ONLY I/O site — off-loop, bounded, read-only.
+
+        Called by MaintenanceCycle through ``asyncio.to_thread`` (never from
+        the tick path). Returns an honest result dict; never raises, because a
+        spread-gate maintenance fault must never disturb trading — the sketch
+        degrades to the honest unknown on its own if refreshes keep failing.
+        """
+        result: dict[str, Any] = {"refreshed": False, "samples": 0, "reason": ""}
+        if not getattr(self.audit, "_is_sqlite", False) or not getattr(self.audit, "_db_path", ""):
+            result["reason"] = "AUDIT_NOT_SQLITE"
+            return result
+        conn = None
+        try:
+            # Bounded read-only connect through the repository's single URI-
+            # aware connect site (same surface champion_sentinel uses).
+            conn = self.audit._connect_sqlite(5.0)
+            samples = self.spread_session_sketch.refresh(conn)
+            result["refreshed"] = True
+            result["samples"] = int(samples)
+            return result
+        except Exception as exc:
+            result["reason"] = f"{type(exc).__name__}: {exc}"[:200]
+            logger.warning("[SPREAD_GATE] event=SKETCH_REFRESH_STAGE_FAILED error=%s", exc)
+            return result
+        finally:
+            if conn is not None:
+                with contextlib.suppress(Exception):
+                    conn.close()
 
     def _serving_model_identity(self) -> tuple[str, str, str]:
         """OBS-TRACE (2026-09-09): identity of the bundle currently serving.
