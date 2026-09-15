@@ -1,7 +1,4 @@
 tests/unit/test_critical_suite.py
-tests/unit/test_incidents.py
-tests/unit/test_forensics.py
-tests/unit/test_walk_forward_trainer.py
 tests/unit/test_shadow70_safety.py
 tests/unit/test_shadow70_health_drift.py
 tests/unit/test_shadow_hardening_chg0046.py
@@ -9,7 +6,6 @@ tests/unit/test_schema_70d_reconciliation.py
 tests/unit/test_70d_contract_parity_task3.py
 tests/unit/test_liquidity_engine_contract.py
 tests/unit/test_liquidity_engine_causality.py
-tests/unit/test_liquidity_engine_features.py
 tests/unit/test_70d_replay_parity_task3.py
 tests/unit/test_70d_bug106_incremental_phase19.py
 tests/unit/test_news_bridge_contract_phase13b.py
@@ -30,7 +26,6 @@ tests/integration/test_database_execution_audit.py
 tests/integration/test_mt5_accounting_api_contract.py
 tests/unit/test_strategy_factory_phase22.py
 tests/unit/test_lifecycle_verdict_mapping.py
-tests/unit/test_lifecycle_e2e_v3.py
 tests/unit/test_hardening_p1_p2.py
 tests/unit/test_runtime_config_hot_reload.py
 tests/unit/test_regime_calibration_bug132.py
@@ -40,7 +35,6 @@ tests/unit/test_accounting_timezone.py
 # BUG-165: BUG-140 terminal-outcome P0 regression net (Hermes-DevOps, 2026-08-31)
 tests/unit/test_lifecycle_bug140.py
 tests/unit/test_outcome_flush_race_bug140.py
-tests/unit/test_outcome_recovery_sweep_bug140.py
 tests/unit/test_nse_lifecycle_regression_matrix.py
 tests/unit/test_lifecycle_event_projection.py
 tests/unit/test_release_system.py
@@ -56,8 +50,6 @@ tests/unit/test_evidence_semantics_bug140.py
 # AGENT4-SPRINT (2026-09-01): winner-protection geometry repair - BE trigger R-floor, lock offset 0.6p, tier floors 0.60/0.70/0.80 (regression suite)
 tests/unit/test_winner_protection_geometry_sprint.py
 # AGENT-2 OBSERVABILITY GUARDRAILS (2026-09-01): executable enforcement of the frozen log contract — storm bounds, redaction, dormant-worker, recovery, evidence preservation (docs/architecture/observability-log-contract.md). Full list + rationale: tests/critical_suite_observability.txt
-tests/unit/test_observability_guardrails.py
-tests/unit/test_observability_contract_freeze.py
 tests/unit/test_logging_redaction.py
 # OBS-002 (2026-09-09): correlation ids (EXEC-/INC-/upd-/fh-/req_) are the
 # log<->DB join key and must survive the high-entropy redactor; secrets stay
@@ -78,7 +70,6 @@ tests/unit/test_update_cli_contract.py
 tests/unit/test_storage_policy.py
 tests/unit/test_storage_lifecycle_wiring.py
 tests/unit/test_mt5_diag_throttle.py
-tests/unit/test_logging_retention_runtime.py
 # CHG-0048 (Nexus-Main UX, 2026-09-02): client UX safety contracts - mode-switch
 # confirmation gate (BUG-194), connectivity truth, palette safety, i18n/RTL,
 # decision humanization. 28 tests over real assets + create_app serve surface.
@@ -160,10 +151,8 @@ tests/unit/test_capital_protection_a15.py
 # PERF-DEADLETTER / PERF-HEALTH / PERF-EXEC-TRACE wave (2026-09-10):
 #   gate-first skeleton heal -> dead-letter bounded retention -> /health TTL
 #   cache -> EXEC_TRACE rate limit; plus fail-closed / LIVE-PAPER guard pins.
-tests/unit/test_dead_letter_retention_cap.py
 tests/unit/test_perf_safety_contract_pins.py
 tests/unit/test_perf_health_probe_cache.py
-tests/unit/test_perf_exec_trace_throttle.py
 
 # BUG-256 (Agent-15 capital protection, 2026-09-11): persisted-safety-state
 # wiring on the dispatch layer — the HALTED/KILL_SWITCH gate must stay live
@@ -317,3 +306,32 @@ tests/unit/test_market_data_integrity_ag13.py
 # USER ACTION / NEXT guidance surface was permanently dead. Filter fix +
 # vocabulary contract + class-wide verdict=="WARN" comparison guard.
 tests/unit/test_bug277_doctor_warning_vocabulary.py
+
+# --- wave-2 (2026-09-15): CR-named owners + mutation-proven P0 contracts promoted;
+#     11 heavy/duplicate-family files demoted to tests/extended_suite.txt (they run
+#     on every main push + release SHA — never dropped, only moved off the PR lane).
+#     Forensic provenance: docs/testing/TEST_ARCHITECTURE.md + scripts/testing/verdicts.
+tests/unit/test_recon_risk_boundary_battery.py
+tests/unit/test_recon_wal_crash_durability.py
+tests/unit/test_recon_batch_atomicity_real_failure.py
+tests/unit/test_recon_duplicate_deal_across_restart.py
+tests/unit/test_recon_requote_and_reconcile.py
+tests/unit/test_agent12_execution_forensic.py
+tests/unit/test_agent5_bug249_251_252.py
+tests/unit/test_gap_safe_sequences.py
+tests/unit/test_hot_swap_governance.py
+tests/unit/test_promotion_rejects_degenerate_model.py
+tests/unit/test_qa_deep_execution_safety.py
+tests/unit/test_signed_update_manifest.py
+tests/unit/test_survival_drawdown_runtime_bug132.py
+tests/unit/test_ci_final_gate_fail_closed.py
+tests/unit/test_wft_time_based_purge.py
+tests/unit/test_wft_fold_economics.py
+
+# --- wave-2: CI-integrity meta-gates (fast, they police the tier system itself) ---
+tests/ci/test_check_workflows.py
+tests/ci/test_classify_changes.py
+tests/ci/test_critical_manifest_gate.py
+tests/ci/test_gate_scope_integrity.py
+tests/ci/test_mutation_runner_smoke.py
+tests/cli/test_docs_consistency.py

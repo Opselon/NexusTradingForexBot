@@ -63,3 +63,22 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_docs_commands_all_exist() -> None:
+    """WAVE-2: this file has had a main() + exit code but ZERO test_ functions,
+    so pytest collected NOTHING from it — the check silently never ran despite
+    living under tests/ (the §12 "generated/temporary tests" trap). Wrapping
+    main() makes it a real gate; it is wired into Tier-1 (the quality job has
+    the package installed, so the Click command tree resolves)."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    cli_md = (REPO_ROOT / "docs" / "CLI.md").read_text(encoding="utf-8")
+
+    real = real_commands()
+    referenced = referenced_commands(readme) | referenced_commands(cli_md)
+    allowed_non_commands = {"start", "starte", "stop", "help"}
+    imaginary = sorted(referenced - real - allowed_non_commands)
+    assert not imaginary, f"documented but non-existent commands: {imaginary}"
+    core = {"help", "version", "doctor", "status", "update", "repair"}
+    missing = sorted(core - referenced)
+    assert not missing, f"core commands missing from docs: {missing}"
