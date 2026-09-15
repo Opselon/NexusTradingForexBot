@@ -2267,6 +2267,11 @@ class LiveEngine:
         with contextlib.suppress(Exception):
             self.adapter.disconnect()
 
+        # BUG-297: release the evaluator's reused SQLite handles before the
+        # repository closes, so no registry-reader handle outlives shutdown.
+        with contextlib.suppress(Exception):
+            self.experience_evaluator.close()
+
         with contextlib.suppress(Exception):
             self.audit.close()
 
