@@ -38,6 +38,8 @@ from typing import Any
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
+from nexus_scalp.gateway.order_validation import validated_order_request
+
 # Reuse the client's HMAC logic — single source of truth for the scheme.
 # Importing the adapter is safe on Linux (conditional HAS_NATIVE_MT5 inside).
 SECRET_ENV_API_KEY = "NSE_GATEWAY_API_KEY"
@@ -270,22 +272,29 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
         return {"status": "SUCCESS", "data": data}
 
     if action == "SEND_ORDER":
-        # Legacy TradeOrder path — used by reservation flow
-        order_type_raw = str(payload.get("order_type") or payload.get("type") or "BUY")
+        # Legacy TradeOrder path — used by reservation flow.
+        # BUG-293 (L11-6): fail-closed payload contract — no silent 0.01/0.0
+        # defaults; malformed requests are rejected BEFORE adapter dispatch.
+        order_type_raw = str(payload.get("order_type") or payload.get("type") or "")
+        if not order_type_raw:
+            return _json_failed("invalid order request", reasons=["missing_order_type"])
         try:
             order_type = OrderType(order_type_raw)
         except Exception:
             return _json_failed(f"unknown order_type {order_type_raw}")
+        req, reasons = validated_order_request(payload, legacy_trade_order=True)
+        if req is None:
+            return _json_failed("invalid order request", reasons=reasons)
         from nexus_scalp.domain.models import TradeOrder
 
         order = TradeOrder(
             order_id=str(payload.get("order_id") or payload.get("idempotency_key") or "gateway"),
-            symbol=str(payload.get("symbol") or ""),
+            symbol=req["symbol"],
             order_type=order_type,
-            volume=float(payload.get("volume") or 0.01),
-            price=float(payload.get("price") or 0.0) or 1.0,
-            stop_loss=float(payload.get("stop_loss") or payload.get("sl") or 0.0) or 1.0,
-            take_profit=float(payload.get("take_profit") or payload.get("tp") or 0.0) or 1.0,
+            volume=req["volume"],
+            price=req["price"],
+            stop_loss=req["stop_loss"],
+            take_profit=req["take_profit"],
             magic_number=int(payload.get("magic_number") or payload.get("magic") or 888101),
             comment=str(payload.get("comment") or "NSE_GATEWAY")[:31],
         )
@@ -303,38 +312,54 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
         return _json_failed("order_send failed")
 
     if action == "EXECUTE_MARKET_ORDER":
-        symbol = str(payload.get("symbol") or "")
-        order_type_raw = str(payload.get("order_type") or "BUY")
+        # BUG-293 (L11-6): the market path previously had NO structural
+        # validation (unlike pending); missing volume became 0.01 lots and
+        # NaN/inf/-price flowed straight to execute_market_order. Reject
+        # malformed payloads BEFORE any broker dispatch. price==0.0 remains
+        # legal: it is the documented execute-at-market sentinel.
+        order_type_raw = str(payload.get("order_type") or "")
+        if not order_type_raw:
+            return _json_failed("invalid order request", reasons=["missing_order_type"])
         try:
             order_type = OrderType(order_type_raw)
         except Exception:
             return _json_failed(f"unknown order_type {order_type_raw}")
+        req, reasons = validated_order_request(payload)
+        if req is None:
+            return _json_failed("invalid order request", reasons=reasons)
         ticket = adapter.execute_market_order(
-            symbol=symbol,
+            symbol=req["symbol"],
             order_type=order_type,
-            volume=float(payload.get("volume") or 0.01),
-            price=float(payload.get("price") or 0.0),
-            stop_loss=float(payload.get("stop_loss") or 0.0),
-            take_profit=float(payload.get("take_profit") or 0.0),
+            volume=req["volume"],
+            price=req["price"],
+            stop_loss=req["stop_loss"],
+            take_profit=req["take_profit"],
         )
         if ticket:
             return _json_success(ticket=int(ticket))
         return _json_failed("execute_market_order failed")
 
     if action == "PLACE_PENDING_ORDER":
-        symbol = str(payload.get("symbol") or "")
-        order_type_raw = str(payload.get("order_type") or "BUY_LIMIT")
+        # BUG-293 (L11-6): boundary validation mirrors the market path;
+        # broker-truth validation (_validate_pending_request) still applies
+        # inside the adapter.
+        order_type_raw = str(payload.get("order_type") or "")
+        if not order_type_raw:
+            return _json_failed("invalid order request", reasons=["missing_order_type"])
         try:
             order_type = OrderType(order_type_raw)
         except Exception:
             return _json_failed(f"unknown order_type {order_type_raw}")
+        req, reasons = validated_order_request(payload)
+        if req is None:
+            return _json_failed("invalid order request", reasons=reasons)
         ticket = adapter.place_pending_order(
-            symbol=symbol,
+            symbol=req["symbol"],
             order_type=order_type,
-            volume=float(payload.get("volume") or 0.01),
-            price=float(payload.get("price") or 0.0),
-            stop_loss=float(payload.get("stop_loss") or 0.0),
-            take_profit=float(payload.get("take_profit") or 0.0),
+            volume=req["volume"],
+            price=req["price"],
+            stop_loss=req["stop_loss"],
+            take_profit=req["take_profit"],
         )
         if ticket:
             return _json_success(ticket=int(ticket))
