@@ -119,6 +119,34 @@ def test_weekend_quiet_market_never_escalates() -> None:
     assert LiveEngine.runtime_risk_state(s) == "RUNNING"
 
 
+def test_weekend_predicate_delegates_to_market_calendar() -> None:
+    """BUG-285 (review follow-up): the engine inlined its own copy of the
+    closed window while claiming market_calendar parity — a restated window
+    rots the day the calendar is recalibrated. Behavior is deliberately
+    PRESERVED here (the delegated predicate agrees with the old inline
+    arithmetic across the whole week); what is fixed is single-ownership:
+    pin (a) the source delegates and contains no restated arithmetic, and
+    (b) behavioral parity with market_calendar.market_state at the edges."""
+    import inspect
+
+    src = inspect.getsource(LiveEngine._feed_stall_in_weekend)
+    assert "market_state" in src, "predicate must DELEGATE to market_calendar"
+    assert "weekday()" not in src and "hour >=" not in src, "no restated window arithmetic"
+
+    edges = [
+        (datetime(2026, 9, 11, 21, 59, tzinfo=UTC), False),  # Fri, pre-close
+        (datetime(2026, 9, 11, 22, 0, tzinfo=UTC), True),  # Fri 22:00 close
+        (datetime(2026, 9, 12, 12, 0, tzinfo=UTC), True),  # Saturday
+        (datetime(2026, 9, 13, 12, 0, tzinfo=UTC), True),  # Sunday (calendar
+        # keeps WEEKEND through all of Sunday; the nominal 21:00 reopen is not
+        # trusted for suppression — conservative, quiet-not-stalled direction)
+        (datetime(2026, 9, 14, 0, 30, tzinfo=UTC), False),  # Mon past midnight
+        (datetime(2026, 9, 14, 12, 0, tzinfo=UTC), False),  # weekday noon
+    ]
+    for dt, want in edges:
+        assert LiveEngine._feed_stall_in_weekend(dt.timestamp()) is want, dt.isoformat()
+
+
 def test_recovery_resets_episode_and_can_escalate_again() -> None:
     s = _surface(now=WEEKDAY_NOON)
     note_stall(s, 20.0)
