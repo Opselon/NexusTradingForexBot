@@ -22,7 +22,7 @@ import contextlib
 import sqlite3
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +30,9 @@ from nexus_scalp.hygiene import Confidence, WorkerMode
 from nexus_scalp.hygiene.archive import ArchiveManager, CleanupJournal
 from nexus_scalp.hygiene.detectors import DuplicateCandidate, DuplicateDetector, OrphanDetector
 from nexus_scalp.hygiene.retention import RetentionEngine
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.hygiene.worker")
 
 #: Per-cycle budget (spec §18, §58) — hard caps, conservative defaults.
 MAX_ROWS_SCANNED: int = 200_000
@@ -51,6 +54,22 @@ SAFE_CLEAN_CLASSES: frozenset[str] = frozenset(
 
 #: Tables allowed to receive bounded retention deletes in SAFE_CLEAN.
 #: (mirrors the existing BUG-054 purge contract + derived candle rows)
+#:
+#: BUG-295 (lane-04 DBF-004): four of these rules named columns that do not
+#: exist in the production DDL (research_/intelligence_worker_state "updated_at",
+#: news_health/news_worker_state "created_at") and one filtered on an
+#: event_type that the ledger never stores ("POSITION_MOVING" — the value IS
+#: emitted by intelligence/lifecycle.py but 0/2,397 production rows carry it).
+#: All were silently skipped by the planner's `ts_col not in col_names:
+#: continue` guard — 417 hygiene cycles, deleted=0 in every row. Rules now
+#: name the REAL columns (audit_repository.py / news/db_schema.py DDL):
+#:   * "ts_col": single age column (unchanged semantics for existing tables),
+#:   * "ts_cols": multi-column age rule (see _retention_where — a row is a
+#:     candidate only when every timestamp carrying evidence is older than
+#:     the cutoff AND at least one carries evidence),
+#:   * "event_type": scalar OR list of event_type values to scope the purge.
+#: A rule whose ts_col(s) are absent from the table is now LOUD (blocked entry
+#: + logger warning), never inert.
 SAFE_RETENTION_DELETES: dict[str, dict[str, Any]] = {
     "audit": {
         "audit_signals": {"ts_col": "generated_at", "days": 7.0},
@@ -62,14 +81,42 @@ SAFE_RETENTION_DELETES: dict[str, dict[str, Any]] = {
         "position_lifecycle_events": {
             "ts_col": "event_timestamp",
             "days": 3.0,
+            # BUG-054 lineage kept for provenance (the durable purge in
+            # audit_repository.py still filters MOVING-only — money-path twin,
+            # untouched); production rows never carried it, so the hygiene
+            # path also sweeps the churn-heavy observation classes actually
+            # emitted (intelligence/lifecycle.py PositionEventType).
             "event_type": "POSITION_MOVING",
+            "event_types": [
+                "POSITION_MFE_REACHED",
+                "POSITION_PROFIT_GIVEBACK",
+                "POSITION_DEGRADING",
+                "POSITION_RECOVERY_ATTEMPT",
+            ],
         },
-        "research_worker_state": {"ts_col": "updated_at", "days": 30.0},
-        "intelligence_worker_state": {"ts_col": "updated_at", "days": 30.0},
+        # audit_repository.py DDL: scope TEXT PRIMARY KEY (no id column —
+        # BUG-295: pk_col must be declared or the executor's default "id"
+        # makes the DELETE fail at runtime).
+        "research_worker_state": {"ts_col": "last_cycle_at", "days": 30.0, "pk_col": "scope"},
+        "intelligence_worker_state": {"ts_col": "last_cycle_at", "days": 30.0, "pk_col": "scope"},
     },
     "news": {
-        "news_health": {"ts_col": "created_at", "days": 90.0},
-        "news_worker_state": {"ts_col": "created_at", "days": 30.0},
+        # news_health (source_id PK, NO id column) has no created_at; live vs
+        # dead source is proven by BOTH last_success_at and last_failure_at —
+        # a row is a deletion candidate only when every timestamp carrying
+        # evidence is older than the window (see _retention_where ts_cols
+        # semantics).
+        "news_health": {
+            "ts_cols": ["last_success_at", "last_failure_at"],
+            "days": 90.0,
+            "pk_col": "source_id",
+        },
+        # news_worker_state (scope PK): last_cycle_at is the real age column.
+        "news_worker_state": {"ts_col": "last_cycle_at", "days": 30.0, "pk_col": "scope"},
+        # lane-04 §3/§7: 26,160 rows / 4.0 MB run manifests at 1,189/day —
+        # pure bookkeeping; run_id TEXT PK is supported by the executor's
+        # IN-SUBSELECT delete (pk_col below routes it).
+        "news_analysis_runs": {"ts_col": "started_at", "days": 30.0, "pk_col": "run_id"},
     },
     "candle_intel": {
         "candles": {"ts_col": "ts", "days": 30.0},
@@ -85,6 +132,72 @@ SAFE_RETENTION_DELETES: dict[str, dict[str, Any]] = {
         "exit_signals": {"ts_col": "ts", "days": 1.0},
     },
 }
+
+
+def _retention_ts_cols(cfg: dict[str, Any]) -> list[str]:
+    """Configured age column(s): ``ts_cols`` (multi) wins over ``ts_col``."""
+    cols = cfg.get("ts_cols")
+    if cols:
+        return [str(c) for c in cols]
+    ts_col = cfg.get("ts_col")
+    return [str(ts_col)] if ts_col else []
+
+
+def _retention_event_values(cfg: dict[str, Any]) -> list[str]:
+    """Configured event_type scope: scalar ``event_type``, list ``event_types``,
+    or both merged (BUG-295: position_lifecycle_events keeps the legacy
+    MOVING key AND the real emitted vocabulary). Deduplicated, order kept."""
+    values: list[str] = []
+    single = cfg.get("event_type")
+    if single:
+        values.append(str(single))
+    multi = cfg.get("event_types")
+    if multi:
+        values.extend(str(v) for v in multi)
+    return list(dict.fromkeys(values))
+
+
+def _retention_where(cfg: dict[str, Any], cutoff_iso: str) -> tuple[str, tuple[Any, ...]]:
+    """Builds the shared ``WHERE`` fragment (leading space included) and its
+    positional args for one retention rule.
+
+    SINGLE-KEY PATH (bit-identical to pre-BUG-295 behavior):
+    ``ts_col < cutoff`` — NULL timestamps never match, so age-unknown rows
+    are kept (spec §73).
+
+    MULTI-KEY PATH (``ts_cols``) — BUG-295 news_health semantics, exactly:
+    a row qualifies ONLY when EVERY timestamp in ts_cols that carries
+    evidence (IS NOT NULL AND not '') is older than the cutoff AND AT LEAST
+    ONE column carries evidence. A row with either timestamp fresh is live
+    state and must survive; a row with NO timestamp evidence at all is NOT a
+    candidate (keep-when-uncertain, spec §73). "Evidence" treats '' as
+    no-evidence on purpose: the production DDL defaults these columns to ''
+    (news/db_schema.py), so a never-polled source row must age like a NULL
+    row, not like a 1970-epoch one — a stricter KEEP than the literal
+    IS-NULL-only reading.
+
+    EVENT PATH: scalar event_type, list event_types, or the merge of both
+    (``event_type IN (...)``) — result-set-identical to the old single-value
+    ``event_type = ?`` for one-element scopes.
+    """
+    parts: list[str] = []
+    args: list[Any] = []
+    events = _retention_event_values(cfg)
+    if events:
+        placeholders = ", ".join("?" for _ in events)
+        parts.append(f"event_type IN ({placeholders})")
+        args.extend(events)
+    ts_cols = _retention_ts_cols(cfg)
+    if len(ts_cols) == 1:
+        parts.append(f"{ts_cols[0]} < ?")
+        args.append(cutoff_iso)
+    elif ts_cols:
+        for col in ts_cols:
+            parts.append(f"({col} IS NULL OR {col} = '' OR {col} < ?)")
+            args.append(cutoff_iso)
+        evidence = " OR ".join(f"({col} IS NOT NULL AND {col} != '')" for col in ts_cols)
+        parts.append(f"({evidence})")
+    return " WHERE " + " AND ".join(parts), tuple(args)
 
 
 @dataclass(frozen=True)
@@ -188,28 +301,46 @@ class HygienePlanner:
             cfg = safe_table_cfg.get(table)
             if not cfg:
                 continue
-            ts_col = cfg["ts_col"]
             col_names = t.get("column_names", [])
-            if ts_col not in col_names:
+            ts_cols = _retention_ts_cols(cfg)
+            dead_ts_cols = [c for c in ts_cols if c not in col_names]
+            if dead_ts_cols or not ts_cols:
+                # LOUD SKIP (BUG-295 / lane-04 DBF-004): the old bare
+                # `continue` made a misconfigured policy permanently inert —
+                # 417 cycles, deleted=0, nothing ever surfaced. A rule whose
+                # age column(s) are not in the table is a contract break:
+                # record it as blocked AND warn, then skip (keep-when-broken).
+                reason = (
+                    f"retention rule ts_col(s) {ts_cols!r} not in {db_key}.{table} "
+                    "columns (dead rule)"
+                )
+                plan.blocked.append({"table": table, "reason": reason})
+                # Event name is ALL-CAPS per the observability contract: the
+                # redactor's constant-shape guard (logging.py _scrub, BUG-141b)
+                # exempts uppercase snake names; a lowercase 24+ char event
+                # name is entropy-redacted out of the log line itself.
+                logger.warning(
+                    "HYGIENE_DEAD_RETENTION_RULE",
+                    database=db_key,
+                    table=table,
+                    dead_ts_cols=dead_ts_cols,
+                    configured_ts_cols=ts_cols,
+                    reason=reason,
+                )
                 continue
             days = float(cfg["days"])
-            event_type = cfg.get("event_type")
-            where = f" WHERE {ts_col} < ?"
-            args: tuple[Any, ...] = (
-                (now - __import__("datetime").timedelta(days=days)).isoformat(),
-            )
-            if event_type:
-                where = f" WHERE event_type = ? AND {ts_col} < ?"
-                args = (event_type, args[0])
+            cutoff_iso = (now - timedelta(days=days)).isoformat()
+            where, args = _retention_where(cfg, cutoff_iso)
             try:
                 n = conn.execute(f'SELECT COUNT(*) FROM "{table}"{where}', args).fetchone()[0]
             except Exception:
                 n = 0
             if n > 0:
+                identity = ",".join(ts_cols)
                 plan.retention_candidates.append(
                     {
                         "table": table,
-                        "ts_col": ts_col,
+                        "ts_col": identity,
                         "retention_days": days,
                         "candidate_rows": n,
                         "cleanup_class": "REBUILDABLE_DERIVED",
@@ -222,7 +353,7 @@ class HygienePlanner:
                             table=table,
                             row_id=None,
                             canonical_row_id=None,
-                            identity_layer=ts_col,
+                            identity_layer=identity,
                             confidence=Confidence.EXACT_DUPLICATE,  # policy-proven class
                             cleanup_class="REBUILDABLE_DERIVED",
                             risk="LOW",
@@ -595,13 +726,16 @@ class CleanupExecutor:
             tcfg = cfg.get(table)
             if not tcfg:
                 continue
-            ts_col = tcfg["ts_col"]
             pk_col = tcfg.get("pk_col", "id")
             if pk_col == "rowid_del":
                 pk_col = "rowid"
             days = float(tcfg["days"])
-            cutoff = (now - __import__("datetime").timedelta(days=days)).isoformat()
-            event_type = tcfg.get("event_type")
+            cutoff = (now - timedelta(days=days)).isoformat()
+            # BUG-295: WHERE comes from the SAME _retention_where the planner
+            # counted with — the two paths cannot diverge (single ts_col rules
+            # stay bit-identical to the old hand-built SQL; ts_cols /
+            # event_types rules apply the same shape here).
+            where, where_args = _retention_where(tcfg, cutoff)
             try:
                 total = 0
                 while True:
@@ -610,20 +744,12 @@ class CleanupExecutor:
                         break
                     batch_limit = min(self.batch_size, global_remaining)
                     with conn:
-                        if event_type:
-                            cur = conn.execute(
-                                f"DELETE FROM {table} WHERE {pk_col} IN "
-                                f"(SELECT {pk_col} FROM {table} WHERE event_type = ? "
-                                f"AND {ts_col} < ? ORDER BY {pk_col} LIMIT ?)",
-                                (event_type, cutoff, batch_limit),
-                            )
-                        else:
-                            cur = conn.execute(
-                                f"DELETE FROM {table} WHERE {pk_col} IN "
-                                f"(SELECT {pk_col} FROM {table} WHERE {ts_col} < ? "
-                                f"ORDER BY {pk_col} LIMIT ?)",
-                                (cutoff, batch_limit),
-                            )
+                        cur = conn.execute(
+                            f"DELETE FROM {table} WHERE {pk_col} IN "
+                            f"(SELECT {pk_col} FROM {table}{where} "
+                            f"ORDER BY {pk_col} LIMIT ?)",
+                            (*where_args, batch_limit),
+                        )
                     total += int(cur.rowcount)
                     # The GLOBAL deletion budget is consumed per batch, not per table: a
                     # single oversized table must not starve the other tables'
