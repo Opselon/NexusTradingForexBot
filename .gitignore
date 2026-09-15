@@ -649,5 +649,11 @@ FEED
 DEGRADED
 RUNNING
 weekend-suppressed
+# BUG-285: second incident of the same class — 'the' and
+# 'min_samples_to_reject' were COMMITTED (not just leaked) in 94ecf2c7 and
+# reached main via the #199 squash. Words eaten from '<' comparisons in a
+# cmd-shell command line. None may ever be tracked.
+the
+min_samples_to_reject
 the
 min_samples_to_reject
