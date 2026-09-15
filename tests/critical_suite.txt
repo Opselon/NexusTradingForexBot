@@ -346,3 +346,7 @@ tests/unit/test_bug277_doctor_warning_vocabulary.py
 # Worker idle-pass drain + file cap + poison dead-letter + recovery observability.
 tests/unit/test_bug285_overflow_drain.py
 tests/unit/test_bug285_overflow_wiring.py
+# BUG-288/289 (NSE-Swarm role 12, 2026-09-15) — audit-worker queue-adoption race (windows CI red
+# b1fe0137; pins live in the already-gated test_outcome_flush_race_bug140.py) + telegram_notify CLI
+# call-shape break (OS-leg + JS-lane finish notifications never delivered).
+tests/unit/test_bug289_telegram_notify_cli.py

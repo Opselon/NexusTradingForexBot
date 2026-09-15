@@ -9,8 +9,10 @@ row. The read path must drain the queue once (bounded) before refusing.
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import sqlite3
+import threading
 import time
 from datetime import UTC, datetime
 
@@ -147,16 +149,20 @@ class TestOutcomeFlushRace:
 
         CI run #983 race: with the worker ALIVE, flush() returned True
         because the live writer drained the poisoned item between put()
-        and flush(). Deterministic stall: freeze the worker inside its
-        blocking q.get() by raising _flush_interval, then stop the loop —
-        the worker sleeps in get() for an hour while an item sits in the
-        queue with no consumer, so unfinished_tasks > 0 and flush() must
-        time out (return False) instead of hanging.
+        and flush(). The swap-based stall relies on a contract BUG-288
+        made real: the writer captured `q = self._queue` BEFORE the
+        constructor returned (the _start_background_worker capture
+        handshake). Before that fix the capture raced thread scheduling +
+        the sqlite connect, so on slow runners (windows-latest, run
+        34925973236 at b1fe0137) the not-yet-bound worker ADOPTED the
+        swapped queue and drained the poisoned item -> flush() returned
+        True -> 'assert True is False'. See
+        test_worker_never_adopts_a_rebound_queue_bug288 for the
+        deterministic pin of that adoption window.
         """
         worker = repo._worker_thread
         assert worker is not None and worker.is_alive()
-        # Deterministic stall (no worker-timing dependence): the writer loop
-        # captured its local ref `q = self._queue` at startup. Swap the
+        # Worker is bound to the ORIGINAL queue (BUG-288 handshake): swap the
         # instance attribute to a FRESH queue — the worker keeps draining the
         # old object while flush() polls self._queue.unfinished_tasks on the
         # new one. An item parked in the new queue has NO consumer, so
@@ -167,3 +173,68 @@ class TestOutcomeFlushRace:
         result = repo.flush(timeout_sec=0.05)
         assert result is False  # returned instead of hanging
         repo._queue = queue.Queue(maxsize=10000)  # restore for teardown/close()
+
+    def test_worker_never_adopts_a_rebound_queue_bug288(self, tmp_path, monkeypatch):
+        """BUG-288: the writer must be bound to self._queue at CONSTRUCTION.
+
+        Deterministic adoption probe: stall the worker's sqlite connect (the
+        window between Thread.start() reporting aliveness and the old
+        `q = self._queue` capture). Swap the instance queue and park an item
+        during the stall, then wait well past the stall. If the worker can
+        still adopt a rebound queue (pre-fix), it drains and CONSUMES the
+        poisoned item — unfinished_tasks falls to 0 and the whole
+        stall-based test family becomes a coin flip. Fixed contract: the
+        item stays unconsumed forever; flush() stays bounded (False).
+        """
+        original_connect = AuditRepository._connect_sqlite
+        release = threading.Event()
+
+        def slow_connect(self, timeout):
+            # Stall ONLY the worker thread's connect (the constructor's own
+            # _setup_storage connect must stay fast).
+            if threading.current_thread().name == "AuditDB_Worker":
+                release.wait(timeout=5.0)  # hold the worker inside the window
+            return original_connect(self, timeout)
+
+        monkeypatch.setattr(AuditRepository, "_connect_sqlite", slow_connect)
+        r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'bug288.db'}")
+        worker = r._worker_thread
+        assert worker is not None and worker.is_alive()
+
+        stalled_queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
+        r._queue = stalled_queue
+        stalled_queue.put(("SELECT 1", ()))
+        assert r.flush(timeout_sec=0.05) is False  # bounded, never hangs
+        release.set()  # worker now proceeds through its (slow) connect
+        # Misbehavior poll: a worker that can still adopt a rebound queue
+        # connects, captures the SWAPPED object, and drains + task_done()s
+        # the poisoned item within milliseconds (that is what windows-latest
+        # did at run 34925973236). Fixed contract: the item stays
+        # unconsumed — the worker is bound to the ORIGINAL queue.
+        deadline = time.monotonic() + 1.0
+        while stalled_queue.unfinished_tasks > 0 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert stalled_queue.unfinished_tasks == 1, (
+            "BUG-288 adoption window is open again: the writer bound itself "
+            "to a queue rebound after construction and consumed its items"
+        )
+        r._queue = queue.Queue(maxsize=10000)  # restore for teardown/close()
+        with contextlib.suppress(Exception):
+            r.close()
+
+    def test_bug288_handshake_source_pins(self):
+        """The capture handshake must not be silently removed (class guard)."""
+        import inspect
+
+        start_src = inspect.getsource(AuditRepository._start_background_worker)
+        worker_src = inspect.getsource(AuditRepository._process_queue_worker)
+        assert ".start()" in start_src and "ready.wait(" in start_src, (
+            "constructor no longer waits for the worker's queue capture"
+        )
+        assert start_src.index(".start()") < start_src.index("ready.wait("), (
+            "handshake wait must come AFTER the thread start (else deadlock)"
+        )
+        assert "ready.set()" in worker_src, "worker no longer publishes its capture"
+        assert worker_src.index("q = self._queue") < worker_src.rindex("ready.set()"), (
+            "capture must be published BEFORE the ready.set() on the sqlite path"
+        )

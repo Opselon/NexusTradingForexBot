@@ -49,7 +49,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--results", default=str(REPO_ROOT / "ci-results"))
     parser.add_argument("--chat-id", default="")
     parser.add_argument("--bot-token", default="")
-    parser.add_argument("--os", dest="os_name", default="")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("run-started").set_defaults(
@@ -58,11 +57,26 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("run-finished").set_defaults(
         func=lambda a: _emit(_reporter(a).notify_run_finished())
     )
-    # OS-matrix variant (tests-os.yml): same payload as run-finished,
+    # OS-matrix variant (tests-os.yml os-finished): same payload as run-finished,
     # tagged with the runner OS so the channel shows which leg finished.
-    sub.add_parser("os-finished").set_defaults(
+    # BUG-289: the --os FLAG LIVES ON THE SUBCOMMAND. tests-os.yml:184 calls
+    # `telegram_notify.py --results ci-results os-finished --os "..."` — flags
+    # after the subcommand are parsed by the SUBPARSER, so a global-only --os
+    # made every run die with "unrecognized arguments: --os windows-latest"
+    # and the OS-leg Telegram notification silently never fired (the `|| true`
+    # in the workflow hid it). The workflow file cannot be edited from here,
+    # so the script adapts to the shipped call shape.
+    p = sub.add_parser("os-finished")
+    p.add_argument("--os", dest="os_name", default="", help="runner OS tag for the message")
+    p.set_defaults(
         func=lambda a: _emit(_reporter(a).notify_run_finished(os_name=getattr(a, "os_name", "")))
     )
+    # JS lane (js-tests.yml:82): same completion payload, tagged 'js' so the
+    # channel shows WHICH lane finished. BUG-289: the workflow has always
+    # called this non-existent subcommand -> usage error, notification never
+    # sent.
+    p = sub.add_parser("js-finished")
+    p.set_defaults(func=lambda a: _emit(_reporter(a).notify_run_finished(os_name="js")))
     sub.add_parser("test-summary").set_defaults(
         func=lambda a: _emit(_reporter(a).notify_test_summary())
     )
