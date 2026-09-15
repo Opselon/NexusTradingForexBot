@@ -350,3 +350,7 @@ tests/unit/test_bug285_overflow_wiring.py
 # b1fe0137; pins live in the already-gated test_outcome_flush_race_bug140.py) + telegram_notify CLI
 # call-shape break (OS-leg + JS-lane finish notifications never delivered).
 tests/unit/test_bug289_telegram_notify_cli.py
+
+# BUG-290/291 (NSE-Swarm role 1, 2026-09-15): perf-wave R7+R8 unbounded in-process guard
+# maps (_processed_orders, _ai_flip_warn_times, AccountingCore._report_cache) -> BoundedLRUMap.
+tests/unit/test_bug290_bounded_guard_maps.py
