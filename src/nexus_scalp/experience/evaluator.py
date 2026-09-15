@@ -28,11 +28,15 @@ Statistical discipline enforced here (Phase 08 rules 10, 11, 12, 13):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import sqlite3
+import threading
 from collections import Counter
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
 
@@ -84,6 +88,20 @@ class StrategyEvaluator:
         self.recovery_confidence_threshold = recovery_confidence_threshold
         # AGENT-2: bounded edge-triggered DEGRADED log state per family.
         self._degraded_log_ts: dict[str, float] = {}
+        # BUG-297: registry reads/writes reuse ONE connection per thread
+        # instead of the three raw per-call sqlite3.connect sites. The tier-3
+        # pre-trade fallback (intelligence._get_score ->
+        # get_registered_strategy_score, reached on the tick-loop thread
+        # whenever the <=4/s inline-refresh budget is exhausted) previously
+        # paid full connection churn per entry-candidate proposal. The handle
+        # is opened through AuditRepository._connect_sqlite — the repository's
+        # ONE connect site, which owns the ``file:`` URI contract (a raw
+        # connect without uri=True silently opens/creates a junk FILE instead
+        # of the shared in-memory audit DB, BUG-156/2026-09-09 class) — and
+        # cached per thread, so SQLite's default same-thread guard holds
+        # WITHOUT check_same_thread=False and no cross-thread lock is needed.
+        # WAL makes concurrent readers on distinct handles safe.
+        self._conn_state = threading.local()
 
     def _should_repeat_degraded(self, strategy_id: str, min_gap_sec: float = 600.0) -> bool:
         """True at most once per min_gap_sec per family (bounded repetition).
@@ -106,6 +124,124 @@ class StrategyEvaluator:
                 self._degraded_log_ts.pop(oldest, None)
             return True
         return False
+
+    # ------------------------------------------------------------------
+    # BUG-297 registry connection seam
+    # ------------------------------------------------------------------
+
+    def _thread_state(self) -> dict[str, Any]:
+        """Per-thread reuse record: {"key": (repo id, db path), "conns": {...}}.
+
+        Threading.local keeps every cached handle on its opening thread, so
+        SQLite's default same-thread guard holds with NO
+        check_same_thread=False and no shared-handle lock; WAL makes
+        concurrent readers on distinct handles safe.
+        """
+        state: dict[str, Any] | None = getattr(self._conn_state, "state", None)
+        if state is None:
+            state = {"key": None, "conns": {}}
+            self._conn_state.state = state
+        return state
+
+    @staticmethod
+    def _close_conns(conns: dict[float, sqlite3.Connection]) -> None:
+        for conn in list(conns.values()):
+            with contextlib.suppress(Exception):
+                conn.close()
+        conns.clear()
+
+    def _open_conn(self, timeout: float) -> sqlite3.Connection:
+        """Opens one registry connection through the repository's seam.
+
+        AuditRepository owns the single ``_connect_sqlite`` connect site
+        (URI contract: shared in-memory DBs need uri=True; raw connects
+        treated the URI string as a literal file name and silently created
+        junk CWD files — the 2026-09-09 disk-leak class the pre-fix evaluator
+        sites were part of). Duck-typed repository stubs without the seam
+        keep working via the pre-fix raw form; production never takes that
+        branch.
+        """
+        connect = getattr(self.audit_repo, "_connect_sqlite", None)
+        if callable(connect):
+            conn: sqlite3.Connection = connect(timeout)
+            return conn
+        return sqlite3.connect(self.audit_repo._db_path, timeout=timeout)
+
+    @contextlib.contextmanager
+    def _registry_conn(self, timeout: float) -> Iterator[sqlite3.Connection]:
+        """Yields a connection to the audit DB for one registry statement.
+
+        Reuse contract (BUG-297): while the repository is running, the handle
+        is cached per (thread, busy-timeout) and REUSED by every later
+        registry access, so the pre-trade tier-3 fallback
+        (intelligence._get_score -> get_registered_strategy_score) no longer
+        pays a connect per entry-candidate proposal. The cached key includes
+        the repository identity and path: if either is swapped or re-resolved
+        under us, stale handles are dropped rather than serving reads from
+        the wrong database (pre-fix per-call connects could not go stale).
+
+        Delegation contract (parity): once the repository is closed
+        (``_running`` False — shutdown teardown, or tests closing the DB
+        under a live evaluator) the seam releases cached handles and behaves
+        exactly like the pre-fix one-shot code for every call.
+
+        Keepalive contract: any statement failure drops the cached handle so
+        the NEXT call reopens fresh; the failure itself propagates to the
+        caller's existing except path, which logs and returns the same
+        degraded shape as before (None / [] / logged clear-failure). Registry
+        I/O therefore still never raises into the tick loop.
+        """
+        state = self._thread_state()
+        conns: dict[float, sqlite3.Connection] = state["conns"]
+
+        if not getattr(self.audit_repo, "_running", False):
+            self._close_conns(conns)
+            state["key"] = None
+            one_shot = self._open_conn(timeout)
+            try:
+                one_shot.row_factory = sqlite3.Row
+                yield one_shot
+            finally:
+                with contextlib.suppress(Exception):
+                    one_shot.close()
+            return
+
+        key = (id(self.audit_repo), str(getattr(self.audit_repo, "_db_path", "")))
+        if state["key"] != key:
+            self._close_conns(conns)
+            state["key"] = key
+        conn = conns.get(timeout)
+        if conn is None:
+            conn = self._open_conn(timeout)
+            # row_factory is connection state: set at open, before the
+            # caller's first statement reads rows by column name.
+            conn.row_factory = sqlite3.Row
+            conns[timeout] = conn
+        try:
+            yield conn
+        except BaseException:
+            # A cached handle whose statement failed is never trusted again:
+            # drop it so the next call reopens fresh (pre-fix, every call WAS
+            # fresh — this is the parity floor, not a regression). The
+            # failure itself propagates to the caller's existing except path.
+            with contextlib.suppress(Exception):
+                conn.close()
+            conns.pop(timeout, None)
+            raise
+
+    def close(self) -> None:
+        """Releases every evaluator-owned SQLite handle on this thread.
+
+        BUG-297 teardown. Handles cached on other threads (e.g. the
+        self-heal rebuild thread) drop with those threads' final reference
+        — CPython refcount closes sqlite3.Connection on dealloc, and the
+        closed-repository delegation above releases the common re-entry
+        pattern; embeddings that want deterministic release should call this
+        from each user thread (or before closing their AuditRepository).
+        """
+        state = self._thread_state()
+        self._close_conns(state["conns"])
+        state["key"] = None
 
     # ------------------------------------------------------------------
     # Evaluation
@@ -527,13 +663,12 @@ class StrategyEvaluator:
         The raw experience tables are untouched, which is what makes this
         operation safe: everything removed here is recomputable.
         """
+        if not self.audit_repo._is_sqlite:
+            return
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=10.0)
-            try:
+            with self._registry_conn(10.0) as conn:
                 conn.execute("DELETE FROM strategy_intelligence_registry;")
                 conn.commit()
-            finally:
-                conn.close()
         except Exception as e:
             logger.error("[SELF_HEAL] registry clear failed", error=str(e))
 
@@ -601,19 +736,23 @@ class StrategyEvaluator:
             )
 
     def get_registered_strategy_score(self, strategy_id: str) -> StrategyScore | None:
-        """Reads a derived score from the registry cache (None when absent)."""
+        """Reads a derived score from the registry cache (None when absent).
+
+        BUG-297: this is the tier-3 pre-trade fallback read (see
+        intelligence._get_score) — it runs on the tick-loop thread. The
+        statement itself is an indexed primary-key SELECT; only the
+        per-call connection churn was the loop-thread cost, and
+        ``_registry_conn`` removes it while preserving the except-path
+        contract (log + None, never a raise into the tick loop).
+        """
         if not self.audit_repo._is_sqlite:
             return None
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                conn.row_factory = sqlite3.Row
+            with self._registry_conn(5.0) as conn:
                 row = conn.execute(
                     "SELECT score_payload FROM strategy_intelligence_registry WHERE strategy_id = ?;",
                     (strategy_id,),
                 ).fetchone()
-            finally:
-                conn.close()
             if row and row["score_payload"]:
                 return StrategyScore.model_validate(json.loads(row["score_payload"]))
         except Exception as e:
@@ -626,9 +765,7 @@ class StrategyEvaluator:
             return []
         out: list[StrategyScore] = []
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                conn.row_factory = sqlite3.Row
+            with self._registry_conn(5.0) as conn:
                 rows = conn.execute(
                     """
                     SELECT score_payload FROM strategy_intelligence_registry
@@ -636,8 +773,6 @@ class StrategyEvaluator:
                     """,
                     (max(1, int(limit)),),
                 ).fetchall()
-            finally:
-                conn.close()
             for row in rows:
                 if row["score_payload"]:
                     out.append(StrategyScore.model_validate(json.loads(row["score_payload"])))
