@@ -4528,7 +4528,7 @@ class LiveEngine:
         Sunday). A closed market is quiet, not stalled — escalation must never
         fire there.
 
-        BUG-285 (review follow-up, 2026-09-15): this used to inline its own
+        BUG-286 (review follow-up, 2026-09-15): this used to inline its own
         copy of the window while claiming calendar parity. The time
         classification happened to agree, but a restated window is a second
         source of truth that rots the day the calendar is recalibrated (the

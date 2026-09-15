@@ -120,7 +120,7 @@ def test_weekend_quiet_market_never_escalates() -> None:
 
 
 def test_weekend_predicate_delegates_to_market_calendar() -> None:
-    """BUG-285 (review follow-up): the engine inlined its own copy of the
+    """BUG-286 (review follow-up): the engine inlined its own copy of the
     closed window while claiming market_calendar parity — a restated window
     rots the day the calendar is recalibrated. Behavior is deliberately
     PRESERVED here (the delegated predicate agrees with the old inline
