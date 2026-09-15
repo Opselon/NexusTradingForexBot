@@ -317,3 +317,9 @@ tests/unit/test_market_data_integrity_ag13.py
 # USER ACTION / NEXT guidance surface was permanently dead. Filter fix +
 # vocabulary contract + class-wide verdict=="WARN" comparison guard.
 tests/unit/test_bug277_doctor_warning_vocabulary.py
+
+# BUG-285 (NSE-Swarm role 10, 2026-09-15) — ID renumbered: swarm reserved BUG-278 mid-PR, Hermes wave took it: durable financial-overflow was write-only
+# (perf-wave R2) — stranded rows never returned to the ledger, dir grew unbounded.
+# Worker idle-pass drain + file cap + poison dead-letter + recovery observability.
+tests/unit/test_bug285_overflow_drain.py
+tests/unit/test_bug285_overflow_wiring.py

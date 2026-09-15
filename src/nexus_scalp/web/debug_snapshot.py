@@ -981,6 +981,17 @@ def _risk_section(engine: Any) -> dict[str, Any]:
             getattr(audit, "financial_events_overflowed", 0) or 0
         )
         out["financial_events_failed"] = int(getattr(audit, "financial_events_failed", 0) or 0)
+        # BUG-285: overflow RECOVERY visibility — an overflowed row is only
+        # durable if something reads it back. recovered = rows returned to
+        # the ledger by the audit worker's drain; failed = replay rejects +
+        # cap refusals; pending = files still stranded on disk right now.
+        out["financial_overflow_recovered"] = int(
+            getattr(audit, "financial_overflow_recovered", 0) or 0
+        )
+        out["financial_overflow_failed"] = int(getattr(audit, "financial_overflow_failed", 0) or 0)
+        _pending_fn = getattr(audit, "overflow_pending_count", None)
+        _pending_val: Any = _pending_fn() if callable(_pending_fn) else -1
+        out["financial_overflow_pending"] = int(_pending_val)
         out["consecutive_losses"] = int(getattr(engine, "_consecutive_losses", 0) or 0)
         cfg = engine.config
         out["risk_per_trade_pct"] = float(cfg.risk.risk_per_trade_pct)
