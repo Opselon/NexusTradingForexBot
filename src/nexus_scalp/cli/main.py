@@ -33,6 +33,7 @@ import time  # re-export: tests use cmain.time
 # effect) and gives the dependency graph the same module edges the monolith had.
 import nexus_scalp.cli.doctor as doctor  # noqa: PLR0402  (full path = graph edge)
 import nexus_scalp.cli.engine_boot as engine_boot  # noqa: PLR0402  (full path = graph edge)
+import nexus_scalp.cli.provision_commands as provision_commands  # noqa: PLR0402,F401 (BUG-293: registers model-provision + train-once)
 import nexus_scalp.cli.update_cli as update_cli  # noqa: PLR0402  (re-exports only; command registration happens via doctor's parity import)
 import nexus_scalp.cli.wizard as wizard  # noqa: PLR0402  (full path = graph edge)
 

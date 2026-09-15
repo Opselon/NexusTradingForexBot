@@ -301,7 +301,9 @@ Write-Step "8/10 Clean-install test"
 if (-not $SkipCleanInstallTest) {
     $TestScript = Join-Path $PSScriptRoot "clean_install_test.ps1"
     if (Test-Path $TestScript) {
-        & $TestScript -SetupExe (Join-Path $OutDir "NexusScalpEngine-$Version-win-x64-setup.exe")
+        # BUG-293: -StartSmoke runs the packaged bare-launch START smoke
+        # against the INSTALLED layout (fresh double-click story).
+        & $TestScript -SetupExe (Join-Path $OutDir "NexusScalpEngine-$Version-win-x64-setup.exe") -StartSmoke
         if ($LASTEXITCODE -ne 0) { Fail "clean-install test failed" }
     } else {
         Write-Host "[RELEASE] clean_install_test.ps1 not present — skipped" -ForegroundColor Yellow

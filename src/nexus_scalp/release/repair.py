@@ -220,11 +220,40 @@ class RepairEngine:
         present = list(model_dir.rglob("model.pt"))
         if present:
             return RepairResult("models", "OK", f"{len(present)} artifact(s) present")
-        return RepairResult(
-            "models",
-            "SKIPPED",
-            "no model artifact — external/optional until training runs",
-        )
+        # BUG-293: setup/repair on a fresh machine provisions the labeled
+        # DEV STARTER so the first `start` never dies on the artifact trust
+        # gates (the gates themselves are never relaxed — the starter PASSES
+        # them by training, and existing bundles are preserved). The install
+        # record labels it DEV_STARTER: first-run always recommends
+        # replacing it with the official bundle (PATH A) or a local training
+        # run (PATH B). Source/dev repair keeps the legacy SKIPPED semantics
+        # (workspace has no packaged config contract).
+        try:
+            from nexus_scalp.model_provisioning import service as prov
+            from nexus_scalp.release import bootstrap as rboot
+
+            result = rboot.mint_starter_bundle(rboot.canonical_starter_path(None))
+            if result.get("provisioned"):
+                prov.record_install(
+                    model_path=Path(str(result.get("path"))),
+                    origin=prov.ORIGIN_DEV_STARTER,
+                    model_sha256=str(result.get("model_sha256", "")),
+                    model_version="starter",
+                    bundle_id="dev-starter",
+                )
+                return RepairResult(
+                    "models",
+                    "OK",
+                    "DEV STARTER provisioned (replace via setup: official or train-local)",
+                )
+            return RepairResult("models", "OK", "model artifact present and servable")
+        except Exception as e:
+            return RepairResult(
+                "models",
+                "SKIPPED",
+                f"no model artifact and starter provisioning refused ({e}); "
+                "run `nexus model-provision` or `nexus train-once`",
+            )
 
     def _ensure_logs(self) -> RepairResult:
         try:

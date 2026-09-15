@@ -2,18 +2,23 @@
 # Nexus Scalp Engine — Clean-Install / Uninstall / Repair Smoke Test
 # =============================================================================
 # Usage:  .\scripts\build\clean_install_test.ps1 [-SetupExe path\to\setup.exe]
+#             [-StartSmoke] [-StartSmokeSec 90]
 #
 # Verifies on THIS machine (best-effort, non-destructive outside the test
 # directory):
 #   1) installer exists
 #   2) silent install into a temp dir
 #   3) installed app shows version + health
+#   3b) BUG-293 optional: installed EXE bare-launch START smoke (fresh double-
+#       click must reach a running engine, not crash on the model trust gates)
 #   4) re-run install (idempotency / upgrade path)
 #   5) uninstall
 #   6) user data preserved after uninstall
 # =============================================================================
 param(
-    [string]$SetupExe = ""
+    [string]$SetupExe = "",
+    [switch]$StartSmoke,
+    [int]$StartSmokeSec = 90
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,6 +65,24 @@ if ($LASTEXITCODE -ne 0 -or $h -notmatch '"overall"') {
     Write-Host "[CLEAN-INSTALL] FAILED health check: $h" -ForegroundColor Red; exit 1
 }
 Write-Host "[CLEAN-INSTALL] health ok"
+
+if ($StartSmoke) {
+    # BUG-293: the actual user story against the INSTALLED layout — bare
+    # launch (double-click parity) from a clean machine must provision the
+    # starter and reach a running engine, not die on the artifact trust gates.
+    Write-Host "[CLEAN-INSTALL] fresh-install START smoke (installed layout)" -ForegroundColor Cyan
+    $smokeScript = Join-Path $PSScriptRoot "start_smoke.ps1"
+    if (-not (Test-Path $smokeScript)) {
+        Write-Host "[CLEAN-INSTALL] FAILED: start_smoke.ps1 missing" -ForegroundColor Red; exit 1
+    }
+    & $smokeScript -ExePath $Exe -DurationSec $StartSmokeSec `
+        -WorkspaceRoot (Join-Path $TestRoot "startsmoke")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[CLEAN-INSTALL] FAILED: installed EXE start smoke (BUG-293 class)" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[CLEAN-INSTALL] start smoke ok" -ForegroundColor Green
+}
 
 Write-Host "[CLEAN-INSTALL] re-run install (idempotency)" -ForegroundColor Cyan
 $p2 = Start-Process -FilePath $SetupExe -ArgumentList $args -Wait -PassThru
