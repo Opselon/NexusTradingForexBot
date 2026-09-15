@@ -116,3 +116,19 @@ def test_unknown_subcommand_still_rejected(tn, spy, tmp_path):
     with pytest.raises(SystemExit):
         _run(tn, ["--results", str(tmp_path), "definitely-not-a-command"])
     assert spy == []
+
+
+def test_bug289_grammar_source_pins():
+    """Class guard: --os may NEVER return to the global parser only, and the
+    workflow call shapes must stay parseable (regex over the shipped script).
+    """
+    src = SCRIPT.read_text(encoding="utf-8")
+    global_section = src.split("sub = parser.add_subparsers")[0]
+    assert '"--os"' not in global_section, (
+        "BUG-289 shape returned: --os declared before the subparsers means "
+        "post-subcommand '--os <runner>' from tests-os.yml is unparsed"
+    )
+    assert 'sub.add_parser("os-finished")' in src and 'sub.add_parser("js-finished")' in src
+    assert '"--os", dest="os_name"' in src.split('sub.add_parser("os-finished")')[1], (
+        "the os-finished SUBPARSER must own --os"
+    )
