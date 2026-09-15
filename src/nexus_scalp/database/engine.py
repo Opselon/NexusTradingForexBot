@@ -271,6 +271,11 @@ class DatabaseMigrationEngine:
 
             def __enter__(self) -> _Lock:
                 try:
+                    # Z-B5 (BUG-296, lane-05 E6): a fresh clone has no
+                    # artifacts/ dir yet; os.open(O_CREAT) does NOT create
+                    # parents, so `nexus db migrate` died with FileNotFoundError
+                    # on the LOCK path before any DB work. Ensure the anchor dir.
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
                     fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                     try:
                         os.write(fd, str(os.getpid()).encode())

@@ -496,13 +496,37 @@ def _run_engine(
             timeout=cfg.mt5.timeout_ms,
             retries=cfg.mt5.retries,
         )
-    engine = LiveEngine(
-        config=cfg,
-        adapter=adapter,
-        # BUG-148: the operator's explicit --mode is authoritative for this
-        # process — a persisted settings-DB value cannot override it at boot.
-        mode_override=mode_override,
+    engine = None
+    # BUG-296 (Z-B1 iii): a fresh clone without a model artifact crashed here
+    # with a raw ArtifactIntegrityError traceback (lane-05 E1) BEFORE the web
+    # server bound. The gate stays fail-closed (weights are never silently
+    # minted/served); only the SURFACE changes to an operator panel that
+    # names the exact remedy.
+    from nexus_scalp.model_lifecycle.load_integrity import (
+        ArtifactIntegrityError as _ArtifactIntegrityError,
     )
+
+    try:
+        engine = LiveEngine(
+            config=cfg,
+            adapter=adapter,
+            # BUG-148: the operator's explicit --mode is authoritative for this
+            # process — a persisted settings-DB value cannot override it at boot.
+            mode_override=mode_override,
+        )
+    except _ArtifactIntegrityError as integrity_err:
+        console.print(
+            _error_panel(
+                "Model load rejected (fail closed)",
+                str(integrity_err),
+                hint=(
+                    "Provision a PAPER starter bundle with `nexus repair --model` "
+                    "(safe on a fresh clone; governed champions are never overwritten)"
+                ),
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     _start_web_and_engine(engine, cfg, port)
 
 

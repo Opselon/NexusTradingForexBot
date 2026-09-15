@@ -356,7 +356,8 @@ class HealthEngine:
                 "MODEL",
                 "WARNING",
                 "no model artifact found — external/optional until training runs",
-                "Run `nexus setup`/`nexus repair --model` to initialize from the release bundle.",
+                "Run `nexus setup`/`nexus repair --model` to provision a PAPER starter "
+                "bundle (BUG-296).",
                 state=NOT_INITIALIZED,
                 optional=True,
             )
