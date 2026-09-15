@@ -13,6 +13,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/observability-map/</loc></url>
@@ -81,6 +82,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/observability-map/</loc></url>
@@ -150,6 +152,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/observability-map/</loc></url>
@@ -219,6 +222,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-map/</loc></url>
@@ -288,6 +292,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/observability-map/</loc></url>
