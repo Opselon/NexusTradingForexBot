@@ -84,7 +84,11 @@ def _mk_audit_db(path: Path) -> sqlite3.Connection:
             ticket TEXT, event_type TEXT, event_timestamp TEXT
         );
         CREATE TABLE research_worker_state (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, updated_at TEXT, payload TEXT
+            scope TEXT PRIMARY KEY,
+            last_checkpoint TEXT DEFAULT '',
+            last_cycle_at TEXT DEFAULT '',
+            last_error TEXT DEFAULT '',
+            cycle_count INTEGER DEFAULT 0
         );
         CREATE TABLE trade_autopsies (
             ticket INTEGER PRIMARY KEY, payload TEXT
@@ -152,10 +156,12 @@ def _mk_audit_db(path: Path) -> sqlite3.Connection:
             "VALUES ('99','POSITION_MOVING', ?)",
             (old,),
         )
-    # Stale worker state.
+    # Stale worker state (BUG-295 reshaped to production columns: scope PK,
+    # age column last_cycle_at — the healed rule deletes on REAL columns).
     stale = (now - timedelta(days=60)).isoformat()
     conn.execute(
-        "INSERT INTO research_worker_state (updated_at, payload) VALUES (?, '{}')", (stale,)
+        "INSERT INTO research_worker_state (scope, last_cycle_at) VALUES ('research', ?)",
+        (stale,),
     )
     # Autopsy for ticket 1.
     conn.execute("INSERT INTO trade_autopsies (ticket, payload) VALUES (1, '{}')")
@@ -178,7 +184,15 @@ def _mk_news_db(path: Path) -> sqlite3.Connection:
             article_id INTEGER, run_id TEXT, analyzed_at TEXT
         );
         CREATE TABLE news_health (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT
+            source_id TEXT PRIMARY KEY,
+            last_success_at TEXT DEFAULT '',
+            last_failure_at TEXT DEFAULT '',
+            last_status INTEGER,
+            consecutive_failures INTEGER NOT NULL DEFAULT 0,
+            rate_limited INTEGER NOT NULL DEFAULT 0,
+            retry_after_sec REAL NOT NULL DEFAULT 0.0,
+            backoff_until TEXT DEFAULT '',
+            healthy INTEGER NOT NULL DEFAULT 1
         );
         """
     )
@@ -203,10 +217,14 @@ def _mk_news_db(path: Path) -> sqlite3.Connection:
         "('h2','Silver falls',?,1,1,'missing-hash',?)",
         (now.isoformat(), now.isoformat()),
     )
-    # Health rows: 2 old.
-    for _ in range(2):
+    # Health rows: 2 old (both timestamps stale -> ts_cols rule candidate).
+    for j in range(2):
         old = (now - timedelta(days=200)).isoformat()
-        conn.execute("INSERT INTO news_health (created_at) VALUES (?)", (old,))
+        conn.execute(
+            "INSERT INTO news_health (source_id, last_success_at, last_failure_at) "
+            "VALUES (?, ?, ?)",
+            (f"src-dead-{j}", old, old),
+        )
     conn.commit()
     return conn
 

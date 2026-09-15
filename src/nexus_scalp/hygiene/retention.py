@@ -179,7 +179,11 @@ AUDIT_RETENTION: dict[str, RetentionRule] = {
         database="audit",
         table="position_lifecycle_events",
         tier=DataTier.TIER_1_CANONICAL_AUDIT,
-        purpose="immutable position timeline (MOVING subset is telemetry)",
+        # BUG-295: production rows never carry MOVING (the durable BUG-054
+        # purge filter); the hygiene sweep targets the churn observation
+        # classes the tracker actually emits (MFE_REACHED / PROFIT_GIVEBACK /
+        # DEGRADING / RECOVERY_ATTEMPT) — see SAFE_RETENTION_DELETES.
+        purpose="immutable position timeline (observation-churn subset is telemetry)",
         minimum_retention_days=3.0,
         delete_after_days=3.0,
         cleanup_class="KEEP",
@@ -389,7 +393,7 @@ AUDIT_RETENTION: dict[str, RetentionRule] = {
         database="audit",
         table="research_worker_state",
         tier=DataTier.TIER_7_TEMPORARY_STATE,
-        purpose="worker checkpoint",
+        purpose="worker checkpoint (scope PK; age column last_cycle_at — BUG-295)",
         minimum_retention_days=30.0,
         delete_after_days=30.0,
         cleanup_class="STALE_TEMP",
@@ -400,7 +404,7 @@ AUDIT_RETENTION: dict[str, RetentionRule] = {
         database="audit",
         table="intelligence_worker_state",
         tier=DataTier.TIER_7_TEMPORARY_STATE,
-        purpose="worker checkpoint",
+        purpose="worker checkpoint (scope PK; age column last_cycle_at — BUG-295)",
         minimum_retention_days=30.0,
         delete_after_days=30.0,
         cleanup_class="STALE_TEMP",
@@ -455,10 +459,19 @@ NEWS_RETENTION: dict[str, RetentionRule] = {
     "news_analysis_runs": RetentionRule(
         database="news",
         table="news_analysis_runs",
+        # BUG-295 (lane-04 §7: WARM 30d -> DELETE, pure bookkeeping). The
+        # registry was never_delete=True while the executable SAFE_CLEAN path
+        # had no rule at all — the table grew unbounded (26,160 rows / 4.0 MB
+        # at 1,189 runs/day). Nothing rebuilds these manifests: rebuildable
+        # stays False; run history is the durable copy, the row is the
+        # bookkeeping handle.
         tier=DataTier.TIER_4_NEWS_INTELLIGENCE,
-        purpose="run manifests",
-        never_delete=True,
+        purpose="run bookkeeping manifests (run_id PK; age column started_at — lane-04 §3)",
+        minimum_retention_days=30.0,
+        delete_after_days=30.0,
+        cleanup_class="STALE_TEMP",
         owner="NewsAnalysis",
+        rebuildable=False,
     ),
     "news_entities": RetentionRule(
         database="news",
@@ -536,7 +549,10 @@ NEWS_RETENTION: dict[str, RetentionRule] = {
         database="news",
         table="news_health",
         tier=DataTier.TIER_5_DERIVED_ANALYTICS,
-        purpose="health snapshots",
+        # BUG-295: source_id PK, no created_at — liveness is the pair
+        # (last_success_at, last_failure_at); the SAFE_CLEAN rule deletes a
+        # row only when BOTH present timestamps are older than the window.
+        purpose="health snapshots (age columns last_success_at/last_failure_at)",
         minimum_retention_days=90.0,
         delete_after_days=90.0,
         cleanup_class="KEEP",
@@ -547,7 +563,7 @@ NEWS_RETENTION: dict[str, RetentionRule] = {
         database="news",
         table="news_worker_state",
         tier=DataTier.TIER_7_TEMPORARY_STATE,
-        purpose="worker checkpoint",
+        purpose="worker checkpoint (scope PK; age column last_cycle_at — BUG-295)",
         minimum_retention_days=30.0,
         delete_after_days=30.0,
         cleanup_class="STALE_TEMP",
