@@ -27,10 +27,24 @@ class TickData(BaseModel):
 
     symbol: str = Field(..., description="Financial instrument identifier, e.g., 'EURUSD'")
     timestamp: datetime = Field(..., description="UTC timestamp of tick generation")
-    bid: float = Field(..., gt=0.0, description="Highest price a buyer is willing to pay")
-    ask: float = Field(..., gt=0.0, description="Lowest price a seller is willing to accept")
-    last: float = Field(default=0.0, ge=0.0, description="Last traded deal price")
-    volume: float = Field(default=0.0, ge=0.0, description="Tick or real volume")
+    # BUG-285 (input-validation lane, wave 2026-09-14): pydantic `gt`/`ge`
+    # ACCEPT infinity, so a malfunctioning terminal's inf quote previously
+    # flowed through (bid=1,ask=inf -> spread inf; inf/inf -> spread NaN) into
+    # the bar aggregator and every downstream price consumer. Corrupted price
+    # is a MUST-FAIL-CLOSED boundary; NaN was rejected only incidentally
+    # (`nan > 0` is False). allow_inf_nan=False makes the contract explicit.
+    bid: float = Field(
+        ..., gt=0.0, allow_inf_nan=False, description="Highest price a buyer is willing to pay"
+    )
+    ask: float = Field(
+        ..., gt=0.0, allow_inf_nan=False, description="Lowest price a seller is willing to accept"
+    )
+    last: float = Field(
+        default=0.0, ge=0.0, allow_inf_nan=False, description="Last traded deal price"
+    )
+    volume: float = Field(
+        default=0.0, ge=0.0, allow_inf_nan=False, description="Tick or real volume"
+    )
     flags: int = Field(default=0, description="Raw tick flag bitmask provided by MT5")
 
     @field_validator("timestamp")
