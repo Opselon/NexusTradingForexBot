@@ -156,18 +156,49 @@ def test_signal_payload_honest_when_no_execution_id(repo):
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_regime_log_has_no_fabricated_features(repo, capsys):
-    repo.log_signal(_proposal(regime="", reason_code="NO_TRADE_REGIME_UNKNOWN"))
-    captured = capsys.readouterr()
-    printed = [ln for ln in captured.out.splitlines() if ln.strip().startswith("{")]
-    assert printed, "unknown-regime console diagnostic missing"
-    data = json.loads(printed[-1])
+def test_unknown_regime_log_has_no_fabricated_features(repo, monkeypatch):
+    """OBS-TRACE + PERF-WAVE R9: the diagnostic lives in the STRUCTURED
+    warning only. The stdout print() twin was removed (blocking stdout on the
+    tick path; the `extra` payload carries everything). Captured with a logger
+    double — never capsys (structlog routing is host-dependent)."""
+    from nexus_scalp.adapters.database import audit_repository as _ar
+
+    records: list[tuple[str, dict]] = []
+
+    class _Double:
+        def warning(self, msg, **kw):
+            records.append((msg, kw))
+
+        def error(self, msg, **kw):
+            records.append((msg, kw))
+
+        def info(self, msg, **kw):
+            records.append((msg, kw))
+
+    monkeypatch.setattr(_ar, "logger", _Double())
+    try:
+        repo.log_signal(_proposal(regime="", reason_code="NO_TRADE_REGIME_UNKNOWN"))
+    finally:
+        monkeypatch.undo()
+    hits = [r for r in records if "UNKNOWN regime" in r[0]]
+    assert hits, "unknown-regime structured diagnostic missing"
+    data = hits[-1][1]["extra"]
     assert data["regime"] == "UNKNOWN"
     # The fabricated claims are gone; absence is stamped, never invented.
     assert data["missing_features"] == "NOT_RECORDED"
     assert data["available_bars"] == "NOT_RECORDED"
     # Real evidence is echoed.
     assert data["reason"] == "NO_TRADE_REGIME_UNKNOWN"
+
+
+def test_unknown_regime_diagnostic_never_prints_to_stdout():
+    """PERF-WAVE R9 pin: no raw print() may return to the audit hot path."""
+    src = open("src/nexus_scalp/adapters/database/audit_repository.py", encoding="utf-8").read()
+    assert "print(json.dumps(unknown_log))" not in src, (
+        "R9 regression: stdout print of the UNKNOWN-regime payload is back on "
+        "the tick path (use the structured warning only)"
+    )
+    assert "\n            print(" not in src, "R9 regression: a raw print() sits in the class body"
 
 
 # ---------------------------------------------------------------------------

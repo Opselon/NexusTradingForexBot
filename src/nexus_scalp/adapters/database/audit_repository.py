@@ -2319,7 +2319,15 @@ class AuditRepository:
             self.financial_queue_backpressure += 1
         try:
             if self._queue.qsize() >= 9000:
-                self._queue.put((query, args), timeout=max(self._flush_interval * 2.0, 2.0))
+                # PERF-WAVE R1 (P1, docs/audit/wave_20260914/10_performance.md):
+                # the blocking window is the audit FLUSH cadence, never a
+                # 2-second floor — log_signal runs on the tick path, so the
+                # old max(flush*2, 2.0) could stall the hot path 20x longer
+                # than the comment at the class header claimed ("worst case
+                # costs one flush interval"). Backpressure still exists (the
+                # put blocks + counter + WARNING below); overflow still wins
+                # if capacity never frees within the bounded window.
+                self._queue.put((query, args), timeout=min(self._flush_interval * 2.0, 0.1))
                 backpressured = True
             else:
                 self._queue.put_nowait((query, args))
@@ -2674,9 +2682,13 @@ class AuditRepository:
                 "available_bars": "NOT_RECORDED",
                 "request_id": str(getattr(proposal, "request_id", "") or ""),
             }
+            # PERF-WAVE R9 (2026-09-14): the duplicate `print(json.dumps(...))`
+            # for stdout-forensics parsing was REMOVED. It wrote to stdout on
+            # the tick path (blocking I/O, per UNKNOWN-regime signal), and the
+            # structured warning below carries the identical payload in
+            # `extra` — engine log capture (file + console handler) owns the
+            # "stdout audit parsing" use case, never raw print().
             logger.warning("UNKNOWN regime detected - decision context echoed", extra=unknown_log)
-            # Standard console log of the json string representation for stdout audit parsing
-            print(json.dumps(unknown_log))
 
         query = """
             INSERT INTO audit_signals
