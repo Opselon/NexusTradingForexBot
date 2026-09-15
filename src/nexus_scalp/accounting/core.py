@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import MutableMapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -55,6 +56,7 @@ from nexus_scalp.accounting.periods import (
     recent_periods,
     utc_now,
 )
+from nexus_scalp.bounded_map import BoundedLRUMap
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.accounting.core")
@@ -63,6 +65,15 @@ logger = get_logger("nexus_scalp.accounting.core")
 #: never turn into a full-history table scan.
 MAX_TRADE_ROWS = 20_000
 MAX_SNAPSHOT_ROWS = 50_000
+
+#: BUG-291 (perf-wave R8): the derived period-report cache is LRU-bounded.
+#: The working set the accounting worker keeps warm is DAY30+WEEK12+MONTH12+
+#: YEAR3 = 57 keys plus web-series bursts (<=60/kind); 512 gives an order of
+#: magnitude of headroom while capping long-lived growth from callers that
+#: pass many distinct `at` moments (historical browsing). The cache is
+#: documented as rebuildable ("self-healing"), so eviction only costs one
+#: recompute of a derived row-set — never lost truth.
+REPORT_CACHE_MAX = 512
 
 
 class AccountingCore:
@@ -87,7 +98,14 @@ class AccountingCore:
         self.strategy_evaluator = strategy_evaluator
         self._lock = threading.Lock()
         #: Cheap in-process cache of derived reports, refreshed by the worker.
-        self._report_cache: dict[str, PeriodReport] = {}
+        #: BUG-291 (perf-wave R8): LRU-bounded (was: unbounded dict, no
+        #: eviction — every distinct period key a caller ever touched stayed
+        #: resident for the process life). Values are rebuildable derived
+        #: aggregates, so eviction only costs one recompute (see
+        #: TestSelfHealing: the cache is never the source of truth).
+        self._report_cache: MutableMapping[str, PeriodReport] = BoundedLRUMap(
+            "period_report_cache", maxsize=REPORT_CACHE_MAX
+        )
         self._cache_stamp: datetime | None = None
 
     # ------------------------------------------------------------------
