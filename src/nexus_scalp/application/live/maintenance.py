@@ -28,6 +28,11 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.maintenance")
 
+#: BUG-292 (perf-wave R6): how often the C3 spread-percentile sketch is
+#: refreshed from the durable copy. The audit asked for "<= 60 s"; the read
+#: surface (policy) is pure RAM in between.
+SPREAD_SKETCH_REFRESH_INTERVAL_SEC: float = 60.0
+
 
 def _split_telegram_report(text: str, max_len: int = 3500) -> list[str]:
     """Lazily resolve the live-engine helper (keeps this module import-light)."""
@@ -64,6 +69,42 @@ class MaintenanceCycle:
         self._champion_sentinel_interval_sec: float = 900.0
         self._last_champion_sentinel_time: float | None = None
         self._champion_sentinel_failures: int = 0
+        # BUG-292 (perf-wave R6): C3 spread-percentile sketch refresh cadence.
+        # None = "never ran" first-due sentinel (the 0.0-vs-monotonic shape
+        # silently skips the first pass on a young host — BUG-273 class).
+        self._last_spread_sketch_refresh_time: float | None = None
+        self._spread_sketch_interval_sec: float = SPREAD_SKETCH_REFRESH_INTERVAL_SEC
+
+    async def _refresh_spread_sketch(self, *, now_t: float) -> None:
+        """BUG-292: drive the C3 spread-sketch refresh (bounded, off-loop).
+
+        The refresh is the sketch's ONLY I/O. It runs on a worker thread
+        (``asyncio.to_thread``) at most once per ``_spread_sketch_interval_sec``
+        and is failure-isolated: a spread-gate maintenance fault must never
+        disturb ticks. A persistently dead refresh degrades the GATE itself to
+        its honest no-op inside the sketch (staleness guard), so this stage
+        never needs to escalate.
+        """
+        refresh = getattr(self.om, "refresh_spread_session_sketch", None)
+        if not callable(refresh):
+            return
+        if (
+            self._last_spread_sketch_refresh_time is not None
+            and now_t - self._last_spread_sketch_refresh_time < self._spread_sketch_interval_sec
+        ):
+            return
+        self._last_spread_sketch_refresh_time = now_t
+        try:
+            report = await asyncio.to_thread(refresh)
+            if isinstance(report, dict) and not report.get("refreshed"):
+                logger.debug(
+                    "[SPREAD_GATE] event=SKETCH_REFRESH_SKIPPED reason=%s",
+                    report.get("reason") or "no-report",
+                )
+        except Exception as sketch_err:
+            logger.warning(
+                "[SPREAD_GATE] event=SKETCH_REFRESH_FAILED (isolated) error=%s", sketch_err
+            )
 
     async def run_cycle(self, *, now_t: float) -> None:
         """Runs one maintenance pass (all stages internally throttled)."""
@@ -201,6 +242,15 @@ class MaintenanceCycle:
                 logger.warning(
                     "[CHAMPION_SENTINEL] event=CYCLE_FAILED (isolated)", error=str(sent_err)
                 )
+
+        # BUG-292 (perf-wave R6): C3 spread-percentile SKETCH refresh. The
+        # policy's session-percentile provider used to open a SQLite
+        # connection and run a same-day SELECT inside EVERY spread-positive
+        # candidate evaluation — loop-thread I/O on the tick path. The
+        # provider now reads an in-process sketch; THIS stage is the sketch's
+        # only I/O, on the cadence the audit asked for (<= 60 s), off the tick
+        # path and failure-isolated.
+        await self._refresh_spread_sketch(now_t=now_t)
 
         # MISSION 5: compact OPERATIONAL digest (one message — mode,
         # protections, drift, parity, rollbacks) alongside the existing deep

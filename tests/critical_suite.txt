@@ -354,3 +354,8 @@ tests/unit/test_bug289_telegram_notify_cli.py
 # BUG-290/291 (NSE-Swarm role 1, 2026-09-15): perf-wave R7+R8 unbounded in-process guard
 # maps (_processed_orders, _ai_flip_warn_times, AccountingCore._report_cache) -> BoundedLRUMap.
 tests/unit/test_bug290_bounded_guard_maps.py
+
+# BUG-292 (NSE-Swarm role 2, 2026-09-15): perf-wave R6 — the C3 session spread-percentile
+# gate ran a per-call SQLite connect + same-day SELECT INSIDE policy evaluation (loop-thread
+# I/O). Now an off-loop-refreshed in-process sketch with SQL-parity guarantees.
+tests/unit/test_bug292_spread_sketch_offload.py
