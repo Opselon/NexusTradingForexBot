@@ -207,6 +207,29 @@ tests/unit/test_hunter_metadata_persistence.py
 #   EVALUATING floor (5, = StrategyEvaluator.min_samples_evaluating); at/above
 #   the floor the full NO_TRADE rejection semantics are pinned UNCHANGED.
 tests/unit/test_bug284_suitability_micro_sample_floor.py
+#   BUG-285 (2026-09-14 wave, input-validation lane L11-1/2): pydantic gt/ge
+#   ACCEPT infinity, so TickData(bid=1,ask=inf) -> spread inf and (inf,inf) ->
+#   NaN passed the MUST-FAIL-CLOSED price boundary; the broker-history reader
+#   forwarded NaN/inf/inverted-OHLC bars into the canonical series (validation
+#   was report-only). Pins: allow_inf_nan=False on all tick price/volume fields,
+#   non-finite BarData refused, get_historical_bars drops malformed rows loudly.
+tests/unit/test_domain_models.py
+tests/unit/test_bug285_price_boundaries_fail_closed.py
+#   BUG-286 FINDING-2 class guard (structural, role-11): no zero-byte
+#   identifier-shaped file may ever be TRACKED at repo root — three incidents
+#   of cmd-hook '<'-sweep sentinels reaching commits ('the',
+#   'min_samples_to_reject' via 94ecf2c7->#199; 'forwarded', 'non-finite' at
+#   the #204 head). Predicate unit pins + live-tree gate + .gitignore guard
+#   memory; RED-BEFORE proven at 701bc50c.
+tests/unit/test_bug286_sentinel_class_guard.py
+#   BUG-287 (role-11, 2026-09-15): PERF-WAVE R1 — the financial audit enqueue
+#   must never block the tick path longer than 100ms (old 2s floor), and R9 —
+#   no raw stdout print on the decision path. Behavior pins + source pins;
+#   RED-BEFORE 3/3 at 65d3cb50. test_obs_trace_chain (the OBS-TRACE decision
+#   contract battery incl. the re-pinned unknown-regime diagnostic) was found
+#   UNREGISTERED at main — gate gap closed with the same wave it now tests.
+tests/unit/test_perf_r1_blocking_put_bound.py
+tests/unit/test_obs_trace_chain.py
 #   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
 #   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
 #   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
@@ -335,3 +358,32 @@ tests/ci/test_critical_manifest_gate.py
 tests/ci/test_gate_scope_integrity.py
 tests/ci/test_mutation_runner_smoke.py
 tests/cli/test_docs_consistency.py
+# BUG-285 (NSE-Swarm role 10, 2026-09-15) — ID renumbered: swarm reserved BUG-278 mid-PR, Hermes wave took it: durable financial-overflow was write-only
+# (perf-wave R2) — stranded rows never returned to the ledger, dir grew unbounded.
+# Worker idle-pass drain + file cap + poison dead-letter + recovery observability.
+tests/unit/test_bug285_overflow_drain.py
+tests/unit/test_bug285_overflow_wiring.py
+# BUG-288/289 (NSE-Swarm role 12, 2026-09-15) — audit-worker queue-adoption race (windows CI red
+# b1fe0137; pins live in the already-gated test_outcome_flush_race_bug140.py) + telegram_notify CLI
+# call-shape break (OS-leg + JS-lane finish notifications never delivered).
+tests/unit/test_bug289_telegram_notify_cli.py
+
+# BUG-290/291 (NSE-Swarm role 1, 2026-09-15): perf-wave R7+R8 unbounded in-process guard
+# maps (_processed_orders, _ai_flip_warn_times, AccountingCore._report_cache) -> BoundedLRUMap.
+tests/unit/test_bug290_bounded_guard_maps.py
+
+# BUG-292 (NSE-Swarm role 2, 2026-09-15): perf-wave R6 — the C3 session spread-percentile
+# gate ran a per-call SQLite connect + same-day SELECT INSIDE policy evaluation (loop-thread
+# I/O). Now an off-loop-refreshed in-process sketch with SQL-parity guarantees.
+tests/unit/test_bug292_spread_sketch_offload.py
+
+# BUG-293 (NSE-Swarm input-validation lane, 2026-09-15): lane-11 L11-4 + L11-6
+# fail-open boundaries — paper_state.json partial-apply on corrupt reload and
+# gateway order payloads silently defaulting volume/price before broker dispatch.
+tests/unit/test_bug293_failopen_boundaries.py
+
+# BUG-294 (NSE perf-bounds lane, 2026-09-15): behavioral regression net for the
+# bounded-runtime class — eviction driven through the REAL dispatch seam, broken-
+# stdout log_signal pin, report-cache LRU under real browsing (pins the BUG-287/290/291
+# behavior, not just its structure).
+tests/unit/test_bug294_bounded_runtime_behavior.py

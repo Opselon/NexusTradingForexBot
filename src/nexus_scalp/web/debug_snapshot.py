@@ -937,6 +937,18 @@ def _policy_section(engine: Any) -> dict[str, Any]:
         if proposal and getattr(proposal, "generated_at", None)
         else None
     )
+    # BUG-292 (perf-wave R6): the C3 gate (b) session distribution now lives in
+    # an off-loop-refreshed sketch. Surface its state so an operator can tell
+    # "gate no-op because the session is thin" apart from "gate no-op because
+    # the maintenance refresh died" — the two used to be indistinguishable.
+    sketch = getattr(engine, "spread_session_sketch", None)
+    if sketch is not None:
+        try:
+            out["spread_session_sketch"] = sketch.snapshot_debug()
+        except Exception:
+            out["spread_session_sketch"] = {"available": False}
+    else:
+        out["spread_session_sketch"] = {"available": False}
     return out
 
 
@@ -981,6 +993,17 @@ def _risk_section(engine: Any) -> dict[str, Any]:
             getattr(audit, "financial_events_overflowed", 0) or 0
         )
         out["financial_events_failed"] = int(getattr(audit, "financial_events_failed", 0) or 0)
+        # BUG-285: overflow RECOVERY visibility — an overflowed row is only
+        # durable if something reads it back. recovered = rows returned to
+        # the ledger by the audit worker's drain; failed = replay rejects +
+        # cap refusals; pending = files still stranded on disk right now.
+        out["financial_overflow_recovered"] = int(
+            getattr(audit, "financial_overflow_recovered", 0) or 0
+        )
+        out["financial_overflow_failed"] = int(getattr(audit, "financial_overflow_failed", 0) or 0)
+        _pending_fn = getattr(audit, "overflow_pending_count", None)
+        _pending_val: Any = _pending_fn() if callable(_pending_fn) else -1
+        out["financial_overflow_pending"] = int(_pending_val)
         out["consecutive_losses"] = int(getattr(engine, "_consecutive_losses", 0) or 0)
         cfg = engine.config
         out["risk_per_trade_pct"] = float(cfg.risk.risk_per_trade_pct)
@@ -1111,6 +1134,12 @@ def _execution_section(engine: Any) -> dict[str, Any]:
         out["global_state"] = getattr(om, "global_state", None)
         out["consecutive_failures"] = getattr(om, "_consecutive_failures", None)
         out["processed_orders_count"] = len(getattr(om, "_processed_orders", {}))
+        # BUG-290: the guard is LRU-bounded; evictions > 0 means entries left
+        # the same-session guard (durable audit idempotency still refuses a
+        # cross-boot replay, so this is a sizing signal, not a correctness one).
+        out["processed_orders_evictions"] = getattr(
+            getattr(om, "_processed_orders", None), "evictions", None
+        )
     try:
         out["adapter"] = type(engine.adapter).__name__
         conn = engine.adapter.connection_state()

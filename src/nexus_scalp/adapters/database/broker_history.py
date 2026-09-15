@@ -464,6 +464,29 @@ def create_paper_executions_table(conn: sqlite3.Connection) -> None:
 # supplying enough fills for a meaningful percentile. Fills only
 # (status='FILLED', real fill price, spread > 0) — quote-less defensive
 # rows (spread=0.0) would drag the percentile toward zero and fail-open.
+def interpolated_percentile(values: list[float], percentile: float) -> float:
+    """Nearest-rank linear interpolation (numpy ``linear`` semantics), no numpy.
+
+    ONE owner of the formula, shared by this module's SQL provider and by
+    ``experience.spread_sketch.SpreadSessionSketch`` (BUG-292 / perf-wave R6):
+    the off-loop sketch must return the IDENTICAL number the DB read returned,
+    so a percentile formula with two owners would be a silent behavior change
+    on the trading path. ``values`` must be non-empty and sorted ascending.
+
+    Lives in the adapters layer (the lower side of the seam) so both consumers
+    import DOWN, never up.
+    """
+    if not values:
+        raise ValueError("interpolated_percentile requires a non-empty sample")
+    rank = (float(percentile) / 100.0) * (len(values) - 1)
+    lo_i = math.floor(rank)
+    hi_i = math.ceil(rank)
+    if lo_i == hi_i:
+        return values[lo_i]
+    frac = rank - lo_i
+    return values[lo_i] + (values[hi_i] - values[lo_i]) * frac
+
+
 def session_spread_percentile(
     conn: sqlite3.Connection,
     symbol: str,
@@ -536,14 +559,9 @@ def session_spread_percentile(
         return None
 
     # Nearest-rank style interpolation (numpy 'linear' semantics) without a
-    # numpy dependency: rank = p/100 * (n-1).
-    rank = (float(percentile) / 100.0) * (len(spreads) - 1)
-    lo_i = math.floor(rank)
-    hi_i = math.ceil(rank)
-    if lo_i == hi_i:
-        return spreads[lo_i]
-    frac = rank - lo_i
-    return spreads[lo_i] + (spreads[hi_i] - spreads[lo_i]) * frac
+    # numpy dependency. ONE owner (spread_sketch.interpolated_percentile) so
+    # the SQL provider and the BUG-292 in-process sketch can never drift.
+    return interpolated_percentile(spreads, float(percentile))
 
 
 def create_history_tables(conn: sqlite3.Connection) -> None:

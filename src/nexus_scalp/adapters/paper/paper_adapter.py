@@ -18,6 +18,7 @@ against this adapter.
 
 import contextlib
 import json
+import math
 import os
 import random
 from datetime import UTC, datetime, timedelta
@@ -74,6 +75,19 @@ def _get_seed() -> int | None:
 
 #: Instruments quoted with 2 decimals and a 100-unit contract size (metals).
 _METAL_PREFIXES: tuple[str, ...] = ("XAU", "XAG", "GOLD", "SILVER")
+
+
+class _PaperStateCorruptionError(ValueError):
+    """A persisted paper_state payload field failed validation (BUG-293).
+
+    Carries the corruption CLASS name so the rejection warning is diagnostic
+    (e.g. ``equity_not_finite``) rather than a raw parse traceback.
+    """
+
+    def __init__(self, corruption_class: str, detail: str) -> None:
+        super().__init__(f"{corruption_class}: {detail}")
+        self.corruption_class = corruption_class
+        self.detail = detail
 
 
 class PaperMT5Adapter(IMT5Port):
@@ -358,6 +372,16 @@ class PaperMT5Adapter(IMT5Port):
                 logger.warning("PAPER persist failed", error=str(exc), path=str(path))
 
     def _load_state(self) -> bool:
+        # BUG-293 (lane-11 L11-4): ATOMIC load. The payload is parsed into a
+        # candidate, validated in full, and engine fields are swapped only on
+        # success. Before this fix fields were mutated sequentially inside one
+        # try, so corruption at any late line left the EARLIER fields applied
+        # (VERIFIED probe: balance=-99999 + equity=NaN persisted despite
+        # _load_state() returning False, and connect() traded on the
+        # half-state); invalid position rows were silently dropped. On any
+        # rejection: keep current state, emit ONE loud structured warning
+        # naming the corruption class, and leave the file in place (the next
+        # healthy persist overwrites it). Never crash-boot — PAPER tier.
         if not self._persist_enabled():
             return False
         path = self._persist_path()
@@ -366,52 +390,116 @@ class PaperMT5Adapter(IMT5Port):
         try:
             raw = path.read_text(encoding="utf-8")
             data = json.loads(raw)
-        except Exception:
+        except Exception as exc:
+            self._log_state_corruption("unreadable_or_invalid_json", str(exc), path)
+            return False
+        if not isinstance(data, dict):
+            self._log_state_corruption(
+                "payload_not_object", f"top level is {type(data).__name__}", path
+            )
             return False
         # Provenance guard: symbol must match; initial_balance is NOT used to gate or reset.
-        try:
-            saved_symbol = str(data.get("symbol", ""))
-            if saved_symbol and saved_symbol != str(self.symbol):
-                logger.info(
-                    "PAPER persist skip (symbol mismatch)", saved=saved_symbol, current=self.symbol
-                )
-                return False
-        except Exception:
-            pass
-        try:
-            self.balance = float(data.get("balance", self.balance))
-            self.equity = float(data.get("equity", self.equity))
-            self._ticket_counter = int(data.get("_ticket_counter", self._ticket_counter))
-            self._last_tick_iso = data.get("_last_tick_iso")
-            # closed tickets
-            ct = data.get("closed_tickets", [])
-            self._closed_tickets = set(int(x) for x in ct) if isinstance(ct, list) else set()
-            # positions
-            raw_positions = data.get("_positions", [])
-            restored: list[Any] = []
-            if isinstance(raw_positions, list):
-                for d in raw_positions:
-                    try:
-                        restored.append(Position.model_validate(d))
-                    except Exception:
-                        continue
-            self._positions = restored
-            # Recompute equity from restored positions (persisted balance stays authoritative).
-            with contextlib.suppress(Exception):
-                self._refresh_position_profits()
-                self._refresh_account()
+        saved_symbol = str(data.get("symbol", ""))
+        if saved_symbol and saved_symbol != str(self.symbol):
             logger.info(
-                "PAPER persist restored",
-                path=str(path),
-                balance=self.balance,
-                positions=len(self._positions),
-                closed=len(self._closed_tickets),
+                "PAPER persist skip (symbol mismatch)", saved=saved_symbol, current=self.symbol
             )
-            return True
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                logger.warning("PAPER load failed", error=str(exc), path=str(path))
             return False
+        try:
+            candidate = self._build_state_candidate(data)
+        except _PaperStateCorruptionError as exc:
+            self._log_state_corruption(exc.corruption_class, exc.detail, path)
+            return False
+        except Exception as exc:  # defensive: never crash-boot on restore
+            self._log_state_corruption("unexpected", f"{type(exc).__name__}: {exc}", path)
+            return False
+        # Full payload validated -> swap atomically.
+        self.balance = candidate["balance"]
+        self.equity = candidate["equity"]
+        self._ticket_counter = candidate["_ticket_counter"]
+        self._last_tick_iso = candidate["_last_tick_iso"]
+        self._closed_tickets = candidate["_closed_tickets"]
+        self._positions = candidate["_positions"]
+        # Recompute equity from restored positions (persisted balance stays authoritative).
+        with contextlib.suppress(Exception):
+            self._refresh_position_profits()
+            self._refresh_account()
+        logger.info(
+            "PAPER persist restored",
+            path=str(path),
+            balance=self.balance,
+            positions=len(self._positions),
+            closed=len(self._closed_tickets),
+        )
+        return True
+
+    def _build_state_candidate(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Validate a persisted payload WITHOUT touching engine state.
+
+        Raises _PaperStateCorruptionError naming the first failing field class.
+        Rules: balance/equity finite and non-negative (a negative simulation
+        book cannot be distinguished from corruption and the boot default is
+        the conservative restore); ticket counter and closed tickets
+        non-negative ints; every position row must validate (a bad row
+        rejects the WHOLE file — positions are never silently dropped).
+        """
+        cand: dict[str, Any] = {}
+        cand["balance"] = self._validated_float(data, "balance", self.balance)
+        cand["equity"] = self._validated_float(data, "equity", self.equity)
+        tc_raw = data.get("_ticket_counter", self._ticket_counter)
+        try:
+            tc = int(tc_raw)
+        except (TypeError, ValueError) as exc:
+            raise _PaperStateCorruptionError("ticket_counter_not_integer", repr(tc_raw)) from exc
+        if tc < 0:
+            raise _PaperStateCorruptionError("ticket_counter_negative", repr(tc_raw))
+        cand["_ticket_counter"] = tc
+        cand["_last_tick_iso"] = data.get("_last_tick_iso")
+        ct = data.get("closed_tickets", [])
+        if not isinstance(ct, list):
+            raise _PaperStateCorruptionError("closed_tickets_not_list", type(ct).__name__)
+        try:
+            closed = {int(x) for x in ct}
+        except (TypeError, ValueError) as exc:
+            raise _PaperStateCorruptionError("closed_tickets_not_integer", str(exc)) from exc
+        if any(t < 0 for t in closed):
+            raise _PaperStateCorruptionError("closed_tickets_negative", repr(ct))
+        cand["_closed_tickets"] = closed
+        raw_positions = data.get("_positions", [])
+        if not isinstance(raw_positions, list):
+            raise _PaperStateCorruptionError("positions_not_list", type(raw_positions).__name__)
+        restored: list[Position] = []
+        for idx, row in enumerate(raw_positions):
+            try:
+                restored.append(Position.model_validate(row))
+            except Exception as exc:
+                raise _PaperStateCorruptionError(
+                    f"position_row_invalid[{idx}]", str(exc).splitlines()[0]
+                ) from exc
+        cand["_positions"] = restored
+        return cand
+
+    @staticmethod
+    def _validated_float(data: dict[str, Any], field: str, fallback: float) -> float:
+        raw = data.get(field, fallback)
+        try:
+            val = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise _PaperStateCorruptionError(f"{field}_not_a_number", repr(raw)) from exc
+        if not math.isfinite(val):
+            raise _PaperStateCorruptionError(f"{field}_not_finite", repr(raw))
+        if val < 0:
+            raise _PaperStateCorruptionError(f"{field}_negative", repr(raw))
+        return val
+
+    def _log_state_corruption(self, corruption_class: str, detail: str, path: Path) -> None:
+        """One loud structured warning per rejected load (never crash-boot)."""
+        logger.warning(
+            "PAPER STATE LOAD REJECTED — keeping current state",
+            corruption_class=corruption_class,
+            error=detail,
+            path=str(path),
+        )
 
     def _clear_persisted_state(self) -> None:
         """Remove the persistence file (test teardown helper)."""

@@ -42,6 +42,53 @@ def test_tick_data_invalid_spread_raises_validation_error() -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# BUG-285 (wave 2026-09-14, input-validation lane L11-1): pydantic gt/ge
+# accept infinity, so a malfunctioning terminal's inf quote produced
+# spread=inf (bid finite, ask inf) or spread=NaN (both inf) INSIDE the
+# validated boundary. Corrupted price is a MUST-FAIL-CLOSED input class.
+# RED-before probes (VERIFIED in the lane report):
+#   TickData(bid=1.0, ask=inf)      -> ACCEPTED, spread_points=inf
+#   TickData(bid=inf, ask=inf)      -> ACCEPTED, spread_points=NaN
+#   TickData(..., volume=inf)       -> ACCEPTED
+#   TickData(..., last=inf)         -> ACCEPTED
+# ---------------------------------------------------------------------------
+
+
+def test_tick_data_rejects_infinite_ask() -> None:
+    now = datetime.now(UTC)
+    with pytest.raises(ValidationError):
+        TickData(symbol="XAUUSD", timestamp=now, bid=1.0, ask=float("inf"))
+
+
+def test_tick_data_rejects_infinite_bid_and_ask() -> None:
+    now = datetime.now(UTC)
+    with pytest.raises(ValidationError):
+        TickData(symbol="XAUUSD", timestamp=now, bid=float("inf"), ask=float("inf"))
+
+
+def test_tick_data_rejects_infinite_last_and_volume() -> None:
+    now = datetime.now(UTC)
+    with pytest.raises(ValidationError):
+        TickData(symbol="XAUUSD", timestamp=now, bid=1.0, ask=1.1, last=float("inf"))
+    with pytest.raises(ValidationError):
+        TickData(symbol="XAUUSD", timestamp=now, bid=1.0, ask=1.1, volume=float("inf"))
+
+
+def test_tick_data_rejects_nan_price() -> None:
+    """NaN was already rejected as a side-effect of gt (nan > 0 is False);
+    pin it so the explicit contract keeps covering it."""
+    now = datetime.now(UTC)
+    with pytest.raises(ValidationError):
+        TickData(symbol="XAUUSD", timestamp=now, bid=float("nan"), ask=1.1)
+
+
+def test_tick_data_finite_prices_still_accepted() -> None:
+    now = datetime.now(UTC)
+    tick = TickData(symbol="XAUUSD", timestamp=now, bid=4400.10, ask=4400.35)
+    assert tick.spread_points == pytest.approx(0.25, abs=1e-6)
+
+
 def test_trade_proposal_buy_invariants() -> None:
     """Ensures invalid stop loss placement on Buy actions triggers validation error."""
     now = datetime.now(UTC)
