@@ -75,7 +75,7 @@ underutilization = the UI indicator engine has exactly ONE consumer (the UI);
 | BUG-284 | Phase-09 suitability REJECT needs >=5 samples (was: zero evidence passes, ONE loss blocks — 34.5% of decisions); full-strength reject preserved at floor | #199 |
 | BUG-285 | TickData/BarData non-finite refusal + broker-history reader drops malformed rows loudly (was report-only) | #206 |
 | BUG-286..292 | calendar single-ownership; hot-path stdout print removed; queue-adoption flake; overflow drain; bounded LRU maps (BoundedLRUMap); telegram CLI contract; C3 gate off the hot path | #205..#212 |
-| BUG-294 | behavioral (not just structural) regression battery for the bounded maps | #214 closed unmerged (structural pins landed with #212; behavioral battery kept on the branch for re-land) |
+| BUG-294 | behavioral (not just structural) regression battery for the bounded maps — the fixes themselves landed with #212 (structural pins only); this tests-only net drives eviction through the real seams | #214 (reopened for merge) |
 | BUG-295 | 5 dead hygiene retention rules healed (417 cycles, deleted=0, silently-skipped) + LOUD skip on misconfigured rules | in review |
 
 ## 6. Model / parity verdict (lane 07, corroborated by independent re-probe)
