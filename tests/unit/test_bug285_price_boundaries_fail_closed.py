@@ -78,10 +78,10 @@ class _HistoryStub(DirectMT5Adapter):
     """Bypass MT5 connection: only get_rate_history is exercised by the
     mapping loop under test."""
 
-    def __init__(self, rows: list[RateBarSnapshot]) -> None:  # noqa: D401
+    def __init__(self, rows: list[RateBarSnapshot]) -> None:
         self._rows = rows
 
-    def get_rate_history(self, symbol, timeframe="M1", count=100):  # noqa: ANN001, ARG002
+    def get_rate_history(self, symbol, timeframe="M1", count=100):
         return list(self._rows)
 
 
