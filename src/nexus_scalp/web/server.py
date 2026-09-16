@@ -1783,6 +1783,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_command_center_js() -> FileResponse:
         return FileResponse(WEB_DIR / "command_center_ui.js")
 
+    @app.get("/backtest_report_ui.js")
+    def serve_backtest_report_ui_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "backtest_report_ui.js")
+
     # FORENSIC FIX (Nexus-Forensic-01): command_center.html loads
     # command_center_spatial.js / command_center_console.js /
     # command_center_timemachine.js but server.py previously had NO routes

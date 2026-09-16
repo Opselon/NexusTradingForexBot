@@ -119,6 +119,7 @@ PUBLIC_JS_ASSETS: frozenset[str] = frozenset(
         "command_center_spatial.js",
         "command_center_timemachine.js",
         "command_center_ui.js",
+        "backtest_report_ui.js",
     }
 )
 
