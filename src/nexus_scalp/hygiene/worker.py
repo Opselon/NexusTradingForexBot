@@ -46,6 +46,7 @@ DELETE_BATCH_SIZE: int = 200
 SAFE_CLEAN_CLASSES: frozenset[str] = frozenset(
     {
         "DUPLICATE_WITH_CANONICAL",  # exact duplicate, canonical row verified
+        "BYTE_IDENTICAL_DUPLICATE",  # byte-identical news articles (url+title+body)
         "STALE_TEMP",  # stale worker state / active-state mirror
         "EXPIRED_CACHE",  # expired rebuildable cache
         "REBUILDABLE_DERIVED",  # derived rows within retention window
@@ -385,7 +386,7 @@ class HygienePlanner:
                         canonical_row_id=dup.canonical_row_id,
                         identity_layer=dup.identity_layer,
                         confidence=Confidence.EXACT_DUPLICATE,
-                        cleanup_class="DUPLICATE_WITH_CANONICAL",
+                        cleanup_class=getattr(dup, "cleanup_class", "DUPLICATE_WITH_CANONICAL"),
                         risk="LOW",
                         reason=dup.detail,
                         retention_status="DUPLICATE",
@@ -499,10 +500,7 @@ class CleanupExecutor:
     def _table_rows_sql(self, db_key: str, table: str) -> str | None:
         """Returns the canonical-row lookup SQL for duplicate deletes per table."""
         if db_key == "news" and table == "news_articles":
-            return (
-                "SELECT article_id, article_hash, title, published_at, source_id, "
-                "is_duplicate, duplicate_of FROM news_articles WHERE article_id = ?"
-            )
+            return "SELECT * FROM news_articles WHERE article_id = ?"
         if db_key == "news" and table == "news_analysis":
             return (
                 "SELECT analysis_id, article_id, run_id, analyzed_at FROM news_analysis "
@@ -679,6 +677,15 @@ class CleanupExecutor:
     ) -> bool:
         """Verifies the canonical replacement row still exists (spec §15)."""
         if db_key == "news" and cand.table == "news_articles":
+            if cand.cleanup_class == "BYTE_IDENTICAL_DUPLICATE":
+                if not cand.canonical_row_id or str(cand.canonical_row_id) == str(cand.row_id):
+                    return False
+                canon = conn.execute(
+                    "SELECT article_id FROM news_articles WHERE article_id = ?",
+                    (cand.canonical_row_id,),
+                ).fetchone()
+                return canon is not None
+
             row = conn.execute(
                 "SELECT duplicate_of FROM news_articles WHERE article_id = ?",
                 (cand.row_id,),

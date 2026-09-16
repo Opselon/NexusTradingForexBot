@@ -420,3 +420,4 @@ tests/unit/test_bug298_provisioning_web_api.py
 tests/unit/test_bug299_friction_cap_saturation.py
 tests/unit/test_bug300_ai_triage_fallback.py
 tests/unit/test_bug300_workflow_ai_wiring.py
+tests/unit/test_byte_identical_news_dedup.py
