@@ -45,6 +45,7 @@ class DuplicateCandidate:
     identity_layer: str
     confidence: Confidence
     detail: str = ""
+    cleanup_class: str = "DUPLICATE_WITH_CANONICAL"
 
 
 class DuplicateDetector:
@@ -138,7 +139,9 @@ class DuplicateDetector:
     # news.db
     # ------------------------------------------------------------------
     def scan_news(self, conn: sqlite3.Connection) -> list[DuplicateCandidate]:
+        import hashlib
         found: list[DuplicateCandidate] = []
+        seen_articles = set()
 
         # articles: article_hash UNIQUE by construction. Scan rows flagged
         # is_duplicate=1; the canonical row must actually EXIST (join on
@@ -156,7 +159,8 @@ class DuplicateDetector:
                 "SELECT article_id FROM news_articles WHERE article_hash = ?",
                 (dup_of,),
             ).fetchone()
-            if canonical is not None and int(canonical[0]) != int(article_id):
+            if canonical is not None and str(canonical[0]) != str(article_id):
+                seen_articles.add(article_id)
                 found.append(
                     DuplicateCandidate(
                         database="news",
@@ -169,6 +173,7 @@ class DuplicateDetector:
                     )
                 )
             else:
+                seen_articles.add(article_id)
                 found.append(
                     DuplicateCandidate(
                         database="news",
@@ -181,6 +186,76 @@ class DuplicateDetector:
                         f"(duplicate_of={dup_of}) — NOT deletable",
                     )
                 )
+
+        # BYTE_IDENTICAL_DUPLICATE: historical re-ingest churn
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(news_articles)").fetchall()}
+            if "article_id" in cols:
+                url_col = "canonical_url" if "canonical_url" in cols else ("url" if "url" in cols else None)
+                title_col = "title" if "title" in cols else None
+                body_col = "body" if "body" in cols else None
+                summary_col = "summary" if "summary" in cols else None
+                
+                if url_col and title_col:
+                    b_expr = f"COALESCE({body_col}, '')" if body_col else "''"
+                    s_expr = f"COALESCE({summary_col}, '')" if summary_col else "''"
+                    
+                    query = f"""
+                        WITH ranked AS (
+                            SELECT 
+                                rowid,
+                                article_id,
+                                {url_col} AS url_val,
+                                {title_col} AS title_val,
+                                {b_expr} AS body_val,
+                                {s_expr} AS summary_val,
+                                FIRST_VALUE(article_id) OVER (
+                                    PARTITION BY {url_col}, {title_col}, {b_expr}, {s_expr}
+                                    ORDER BY rowid ASC
+                                ) AS canonical_article_id,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY {url_col}, {title_col}, {b_expr}, {s_expr}
+                                    ORDER BY rowid ASC
+                                ) AS rn
+                            FROM news_articles
+                            WHERE ({url_col} IS NOT NULL AND {url_col} != '')
+                              AND ({title_col} IS NOT NULL AND {title_col} != '')
+                        )
+                        SELECT article_id, canonical_article_id, url_val, title_val, body_val, summary_val
+                        FROM ranked
+                        WHERE rn > 1
+                    """
+                    byte_dups = conn.execute(query).fetchall()
+                    for art_id, canon_art_id, u_val, t_val, b_val, s_val in byte_dups:
+                        if art_id in seen_articles:
+                            continue
+                        hasher = hashlib.sha256()
+                        hasher.update((u_val or "").strip().encode("utf-8"))
+                        hasher.update(b"|")
+                        hasher.update((t_val or "").strip().encode("utf-8"))
+                        hasher.update(b"|")
+                        hasher.update((b_val or "").strip().encode("utf-8"))
+                        hasher.update(b"|")
+                        hasher.update((s_val or "").strip().encode("utf-8"))
+                        fingerprint = hasher.hexdigest()
+                        
+                        seen_articles.add(art_id)
+                        found.append(
+                            DuplicateCandidate(
+                                database="news",
+                                table="news_articles",
+                                row_id=art_id,
+                                canonical_row_id=canon_art_id,
+                                identity_layer="url+title+body_fingerprint",
+                                confidence=Confidence.EXACT_DUPLICATE,
+                                detail=f"byte-identical duplicate of canonical article_id={canon_art_id} "
+                                       f"(fingerprint={fingerprint[:16]})",
+                                cleanup_class="BYTE_IDENTICAL_DUPLICATE",
+                            )
+                        )
+        except sqlite3.OperationalError as e:
+            print(f"BYTE IDENTICAL DEDUP ERROR: {e}")
+            pass
 
         # analysis: (article_id, run_id) should be unique; scan for true dups
         # on the tuples that carry BOTH columns.
