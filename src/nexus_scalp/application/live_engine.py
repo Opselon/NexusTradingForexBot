@@ -1164,6 +1164,16 @@ class LiveEngine:
         # production Champion is NEVER touched by candidate training; a
         # Challenger is validated and compared but never auto-promoted.
         # =====================================================================
+        # BUG-293: anchor the config-declared relative artifact path to the
+        # canonical runtime workspace BEFORE any path consumer runs (the
+        # packaged double-click CWD is arbitrary; BUG-149 anchored artifacts
+        # but the config string stayed relative). Absolute paths pass through
+        # unchanged, so hermetic tmp-path tests are untouched.
+        from nexus_scalp.release.bootstrap import resolve_model_path
+
+        self.config.model.model_artifact_path = str(
+            resolve_model_path(self.config.model.model_artifact_path)
+        )
         initial_art_path = Path(self.config.model.model_artifact_path)
         declared_dim = self._declared_contract_dim_for_path(initial_art_path) or self.FEATURE_DIM
         declared_schema = "scalp_v3" if declared_dim == 70 else self.FEATURE_SCHEMA_ID
@@ -1573,7 +1583,9 @@ class LiveEngine:
             _md_snap = self.runtime_config.get_snapshot().model.model_artifact_path
             if _md_snap:
                 model_path_str = str(_md_snap)
-        model_path = Path(model_path_str)
+        # BUG-293: the rehydrated snapshot can carry a RELATIVE path persisted
+        # by an older version — anchor it to the runtime workspace too.
+        model_path = resolve_model_path(model_path_str)
         self._bundle = self._load_or_create_bundle(
             model_path=model_path, force_fresh=self.force_fresh_model
         )

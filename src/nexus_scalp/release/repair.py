@@ -220,10 +220,16 @@ class RepairEngine:
         present = list(model_dir.rglob("model.pt"))
         if present:
             return RepairResult("models", "OK", f"{len(present)} artifact(s) present")
+        # BUG-296 (Z-B1): provisioning the starter is the EXPLICIT
+        # `nexus repair --model` / first-run coordinator path — plain repair
+        # keeps the legacy SKIPPED semantics (never silently writes model
+        # bytes the operator did not ask for).
         return RepairResult(
             "models",
             "SKIPPED",
-            "no model artifact — external/optional until training runs",
+            "no model artifact — run `nexus repair --model` (starter), "
+            "`nexus model-setup` (official download / train your own), "
+            "or `nexus train-once`",
         )
 
     def _ensure_logs(self) -> RepairResult:

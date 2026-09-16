@@ -162,7 +162,7 @@ jobs:
       # the release-lane-only slice (installer protocol + hardening; MT5 probes
       # skip cleanly without a terminal).
       - name: Integration smoke (fast subset, no MT5, no browser)
-        run: pytest tests/release/test_release_hardening.py tests/installer/test_installer_protocol.py tests/integration/test_mt5_api_probes.py -q --tb=short
+        run: pytest tests/release/test_release_hardening.py tests/release/test_release_start_smoke_contract.py tests/installer/test_installer_protocol.py tests/integration/test_mt5_api_probes.py -q --tb=short
 
       - name: Telegram - release gates complete
         continue-on-error: true
@@ -271,6 +271,18 @@ jobs:
           if ($vi1.commit -ne $bi.git_commit) { throw "CLI_EXE_IDENTITY_MISMATCH: CLI commit $($vi1.commit) != build-info commit $($bi.git_commit)" }
           if ($vi1.build_timestamp -ne $bi.build_timestamp) { throw "CLI_EXE_TIMESTAMP_MISMATCH: identity diverges from stamped build-info" }
           Write-Host "CLI identity stamped: commit $($vi1.commit) timestamp $($vi1.build_timestamp)"
+      # BUG-293 FRESH-INSTALL START SMOKE: `version` + `health` never
+      # construct the LiveEngine, so the v9.0.12 first-start crash
+      # (ArtifactIntegrityError: LOAD_REJECTED model.pt -> PYI abort) shipped
+      # green. This launches the actual built EXE bare (= user double-click,
+      # PAPER default) from a clean workspace and fails the release unless it
+      # runs clean for the window. A red here blocks the `release` job (it
+      # needs build-windows-x64), so a broken first-start can never publish.
+      - name: Fresh-install START smoke (packaged EXE, blocking)
+        shell: pwsh
+        run: |
+          .\scripts\build\start_smoke.ps1 -ExePath "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" -DurationSec 90
+          if ($LASTEXITCODE -ne 0) { throw "BUG293_START_SMOKE_FAILED: packaged first-start crashed — release blocked" }
       - name: Stage release tree
         shell: pwsh
         run: |
@@ -376,6 +388,19 @@ jobs:
             "/DNSE_VERSION=$V" "/DNSE_CHANNEL=stable" `
             "/DNSE_SOURCE_DIR=$PWD\$Out\portable" "/DNSE_OUTPUT_DIR=$PWD\$Out"
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+      # BUG-293: the clean-install lifecycle test (silent install into a temp
+      # dir, version+health against the INSTALLED layout, re-install idempotency,
+      # uninstall, user-data preservation) previously ran only from the local
+      # build orchestrator. It is now a required release step: a broken install
+      # payload fails the build job and therefore the release.
+      - name: Clean-install lifecycle test (blocking)
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
+          .\scripts\build\clean_install_test.ps1 -SetupExe "$Out\NexusScalpEngine-$V-win-x64-setup.exe" `
+            -StartSmoke -StartSmokeSec 90
+          if ($LASTEXITCODE -ne 0) { throw "BUG293_CLEAN_INSTALL_FAILED: installed build failed the lifecycle smoke — release blocked" }
       - name: Checksums + manifest + SBOM
         shell: pwsh
         run: |
