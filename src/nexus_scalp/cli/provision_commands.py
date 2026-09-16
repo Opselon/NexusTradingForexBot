@@ -133,13 +133,17 @@ def model_setup_cmd(
 ) -> None:
     """First setup: choose how to obtain the serving model.
 
-    Shows the honest current state, then offers:
-      [1] DOWNLOAD OFFICIAL NEXUS MODEL  (recommended; verified install;
-          no local training needed)
-      [2] TRAIN MY OWN MODEL             (your broker export, local only;
-          data never leaves this machine)
-      [3] DEV STARTER                    (offline simulation only — clearly
-          labeled, never production)
+    Two SEPARATE concerns (operator directive 2026-09-16):
+      APPLICATION SETUP — how the engine gets a serving model:
+        [1] DOWNLOAD OFFICIAL NEXUS MODEL  (recommended; verified install;
+            no local training, no PyTorch needed)
+        [3] DEV STARTER                    (offline simulation only — clearly
+            labeled, never production)
+      OPTIONAL TRAINING SETUP — train your own, on your own data:
+        [2] TRAIN MY OWN MODEL             (local only; your data never
+            leaves this machine; gated on the training-environment check —
+            PyTorch is provisioned ONLY if you explicitly install it here,
+            never at application startup)
     """
     coordinator = prov.FirstRunCoordinator()
     cls = coordinator.slot()
@@ -164,12 +168,14 @@ def model_setup_cmd(
     )
     console.print(
         PanelBox(
+            "  APPLICATION SETUP (no training stack needed)\n"
             "  [bold green][1] DOWNLOAD OFFICIAL MODEL[/bold green] — recommended\n"
-            "      signed bundle + SHA256 + schema + integrity verification\n"
-            "      no Python/PyTorch training required on this machine\n\n"
+            "      signed bundle + SHA256 + schema + integrity verification\n\n"
+            "  OPTIONAL TRAINING SETUP (only if YOU choose to train)\n"
             "  [bold cyan][2] TRAIN MY OWN MODEL[/bold cyan] — uses YOUR broker data\n"
             "      CSV/Parquet import -> canonical 70D walk-forward training\n"
-            "      requires PyTorch locally · [bold]your data never leaves this computer[/bold]\n\n"
+            "      [bold]your data never leaves this computer[/bold]; PyTorch is\n"
+            "      checked first and installed only with your explicit OK\n\n"
             "  [bold yellow][3] DEV STARTER[/bold yellow] — offline/CI/emergency only\n"
             "      labeled starter, never presented as a production model",
             border="cyan" if not cls.servable else "green",
@@ -177,7 +183,8 @@ def model_setup_cmd(
     )
     if not cls.servable:
         choice = typer.prompt(
-            "Choose [1/2/3]", default="1" if official.configured else "2" if _has_torch() else "3"
+            "Choose [1/2/3]",
+            default="1" if official.configured else "2" if _training_ready() else "3",
         )
     else:
         choice = typer.prompt("Current model is usable — re-prepare? [1/2/3/skip]", default="skip")
@@ -270,6 +277,13 @@ def model_train_local_cmd(
     ),
     folds: int = typer.Option(6, "--folds"),
     epochs: int = typer.Option(4, "--epochs"),
+    backend: str = typer.Option(
+        "",
+        "--backend",
+        help="Training backend: cpu | cuda (default: auto = NVIDIA GPU "
+        "detected ? cuda : cpu). cuda trains on the GPU with a real CUDA "
+        "allocation smoke test; cpu uses the pinned CPU build.",
+    ),
     install: bool = typer.Option(
         True,
         "--install/--no-install",
@@ -293,6 +307,7 @@ def model_train_local_cmd(
         install=install,
         json_mode=json_mode,
         symbol=symbol,
+        backend=backend,
     )
 
 
@@ -305,24 +320,34 @@ def train_local_main(
     install: bool = True,
     json_mode: bool = False,
     symbol: str = "XAUUSD",
+    backend: str = "",
 ) -> None:
-    from nexus_scalp.model_provisioning.pipeline import detect_ml_environment, train_local_model
+    from nexus_scalp.model_provisioning.pipeline import train_local_model
+    from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
 
-    env = detect_ml_environment()
-    if not env.get("torch"):
-        guidance = (
-            "PyTorch is required for local training. Install the release "
-            "extras (pip install torch) or choose PATH A (official download) "
-            "instead — it needs no training stack."
-        )
+    # TRAINING ENV GATE (BUG-301): discovery-only status first; training may
+    # not start unless the resolved environment is READY IN THIS PROCESS.
+    # Provisioning is the separate explicit `model-train-env install` action.
+    manager = TrainingEnvironmentManager()
+    gate_backend = (backend or "").strip().lower() or None
+    if gate_backend not in (None, "cpu", "cuda"):
+        msg = f"invalid --backend {backend!r} (accepted: cpu | cuda)"
         if json_mode:
-            _emit({"error": guidance, "environment": env, "exit_code": xc.EXIT_ENVIRONMENT}, True)
+            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
         else:
-            console.print(
-                _error_panel(
-                    "Training environment missing", guidance, exit_code=xc.EXIT_ENVIRONMENT
-                )
-            )
+            console.print(_error_panel("Invalid backend", msg, exit_code=xc.EXIT_USAGE))
+        raise typer.Exit(xc.EXIT_USAGE) from None
+    gate = manager.status(backend=gate_backend)
+    if not gate.training_ready or not gate.in_process_ready:
+        if not json_mode:
+            console.print(_env_checklist_panel(gate))
+        payload = {
+            "error": "TRAINING_ENV_BLOCKED" if not gate.training_ready else "TRAINING_ENV_MISMATCH",
+            "report": gate.as_dict(),
+            "exit_code": xc.EXIT_ENVIRONMENT,
+        }
+        if json_mode:
+            _emit(payload, True)
         raise typer.Exit(xc.EXIT_ENVIRONMENT) from None
 
     if input_file is None or not Path(input_file).exists():
@@ -365,6 +390,7 @@ def train_local_main(
         epochs=epochs,
         install=install,
         cancel_event=cancel,
+        backend=gate_backend,
     )
 
     started = time.monotonic()
@@ -383,10 +409,11 @@ def train_local_main(
                 f"elapsed {time.monotonic() - started:.0f}s"
             )
 
+    _gpu = (gate.gpu or {}).get("name")
     console.print(
         PanelBox(
-            f"training locally (symbol={symbol}) — device: "
-            f"{'CUDA ' + str(env.get('gpu_name')) if env.get('cuda') else 'CPU'} · "
+            f"training locally (symbol={symbol}) — backend: "
+            f"{'CUDA ' + str(_gpu) if gate.backend == 'cuda' and _gpu else 'CPU'} · "
             "NO market data leaves this machine"
         )
     )
@@ -510,10 +537,12 @@ def _resolve_target(path_override: str) -> Path:
     return prov.serving_model_path()
 
 
-def _has_torch() -> bool:
-    from nexus_scalp.model_provisioning.pipeline import detect_ml_environment
+def _training_ready() -> bool:
+    """OPTIONAL TRAINING SETUP readiness (typed discovery, never installs)."""
+    from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
 
-    return bool(detect_ml_environment().get("torch"))
+    rep = TrainingEnvironmentManager().status()
+    return bool(rep.training_ready and rep.in_process_ready)
 
 
 def _print_slot(cls: prov.SlotClassification) -> None:
@@ -546,10 +575,97 @@ def PanelBox(body: str, *, border: str = "cyan") -> Any:
     return Panel(body, border_style=border)
 
 
+def _env_checklist_panel(report: Any) -> Any:
+    """Render the TrainingEnvironmentManager report as the directive's
+    checklist: per-stage ✓/✗ + code + remedy (never raw exception text)."""
+    lines = []
+    for c in report.checks:
+        mark = "[green]OK[/green]" if c.ok else "[red]--[/red]"
+        line = f"  {mark} {c.stage:<14} {c.detail[:60]}"
+        lines.append(line)
+        if not c.ok and c.remedy:
+            lines.append(f"      [dim]-> {c.remedy[:160]}[/dim]")
+    body = "Training environment (checklist):\n" + "\n".join(lines)
+    if not report.training_ready:
+        body += "\n\n[bold red]Training is BLOCKED until every check passes.[/bold red]"
+    elif not report.in_process_ready:
+        body += (
+            "\n\n[bold yellow]READY in a separate interpreter[/bold yellow] — run:\n"
+            f"  [cyan]{report.training_command}[/cyan]"
+        )
+    border = "green" if (report.training_ready and report.in_process_ready) else "yellow"
+    return PanelBox(body, border=border)
+
+
+# ---------------------------------------------------------------------------
+# nexus model-train-env — OPTIONAL TRAINING SETUP provisioning (explicit only)
+# ---------------------------------------------------------------------------
+@app.command("model-train-env")
+def model_train_env_cmd(
+    install: bool = typer.Option(
+        False,
+        "--install",
+        help="Provision the training stack now (creates/reuses the training "
+        "environment and pip-installs the CANONICAL pinned PyTorch variant). "
+        "Without this flag the command only DISCOVERS (checks), never installs.",
+    ),
+    backend: str = typer.Option(
+        "", "--backend", help="cpu | cuda (default: auto = NVIDIA GPU detected ? cuda : cpu)"
+    ),
+    json_mode: bool = typer.Option(False, "--json"),
+) -> None:
+    """Training Environment lifecycle (OPTIONAL TRAINING SETUP, BUG-301).
+
+    Application setup never needs this: PAPER inference and PATH A work with
+    no training stack. Checks the resolve ladder (python -> environment -> pip
+    -> backend -> torch -> version -> smoke) and, ONLY with --install, runs
+    the pinned provisioning against configs/training_environment.json — a
+    real tensor/GPU allocation smoke test gates READY either way."""
+    from nexus_scalp.model_provisioning.training_env import (
+        TrainingEnvironmentError,
+        TrainingEnvironmentManager,
+    )
+
+    manager = TrainingEnvironmentManager()
+    try:
+        be = backend or None
+        if install:
+            report = manager.install(backend=be)
+        else:
+            report = manager.status(backend=be)
+    except TrainingEnvironmentError as e:
+        payload = {
+            "error": e.code.value,
+            "detail": e.detail,
+            "remedy": e.remedy,
+            "exit_code": xc.EXIT_ENVIRONMENT,
+        }
+        if json_mode:
+            _emit(payload, True)
+        else:
+            console.print(
+                _error_panel(
+                    f"Training environment: {e.code.value}",
+                    e.detail,
+                    hint=e.remedy,
+                    exit_code=xc.EXIT_ENVIRONMENT,
+                )
+            )
+        raise typer.Exit(xc.EXIT_ENVIRONMENT) from None
+
+    if json_mode:
+        _emit(report.as_dict(), True)
+    else:
+        console.print(_env_checklist_panel(report))
+    ok = report.training_ready and (report.in_process_ready or not install)
+    raise typer.Exit(xc.EXIT_OK if ok else xc.EXIT_ENVIRONMENT)
+
+
 __all__ = [
     "model_official_cmd",
     "model_provision_cmd",
     "model_setup_cmd",
+    "model_train_env_cmd",
     "model_train_local_cmd",
     "train_once_cmd",
 ]

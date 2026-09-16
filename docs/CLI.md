@@ -80,12 +80,25 @@ asserts the golden list; run `nexus help` on your install for the live list).
 
 ### Model factory (artifact-first; never touches the Champion automatically)
 
-`model-setup` · `model-official` · `model-train-local` · `model-provision` ·
+`model-setup` · `model-official` · `model-train-local` · `model-train-env` ·
+`model-provision` ·
 `train-once` (deprecated alias) ·
 `model-dataset-build` · `model-experiment-create` · `model-train` ·
 `model-train-3` · `model-validate` · `model-inspect` · `model-replay` ·
 `model-doctor` — deterministic, artifact-first flows. Training candidates
 never auto-promote; the 70D `scalp_v3` canonical contract is respected.
+
+**Optional Training Setup (BUG-301):** training is gated on a typed
+environment lifecycle, never implicit. `nexus model-train-env` DISCOVERS
+(python → environment → pip → backend → pytorch → version → smoke) without
+changing the machine; `nexus model-train-env --install [--backend cpu|cuda]`
+is the ONLY way the training stack is provisioned — the canonical pinned
+contract `configs/training_environment.json` (one version source; CPU and
+CUDA are two real paths, each ending in a REAL tensor / CUDA-allocation
+smoke test before READY). `model-train-local --backend cpu|cuda` and the web
+wizard expose the same manager; training is BLOCKED (typed reason + remedy)
+until the environment is READY in-process. PyTorch is NEVER installed at
+application startup — PAPER inference and PATH A need no training stack.
 
 **First run (BUG-293):** a clean install acquires its serving model through
 one of two explicit paths (same domain service behind CLI and the
