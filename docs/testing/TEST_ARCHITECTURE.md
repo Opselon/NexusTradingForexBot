@@ -23,7 +23,7 @@ runs under `scratch/recon/` (this branch) and the CI timing table in
 |---|---|---|---|---|
 | **T0** FAST (agent loop) | `tests/fast_suite.txt` (25 files) | local `scripts/ci/check_local.py` fast stage (`-n 4`); after EVERY edit | **measured 20–26 s wall** (8-core dev box, two runs) | one mutation-proven owner per P0 domain: risk math, execution state/dup-write, accounting identity, DB dedup/salvage, PAPER/LIVE, model/feature contract, economics |
 | **T0** static | (ruff/mypy/`check_workflows`/`gate_parity`/`classify_changes`) | every PR + push | seconds–~2 min | lint, format, types, CI self-integrity |
-| **T1** PR-critical | `tests/critical_suite.txt` (**163 files** after wave 2) | PR + every push (ubuntu via `ci.yml:quality`; Windows skew via `tests-os.yml`) | ≤5 min, measured 141 s local / ~6 min CI | deterministic P0 production-truth + CR-named owners + CI meta-gates (`tests/ci/*`) + docs-CLI consistency |
+| **T1** PR-critical | `tests/critical_suite.txt` (**163 files** after wave 2) | PR + every push (ubuntu via `ci.yml:quality`; Windows skew via `tests-os.yml`) | ≤5 min, measured 141 s (pre-merge) / 162 s (merged with main) local, ~6 min CI | deterministic P0 production-truth + CR-named owners + CI meta-gates (`tests/ci/*`) + docs-CLI consistency |
 | **T2** extended | `tests/extended_suite.txt` (**14 files** after wave 2) | main push (`ci.yml:extended`) + release SHA (`release.yml:gates`) | measured 81 s wall | high-value/expensive boot batteries (bug276, deadletter, news-truncation) + wave-2 demotions (forensics, incidents, walk-forward trainer, recovery/observability families) |
 | **T3** cross-platform | `tests/windows_skew_suite.txt` (PR) + full `critical_suite.txt` on Windows/macOS (main/schedule) | PR: Windows skew subset; main push + Monday 07:17 + dispatch: full | PR ≈3–4 min/leg | OS-specific defects (paths/CRLF/launcher/installer); macOS advisory-drift, never ships |
 | **T4** release/forensic | `tests/slow_suite.txt` + heavy-ci arms + `run_mutations.py` + `e2e_client` + ci-gate-tooling lane (`test_gate_bypass_detection`, `test_check_local_gate`, `test_live_state_contract` boot-heavy) | nightly (01:17/02:33) + ci-tests branch + release dispatch | 30–60 min | chaos, mutation campaign, docker client journeys, PG provider matrix |
@@ -133,7 +133,7 @@ edit → FAST_TESTS → fix → FAST_TESTS → CRITICAL_TESTS → commit
 | command | lane | measured |
 |---|---|---|
 | `python scripts/ci/check_local.py` (fast stage) | FAST (T0 manifest, `-n 4`) | **20–26 s** wall (two measured runs) |
-| `pytest $(grep -v '^#' tests/critical_suite.txt…) -n auto --dist loadgroup` | CRITICAL (T1, 163 files) | **141 s** wall, 1,768 tests, 0 failures |
+| `pytest $(grep -v '^#' tests/critical_suite.txt…) -n auto --dist loadgroup` | CRITICAL (T1, 163 files pre-merge; 175 after merging main) | **141–162 s** wall, 1,768–1,923 tests, 0 failures |
 | `pytest $(cat tests/extended_suite.txt…) -n auto` | T2 (14 files) | **81 s** wall |
 
 ## Wave-2 delta (2026-09-15, all measured)

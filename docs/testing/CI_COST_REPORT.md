@@ -103,14 +103,14 @@ Monday schedule / dispatch — its 5×-billed per-PR re-execution removed.
 | test files on disk | 486 | 481 | AST inventory (`inventory_raw.json`, 490 raw incl. manual/) |
 | collected tests | 5,891 | 5,851* | pytest collection (same basis both runs) |
 | T0 FAST lane | none (fast_suite unwired) | **25 files, 20–26 s wall**, wired into `check_local.py` | `-n 4` loadgroup, two runs |
-| T1 files / tests / wall | 143 / 1,931 / 127 s | **163 / 1,768 / 141 s**, 0 failed | `-n auto` junit (`junit_w2_final.xml`) |
+| T1 files / tests / wall | 143 / 1,931 / 127 s | **163 / 1,768 / 141 s** pre-merge, **175 / 1,923 / 162 s** after merging main (0 failed) | `-n auto` junit (`junit_w2_final.xml`, `junit_w2_merged2.xml`) |
 | T1 worker-seconds | 542 | 525 | junit sum (net −17 s at +22 files) |
 | T2 lane | 3 files (never executed) | **14 files, 81 s, runs on every main push + release SHA** | `ci.yml:extended` (green on main, GitHub run 34909926825) |
 | files with forensic verdict | 110 (salvaged) | **~340 (63 PROTECTED + 277 reviewed)** | `merge_verdicts.py` + `test_protection.json` |
 | CR-registry owners actually manifested | 41 (drift: recon batteries + named owners missing) | **all named owners manifested** (+22 files, +50 ws) | manifest diff + `verify_critical_suite_manifest` 163/163 |
 | silent-zero-collection files fixed | 1 (hist_sim deleted) | +1 more: `tests/cli/test_docs_consistency.py` (0 test functions → real T1 test) | run rc=0 |
 | evidence-backed deletions | 6 | +5 (merged-duplicate + delegation mirror; §14-verified, superset counts 108=87+21, 92=66+26) | `classification_overrides.json` |
-| agent edit→feedback loop | pytest tests/unit ≈ 24 min | **20 s FAST, 141 s CRITICAL** | above |
+| agent edit→feedback loop | pytest tests/unit ≈ 24 min | **20 s FAST, 141-162 s CRITICAL** | above |
 
 ## Value/cost model (brief §16) — what moved and why
 - **Low value / high cost, deleted**: 4 merged incident/forensic source files
