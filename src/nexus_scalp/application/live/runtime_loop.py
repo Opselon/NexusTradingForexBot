@@ -35,6 +35,36 @@ class RuntimeLoop:
     def __init__(self, om: Any) -> None:
         self.om = om
 
+    async def _poll_tick(self, symbol: str) -> Any:
+        """Offload only remote market reads; never detach a poll on cancellation.
+
+        Paper tick reads execute fills and native MT5 reads share driver state,
+        so those remain inline. Await completion rather than timing out and
+        starting overlapping requests. Transport timeouts remain adapter-owned.
+        """
+        from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
+
+        adapter = self.om.adapter
+        if not isinstance(adapter, RemoteMT5GatewayAdapter):
+            return adapter.get_last_tick(symbol)
+        task = asyncio.create_task(asyncio.to_thread(adapter.get_last_tick, symbol))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # A Python cancellation cannot stop urllib's worker. Drain it before
+            # the caller can disconnect/swap adapters; repeated cancels must not
+            # detach it either. Retrieve errors, but preserve cancellation.
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not task.cancelled():
+                task.exception()
+            raise
+
     async def run(self) -> None:
         """
         Main tick ingestion loop.
@@ -388,7 +418,7 @@ class RuntimeLoop:
                     # still advances every iteration). BUG-274: read the engine
                     # surface the writer above actually sets.
                     live_account = getattr(self.om, "_last_account_info", None)
-                tick = self.om.adapter.get_last_tick(symbol)
+                tick = await self._poll_tick(symbol)
 
                 # P1 ACCOUNT FRESHNESS GATE: with a STALE account snapshot
                 # (failed refreshes beyond _account_age_max_sec) the engine
