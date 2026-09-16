@@ -136,11 +136,30 @@ class BacktestEngine:
         )
         # ECON v1: attach the explicit economic world + the sized view so the
         # result is self-describing (profile, friction, swap, sizing policy).
+        from nexus_scalp.research.backtest_report import sanitize_report
+
+        is_invalid = result.report.get("data_quality", {}).get("status") == "INVALID_INPUT"
+        sized = compute_sized_economic_pnl(samples, self.economic) if not is_invalid else None
+        report = dict(result.report)
+        report["settings"] = {
+            **report.get("settings", {}),
+            "partition": "TRAIN_VALIDATION" if use_split else "FULL_DATASET",
+            "input_sample_count": len(dataset.samples),
+            "selected_sample_count": len(samples),
+            "dataset_source": dataset.source,
+            "dataset_provenance": dataset.provenance_extra,
+            "schema_ids": dataset.schema_ids,
+            "assumptions_provenance": self.assumptions_provenance,
+            "purge_seconds": purge_seconds if use_split else None,
+            "embargo_seconds": embargo_seconds if use_split else None,
+            "val_frac": val_frac if use_split else None,
+            "oos_frac": oos_frac if use_split else None,
+        }
+        report["economic"] = self.economic.model_dump(mode="json")
+        report["sized"] = sized.model_dump(mode="json") if sized else None
+        report = sanitize_report(report)
         result = result.model_copy(
-            update={
-                "economic": self.economic,
-                "sized": compute_sized_economic_pnl(samples, self.economic),
-            }
+            update={"economic": self.economic, "sized": sized, "report": report}
         )
         logger.info(
             "[BACKTEST] event=COMPLETE",

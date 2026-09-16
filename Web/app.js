@@ -9501,7 +9501,7 @@ async function validateResearchCandidate() {
 
     if (!sid) { box.innerHTML = '<div class="text-accentRed italic">Enter a strategy_id first.</div>'; return; }
 
-    box.innerHTML = '<div class="text-textMuted italic">Running backtest → walk-forward → OOS → robustness → score…</div>';
+    box.innerHTML = '<div class="text-textMuted italic">Waiting for empirical validation response…</div>';
 
     try {
 
@@ -9518,22 +9518,46 @@ async function validateResearchCandidate() {
         }
 
         const r = body.result || {};
+        const wfPassed = r.walk_forward?.status ?? (r.walk_forward?.passed === true ? 'PASS' : r.walk_forward?.passed === false ? 'FAIL' : 'N/A');
+        const gatesHtml = '<div class="p-3 bg-darkBg/80 border border-borderClr rounded-lg mb-3">' +
+            '<div class="flex flex-wrap items-center justify-between gap-2 mb-2">' +
+            '<span class="text-accentCyan font-bold text-sm">lifecycle: ' + esc(r.lifecycle || '--') + '</span>' +
+            '<span class="text-xs text-textMuted">score: <span class="text-emerald-300 font-bold">' + esc(r.score == null ? 'N/A' : safeScore(r.score)) + '</span> · verdict: <span class="text-white font-bold">' + esc((safeScoreObj(r.score) || {}).verdict ?? '--') + '</span></span>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">' +
+            '<div><span class="text-textMuted">expectancy_r:</span> <span class="font-mono text-white">' + esc(r.backtest?.expectancy_r ?? '--') + '</span></div>' +
+            '<div><span class="text-textMuted">walk-forward:</span> <span class="font-mono ' + (wfPassed === 'PASS' ? 'text-emerald-400' : (wfPassed === 'FAIL' ? 'text-rose-400' : 'text-textMuted')) + '">' + esc(wfPassed) + '</span></div>' +
+            '<div><span class="text-textMuted">oos_status:</span> <span class="font-mono ' + (r.oos?.status === 'PASS' ? 'text-emerald-400' : (r.oos?.status === 'FAIL' ? 'text-rose-400' : 'text-textMuted')) + '">' + esc(r.oos?.status ?? '--') + '</span> (expR: ' + esc(r.oos?.oos_expectancy_r ?? '--') + ')</div>' +
+            '<div><span class="text-textMuted">robustness:</span> <span class="font-mono ' + (r.robustness?.status === 'PASS' ? 'text-emerald-400' : (r.robustness?.status === 'FAIL' ? 'text-rose-400' : 'text-textMuted')) + '">' + esc(r.robustness?.status ?? '--') + '</span></div>' +
+            '</div>' +
+            '</div>';
 
-        box.innerHTML = '<div class="text-accentCyan font-bold">lifecycle: ' + esc(r.lifecycle) + '</div>' +
+        let reportHtml = '';
+        const reportData = r.backtest?.report;
+        if (reportData && window.NSEBacktestReport) {
+            try {
+                reportHtml = window.NSEBacktestReport.render(reportData);
+            } catch (renderErr) {
+                console.warn('NSEBacktestReport.render failed', renderErr);
+                reportHtml = '<div class="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs rounded mb-2">' +
+                    '<strong>Report rendering error:</strong> ' + esc(renderErr.message || renderErr) + '</div>' +
+                    '<div class="text-textMuted text-xs italic">Detailed report unavailable (legacy result).</div>';
+            }
+        } else {
+            reportHtml = '<div class="p-3 bg-darkBg/60 border border-borderClr/40 rounded text-textMuted text-xs italic">Detailed report unavailable (legacy result).</div>';
+        }
 
-            '<div>expectancy_r: ' + esc(r.backtest?.expectancy_r ?? '--') + '</div>' +
-
-            '<div>oos_expectancy_r: ' + esc(r.oos?.oos_expectancy_r ?? '--') + ' · oos_status: ' + esc(r.oos?.status ?? '--') + '</div>' +
-
-            '<div>robustness: ' + esc(r.robustness?.status ?? '--') + '</div>' +
-
-            '<div>score: ' + esc(safeScore(r.score)) + ' · verdict: ' + esc((safeScoreObj(r.score) || {}).verdict ?? '--') + '</div>';
+        box.innerHTML = gatesHtml + reportHtml;
+        if (reportData && window.NSEBacktestReport?.bindDownload) {
+            try { window.NSEBacktestReport.bindDownload(box, reportData); } catch (_) {}
+        }
 
         loadResearchSummary();
 
     } catch (e) {
 
         console.warn('research validate failed', e);
+        box.innerHTML = '<div class="text-accentRed italic">Validation failed: ' + esc(e.message || e || 'Unknown error') + '</div>';
 
     }
 
@@ -12990,7 +13014,7 @@ async function loadFactoryBenchmarks(generationId) {
             box.innerHTML = '<div class="text-textMuted italic">No benchmarks yet for this generation.</div>';
             return;
         }
-        box.innerHTML = bms.slice(0,50).map(function(b){
+        box.innerHTML = bms.slice(0,50).map(function(b, reportIndex){
             var decision = b.decision || b.lifecycle || '--';
             var decCls = decision === 'CANDIDATE_ELITE' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : decision === 'INCONCLUSIVE_NEEDS_MORE_DATA' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-rose-500/10 text-rose-300 border-rose-500/30';
             var cov = b.coverage || {};
@@ -13018,8 +13042,27 @@ async function loadFactoryBenchmarks(generationId) {
                 + '<div><span class="text-textMuted">primary failure</span> <span class="text-rose-300">' + escHtml(pf) + '</span></div>'
                 + '</div>'
                 + (flist ? '<div class="mt-1 text-[10px] text-textMuted truncate">filters: <span class="text-gray-300">' + flist + '</span></div>' : '')
+                + '<details class="mt-3"><summary class="cursor-pointer text-accentCyan">Backtest report</summary><div class="mt-3" data-benchmark-report="' + reportIndex + '"></div></details>'
                 + '</div>';
         }).join('');
+        box.querySelectorAll('[data-benchmark-report]').forEach(function(node) {
+            const report = bms[Number(node.getAttribute('data-benchmark-report'))]?.backtest?.report;
+            const details = node.closest('details');
+            let rendered = false;
+            details.addEventListener('toggle', function() {
+                if (!details.open || rendered) return;
+                rendered = true;
+                node.innerHTML = '<p class="text-textMuted">Detailed report unavailable (legacy result).</p>';
+                if (report && window.NSEBacktestReport) {
+                    try {
+                        node.innerHTML = window.NSEBacktestReport.render(report);
+                        if (window.NSEBacktestReport.bindDownload) window.NSEBacktestReport.bindDownload(node, report);
+                    } catch (error) {
+                        node.innerHTML = '<p class="text-accentRed">Report rendering error: ' + escHtml(error.message || String(error)) + '</p>';
+                    }
+                }
+            });
+        });
         if (bms.length) factoryLog('info', 'Benchmarks loaded: ' + bms.length + ' (elite ' + elite + ', inconclusive ' + incon + ')');
     } catch (err) {
         console.warn('factory benchmarks failed', err);

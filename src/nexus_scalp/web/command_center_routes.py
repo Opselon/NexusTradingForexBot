@@ -476,6 +476,7 @@ class CommandCenterAPI:
                 "strategy_id": strategy_id,
                 "lifecycle": entry.lifecycle.value,
                 "gates": gates,
+                "backtest_report": (bt.report or None) if bt else None,
             }
         )
 

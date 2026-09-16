@@ -37,16 +37,18 @@ def _usd_array(samples: Sequence[ResearchSample]) -> np.ndarray:
     return np.asarray([float(s.realized_pnl_usd) for s in samples], dtype=float)
 
 
-def drawdown_metrics(r_series: Sequence[float]) -> tuple[float, float, int]:
+def drawdown_metrics(
+    r_series: Sequence[float],
+    usd_series: Sequence[float] | None = None,
+) -> tuple[float, float, int]:
     """
-    Returns (max_drawdown_usd_notional, max_drawdown_r, recovery_duration_trades).
+    Returns (max_drawdown_usd, max_drawdown_r, recovery_duration_trades).
 
-    Drawdown computed on the cumulative R equity curve. Convention: drawdown is
-    reported as a positive magnitude.
+    Drawdown computed on the cumulative R equity curve and cumulative USD PnL.
+    Convention: drawdown is reported as a positive magnitude.
     """
     cum = 0.0
     peak = 0.0
-    max_dd = 0.0
     max_dd_r = 0.0
     current_dd_trades = 0
     recovery_trades = 0
@@ -60,13 +62,25 @@ def drawdown_metrics(r_series: Sequence[float]) -> tuple[float, float, int]:
                 worst_recovery = max(worst_recovery, current_dd_trades)
             current_dd_trades = 0
         dd = peak - cum
-        if dd > max_dd:
-            max_dd = dd
+        if dd > max_dd_r:
+            max_dd_r = dd
             recovery_trades = current_dd_trades
         if dd > 0:
             current_dd_trades += 1
-            max_dd_r = max(max_dd_r, dd)
-    return max_dd, max_dd_r, max(recovery_trades, 0)
+
+    if usd_series is not None:
+        cum_u = 0.0
+        peak_u = 0.0
+        max_dd_usd = 0.0
+        for u in usd_series:
+            cum_u += float(u)
+            peak_u = max(peak_u, cum_u)
+            dd_u = peak_u - cum_u
+            max_dd_usd = max(max_dd_usd, dd_u)
+    else:
+        max_dd_usd = max_dd_r
+
+    return max_dd_usd, max_dd_r, max(recovery_trades, 0)
 
 
 def compute_relative_degradation(
@@ -114,6 +128,46 @@ def max_consecutive_losses(r_series: Sequence[float]) -> int:
     return best
 
 
+def _empty_report(
+    strategy_id: str,
+    strategy_version: str,
+    dataset_id: str,
+    assumptions: ExecutionAssumptions,
+) -> dict[str, Any]:
+    from nexus_scalp.research.backtest_report import build_backtest_report
+
+    return build_backtest_report(
+        strategy_id=strategy_id,
+        strategy_version=strategy_version,
+        dataset_id=dataset_id,
+        assumptions=assumptions,
+        ordered_samples=[],
+        adj_r=[],
+        adj_usd=[],
+        modeled_costs_usd=[],
+        total_trades=0,
+        wins=0,
+        losses=0,
+        breakeven=0,
+        tail_loss_count=0,
+        max_consecutive_losses=0,
+        net_pnl_usd=0.0,
+        expectancy_r=0.0,
+        expectancy_usd=0.0,
+        avg_win_r=0.0,
+        avg_loss_r=0.0,
+        max_drawdown_usd=0.0,
+        max_drawdown_r=0.0,
+        recovery_duration_trades=0,
+        return_variance=0.0,
+        worst_trade_r=0.0,
+        largest_loss_r=0.0,
+        avg_mae_r=0.0,
+        avg_mfe_r=0.0,
+        avg_holding_duration_sec=0.0,
+    )
+
+
 def compute_backtest(
     samples: Sequence[ResearchSample],
     strategy_id: str,
@@ -132,12 +186,56 @@ def compute_backtest(
     """
     ordered = sorted(samples, key=lambda s: s.decision_timestamp)
     n = len(ordered)
+
+    def invalid_result(reason: str) -> BacktestResult:
+        report = _empty_report(strategy_id, strategy_version, dataset_id, assumptions)
+        report["settings"].update(input_sample_count=n, selected_sample_count=n)
+        report["data_quality"].update(
+            status="INVALID_INPUT",
+            input_sample_count=n,
+            valid_sample_count=0,
+            reason=reason,
+        )
+        report["performance"] = {
+            key: None if isinstance(value, (int, float)) else value
+            for key, value in report["performance"].items()
+        }
+        report["drawdown"] = {
+            key: None if isinstance(value, (int, float)) else value
+            for key, value in report["drawdown"].items()
+        }
+        report["limitations"].append(reason + "; no partial partition was evaluated.")
+        return BacktestResult(
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+            dataset_id=dataset_id,
+            assumptions=assumptions,
+            report=report,
+        )
+
+    fields = (
+        "realized_r",
+        "realized_pnl_usd",
+        "risk_distance",
+        "mae_r",
+        "mfe_r",
+        "holding_duration_sec",
+    )
+    if any(not math.isfinite(float(getattr(s, field))) for s in ordered for field in fields):
+        return invalid_result("Non-finite sample input")
+    if any(
+        not math.isfinite(float(value))
+        for value in assumptions.model_dump().values()
+        if isinstance(value, (int, float))
+    ):
+        return invalid_result("Non-finite execution assumption")
     if n == 0:
         return BacktestResult(
             strategy_id=strategy_id,
             strategy_version=strategy_version,
             dataset_id=dataset_id,
             assumptions=assumptions,
+            report=_empty_report(strategy_id, strategy_version, dataset_id, assumptions),
         )
 
     friction_points = assumptions.spread_ticks + assumptions.slippage_ticks
@@ -165,10 +263,11 @@ def compute_backtest(
             else:
                 friction_r = 0.01 * friction_ticks_eff
             r = r - friction_r
-            # Degrade notional USD by the same R fraction when a non-zero R exists.
+            # Model an additional cost using the recorded implied USD/R scale.
+            # Subtract a positive cost: scaling signed PnL shrank losing trades.
             if abs(s.realized_r) > 1e-9:
-                usd_fraction = friction_r / abs(s.realized_r)
-                adj_usd.append(s.realized_pnl_usd * max(0.0, 1.0 - usd_fraction))
+                cost_usd = friction_r * abs(s.realized_pnl_usd / s.realized_r)
+                adj_usd.append(s.realized_pnl_usd - cost_usd)
             else:
                 adj_usd.append(s.realized_pnl_usd)
         else:
@@ -188,6 +287,13 @@ def compute_backtest(
         mfe_list.append(s.mfe_r)
         dur_list.append(s.holding_duration_sec)
 
+    # Reject arithmetic overflow before numpy reductions or curves can emit Inf.
+    if not all(math.isfinite(v) for v in adj_r + adj_usd):
+        return invalid_result("Non-finite adjusted return")
+    if not all(math.isfinite(sum(abs(v) for v in values)) for values in (adj_r, adj_usd)):
+        return invalid_result("Return aggregation overflow")
+    if not math.isfinite(sum(v * v for v in adj_r)):
+        return invalid_result("Return variance overflow")
     r_arr = np.asarray(adj_r, dtype=float)
     if len(r_arr) == 0 or not np.all(np.isfinite(r_arr)):
         # TASK-4: never let NaN/Inf reach statistics; an all-non-finite
@@ -198,6 +304,7 @@ def compute_backtest(
             dataset_id=dataset_id,
             assumptions=assumptions,
             total_trades=0,
+            report=_empty_report(strategy_id, strategy_version, dataset_id, assumptions),
         )
     expectancy_r = float(np.mean(r_arr)) if n else 0.0
     expectancy_usd = float(np.mean(adj_usd)) if n else 0.0
@@ -213,7 +320,7 @@ def compute_backtest(
         gross_win / gross_loss if gross_loss > 1e-9 else (gross_win if gross_win > 0 else 0.0)
     )
 
-    max_dd_usd, max_dd_r, recovery = drawdown_metrics(adj_r)
+    max_dd_usd, max_dd_r, recovery = drawdown_metrics(adj_r, adj_usd)
     consec = max_consecutive_losses(adj_r)
     var = float(np.var(r_arr)) if n else 0.0
 
@@ -243,7 +350,7 @@ def compute_backtest(
     if economic is not None:
         sized = compute_sized_economic_pnl(ordered, economic)
 
-    return BacktestResult(
+    result = BacktestResult(
         strategy_id=strategy_id,
         strategy_version=strategy_version,
         dataset_id=dataset_id,
@@ -275,6 +382,39 @@ def compute_backtest(
         equity_curve_r=[round(float(x), 6) for x in equity_curve],
         sized=sized,
     )
+    from nexus_scalp.research.backtest_report import build_backtest_report
+
+    report = build_backtest_report(
+        strategy_id=strategy_id,
+        strategy_version=strategy_version,
+        dataset_id=dataset_id,
+        assumptions=assumptions,
+        ordered_samples=ordered,
+        adj_r=adj_r,
+        adj_usd=adj_usd,
+        modeled_costs_usd=[s.realized_pnl_usd - u for s, u in zip(ordered, adj_usd, strict=True)],
+        total_trades=n,
+        wins=wins,
+        losses=losses,
+        breakeven=breakeven,
+        tail_loss_count=tail_loss,
+        max_consecutive_losses=consec,
+        net_pnl_usd=net_pnl,
+        expectancy_r=expectancy_r,
+        expectancy_usd=expectancy_usd,
+        avg_win_r=avg_win,
+        avg_loss_r=avg_loss,
+        max_drawdown_usd=max_dd_usd,
+        max_drawdown_r=max_dd_r,
+        recovery_duration_trades=recovery,
+        return_variance=var,
+        worst_trade_r=worst_r,
+        largest_loss_r=largest_loss_r,
+        avg_mae_r=result.avg_mae_r,
+        avg_mfe_r=result.avg_mfe_r,
+        avg_holding_duration_sec=result.avg_holding_duration_sec,
+    )
+    return result.model_copy(update={"report": report})
 
 
 def _friction_sensitivity(
