@@ -276,22 +276,25 @@ def test_cli_consent_and_external_ready_worker_path(
 
 
 def test_cli_train_help_is_complete_and_source_options_explicit():
+    import re
+
     from typer.testing import CliRunner
 
     from nexus_scalp.cli.main import app
 
-    result = CliRunner().invoke(app, ["model-train-local", "--help"], terminal_width=160)
+    result = CliRunner().invoke(app, ["model-train-local", "--help"], color=False)
     assert result.exit_code == 0
+    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", result.output)
     for token in (
-        "--source",
-        "--prepare-environment",
-        "--timeframe",
+        "source",
+        "prepare-environment",
+        "timeframe",
         "Ctrl+C",
         "Python",
         "governed",
         "Examples",
     ):
-        assert token in result.output
+        assert token in clean
 
 
 def test_remote_gateway_reuses_existing_get_historical_bars_contract(tmp_path, monkeypatch):

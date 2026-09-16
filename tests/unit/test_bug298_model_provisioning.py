@@ -453,6 +453,11 @@ def test_local_tag_gate_cuda_backend_rejects_cpu_wheel(
             "torch": "2.13.0+cpu",
         },
     )
+    import os
+
+    vdir = tmp_path / "training-env" / ("Scripts" if os.name == "nt" else "bin")
+    vdir.mkdir(parents=True, exist_ok=True)
+    (vdir / ("python.exe" if os.name == "nt" else "python")).touch()
     m = te.TrainingEnvironmentManager(workspace=tmp_path)
     rep = m.status(backend="cuda")
     failing = {c.stage: c.code for c in rep.failing()}
