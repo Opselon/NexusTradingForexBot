@@ -967,7 +967,7 @@ wheels = [
 
 [[package]]
 name = "nexus-scalp-engine"
-version = "9.0.12"
+version = "9.0.13"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

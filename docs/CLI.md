@@ -80,10 +80,40 @@ asserts the golden list; run `nexus help` on your install for the live list).
 
 ### Model factory (artifact-first; never touches the Champion automatically)
 
+`model-setup` · `model-official` · `model-train-local` · `model-provision` ·
+`train-once` (deprecated alias) ·
 `model-dataset-build` · `model-experiment-create` · `model-train` ·
 `model-train-3` · `model-validate` · `model-inspect` · `model-replay` ·
 `model-doctor` — deterministic, artifact-first flows. Training candidates
 never auto-promote; the 70D `scalp_v3` canonical contract is respected.
+
+**First run (BUG-293):** a clean install acquires its serving model through
+one of two explicit paths (same domain service behind CLI and the
+`/first_setup.html` wizard):
+
+- **PATH A — official model:** `nexus model-official` downloads the signed
+  Nexus bundle and verifies SHA256 per file, the Ed25519 signature (the
+  updater trust root), schema/dimension/architecture bindings and artifact
+  integrity BEFORE install; an unverified bundle is never installed. No
+  local PyTorch training needed. Hosting is operator-configured via
+  `NEXUS_OFFICIAL_MODEL_BASE_URL` (HTTPS directory or `drive:<fileid>`);
+  publish with `scripts/release/build_official_bundle.py`.
+- **PATH B — train your own:** `nexus model-train-local --input <broker
+  export.csv|.parquet>` imports the user's own data, reports real
+  diagnostics (duplicates / invalid rows / gaps / chronological-tail
+  selection), runs the canonical purged walk-forward trainer (time splits
+  only, real per-epoch loss/val-loss progress, cancel at epoch boundary),
+  verifies the candidate, and installs it ONLY over an empty/dev-starter
+  serving slot. Market data never leaves the machine (no upload, no cloud,
+  no data-bearing telemetry).
+- `nexus start` (PAPER) auto-selects: keep a verified bundle → download the
+  official bundle when configured → else mint the **DEV STARTER** (labeled,
+  offline/CI/emergency fallback — never presented as production; `nexus
+  model-setup` always recommends replacing it). SHADOW/LIVE never
+  auto-provision: they refuse until a real verified bundle is installed.
+- `nexus model-provision [--status|--starter]` shows the honest slot
+  classification (origin OFFICIAL / USER_TRAINED / GOVERNED / DEV_STARTER /
+  UNKNOWN + lifecycle state) and mints the labeled starter on demand.
 
 ### Data / infrastructure
 
