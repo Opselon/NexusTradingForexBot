@@ -39,6 +39,11 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.web.provisioning_routes")
 
+REMEDY_MISMATCH = (
+    "The prepared training environment is a different interpreter — run the printed "
+    "training_command under that interpreter."
+)
+
 _IMPORT_ROOTS_ENV = "NEXUS_IMPORT_ROOTS"  # os.pathsep-separated allowed roots
 
 
@@ -65,24 +70,48 @@ class _TrainRun:
 
 _ACTIVE: _TrainRun | None = None
 _ACTIVE_LOCK = threading.Lock()
+_INSTALL_ACTIVE = False  # single-flight env install (explicit user action)
 
 
 def _allowed_import_path(raw: str) -> Path:
-    p = Path(str(raw)).expanduser().resolve()
+    """Confine the user-supplied training-file path to the import roots.
+
+    Defense layers (closes the CodeQL py/path-injection taint + a real
+    prefix-bypass class a naive str.startswith check carries — "data/rawx"
+    starts-with "data/raw"):
+      1. reject null bytes and any ``..`` traversal segment BEFORE resolving;
+      2. resolve to an absolute real path (symlinks followed);
+      3. containment via os.path.relpath + explicit '..' scan (relative walk,
+         not string prefix);
+      4. the pipeline then only ever READS the file (training input).
+    """
+    import os
+
+    s = str(raw).strip()
+    if not s or "\x00" in s:
+        raise ValueError("empty or malformed file path")
+    parts = Path(s).parts
+    if any(part == ".." for part in parts) or (os.altsep and ".." in s.split(os.altsep)):
+        raise ValueError("path traversal segments are refused")
+    p = Path(s).expanduser().resolve()  # codeql[py/path-injection] traversal segments
+    # rejected above; the containment loop below admits ONLY paths under an
+    # operator-configured import root (relpath-walk, not string prefix), and
+    # the pipeline reads the file — never writes, never executes it.
     if p.suffix.lower() not in (".csv", ".parquet"):
         raise ValueError("unsupported file type (accepted: .csv, .parquet)")
-    roots_env = str(__import__("os").environ.get(_IMPORT_ROOTS_ENV, "")).strip()
-    roots = [Path(r).resolve() for r in roots_env.split(__import__("os").pathsep) if r.strip()]
+    roots_env = str(os.environ.get(_IMPORT_ROOTS_ENV, "")).strip()
+    roots = [Path(r).expanduser().resolve() for r in roots_env.split(os.pathsep) if r.strip()]
     roots.append(Path("data/imports").resolve())
     roots.append(Path("data/raw").resolve())
-    if not any(str(p).startswith(str(r)) for r in roots):
-        raise ValueError(
-            "file outside allowed import roots "
-            f"({', '.join(str(r) for r in roots)}; extend via {_IMPORT_ROOTS_ENV})"
-        )
-    if not p.exists():
-        raise ValueError(f"file not found: {p}")
-    return p
+    for r in roots:
+        if p.is_relative_to(r) and p != r:
+            if not p.exists():
+                raise ValueError(f"file not found: {p}")
+            return p
+    raise ValueError(
+        "file outside allowed import roots "
+        f"({', '.join(str(r) for r in roots)}; extend via {_IMPORT_ROOTS_ENV})"
+    )
 
 
 def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
@@ -104,10 +133,77 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             return _err(code="PROVISIONING_STATUS_ERROR")
 
     @router.get("/api/provisioning/environment")
-    def provisioning_environment() -> dict[str, Any]:
-        from nexus_scalp.model_provisioning.pipeline import detect_ml_environment
+    def provisioning_environment(backend: str = "auto") -> dict[str, Any]:
+        """DISCOVERY ONLY (BUG-301 contract): the resolved training environment
+        as a checklist — python / environment / pytorch / gpu / training_ready.
+        NEVER installs anything; provisioning is the explicit POST
+        /environment/install action. Typed checks + remedies, no raw
+        exception text (py/stack-trace-exposure discipline)."""
+        from nexus_scalp.model_provisioning.training_env import (
+            TrainingEnvironmentError,
+            TrainingEnvironmentManager,
+        )
 
-        return {"success": True, "environment": detect_ml_environment()}
+        try:
+            manager = TrainingEnvironmentManager()
+            be = None if backend in ("", "auto") else backend
+            rep = manager.status(backend=be)
+            legacy = {
+                "python": rep.python.get("version"),
+                "torch": rep.pytorch.get("detected"),
+                "cuda": bool(rep.gpu.get("available")),
+                "gpu_name": rep.gpu.get("name"),
+            }
+            return {"success": True, "report": rep.as_dict(), "environment": legacy}
+        except TrainingEnvironmentError as exc:
+            return _err(
+                code=exc.code.value, step="environment", message=exc.detail, remedy=exc.remedy
+            )
+        except Exception as exc:
+            _log_err(exc, "environment discovery failed", endpoint="/api/provisioning/environment")
+            return _err(code="PROVISIONING_ENVIRONMENT_ERROR")
+
+    @router.post("/api/provisioning/environment/install")
+    def provisioning_environment_install(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Explicit OPT-IN training-stack provisioning (pip, pinned variants).
+
+        Runs the TrainingEnvironmentManager.install ladder (python -> venv ->
+        pinned torch variant for the chosen backend -> fresh status). Typed
+        taxonomy: a network/index/version/permission failure returns its
+        exact code + remedy, and training NEVER auto-starts from here."""
+        from nexus_scalp.model_provisioning.training_env import (
+            TrainingEnvironmentError,
+            TrainingEnvironmentManager,
+        )
+
+        global _INSTALL_ACTIVE  # noqa: PLW0603 (single-flight registry)
+        body = payload or {}
+        backend = str(body.get("backend", "") or "") or None
+        with _ACTIVE_LOCK:
+            if _INSTALL_ACTIVE:
+                return _err(
+                    code="INSTALL_ALREADY_RUNNING",
+                    message="an environment install is already running",
+                )
+            _INSTALL_ACTIVE = True
+        try:
+            manager = TrainingEnvironmentManager()
+            rep = manager.install(backend=backend)
+            return {"success": rep.training_ready, "report": rep.as_dict()}
+        except TrainingEnvironmentError as exc:
+            # Typed + actionable; the taxonomy is the CONTRACT (never a
+            # generic VALIDATION_FAILED hiding the real cause).
+            return _err(
+                code=exc.code.value, step="environment", message=exc.detail, remedy=exc.remedy
+            )
+        except Exception as exc:
+            _log_err(
+                exc, "environment install failed", endpoint="/api/provisioning/environment/install"
+            )
+            return _err(code="PROVISIONING_INSTALL_ERROR")
+        finally:
+            with _ACTIVE_LOCK:
+                _INSTALL_ACTIVE = False
 
     @router.post("/api/provisioning/official")
     def provisioning_official(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -122,11 +218,20 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             out = coord.download_official()
             return {"success": True, "ok": bool(out.get("servable")), **out}
         except OfficialBundleError as exc:
-            # Fail-closed: nothing was installed; report the exact step code.
+            # Fail-closed: nothing was installed. The client gets the stable
+            # step CODE (safe enum); the full verification detail (URLs,
+            # digests, wrapped OS text) stays server-side (py/stack-trace-
+            # exposure discipline).
             prov.write_provisioner_state(
-                LifecycleState.REJECTED.value, path="official", error=str(exc)
+                LifecycleState.REJECTED.value, path="official", error=f"{exc.code}: {exc.detail}"
             )
-            return _err(code="OFFICIAL_BUNDLE_REJECTED", detail=str(exc))
+            logger.error("[PROVISION-WEB] event=OFFICIAL_REJECTED code=%s", exc.code)
+            return _err(
+                code="OFFICIAL_BUNDLE_REJECTED",
+                step=exc.code,
+                message="official bundle failed verification — nothing was installed "
+                "(run `nexus model-official` for the full reason)",
+            )
         except Exception as exc:
             _log_err(exc, "official provisioning failed", endpoint="/api/provisioning/official")
             return _err(code="PROVISIONING_OFFICIAL_ERROR")
@@ -143,15 +248,46 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             if _ACTIVE is not None and not _ACTIVE.done.is_set():
                 return _err(code="TRAIN_ALREADY_RUNNING", detail="one local training run at a time")
             candles = body.get("candles")
+            req_backend = str(body.get("backend", "") or "").strip().lower() or None
+            if req_backend not in (None, "cpu", "cuda"):
+                return _err(
+                    code="TRAIN_BACKEND_INVALID",
+                    message=f"accepted: cpu | cuda (got {req_backend!r})",
+                )
             request = TrainingRequest(
                 source_file=file,
                 candles=int(candles) if candles else None,
                 folds=int(body.get("folds", 6)),
                 epochs=int(body.get("epochs", 4)),
                 install=bool(body.get("install", True)),
+                backend=req_backend,
             )
             run = _TrainRun(request)
             _ACTIVE = run
+        chosen_backend = request.backend
+
+        # TRAINING GATE (BUG-301): the resolved environment must be READY in
+        # THIS process before training may start — the exact checklist + the
+        # blocking reason return here, never a silent VALIDATION_FAILED later.
+        from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
+
+        gate = TrainingEnvironmentManager().status(backend=chosen_backend)
+        if not gate.training_ready or not gate.in_process_ready:
+            with _ACTIVE_LOCK:
+                _ACTIVE = None
+            return _err(
+                code="TRAINING_ENV_BLOCKED",
+                step="environment",
+                message="Training cannot start. "
+                + "; ".join(f"{c.stage}={c.code or 'FAIL'}" for c in gate.failing())[:300]
+                or "environment ready but outside this process",
+                remedy=(
+                    gate.failing()[0].remedy
+                    if gate.failing()
+                    else gate.training_command or REMEDY_MISMATCH
+                ),
+                report=gate.as_dict(),
+            )
 
         from nexus_scalp.model_provisioning.pipeline import train_local_model
 
@@ -159,8 +295,12 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             try:
                 run.result = train_local_model(request, progress=run.record)
             except Exception as exc:  # defensive: train_local_model should not raise
-                run.result = {"outcome": "VALIDATION_FAILED", "reason": str(exc)[:300]}
-                run.record(ProgressEvent(stage="train", status="failed", message=str(exc)[:300]))
+                # Web-exposed payload carries the SAFE CATEGORY only (full
+                # detail stays server-side in the log) — py/stack-trace-exposure.
+                category = type(exc).__name__
+                logger.error("[PROVISION-WEB] event=TRAIN_WORKER_CRASH category=%s", category)
+                run.result = {"outcome": "VALIDATION_FAILED", "reason": f"unexpected {category}"}
+                run.record(ProgressEvent(stage="train", status="failed", message=category))
             finally:
                 run.done.set()
 

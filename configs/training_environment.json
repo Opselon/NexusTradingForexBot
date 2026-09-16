@@ -1,0 +1,29 @@
+{
+  "schema": "nexus_training_env_v1",
+  "note": "Canonical pinned training-environment contract (BUG-301). Single source of truth for OPTIONAL local-training dependencies — discovery never installs; only TrainingEnvironmentManager.install() acts on it, and only after explicit operator opt-in. Packages listed here are the ones the training pipeline actually imports (torch); do NOT add unused deps. Versions were validated against the release's tested matrix; pip resolves the +cpu/+cu local variants from the matching index.",
+  "python": {
+    "min_minor": 11,
+    "max_minor": 13,
+    "guidance": "Install Python 3.11-3.13 (x64) from python.org, check 'Add to PATH', relaunch Nexus, press Re-check."
+  },
+  "venv": {
+    "dir_name": "training-env",
+    "reuse_precedence": ["NEXUS_TRAINING_ENV env var", "active virtual env (.venv)", "create <workspace>/training-env"]
+  },
+  "variants": {
+    "cpu": {
+      "index_url": "https://download.pytorch.org/whl/cpu",
+      "packages": { "torch": "==2.13.0" }
+    },
+    "cuda": {
+      "index_url": "https://download.pytorch.org/whl/cu126",
+      "packages": { "torch": "==2.13.0" },
+      "min_driver_cuda_version": "12.6",
+      "requires_nvidia_gpu": true
+    }
+  },
+  "smoke": {
+    "cpu_tensor": "torch.ones(64,70) @ torch.randn(70,3) must produce finite output",
+    "cuda": "torch.cuda.is_available() AND a real allocation + matmul on 'cuda:0' with device-name readback"
+  }
+}

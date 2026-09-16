@@ -361,3 +361,157 @@ def test_official_bundle_publisher_script_runs() -> None:
         check=False,
     )
     assert r2.returncode == 2  # usage error: material/key missing, no crash
+
+
+# ---------------------------------------------------------------------------
+# BUG-301 — Training Environment Contract (typed lifecycle, gated training)
+# ---------------------------------------------------------------------------
+def test_contract_file_is_canonical_and_parses() -> None:
+    from nexus_scalp.model_provisioning.training_env import load_contract
+
+    c = load_contract()
+    assert c["schema"] == "nexus_training_env_v1"
+    for variant in ("cpu", "cuda"):
+        v = c["variants"][variant]
+        assert v["index_url"].startswith("https://download.pytorch.org/whl/")
+        assert "torch" in v["packages"]
+
+
+def test_status_discovery_is_readonly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """status() must never create a venv / pip-install / touch requirements."""
+    from nexus_scalp.model_provisioning import training_env as te
+
+    monkeypatch.chdir(tmp_path)
+    calls: list[str] = []
+    real_run = te.subprocess.run
+
+    def _spy(cmd, *a, **k):
+        calls.append(" ".join(str(x) for x in cmd))
+        return real_run(cmd, *a, **k)
+
+    monkeypatch.setattr(te.subprocess, "run", _spy)
+    m = te.TrainingEnvironmentManager(workspace=tmp_path)
+    rep = m.status(backend="cpu")
+    assert isinstance(rep.training_ready, bool)
+    # discovery may probe interpreters (read-only) but never venv-create/pip:
+    joined = " | ".join(calls)
+    assert "-m venv" not in joined
+    assert "pip install" not in joined
+    assert not (tmp_path / "training-env").exists()
+
+
+def test_missing_venv_reports_venv_not_found_until_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Packaged/fresh machine (no venv, override python): discovery says
+    VENV_NOT_FOUND (typed), install creates it. Simulated via a non-venv
+    python override pointing at a bare interpreter copy is too heavy — we
+    assert the DISCOVERY half + the install guard instead."""
+    from nexus_scalp.model_provisioning import training_env as te
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(te, "is_interpreter_process", lambda: False)  # packaged-like
+    m = te.TrainingEnvironmentManager(workspace=tmp_path)
+    rep = m.status(backend="cpu")
+    codes = [c.code for c in rep.failing()]
+    # PYTHON_NOT_FOUND (frozen exe is not an interpreter) OR VENV_NOT_FOUND —
+    # either way: typed, not-ready, nothing created.
+    assert "VENV_NOT_FOUND" in codes or "PYTHON_NOT_FOUND" in codes
+    assert rep.training_ready is False
+    assert not (tmp_path / "training-env").exists()
+
+
+def test_local_tag_gate_cuda_backend_rejects_cpu_wheel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The two REAL paths rule: a +cpu build must NEVER satisfy the cuda
+    backend (is_available() and tag gates), and the check carries the exact
+    remedy."""
+    from nexus_scalp.model_provisioning import training_env as te
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        te,
+        "detect_nvidia_gpu",
+        lambda: {
+            "vendor": "NVIDIA",
+            "name": "FakeGPU",
+            "available": True,
+            "driver_version": "0",
+            "compute_cap": "8.6",
+        },
+    )
+    monkeypatch.setattr(
+        te,
+        "probe_python_interpreter",
+        lambda exe: {
+            "path": exe,
+            "found": True,
+            "version": "3.11.9",
+            "minor": 11,
+            "pip": True,
+            "torch": "2.13.0+cpu",
+        },
+    )
+    m = te.TrainingEnvironmentManager(workspace=tmp_path)
+    rep = m.status(backend="cuda")
+    failing = {c.stage: c.code for c in rep.failing()}
+    assert failing.get("torch_version") == "TORCH_LOCAL_TAG_MISMATCH"
+    assert rep.training_ready is False
+    rep_cpu = m.status(backend="cpu")
+    assert not any(c.code == "TORCH_LOCAL_TAG_MISMATCH" for c in rep_cpu.failing())
+
+
+def test_pip_failure_taxonomy() -> None:
+    from nexus_scalp.model_provisioning.training_env import EnvCode, classify_pip_failure
+
+    assert (
+        classify_pip_failure("ERROR: Could not find a version that satisfies torch==9.9")[0]
+        is EnvCode.PACKAGE_VERSION_UNSATISFIED
+    )
+    assert (
+        classify_pip_failure("Retrying (Retry(total=4)) after connection broken")[0]
+        is EnvCode.NETWORK_UNREACHABLE
+    )
+    assert (
+        classify_pip_failure("Permission denied: 'site-packages'")[0]
+        is EnvCode.INSTALL_PERMISSION_DENIED
+    )
+    assert classify_pip_failure("some weird pip failure")[0] is EnvCode.INSTALL_FAILED
+
+
+def test_train_blocked_when_env_not_ready(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """train_local_model refuses BEFORE any training work with the typed
+    TRAINING_ENV_BLOCKED + the failing checklist, and leaves the slot empty."""
+    from nexus_scalp.model_provisioning import pipeline as pl_mod
+    from nexus_scalp.model_provisioning import training_env as te
+    from nexus_scalp.model_provisioning.pipeline import TrainingRequest, train_local_model
+
+    workspace = tmp_path / "ws"
+    monkeypatch.setattr(rb.rpaths, "get_runtime_workspace", lambda: workspace)
+    csv_path = tmp_path / "export.csv"
+    _synthetic_mt5_csv(csv_path, rows=10_500)
+
+    def _not_ready(*a, **k):
+        rep = te.EnvironmentReport(backend="cpu")
+        rep.checks.append(
+            te.EnvCheck(
+                te.EnvStage.TORCH.value,
+                False,
+                te.EnvCode.TORCH_NOT_INSTALLED.value,
+                "missing",
+                "install",
+            )
+        )
+        return rep
+
+    monkeypatch.setattr(te.TrainingEnvironmentManager, "status", _not_ready)
+    out = train_local_model(TrainingRequest(source_file=csv_path), progress=None)
+    assert out["outcome"] == "TRAINING_ENV_BLOCKED"
+    assert "pytorch" in out["missing"]
+    assert (
+        rb.bundle_status(workspace / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt")[
+            "state"
+        ]
+        == rb.STATE_MISSING
+    )
