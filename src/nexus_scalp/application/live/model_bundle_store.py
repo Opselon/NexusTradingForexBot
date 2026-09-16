@@ -125,7 +125,8 @@ class ModelBundleStore:
             except ArtifactIntegrityError as integ_err:
                 logger.critical(
                     "[MODEL_LOAD_REJECTED] event=ARTIFACT_INTEGRITY_FAIL "
-                    "status=%s reason=%s artifact=%s",
+                    "status=%s reason=%s artifact=%s "
+                    "remedy='nexus model-provision (starter) or nexus train-once + promote (BUG-293)'",
                     integ_err.verdict.status.value,
                     integ_err.verdict.reason,
                     integ_err.verdict.artifact,

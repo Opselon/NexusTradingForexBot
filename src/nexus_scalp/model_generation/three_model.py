@@ -157,6 +157,8 @@ def train_variant(
     epochs: int = 10,
     smoke: bool = False,
     output_dir: str | Path | None = None,
+    progress_cb: Any | None = None,
+    cancel_event: Any | None = None,
 ) -> dict[str, Any]:
     """Train one variant through the canonical purged walk-forward trainer.
 
@@ -249,6 +251,10 @@ def train_variant(
         # never paper/live fills). Declared explicitly so the production
         # lineage hard-gate passes with evidence instead of UNKNOWN.
         label_origin="CLEAN_HISTORICAL",
+        # BUG-293 first-run UX: optional real-progress callback + cancel event
+        # (None => dormant, every existing caller unchanged).
+        progress_cb=progress_cb,
+        cancel_event=cancel_event,
     )
     t0 = time.perf_counter()
     trainer.train_and_validate(df=df_labeled, feature_cols=cols)

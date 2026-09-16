@@ -1751,6 +1751,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_command_center_html() -> FileResponse:
         return FileResponse(WEB_DIR / "command_center.html")
 
+    # BUG-293 FIRST-SETUP WIZARD (PATH A official download / PATH B local
+    # training) — static shell, public like the other entry documents; its
+    # /api/provisioning/* calls stay fully token-gated.
+    @app.get("/first_setup.html")
+    def serve_first_setup_html() -> FileResponse:
+        return FileResponse(WEB_DIR / "first_setup.html")
+
     @app.get("/dependency")
     def serve_dependency_dashboard() -> FileResponse:
         """Dependency Intelligence developer dashboard (NSE engineering)."""
@@ -2704,6 +2711,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     from nexus_scalp.web.calibration_monitor import register_calibration_route
 
     register_calibration_route(app, _err, _log_err)
+
+    # FIRST-RUN MODEL PROVISIONING (BUG-293 redesign): /api/provisioning/*
+    # — the Web view of the SAME domain service the CLI exposes (official
+    # download + verify, local training with real progress, status/origin).
+    # Purely additive; user market data is never uploaded anywhere — the
+    # train route references a local file under an allowed import root.
+    from nexus_scalp.web.provisioning_routes import register_provisioning_routes
+
+    register_provisioning_routes(app, _err, _log_err)
 
     # REPLAY-ON-CHART session routes (CHG-0043, REPLAY_API v1): the chart's
     # operator surface for the REAL historical decision pipeline. Records

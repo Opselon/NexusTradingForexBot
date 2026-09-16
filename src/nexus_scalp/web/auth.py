@@ -91,6 +91,10 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         "/dependency.html",
         "/dependency",
         "/command_center.html",
+        # BUG-293 first-setup wizard: static shell only (same contract as
+        # the other entry documents); every /api/provisioning/* call it
+        # makes keeps full token enforcement.
+        "/first_setup.html",
     }
 )
 #: /vendor/ = fontawesome webfonts (static binaries, no credentials).
@@ -147,7 +151,7 @@ WEB_AUTH_COOKIE_DISABLE_ENV = "NSE_WEB_AUTH_COOKIE_DISABLE"
 #: (a gated path can never be reached tokenless, so setting a cookie on it
 #: would be dead code); pinned by tests/unit/test_web_auth_bootstrap_bug267.py.
 COOKIE_BOOTSTRAP_PATHS: frozenset[str] = frozenset(
-    {"/", "/index.html", "/app.js", "/api_client.js", "/alt", "/alt/"}
+    {"/", "/index.html", "/app.js", "/api_client.js", "/alt", "/alt/", "/first_setup.html"}
 )
 
 
