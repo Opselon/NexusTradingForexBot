@@ -398,3 +398,7 @@ tests/unit/test_bug294_bounded_runtime_behavior.py
 # sqlite3.connect per call on the loop thread and bypassed the repository's URI contract.
 # Now one reused handle per (thread, timeout tier) through _connect_sqlite.
 tests/unit/test_bug297_evaluator_hot_path_reads.py
+tests/unit/test_recon_dead_letter_store_contracts.py
+[INFO] Recording command outcome: echo
+
+[OK] Command outcome recorded
