@@ -421,6 +421,10 @@ tests/unit/test_bug299_friction_cap_saturation.py
 tests/unit/test_bug300_ai_triage_fallback.py
 tests/unit/test_bug300_workflow_ai_wiring.py
 tests/unit/test_byte_identical_news_dedup.py
+# PERF-WAVE R4 (NSE-Swarm role 6, 2026-09-16): remote gateway recurring tick
+# read offloaded from the event loop in RuntimeLoop._poll_tick (shielded, drained
+# on cancel, paper/direct inline, execution untouched).
+tests/unit/test_perf_r4_runtime_loop_offload.py
 # First Setup & Local Training Environment Provisioning
 tests/unit/test_training_dataset_source.py
 tests/unit/test_training_env_exact.py
