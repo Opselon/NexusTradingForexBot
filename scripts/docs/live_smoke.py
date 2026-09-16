@@ -74,6 +74,23 @@ def main() -> int:
     record("styles.css non-trivial", code == 200 and len(css) > 4000, f"{len(css)} bytes")
     code, _js = get(base, "assets/search.js")
     record("search.js 200", code == 200, f"HTTP {code}")
+    code, _lc = get(base, "assets/landing.css")
+    record("landing.css 200", code == 200, f"HTTP {code}")
+    code, _lj = get(base, "assets/landing.js")
+    record("landing.js 200", code == 200, f"HTTP {code}")
+    code, pj = get(base, "data/project-status.json")
+    record("project-status.json 200", code == 200, f"HTTP {code}")
+    if code == 200:
+        try:
+            pdata = json.loads(pj)
+            record(
+                "project-status version",
+                pdata.get("version") == cfg.repo_version(),
+                str(pdata.get("version")),
+            )
+        except Exception as exc:
+            record("project-status version", False, str(exc))
+    record("homepage landing structure", "landing-page" in home and "id='pulse'" in home)
     code, _ = get(base, "assets/favicon.svg")
     record("favicon 200", code == 200, f"HTTP {code}")
     # root-absolute reference must NOT appear in any served page (base-path bug)

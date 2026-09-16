@@ -33,8 +33,10 @@ import json
 import re
 import shutil
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
+import landing as _landing
 import site_config as _cfg
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -703,7 +705,15 @@ def breadcrumbs(lang: str, rel: str, from_rel: str) -> str:
     return "<nav class='breadcrumbs' aria-label='breadcrumb'>" + " / ".join(crumbs) + "</nav>"
 
 
-def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: bool) -> str:
+def shell(
+    lang: str,
+    title: str,
+    desc: str,
+    body: str,
+    rel: str,
+    translated: bool,
+    body_class: str = "",
+) -> str:
     ui = UI(lang)
     direction = LANGUAGES[lang]["dir"]
     if lang == "en":
@@ -743,6 +753,16 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
             f"<a href='{page_href(rel, 'en', rel)}'>{html.escape(ui['english'])}</a></div>"
         )
     )
+    landing_css = (
+        f"<link rel='stylesheet' href='{asset_href(rel, 'landing.css', lang)}'>"
+        if body_class == "landing-page"
+        else ""
+    )
+    landing_js = (
+        f"<script src='{asset_href(rel, 'landing.js', lang)}' defer></script>"
+        if body_class == "landing-page"
+        else ""
+    )
     return f"""<!DOCTYPE html>
 <html lang='{lang}' dir='{direction}'>
 <head>
@@ -765,9 +785,10 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 <link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
 <link rel='stylesheet' href='{asset_href(rel, "styles.css", lang)}'>
 <link rel='stylesheet' href='{asset_href(rel, "docs-enhance.css", lang)}'>
+{landing_css}
 <link rel='icon' href='{asset_href(rel, "favicon.svg", lang)}' type='image/svg+xml'>
 </head>
-<body>
+<body class='{body_class}'>
 <div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
 <a class='skip-link' href='#content'>{html.escape(ui["skip"])}</a>
 {build_header(lang, rel)}
@@ -808,6 +829,7 @@ window.NEXUS_LANG = {lang_json};
 </script>
 <script src='{asset_href(rel, "docs-enhance.js", lang)}' defer></script>
 <script src='{asset_href(rel, "search.js", lang)}' defer></script>
+{landing_js}
 </body>
 </html>"""
 
@@ -828,6 +850,67 @@ def build_404(lang: str = "en") -> str:
 
 _TAG_RE = re.compile(r"^v[0-9][A-Za-z0-9._-]{0,40}$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$")
+
+
+def load_repo_cache() -> dict | None:
+    """Build-time repository metadata cache (fetch_repo.py). Validated
+    boundary like load_releases(): only known scalar fields survive; the
+    result is embedded into data/project-status.json for the landing page."""
+    cache = CACHE_DIR / "repo.json"
+    if not cache.exists():
+        return None
+    try:
+        raw = json.loads(cache.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(raw, dict):
+        return None
+
+    def _int(v: object) -> int | None:
+        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    commit = raw.get("latest_commit") if isinstance(raw.get("latest_commit"), dict) else {}
+    ci = raw.get("ci") if isinstance(raw.get("ci"), dict) else {}
+    return {
+        "stars": _int(raw.get("stars")),
+        "forks": _int(raw.get("forks")),
+        "open_issues": _int(raw.get("open_issues")),
+        "pushed_at": raw.get("pushed_at") if isinstance(raw.get("pushed_at"), str) else "",
+        "license": raw.get("license") if isinstance(raw.get("license"), str) else "",
+        "contributors": _int(raw.get("contributors")),
+        "latest_commit": {
+            "sha": commit.get("sha", "") if isinstance(commit.get("sha"), str) else "",
+            "date": commit.get("date", "") if isinstance(commit.get("date"), str) else "",
+            "message": commit.get("message", "") if isinstance(commit.get("message"), str) else "",
+        },
+        "ci": {
+            "name": ci.get("name", "") if isinstance(ci.get("name"), str) else "",
+            "status": ci.get("status", "") if isinstance(ci.get("status"), str) else "",
+            "conclusion": ci.get("conclusion", "") if isinstance(ci.get("conclusion"), str) else "",
+            "html_url": ci.get("html_url", "") if isinstance(ci.get("html_url"), str) else "",
+        },
+    }
+
+
+def _translation_coverage() -> dict[str, int]:
+    """Per-language UI-key coverage computed from the actual locale files —
+    never a hand-written number."""
+
+    def flat(d: dict, prefix: str = "") -> set[str]:
+        out: set[str] = set()
+        for k, v in d.items():
+            if isinstance(v, dict):
+                out |= flat(v, prefix + k + ".")
+            else:
+                out.add(prefix + k)
+        return out
+
+    base = flat(LOCALES["en"])
+    cov: dict[str, int] = {}
+    for lang in LANGUAGES:
+        have = flat(LOCALES[lang])
+        cov[lang] = round(100.0 * len(base & have) / max(len(base), 1))
+    return cov
 
 
 def load_releases() -> list[dict]:
@@ -897,7 +980,16 @@ def release_highlights(body: str, limit: int = 6) -> list[str]:
 
 
 def homepage_html(lang: str = "en") -> str:
-    """Flagship pro homepage — cinematic hero with live chart, KPIs, bento, modes, pipeline, terminal, evidence, CTA."""
+    """Cinematic landing — dark hero with WebGL Nexus core, interactive
+    pipeline, three modes, research lab, XAUUSD DEMO market, hexagonal
+    architecture explorer, console preview and a self-updating project pulse.
+
+    Truth contract: no fabricated live market numbers, profitability, win
+    rates, or hard-coded test/scenario counts. Every capability state is
+    evidence-graded from docs/project/status.md; the market visualization is
+    labelled DEMO/ILLUSTRATIVE; live values hydrate client-side from
+    data/project-status.json (build-time generated, GitHub-API-refreshed, N/A
+    fallback)."""
     ui = UI(lang)
     from_rel = ""
     releases = [r for r in load_releases() if not r.get("draft")]
@@ -920,158 +1012,6 @@ def homepage_html(lang: str = "en") -> str:
             f"<a class='wn-more' href='{page_href('releases/', lang, from_rel)}'>{html.escape(ui['all_releases'])} →</a></section>"
         )
 
-    # ---- NEW flagship hero (pro) -------------------------------------------------
-    trusted = (
-        "<div class='trust-mini'>"
-        "<span>Trusted by researchers</span> · "
-        "<strong>MIT-licensed research core</strong> · "
-        "<strong> Windows x64 packaged</strong> · "
-        f"<span>XAUUSD M1 · MT5 · <a href='{page_href('project/status/', lang, from_rel)}'>Evidence-graded</a></span>"
-        "</div>"
-    )
-    hero_pro = (
-        f"<section class='hero-pro reveal'>"
-        f"<div class='hero-copy'>"
-        f"<div class='hero-kicker'>{html.escape(ui['hero_kicker'])}</div>"
-        f"<h1>{html.escape(ui['hero_title_a'])} <span class='grad'>{html.escape(ui['hero_title_b'])}</span></h1>"
-        f"<p class='hero-sub'>{html.escape(ui['hero_sub'])}</p>"
-        f"<div class='hero-stats'>"
-        f"<span class='chip chip-cert'>v{PROJECT_VERSION} {html.escape(ui['chip_released'])}</span>"
-        f"<span class='chip'>{html.escape(ui['chip_rev'])} {REVISION}</span>"
-        f"<span class='chip'>{html.escape(ui['chip_research'])}</span>"
-        f"</div>"
-        f"<div class='hero-actions'>"
-        f"<a class='btn btn-primary btn-lg' href='{page_href('getting-started/quickstart/', lang, from_rel)}'>{html.escape(ui['get_started'])} →</a>"
-        f"<a class='btn' href='{page_href('architecture/overview/', lang, from_rel)}'>{html.escape(ui['view_architecture'])}</a>"
-        f"<a class='btn btn-ghost' href='{REPO_URL}'>GitHub ↗</a>"
-        f"</div>"
-        f"{trusted}"
-        f"</div>"
-        f"<div class='hero-visual'>"
-        f"  <div class='chart-mock'>"
-        f"    <div class='chart-top'><div class='chart-top-left'><span class='chart-dot'></span> XAUUSD · M1 <span data-ticker style='color:var(--muted);font-weight:700'>2650.42</span></div><span class='chart-badge'>LIVE CHART</span></div>"
-        f"    <div class='chart-canvas'><svg id='hero-chart-svg' class='chart-svg' viewBox='0 0 520 190' preserveAspectRatio='none' aria-hidden='true'></svg></div>"
-        f"    <div class='chart-stats'>"
-        f"      <div class='chart-stat'><b><span class='count' data-count='50' data-suffix='D'>50D</span></b><span>Live contract</span></div>"
-        f"      <div class='chart-stat'><b class='count' data-count='779'>779</b><span>Tests (critical)</span></div>"
-        f"      <div class='chart-stat'><b><span class='count' data-count='60' data-suffix=''>60</span> scenarios</b><span>Execution router</span></div>"
-        f"    </div>"
-        f"  </div>"
-        f"</div>"
-        f"</section>"
-    )
-
-    kpis = (
-        "<section class='kpi-grid reveal'>"
-        "<div class='kpi'><b><span class='count' data-count='50'>50</span>D</b><span>Causal features · certified</span></div>"
-        "<div class='kpi'><b><span class='count' data-count='779'>779</span></b><span>Critical tests · xdist</span></div>"
-        "<div class='kpi'><b><span class='count' data-count='60'>60</span></b><span>Execution scenarios</span></div>"
-        "<div class='kpi'><b><span class='count' data-count='20' data-suffix='%'>20%</span></b><span>Margin clamp</span></div>"
-        "</section>"
-    )
-
-    pillars = (
-        "<section class='pillars reveal'>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_evidence_t'])}</h3><p>{html.escape(ui['pillar_evidence_b'])}</p></div>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_safety_t'])}</h3><p>{html.escape(ui['pillar_safety_b'])}</p></div>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_research_t'])}</h3><p>{html.escape(ui['pillar_research_b'])}</p></div>"
-        f"<div class='pillar'><h3>{html.escape(ui['pillar_truth_t'])}</h3><p>{html.escape(ui['pillar_truth_b'])}</p></div>"
-        "</section>"
-    )
-
-    bento = (
-        "<section class='reveal'>"
-        "<div class='section-head'><h2><span class='sec-ic'>✦</span> Why Nexus is different</h2>"
-        f"<a class='wn-more' href='{page_href('project/vision/', lang, from_rel)}'>Vision →</a></div>"
-        "<p class='section-desc'>Not a claim of alpha — a <strong>way of treating claims</strong>. Every dataset, model and run is fingerprinted. Candidates never promote themselves.</p>"
-        "<div class='bento'>"
-        f"<div class='bento-card'><div class='bento-icon'>🧬</div><h3>Causal 50D engine <span class='chip chip-cert'>CERTIFIED</span></h3><p>Strictly causal features (INV-008) with NaN/Inf fallbacks. Same contract for live, replay and training — protected by schema hash.</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/data-flow/', lang, from_rel)}'>Data flow →</a></div></div>"
-        f"<div class='bento-card'><div class='bento-icon'>🧠</div><h3>ScalpNet + Model Factory</h3><p>Dual-path TCN + self-attention. Artifact-first governance: manifests, inference needs no DB, operator-gated promotion only.</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/model-pipeline/', lang, from_rel)}'>Model pipeline →</a></div></div>"
-        f"<div class='bento-card'><div class='bento-icon'>🛡️</div><h3>Invariant risk engine</h3><p>Kelly sizing · margin ≤20% · HARD_MAX_LOTS=10 · circuit breaker. Hard clamps live in the execution path, not in a comment.</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/execution-pipeline/', lang, from_rel)}'>Execution →</a></div></div>"
-        f"<div class='bento-card'><div class='bento-icon'>🔒</div><h3>Safety by construction</h3><p>PAPER is default. SHADOW has <em>zero</em> order authority. LIVE needs explicit confirmation. Research workers never hold order authority (INV-002).</p><div class='bento-meta'><a class='chip' href='{page_href('architecture/runtime/', lang, from_rel)}'>Runtime →</a></div></div>"
-        f"<div class='bento-card wide'><div class='bento-icon'>🔬</div><h3>Deterministic research loop <span class='chip chip-cert'>CERTIFIED</span></h3><p>Purged + embargoed walk-forward · bit-exact replay · fingerprinted runs · provenance on every artifact · hard OOS gate (OOS failure ⇒ REJECTED — proven on 70D).</p><div class='bento-meta'><a class='chip' href='{page_href('research/methodology/', lang, from_rel)}'>Methodology →</a> <a class='chip' href='{page_href('research/validation/', lang, from_rel)}'>Validation →</a></div></div>"
-        "</div></section>"
-    )
-
-    mode_cards = (
-        "<section class='reveal'>"
-        "<div class='section-head'><h2><span class='sec-ic'>▦</span> Operating modes</h2>"
-        f"<a class='wn-more' href='{page_href('getting-started/first-run/', lang, from_rel)}'>First run →</a></div>"
-        "<div class='mode-cards'>"
-        "<div class='mode-card paper'><span class='mode-badge'>SAFE</span><h3>🟢 PAPER</h3><p><strong>Default.</strong> Fully simulated — market data + orders. For first run, dev, UI work.</p></div>"
-        "<div class='mode-card shadow'><span class='mode-badge'>RECOMMENDED</span><h3>👁 SHADOW</h3><p><strong>Live feed, zero authority.</strong> Evaluate signals & gates on real data with no orders — the honest test.</p></div>"
-        "<div class='mode-card live'><span class='mode-badge'>REAL RISK</span><h3>🔴 LIVE</h3><p><strong>Real money.</strong> Broker IPC / ZMQ · account-identity fail-safe · explicit confirmation.</p></div>"
-        "</div>"
-        "</section>"
-    )
-
-    evidence = (
-        "<section class='evidence-banner reveal'>"
-        "<div class='ic'>⚠️</div>"
-        "<div><strong>Negative results are published, not buried.</strong> The flagship 70D research series (Base+News+Liquidity) was returned <strong>NOT_ELIGIBLE</strong> by the hard OOS gate on real-data walk-forward. The live contract stays <strong>50D</strong> until a candidate clears every gate and an operator promotes it. "
-        f"<a href='{page_href('project/status/', lang, from_rel)}'>Evidence-graded status →</a> · <a href='{page_href('research/out-of-sample/', lang, from_rel)}'>OOS gate →</a></div>"
-        "</section>"
-    )
-
-    terminal = (
-        "<section class='terminal-demo reveal'>"
-        "<div class='terminal-bar'><span class='terminal-dots'><i></i><i></i><i></i></span> nexus — Control Center</div>"
-        "<div class='terminal-body'>"
-        "<div><span class='mut'>$</span> <span class='cmd' data-type='nexus doctor'></span></div>"
-        "<div><span class='ok'>✔ 19-category diagnostics</span> <span class='mut'>— PAPER default, SHADOW ready, LIVE gated</span></div>"
-        "<div><span class='mut'>$</span> <span class='cmd' data-type='nexus start --mode shadow'></span></div>"
-        "<div><span class='ok'>✔ SHADOW</span> <span class='mut'>— live feed · zero order authority · dashboard at </span><span class='cmd'>http://127.0.0.1:8080</span></div>"
-        "<div><span class='mut'>$</span> <span class='cmd' data-type='nexus start --mode paper'></span> <span class='mut'>— safe default</span></div>"
-        "</div>"
-        "</section>"
-    )
-
-    shot_href = (
-        asset_href("", "pics/web.png", lang)
-        if (SITE_DIR / "assets" / "pics" / "web.png").exists()
-        else (REPO_URL + "/blob/main/pics/web.png")
-    )
-    # Use the built site asset path (copied via main) or fallback to repo
-    shots_block = (
-        "<section class='shot-wrap reveal'>"
-        "<div class='shot-tabs'>"
-        "<button class='shot-tab is-active' type='button'>Control Center</button>"
-        "<button class='shot-tab' type='button'>Chart Overlays</button>"
-        "<button class='shot-tab' type='button'>Account & Risk</button>"
-        "</div>"
-        f"<div id='shot-stage' class='shot-stage' data-shots='{html.escape(json.dumps([{'src': shot_href, 'alt': 'Nexus Control Center', 'cap': 'Live M1 chart with OB/FVG and entry-SL-TP'}, {'src': shot_href, 'alt': 'Strategy Research', 'cap': 'Model & evidence views'}, {'src': shot_href, 'alt': 'Risk & Accounting', 'cap': 'Immutable ledger & autopsy'}], ensure_ascii=False))}'>"
-        f"<img src='{html.escape(shot_href)}' alt='Nexus Control Center' loading='lazy'>"
-        "<div class='shot-nav'><button id='shot-prev' aria-label='Previous'>&#8249;</button><button id='shot-next' aria-label='Next'>&#8250;</button></div>"
-        "</div>"
-        "<div id='shot-caption' style='padding:10px 14px;color:var(--muted);font-size:.88rem;text-align:center'>Live M1 chart with OB / FVG and entry-SL-TP · Control Center at http://127.0.0.1:8080</div>"
-        "</section>"
-    )
-
-    cap_rows = [
-        ("architecture/data-flow", ui["cap_engine"], "chip-cert", "CERTIFIED"),
-        ("architecture/execution-pipeline", ui["cap_risk"], "chip-cert", "CERTIFIED"),
-        ("research/validation", ui["cap_oos"], "chip-cert", "CERTIFIED"),
-        ("architecture/model-pipeline", ui["cap_factory"], "chip-impl", "IMPLEMENTED"),
-        ("architecture/research-stack", ui["cap_70d"], "chip-exp", "EXPERIMENTAL"),
-        ("research/counterfactuals", ui["cap_cf"], "chip-res", "RESEARCH"),
-    ]
-    caps = (
-        "<section class='cap-highlights reveal'><div class='section-head'><h2><span class='sec-ic'>🧱</span> "
-        + html.escape(t(lang, "ui.cap_highlights"))
-        + "</h2>"
-        + f"<a class='wn-more' href='{page_href('project/capabilities/', lang, from_rel)}'>{html.escape(ui['full_matrix'])} →</a></div>"
-        + "<div class='table-wrap'><table><thead><tr><th>"
-        + html.escape(t(lang, "ui.capability"))
-        + "</th><th>"
-        + html.escape(t(lang, "ui.status"))
-        + "</th></tr></thead><tbody>"
-        + "".join(
-            f"<tr><td><a href='{page_href(rel, lang, from_rel)}'>{html.escape(name)}</a></td>"
-            f"<td><span class='chip {chip}'>{html.escape(t(lang, 'ui.' + label))}</span></td></tr>"
-            for rel, name, chip, label in cap_rows
-        )
-        + "</tbody></table></div></section>"
-    )
     section_icons = {
         "getting-started": "🚀",
         "project": "📌",
@@ -1088,45 +1028,24 @@ def homepage_html(lang: str = "en") -> str:
         f"<p>{html.escape(section_intro(sec, lang))}</p></a>"
         for sec, icon in section_icons.items()
     )
-    pipe = (
-        "<section class='pipe-block reveal'><div class='section-head'><h2><span class='sec-ic'>⚙️</span> "
-        + html.escape(t(lang, "ui.how_it_works"))
-        + "</h2></div>"
-        + "<p class='section-desc'>Every stage is isolated behind hexagonal ports. Promotion between stages requires an <strong>operator decision on reproducible evidence</strong>.</p>"
-        + "<div class='pipe'>"
-        + f"<a class='pipe-node' href='{page_href('architecture/data-flow/', lang, from_rel)}'><span class='pipe-ic'>📈</span> DATA → FEATURES</a>"
-        + f"<a class='pipe-node' href='{page_href('architecture/model-pipeline/', lang, from_rel)}'><span class='pipe-ic'>🧠</span> MODEL</a>"
-        + f"<a class='pipe-node' href='{page_href('guides/api/', lang, from_rel)}'><span class='pipe-ic'>♟️</span> STRATEGY / API</a>"
-        + f"<a class='pipe-node' href='{page_href('architecture/execution-pipeline/', lang, from_rel)}'><span class='pipe-ic'>🛡️</span> RISK</a>"
-        + f"<a class='pipe-node' href='{page_href('architecture/runtime/', lang, from_rel)}'><span class='pipe-ic'>⚡</span> EXECUTION</a>"
-        + f"<a class='pipe-node' href='{page_href('architecture/observability/', lang, from_rel)}'><span class='pipe-ic'>👁️</span> OBSERVABILITY</a>"
-        + "</div></section>"
-    )
     cta = (
         "<section class='cta reveal'>"
-        "<div><h3>Ready to evaluate on live data — without risk?</h3><p>Start in SHADOW. Same features, same gates, same pipeline — zero order authority.</p></div>"
-        f"<div style='display:flex;gap:10px;flex-wrap:wrap'><a class='btn btn-primary btn-lg' href='{page_href('getting-started/quickstart/', lang, from_rel)}'>Quickstart →</a><a class='btn' href='{page_href('getting-started/installation/', lang, from_rel)}'>Installation</a></div>"
-        "</section>"
+        "<div><h3>"
+        + html.escape(_landing._land(sys.modules[__name__], lang, "cta_title"))
+        + "</h3><p>"
+        + html.escape(_landing._land(sys.modules[__name__], lang, "cta_desc"))
+        + "</p></div>"
+        f"<div style='display:flex;gap:10px;flex-wrap:wrap'>"
+        f"<a class='btn btn-primary btn-lg' href='{page_href('getting-started/quickstart/', lang, from_rel)}'>"
+        + html.escape(ui["quickstart_label"])
+        + " →</a>"
+        f"<a class='btn' href='{page_href('getting-started/installation/', lang, from_rel)}'>"
+        + html.escape(_landing._land(sys.modules[__name__], lang, "cta_install"))
+        + "</a></div></section>"
     )
-    body = f"""
-{hero_pro}
-{kpis}
-{pillars}
-{bento}
-{mode_cards}
-{evidence}
-{terminal}
-{pipe}
-{shots_block}
-{caps}
-{whats_new}
-<section class='secs reveal'><div class='section-head'><h2><span class='sec-ic'>📚</span> {html.escape(ui["explore_docs"])}</h2></div>
-<div class='sec-grid'>{grid}</div></section>
-<section class='timeline-block reveal'><div class='section-head'><h2><span class='sec-ic'>🗓️</span> {html.escape(ui["release_timeline"])}</h2>
-<a class='wn-more' href='{page_href("releases/", lang, from_rel)}'>{html.escape(ui["all_releases"])} →</a></div>
-<div class='timeline'>{timeline}</div></section>
-{cta}
-"""
+    body = _landing.landing_body(
+        sys.modules[__name__], lang, from_rel, whats_new, grid, timeline, cta
+    )
     return shell(
         lang,
         "Nexus Scalp Engine — Research-driven quantitative trading platform",
@@ -1134,6 +1053,7 @@ def homepage_html(lang: str = "en") -> str:
         body,
         "",
         True,
+        body_class="landing-page",
     )
 
 
@@ -1234,12 +1154,16 @@ def main() -> int:
     src_icon = SITE_DIR / "assets" / "favicon.svg"
     src_enhance_css = SITE_DIR / "assets" / "docs-enhance.css"
     src_enhance_js = SITE_DIR / "assets" / "docs-enhance.js"
+    src_landing_css = SITE_DIR / "assets" / "landing.css"
+    src_landing_js = SITE_DIR / "assets" / "landing.js"
     for src, dst in (
         (src_css, "styles.css"),
         (src_js, "search.js"),
         (src_icon, "favicon.svg"),
         (src_enhance_css, "docs-enhance.css"),
         (src_enhance_js, "docs-enhance.js"),
+        (src_landing_css, "landing.css"),
+        (src_landing_js, "landing.js"),
     ):
         if src.exists():
             shutil.copyfile(src, out_dir / "assets" / dst)
@@ -1378,6 +1302,18 @@ def main() -> int:
                 "pages": PAGES_URL,
             },
             indent=1,
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    # Self-updating landing data: build-time generated, consumed by the
+    # homepage and refreshable client-side from the public GitHub API.
+    (out_dir / "data").mkdir(exist_ok=True)
+    (out_dir / "data" / "project-status.json").write_text(
+        _landing.project_status_json(
+            sys.modules[__name__],
+            datetime.now(UTC).isoformat(timespec="seconds"),
+            _translation_coverage(),
         ),
         encoding="utf-8",
         newline="\n",
