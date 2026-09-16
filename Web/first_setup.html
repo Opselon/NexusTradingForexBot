@@ -86,9 +86,20 @@
       <p>Train on <b>your own broker export</b> (CSV / Parquet, MT5 columns).
          Your market data never leaves this computer — no upload, no cloud,
          no telemetry with candles. Requires Python + PyTorch locally.</p>
+      <div id="cardBBody">
       <div class="row" id="envRow"><span class="note" id="envNote">checking environment…</span></div>
       <div class="row">
+        <span class="note">Training backend:</span>
+        <select id="backendSel" title="cpu and cuda are two REAL paths, each smoke-tested">
+          <option value="auto" selected>auto (GPU if detected)</option>
+          <option value="cpu">CPU</option>
+          <option value="cuda">NVIDIA CUDA GPU</option>
+        </select>
+        <button id="btnInstallEnv" class="ghost" style="display:none" onclick="installEnv(this)">Install required dependencies</button>
+      </div>
+      <div class="row">
         <input type="text" id="trainFile" placeholder="Local file path: C:\data\XAUUSD_M1.csv or .parquet">
+      </div>
       </div>
       <div class="row">
         <select id="candlesSel" title="Candles used (most recent N bars — chronological tail)">
@@ -120,7 +131,7 @@
 "use strict";
 const $ = (id)=>document.getElementById(id);
 const STAGES = ["import","validate","prepare","train","validate_model","verify","install"];
-let poll = null, after = 0, elapsed0 = 0;
+let poll = null, after = 0, elapsed0 = 0, lastEnvReport = null;
 
 async function api(path, opts){
   const r = await fetch(path, Object.assign({credentials:"same-origin",headers:{"Content-Type":"application/json"}}, opts||{}));
@@ -156,13 +167,49 @@ async function refreshStatus(){
       ? "official source not configured on this machine" : "";
   }catch(e){ box.innerHTML = "<b class='bad'>Status unavailable</b> · "+esc(e.message); }
   try{
-    const env = (await api("/api/provisioning/environment")).environment||{};
-    const line = ["python "+(env.python||"?"), "PyTorch "+(env.torch||"MISSING"),
-                  "CUDA "+(env.cuda?"✓":"✗"), (env.cuda&&env.gpu_name)?env.gpu_name:""].filter(Boolean).join("  ·  ");
-    $("envNote").textContent = line;
-    $("envNote").className = "note"+(env.torch?"":" err");
-    $("btnTrain").disabled = !env.torch;
+    const r = await api("/api/provisioning/environment?backend="+encodeURIComponent($("backendSel").value));
+    renderEnv(r.report||{});
   }catch(e){ $("envNote").textContent="environment probe unavailable"; }
+}
+
+function renderEnv(rep){
+  lastEnvReport = rep;
+  const checks = rep.checks||[];
+  const lines = checks.map(c=>{
+    const mark = c.ok ? "<span class='okline'>OK</span>" : "<span class='err'>--</span>";
+    let line = mark+" "+c.stage;
+    if(!c.ok && c.code) line += " <span class='err'>"+esc(c.code)+"</span>";
+    return line;
+  });
+  const gpu = rep.gpu||{};
+  $("envNote").innerHTML =
+    "python "+esc((rep.python&&rep.python.version)||"?")+" · "+
+    "env "+esc((rep.environment&&rep.environment.type)||(rep.environment&&rep.environment.found?"present":"none"))+" · "+
+    "pytorch "+esc((rep.pytorch&&rep.pytorch.detected)||"MISSING")+" (required "+esc((rep.pytorch&&rep.pytorch.required)||"?")+") · "+
+    "GPU "+esc(gpu.available?(gpu.name||"NVIDIA"):"none")+"<br>"+lines.join("<br>");
+  $("btnInstallEnv").style.display = (rep.training_ready && rep.in_process_ready) ? "none" : "";
+  $("btnTrain").disabled = !(rep.training_ready && rep.in_process_ready);
+  if(rep.training_ready && !rep.in_process_ready){
+    $("envNote").innerHTML += "<br><span class='note'>Environment READY in a separate interpreter: <code>"+esc(rep.training_command||"")+"</code></span>";
+  }
+}
+
+async function installEnv(btn){
+  btn.disabled=true; const old=btn.textContent; btn.textContent="installing… (pinned stack, may take minutes)";
+  const box = document.createElement("div"); box.className="err"; $("cardBBody").appendChild(box);
+  try{
+    const r = await api("/api/provisioning/environment/install",{method:"POST",
+      body:JSON.stringify({backend:$("backendSel").value})});
+    box.className="okline"; box.textContent = r.success? "environment READY — you can train now." : "install finished but checks still fail (see list).";
+    if(r.report) renderEnv(r.report);
+  }catch(e){ box.textContent = "Install failed: "+esc(e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+function trainBlockedReason(){
+  const rep = lastEnvReport||{}; const bad=(rep.checks||[]).filter(c=>!c.ok);
+  if(!bad.length){ return "The prepared environment runs under a different interpreter — see the printed command."; }
+  return bad.map(c=>c.stage+": "+(c.code||"FAIL")+(c.remedy?(" — "+c.remedy):"")).join("
+");
 }
 
 /* ---------------- PATH A ---------------- */
@@ -245,14 +292,19 @@ $("btnTrain").addEventListener("click", async ()=>{
   $("trainMetrics").textContent=""; $("diag").textContent=""; $("meterFill").style.width="0%";
   const candles = $("candlesSel").value;
   try{
-    await api("/api/provisioning/train/start",{method:"POST",body:JSON.stringify({file:file,candles:candles?parseInt(candles,10):null})});
+    await api("/api/provisioning/train/start",{method:"POST",body:JSON.stringify({file:file,candles:candles?parseInt(candles,10):null,backend:$("backendSel").value})});
     elapsed0 = 0; setTimeout(()=>{elapsed0=1;},1000); // measured clock starts; ETA only after real progress
     const t0=Date.now();
     poll = setInterval(()=>{ if(elapsed0) elapsed0=(Date.now()-t0)/1000; pump(); }, 1500);
     pump();
   }catch(e){
-    $("diag").innerHTML="<span class='err'>✗ "+esc(e.message)+"</span>";
+    $("diag").innerHTML="<span class='err'>"+esc(e.message)+"</span>";
     $("btnTrain").disabled=false; $("btnCancel").disabled=true;
+    if(String(e.message).indexOf("TRAINING_ENV")>=0 || String(e.message).indexOf("TRAIN_BACKEND")>=0){
+      $("diag").innerHTML = "<span class='err'><b>Training cannot start.</b><br>"+
+        esc(trainBlockedReason()||e.message)+"</span>";
+      $("btnInstallEnv").style.display="";
+    }
   }
 });
 $("btnCancel").addEventListener("click", async ()=>{
@@ -260,6 +312,7 @@ $("btnCancel").addEventListener("click", async ()=>{
        $("trainMetrics").textContent+="\ncancel requested — observed at the next epoch boundary"; }catch(e){}
 });
 
+$("backendSel").addEventListener("change", refreshStatus);
 refreshStatus(); setInterval(refreshStatus, 15000);
 </script>
 </body>

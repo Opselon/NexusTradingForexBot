@@ -531,7 +531,11 @@ ipch/
 # ==============================================================================
 # RELEASE ENGINEERING OUTPUTS (never commit generated artifacts)
 # ==============================================================================
-release/
+# Anchored to the repo root: the bare `release/` form also matched ANY path
+# segment named release — swallowing tests/release/*.py (BUG-298's contract
+# battery, force-added in #235) and shadowing the tracked src/nexus_scalp/
+# release/ package. The generated release OUTPUT dir is root-level only.
+/release/
 build-info.json
 *.spec
 installer/*.exe

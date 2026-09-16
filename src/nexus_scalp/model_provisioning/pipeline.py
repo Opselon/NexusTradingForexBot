@@ -83,6 +83,11 @@ class TrainingRequest:
     epochs: int = 4
     install: bool = True
     cancel_event: threading.Event | None = None
+    #: Training backend CHOICE (user): "cpu" | "cuda"; None = auto
+    #: (NEXUS_TRAINING_BACKEND env or NVIDIA-GPU detection). CPU-only torch
+    #: installs must pass cpu explicitly — auto prefers cuda when a GPU is
+    #: detected, per the OPTIONAL TRAINING SETUP contract.
+    backend: str | None = None
 
 
 @dataclass
@@ -218,7 +223,12 @@ def import_user_bars(source_file: Path, candles: int | None = None) -> UserBarsI
 def detect_ml_environment() -> dict[str, Any]:
     """Real environment probe for the first-setup UI (Python / torch / CUDA
     / GPU). Official download (PATH A) never calls this; missing torch is a
-    FACT, not an error, and is reported as one."""
+    FACT, not an error, and is reported as one.
+
+    SECURITY: the returned dict is surfaced by a web API, so it carries a
+    SAFE CATEGORY only (exception TYPE NAME) — never the raw exception
+    message (paths, library internals, environment details stay server-side
+    in the log line)."""
     import platform
     import sys
 
@@ -240,7 +250,9 @@ def detect_ml_environment() -> dict[str, Any]:
         except Exception:
             env["cuda"] = False
     except Exception as exc:
-        env["torch_error"] = str(exc)[:200]
+        # Safe category for the client; full detail for the local log only.
+        env["torch_error"] = type(exc).__name__
+        logger.info("[LOCAL-TRAIN] event=TORCH_PROBE_FAILED category=%s", type(exc).__name__)
     return env
 
 
@@ -298,27 +310,63 @@ def train_local_model(
         return result
 
     # -- canonical training (shared pipeline; features + sequences + WF) ----
-    env = detect_ml_environment()
-    if not env.get("torch"):
+    # TRAINING ENV GATE (BUG-301): training may only start once the resolved
+    # environment is READY for THIS process. The manager only DISCOVERS here
+    # (never installs — provisioning is a separate, explicit user action via
+    # TrainingEnvironmentManager.install / the CLI "install" verb).
+    from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
+
+    manager = TrainingEnvironmentManager()
+    backend = (request.backend or manager.chosen_backend()).lower()
+    env_report = manager.status(backend=backend)
+    result["environment_report"] = env_report.as_dict()
+    if not env_report.training_ready:
+        missing = [
+            f"{c.stage}: {c.code or 'FAILED'}" + (f" — {c.remedy}" if c.remedy else "")
+            for c in env_report.failing()
+        ]
         _emit(
             progress,
             ProgressEvent(
-                stage="train",
-                status="failed",
-                message="PyTorch is not available — PATH A (official model download) needs no "
-                "training stack; install torch to train locally",
+                stage="env",
+                status="blocked",
+                message="Training environment NOT ready — training has not started. "
+                + "; ".join(missing)[:400],
+                metrics={"checks": [c.as_dict() for c in env_report.checks]},
             ),
         )
-        result.update(outcome="VALIDATION_FAILED", reason="torch unavailable", environment=env)
+        result.update(
+            outcome="TRAINING_ENV_BLOCKED",
+            reason="; ".join(missing)[:500] or "environment not ready",
+            missing=[c.stage for c in env_report.failing()],
+            backend=backend,
+        )
         return result
-
+    if not env_report.in_process_ready:
+        # The READY environment is a DIFFERENT interpreter (managed venv):
+        # starting training HERE would silently run on a different stack.
+        _emit(
+            progress,
+            ProgressEvent(
+                stage="env",
+                status="blocked",
+                message="Environment READY but outside this process — run the printed "
+                "command with that interpreter (TRAINING_ENV_MISMATCH).",
+            ),
+        )
+        result.update(
+            outcome="TRAINING_ENV_MISMATCH",
+            reason=env_report.training_command,
+            backend=backend,
+        )
+        return result
     _emit(
         progress,
         ProgressEvent(
             stage="prepare",
             status="start",
             message=f"70D canonical feature pipeline on {imp.selected_rows} bars "
-            f"(device={'CUDA ' + str(env.get('gpu_name')) if env.get('cuda') else 'CPU'})",
+            f"(backend={backend})",
             fraction=0.10,
         ),
     )
