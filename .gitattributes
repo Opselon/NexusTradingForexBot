@@ -76,3 +76,15 @@ scripts/linux/*.sh text eol=lf
 installer/*.iss -text
 tests/fast_suite.txt text eol=lf
 tests/slow_suite.txt text eol=lf
+
+###############################################################################
+# Agent governance (DEC-0009 INV-GIT-005): append-only merge drivers for the
+# multi-agent registries. The driver binaries are registered per-clone via
+# `git config merge.append-only-taskboard.driver` — see
+# scripts/install_agent_hooks.py which wires both the hooks path and the
+# driver definitions (deterministic 3-way table union; concurrent row
+# appends are never dropped).
+###############################################################################
+agents/taskboard.md merge=append-only-taskboard
+agents/bugs.md merge=append-only-bugs
+
