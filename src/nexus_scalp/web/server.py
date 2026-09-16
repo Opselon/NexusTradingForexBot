@@ -2852,7 +2852,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # every route (current and future) is behind token auth (audit B1).
     _install_web_auth_if_enabled(app)
 
-    return app
+    # TASK-SEC-WS-AUTH-P0 (2026-09-11): WebSocket fail-closed enforcement at
+    # the outermost ASGI boundary. Starlette's BaseHTTPMiddleware (the HTTP
+    # auth layer above) structurally never sees websocket scopes — without
+    # this wrapper every WS handshake reached the router unauthenticated and
+    # streamed full system state (equity, positions, proposals). The guard
+    # delegates all attributes to the app, so callers are unaffected; the
+    # only intercepted behavior is the call operator itself. When the
+    # operator disabled auth (NSE_WEB_AUTH_DISABLE=1) the app is returned
+    # unwrapped and the guard logs a loud trusted-LAN-only warning.
+    from nexus_scalp.web.auth import build_websocket_auth_guard
+
+    return build_websocket_auth_guard(app)
 
 
 # ------------------------------------------------------------------------------

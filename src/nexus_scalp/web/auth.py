@@ -138,11 +138,116 @@ def _resolve_token() -> tuple[str, str]:
         raise RuntimeError(f"web auth token unresolvable: {exc}") from exc
 
 
+#: Subprotocol channel for browser WebSocket clients: a browser cannot set
+#: Authorization / X-NSE-Token on the upgrade handshake, so a token may be
+#: offered as subprotocol "nse-token.<token>" (consumed here; never echoed
+#: back unfiltered in the negotiated-protocol response).
+WS_TOKEN_SUBPROTOCOL_PREFIX = "nse-token."
+
+#: WebSocket close codes used when an upgrade handshake is refused:
+#: 4401 = application-private "WS unauthorized"; 1008 = RFC 6455 policy
+#: violation. Both satisfy the regression contract.
+WS_CLOSE_UNAUTHORIZED = 4401
+WS_CLOSE_POLICY_VIOLATION = 1008
+
+#: Operator opt-out env (trusted-LAN only, NOT for LIVE) — same flag the
+#: server's _install_web_auth_if_enabled honors for the HTTP layer.
+WS_AUTH_DISABLED_ENV = "NSE_WEB_AUTH_DISABLE"
+
+
+def is_auth_disabled() -> bool:
+    """True when the operator explicitly disabled web auth (trusted-LAN only).
+
+    Mirrors the server-side ``NSE_WEB_AUTH_DISABLE=1`` opt-out so the HTTP
+    layer and the WebSocket layer can never disagree about the disabled
+    state. The flag is NEVER combined with LIVE execution mode by design —
+    that combination is an operator misconfiguration the server warns about
+    at install time.
+    """
+    return os.environ.get(WS_AUTH_DISABLED_ENV, "").strip() == "1"
+
+
+def _constant_time_token_match(supplied: str | None, expected: str | None) -> bool:
+    """Constant-time comparison shared by the HTTP and WebSocket paths."""
+    if not supplied or not expected:
+        return False
+    return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
+
+
+def extract_ws_token(scope: dict) -> str | None:
+    """Multi-channel token extraction for one websocket ASGI scope.
+
+    Order (first match wins — mirrors the HTTP layer's precedence):
+      1. Authorization: Bearer <token> header (native clients / proxies).
+      2. X-NSE-Token header (service clients).
+      3. Query string ``?token=<token>`` (browser clients: the JS WebSocket
+         API cannot set custom upgrade headers, so the URL query is the
+         primary browser channel).
+      4. Subprotocol channel ``Sec-WebSocket-Protocol: nse-token.<token>``
+         (browser-native alternative when the URL must stay token-free).
+
+    Returns None when no channel carries a token. Never raises (a malformed
+    scope must fail the handshake, not 500 the server).
+    """
+    try:
+        headers = {
+            k.decode("latin-1").lower(): v.decode("latin-1")
+            for k, v in scope.get("headers", []) or []
+        }
+        auth = headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            supplied = auth[7:].strip()
+            if supplied:
+                return supplied
+        xt = headers.get("x-nse-token", "").strip()
+        if xt:
+            return xt
+        qs = (scope.get("query_string", b"") or b"").decode("latin-1")
+        for part in qs.split("&"):
+            if part.startswith("token="):
+                val = part[6:].strip()
+                if val:
+                    return val
+        for proto in scope.get("subprotocols", []) or []:
+            text = proto.decode("latin-1") if isinstance(proto, bytes) else str(proto)
+            if text.startswith(WS_TOKEN_SUBPROTOCOL_PREFIX):
+                val = text[len(WS_TOKEN_SUBPROTOCOL_PREFIX) :].strip()
+                if val:
+                    return val
+    except Exception:
+        return None
+    return None
+
+
+def ws_scope_authorized(scope: dict, expected_token: str | None) -> bool:
+    """Fail-closed websocket authorization decision for one ASGI scope.
+
+    * auth disabled by operator flag -> allow (trusted-LAN override).
+    * no token resolvable -> REFUSE (config error can never fail open; the
+      HTTP layer reports the same condition as 500 AUTH_CONFIG_ERROR).
+    * otherwise -> constant-time comparison of the best supplied token.
+    """
+    if is_auth_disabled():
+        return True
+    if expected_token is None:
+        return False
+    supplied = extract_ws_token(scope)
+    return _constant_time_token_match(supplied, expected_token)
+
+
 class WebAuthMiddleware:
     """Pure ASGI middleware: bearer/X-NSE-Token/query-token enforcement.
 
     Kept framework-free (pure ASGI wrapper) so it composes with the existing
     Starlette middleware stack without changing create_app's response contract.
+
+    TASK-SEC-WS-AUTH-P0 (2026-09-11): WebSocket scopes are NO LONGER passed
+    through unauthenticated. Every non-HTTP scope of type ``websocket`` is
+    authenticated at the ASGI boundary BEFORE the route handler runs
+    (multi-channel token extraction + constant-time compare; failure sends a
+    ``websocket.close`` frame with code 4401 and never reaches the inner app).
+    Other scope types (lifespan) still pass through — they carry no request
+    credentials and no client data.
     """
 
     def __init__(self, app, *, require_always: bool = False) -> None:
@@ -163,7 +268,38 @@ class WebAuthMiddleware:
 
     # ------------------------------------------------------------------ ASGI
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http":
+        scope_type = scope.get("type")
+
+        if scope_type == "websocket":
+            # TASK-SEC-WS-AUTH-P0: fail-closed WS gate BEFORE the route runs.
+            # A rejected handshake sends websocket.close directly and NEVER
+            # reaches the inner app (no accept, no system-state frame).
+            if ws_scope_authorized(scope, self._token):
+                state = scope.setdefault("state", {})
+                state["authenticated"] = True
+                await self.app(scope, receive, send)
+                return
+            reason = (
+                "web auth token unresolvable (fail-closed)"
+                if self._token is None
+                else "Unauthorized"
+            )
+            logger.warning(
+                "[WEB-AUTH] websocket handshake REFUSED (missing or invalid token)",
+                path=scope.get("path", ""),
+            )
+            await send(
+                {
+                    "type": "websocket.close",
+                    "code": WS_CLOSE_UNAUTHORIZED,
+                    "reason": reason,
+                }
+            )
+            return
+
+        if scope_type != "http":
+            # lifespan and any future scope types: no client credentials, no
+            # client-controlled data — pass through (connection framing only).
             await self.app(scope, receive, send)
             return
 
@@ -321,3 +457,96 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
 
     app.add_middleware(_TokenAuthMiddleware, token_resolver=_resolve)
     app.state._web_auth_token_source = "middleware"
+
+
+class WebSocketAuthGuard:
+    """Pure-ASGI outer wrapper enforcing token auth on ``websocket`` scopes.
+
+    TASK-SEC-WS-AUTH-P0: Starlette's ``BaseHTTPMiddleware`` (the production
+    HTTP auth layer) structurally never sees ``websocket`` scopes — they flow
+    around it straight to the router. This class is the missing ASGI-boundary
+    layer: it authenticates every websocket handshake BEFORE the FastAPI app
+    runs (multi-channel extraction + constant-time compare via
+    :func:`ws_scope_authorized`), rejects unauthorized handshakes with a
+    ``websocket.close`` frame (code 4401) that never reaches the inner app,
+    stamps ``scope["state"]["authenticated"] = True`` on success, and then
+    delegates EVERYTHING — http and websocket alike — to the wrapped app.
+
+    All attribute access is delegated to the wrapped FastAPI instance
+    (``.state``, ``.routes``, route registration, engine boot's
+    ``app_obj.state.server_state`` hand-off), so callers keep working with
+    the app exactly as before; only the call operator is intercepted.
+
+    ``guard_token`` resolution mirrors the HTTP middleware (env >
+    SecureSecretStore > generated+persisted). ``None`` token + auth enabled
+    means FAIL-CLOSED: every websocket handshake is refused (the HTTP layer
+    reports the same misconfiguration as 500 AUTH_CONFIG_ERROR).
+    """
+
+    def __init__(self, asgi_app, *, guard_token: str | None) -> None:
+        self._asgi_app = asgi_app
+        self._guard_token = guard_token
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") == "websocket":
+            if not ws_scope_authorized(scope, self._guard_token):
+                logger.warning(
+                    "[WEB-AUTH][WS] websocket handshake REFUSED at ASGI boundary "
+                    "(missing or invalid token)",
+                    path=scope.get("path", ""),
+                )
+                reason = (
+                    "web auth token unresolvable (fail-closed)"
+                    if self._guard_token is None
+                    else "Unauthorized"
+                )
+                await send(
+                    {
+                        "type": "websocket.close",
+                        "code": WS_CLOSE_UNAUTHORIZED,
+                        "reason": reason,
+                    }
+                )
+                return
+            scope.setdefault("state", {})["authenticated"] = True
+        await self._asgi_app(scope, receive, send)
+
+    def __getattr__(self, name: str):
+        # Delegation only (called when normal lookup fails); the guard's own
+        # _asgi_app/_guard_token attributes resolve normally.
+        return getattr(self._asgi_app, name)
+
+    def __setattr__(self, name: str, value) -> None:
+        if name in ("_asgi_app", "_guard_token"):
+            object.__setattr__(self, name, value)
+            return
+        setattr(self._asgi_app, name, value)
+
+
+def build_websocket_auth_guard(app, *, require_always: bool = False):
+    """Returns the app wrapped in :class:`WebSocketAuthGuard`.
+
+    Called by ``create_app`` as the FINAL step (after ``install_web_auth``)
+    so the returned ASGI callable enforces websocket auth before anything
+    else runs. When the operator disabled auth (``NSE_WEB_AUTH_DISABLE=1``)
+    the app is returned unwrapped and a loud warning is logged (identical
+    semantics to the HTTP opt-out; NEVER valid for LIVE execution mode).
+    """
+    if is_auth_disabled():
+        logger.warning(
+            "[WEB-AUTH][WS] auth disabled via NSE_WEB_AUTH_DISABLE=1 — websocket "
+            "endpoints accept unauthenticated connections (NEVER combine with "
+            "LIVE execution mode or a routable host binding)."
+        )
+        return app
+    token: str | None
+    try:
+        token, source = _resolve_token()
+        if source in ("env", "secret_store"):
+            logger.info("[WEB-AUTH][WS] websocket guard active", source=source)
+    except Exception as exc:
+        # Fail-closed: an unresolvable token refuses every WS handshake.
+        token = None
+        logger.error("[WEB-AUTH][WS] FAIL-CLOSED: no token resolvable", error=str(exc))
+    app.state._web_auth_ws_guard_installed = True
+    return WebSocketAuthGuard(app, guard_token=token)
