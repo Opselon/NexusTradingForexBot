@@ -11,3 +11,16 @@ tests/unit/test_perf_deadletter_skeleton_repro.py
 
 # measured 428s aggregate — news DB export truncation honesty (dataset integrity).
 tests/unit/test_news_db_truncation_honesty.py
+
+# --- wave-2 demotions from Tier 1 (measured cost or family consolidation; still run on main push) ---
+tests/unit/test_forensics.py
+tests/unit/test_incidents.py
+tests/unit/test_walk_forward_trainer.py
+tests/unit/test_dead_letter_retention_cap.py
+tests/unit/test_lifecycle_e2e_v3.py
+tests/unit/test_outcome_recovery_sweep_bug140.py
+tests/unit/test_observability_guardrails.py
+tests/unit/test_liquidity_engine_features.py
+tests/unit/test_logging_retention_runtime.py
+tests/unit/test_observability_contract_freeze.py
+tests/unit/test_perf_exec_trace_throttle.py

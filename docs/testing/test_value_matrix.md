@@ -1,6 +1,6 @@
 # NSE Test Value Matrix
 
-Generated 2026-09-14T22:38:33+00:00 from measured evidence. Machine-readable source: `docs/testing/test_inventory.json`.
+Generated 2026-09-15T17:35:47+00:00 from measured evidence. Machine-readable source: `docs/testing/test_inventory.json`.
 
 ## Scoring model (explainable, not vanity)
 
@@ -17,15 +17,18 @@ RuntimeEfficiency = measured aggregate worker-seconds (<=2s:1.0, <=10s:.9, <=60s
 
 ## Classification tally (481 test files)
 
-- **UNREVIEWED**: 396
-- **KEEP**: 55
-- **MERGE**: 8
-- **DELETED**: 6
-- **CONVERT-RUNTIME**: 5
-- **REWRITE**: 5
-- **PROMOTE-GATE**: 3
-- **PROMOTE-GATE-APPLIED**: 2
-- **DELETE-CHECK**: 1
+- **KEEP**: 205
+- **UNREVIEWED**: 153
+- **MERGE**: 39
+- **KEEP-PROMOTE**: 26
+- **DEMOTE**: 22
+- **PROMOTE-GATE**: 14
+- **REWRITE**: 8
+- **CONVERT-RUNTIME**: 7
+- **PROMOTE-GATE-APPLIED**: 7
+- **DELETED**: 5
+- **DELETE-CHECK**: 3
+- **DELETE**: 1
 
 ## Tier-1 cost outliers REMOVED from the PR gate (moved to Tier 2, evidence-driven)
 
@@ -63,6 +66,11 @@ tick integrity. Per-file defect statements: `docs/testing/critical_regressions.m
 | `tests/integration/test_engine_runtime_launch.py` | not a launch test (log+source grep), skips in CI, writes repo artifacts on failure; startup certification owned by scripts/ci/runtime_gate.py + test_runtime_gate_e2e |
 | `tests/unit/test_hist_sim_golden.py` | COLLECTION ERROR at origin/main: imports src/nexus_scalp/research/historical/bars.py which never existed on main (git log --all: no history). Test targets deleted functionality; breaks every full-suite run. |
 | `tests/integration/test_playwright_e2e.py` | fixed port 9091 + sleep-paced selectors; superseded by tests/e2e_client journeys wired to nightly-e2e. Moved to tests/manual/ (kept, never deleted without replacement proof) |
+| `tests/unit/test_forensic_monitoring_task11.py` | WAVE-2: 87 tests were merged into test_forensics.py (108 = 87+21, def-count superset verified via grep); file unmanifested anywhere; zero CR/bugs.md protection rows. The T1 anchor runs the union. |
+| `tests/unit/test_forensic_incident_center_task.py` | WAVE-2: 21 tests merged into test_forensics.py; same arithmetic; unmanifested; no CR row |
+| `tests/unit/test_incident_response_task12.py` | WAVE-2: 66 tests merged into test_incidents.py (92 = 66+26 verified); unmanifested; no CR row |
+| `tests/unit/test_incident_runtime_task13.py` | WAVE-2: 26 tests merged into test_incidents.py; unmanifested; no CR row |
+| `tests/unit/test_dead_letter_store_split.py` | WAVE-2: A4-refactor delegation mirror ('store owns table, facade delegates' = §12 implementation-detail); durable dead-letter behavior owned by dead_letter_retention_cap (T2 now) + native-failure salvage battery test_recon_batch_atomicity_real_failure; unmanifested, no CR row |
 
 ## Moved to explicit manual/nightly lanes (never deleted without replacement proof)
 
@@ -75,6 +83,7 @@ tick integrity. Per-file defect statements: `docs/testing/critical_regressions.m
 - `tests/unit/test_wsl2_platform_registry.py` — CRLF/eol hygiene -> pre-commit/CI lint; keep the docs-claim pin in docs lane
 - `tests/unit/test_agent16_hotpath_perf.py` — timing assertions flake under CI load; move to scheduled benchmark
 - `tests/cli/test_docs_consistency.py` — zero test_ functions -> silently collected nothing; main() moved to scripts/ci/check_docs_cli.py invoked by docs job
+- `tests/unit/test_gate_bypass_detection.py` — WAVE-2 fixture census: 5213 worker-seconds (11 full git-archive HEAD materializations + a check_local subprocess per test) — real behavior (gate-bypass detectability) so NOT deleted, but it belongs to the ci-gate-tooling lane, never a PR tier. Blessed-tree materialize-once optimization (~350s saving) is a follow-up rewrite.
 
 ## Rewrites required (kept in suite, defect noted; next wave)
 
@@ -98,7 +107,7 @@ tick integrity. Per-file defect statements: `docs/testing/critical_regressions.m
 
 ## UNREVIEWED remainder
 
-396 files carry machine facts only (no forensic verdict survived the
+153 files carry machine facts only (no forensic verdict survived the
 salvage). Policy: an UNREVIEWED file may NOT be deleted; it is tier-assigned by machine
 signals (subprocess/sleep/network -> Tier2+, else inherits directory default) and stays in
 the appropriate manifest. Completion of their judgment is the next wave's first task.

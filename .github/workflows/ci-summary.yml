@@ -1,0 +1,225 @@
+name: CI Final Summary (AI)
+
+# BUG-300 — THE VERY LAST WORD OF EVERY PIPELINE.
+# workflow_run fires AFTER each watched workflow finishes, so this job runs
+# at the absolute end of CI / release / security / OS-matrix / JS / docs /
+# dependency lanes. It collects the WHOLE-run evidence (jobs, failed steps,
+# junit/coverage from the ci-results artifact, PR diff + review state +
+# comments), sends it through the reachability-gated AI triage, and delivers
+# the verdict block three ways: Telegram, the run's step summary, and a
+# PR review comment (when the run belongs to a PR).
+#
+# Advisory by construction: permissions are read-only for repo content
+# (pull-requests: write only to comment), the job NEVER fails CI (it runs
+# after everything), and the AI lane degrades to deterministic rules when
+# AI_HOST/AI_KEY are absent, unreachable, or slow (see docs/
+# ci-telegram-operations.md §1a).
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_run:
+    workflows:
+      - "CI"
+      - "Release"
+      - "Security"
+      - "Tests (OS Matrix)"
+      - "JS Tests"
+      - "Docs"
+      - "Dependency Lock & Migration Safety"
+      - "Lockfile Diff"
+      - "OSV Dependency Scan"
+      - "Docker Build & Publish"
+      - "Nightly Deep QA"
+      - "Nightly Client E2E (Docker)"
+      - "QA Deep Assurance"
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: ci-summary-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  # Telegram feed (advisory; values never printed).
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  USER_ID: ${{ secrets.USER_ID }}
+  # BUG-300 AI triage endpoint (OpenAI-compatible); presence-gated.
+  AI_HOST: ${{ secrets.AI_HOST }}
+  AI_KEY: ${{ secrets.AI_KEY }}
+
+jobs:
+  final-summary:
+    name: AI Final Summary
+    if: ${{ github.event_name == 'workflow_run' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Resolve target run + PR
+        id: target
+        run: |
+          set +e
+          echo "run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          echo "workflow=${{ github.event.workflow_run.name }}" >> "$GITHUB_OUTPUT"
+          echo "conclusion=${{ github.event.workflow_run.conclusion }}" >> "$GITHUB_OUTPUT"
+          echo "event=${{ github.event.workflow_run.event }}" >> "$GITHUB_OUTPUT"
+          echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          echo "branch=${{ github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+          PR="${{ github.event.workflow_run.pull_requests[0].number }}"
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+
+      - name: Collect whole-run evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: ${{ steps.target.outputs.run_id }}
+          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
+          TARGET_EVENT: ${{ steps.target.outputs.event }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
+        run: |
+          set +e
+          mkdir -p ci-results/run-info
+          PYTHONPATH=src python scripts/ci/ci_summary.py \
+            --out ci-results/run-info/summary-evidence.json || true
+
+      - name: AI analysis -> Telegram block (reachability-gated, rules fallback)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: ${{ steps.target.outputs.run_id }}
+          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
+          TARGET_EVENT: ${{ steps.target.outputs.event }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
+        run: |
+          set +e
+          KIND=$(python - <<'PY' || echo ci-failure
+          import json, os
+          try:
+              print(json.load(open("ci-results/run-info/summary-evidence.json", encoding="utf-8")).get("kind", "ci-failure"))
+          except Exception:
+              print("ci-failure")
+          PY
+          )
+          PYTHONPATH=src python scripts/ci/telegram_notify.py --results ci-results \
+            ai-triage --kind "$KIND" \
+            --context ci-results/run-info/summary-evidence.json || true
+
+      - name: Write step summary (why failed / why succeeded / merge checks)
+        run: |
+          set +e
+          python - <<'PY' || true
+          import html, json, os
+          try:
+              art = json.load(open("ci-results/run-info/ai-analysis.json", encoding="utf-8"))
+          except Exception:
+              art = {}
+          run = ("${{ steps.target.outputs.workflow }}")
+          concl = ("${{ steps.target.outputs.conclusion }}")
+          sha = ("${{ steps.target.outputs.sha }}")[:10]
+          lines = [
+              f"## Final summary — {run} @ {sha} → `{concl}`",
+              f"- AI provenance: `{art.get('provenance','?')}` (model `{art.get('model') or 'n/a'}`)",
+              "",
+          ]
+          if art.get("text"):
+              lines.append("```text")
+              lines.append(str(art["text"])[:4000])
+              lines.append("```")
+          else:
+              lines.append("_No analysis produced (rules found nothing and AI unavailable)._")
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+          PY
+
+      - name: PR review comment (auto summary for the authors)
+        if: ${{ steps.target.outputs.pr != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
+          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
+          TARGET_CONCLUSION: ${{ steps.target.outputs.conclusion }}
+        run: |
+          set +e
+          python - <<'PY' || true
+          import json, os, subprocess
+          try:
+              art = json.load(open("ci-results/run-info/ai-analysis.json", encoding="utf-8"))
+          except Exception:
+              raise SystemExit(0)
+          text = (art.get("text") or "").strip()
+          if not text:
+              raise SystemExit(0)
+          run = os.environ.get("TARGET_WORKFLOW", "CI")
+          concl = os.environ.get("TARGET_CONCLUSION", "")
+          body = (
+              "**NSE final CI summary (AI, advisory — not a merge authorization)**\n\n"
+              f"Watched run: `{run}` → `{concl}` · provenance: `{art.get('provenance','?')}`\n\n"
+              + text
+          )
+          subprocess.run(
+              ["gh", "pr", "comment", os.environ["PR_NUMBER"], "--body", body],
+              timeout=60, check=False,
+          )
+          PY
+
+  event-feed:
+    name: Push/PR event feed
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Telegram push event summary + AI note
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p ci-results/run-info
+          python - <<'PY' || true
+          import json, os, subprocess, sys
+          ev = {}
+          try:
+              ev = json.load(open(os.environ.get("GITHUB_EVENT_PATH", ""), encoding="utf-8"))
+          except Exception:
+              pass
+          commits = ev.get("commits") or []
+          head = ev.get("head_commit") or {}
+          author = ((head.get("author") or {}).get("name")) or ""
+          msgs = "||".join((c.get("message") or "").splitlines()[0] for c in commits[:5])
+          subprocess.run([
+              sys.executable, "scripts/ci/telegram_notify.py", "--results", "ci-results",
+              "push", "--author", author, "--commits", str(len(commits)),
+              "--latest", (ev.get("after") or os.environ.get("GITHUB_SHA", ""))[:10],
+              "--messages", msgs,
+          ], timeout=120, check=False)
+          json.dump({"kind": "push-summary", "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+                     "branch": os.environ.get("GITHUB_REF_NAME", ""),
+                     "commits": [{"sha": (c.get("id") or "")[:10],
+                                  "message": ((c.get("message") or "").splitlines() or [""])[0][:160],
+                                  "author": ((c.get("author") or {}).get("name")) or "",
+                                  "added": len(c.get("added") or []), "removed": len(c.get("removed") or [])}
+                                 for c in commits[:20]]},
+                    open("ci-results/run-info/summary-evidence.json", "w", encoding="utf-8"),
+                    indent=2, sort_keys=True)
+          PY
+          PYTHONPATH=src python scripts/ci/telegram_notify.py --results ci-results             ai-triage --kind push-summary             --context ci-results/run-info/summary-evidence.json || true

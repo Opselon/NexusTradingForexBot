@@ -38,6 +38,59 @@ Separation of concerns (spec §20):
 - **Retry/timeout** — bounded, exponential backoff, 429 Retry-After
 - **Audit** — structured logs + health_state() on the notifier
 
+## 1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline
+
+`.github/workflows/ci-summary.yml` (workflow_run @ completed) fires AFTER
+each watched pipeline (CI, Release, Security, OS matrix, JS, Docs,
+dependency lanes, OSV, nightlies) — the absolute last job of the run.
+It is the ONLY consumer of `AI_HOST`/`AI_KEY`.
+
+Per run it: (1) `scripts/ci/ci_summary.py` collects WHOLE-run evidence —
+run conclusion, job/step verdicts, junit + coverage from the ci-results
+artifact, PR diff stats + mergeable + review decision + recent comments,
+touched lanes via classify_changes; (2) `telegram_notify.py ai-triage`
+(analyzed in src/nexus_scalp/observability/ci_ai_triage.py) renders the
+verdict block; (3) it is delivered THREE ways: Telegram message, the run's
+GitHub step summary, and an automatic PR review comment (advisory, clearly
+labeled not-a-merge-authorization). `ci-results/run-info/ai-analysis.json`
+rides the artifact for audit.
+
+The pro prompt charter (see `_SYSTEM`/`PROMPTS` in ci_ai_triage.py) forces
+a six-line analyst report on every event: WHY (failed or succeeded),
+EVIDENCE, VERDICT (GOOD-TO-MERGE / MERGE-AFTER-FIX / DO-NOT-MERGE /
+INVESTIGATE), RISK (is it a good idea: safety boundaries, tests,
+registries), CHECK (ordered next actions), COMMENT (paste-ready for the
+author), CONFIDENCE. The model is told the repo taxonomy (lock drift,
+ruff-format blocking, stale-base phantom reds, release_auth_gate, review +
+Validate-documentation requirements, fail-closed money paths).
+
+Flow (src/nexus_scalp/observability/ci_ai_triage.py):
+
+1. CONFIG GATE — `AI_HOST`+`AI_KEY` secrets must be present (names in
+   `docs/ci-secrets.md`), else provenance `AI_UNCONFIGURED` + rules fallback.
+2. REACHABILITY GATE (the timer) — TCP connect phase capped 2 s
+   (`AI_PROBE_CONNECT_SEC`), full `/models` response budget 4 s
+   (`AI_PROBE_TIMEOUT_SEC`); slower-than-2.5 s = `SLOW_OK` (one attempt,
+   then circuit holds for the process). Verdict cached 120 s per host so N
+   notifies pay the probe once. Down/timeout => `AI_UNREACHABLE` + fallback.
+3. COMPLETION — per-kind pro prompts (`PROMPTS` dict) under a strict analyst
+   system charter; host model defaults `coding`, override `AI_MODEL`.
+   Failure/empty => `AI_CHAT_FAILED` + fallback.
+4. FALLBACK RULES — deterministic pattern table (lock drift, ruff-format
+   blocking, CRLF noise, rate-limit, stale-base conflict, CodeQL class,
+   auth bootstrap, BUG-298 provisioning, runner timeout/OOM, network flake).
+   Always delivered; silence only as `AI_RULES_EMPTY` (visible on channel).
+
+Kinds: `ci-failure` (ci/tests-os/js on failure), `release-failure`
+(release gates + nightly-qa), `security` (Trivy lane), `pr-analysis`
+(every PR: `scripts/ci/pr_evidence.py` bundle = changed files/lanes/commits —
+this is the automatic new-commit PR summary), `push-summary` (push events).
+
+Security posture: outbound evidence passes `redact_secrets` + literal
+scrub of AI_KEY/bot token/GITHUB_TOKEN before the host sees it; model output
+is HTML-escaped (untrusted content); advisory-only — the step is
+`continue-on-error` + `|| true`, CI verdicts never depend on the AI.
+
 ## 2. Configuration (chat id)
 
 Required secrets (repository scope: **Settings > Secrets and variables >

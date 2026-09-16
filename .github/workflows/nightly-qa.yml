@@ -206,3 +206,5 @@ jobs:
             --error-class "NIGHTLY_FAILURE" \
             --error-detail "slow-suite=${{ needs.slow-suite.result }} chaos=${{ needs.lifecycle-chaos.result }} mutations=${{ needs.mutation-campaign.result }} ref=${{ github.ref_name }} sha=${{ github.sha }}" \
             || true
+          # BUG-300: rule/AI analysis rides the release-failure notification;
+          # the ci-summary.yml workflow_run lane adds the full final block.

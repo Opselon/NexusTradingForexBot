@@ -28,7 +28,7 @@
 | CR-010 | Breaker budget laundered across restart (same-day breach cleared) | risk | persist anchors, restart, re-evaluate | `test_bug259_breaker_anchor_restart.py`, `test_risk_circuit_breakers.py` | P0 | T1 |
 | CR-011 | Circuit breaker dead on the primary dispatch path (SAFE_MODE never fed) | execution | 3 consecutive broker refusals | `test_agent11_execution_risk_forensic.py` (BUG-241), `test_agent12_execution_forensic.py::TestAgent12SafeMode` | P0 | T1 |
 | CR-012 | Web `/api/positions/close` called the adapter directly (only risk-bypass surface) | web/execution | close via API vs manager audit rows | `test_agent11_execution_risk_forensic.py` (BUG-242) | P0 | T1 |
-| CR-013 | PAPER engine ran with LIVE adapter / persisted LIVE beat explicit PAPER override at boot | mode isolation | mode_override vs settings DB precedence | `test_packaged_db_and_mode_bug146_149.py`, `test_bug232_mode_boundary.py`, `test_system_integration_boundaries.py` | P0 | T1 |
+| CR-013 | PAPER engine ran with LIVE adapter / persisted LIVE beat explicit PAPER override at boot | mode isolation | mode_override vs settings DB precedence | `test_bug232_mode_boundary.py`, `test_system_integration_boundaries.py`; `test_packaged_db_and_mode_bug146_149.py` PENDING rewrite (order-dependent boot vs LEGACY_UNVERIFIED artifact — see TEST_ARCHITECTURE wave2_findings; not a coverage hole, the two manifested owners carry it) | P0 | T1 |
 | CR-014 | Replay toggle flipped a PAPER engine to LIVE (historic defect class) | mode isolation | REPLAY off restores PRIOR mode, never LIVE | `test_replay_toggle_guard.py` | P0 | T1 |
 | CR-015 | Shadow observations executed against the broker | shadow isolation | SHADOW mode decision → zero order_send | `test_shadow70_safety.py`, `test_shadow_phase11.py`; mutation anchor MUT-SHADOW-BOUNDARY | P0 | T1 |
 | CR-016 | Paper data trained a production-eligible model (lineage laundering) | model provenance | PAPER/UNKNOWN lineage → promotion ineligible | `test_paper_live_training_lineage.py`, `test_bug226_paper_provenance.py` | P0 | T1 |
@@ -51,7 +51,7 @@
 | CR-033 | Pending churn-lock: re-quote storm without the 30s+1×ATR AND-gate; stale cache stuck exposure gate open | execution/pending | both legs isolated (this reconstruction's gap) | `test_recon_requote_and_reconcile.py` (mutation-KILLED) | P0 | T1 |
 | CR-034 | News out-of-range state poisoned the 70D vector / silently clamped LIMIT truncated training frames | news/70D | [-3,3] bounds; truncation warnings | `test_bug217_news_state_bounds.py` (T1), `test_news_db_truncation_honesty.py` (T2) | P1 | T1/T2 |
 | CR-035 | `persist=False` ignored: quality-rejected candidate overwrote the artifact (BUG-228) | model gen | early-exit paths never re-persist | `test_rejected_candidate_not_persisted.py`, `test_p0_producer_regression.py` | P0 | T1 |
-| CR-036 | Test harness wrote the production champion artifact/registry (BUG-276 wave) | harness safety | sandboxed artifact root assertions | `test_bug276_test_harness_artifact_isolation.py` (wave branch), `test_lifecycle_chaos.py` | P1 | T2 |
+| CR-036 | Test harness wrote the production champion artifact/registry (BUG-276 wave) | harness safety | sandboxed artifact root assertions | `test_bug278_test_harness_artifact_isolation.py` (landed name; T1), `test_lifecycle_chaos.py` (nightly chaos, unmanifested script battery) | P1 | T1 + nightly |
 
 ## Standing rules
 
