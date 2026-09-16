@@ -381,3 +381,15 @@ tests/unit/test_bug294_bounded_runtime_behavior.py
 # sqlite3.connect per call on the loop thread and bypassed the repository's URI contract.
 # Now one reused handle per (thread, timeout tier) through _connect_sqlite.
 tests/unit/test_bug297_evaluator_hot_path_reads.py
+
+# BUG-298 (packaged fresh-install START crash + first-run model acquisition,
+# 2026-09-16): a clean GitHub-release install died on launch with
+# ArtifactIntegrityError LOAD_REJECTED (model.pt missing) -> PYI abort, because
+# nothing provisioned a serving bundle for an INSTALLED release and no release
+# gate ever launched the built EXE in a start shape. Adds the model_provisioning
+# package (PATH A signed official download / PATH B local training), packaged
+# workspace+configs anchoring, the labeled DEV STARTER fallback, and the
+# blocking fresh-install START smoke in release.yml.
+tests/unit/test_bug298_fresh_install_bootstrap.py
+tests/unit/test_bug298_model_provisioning.py
+tests/unit/test_bug298_provisioning_web_api.py

@@ -3,7 +3,7 @@
 WHERE/WHY: ``nexus start`` (PAPER default, LIVE needs explicit confirmation —
 safety contract sections 17/31/59), the BUG-170 atomic-pidfile daemon spawn
 (O_EXCL claim + loser grace window, BUG-179), the migration-gated engine
-construction (_run_engine: DB gate → adapter selection → LiveEngine), the
+construction (_run_engine: DB gate -> adapter selection -> LiveEngine), the
 uvicorn co-boot (_start_web_and_engine, BUG-147 port probe) and the pidfile-based
 stop/restart/run legacy-parity commands. Extracted verbatim from cli/main.py
 (CHG-0032 Step 1).
@@ -382,6 +382,24 @@ def _spawn_daemon(cmd: list[str]) -> None:
 def _run_engine(
     cfg: AppConfig, *, gateway: bool, port: int, mode_override: ExecutionMode | None = None
 ) -> None:
+    # BUG-293: packaged launches must first anchor the runtime workspace
+    # (double-click CWD is arbitrary) and mirror bundled configs into
+    # <root>/configs so canonical consumers (execution_assumptions.json)
+    # resolve. Source runs: both are no-ops. Failure-isolated — an anchoring
+    # fault must never block the migration gate below (it surfaces honestly
+    # via health instead).
+    try:
+        from nexus_scalp.release import bootstrap as rboot
+
+        rboot.anchor_workspace()
+        rboot.ensure_packaged_config_dir()
+    except Exception as anchor_err:  # pragma: no cover - defensive
+        console.print(
+            Panel(
+                f"[yellow]Workspace anchoring skipped[/yellow]\n[dim]{anchor_err}[/dim]",
+                border_style="yellow",
+            )
+        )
     # TASK-10 startup migration gate: apply safe pending schema migrations
     # BEFORE the engine enters READY (§6/§7). Same canonical engine as `nexus db`.
     try:
@@ -421,6 +439,65 @@ def _run_engine(
             )
         )
         raise typer.Exit(xc.EXIT_RUNTIME) from None
+    # BUG-293 FIRST-RUN MODEL GATE (redesign, operator directive 2026-09-16):
+    # a clean install acquires a serving model through the provisioning
+    # service — PAPER prefers the signed OFFICIAL bundle (PATH A) when the
+    # operator hosts one, falls back to the explicitly-labeled DEV STARTER
+    # for offline boots (never presented as production), and SHADOW/LIVE are
+    # REFUSED without a real verified bundle (starter or silent mint never
+    # serves live-money paths). Serving gates are never relaxed.
+    _eff_mode = mode_override if mode_override is not None else cfg.execution.mode
+    if _eff_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW):
+        try:
+            from nexus_scalp.model_provisioning import FirstRunCoordinator
+
+            coordinator = FirstRunCoordinator()
+            outcome = coordinator.ensure_serving_model(_eff_mode.value.lower())
+            action = outcome.get("action", "")
+            if action == "refuse":
+                console.print(
+                    _error_panel(
+                        "No verified serving model",
+                        f"{outcome.get('reason', '')} — slot: {outcome.get('state', '')} "
+                        f"{outcome.get('detail', '')}",
+                        hint="Run: NexusScalpEngine.exe setup (download official model "
+                        "or train your own), then retry",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+                raise typer.Exit(xc.EXIT_RUNTIME) from None
+            if action == "official":
+                console.print(
+                    _success_panel(
+                        "Official Nexus model installed",
+                        f"bundle {outcome.get('bundle_id', '')} — signature + SHA256 + "
+                        "schema + integrity verified",
+                    )
+                )
+            elif action == "starter":
+                if outcome.get("provisioned"):
+                    console.print(
+                        Panel(
+                            "[bold yellow]OFFLINE DEV STARTER installed[/bold yellow]\n"
+                            "This is a deterministic trained starter for FIRST-RUN SIMULATION "
+                            "ONLY - explicitly NOT your production model.\n"
+                            "Replace it with [bold]Setup / Download Official Nexus Model[/bold] "
+                            "or [bold]Setup / Train My Own[/bold] (nexus setup).",
+                            border_style="yellow",
+                        )
+                    )
+        except typer.Exit:
+            raise
+        except Exception as prov_err:
+            console.print(
+                _error_panel(
+                    "Serving model unavailable",
+                    str(prov_err),
+                    hint="Run `nexus model-provision --status` for details, or `nexus setup`",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
     # Heavy engine imports are local so the slim onefile CLI (which excludes
     # torch/polars/MetaTrader5) never pays for them unless actually starting.
     try:
