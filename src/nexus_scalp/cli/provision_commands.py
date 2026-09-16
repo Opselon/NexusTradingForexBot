@@ -262,45 +262,72 @@ def official_main(*, base_url: str = "", json_mode: bool = False) -> None:
 # ---------------------------------------------------------------------------
 @app.command("model-train-local")
 def model_train_local_cmd(
-    input_file: Path = typer.Option(
-        Path(""),
+    input_file: Path | None = typer.Option(
+        None,
         "--input",
         "-i",
-        help="Broker export to train on: CSV or Parquet (OHLCV, MT5 columns accepted).",
+        help="Your XAUUSD M1 CSV/TXT/Parquet export; required for unattended file source.",
     ),
-    symbol: str = typer.Option("XAUUSD", "--symbol", help="Symbol label (recorded in provenance)."),
+    source: str = typer.Option(
+        "file",
+        "--source",
+        help="file | broker. Broker reads the logged-in local MT5 terminal; no paper/synthetic fallback.",
+    ),
+    symbol: str = typer.Option("XAUUSD", "--symbol", help="Only XAUUSD is supported."),
+    timeframe: str = typer.Option("M1", "--timeframe", help="Only closed M1 candles are accepted."),
     candles: int = typer.Option(
         0,
         "--candles",
-        help="Candles to use (0 = all detected). Chronological TAIL — most "
-        "recent N bars; presets offered: 1,000 / 10,000 / 50,000 / all.",
+        help="File: 0 = all, or >=3000 most recent candles. Broker: explicit 3000..100000; insufficient history fails.",
     ),
-    folds: int = typer.Option(6, "--folds"),
-    epochs: int = typer.Option(4, "--epochs"),
+    folds: int = typer.Option(6, "--folds", min=2, help="Purged chronological walk-forward folds."),
+    epochs: int = typer.Option(4, "--epochs", min=1, help="Training epochs per fold."),
     backend: str = typer.Option(
         "",
         "--backend",
-        help="Training backend: cpu | cuda (default: auto = NVIDIA GPU "
-        "detected ? cuda : cpu). cuda trains on the GPU with a real CUDA "
-        "allocation smoke test; cpu uses the pinned CPU build.",
+        help="cpu | cuda; auto uses detected NVIDIA GPU. READY requires exact pins and a real tensor/CUDA test.",
+    ),
+    prepare_environment: bool = typer.Option(
+        False,
+        "--prepare-environment",
+        help="Consent to prepare the managed environment and download required pinned packages if needed. Required for unattended first setup; interactive use prompts.",
     ),
     install: bool = typer.Option(
         True,
         "--install/--no-install",
-        help="Install into the serving slot when it is empty or starter-only "
-        "(a governed/official bundle is never displaced — use promotion).",
+        help="Install verified candidate over empty/DEV STARTER only; never replaces a governed champion. --no-install keeps the candidate.",
     ),
-    json_mode: bool = typer.Option(False, "--json"),
+    json_mode: bool = typer.Option(
+        False,
+        "--json",
+        help="One final JSON payload on stdout; no prompts. Progress/logs go to stderr.",
+    ),
 ) -> None:
-    """PATH B — train a model locally from YOUR broker export.
+    """Train on YOUR real data; no uploads or silent synthetic history.
 
-    Your data is read and processed LOCALLY only — no uploads, no telemetry
-    with market data, no cloud training. Progress and metrics are the
-    engine's real measurements (never synthesized). The trained bundle is
-    installed as a USER-TRAINED serving model only over an empty/starter
-    slot; otherwise it remains a local candidate for governed promotion."""
+    Package preparation requires --prepare-environment or interactive consent.
+    The same manager verifies and launches its READY interpreter automatically,
+    including from the EXE. No Python found? Install a supported 64-bit Python
+    from python.org, then re-check model-train-env. The EXE and Official Download
+    need no separate training Python.
+
+    CPU is supported; CUDA needs compatible NVIDIA hardware/driver and the
+    pinned CUDA wheel (a system CUDA toolkit is normally unnecessary). Progress
+    shows actual candles/features/epochs/loss/val_loss and measured ETA when
+    available. Ctrl+C requests cooperative cancellation; wait for the
+    provider/worker boundary. Training completion is NOT governed promotion.
+
+    Examples:
+      nexus model-train-local --input C:/data/XAUUSD_M1.csv --backend cpu --prepare-environment
+      nexus model-train-local --source broker --candles 50000 --backend cuda --prepare-environment
+      nexus model-train-local --input bars.parquet --candles 10000 --no-install --prepare-environment --json
+
+    See docs/TRAINING_SETUP.md for formats, blockers and model governance.
+    """
     train_local_main(
         input_file=input_file,
+        source=source,
+        timeframe=timeframe,
         candles=candles,
         folds=folds,
         epochs=epochs,
@@ -308,6 +335,7 @@ def model_train_local_cmd(
         json_mode=json_mode,
         symbol=symbol,
         backend=backend,
+        prepare_environment=prepare_environment,
     )
 
 
@@ -321,116 +349,160 @@ def train_local_main(
     json_mode: bool = False,
     symbol: str = "XAUUSD",
     backend: str = "",
+    source: str = "file",
+    timeframe: str = "M1",
+    prepare_environment: bool = False,
 ) -> None:
-    from nexus_scalp.model_provisioning.pipeline import train_local_model
-    from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
+    import contextlib
+    import json
+    import signal
+    import sys
 
-    # TRAINING ENV GATE (BUG-301): discovery-only status first; training may
-    # not start unless the resolved environment is READY IN THIS PROCESS.
-    # Provisioning is the separate explicit `model-train-env install` action.
-    manager = TrainingEnvironmentManager()
-    gate_backend = (backend or "").strip().lower() or None
-    if gate_backend not in (None, "cpu", "cuda"):
-        msg = f"invalid --backend {backend!r} (accepted: cpu | cuda)"
+    from nexus_scalp.model_provisioning.dataset_source import (
+        DatasetSourceError,
+        prepare_training_dataset,
+        validate_dataset_request,
+    )
+    from nexus_scalp.model_provisioning.pipeline import (
+        TrainingCancelledError,
+        TrainingRequest,
+        train_local_model,
+    )
+    from nexus_scalp.model_provisioning.training_env import (
+        TrainingEnvironmentError,
+        TrainingEnvironmentManager,
+    )
+    from nexus_scalp.release.paths import get_runtime_workspace
+
+    def fail(error: str, code: int, **details: Any) -> None:
         if json_mode:
-            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+            _emit({"error": error, "exit_code": code, **details}, True)
         else:
-            console.print(_error_panel("Invalid backend", msg, exit_code=xc.EXIT_USAGE))
-        raise typer.Exit(xc.EXIT_USAGE) from None
-    gate = manager.status(backend=gate_backend)
-    if not gate.training_ready or not gate.in_process_ready:
-        if not json_mode:
-            console.print(_env_checklist_panel(gate))
-        payload = {
-            "error": "TRAINING_ENV_BLOCKED" if not gate.training_ready else "TRAINING_ENV_MISMATCH",
-            "report": gate.as_dict(),
-            "exit_code": xc.EXIT_ENVIRONMENT,
-        }
-        if json_mode:
-            _emit(payload, True)
-        raise typer.Exit(xc.EXIT_ENVIRONMENT) from None
-
-    if input_file is None or not Path(input_file).exists():
-        try:
-            raw = typer.prompt("Path to your broker export (CSV/Parquet)")
-        except (typer.Abort, EOFError):
-            raise typer.Exit(xc.EXIT_USAGE) from None
-        input_file = Path(raw.strip().strip('"'))
-    if not Path(input_file).exists():
-        msg = f"input file not found: {input_file}"
-        if json_mode:
-            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
-        else:
-            console.print(_error_panel("Input missing", msg, exit_code=xc.EXIT_USAGE))
-        raise typer.Exit(xc.EXIT_USAGE) from None
-
-    candles_sel: int | None = candles or None
-    if not json_mode and candles == 0:
-        console.print(
-            PanelBox(
-                "How many candles should training use?\n"
-                "  [1] 1,000   (quick smoke — evidence only)\n"
-                "  [2] 10,000  (~1 week of M1)\n"
-                "  [3] 50,000  (~5 weeks of M1)\n"
-                "  [4] ALL detected\n"
-                "Selection takes the MOST RECENT N bars (chronological tail — "
-                "time-series never take random rows)."
+            console.print(
+                _error_panel(
+                    "Training not started", error, hint=details.get("remedy", ""), exit_code=code
+                )
             )
-        )
-        pick = typer.prompt("Choice [1/2/3/4]", default="3")
-        candles_sel = {"1": 1_000, "2": 10_000, "3": 50_000}.get(pick.strip(), None)
+        raise typer.Exit(code)
 
-    from nexus_scalp.model_provisioning import TrainingRequest
+    interactive = not json_mode and sys.stdin.isatty()
+    gate_backend = backend.strip().lower() or None
+    if gate_backend not in (None, "cpu", "cuda"):
+        fail("invalid --backend (accepted: cpu | cuda)", xc.EXIT_USAGE)
+    if type(folds) is not int or folds < 2 or type(epochs) is not int or epochs < 1:
+        fail("folds must be >=2 and epochs >=1", xc.EXIT_USAGE)
+    if source == "file" and input_file is None and interactive:
+        input_file = Path(
+            typer.prompt("Path to your XAUUSD M1 broker export (CSV/TXT/Parquet)")
+            .strip()
+            .strip('"')
+        )
+    selected = None if candles == 0 else candles
+    try:
+        validate_dataset_request(
+            source=source,
+            source_file=input_file,
+            symbol=symbol,
+            timeframe=timeframe,
+            candles=selected,
+        )
+    except DatasetSourceError as exc:
+        fail(str(exc), xc.EXIT_USAGE)
 
     cancel = threading.Event()
-    request = TrainingRequest(
-        source_file=Path(input_file),
-        candles=candles_sel,
-        folds=folds,
-        epochs=epochs,
-        install=install,
-        cancel_event=cancel,
-        backend=gate_backend,
-    )
-
+    previous_handler: Any = None
+    handler_installed = False
     started = time.monotonic()
 
-    def _cb(ev: Any) -> None:
+    def callback(event: Any) -> None:
+        payload: dict[str, Any] = (
+            {"stage": "environment", "status": "progress", "message": event}
+            if isinstance(event, str)
+            else event
+            if isinstance(event, dict)
+            else event.as_dict()
+        )
         if json_mode:
-            return  # JSON contract emits ONE payload at the end
-        frac = "" if ev.fraction is None else f" [{ev.fraction * 100:4.1f}%]"
-        style = {"failed": "red", "cancelled": "yellow"}.get(ev.status, "cyan")
-        console.print(f"[{style}]{ev.stage}:{ev.status}{frac}[/] {ev.message}")
-        m = ev.metrics or {}
-        if m.get("epoch") is not None:
+            print(json.dumps(payload, default=str), file=sys.stderr)
+            return
+        console.print(
+            f"{payload.get('stage', 'environment')}:{payload.get('status', '')} {payload.get('message', '')}"
+        )
+        metrics: dict[str, Any] = dict(payload.get("metrics") or {})
+        if metrics:
             console.print(
-                f"    epoch {m.get('epoch')}/{m.get('epochs', '?')}  "
-                f"loss {m.get('loss', '—')}  val_loss {m.get('val_loss', '—')}  "
-                f"elapsed {time.monotonic() - started:.0f}s"
+                "    "
+                + "  ".join(f"{key}={value}" for key, value in metrics.items() if value is not None)
             )
 
-    _gpu = (gate.gpu or {}).get("name")
-    console.print(
-        PanelBox(
-            f"training locally (symbol={symbol}) — backend: "
-            f"{'CUDA ' + str(_gpu) if gate.backend == 'cuda' and _gpu else 'CPU'} · "
-            "NO market data leaves this machine"
-        )
-    )
-    result = train_local_model(request, progress=_cb)
+    def interrupt(signum: int, frame: Any) -> None:
+        cancel.set()
+        print("Cancellation requested; waiting for the active operation boundary.", file=sys.stderr)
+
+    if threading.current_thread() is threading.main_thread():
+        previous_handler = signal.signal(signal.SIGINT, interrupt)
+        handler_installed = True
+    try:
+        manager = TrainingEnvironmentManager(workspace=get_runtime_workspace())
+        with contextlib.redirect_stdout(sys.stderr) if json_mode else contextlib.nullcontext():
+            gate = manager.status(backend=gate_backend)
+            if not gate.training_ready and not prepare_environment and interactive:
+                console.print(_env_checklist_panel(gate))
+                prepare_environment = typer.confirm(
+                    "Prepare required training packages now? This downloads the pinned stack into a managed environment",
+                    default=False,
+                )
+            if not gate.training_ready and prepare_environment and not cancel.is_set():
+                gate = manager.install(backend=gate_backend, progress=callback)
+        if cancel.is_set():
+            raise TrainingCancelledError()
+        if not gate.training_ready:
+            if not json_mode:
+                console.print(_env_checklist_panel(gate))
+            fail(
+                "TRAINING_ENV_BLOCKED",
+                xc.EXIT_ENVIRONMENT,
+                report=gate.as_dict(),
+                remedy="Use --prepare-environment to authorize package preparation, or fix the reported checks and retry. No Python: install supported 64-bit Python from python.org and re-check.",
+            )
+
+        # Only a validated file crosses to the managed worker, never an adapter.
+        with contextlib.redirect_stdout(sys.stderr) if json_mode else contextlib.nullcontext():
+            prepared = prepare_training_dataset(
+                source=source,
+                source_file=input_file,
+                symbol=symbol,
+                timeframe=timeframe,
+                candles=selected,
+                progress=callback,
+                cancel_event=cancel,
+            )
+            request = TrainingRequest(
+                source_file=prepared,
+                candles=selected,
+                folds=folds,
+                epochs=epochs,
+                install=install,
+                cancel_event=cancel,
+                backend=gate.backend,
+            )
+            result = train_local_model(request, progress=callback)
+    except TrainingEnvironmentError as exc:
+        fail(exc.code.value, xc.EXIT_ENVIRONMENT, detail=exc.detail, remedy=exc.remedy)
+    except DatasetSourceError as exc:
+        fail(str(exc), xc.EXIT_USAGE if source == "file" else xc.EXIT_ENVIRONMENT)
+    except (TrainingCancelledError, KeyboardInterrupt):
+        result = {"outcome": "CANCELLED", "reason": "operator cancellation; no new model installed"}
+    finally:
+        if handler_installed:
+            signal.signal(signal.SIGINT, previous_handler)
     if json_mode:
         _emit(result, True)
     else:
         console.print(
-            f"\n[bold]outcome: {result.get('outcome')}[/bold]  "
-            f"candidate: {result.get('candidate_model', '')}"
-            + (
-                f"\ninstalled to: {result.get('serving_path', '')}"
-                if result.get("installed")
-                else ""
-            )
-            + (f"\n{result.get('reason') or result.get('install_skipped') or ''}")
+            f"outcome: {result.get('outcome')}  elapsed: {time.monotonic() - started:.0f}s"
         )
+        console.print(result.get("reason") or result.get("candidate_model") or "")
     ok = result.get("outcome") in ("INSTALLED", "CANDIDATE")
     raise typer.Exit(xc.EXIT_OK if ok else xc.EXIT_RUNTIME)
 
@@ -446,27 +518,28 @@ def train_once_cmd(
     folds: int = typer.Option(6, "--folds"),
     epochs: int = typer.Option(4, "--epochs"),
     install: bool = typer.Option(True, "--install/--no-install"),
+    prepare_environment: bool = typer.Option(
+        False, "--prepare-environment", help="Consent to prepare required training packages."
+    ),
+    backend: str = typer.Option("", "--backend", help="cpu | cuda"),
     json_mode: bool = typer.Option(False, "--json"),
 ) -> None:
-    """DEPRECATED alias of model-train-local using the live MT5 terminal as
-    the data source (download to parquet, then the SAME local pipeline)."""
+    """DEPRECATED alias of model-train-local --source broker (download to a validated CSV, then the SAME local pipeline)."""
     console.print(
-        "[yellow]train-once is deprecated — use `nexus model-train-local` "
-        "(and `data-fetch` if you need the MT5 terminal export)[/yellow]"
+        "[yellow]train-once is deprecated — use `nexus model-train-local --source broker`[/yellow]"
     )
-    bars_path = Path(f"data/raw/{symbol.upper()}_{timeframe.upper()}.parquet")
-    if not bars_path.exists():
-        data_fetch_into(
-            bars_path, symbol=symbol, timeframe=timeframe, count=bars, json_mode=json_mode
-        )
     train_local_main(
-        input_file=bars_path,
+        input_file=None,
         candles=bars,
         folds=folds,
         epochs=epochs,
         install=install,
         json_mode=json_mode,
         symbol=symbol,
+        timeframe=timeframe,
+        backend=backend,
+        source="broker",
+        prepare_environment=prepare_environment,
     )
 
 
@@ -625,8 +698,9 @@ def model_train_env_cmd(
         TrainingEnvironmentError,
         TrainingEnvironmentManager,
     )
+    from nexus_scalp.release.paths import get_runtime_workspace
 
-    manager = TrainingEnvironmentManager()
+    manager = TrainingEnvironmentManager(workspace=get_runtime_workspace())
     try:
         be = backend or None
         if install:

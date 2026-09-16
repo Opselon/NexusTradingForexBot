@@ -271,6 +271,8 @@ class WalkForwardTrainer:
         # mid-batch, so a cancel leaves the artifact path untouched).
         progress_cb: Any | None = None,
         cancel_event: Any | None = None,
+        # None retains historical auto-selection; explicit requests never fall back.
+        backend: str | None = None,
     ) -> None:
         self.num_folds = int(num_folds)
         self.train_ratio = float(train_ratio)
@@ -404,7 +406,13 @@ class WalkForwardTrainer:
         # ONLINE profile (the only mode that used it in practice at the old
         # default). New code must read the profile fields explicitly.
         self.time_decay_half_life_bars = self.time_decay_online_half_life_bars
-        if torch.cuda.is_available():
+        if backend is not None:
+            if backend not in ("cpu", "cuda"):
+                raise ValueError(f"backend must be 'cpu', 'cuda', or None, got {backend!r}")
+            if backend == "cuda" and not torch.cuda.is_available():
+                raise RuntimeError("CUDA backend requested but torch.cuda.is_available() is false")
+            self.device = torch.device(backend)
+        elif torch.cuda.is_available():
             self.device = torch.device("cuda")
         elif torch.backends.mps.is_available():
             self.device = torch.device("mps")
@@ -709,6 +717,14 @@ class WalkForwardTrainer:
             fold_train_losses: list[float] = []
             fold_val_losses: list[float] = []
             _fold_t0 = time.monotonic()
+            self._emit_stage_progress(
+                "train",
+                "running",
+                phase="walk_forward",
+                fold=fold + 1,
+                folds=self.num_folds,
+                device=str(self.device),
+            )
             for _epoch in range(self.epochs):
                 self._check_cancelled()
                 train_loss = self._train_one_epoch(model, train_loader, optimizer, criterion)
@@ -751,7 +767,18 @@ class WalkForwardTrainer:
             )
             if best_state is not None:
                 model.load_state_dict(best_state)
+            self._emit_stage_progress(
+                "validation", "running", phase="oos", fold=fold + 1, folds=self.num_folds
+            )
             fold_preds = self._predict_classes(model, test_loader)
+            self._emit_stage_progress(
+                "validation",
+                "done",
+                phase="oos",
+                fold=fold + 1,
+                folds=self.num_folds,
+                samples=len(fold_preds),
+            )
             oos_predictions.extend(fold_preds)
             oos_targets.extend(y_test[: len(fold_preds)].tolist())
             fold_sharpe_proxy = self._calculate_fold_sharpe_proxy(
@@ -823,9 +850,24 @@ class WalkForwardTrainer:
             final_optimizer,
             T_max=self.epochs,
         )
+        _final_t0 = time.monotonic()
+        self._emit_stage_progress("train", "running", phase="final_fit", device=str(self.device))
         for _epoch in range(self.epochs):
-            self._train_one_epoch(final_model, full_loader, final_optimizer, final_criterion)
+            self._check_cancelled()
+            final_loss = self._train_one_epoch(
+                final_model, full_loader, final_optimizer, final_criterion
+            )
             final_scheduler.step()
+            self._emit_stage_progress(
+                "train",
+                "running",
+                phase="final_fit",
+                epoch=_epoch + 1,
+                epochs=self.epochs,
+                loss=float(final_loss),
+                elapsed_sec=round(time.monotonic() - _final_t0, 2),
+            )
+        self._emit_stage_progress("train", "done", phase="final_fit")
         # ECON v1 convergence metadata: persisted on the trainer + stamped into
         # the bundle manifest so promotion can judge whether the model actually
         # converged, overfit, collapsed, or never learned.
@@ -897,6 +939,7 @@ class WalkForwardTrainer:
         # writes the binding manifest, then commits the bundle. Per-file
         # publishes into the target directory are no longer the publication
         # mechanism — consumers can never observe a partially-written bundle.
+        self._check_cancelled()
         self._publish_candidate_bundle(final_model, full_scaler, feature_cols, lineage_origin)
         logger.info(
             "Production training complete",
@@ -1792,6 +1835,14 @@ class WalkForwardTrainer:
         ev = self._cancel_event
         if ev is not None and bool(ev.is_set()):
             raise TrainingCancelledError("walk-forward training cancelled by operator")
+
+    def _emit_stage_progress(self, stage: str, status: str, **facts: Any) -> None:
+        """Report actual work boundaries; never infer completion or an ETA."""
+        if self._progress_cb is not None:
+            try:
+                self._progress_cb({"stage": stage, "status": status, **facts})
+            except Exception as exc:  # a UI fault must never break training
+                logger.warning("training progress_cb failed (ignored): %s", exc)
 
     def _emit_epoch_progress(
         self, *, fold: int, epoch: int, loss: float, val_loss: float, elapsed_sec: float

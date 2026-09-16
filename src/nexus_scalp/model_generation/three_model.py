@@ -159,6 +159,7 @@ def train_variant(
     output_dir: str | Path | None = None,
     progress_cb: Any | None = None,
     cancel_event: Any | None = None,
+    backend: str | None = None,
 ) -> dict[str, Any]:
     """Train one variant through the canonical purged walk-forward trainer.
 
@@ -206,7 +207,16 @@ def train_variant(
         # (the same window the 70D/liquidity producers need).
         bars_frame = bars_frame.tail(SMOKE_MIN_ROWS)
 
+    def emit_feature_progress(status: str) -> None:
+        if progress_cb is not None:
+            try:
+                progress_cb({"stage": "features", "status": status})
+            except Exception as exc:  # UI failures must not alter training
+                logger.warning("training progress_cb failed (ignored): %s", exc)
+
+    emit_feature_progress("running")
     feat = build_feature_frame(variant, bars_frame, news_frame)
+    emit_feature_progress("done")
     labeler = TripleBarrierLabeler(
         take_profit_atr_mult=1.1,
         stop_loss_atr_mult=1.0,
@@ -255,6 +265,7 @@ def train_variant(
         # (None => dormant, every existing caller unchanged).
         progress_cb=progress_cb,
         cancel_event=cancel_event,
+        backend=backend,
     )
     t0 = time.perf_counter()
     trainer.train_and_validate(df=df_labeled, feature_cols=cols)

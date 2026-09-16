@@ -84,6 +84,7 @@ class EnvStage(StrEnum):
     TORCH = "pytorch"
     VERSION = "torch_version"
     SMOKE = "smoke"
+    APPLICATION = "application"
     READY = "ready"
 
 
@@ -111,11 +112,13 @@ class EnvCode(StrEnum):
     INSTALL_PERMISSION_DENIED = "INSTALL_PERMISSION_DENIED"
     INSTALL_FAILED = "INSTALL_FAILED"
     USER_CANCELLED = "USER_CANCELLED"
+    APPLICATION_NOT_READY = "APPLICATION_NOT_READY"
     TRAINING_ENV_MISMATCH = "TRAINING_ENV_MISMATCH"
 
 
 #: Actionable remedy per code (UI renders this verbatim next to the check).
 REMEDIES: dict[str, str] = {
+    EnvCode.APPLICATION_NOT_READY: "Training application dependencies or source payload failed verification. Install required dependencies, or reinstall the application if its training payload is missing, then Re-check.",
     EnvCode.PYTHON_NOT_FOUND: "Install Python 3.11+ x64 from python.org (check 'Add python.exe to PATH'), relaunch, press Re-check.",
     EnvCode.PYTHON_VERSION_UNSUPPORTED: "Training requires the supported Python range in the canonical contract — install it or point NEXUS_TRAINING_PYTHON at a supported interpreter.",
     EnvCode.VENV_NOT_FOUND: "No training environment yet — press Install to create (or reuse) one.",
@@ -366,6 +369,8 @@ class TrainingEnvironmentManager:
         backend = str(os.environ.get(BACKEND_ENV, "auto")).strip().lower()
         if backend in ("cpu", "cuda"):
             return backend
+        if backend != "auto":
+            raise TrainingEnvironmentError(EnvCode.CONTRACT_INVALID, f"invalid backend {backend!r}")
         gpu = detect_nvidia_gpu()
         return "cuda" if gpu["available"] else "cpu"
 
@@ -374,7 +379,12 @@ class TrainingEnvironmentManager:
         return int(py.get("min_minor", 11)), int(py.get("max_minor", 13))
 
     def resolve_python(self) -> tuple[str | None, EnvCheck]:
-        """Explicit override > current interpreter (if supported) > py launcher probe."""
+        """Explicit override > current interpreter (if supported) > PATH
+        candidates > versioned candidates (python3.11..python3.13, Windows
+        ``py`` launcher). An unsupported candidate is REMEMBERED as the
+        reason (PYTHON_VERSION_UNSUPPORTED) but never short-circuits the
+        search — the fallthrough keeps probing until one candidate passes
+        or the candidate list is exhausted."""
         lo, hi = self._python_pin()
         candidates: list[str] = []
         override = str(os.environ.get(TRAINING_PYTHON_ENV, "")).strip()
@@ -384,6 +394,10 @@ class TrainingEnvironmentManager:
             candidates.append(sys.executable)
         candidates.append("python")
         candidates.append("python3")
+        candidates.extend(f"python3.{minor}" for minor in range(lo, hi + 1))
+        if os.name == "nt":
+            candidates.append("py")
+        first_unsupported: tuple[str, EnvCheck] | None = None
         for exe in candidates:
             resolved = shutil.which(exe) or (exe if Path(exe).exists() else None)
             if not resolved:
@@ -396,13 +410,19 @@ class TrainingEnvironmentManager:
                 return resolved, EnvCheck(
                     EnvStage.PYTHON.value, True, detail=f"{resolved} (3.{minor})"
                 )
-            return resolved, EnvCheck(
-                EnvStage.PYTHON.value,
-                False,
-                EnvCode.PYTHON_VERSION_UNSUPPORTED.value,
-                f"{resolved} is 3.{minor}; supported 3.{lo}-3.{hi}",
-                REMEDIES[EnvCode.PYTHON_VERSION_UNSUPPORTED.value],
-            )
+            if first_unsupported is None:
+                first_unsupported = (
+                    resolved,
+                    EnvCheck(
+                        EnvStage.PYTHON.value,
+                        False,
+                        EnvCode.PYTHON_VERSION_UNSUPPORTED.value,
+                        f"{resolved} is 3.{minor}; supported 3.{lo}-3.{hi}",
+                        REMEDIES[EnvCode.PYTHON_VERSION_UNSUPPORTED.value],
+                    ),
+                )
+        if first_unsupported is not None:
+            return first_unsupported
         return None, EnvCheck(
             EnvStage.PYTHON.value,
             False,
@@ -422,23 +442,21 @@ class TrainingEnvironmentManager:
         A dev/source checkout training inside its own .venv REUSES it (the
         directive's "existing environment wins"); a packaged app finds no
         environment and reports VENV_NOT_FOUND until the user installs."""
-        managed_py = self.venv_python()
-        if managed_py:
-            return managed_py, {
-                "found": True,
-                "path": str(self.managed_venv_path()),
-                "type": "managed-venv",
-            }
         override = str(os.environ.get(TRAINING_ENV_DIR_ENV, "")).strip()
         if override:
             p = Path(override)
             exepath = p / "Scripts" / "python.exe" if os.name == "nt" else p / "bin" / "python"
             if exepath.exists():
                 return str(exepath), {"found": True, "path": str(p), "type": "external-venv"}
-        in_venv = (
-            getattr(sys, "prefix", "") != getattr(sys, "base_prefix", "")
-            or getattr(sys, "base_executable", "") != sys.executable
-        )
+            return None, {"found": False, "path": str(p), "type": "external-venv"}
+        managed_py = self.venv_python()
+        if managed_py or self.managed_venv_path().exists():
+            return managed_py, {
+                "found": bool(managed_py),
+                "path": str(self.managed_venv_path()),
+                "type": "managed-venv",
+            }
+        in_venv = getattr(sys, "prefix", "") != getattr(sys, "base_prefix", "")
         if (
             python_exe
             and Path(python_exe) == Path(sys.executable)
@@ -492,7 +510,9 @@ class TrainingEnvironmentManager:
     # -- discovery (NEVER mutates) ------------------------------------------
     def status(self, backend: str | None = None) -> EnvironmentReport:
         contract = self.contract
-        backend = (backend or self.chosen_backend()).lower()
+        backend = (self.chosen_backend() if backend is None else backend).strip().lower()
+        if backend not in ("cpu", "cuda") or not self.contract.get("variants", {}).get(backend):
+            raise TrainingEnvironmentError(EnvCode.CONTRACT_INVALID, f"no variant {backend!r}")
         rep = EnvironmentReport(backend=backend)
         rep.contract = {
             "path": str(canonical_contract_path()),
@@ -506,9 +526,7 @@ class TrainingEnvironmentManager:
         rep.checks.append(python_check)
         rep.python = {
             "found": python_check.ok,
-            "version": python_check.detail.rsplit(" (", 1)[-1].rstrip(")")
-            if python_check.ok
-            else None,
+            "version": probe_python_interpreter(python_exe or "").get("version"),
             "path": python_exe,
         }
         if not python_check.ok:
@@ -535,6 +553,41 @@ class TrainingEnvironmentManager:
         rep.environment = env_block
 
         facts = probe_python_interpreter(env_exe or "")
+        rep.python = {
+            "found": bool(facts.get("found")),
+            "version": facts.get("version"),
+            "path": env_exe,
+        }
+        rep.environment["python"] = env_exe
+        # The TRAINING interpreter must satisfy the Python pin, not just the
+        # base interpreter that created the venv — a stale/wrong-minor venv
+        # must fail closed here instead of passing as READY.
+        env_minor = facts.get("minor")
+        if not facts.get("found") or env_minor is None or not facts.get("version"):
+            rep.environment["found"] = False
+            rep.checks.append(
+                EnvCheck(
+                    EnvStage.PYTHON.value,
+                    False,
+                    EnvCode.PYTHON_NOT_FOUND.value,
+                    "target interpreter probe failed",
+                    REMEDIES[EnvCode.PYTHON_NOT_FOUND.value],
+                )
+            )
+            rep.pytorch = {"installed": False, "compatible": False}
+            return rep
+        lo_pin, hi_pin = self._python_pin()
+        if facts["found"] and env_minor is not None and not lo_pin <= int(env_minor) <= hi_pin:
+            unsupported = EnvCheck(
+                EnvStage.PYTHON.value,
+                False,
+                EnvCode.PYTHON_VERSION_UNSUPPORTED.value,
+                f"{env_exe} is 3.{env_minor}; supported 3.{lo_pin}-3.{hi_pin}",
+                REMEDIES[EnvCode.PYTHON_VERSION_UNSUPPORTED.value],
+            )
+            rep.checks.append(unsupported)
+            rep.pytorch = {"installed": False, "compatible": False}
+            return rep
         rep.checks.append(
             EnvCheck(
                 EnvStage.PIP.value,
@@ -558,6 +611,23 @@ class TrainingEnvironmentManager:
                     if gpu_ok
                     else "nvidia-smi found no GPU",
                     "" if gpu_ok else REMEDIES[EnvCode.BACKEND_UNSUPPORTED.value],
+                )
+            )
+            floor = contract["variants"]["cuda"].get("min_driver_version", {}).get(sys.platform, "")
+            detected = str(rep.gpu.get("driver_version", ""))
+            try:
+                actual_parts = tuple(int(p) for p in detected.split("."))
+                floor_parts = tuple(int(p) for p in floor.split("."))
+                driver_ok = bool(floor) and actual_parts >= floor_parts
+            except ValueError:
+                driver_ok = False
+            rep.checks.append(
+                EnvCheck(
+                    EnvStage.BACKEND.value,
+                    gpu_ok and driver_ok,
+                    EnvCode.OK.value if gpu_ok and driver_ok else EnvCode.DRIVER_TOO_OLD.value,
+                    f"driver {detected or 'unknown'}; {sys.platform} minimum {floor or 'unsupported'}",
+                    "" if gpu_ok and driver_ok else REMEDIES[EnvCode.DRIVER_TOO_OLD.value],
                 )
             )
         else:
@@ -586,11 +656,21 @@ class TrainingEnvironmentManager:
                 )
             )
             return rep
-        req_base = required.lstrip("=").strip()
+        req_full = required.removeprefix("==").strip()
+        req_base = req_full.split("+", 1)[0]
+        required_tag = (
+            req_full.split("+", 1)[1]
+            if "+" in req_full
+            else str(
+                contract["variants"][backend].get(
+                    "local_tag", "cpu" if backend == "cpu" else "cu126"
+                )
+            )
+        )
         got_full = str(installed)
         got_base = got_full.split("+", 1)[0]
-        got_tag = got_full.split("+", 1)[1] if "+" in got_full else "cpu"
-        if backend == "cuda" and got_tag.startswith("cpu"):
+        got_tag = got_full.split("+", 1)[1] if "+" in got_full else "none"
+        if got_tag != required_tag:
             rep.checks.append(
                 EnvCheck(EnvStage.TORCH.value, True, detail=f"torch {got_full} present")
             )
@@ -599,7 +679,7 @@ class TrainingEnvironmentManager:
                     EnvStage.VERSION.value,
                     False,
                     EnvCode.TORCH_LOCAL_TAG_MISMATCH.value,
-                    f"installed build +{got_tag}, CUDA backend needs a +cu wheel",
+                    f"installed build +{got_tag}, {backend} requires +{required_tag}",
                     REMEDIES[EnvCode.TORCH_LOCAL_TAG_MISMATCH.value],
                 )
             )
@@ -625,6 +705,7 @@ class TrainingEnvironmentManager:
         rep.checks.append(EnvCheck(EnvStage.TORCH.value, True, detail=f"torch {installed}"))
         rep.checks.append(EnvCheck(EnvStage.VERSION.value, True, detail=f"matches pin {req_base}"))
 
+        rep.checks.append(self.run_application_probe(env_exe))
         if env_exe == sys.executable:
             smoke = self.run_in_process_smoke(backend)
             rep.checks.append(smoke)
@@ -653,6 +734,61 @@ class TrainingEnvironmentManager:
         elif rep.training_ready:
             rep.checks.append(EnvCheck(EnvStage.READY.value, True, detail="READY (in-process)"))
         return rep
+
+    def run_application_probe(self, python_exe: str) -> EnvCheck:
+        """Probe the shipped trainer and runtime pins in the selected interpreter."""
+        from nexus_scalp.model_provisioning.training_dispatch import worker_script
+        from nexus_scalp.release.paths import is_frozen
+
+        try:
+            if is_frozen() and os.path.abspath(python_exe) == os.path.abspath(sys.executable):
+                raise ValueError("application EXE is not a Python interpreter")
+            env = os.environ.copy()
+            for key in (
+                "PYTHONHOME",
+                "PYTHONPATH",
+                "_MEIPASS2",
+                "_PYI_APPLICATION_HOME_DIR",
+                "_PYI_ARCHIVE_FILE",
+                "_PYI_PARENT_PROCESS_LEVEL",
+            ):
+                env.pop(key, None)
+            if is_frozen():
+                for key in ("LD_LIBRARY_PATH", "LIBPATH"):
+                    if key + "_ORIG" in env:
+                        env[key] = env.pop(key + "_ORIG")
+                    else:
+                        env.pop(key, None)
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            proc = subprocess.run(
+                [python_exe, "-B", str(worker_script()), "--requirements-stdin", "--probe"],
+                input=json.dumps(
+                    {"packages": self.contract.get("runtime", {}).get("packages", [])}
+                ),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180,
+                check=False,
+                env=env,
+            )
+            data = json.loads(proc.stdout)
+            ok = proc.returncode == 0 and isinstance(data, dict) and data.get("ready") is True
+            detail = (
+                json.dumps(data, ensure_ascii=True)
+                if not ok
+                else "trainer imports and runtime pins verified"
+            )
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            ok, detail = False, f"application probe failed ({type(exc).__name__}): {exc}"
+        return EnvCheck(
+            EnvStage.APPLICATION.value,
+            ok,
+            EnvCode.OK.value if ok else EnvCode.APPLICATION_NOT_READY.value,
+            detail[:200],
+            "" if ok else REMEDIES[EnvCode.APPLICATION_NOT_READY.value],
+        )
 
     # -- smoke tests (REAL operations, both paths) ---------------------------
     def run_in_process_smoke(self, backend: str) -> EnvCheck:
@@ -754,7 +890,9 @@ class TrainingEnvironmentManager:
         Classifies pip failures into the taxonomy (network / index / version /
         permission). Never claims success: the return is a FRESH status()."""
         contract = self.contract
-        backend = (backend or self.chosen_backend()).lower()
+        backend = (self.chosen_backend() if backend is None else backend).strip().lower()
+        if backend not in ("cpu", "cuda") or not self.contract.get("variants", {}).get(backend):
+            raise TrainingEnvironmentError(EnvCode.CONTRACT_INVALID, f"no variant {backend!r}")
         variant = contract.get("variants", {}).get(backend)
         if not variant:
             raise TrainingEnvironmentError(EnvCode.CONTRACT_INVALID, f"no variant '{backend}'")
@@ -766,11 +904,27 @@ class TrainingEnvironmentManager:
             except ValueError:
                 raise TrainingEnvironmentError(EnvCode.PYTHON_NOT_FOUND, pchk.detail) from None
         if not self.venv_python() and not self.status(backend=backend).environment.get("found"):
+            if os.environ.get(TRAINING_ENV_DIR_ENV):
+                raise TrainingEnvironmentError(
+                    EnvCode.VENV_NOT_FOUND, "explicit training venv is missing or broken"
+                )
             vchk = self.create_managed_venv(base_python or "")
             if not vchk.ok:
                 raise TrainingEnvironmentError(EnvCode.VENV_CREATE_FAILED, vchk.detail)
         rep = self.status(backend=backend)
-        python_exe = (rep.pytorch or {}).get("path") or sys.executable
+        python_exe = rep.environment.get("python") or rep.pytorch.get("path")
+        if not python_exe:
+            raise TrainingEnvironmentError(
+                EnvCode.VENV_NOT_FOUND, "no validated target interpreter"
+            )
+        for check in rep.failing():
+            if check.stage in (
+                EnvStage.PYTHON.value,
+                EnvStage.VENV.value,
+                EnvStage.PIP.value,
+                EnvStage.BACKEND.value,
+            ):
+                raise TrainingEnvironmentError(EnvCode(check.code), check.detail)
         if not rep.environment.get("found"):
             first = rep.failing()[0] if rep.failing() else None
             try:
@@ -780,16 +934,29 @@ class TrainingEnvironmentManager:
             raise TrainingEnvironmentError(
                 code, "environment not resolved: " + (first.detail if first else "")
             )
-        specs = [f"{pkg}{op}{ver}" for pkg, (op, ver) in variant.get("packages", {}).items()]
+        specs = [f"{pkg}{spec}" for pkg, spec in variant.get("packages", {}).items()]
+        # Pin the local build, not just the release: pip treats ==X.Y.Z as
+        # matching every local variant unless the +cpu/+cu tag is explicit.
+        tag = str(variant.get("local_tag") or ("cpu" if backend == "cpu" else "cu126"))
+        specs = [
+            spec + f"+{tag}" if spec.startswith("torch==") and "+" not in spec else spec
+            for spec in specs
+        ]
         # Install THROUGH the target interpreter's own pip — the packages
         # land in THAT environment (no --target hacks).
-        args = [python_exe, "-m", "pip", "install", "--no-input", "--disable-pip-version-check"]
+        args = [
+            python_exe,
+            "-m",
+            "pip",
+            "install",
+            "--require-virtualenv",
+            "--no-input",
+            "--disable-pip-version-check",
+        ]
         args += [
             *specs,
-            "--extra-index-url",
+            "--index-url",
             str(variant.get("index_url", "")),
-            "--extra-index-url",
-            "https://pypi.org/simple",
         ]
         if callable(progress):
             progress(f"installing {', '.join(specs)} ({backend})")
@@ -810,6 +977,42 @@ class TrainingEnvironmentManager:
         if proc.returncode != 0:
             raise TrainingEnvironmentError(*classify_pip_failure(proc.stderr + proc.stdout))
         logger.info("[TRAINING-ENV] event=INSTALL_FINISHED backend=%s", backend)
+        # Exact pinned application runtime (requirements.lock), in the SAME
+        # interpreter: torch's index does not serve the pure-python app deps.
+        runtime = list(self.contract.get("runtime", {}).get("packages", []))
+        if runtime:
+            app_args = [
+                python_exe,
+                "-m",
+                "pip",
+                "install",
+                "--require-virtualenv",
+                "--no-input",
+                "--disable-pip-version-check",
+                *runtime,
+                "--index-url",
+                str(self.contract.get("runtime", {}).get("index_url", "https://pypi.org/simple")),
+            ]
+            if callable(progress):
+                progress(f"installing application dependencies ({len(runtime)} pinned)")
+            logger.info(
+                "[TRAINING-ENV] event=APP_INSTALL_STARTED target=%s count=%d",
+                python_exe,
+                len(runtime),
+            )
+            try:
+                proc = subprocess.run(
+                    app_args, capture_output=True, text=True, timeout=3600, check=False
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise TrainingEnvironmentError(
+                    EnvCode.NETWORK_UNREACHABLE, f"pip timed out: {exc}"
+                ) from exc
+            except OSError as exc:
+                raise TrainingEnvironmentError(EnvCode.PIP_UNAVAILABLE, str(exc)) from exc
+            if proc.returncode != 0:
+                raise TrainingEnvironmentError(*classify_pip_failure(proc.stderr + proc.stdout))
+            logger.info("[TRAINING-ENV] event=APP_INSTALL_FINISHED target=%s", python_exe)
         out = self.status(backend=backend)
         out.install_attempted = True
         out.install_result = "installed" if out.training_ready else "installed-but-not-ready"

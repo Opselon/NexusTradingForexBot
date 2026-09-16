@@ -257,7 +257,7 @@ def detect_ml_environment() -> dict[str, Any]:
 
 
 def train_local_model(
-    request: TrainingRequest, progress: ProgressCb | None = None
+    request: TrainingRequest, progress: ProgressCb | None = None, *, _worker_mode: bool = False
 ) -> dict[str, Any]:
     """Run the full PATH B pipeline with honest staged progress.
 
@@ -267,14 +267,86 @@ def train_local_model(
     genuinely unusable input (import/validation failures surface as
     VALIDATION_FAILED with the reason).
     """
-    from nexus_scalp.model_provisioning import service as prov
-
     cancel = request.cancel_event or threading.Event()
 
     def _cancelled() -> bool:
         return cancel.is_set()
 
     result: dict[str, Any] = {"outcome": "FAILED", "request": {"source": str(request.source_file)}}
+
+    if _cancelled():
+        _emit(progress, ProgressEvent(stage="train", status="cancelled"))
+        result["outcome"] = "CANCELLED"
+        return result
+
+    # -- canonical training (shared pipeline; features + sequences + WF) ----
+    # TRAINING ENV GATE (BUG-301): training may only start once the resolved
+    # environment is READY for the selected interpreter. The manager only DISCOVERS here
+    # (never installs — provisioning is a separate, explicit user action via
+    # TrainingEnvironmentManager.install / the CLI "install" verb).
+    from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
+    from nexus_scalp.release.paths import get_runtime_workspace
+
+    manager = TrainingEnvironmentManager(workspace=get_runtime_workspace())
+    backend = (request.backend or manager.chosen_backend()).lower()
+    try:
+        env_report = manager.status(backend=backend)
+    except Exception as exc:
+        result.update(
+            outcome="TRAINING_ENV_BLOCKED", reason=f"environment check failed: {type(exc).__name__}"
+        )
+        _emit(progress, ProgressEvent(stage="env", status="blocked", message=result["reason"]))
+        return result
+    result["environment_report"] = env_report.as_dict()
+    if not env_report.training_ready:
+        missing = [
+            f"{c.stage}: {c.code or 'FAILED'}" + (f" — {c.remedy}" if c.remedy else "")
+            for c in env_report.failing()
+        ]
+        _emit(
+            progress,
+            ProgressEvent(
+                stage="env",
+                status="blocked",
+                message="Training environment NOT ready — training has not started. "
+                + "; ".join(missing)[:400],
+                metrics={"checks": [c.as_dict() for c in env_report.checks]},
+            ),
+        )
+        result.update(
+            outcome="TRAINING_ENV_BLOCKED",
+            reason="; ".join(missing)[:500] or "environment not ready",
+            missing=[c.stage for c in env_report.failing()],
+            backend=backend,
+        )
+        return result
+    if _worker_mode and env_report.in_process_ready:
+        import os
+        import sys
+
+        selected = env_report.environment.get("python") or env_report.pytorch.get("path")
+        # Do NOT resolve symlinks: two venvs can point at the same base binary.
+        if not selected or os.path.normcase(os.path.abspath(selected)) != os.path.normcase(
+            os.path.abspath(sys.executable)
+        ):
+            result.update(
+                outcome="TRAINING_ENV_BLOCKED",
+                reason="worker interpreter identity changed; re-check environment",
+            )
+            return result
+    if not env_report.in_process_ready:
+        if _worker_mode:
+            result.update(outcome="TRAINING_ENV_BLOCKED", reason="worker interpreter is not READY")
+            return result
+        from nexus_scalp.model_provisioning.training_dispatch import run_training_worker
+
+        worker_result = run_training_worker(request, env_report, progress)
+        if worker_result.get("outcome") == "CANDIDATE" and request.install:
+            if cancel.is_set():
+                return {"outcome": "CANCELLED"}
+            return _install_training_candidate(worker_result, progress, cancel_check=cancel.is_set)
+        return worker_result
+    from nexus_scalp.model_provisioning import service as prov
 
     # -- import + diagnostics ------------------------------------------------
     _emit(
@@ -309,57 +381,6 @@ def train_local_model(
         result["outcome"] = "CANCELLED"
         return result
 
-    # -- canonical training (shared pipeline; features + sequences + WF) ----
-    # TRAINING ENV GATE (BUG-301): training may only start once the resolved
-    # environment is READY for THIS process. The manager only DISCOVERS here
-    # (never installs — provisioning is a separate, explicit user action via
-    # TrainingEnvironmentManager.install / the CLI "install" verb).
-    from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
-
-    manager = TrainingEnvironmentManager()
-    backend = (request.backend or manager.chosen_backend()).lower()
-    env_report = manager.status(backend=backend)
-    result["environment_report"] = env_report.as_dict()
-    if not env_report.training_ready:
-        missing = [
-            f"{c.stage}: {c.code or 'FAILED'}" + (f" — {c.remedy}" if c.remedy else "")
-            for c in env_report.failing()
-        ]
-        _emit(
-            progress,
-            ProgressEvent(
-                stage="env",
-                status="blocked",
-                message="Training environment NOT ready — training has not started. "
-                + "; ".join(missing)[:400],
-                metrics={"checks": [c.as_dict() for c in env_report.checks]},
-            ),
-        )
-        result.update(
-            outcome="TRAINING_ENV_BLOCKED",
-            reason="; ".join(missing)[:500] or "environment not ready",
-            missing=[c.stage for c in env_report.failing()],
-            backend=backend,
-        )
-        return result
-    if not env_report.in_process_ready:
-        # The READY environment is a DIFFERENT interpreter (managed venv):
-        # starting training HERE would silently run on a different stack.
-        _emit(
-            progress,
-            ProgressEvent(
-                stage="env",
-                status="blocked",
-                message="Environment READY but outside this process — run the printed "
-                "command with that interpreter (TRAINING_ENV_MISMATCH).",
-            ),
-        )
-        result.update(
-            outcome="TRAINING_ENV_MISMATCH",
-            reason=env_report.training_command,
-            backend=backend,
-        )
-        return result
     _emit(
         progress,
         ProgressEvent(
@@ -372,6 +393,18 @@ def train_local_model(
     )
 
     def _fold_progress(payload: dict[str, Any]) -> None:
+        if payload.get("stage"):
+            stage = str(payload["stage"])
+            _emit(
+                progress,
+                ProgressEvent(
+                    stage=stage,
+                    status=str(payload.get("status", "progress")),
+                    message=str(payload.get("message", stage)),
+                    metrics=payload,
+                ),
+            )
+            return
         # Real per-epoch metrics forwarded from the canonical trainer
         # (fold/epoch/loss/val_loss/elapsed) — nothing synthesized.
         done_fold = int(payload.get("fold", 0))
@@ -404,6 +437,7 @@ def train_local_model(
             output_dir=candidate_dir,
             progress_cb=_fold_progress,
             cancel_event=cancel,
+            backend=backend,
         )
     except TrainingCancelledError:
         _emit(
@@ -474,7 +508,7 @@ def train_local_model(
         ),
     )
 
-    # -- install (governed) --------------------------------------------------
+    # -- install (governed; publishing stays in the supervising process) -----
     if not request.install:
         result["outcome"] = "CANDIDATE"
         _emit(
@@ -483,6 +517,33 @@ def train_local_model(
                 stage="install", status="done", message="--no-install: candidate kept", fraction=1.0
             ),
         )
+        return result
+    if _cancelled():
+        result["outcome"] = "CANCELLED"
+        return result
+    return _install_training_candidate(result, progress, cancel_check=_cancelled)
+
+
+def _install_training_candidate(
+    result: dict[str, Any],
+    progress: ProgressCb | None,
+    *,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """Publish only in the supervising process, after clean worker exit.
+
+    Reuse the same integrity and champion-protection gates as in-process training.
+    """
+    from nexus_scalp.model_provisioning import service as prov
+    from nexus_scalp.release import bootstrap as rb
+
+    trained_model = Path(str(result.get("candidate_model", "")))
+    verdict = rb.bundle_status(trained_model)
+    if verdict["state"] != rb.STATE_OK:
+        result.update(outcome="VALIDATION_FAILED", reason="candidate failed parent integrity gates")
+        return result
+    if cancel_check is not None and cancel_check():
+        result["outcome"] = "CANCELLED"
         return result
     install = prov.install_candidate(
         trained_model,
