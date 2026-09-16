@@ -38,6 +38,60 @@ CANONICAL_PATH = Path(__file__).resolve().parents[3] / "configs" / "execution_as
 #: with the SAME schema; silent fallback is forbidden by design).
 ENV_OVERRIDE = "NEXUS_EXECUTION_ASSUMPTIONS"
 
+
+def _packaged_canonical_candidates() -> tuple[Path, ...]:
+    """BUG-293: packaged (PyInstaller onedir) layouts keep the repo-root
+    resolution ONLY when release.bootstrap mirrored the bundle configs there.
+    Mirror before that ran (or on a read-only install) must still find the
+    artifact inside the bundle — probe the documented packaged locations,
+    canonical file first. Empty for source/dev installs (behavior there is
+    byte-identical to before: CANONICAL_PATH only)."""
+    try:
+        from nexus_scalp.release.paths import exe_dir, get_runtime_workspace, is_frozen
+
+        if not is_frozen():
+            return ()
+        root = get_runtime_workspace()
+        exd = exe_dir()
+        seen: list[Path] = []
+        for base in (root, exd, exd.parent):
+            for cfg in (Path(base) / "configs", Path(base) / "_internal" / "configs"):
+                p = cfg / "execution_assumptions.json"
+                if p not in seen:
+                    seen.append(p)
+        return tuple(seen)
+    except Exception:
+        return ()
+
+
+def resolve_canonical_path() -> Path:
+    """BUG-293: single resolution site for the canonical artifact.
+
+    Order: env override > repo-root CANONICAL_PATH > packaged bundle
+    locations. Raises ExecutionCostsError naming every candidate when none
+    exists — fail-closed unchanged, just with an honest search path.
+    """
+    env = os.environ.get(ENV_OVERRIDE, "").strip()
+    if env:
+        return Path(env)
+    if CANONICAL_PATH.exists():
+        return CANONICAL_PATH
+    for cand in _packaged_canonical_candidates():
+        if cand.exists():
+            return cand
+    raise ExecutionCostsError(
+        f"canonical execution assumptions missing: {CANONICAL_PATH}"
+        + (
+            " (packaged search path also exhausted: "
+            + ", ".join(str(c) for c in _packaged_canonical_candidates())
+            + ")"
+            if _packaged_canonical_candidates()
+            else ""
+        )
+        + " — refusing to fall back to per-module hardcoded costs"
+    )
+
+
 CANONICAL_SPREAD = "0.08-0.18c paper band inside REAL measured 7-37c spread"
 
 
@@ -185,13 +239,13 @@ def load_execution_assumptions(
     """Load and validate the canonical execution-cost artifact.
 
     Resolution order: explicit ``path`` argument > ``NEXUS_EXECUTION_ASSUMPTIONS``
-    env override > repo-root ``configs/execution_assumptions.json``. Missing or
-    invalid artifacts raise ``ExecutionCostsError`` (fail-closed: consumers
-    must NOT fall back to private defaults).
+    env override > repo-root ``configs/execution_assumptions.json`` (packaged
+    installs probe the bundle locations too — BUG-293, see
+    ``resolve_canonical_path``). Missing or invalid artifacts raise
+    ``ExecutionCostsError`` (fail-closed: consumers must NOT fall back to
+    private defaults).
     """
-    resolved = (
-        Path(path) if path is not None else Path(os.environ.get(ENV_OVERRIDE, "") or CANONICAL_PATH)
-    )
+    resolved = resolve_canonical_path() if path is None else Path(path)
     if not resolved.exists():
         raise ExecutionCostsError(
             f"canonical execution assumptions missing: {resolved} — "
@@ -216,7 +270,7 @@ def _cached(path_str: str, mtime: float) -> ExecutionCostAssumptions:
 
 def get_execution_assumptions() -> ExecutionCostAssumptions:
     """Process-wide cached accessor (mtime-guarded; test-friendly via env)."""
-    resolved = Path(os.environ.get(ENV_OVERRIDE, "") or CANONICAL_PATH)
+    resolved = resolve_canonical_path()
     if not resolved.exists():
         raise ExecutionCostsError(
             f"canonical execution assumptions missing: {resolved} — "
