@@ -38,6 +38,60 @@ CANONICAL_PATH = Path(__file__).resolve().parents[3] / "configs" / "execution_as
 #: with the SAME schema; silent fallback is forbidden by design).
 ENV_OVERRIDE = "NEXUS_EXECUTION_ASSUMPTIONS"
 
+
+def _packaged_canonical_candidates() -> tuple[Path, ...]:
+    """BUG-293: packaged (PyInstaller onedir) layouts keep the repo-root
+    resolution ONLY when release.bootstrap mirrored the bundle configs there.
+    Mirror before that ran (or on a read-only install) must still find the
+    artifact inside the bundle — probe the documented packaged locations,
+    canonical file first. Empty for source/dev installs (behavior there is
+    byte-identical to before: CANONICAL_PATH only)."""
+    try:
+        from nexus_scalp.release.paths import exe_dir, get_runtime_workspace, is_frozen
+
+        if not is_frozen():
+            return ()
+        root = get_runtime_workspace()
+        exd = exe_dir()
+        seen: list[Path] = []
+        for base in (root, exd, exd.parent):
+            for cfg in (Path(base) / "configs", Path(base) / "_internal" / "configs"):
+                p = cfg / "execution_assumptions.json"
+                if p not in seen:
+                    seen.append(p)
+        return tuple(seen)
+    except Exception:
+        return ()
+
+
+def resolve_canonical_path() -> Path:
+    """BUG-293: single resolution site for the canonical artifact.
+
+    Order: env override > repo-root CANONICAL_PATH > packaged bundle
+    locations. Raises ExecutionCostsError naming every candidate when none
+    exists — fail-closed unchanged, just with an honest search path.
+    """
+    env = os.environ.get(ENV_OVERRIDE, "").strip()
+    if env:
+        return Path(env)
+    if CANONICAL_PATH.exists():
+        return CANONICAL_PATH
+    for cand in _packaged_canonical_candidates():
+        if cand.exists():
+            return cand
+    raise ExecutionCostsError(
+        f"canonical execution assumptions missing: {CANONICAL_PATH}"
+        + (
+            " (packaged search path also exhausted: "
+            + ", ".join(str(c) for c in _packaged_canonical_candidates())
+            + ")"
+            if _packaged_canonical_candidates()
+            else ""
+        )
+        + " — refusing to fall back to per-module hardcoded costs"
+    )
+
+
 CANONICAL_SPREAD = "0.08-0.18c paper band inside REAL measured 7-37c spread"
 
 
@@ -185,13 +239,13 @@ def load_execution_assumptions(
     """Load and validate the canonical execution-cost artifact.
 
     Resolution order: explicit ``path`` argument > ``NEXUS_EXECUTION_ASSUMPTIONS``
-    env override > repo-root ``configs/execution_assumptions.json``. Missing or
-    invalid artifacts raise ``ExecutionCostsError`` (fail-closed: consumers
-    must NOT fall back to private defaults).
+    env override > repo-root ``configs/execution_assumptions.json`` (packaged
+    installs probe the bundle locations too — BUG-293, see
+    ``resolve_canonical_path``). Missing or invalid artifacts raise
+    ``ExecutionCostsError`` (fail-closed: consumers must NOT fall back to
+    private defaults).
     """
-    resolved = (
-        Path(path) if path is not None else Path(os.environ.get(ENV_OVERRIDE, "") or CANONICAL_PATH)
-    )
+    resolved = resolve_canonical_path() if path is None else Path(path)
     if not resolved.exists():
         raise ExecutionCostsError(
             f"canonical execution assumptions missing: {resolved} — "
@@ -216,7 +270,7 @@ def _cached(path_str: str, mtime: float) -> ExecutionCostAssumptions:
 
 def get_execution_assumptions() -> ExecutionCostAssumptions:
     """Process-wide cached accessor (mtime-guarded; test-friendly via env)."""
-    resolved = Path(os.environ.get(ENV_OVERRIDE, "") or CANONICAL_PATH)
+    resolved = resolve_canonical_path()
     if not resolved.exists():
         raise ExecutionCostsError(
             f"canonical execution assumptions missing: {resolved} — "
@@ -225,12 +279,39 @@ def get_execution_assumptions() -> ExecutionCostAssumptions:
     return _cached(str(resolved), resolved.stat().st_mtime)
 
 
+#: Runaway-friction cap the research bridge must never let fall below the
+#: canonical measured friction. BUG-299: the model default
+#: (``ExecutionAssumptions.max_slippage_ticks = 5.0``, "guard against runaway")
+#: was carried UNCHANGED by this bridge while the canonical evidence is
+#: spread.mean 0.147 + slippage.p95 0.05 = ~20 TICKS. ``research.metrics``
+#: computes effective friction as ``min(spread + slippage, max_slippage_ticks)``,
+#: so every default-costs research engine (pipeline backtest / walk-forward /
+#: OOS / robustness) silently traded at 5 ticks instead of the calibrated 20 —
+#: 25% of the money-path cost — and the robustness +1/+2-tick stress scenarios
+#: were EXACT no-ops (baseline and stressed friction both pinned at the cap;
+#: max_degradation measured 0.0 and GATE8 passed everything). The economics
+#: lane had already reasoned its way out of the same trap
+#: (economics.PRODUCTION_MAX_FRICTION_TICKS = 40.0, "legacy frictionless
+#: baseline used max_slippage_ticks=5 for tiny stresses") — the canonical
+#: bridge never got it. The cap is now DERIVED from the evidence: it always
+#: covers base friction plus the documented stress headroom (STRESS_MAX_TICKS
+#: per scenario dimension, +2 spread / +2 slip in robustness.STRESS_SCENARIOS),
+#: floored at the legacy 5.0 so a frictionless analytical bundle keeps its
+#: runaway guard.
+STRESS_HEADROOM_TICKS: float = 4.0
+
+
 def to_research_assumptions(costs: ExecutionCostAssumptions, price_tick: float = 0.01):
     """Bridge to the research engine's ``ExecutionAssumptions`` (ticks).
 
     Research engines consume spread/slippage in TICKS of ``price_tick``;
     the canonical artifact is in USD/oz. Conversion: usd / price_tick.
     The calibration version rides along for provenance stamping.
+
+    BUG-299: ``max_slippage_ticks`` (the effective-friction cap every research
+    engine applies) is derived from the converted evidence — never left at the
+    5.0 model default, which silently truncated real calibrated friction and
+    deadened the robustness stress gate.
     """
     from nexus_scalp.research.models import ExecutionAssumptions
 
@@ -238,11 +319,15 @@ def to_research_assumptions(costs: ExecutionCostAssumptions, price_tick: float =
         raise ExecutionCostsError("price_tick must be > 0")
     spread_ticks = round(costs.spread.mean / price_tick)
     slippage_ticks = round(costs.slippage.paper_measured_p95 / price_tick)
+    friction_cap_ticks = max(
+        5.0, float(spread_ticks) + float(slippage_ticks) + STRESS_HEADROOM_TICKS
+    )
     return ExecutionAssumptions(
         spread_ticks=float(spread_ticks),
         slippage_ticks=float(slippage_ticks),
         price_tick=price_tick,
         pay_spread=True,
+        max_slippage_ticks=friction_cap_ticks,
     ), costs.calibration_version
 
 

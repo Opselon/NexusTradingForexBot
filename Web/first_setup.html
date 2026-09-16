@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus First Setup — Model Preparation</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#121724; --panel2:#0f1420; --line:#232c42;
+    --text:#dbe2f0; --dim:#8b96ad; --cyan:#37c4e0; --green:#3ecf8e;
+    --yellow:#e8b93e; --red:#ef5b6b;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f4f5f8; --panel:#ffffff; --panel2:#eef0f5; --line:#d7dce6;
+      --text:#1c2333; --dim:#5d6a84; --cyan:#0e7f97; --green:#1c8f5f;
+      --yellow:#a06f0e; --red:#c0313f;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif;
+       padding-block:calc(20px + env(safe-area-inset-top,0px));}
+  .wrap{max-width:880px;margin:0 auto;padding-inline:20px}
+  h1{font-size:20px;letter-spacing:.14em;margin:0 0 4px}
+  h1 .nexus{color:var(--cyan)}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .status{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+          padding:12px 16px;margin-bottom:18px;font-size:13px}
+  .status b.ok{color:var(--green)} .status b.warn{color:var(--yellow)} .status b.bad{color:var(--red)}
+  .cards{display:grid;grid-template-columns:1fr;gap:16px}
+  @media (min-width:720px){.cards{grid-template-columns:1fr 1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;
+        display:flex;flex-direction:column;gap:10px}
+  .card h2{font-size:15px;margin:0;letter-spacing:.05em}
+  .tag{font-size:11px;color:var(--bg);background:var(--green);border-radius:4px;padding:1px 7px;font-weight:700}
+  .tag.alt{background:var(--cyan)}
+  .card p{margin:0;color:var(--dim);font-size:13px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input[type=text],select{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+        border-radius:8px;padding:8px 10px;font:inherit;flex:1;min-width:160px}
+  button{background:var(--cyan);border:0;color:#04121a;font:inherit;font-weight:700;
+         border-radius:8px;padding:10px 16px;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text);font-weight:400}
+  button:disabled{opacity:.45;cursor:default}
+  .progress{margin-top:6px}
+  .stage{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:2px 0}
+  .stage .dot{width:10px;color:var(--dim)}
+  .stage.done .dot{color:var(--green)} .stage.active .dot{color:var(--cyan)}
+  .stage.failed .dot{color:var(--red)} .stage.cancelled .dot{color:var(--yellow)}
+  .meter{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin:8px 0}
+  .meter i{display:block;height:100%;background:var(--cyan);width:0%;transition:width .5s}
+  .metrics{font:12px/1.55 Consolas,Menlo,monospace;color:var(--dim);white-space:pre-wrap}
+  .note{font-size:12px;color:var(--dim)}
+  .err{color:var(--red);font-size:12.5px}
+  .okline{color:var(--green);font-size:12.5px}
+  footer{margin-top:26px;color:var(--dim);font-size:12px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="nexus">NEXUS</span> FIRST SETUP</h1>
+  <p class="sub">Choose how you want to prepare your model. Both paths end with a
+     verified bundle passing every engine serving gate.</p>
+
+  <div class="status" id="statusBox">Loading current model state…</div>
+
+  <div class="cards">
+    <!-- PATH A -->
+    <section class="card" id="cardA">
+      <h2><span class="tag">RECOMMENDED</span> ⚡ READY TO USE</h2>
+      <p>Download the <b>official Nexus model</b> (dataset identity + weights).
+         Verified before install: SHA256 per file, Ed25519 signature, schema,
+         70D dimension, architecture, integrity gates. No local training —
+         works without PyTorch installed.</p>
+      <div class="row" id="officialRow">
+        <button id="btnOfficial">Download &amp; Install</button>
+        <span class="note" id="officialNote"></span>
+      </div>
+      <div class="progress" id="officialProgress"></div>
+    </section>
+
+    <!-- PATH B -->
+    <section class="card" id="cardB">
+      <h2><span class="tag alt">LOCAL ONLY</span> 🧠 TRAIN YOUR OWN MODEL</h2>
+      <p>Train on <b>your own broker export</b> (CSV / Parquet, MT5 columns).
+         Your market data never leaves this computer — no upload, no cloud,
+         no telemetry with candles. Requires Python + PyTorch locally.</p>
+      <div class="row" id="envRow"><span class="note" id="envNote">checking environment…</span></div>
+      <div class="row">
+        <input type="text" id="trainFile" placeholder="Local file path: C:\data\XAUUSD_M1.csv or .parquet">
+      </div>
+      <div class="row">
+        <select id="candlesSel" title="Candles used (most recent N bars — chronological tail)">
+          <option value="1000">1,000 candles</option>
+          <option value="10000">10,000 candles</option>
+          <option value="50000" selected>50,000 candles</option>
+          <option value="">All available</option>
+        </select>
+        <button id="btnTrain">Train My Model</button>
+        <button id="btnCancel" class="ghost" disabled>Cancel</button>
+      </div>
+      <div id="diag" class="metrics"></div>
+      <div class="meter"><i id="meterFill"></i></div>
+      <div class="progress" id="trainStages"></div>
+      <div class="metrics" id="trainMetrics"></div>
+    </section>
+  </div>
+
+  <footer>
+    Diagnostics are real measurements from the pipeline (duplicates, invalid rows,
+    gaps, epoch/loss/val-loss). Progress and ETA are derived from completed work
+    only — nothing is simulated. A locally trained model is installed only over an
+    empty or dev-starter serving slot; governed champions change via the
+    promotion lifecycle.
+  </footer>
+</div>
+
+<script>
+"use strict";
+const $ = (id)=>document.getElementById(id);
+const STAGES = ["import","validate","prepare","train","validate_model","verify","install"];
+let poll = null, after = 0, elapsed0 = 0;
+
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({credentials:"same-origin",headers:{"Content-Type":"application/json"}}, opts||{}));
+  const j = await r.json().catch(()=>({success:false,error:{code:"BAD_JSON",message:"invalid response"}}));
+  const failed = !r.ok || j.success===false || (j.error && !j.slot);
+  if(failed){ const e=(j&&j.error)||{}; throw new Error((e.code||r.status)+" "+(e.message||e.detail||"")); }
+  return j;
+}
+function esc(s){const d=document.createElement("span");d.textContent=String(s==null?"":s);return d.outerHTML;}
+
+async function refreshStatus(){
+  const box = $("statusBox");
+  try{
+    const st = await api("/api/provisioning/status");
+    const slot = st.slot||{}, origin = slot.origin||"", state = slot.state||"missing";
+    let cls = "ok", label = "Model state: "+state;
+    if(state==="missing"||state==="rejected"){cls="bad";}
+    else if(origin==="DEV_STARTER"){cls="warn";}
+    let html = "<b class='"+cls+"'>"+esc(label)+"</b>";
+    if(origin) html += " · origin <b>"+esc(origin)+"</b>";
+    if(slot.path) html += "<br><span style='color:var(--dim)'>"+esc(slot.path)+"</span>";
+    const rec = (st.recommended||{}).action;
+    if(rec==="upgrade_from_starter")
+      html += "<br><span class='note'>This slot runs the <b>DEV STARTER</b> (offline/CI fallback) — replace it below for production use.</span>";
+    else if(rec==="download_official")
+      html += "<br><span class='note'>No model yet — official download recommended.</span>";
+    else if(rec==="train_local")
+      html += "<br><span class='note'>No model and no official source published yet — train on your own data.</span>";
+    else if(rec==="starter_offline")
+      html += "<br><span class='note'>Offline fallback CLI: <code>nexus model-provision --starter</code> (labeled DEV STARTER, never production).</span>";
+    box.innerHTML = html;
+    $("officialNote").textContent = st.recommended && st.recommended.official_configured===false
+      ? "official source not configured on this machine" : "";
+  }catch(e){ box.innerHTML = "<b class='bad'>Status unavailable</b> · "+esc(e.message); }
+  try{
+    const env = (await api("/api/provisioning/environment")).environment||{};
+    const line = ["python "+(env.python||"?"), "PyTorch "+(env.torch||"MISSING"),
+                  "CUDA "+(env.cuda?"✓":"✗"), (env.cuda&&env.gpu_name)?env.gpu_name:""].filter(Boolean).join("  ·  ");
+    $("envNote").textContent = line;
+    $("envNote").className = "note"+(env.torch?"":" err");
+    $("btnTrain").disabled = !env.torch;
+  }catch(e){ $("envNote").textContent="environment probe unavailable"; }
+}
+
+/* ---------------- PATH A ---------------- */
+$("btnOfficial").addEventListener("click", async ()=>{
+  const btn=$("btnOfficial"); btn.disabled=true; $("officialProgress").innerHTML="downloading + verifying…";
+  try{
+    const out = await api("/api/provisioning/official",{method:"POST",body:"{}"});
+    $("officialProgress").innerHTML = out.servable
+      ? "<div class='okline'>✓ official model installed &amp; verified (bundle "+esc(out.bundle_id||"")+") — you can start trading in PAPER now.</div>"
+      : "<div class='err'>installed but slot verification failed — run <code>nexus model-provision --status</code></div>";
+  }catch(e){
+    $("officialProgress").innerHTML = "<div class='err'>✗ "+esc(e.message)+"<br>Nothing was installed — the previous state is unchanged.</div>";
+  }finally{ btn.disabled=false; refreshStatus(); }
+});
+
+/* ---------------- PATH B ---------------- */
+function renderStages(events){
+  const last = {};
+  events.forEach(ev=>{ last[ev.stage]=ev.status; });
+  $("trainStages").innerHTML = STAGES.filter(s=>last[s]).map(s=>{
+    const st = last[s];
+    const dot = st==="done"?"✓":(st==="failed"?"✗":(st==="cancelled"?"⏹":"●"));
+    const frac = " "+(s==="train"?"training":"<span class='dimm'></span>");
+    return "<div class='stage "+esc(st)+"'><span class='dot'>"+dot+"</span>"+esc(s)+frac.replace('training',esc(s))+"</div>";
+  }).join("");
+}
+function setMeter(ev){
+  if(ev.fraction!=null){
+    $("meterFill").style.width = Math.round(Math.min(1,ev.fraction)*100)+"%";
+    if(elapsed0){
+      const f=Math.min(0.999,ev.fraction);
+      const rem=(elapsed0/f-elapsed0);
+      $("trainMetrics").textContent += "\rETA ≈ "+Math.max(0,Math.round(rem))+"s (from measured progress)   ";
+    }
+  }
+}
+async function pump(){
+  try{
+    const p = await api("/api/provisioning/train/progress?after="+after);
+    const evs = p.events||[];
+    if(evs.length){
+      after += evs.length;
+      renderStages(allEvents.concat(evs));
+      evs.forEach(ev=>{ setMeter(ev);
+        if(ev.metrics && (ev.metrics.epoch||ev.metrics.loss!=null)){
+          const m=ev.metrics;
+          $("trainMetrics").textContent =
+            "fold "+m.fold+"/"+m.folds+"   epoch "+m.epoch+"/"+m.epochs+
+            "\nloss        "+(m.loss!=null?Number(m.loss).toFixed(4):"—")+
+            "\nval loss    "+(m.val_loss!=null?Number(m.val_loss).toFixed(4):"—")+
+            "\nfold elapsed "+(m.elapsed_sec!=null?m.elapsed_sec+"s":"—");
+        }
+        if(ev.stage==="validate"&&ev.status==="done"&&ev.metrics&&ev.metrics.rows_total!=null){
+          const d=ev.metrics;
+          $("diag").textContent =
+            "detected "+d.rows_total+" rows · valid "+d.rows_valid+
+            " · duplicates "+d.dropped_duplicates+" · invalid "+d.dropped_invalid+
+            "\nselected "+d.selected_rows+" (chronological tail) · range "+(d.time_range||[]).join(" → ")+
+            (d.missing_bar_gaps>=0?"\nmissing-candle gaps: "+d.missing_bar_gaps:"");
+        }
+      });
+      allEvents = allEvents.concat(evs);
+    }
+    if(!p.active){
+      clearInterval(poll); poll=null; $("btnTrain").disabled=false; $("btnCancel").disabled=true;
+      const res=p.result||{};
+      if(res.outcome==="INSTALLED") $("trainMetrics").textContent+="\n\n✓ model installed & verified — READY.";
+      else if(res.outcome==="CANDIDATE") $("trainMetrics").textContent+="\n\ncandidate kept ("+(res.install_skipped||"--no-install")+") — use promotion to serve it.";
+      else if(res.outcome==="CANCELLED") $("trainMetrics").textContent+="\n\ncancelled — no artifact was written.";
+      else $("trainMetrics").textContent+="\n\n✗ "+(res.reason||res.outcome||"failed");
+      refreshStatus();
+    }
+  }catch(e){ /* transient */ }
+}
+let allEvents=[];
+$("btnTrain").addEventListener("click", async ()=>{
+  const file = $("trainFile").value.trim();
+  if(!file){ $("diag").innerHTML="<span class='err'>enter the path to your broker export first</span>"; return; }
+  $("btnTrain").disabled=true; $("btnCancel").disabled=false; after=0; allEvents=[]; elapsed0=0;
+  $("trainMetrics").textContent=""; $("diag").textContent=""; $("meterFill").style.width="0%";
+  const candles = $("candlesSel").value;
+  try{
+    await api("/api/provisioning/train/start",{method:"POST",body:JSON.stringify({file:file,candles:candles?parseInt(candles,10):null})});
+    elapsed0 = 0; setTimeout(()=>{elapsed0=1;},1000); // measured clock starts; ETA only after real progress
+    const t0=Date.now();
+    poll = setInterval(()=>{ if(elapsed0) elapsed0=(Date.now()-t0)/1000; pump(); }, 1500);
+    pump();
+  }catch(e){
+    $("diag").innerHTML="<span class='err'>✗ "+esc(e.message)+"</span>";
+    $("btnTrain").disabled=false; $("btnCancel").disabled=true;
+  }
+});
+$("btnCancel").addEventListener("click", async ()=>{
+  try{ await api("/api/provisioning/train/cancel",{method:"POST",body:"{}"});
+       $("trainMetrics").textContent+="\ncancel requested — observed at the next epoch boundary"; }catch(e){}
+});
+
+refreshStatus(); setInterval(refreshStatus, 15000);
+</script>
+</body>
+</html>

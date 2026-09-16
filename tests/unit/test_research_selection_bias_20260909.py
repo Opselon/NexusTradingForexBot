@@ -108,15 +108,20 @@ def test_economic_floor_is_positive_and_legacy_constant_preserved() -> None:
 
 
 def _sub_economic_dataset() -> ResearchDataset:
-    """120 samples whose FINAL 20% (the OOS window) averages exactly +0.01R —
-    positive, but below the 0.02R economic floor."""
+    """120 samples whose FINAL 20% (the OOS window) averages exactly +0.01R
+    FRICTION-ADJUSTED — positive, but below the 0.02R economic floor."""
     samples = _mk_samples(120, r_win=0.62, frac=0.545)
     oos_start = 96  # last 20% of 120
     for j, s in enumerate(samples[oos_start:]):
-        # The gate measures FRICTION-ADJUSTED R (~0.025R consumed by the
-        # default spread+slip at risk_distance 2.0); raw +0.645/-0.575
-        # alternation leaves an adjusted mean of ~ +0.01R.
-        r = 0.645 if j % 2 == 0 else -0.575
+        # BUG-299 re-calibration of this FIXTURE ONLY (intent unchanged): the
+        # gate measures FRICTION-ADJUSTED R. Pre-BUG-299 the canonical bridge
+        # silently capped friction at 5 ticks (0.025R at risk_distance 2.0);
+        # with the true calibrated friction (spread.mean 15 + slip p95 5 = 20
+        # ticks = 0.2 USD = 0.1R) the same alternating raw pair lands NEGATIVE,
+        # testing the wrong band. +0.71/-0.49 alternation keeps the raw mean at
+        # +0.11R so the adjusted mean stays ~+0.01R: still inside
+        # (0, MIN_ECONOMIC_OOS_EXPECTANCY_R), exactly the case the test pins.
+        r = 0.71 if j % 2 == 0 else -0.49
         samples[oos_start + j] = s.model_copy(
             update={"realized_r": r, "realized_pnl_usd": r * 20.0}
         )

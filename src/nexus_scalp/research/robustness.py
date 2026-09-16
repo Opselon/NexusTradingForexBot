@@ -27,6 +27,20 @@ logger = get_logger("nexus_scalp.research.robustness")
 
 #: Max absolute R degradation from baseline before the strategy is FRAGILE.
 MAX_ACCEPTABLE_DEGRADATION_R: float = 0.25
+
+
+def _effective_friction_ticks(a: object) -> float:
+    """Effective per-trade friction the deterministic backtest actually pays:
+    ``min(spread + slippage, max_slippage_ticks)`` (research.metrics semantics).
+    Duck-typed so any ExecutionAssumptions-shaped bundle works."""
+    return float(
+        min(
+            getattr(a, "spread_ticks", 0.0) + getattr(a, "slippage_ticks", 0.0),
+            getattr(a, "max_slippage_ticks", 0.0),
+        )
+    )
+
+
 #: Stress scenarios applied on top of the baseline assumptions.
 STRESS_SCENARIOS: list[tuple[str, dict[str, float]]] = [
     ("spread_plus_1", {"spread": 1.0}),
@@ -78,6 +92,20 @@ class RobustnessEngine:
         )
         baseline_exp = base_bt.expectancy_r
         stress_expectancies: dict[str, float] = {}
+        # BUG-299 (P0-3 item 3): a scenario is ECONOMICALLY REAL only if its
+        # perturbation changes the effective friction the backtest actually
+        # pays. Pre-fix, the canonical-costs pipeline ran with
+        # spread+slip (20 ticks) ABOVE max_slippage_ticks (5) — the
+        # min(spread+slip, cap) in compute_backtest pinned baseline AND every
+        # stressed bundle to the same 5 ticks, so all six "stress" expectancies
+        # were byte-identical to baseline, max_degradation was a constant 0.0,
+        # and GATE8 PASSed every candidate that reached it (scoring's rob term
+        # = 1.0 — the exact "silent no-op" P0-3 forbids). Latency scenarios
+        # have never touched P&L in the deterministic backtest (canonical
+        # artifact: "LIVE latency UNKNOWN until measured") — recording them as
+        # NOT_SIMULABLE instead of a fake 0-degradation PASS.
+        base_eff_friction = _effective_friction_ticks(self.baseline)
+        ineffective: list[str] = []
         max_deg = 0.0
         for name, params in self.scenarios:
             stressed = self.baseline.with_perturbation(
@@ -85,6 +113,8 @@ class RobustnessEngine:
                 sl=params.get("sl", 0.0),
                 latency=params.get("latency", 0.0),
             )
+            if _effective_friction_ticks(stressed) == base_eff_friction:
+                ineffective.append(name)
             bt = compute_backtest(
                 dataset.samples,
                 strategy_id=strategy_id,
@@ -110,6 +140,32 @@ class RobustnessEngine:
             reasons.append(
                 f"Worst stress expectancy {worst:.4f}R is negative under material stress"
             )
+        # BUG-299 fail-closed: if EVERY stress scenario resolved to the same
+        # effective friction as the baseline (a cap at or below base friction —
+        # the pre-fix canonical shape — or a scenario set that only moves
+        # dimensions the deterministic backtest cannot price), the gate
+        # measured NOTHING and must never report PASS. Latency-only
+        # ineffectiveness alongside live friction scenarios is expected and is
+        # recorded in the census, never presented as a measured result.
+        if not self.scenarios or len(ineffective) == len(self.scenarios):
+            failed = True
+            reasons.append(
+                "ROBUSTNESS_NOT_SIMULABLE: no stress scenario changes the effective "
+                f"friction the backtest pays ({len(self.scenarios)} scenarios, all "
+                "non-impacting; base effective friction "
+                f"{base_eff_friction:g} ticks, cap "
+                f"{getattr(self.baseline, 'max_slippage_ticks', 0.0):g}) — the gate "
+                "cannot measure degradation and fails closed"
+            )
+            logger.warning(
+                "[ROBUSTNESS] event=NOT_SIMULABLE strategy_id=%s dead_scenarios=%s "
+                "base_friction_ticks=%s cap=%s — a PASS from this bundle is impossible; "
+                "check ExecutionAssumptions.max_slippage_ticks vs spread+slippage",
+                strategy_id,
+                ineffective,
+                base_eff_friction,
+                getattr(self.baseline, "max_slippage_ticks", None),
+            )
 
         status = "FAIL" if failed else "PASS"
         logger.info(
@@ -118,6 +174,7 @@ class RobustnessEngine:
             baseline=round(baseline_exp, 6),
             max_degradation=round(max_deg, 6),
             status=status,
+            not_simulable=len(ineffective),
         )
         return RobustnessResult(
             strategy_id=strategy_id,
@@ -127,4 +184,5 @@ class RobustnessEngine:
             max_degradation=round(max_deg, 6),
             status=status,
             reason="; ".join(reasons) or "Robust to modelled stress",
+            not_simulable_scenarios=ineffective,
         )

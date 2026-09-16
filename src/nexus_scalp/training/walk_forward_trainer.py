@@ -24,6 +24,7 @@ import copy
 import json
 import math
 import random
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -87,6 +88,14 @@ def _session_semantics_payload() -> dict[str, Any]:
 # =============================================================================
 # DATASET
 # =============================================================================
+class TrainingCancelledError(RuntimeError):
+    """BUG-293: operator cancel observed at an epoch boundary (the training
+    loop raises at the NEXT check; state never lands mid-write). Distinct
+    from every other failure so callers can classify CANCELLED honestly."""
+
+    pass
+
+
 class ScalpDataset(Dataset):
     """Simple tensor dataset for ScalpNet training."""
 
@@ -252,6 +261,16 @@ class WalkForwardTrainer:
         # P0-2026-09-04 CHAMPION GUARD: explicit operator opt-in required to
         # write a canonical variant bundle (see assert_not_champion_path).
         allow_champion_save: bool = False,
+        # BUG-293 first-run UX seam (OPTIONAL, default None => zero behavior
+        # change for every existing caller): a callback receiving REAL
+        # per-epoch progress facts {fold, folds, epoch, epochs, loss,
+        # val_loss, elapsed_sec} at epoch boundaries. Nothing is estimated
+        # here — the caller computes any ETA from these measurements.
+        # ``cancel_event`` (threading.Event) is checked at each epoch
+        # boundary and raises TrainingCancelledError when set (never
+        # mid-batch, so a cancel leaves the artifact path untouched).
+        progress_cb: Any | None = None,
+        cancel_event: Any | None = None,
     ) -> None:
         self.num_folds = int(num_folds)
         self.train_ratio = float(train_ratio)
@@ -272,6 +291,9 @@ class WalkForwardTrainer:
         from nexus_scalp.training.champion_guard import assert_not_champion_path
 
         self.allow_champion_save = bool(allow_champion_save)
+        # BUG-293 progress/cancel seams (None => dormant; never on the tick path).
+        self._progress_cb = progress_cb
+        self._cancel_event = cancel_event
         _p = Path(artifact_save_path)
         assert_not_champion_path(
             _p,
@@ -608,8 +630,7 @@ class WalkForwardTrainer:
             fold_X = X_raw[start_idx:end_idx]
             fold_y = y[start_idx:end_idx]
             if len(fold_X) < 10:
-                continue
-            # PURGED + EMBARGOED split. The embargo tail is dropped from the
+                continue  # PURGED + EMBARGOED split. The embargo tail is dropped from the
             # validation block so labels whose horizon runs past the fold cannot be
             # scored with information the model would not have had at decision time.
             train_end_point, test_start_point, test_end_point = self._split_fold_with_embargo(
@@ -687,13 +708,22 @@ class WalkForwardTrainer:
             early_stopped = False
             fold_train_losses: list[float] = []
             fold_val_losses: list[float] = []
+            _fold_t0 = time.monotonic()
             for _epoch in range(self.epochs):
+                self._check_cancelled()
                 train_loss = self._train_one_epoch(model, train_loader, optimizer, criterion)
                 scheduler.step()
                 val_loss = self._evaluate_loss(model, test_loader, criterion)
                 epochs_run = _epoch + 1
                 fold_train_losses.append(float(train_loss))
                 fold_val_losses.append(float(val_loss))
+                self._emit_epoch_progress(
+                    fold=fold + 1,
+                    epoch=_epoch + 1,
+                    loss=float(train_loss),
+                    val_loss=float(val_loss),
+                    elapsed_sec=round(time.monotonic() - _fold_t0, 2),
+                )
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     best_state = copy.deepcopy(model.state_dict())
@@ -1752,6 +1782,36 @@ class WalkForwardTrainer:
                 mapped.append(int(self.label_map[lab]))
         y = np.array(mapped, dtype=np.int64)
         return X_raw, y
+
+    # ------------------------------------------------------------------
+    # BUG-293 first-run progress/cancel seams (dormant when unconfigured)
+    # ------------------------------------------------------------------
+    def _check_cancelled(self) -> None:
+        """Epoch-boundary cancel check. Raises TrainingCancelledError so the
+        artifact path is never mid-write when a cancel lands."""
+        ev = self._cancel_event
+        if ev is not None and bool(ev.is_set()):
+            raise TrainingCancelledError("walk-forward training cancelled by operator")
+
+    def _emit_epoch_progress(
+        self, *, fold: int, epoch: int, loss: float, val_loss: float, elapsed_sec: float
+    ) -> None:
+        cb = self._progress_cb
+        if cb is None:
+            return
+        payload = {
+            "fold": int(fold),
+            "folds": int(self.num_folds),
+            "epoch": int(epoch),
+            "epochs": int(self.epochs),
+            "loss": loss,
+            "val_loss": val_loss,
+            "elapsed_sec": elapsed_sec,
+        }
+        try:
+            cb(payload)
+        except Exception as cb_err:  # a UI fault must never break training
+            logger.warning("training progress_cb failed (ignored): %s", cb_err)
 
     def _fit_scaler(self, X_raw: np.ndarray) -> ScalerBundle:
         if not self.use_feature_scaling:
