@@ -425,3 +425,8 @@ tests/unit/test_byte_identical_news_dedup.py
 # read offloaded from the event loop in RuntimeLoop._poll_tick (shielded, drained
 # on cancel, paper/direct inline, execution untouched).
 tests/unit/test_perf_r4_runtime_loop_offload.py
+# MT5-inspired Truthful Backtest Report Engine & UI contract
+tests/unit/test_backtest_report.py
+tests/unit/test_backtest_report_integration.py
+tests/unit/test_backtest_report_asset.py
+tests/unit/test_factory_backtest_report_projection.py

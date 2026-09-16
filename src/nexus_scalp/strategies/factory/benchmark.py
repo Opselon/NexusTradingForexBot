@@ -241,6 +241,9 @@ def build_benchmark_artifact(
             "avg_win_r": bt.get("avg_win_r"),
             "avg_loss_r": bt.get("avg_loss_r"),
         }
+        bt_report = bt.get("report")
+        if bt_report is not None:
+            bt_explain["report"] = bt_report
 
     rob_explain = None
     if rob:

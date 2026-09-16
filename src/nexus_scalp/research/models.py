@@ -341,6 +341,8 @@ class BacktestResult(BaseModel):
     #: String annotation: SizedEconomicResult is defined in research.metrics
     #: and resolved via rebuild_economic_refs() below (import-cycle contract).
     sized: Any = Field(default=None)
+    #: Additive empirical replay report; old persisted results remain readable.
+    report: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def has_positive_expectancy(self) -> bool:
