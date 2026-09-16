@@ -418,4 +418,5 @@ tests/unit/test_bug298_provisioning_web_api.py
 # scenarios were exact no-ops (PASS with max_degradation=0.0). Cap now derived from
 # evidence; a cap-pinned gate fails closed ROBUSTNESS_NOT_SIMULABLE.
 tests/unit/test_bug299_friction_cap_saturation.py
-
+tests/unit/test_bug300_ai_triage_fallback.py
+tests/unit/test_bug300_workflow_ai_wiring.py

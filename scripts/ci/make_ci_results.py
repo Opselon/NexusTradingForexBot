@@ -44,6 +44,9 @@ SECRET_PRESENCE_ENV = [
     "NEXUS_TELEGRAM_BOT_TOKEN",
     "NEXUS_TELEGRAM_ADMIN_ID",
     "CODECOV_TOKEN",
+    # BUG-300: AI triage endpoint configuration (presence only, values never read).
+    "AI_HOST",
+    "AI_KEY",
 ]
 
 TRUTHY = {"1", "true", "yes", "on"}
