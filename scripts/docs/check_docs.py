@@ -255,8 +255,11 @@ def check_built_site_structure() -> None:
         "sitemap.xml",
         "search-index.json",
         "site-meta.json",
+        "data/project-status.json",
         "assets/styles.css",
         "assets/search.js",
+        "assets/landing.css",
+        "assets/landing.js",
         "assets/favicon.svg",
         "releases/index.html",
     ):
@@ -379,6 +382,24 @@ def check_seo_gate() -> None:
     ok = proc.returncode == 0
     detail = "ok" if ok else (proc.stdout.strip().splitlines()[-1] if proc.stdout else "failed")
     record("SEO gate", ok, [detail])
+
+
+def check_landing_gate() -> None:
+    """Cinematic landing contract: structure, truth (no fabricated numbers),
+    evidence fields, i18n parity and generated project-status.json."""
+    import subprocess
+
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "docs" / "check_landing.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=120,
+        check=False,
+    )
+    ok = proc.returncode == 0
+    detail = "ok" if ok else (proc.stdout.strip().splitlines()[-1] if proc.stdout else "failed")
+    record("Landing gate", ok, [detail])
 
 
 def check_perf_budget() -> None:
@@ -540,6 +561,7 @@ def main() -> int:
     check_built_site_structure()
     check_localization_gate()
     check_seo_gate()
+    check_landing_gate()
     check_perf_budget()
     check_mermaid()
     check_build()
