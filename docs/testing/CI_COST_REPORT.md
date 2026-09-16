@@ -91,3 +91,49 @@ Monday schedule / dispatch — its 5×-billed per-PR re-execution removed.
   the push that starts that measurement); the T1 timing above is the authoritative
   local number and matches the structural budget argument (143 files, none of the
   3 cost outliers, promoted set ~20 s).
+
+---
+
+# WAVE 2 — Agent-Loop Reduction (measured 2026-09-15, this machine, 8-core)
+
+## Success metrics (§33), before → after, measured not estimated
+
+| metric | wave-1 end | wave-2 end | how measured |
+|---|---|---|---|
+| test files on disk | 486 | 481 | AST inventory (`inventory_raw.json`, 490 raw incl. manual/) |
+| collected tests | 5,891 | 5,851* | pytest collection (same basis both runs) |
+| T0 FAST lane | none (fast_suite unwired) | **25 files, 20–26 s wall**, wired into `check_local.py` | `-n 4` loadgroup, two runs |
+| T1 files / tests / wall | 143 / 1,931 / 127 s | **163 / 1,768 / 141 s** pre-merge, **175 / 1,923 / 162 s** after merging main (0 failed) | `-n auto` junit (`junit_w2_final.xml`, `junit_w2_merged2.xml`) |
+| T1 worker-seconds | 542 | 525 | junit sum (net −17 s at +22 files) |
+| T2 lane | 3 files (never executed) | **14 files, 81 s, runs on every main push + release SHA** | `ci.yml:extended` (green on main, GitHub run 34909926825) |
+| files with forensic verdict | 110 (salvaged) | **~340 (63 PROTECTED + 277 reviewed)** | `merge_verdicts.py` + `test_protection.json` |
+| CR-registry owners actually manifested | 41 (drift: recon batteries + named owners missing) | **all named owners manifested** (+22 files, +50 ws) | manifest diff + `verify_critical_suite_manifest` 163/163 |
+| silent-zero-collection files fixed | 1 (hist_sim deleted) | +1 more: `tests/cli/test_docs_consistency.py` (0 test functions → real T1 test) | run rc=0 |
+| evidence-backed deletions | 6 | +5 (merged-duplicate + delegation mirror; §14-verified, superset counts 108=87+21, 92=66+26) | `classification_overrides.json` |
+| agent edit→feedback loop | pytest tests/unit ≈ 24 min | **20 s FAST, 141-162 s CRITICAL** | above |
+
+## Value/cost model (brief §16) — what moved and why
+- **Low value / high cost, deleted**: 4 merged incident/forensic source files
+  (unmanifested, 0 CR rows, superset-verified) + dead-letter delegation mirror.
+- **High value / high cost, DEMOTED not deleted** (−74 ws off PR lane, still
+  main-push+release executed): forensics 237→12.3 ws-share, incidents,
+  walk_forward_trainer, lifecycle_e2e_v3, outcome_recovery_sweep, +6 family pins.
+- **High value / low cost, PROMOTED** (+50 ws, 22 files): every CR-named owner
+  incl. the five mutation-KILLED recon batteries, CI meta-gates (tests/ci/*),
+  docs-CLI consistency.
+- **Kept despite cost with a rewrite ticket** (fixture census, est. recoverable
+  seconds): gate_bypass 5213 s→materialize-once (~350 s), live_state_contract
+  539 s→module app (~350 s), bug276/deadletter/migrations ~2.4k s→blessed-DB
+  backup-copies (~1.9k s), news seed 428 s→single txn (~300 s). Deferred with
+  evidence in `wave2_findings_open`; NOT deleted (§35).
+
+## Honest caveats (wave 2)
+- 141 s T1 wall on an 8-core dev box ≠ GitHub ubuntu-4core minutes (CI stays
+  ~6 min with install; the +14 s net cost lands well inside the ≤5 min budget).
+- Two registry owners stay UNPROTECTED-by-manifest pending rewrites, disclosed:
+  `packaged_db_and_mode_bug146_149` (order-dependent boot) and
+  `launcher_paper_boundary_bug212` (split mandate) — invariant currently
+  carried by bug232/replay_toggle/marketplace in T1; registry cells updated.
+- `rejected_candidate_not_persisted` discovered as a deterministic local RED
+  (early-stop vs accept-persist contract, both pre- and post-#199 trees) — a
+  real production question filed for the trainer owner, not hidden (§26/§42).

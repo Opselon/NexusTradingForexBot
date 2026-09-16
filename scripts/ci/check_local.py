@@ -389,9 +389,10 @@ def stage_decision_ids() -> StageResult:
 
 
 def stage_fast_tests(scope_files: list[str]) -> StageResult:
-    """Cheap targeted tests: the local-gate regression suite (does NOT modify
-    the real tree) + the manifest unit tests when they exist. Never xdist,
-    never coverage, never network.
+    """Cheap targeted tests: the FAST lane manifest (tests/fast_suite.txt —
+    one mutation-proven owner per P0 domain, budget <=60s, wave-2 agent-loop
+    contract) + the legacy single-file target for backward parity. Never
+    coverage, never network.
 
     NOTE: the gate's own regression suite is EXCLUDED from the gate's fast
     stage (it materializes HEAD into temp trees and re-invokes the gate —
@@ -401,7 +402,31 @@ def stage_fast_tests(scope_files: list[str]) -> StageResult:
     targets = [
         REPO_ROOT / "tests" / "unit" / "test_research_purge_defaults_bug183.py",
     ]
-    args = [sys.executable, "-m", "pytest", "-q", "--no-header", "-x", "-p", "no:cacheprovider"]
+    fast_manifest = REPO_ROOT / "tests" / "fast_suite.txt"
+    xdist_args: list[str] = []
+    if fast_manifest.exists():
+        manifest_targets = [
+            (REPO_ROOT / ln.split("#")[0].strip())
+            for ln in fast_manifest.read_text(encoding="utf-8").splitlines()
+            if ln.split("#")[0].strip()
+        ]
+        manifest_existing = [t for t in manifest_targets if t.exists()]
+        if manifest_existing:
+            # The FAST lane is the agent-loop gate: xdist -n 4 measured 20s on
+            # an 8-core host (serial 66s; -n 8 slower — interpreter-start bound).
+            targets = manifest_existing
+            xdist_args = ["-n", "4", "--dist", "loadgroup"]
+    args = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "--no-header",
+        "-x",
+        "-p",
+        "no:cacheprovider",
+        *xdist_args,
+    ]
     existing = [str(t.relative_to(REPO_ROOT)) for t in targets if t.exists()]
     if not existing:
         return StageResult(
