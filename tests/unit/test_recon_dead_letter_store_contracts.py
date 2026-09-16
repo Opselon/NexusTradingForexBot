@@ -198,3 +198,61 @@ def test_dead_letter_survives_simulated_restart(tmp_path) -> None:
         assert rows[0]["error_type"] == "ValueError"
     finally:
         r2.close()
+
+
+# ---------------------------------------------------------------------------
+# Facade contracts that the wave-2 name-overlap audit found WITHOUT a surviving
+# home (second pass, after the store-behavior restoration). These are not
+# delegation mirrors: both assert observable, incident-bearing behavior of the
+# PUBLIC AuditRepository surface that no other battery exercises.
+# ---------------------------------------------------------------------------
+
+
+def test_repo_schema_created_at_setup_zero_migration(repo) -> None:
+    """The audit_dead_letter table must exist right after repository
+    construction (DDL applied on the repo's setup connection) with the
+    pre-split column contract — no schema change to the incident ledger.
+
+    Distinct from test_store_create_table_is_idempotent_verbatim_schema, which
+    pins create_table() on a bare store: this pins that a *constructed
+    repository* already carries the table, i.e. the DDL is wired into setup and
+    not deferred to first write (a deferred DDL would drop the first
+    dead-letter of a fresh install — the incident nobody would ever see)."""
+    with sqlite3.connect(repo._db_path) as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(audit_dead_letter)").fetchall()]
+    assert cols == [
+        "id",
+        "failed_at",
+        "table_name",
+        "query",
+        "args_json",
+        "error_type",
+        "error_message",
+        "retry_count",
+        "sequence_no",
+        "payload_note",
+    ]
+
+
+def test_repo_batch_recovery_counter_contract_still_holds(repo) -> None:
+    """The counter the batch-recovery worker path reads must be the store-owned
+    one: after N dead-letters through the PUBLIC facade (the same call site the
+    batch-recovery block uses), repo.audit_dead_letter_rows agrees with the
+    store it composes, and the rows carry the batch-recovery payload note.
+
+    A split-brain counter here means the recovery worker believes rows were
+    salvaged that were never recorded — the exact failure the dead-letter
+    surface exists to make impossible."""
+    for i in range(2):
+        repo.record_dead_letter(
+            query="INSERT INTO audit_signals (request_id) VALUES (?)",
+            args=(f"req-{i}",),
+            error=sqlite3.IntegrityError("constraint"),
+            retry_count=1,
+            payload_note="audit worker batch-retry failure",
+        )
+    assert repo.audit_dead_letter_rows == 2
+    assert repo.audit_dead_letter_rows == repo.dead_letter_store.audit_dead_letter_rows
+    dl = repo.get_dead_letter_rows()
+    assert len(dl) == 2
+    assert all("audit worker batch-retry failure" == r["payload_note"] for r in dl)

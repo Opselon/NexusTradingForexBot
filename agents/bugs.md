@@ -8773,6 +8773,22 @@ live at:
 | tests/unit/test_incident_runtime_task13.py | tests/unit/test_incidents.py (T1) |
 | tests/unit/test_dead_letter_store_split.py | store-behavior contracts restored in tests/unit/test_recon_dead_letter_store_contracts.py (T1); the 6 facade-delegation mirror asserts intentionally not restored (wiring-shape per reduction brief §12; facade behavior covered by test_recon_batch_atomicity_real_failure.py + test_runtime_safety_mission.py) |
 
+### Second-pass audit correction (2026-09-16, independent re-verification of the reductions)
+
+The first pass classified all 7 `test_repo_*` tests as delegation mirrors. That was
+accurate for 5 of them, but TWO assert observable, incident-bearing behavior of the
+PUBLIC `AuditRepository` surface and had NO surviving home anywhere in `tests/`:
+
+| contract | why it is not a mirror | now pinned in |
+|---|---|---|
+| `test_repo_schema_created_at_setup_zero_migration` | pins that a *constructed repository already carries* `audit_dead_letter` (DDL wired into setup, not deferred to first write) with the 10-column incident-ledger contract. The surviving `test_store_create_table_is_idempotent_verbatim_schema` pins `create_table()` on a **bare store**, which is a different seam: a deferred-DDL regression drops the FIRST dead-letter of a fresh install — the incident nobody would ever see. | `test_recon_dead_letter_store_contracts.py` (T1) |
+| `test_repo_batch_recovery_counter_contract_still_holds` | pins facade/store counter AGREEMENT through the public `record_dead_letter` call site the batch-recovery worker uses (`repo.audit_dead_letter_rows == repo.dead_letter_store.audit_dead_letter_rows`) plus the batch-recovery `payload_note` surviving to the rows. `test_recon_batch_atomicity_real_failure.py` does NOT touch `audit_dead_letter_rows` at all; a split-brain counter makes the recovery worker believe rows were salvaged that were never recorded. | `test_recon_dead_letter_store_contracts.py` (T1) |
+
+Both restored pins were MUTATION-PROVEN (executed, not asserted): forcing
+`audit_dead_letter_rows` to a stale constant → RED; skipping
+`dead_letter_store.create_table(conn)` at repository setup → RED; pristine → GREEN.
+Survivor file is now 9 tests (was 7), all GREEN, still critical_suite-pinned.
+
 Deletion-protection ledger: docs/testing/test_protection.json. Full evidence:
 docs/testing/test_value_matrix.md + scripts/testing/classification_overrides.json.
 
