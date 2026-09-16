@@ -28,7 +28,9 @@ files or any other credential storage into this repository.
 | `TELEGRAM_CHAT_ID` | `.github/workflows/ci.yml`, `release.yml` (Telegram CI/CD observability) | Destination chat/group id for CI notifications; falls back to `USER_ID` | No for CI | Repository |
 | `USER_ID` | `.github/workflows/*.yml` (Telegram CI/CD observability) | Telegram destination chat id (numeric); used as fallback when `TELEGRAM_CHAT_ID` is absent | No for CI | Repository |
 | `NEXUS_TELEGRAM_BOT_TOKEN` | runtime / Telegram reports; presence-checked in CI | Telegram bot token for project notifications | No for CI (bounded report feature) | Repository (runtime env) |
-| `NEXUS_TELEGRAM_ADMIN_ID` | runtime / Telegram reports; presence-checked in CI | Admin chat id for Telegram reports | No for CI | Repository (runtime env) |
+| `NEXUS_TELEGRAM_ADMIN_ID` | runtime / Telegram reports; presence-checked in CI | Admin chat id for Telegram reports | No for CI (bounded report feature) | Repository (runtime env) |
+| `AI_HOST` | `telegram_notify.py ai-triage` via `src/nexus_scalp/observability/ci_ai_triage.py` (BUG-300) | Base URL of the operator OpenAI-compatible endpoint used to root-cause CI/release/PR summaries before the Telegram feed delivers them. Reachability-probed with timers; absent/down => deterministic rules fallback. Value never printed, never embedded in prompts/artifacts. | No (fallback is the designed degraded path) | Repository |
+| `AI_KEY` | same as `AI_HOST` (BUG-300) | Bearer key for the AI endpoint. Scrubbed from all outbound prompt context by literal + pattern redaction before any call. | No | Repository |
 
 > `NEXUS_TELEGRAM_*` are read by the application at runtime (settings service),
 > not by workflows; CI only records whether they are configured

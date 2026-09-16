@@ -605,6 +605,51 @@ def format_security_event(ctx: CIContext, *, scan: str, status: str, detail: str
     return _blockquote(lines)
 
 
+def format_ai_triage(
+    ctx: CIContext,
+    *,
+    kind: str,
+    analysis: str,
+    provenance: str,
+    model: str = "",
+    probe: dict | None = None,
+) -> str:
+    """AI (or fallback-rule) root-cause block appended to a summary lane.
+
+    ``analysis`` is model output = UNTRUSTED content: it is HTML-escaped in
+    full before render, so a prompt-injected endpoint cannot forge markup or
+    links into the Telegram channel. Provenance + probe timings make the
+    fallback path visible (AI vs rule-based, why).
+    """
+    header = {
+        "ci-failure": "CI AI TRIAGE",
+        "release-failure": "RELEASE AI TRIAGE",
+        "security": "SECURITY AI TRIAGE",
+        "pr-analysis": "PR AI REVIEW NOTE",
+        "push-summary": "PUSH AI SUMMARY",
+    }.get(kind, "AI TRIAGE")
+    mark = "\U0001f916" if provenance == "AI" else "\u26a0\ufe0f"
+    lines = [
+        _head(mark, header),
+        DIVIDER,
+        _kv("Source", code(provenance)),
+    ]
+    if model:
+        lines.append(_kv("Model", code(model)))
+    probe = probe or {}
+    if probe.get("status"):
+        timing = str(probe.get("status"))
+        if probe.get("connect_sec") is not None:
+            timing += f" connect={probe['connect_sec']}s"
+        if probe.get("total_sec") is not None:
+            timing += f" total={probe['total_sec']}s"
+        lines.append(_kv("Endpoint", code(timing)))
+    lines.extend(ctx.context_lines(include_job=bool(ctx.job)))
+    lines.append("")
+    lines.append(esc(analysis))
+    return _blockquote(lines)
+
+
 def format_retry(
     ctx: CIContext,
     *,
@@ -843,6 +888,7 @@ __all__ = [
     "code_short",
     "esc",
     "esc_short",
+    "format_ai_triage",
     "format_artifact_summary",
     "format_error_details",
     "format_pr_event",

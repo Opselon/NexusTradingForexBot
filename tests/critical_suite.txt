@@ -393,3 +393,5 @@ tests/unit/test_bug297_evaluator_hot_path_reads.py
 tests/unit/test_bug298_fresh_install_bootstrap.py
 tests/unit/test_bug298_model_provisioning.py
 tests/unit/test_bug298_provisioning_web_api.py
+tests/unit/test_bug300_ai_triage_fallback.py
+tests/unit/test_bug300_workflow_ai_wiring.py

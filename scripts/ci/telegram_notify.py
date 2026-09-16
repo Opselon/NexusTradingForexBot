@@ -182,6 +182,32 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
+    # BUG-300: AI failure triage appended to the summary lanes. The analysis
+    # is advisory; the command exits 0 even when the AI endpoint is down —
+    # then the deterministic rules fallback carries the message instead.
+    p = sub.add_parser("ai-triage")
+    p.add_argument(
+        "--kind",
+        default="ci-failure",
+        choices=("ci-failure", "release-failure", "security", "pr-analysis", "push-summary"),
+    )
+    p.add_argument(
+        "--context", default="", help="optional JSON evidence file (else built from --results)"
+    )
+    p.add_argument(
+        "--no-send", action="store_true", help="write ci-results/run-info/ai-analysis.* only"
+    )
+    p.set_defaults(
+        func=lambda a: _emit(
+            _ai_triage(
+                a.results,
+                kind=a.kind,
+                context_path=a.context or None,
+                send_telegram=not a.no_send,
+            )
+        )
+    )
+
     args = parser.parse_args(argv)
     try:
         return int(args.func(args) or 0)
@@ -192,6 +218,20 @@ def main(argv: list[str] | None = None) -> int:
 
 def _send_custom(reporter: CITelegramReporter, html_text: str) -> dict:
     return reporter._send_text(html_text, event_type="CUSTOM")
+
+
+def _ai_triage(
+    results_dir: str, *, kind: str, context_path: str | None, send_telegram: bool
+) -> dict:
+    """BUG-300 dispatch seam: delegate to ci_ai_triage.notify_triage."""
+    from nexus_scalp.observability.ci_ai_triage import notify_triage
+
+    return notify_triage(
+        kind,
+        results_dir,
+        context_path=context_path,
+        send_telegram=send_telegram,
+    )
 
 
 if __name__ == "__main__":
