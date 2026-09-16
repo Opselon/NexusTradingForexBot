@@ -30,7 +30,7 @@ def hygiene_env(tmp_path: Path):
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     news_db = artifacts / "news.db"
-    
+
     conn = sqlite3.connect(str(news_db))
     conn.executescript(
         """
@@ -47,7 +47,7 @@ def hygiene_env(tmp_path: Path):
         );
         """
     )
-    
+
     # 1. Canonical story (min rowid for the Gold Price group)
     conn.execute(
         "INSERT INTO news_articles (article_id, article_hash, canonical_url, title, summary, body, source_id) "
@@ -86,7 +86,7 @@ def hygiene_env(tmp_path: Path):
         "INSERT INTO news_articles (article_id, article_hash, canonical_url, title, summary, body, source_id, is_duplicate, duplicate_of) "
         "VALUES ('F2', 'hashF2', 'http://example.com/3', 'Silver Price (dup)', 'Sum2', 'Body2', 'SRC3', 1, 'hashF1')"
     )
-    
+
     conn.commit()
     conn.close()
     return tmp_path, news_db
@@ -149,24 +149,22 @@ def test_safe_clean_archives_and_deletes(hygiene_env):
     """SAFE_CLEAN archives duplicate rows then deletes them."""
     tmp_path, news_db = hygiene_env
     worker = DatabaseHygieneWorker(
-        repo_root=tmp_path,
-        mode=WorkerMode.SAFE_CLEAN,
-        apply_deletes=True
+        repo_root=tmp_path, mode=WorkerMode.SAFE_CLEAN, apply_deletes=True
     )
     res = worker.run_cycle(["news"])
     db_res = res["databases"]["news"]
-    
+
     assert db_res["archived"].get("news_articles", 0) == 3
     assert db_res["deleted"].get("news_articles", 0) == 3
-    
+
     conn = sqlite3.connect(str(news_db))
     remaining = {r[0] for r in conn.execute("SELECT article_id FROM news_articles").fetchall()}
     conn.close()
-    
-    assert "A" in remaining   # canonical kept
+
+    assert "A" in remaining  # canonical kept
     assert "B" not in remaining  # byte-identical dup deleted
     assert "C" not in remaining  # byte-identical dup deleted
-    assert "D" in remaining   # different body kept
+    assert "D" in remaining  # different body kept
     assert "E1" in remaining  # empty kept
     assert "E2" in remaining  # empty kept
     assert "F1" in remaining  # canonical kept
@@ -177,25 +175,23 @@ def test_canonical_missing_blocks_delete(hygiene_env):
     """If the canonical row is deleted between plan and execute, the duplicate SURVIVES."""
     tmp_path, news_db = hygiene_env
     worker = DatabaseHygieneWorker(
-        repo_root=tmp_path,
-        mode=WorkerMode.SAFE_CLEAN,
-        apply_deletes=True
+        repo_root=tmp_path, mode=WorkerMode.SAFE_CLEAN, apply_deletes=True
     )
     # Build plan while A exists
     conn_ro = sqlite3.connect(f"file:{news_db}?mode=ro", uri=True)
     plan = worker.planner.build_plan("news", conn_ro)
     conn_ro.close()
-    
+
     # Now kill canonical row A
     conn = sqlite3.connect(str(news_db))
     conn.execute("DELETE FROM news_articles WHERE article_id = 'A'")
     conn.commit()
-    
+
     worker.executor.apply_plan("news", str(news_db), plan, "run-1", apply_deletes=True)
-    
+
     remaining = {r[0] for r in conn.execute("SELECT article_id FROM news_articles").fetchall()}
     conn.close()
-    
+
     # B and C survive because their canonical A is gone
     assert "B" in remaining
     assert "C" in remaining
@@ -206,7 +202,7 @@ def test_missing_columns_graceful(tmp_path: Path):
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     news_db = artifacts / "news.db"
-    
+
     conn = sqlite3.connect(str(news_db))
     conn.executescript(
         """
@@ -218,7 +214,7 @@ def test_missing_columns_graceful(tmp_path: Path):
         """
     )
     conn.close()
-    
+
     worker = DatabaseHygieneWorker(repo_root=tmp_path, mode=WorkerMode.DRY_RUN)
     res = worker.run_cycle(["news"])
     assert res["databases"]["news"]["duplicates_found"] == 0

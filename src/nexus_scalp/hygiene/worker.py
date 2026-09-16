@@ -685,7 +685,7 @@ class CleanupExecutor:
                     (cand.canonical_row_id,),
                 ).fetchone()
                 return canon is not None
-            
+
             row = conn.execute(
                 "SELECT duplicate_of FROM news_articles WHERE article_id = ?",
                 (cand.row_id,),

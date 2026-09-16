@@ -140,6 +140,7 @@ class DuplicateDetector:
     # ------------------------------------------------------------------
     def scan_news(self, conn: sqlite3.Connection) -> list[DuplicateCandidate]:
         import hashlib
+
         found: list[DuplicateCandidate] = []
         seen_articles = set()
 
@@ -191,15 +192,19 @@ class DuplicateDetector:
         try:
             cols = {r[1] for r in conn.execute("PRAGMA table_info(news_articles)").fetchall()}
             if "article_id" in cols:
-                url_col = "canonical_url" if "canonical_url" in cols else ("url" if "url" in cols else None)
+                url_col = (
+                    "canonical_url"
+                    if "canonical_url" in cols
+                    else ("url" if "url" in cols else None)
+                )
                 title_col = "title" if "title" in cols else None
                 body_col = "body" if "body" in cols else None
                 summary_col = "summary" if "summary" in cols else None
-                
+
                 if url_col and title_col:
                     b_expr = f"COALESCE({body_col}, '')" if body_col else "''"
                     s_expr = f"COALESCE({summary_col}, '')" if summary_col else "''"
-                    
+
                     query = f"""
                         WITH ranked AS (
                             SELECT 
@@ -238,7 +243,7 @@ class DuplicateDetector:
                         hasher.update(b"|")
                         hasher.update((s_val or "").strip().encode("utf-8"))
                         fingerprint = hasher.hexdigest()
-                        
+
                         seen_articles.add(art_id)
                         found.append(
                             DuplicateCandidate(
@@ -249,7 +254,7 @@ class DuplicateDetector:
                                 identity_layer="url+title+body_fingerprint",
                                 confidence=Confidence.EXACT_DUPLICATE,
                                 detail=f"byte-identical duplicate of canonical article_id={canon_art_id} "
-                                       f"(fingerprint={fingerprint[:16]})",
+                                f"(fingerprint={fingerprint[:16]})",
                                 cleanup_class="BYTE_IDENTICAL_DUPLICATE",
                             )
                         )
