@@ -393,3 +393,10 @@ tests/unit/test_bug297_evaluator_hot_path_reads.py
 tests/unit/test_bug298_fresh_install_bootstrap.py
 tests/unit/test_bug298_model_provisioning.py
 tests/unit/test_bug298_provisioning_web_api.py
+
+# BUG-299 (NSE-Swarm role4, 2026-09-16): the canonical-costs research bridge left
+# max_slippage_ticks at the 5.0 model default while calibrated friction is ~20 ticks —
+# every default-costs backtest paid 25% of real cost and the robustness GATE8 stress
+# scenarios were exact no-ops (PASS with max_degradation=0.0). Cap now derived from
+# evidence; a cap-pinned gate fails closed ROBUSTNESS_NOT_SIMULABLE.
+tests/unit/test_bug299_friction_cap_saturation.py

@@ -436,6 +436,13 @@ class RobustnessResult(BaseModel):
     max_degradation: float = Field(default=0.0)  # absolute drop from baseline
     status: str = Field(...)  # PASS | FAIL
     reason: str = Field(default="")
+    #: BUG-299 (P0-3 item 3): scenarios whose perturbation did NOT change the
+    #: effective friction the backtest pays (cap-pinned friction, or a
+    #: dimension the deterministic model cannot price, e.g. latency). Honest
+    #: census: these are recorded as NOT_SIMULABLE measurements, never
+    #: presented as a 0-degradation PASS. The gate fails closed when EVERY
+    #: friction-bearing scenario is in this list.
+    not_simulable_scenarios: list[str] = Field(default_factory=list)
 
 
 class StrategyScore(BaseModel):
