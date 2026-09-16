@@ -169,3 +169,24 @@ main green (post-#212), host tree clean at the wave branch tip; concurrent lanes
 operate in their own worktrees under their own branches. Every claim above is bound to
 a `docs/audit/wave_20260914/` lane report, an `agents/bugs.md` entry (BUG-276..295), or
 the two machine artifacts beside this file.
+
+## 15. Closeout addendum (2026-09-16, end of wave)
+
+All queue items landed; post-merge main CI settled with **0 failures**. Session merge
+ledger: #216 report+inventory `88bb4546` · #217 BUG-293 `7678a9ed` · #220 lock drift
+`ad050c89` · #214 BUG-294 `3df969bb` · #218 BUG-295 `1d647859` · #222 BUG-297
+`d0764962` · #221 BUG-296 `78c77e03`. Sections 5/8 above predate some of these merges —
+read them as historical: the zero-state bootstrap (Z-B1/Z-B5/W12-1), hygiene dead-rule
+healing (DBF-004), the evaluator hot-path fix (R5) and the bounded-maps behavioral net
+are ALL on main now; from the lane-05 blocker list only Z-B4 (Linux gateway
+default-creds) and Z-B6 (cold-start champion-sync class defaults) remain open.
+Next-wave item 2 ("land the in-flight lanes -> then DB cleanup") is unblocked: the
+cleanup procedure in section 7 can now run under the healed hygiene rules.
+
+Operator actions outstanding (unchanged): (1) revoke/rotate the OAuth token embedded in
+`.git/config`'s remote URL; (2) prune the `sync-backup/*` remote refs (all ancestors of
+main); (3) fix the TELEGRAM-SEND-FAILED CI notify transport (role-12 closeout record
+#211); (4) the host working tree was left on another lane's branch
+(`fix/bug286-calendar-ownership`) with foreign in-progress edits — preserved per the
+no-foreign-destroy rule, clean up when that lane finishes.
+

@@ -215,21 +215,32 @@ def test_mint_recipe_is_deterministic(tmp_path: Path) -> None:
 
 # ---------------------------------------------------------------------------
 # 7. Source contract: fail-loud seam + seed-before-construct survive edits
+#    (BUG-296: the mint moved into nexus_scalp/release/model_bootstrap.py so
+#    `nexus repair --model` and the docker entrypoint share ONE recipe; the
+#    docker script is now a thin wrapper. The contracts are pinned on the
+#    module that OWNS the mint.)
 # ---------------------------------------------------------------------------
+
+BOOTSTRAP = REPO / "src" / "nexus_scalp" / "release" / "model_bootstrap.py"
 
 
 def test_provisioner_source_contract() -> None:
-    src = SCRIPT.read_text(encoding="utf-8")
-    # scope the ordering contract to the mint function body (the module
-    # docstring legitimately mentions ScalpNet first)
-    mint_body = src[src.index("def _mint_trained_starter") :]
+    src = BOOTSTRAP.read_text(encoding="utf-8")
+    # scope the ordering contract to the mint function body
+    mint_body = src[src.index("def mint_trained_starter") :]
     seed_at = mint_body.index("torch.manual_seed(MINT_SEED)")
     ctor_at = mint_body.index("ScalpNet(")
     assert seed_at < ctor_at, "manual_seed must precede ScalpNet construction"
     # never relax-the-gate drift: the mint must re-check the SERVING gates
-    assert "_is_servable(model)" in src, "mint must probe the serving gates"
+    assert "bundle_is_servable(model)" in src, "mint must probe the serving gates"
     assert "PROVISIONING_ERROR" in src, "unservable mint must fail loud"
-    # digest-match alone must never be the skip condition
-    assert "is_servable" in src.split("bundle verified")[0], (
-        "skip branch must gate on servability, not only the digest"
+    # digest-match alone must never be the skip condition: the VERIFIED branch
+    # of provision() must gate on servability before keeping/declining a write.
+    verified_branch = src[src.index("if verdict_status is ArtifactIntegrityStatus.VERIFIED") :]
+    assert "servable" in verified_branch.split("mint_starter_bundle")[0], (
+        "skip/keep branch must gate on servability, not only the digest"
     )
+    # docker wrapper keeps delegating (no recipe fork): it imports the seam.
+    wrapper = SCRIPT.read_text(encoding="utf-8")
+    assert "from nexus_scalp.release.model_bootstrap import" in wrapper
+    assert "def mint_trained_starter" not in wrapper, "mint must not fork back into docker"

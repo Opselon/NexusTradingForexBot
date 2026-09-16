@@ -179,6 +179,11 @@ tests/unit/test_bug268_min_loss_grace_clock.py
 # untrained weights that pass the digest gate then die on the P0 serving
 # probe -> fresh-volume container restart loop. Servability-gated re-mint.
 tests/unit/test_bug269_docker_starter_servable.py
+# BUG-296 (NSE-Swarm zero-state lane, 2026-09-15): nexus repair --model is the
+# ONLY supported zero-state model bootstrap (E1/E4/E8) — sidecar-stamped mint,
+# boot-#2 load, CHAMPION/verified-bundle clobber refusals (E9), db-migrate lock
+# mkdir (E6) and the cp1252 pre-bind panel safety (W12).
+tests/unit/test_bug296_repair_model.py
 # BUG-271 (NSE-Swarm role 4, 2026-09-13): governed in-place serving-artifact
 # persist (async retrain / collapse recovery / hot-swap) orphans the CHAMPION
 # fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
@@ -387,3 +392,9 @@ tests/unit/test_bug293_failopen_boundaries.py
 # stdout log_signal pin, report-cache LRU under real browsing (pins the BUG-287/290/291
 # behavior, not just its structure).
 tests/unit/test_bug294_bounded_runtime_behavior.py
+
+# BUG-297 (NSE-Swarm hot-path-sqlite lane, 2026-09-16): perf-wave R5 — the evaluator's
+# derived-registry reads (pre-trade tier-3 fallback twin of BUG-292) paid a raw
+# sqlite3.connect per call on the loop thread and bypassed the repository's URI contract.
+# Now one reused handle per (thread, timeout tier) through _connect_sqlite.
+tests/unit/test_bug297_evaluator_hot_path_reads.py

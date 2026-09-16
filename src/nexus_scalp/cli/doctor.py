@@ -744,10 +744,31 @@ def repair_cmd(
     force_recreate: bool = typer.Option(
         False, "--recreate-config", help="Restore config from template (keeps DBs)."
     ),
+    provision_model: bool = typer.Option(
+        False,
+        "--model",
+        help=(
+            "Provision the CONFIGURED model artifact with a PAPER starter bundle "
+            "(integrity sidecars stamped; governed champions are never touched) "
+            "— the zero-state bootstrap, BUG-296/Z-B1."
+        ),
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="With --model: re-provision a declared starter (NEVER a verified foreign bundle or champion).",
+    ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
     verify: bool = typer.Option(True, "--verify/--no-verify", help="Re-run doctor after repair."),
 ) -> None:
     """Repair non-destructive derived state. NEVER deletes user data."""
+    if force and not provision_model:
+        msg = "--force is only meaningful with --model"
+        if json_mode:
+            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(_error_panel("Invalid usage", msg, exit_code=xc.EXIT_USAGE))
+        raise typer.Exit(xc.EXIT_USAGE) from None
     with Progress(
         SpinnerColumn(style="cyan"),
         TextColumn("[bold cyan]Repairing…[/bold cyan]"),
@@ -757,17 +778,41 @@ def repair_cmd(
         progress.add_task("repair", total=None)
         engine = rrepair.RepairEngine()
         results = engine.run(recreate_dirs=force_recreate, with_news=news_db)
+    model_result: dict[str, Any] | None = None
+    model_failed = False
+    if provision_model:
+        from nexus_scalp.release import model_bootstrap
+
+        artifact = model_bootstrap.resolve_configured_artifact(engine.workspace)
+        try:
+            model_result = model_bootstrap.provision(
+                artifact, force=force, note="nexus repair --model provisioned (PAPER starter)"
+            )
+        except Exception as exc:  # ProvisioningError + unexpected: fail loud, never boot-loop
+            model_result = {"status": "FAILED", "artifact": str(artifact), "detail": str(exc)}
+            model_failed = True
     if json_mode:
         payload = engine.summary_dict(results)
+        if model_result is not None:
+            payload["model"] = model_result
         if verify:
             verdict, entries = _health_entries()
             payload["verify"] = {"overall": verdict, "checks": [e.to_dict() for e in entries]}
         _emit(payload, True)
+        if model_failed:
+            raise typer.Exit(1)
         return
     console.print(_banner(subtitle="repair — what we fixed"))
     for r in results:
         style = "green" if r.status == "OK" else ("yellow" if r.status == "SKIPPED" else "red")
         console.print(f"[{style}]{r.status:8}[/{style}] {r.action:12} {r.detail}")
+    if model_result is not None:
+        status = str(model_result.get("status"))
+        style = "red" if status == "FAILED" else ("green" if status == "MINTED" else "yellow")
+        console.print(
+            f"[{style}]{status:8}[/{style}] {'model':12} "
+            f"{model_result.get('artifact', '')} — {model_result.get('detail', '')}"
+        )
     if verify:
         verdict, entries = _health_entries()
         console.print("\n[bold]Verification after repair[/bold]")
@@ -785,7 +830,7 @@ def repair_cmd(
         if verdict in ("READY", "PASS"):
             console.print("[bold green]System verified — you can run: nexus start[/bold green]")
     failed = [r for r in results if r.status == "FAILED"]
-    raise typer.Exit(1 if failed else 0)
+    raise typer.Exit(1 if failed or model_failed else 0)
 
 
 @app.command("audit-purge")

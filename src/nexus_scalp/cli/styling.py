@@ -55,7 +55,7 @@ MODE_STYLES: dict[str, str] = {
     "SHADOW": "bold white on #3a3a1a",  # amber watch
     "LIVE": "bold white on #5a1a1a",  # guarded crimson
 }
-MODE_DOTS: dict[str, str] = {"PAPER": "●", "SHADOW": "◐", "LIVE": "■"}
+MODE_DOTS: dict[str, str] = {"PAPER": "*", "SHADOW": "o", "LIVE": "#"}
 MODE_TIPS: dict[str, str] = {
     "PAPER": "Safe simulation — no broker orders. Perfect for first run + tests.",
     "SHADOW": "Shadow paper — mirrors live decisions without execution.",
@@ -120,7 +120,7 @@ def _mode_style(mode_value: str) -> str:
 
 
 def _mode_dot(mode_value: str) -> str:
-    return MODE_DOTS.get(mode_value.upper(), "●")
+    return MODE_DOTS.get(mode_value.upper(), "*")
 
 
 def _verdict_style(v: str) -> str:
@@ -235,7 +235,7 @@ def _welcome_panel(
 
     body = (
         f"[bold]{_mode_dot(mode)}  Engine mode:[/bold] [{_mode_style(mode)}] {mode} [/{_mode_style(mode)}]"
-        f"{'  [bold red]⚠ LIVE[/bold red]' if live_risk else ''}{nl}"
+        f"{'  [bold red]!! LIVE[/bold red]' if live_risk else ''}{nl}"
         f"[bold]Instrument:[/bold] [bold cyan]{symbol}[/bold cyan]  "
         f"[dim]·[/dim]  Risk guard [bold]{risk_drawdown}%[/bold] max drawdown{nl}{nl}"
         f"[bold]Web Control Center[/bold]{nl}{endpoints_str}{nl}{nl}"
@@ -270,7 +270,7 @@ def _error_panel(
     # sounded like a blamer); keep red detail but add a calmer hint row.
     body = f"[bold red]{detail}[/bold red]"
     if hint:
-        body += f"\n\n[dim]→ {hint}[/dim]"
+        body += f"\n\n[dim]> {hint}[/dim]"
     if exit_code is not None:
         body += f"\n[dim]Exit code: {exit_code} ({xc.EXIT_NAMES.get(exit_code, '?')})[/dim]"
     return Panel(body, title=f"[bold red]{title}[/bold red]", border_style="red", box=box.ROUNDED)
@@ -279,8 +279,13 @@ def _error_panel(
 def _success_panel(title: str, body: str, *, border: str = "green") -> Panel:
     # UX polish: success panels now carry a subtle check prefix so "green
     # border" isn't the only success signal for light terminals.
+    # W12-1 (BUG-296): the prefix must stay cp1252-encodable — these panels
+    # render on the engine_boot path BEFORE the web server binds, and under
+    # redirected stdout (Windows default cp1252) a U+2713 glyph raised
+    # UnicodeEncodeError and killed the boot. rich already falls back to
+    # ASCII box drawing; the literal text never gets that treatment.
     return Panel(
-        f"[green]✓[/green] {body}",
+        f"[green]OK[/green]  {body}",
         title=f"[bold {border}]{title}[/bold {border}]",
         border_style=border,
         box=box.ROUNDED,
