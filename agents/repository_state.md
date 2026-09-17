@@ -1,5 +1,8 @@
 # REPOSITORY STATE SNAPSHOT — Nexus Scalp Engine (NSE)
 
+## Swarm role7 — 2026-09-17
+AUDIT-A6-WRAPPER locally verified: beforePush.sh interpreter header corrected; canonical runner unchanged. Six real-executable regressions pinned in critical_suite; all 51 tests/ci pass. Work isolated from foreign release checkout; remote review pending. Report: docs/agent_handoffs/swarm/2026-09-17_run7_wrapper.md.
+
 > Maintained per the MASTER MULTI-AGENT CONTRACT §6 (see `agents/multi-agent-git-contract.md`).
 > This is the project's CURRENT MAP. Refresh after substantial work.
 > Snapshot taken: 2026-08-18 (contract registry initialization).
