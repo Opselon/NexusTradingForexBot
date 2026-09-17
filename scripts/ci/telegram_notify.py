@@ -22,13 +22,103 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from nexus_scalp.observability.ci_telegram_reporter import CITelegramReporter  # noqa: E402
+# BUG-303: stdlib-only env probe BEFORE importing the observability package.
+# Lanes that call this entry point WITHOUT installing the project (JS Tests,
+# Trivy, SKIP-REPORT OS leg, ci-summary) previously died with
+# ModuleNotFoundError: No module named 'structlog'. Because every call site is
+# `|| true` + continue-on-error, the Telegram notification was silently lost.
+# The probe reports missing deps as JSON; if any are missing and --no-env-repair
+# is not set, we pip install --user the small pinned subset in THIS interpreter
+# (no torch/polars, no repo write). Import failure still emits a structured
+# ENV_IMPORT_FAILED payload instead of a bare traceback.
+_ENV_REPAIR = "--no-env-repair" not in sys.argv
+
+
+def _env_probe_status() -> dict:
+    """Stdlib-only dependency probe. Safe to call before any app import."""
+    try:
+        from nexus_scalp.observability.ci_env_probe import probe as env_probe
+
+        return {"category": "ENV_PROBE", "status": env_probe()}
+    except Exception as exc:  # pragma: no cover - probe is stdlib-only
+        return {"category": "ENV_PROBE_ERROR", "error": f"{type(exc).__name__}: {exc}"[:300]}
+
+
+def _env_import_failed_payload(exc: BaseException) -> dict:
+    """BUG-303 structured payload replacing a bare traceback."""
+    return {
+        "category": "ENV_IMPORT_FAILED",
+        "error": f"{type(exc).__name__}: {exc}"[:300],
+        "env_probe": _env_probe_status().get("status", {}),
+        "diagnosis": (
+            "The observability package could not be imported because required "
+            "third-party deps are absent in the CI interpreter (typical shape: "
+            "ModuleNotFoundError: No module named 'structlog' on lanes that do "
+            "not `pip install -e .`)."
+        ),
+        "remedy": (
+            "Re-run without --no-env-repair so the pinned subset "
+            "(structlog, pydantic, pydantic-settings, PyYAML, numpy) is "
+            "installed into the user site; or pre-install the project in the lane."
+        ),
+    }
+
+
+def _repair_env() -> dict:
+    """Install missing observability deps via pip --user (same interpreter)."""
+    probe_result = _env_probe_status()
+    status = probe_result.get("status") or {}
+    missing = status.get("missing") or []
+    if not missing:
+        return {"category": "ENV_REPAIR", "needed": False, "missing": []}
+    cmd = [sys.executable, "-m", "pip", "install", "--user", *missing]
+    try:
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
+    except Exception as exc:  # advisory, never fail CI
+        return {
+            "category": "ENV_REPAIR_FAILED",
+            "needed": True,
+            "missing": missing,
+            "error": f"{type(exc).__name__}: {exc}"[:200],
+        }
+    after = _env_probe_status().get("status") or {}
+    return {
+        "category": "ENV_REPAIR",
+        "needed": True,
+        "missing": missing,
+        "pip_rc": proc.returncode,
+        "pip_stderr_tail": (proc.stderr or "")[-400:],
+        "missing_after": after.get("missing", []),
+    }
+
+
+if not _ENV_REPAIR:
+    _ENV_REPAIR_RESULT: dict | None = None
+else:
+    # Probe FIRST (stdlib only); repair only when deps are missing. Both happen
+    # BEFORE `from nexus_scalp.observability...` so the reporter import lands on
+    # a healthy interpreter instead of dying with a masked ModuleNotFoundError.
+    _pre = _env_probe_status()
+    if (_pre.get("status") or {}).get("missing"):
+        _ENV_REPAIR_RESULT = _repair_env()
+        print(json.dumps(_ENV_REPAIR_RESULT, indent=2, sort_keys=True))
+    else:
+        _ENV_REPAIR_RESULT = {"category": "ENV_REPAIR", "needed": False, "missing": []}
+
+try:
+    from nexus_scalp.observability.ci_telegram_reporter import CITelegramReporter
+
+    _IMPORT_ERROR: BaseException | None = None
+except BaseException as _exc:
+    CITelegramReporter = None  # type: ignore[assignment,misc]
+    _IMPORT_ERROR = _exc
 
 
 def _reporter(args: argparse.Namespace) -> CITelegramReporter:
@@ -50,6 +140,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--chat-id", default="")
     parser.add_argument("--bot-token", default="")
     sub = parser.add_subparsers(dest="command", required=True)
+    # BUG-303: allow callers to skip the pip repair step.
+    parser.add_argument(
+        "--no-env-repair",
+        action="store_true",
+        help="skip stdlib-only env probe + pip --user repair of missing observability deps",
+    )
 
     sub.add_parser("run-started").set_defaults(
         func=lambda a: _emit(_reporter(a).notify_run_started())
@@ -209,10 +305,40 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    if not args.no_env_repair:
+        status_probe = _env_probe_status()
+        if (status_probe.get("status") or {}).get("missing"):
+            repair_res = _repair_env()
+            print(json.dumps(repair_res, indent=2, sort_keys=True))
+
+    if _IMPORT_ERROR is not None or CITelegramReporter is None:
+        print(
+            json.dumps(
+                _env_import_failed_payload(
+                    _IMPORT_ERROR or ImportError("CITelegramReporter not available")
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
     try:
         return int(args.func(args) or 0)
-    except Exception as err:  # never crash CI on a Telegram hiccup
-        print(json.dumps({"ok": False, "error": str(err)[:300]}))
+    except Exception as err:
+        status = _env_probe_status()
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": str(err)[:300],
+                    "env_probe": status.get("status", {}),
+                    "category": "ENV_IMPORT_FAILED",
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
 
 
