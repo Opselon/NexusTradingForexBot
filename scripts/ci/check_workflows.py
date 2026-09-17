@@ -474,7 +474,7 @@ def run(workflows_dir: Path, strict: bool = False) -> tuple[list[WorkflowModel],
         wf = parse_workflow(p)
         analyze_workflow(wf)
         models.append(wf)
-    # Determine exit code: ERROR -> 1; WARNING -> 1 only if strict.
+    # Exit code: ERROR -> 1; WARNING -> 1 only if strict.
     has_error = any(f.severity == "ERROR" for m in models for f in m.findings)
     has_warn = any(f.severity == "WARNING" for m in models for f in m.findings)
     exit_code = 0
@@ -483,6 +483,48 @@ def run(workflows_dir: Path, strict: bool = False) -> tuple[list[WorkflowModel],
     elif has_warn and strict:
         exit_code = 1
     return models, exit_code
+
+
+def validate_lane_report_step(wf: WorkflowModel) -> str | None:
+    """BUG-303: every watched workflow must end with a lane-report step
+    that is ``continue-on-error: true``, ``if: always()`` and ``|| true``.
+
+    Returns None when all watched steps comply, otherwise a message
+    string (severity WARNING) describing the offending steps.
+    """
+    observed: list[str] = []
+    for job_name, job in wf.jobs.items():
+        if job.get("runs-on"):
+            observed.append(job_name)
+    if len(observed) > 5:  # observed + report + 3 notify + 1 extra
+        observed = observed[:5]
+    issues: list[str] = []
+    for last_job in observed:
+        j = wf.jobs.get(last_job)
+        if not j:
+            continue
+        steps = j.get("steps") or []
+        if not steps:
+            continue
+        last = steps[-1]
+        uses = last.get("uses", "") or ""
+        run_cmd = last.get("run") or ""
+        if "lane-report" not in uses and "lane_report" not in run_cmd:
+            issues.append(f"{wf.name}:{last_job} last step is not lane-report: uses={uses!r}")
+        if not last.get("continue-on-error"):
+            issues.append(f"{wf.name}:{last_job} lane-report step lacks continue-on-error: true")
+        cond = last.get("if", "")
+        if cond != "always()" and str(cond) != '"always()"':
+            issues.append(
+                f"{wf.name}:{last_job} lane-report step if-condition is {cond!r}, expected always()"
+            )
+        if not run_cmd.endswith("|| true"):
+            issues.append(
+                f"{wf.name}:{last_job} lane-report run command missing trailing `|| true`"
+            )
+    if issues:
+        return "Lane-report contract violations: " + "; ".join(issues)
+    return None
 
 
 def _print_text(models: list[WorkflowModel]) -> None:
