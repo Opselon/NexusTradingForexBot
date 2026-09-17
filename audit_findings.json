@@ -1,0 +1,160 @@
+{
+  "findings": [
+    {
+      "topic": "50D live inference path",
+      "finding": "The production champion serves a 50D tensor by default (scalp_v1/50D contract). 70D inference activates only when the loaded bundle has scaler width 70 AND the liquidity governor causal_state == VALID. The canonical live tensor is assembled at InferenceService.build_live_feature_vector: 50D returns base50 directly; 70D adds News 10D (50..59) + Liquidity 10D (60..69) from the SAME bar context the champion consumed.",
+      "evidence": [
+        "src/nexus_scalp/application/live/inference.py:52-88 — validate_feature_vector dispatches 70D vs 50D; build_live_feature_vector returns base50 when eff_dim != 70",
+        "src/nexus_scalp/application/live/inference.py:81-88 — 70D path requires news10 + liq10 with VALID causal state; raises RuntimeError if liquidity not VALID",
+        "src/nexus_scalp/application/live_engine.py:243-261 — effective_feature_dim derives from loaded bundle scaler width, NOT class constants; returns class default (50D) when no bundle",
+        "src/nexus_scalp/application/live/tick_pipeline.py:500-502 — 70D inference gated on liquidity_governor.causal_state() == VALID; 50D contracts unaffected",
+        "src/nexus_scalp/application/live_engine.py:4770 — _validate_50d_tensor classmethod (canonical 50D validation)"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Confidence / policy gate hierarchy",
+      "finding": "SignalPolicy.evaluate_probabilities is the single policy chokepoint. Model confidence (probs[1]/[2] from inference) feeds directional confidence via _directional_confidence, then gates run in order: guardian gate, symbol gate, duplicate tick, AI reversal, frequency throttle, exposure limits, HTF/SR alignment, confidence gate, zone quality gate, anti-flip, same-level re-entry lockout. SMC_GOD_MODE (confidence >= ai_zone_confidence_threshold + all SMC conditions) bypasses HTF/SR filters with a 15% confidence penalty. RuleMatrixEngine can independently produce BUY/SELL entries before the model path even executes.",
+      "evidence": [
+        "src/nexus_scalp/signals/policy.py:171-1545 — evaluate_probabilities: full gate chain from guardian to final_proposal",
+        "src/nexus_scalp/signals/policy.py:710-721 — SMC_GOD_MODE activation: has_bos + valid_ob + confidence >= zone_thresh + sweep + FVG; bypasses HTF/SR at lines 1044, 1049",
+        "src/nexus_scalp/signals/policy.py:1044-1048 — BUY_REJECTED_HTF_TREND_CONFL_FAIL: model BUY rejected when HTF misaligned unless smc_god_mode_active",
+        "src/nexus_scalp/signals/policy.py:1136-1141 — SMC_GOD_MODE applies 15% confidence penalty after bypass",
+        "src/nexus_scalp/signals/policy.py:1215-1229 — CONFIDENCE_GATE: confidence < active_threshold blocks entry",
+        "src/nexus_scalp/signals/policy.py:129-133 — confidence_threshold owned from ModelConfig.confidence_threshold (canonical default 0.35)"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "SMC (Smart Money Concepts) execution override",
+      "finding": "SMC_GOD_MODE is a real override inside SignalPolicy that bypasses HTF trend filters and SR margin filters when confidence >= ai_zone_confidence_threshold (default 0.60) AND BOS + valid OB + sweep + FVG are all active. The override_reason is 'HTF_BYPASSED' and execution_mode is 'SMC_GOD_MODE'. This is the ONLY structural bypass of HTF/SR alignment — all other paths still require HTF or SR pass.",
+      "evidence": [
+        "src/nexus_scalp/signals/policy.py:710-721 — smc_god_mode_active=True, override_reason='HTF_BYPASSED', execution_mode='SMC_GOD_MODE'",
+        "src/nexus_scalp/signals/policy.py:1044 — 'if not htf_buy_aligned and not smc_god_mode_active' -> HTF_TREND_FILTER rejection",
+        "src/nexus_scalp/signals/policy.py:1049 — 'elif not sr_buy_allowed and not smc_god_mode_active' -> SR_MARGIN_FILTER rejection",
+        "src/nexus_scalp/signals/policy.py:1092-1097 — same pattern for SELL paths",
+        "src/nexus_scalp/configuration/config.py:99 — ai_zone_confidence_threshold default 0.60"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Shadow mode — observation-only boundary",
+      "finding": "SHADOW mode is fully enforced at DecisionExecutor.execute_decision_stage. When config.execution.mode == SHADOW and policy_decision.action != NO_TRADE, the decision is downgraded to NO_TRADE with reason 'SHADOW_OBSERVATION_ONLY'. This affects PRIMARY entries, lifecycle actions, AND intelligent hedges. Additionally, live_engine._evaluate_hedging_policy at line 3524-3533 suppresses hedge dispatch in SHADOW. The rule matrix and shadow recording still run (observability only).",
+      "evidence": [
+        "src/nexus_scalp/application/live/decision_executor.py:129-150 — SHADOW_BOUNDARY: action replaced with NO_TRADE, 'SHADOW_OBSERVATION_ONLY'",
+        "src/nexus_scalp/application/live/decision_executor.py:220-229 — primary BUY/SELL entries gated through risk engine + dispatch",
+        "src/nexus_scalp/application/live_engine.py:3524-3533 — hedge dispatch suppressed in SHADOW mode",
+        "src/nexus_scalp/application/live/shadow_recorder.py:188-190 — shadow failures logged and swallowed, never affect live",
+        "src/nexus_scalp/application/live/tick_pipeline.py:273-285 — PHASE 11: champion/challenger shadow recording runs regardless of mode"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Paper mode vs Live mode boundary",
+      "finding": "PAPER mode binds PaperMT5Adapter (simulation with deterministic fills, synthetic spread 8-18c gold band, auto-SL/TP execution on every tick). LIVE mode binds DirectMT5Adapter (native MT5 order_send). SHADOW mode KEEPS the live adapter (per live_engine _align_adapter_to_boot_mode: 'SHADOW keeps its live-data (prediction) adapter by contract'). RuntimeModeService.set_execution_mode swaps the adapter on hot-swap and triggers cross-mode state invalidation (session generation bump, price-lock purge, aggregator reseed). PAPER->LIVE swap purges stale paper bars and cached price state.",
+      "evidence": [
+        "src/nexus_scalp/application/live/runtime_mode.py:63-182 — set_execution_mode: adapter swap + invalidate_cross_mode_state",
+        "src/nexus_scalp/application/live/runtime_mode.py:184-286 — invalidate_cross_mode_state: session generation bump, policy cache purge, aggregator reseed, warmup reset, account snapshot drop",
+        "src/nexus_scalp/application/live_engine.py:4240-4349 — _align_adapter_to_boot_mode: PAPER needs simulation adapter; LIVE realigns paper->real; SHADOW keeps live adapter",
+        "src/nexus_scalp/adapters/paper/paper_adapter.py:93 — PaperMT5Adapter: simulated immediate market fill, deterministic slippage",
+        "src/nexus_scalp/adapters/mt5/mt5_adapter.py:143-201 — DirectMT5Adapter: native MT5, mt5.order_send"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Model vs Strategy independence — can model BUY while strategy says NO_TRADE?",
+      "finding": "YES, the model can independently signal BUY while the strategy gates produce NO_TRADE. The model confidence is ONE input to SignalPolicy. Multiple independent gates can convert a BUY-class proposal to NO_TRADE: (1) HTF misalignment (model bullish but h4_trend<0), (2) SR resistance margin fail, (3) confidence gate (model confidence < threshold), (4) zone quality gate, (5) anti-flip, (6) same-level re-entry lockout. The model prediction enters via probs[1] (BUY prob) but the policy can and frequently does emit NO_TRADE despite a BUY signal from inference.",
+      "evidence": [
+        "src/nexus_scalp/signals/policy.py:1044-1048 — BUY rejected at HTF_TREND_FILTER when htf_buy_aligned is False and not smc_god_mode_active (model BUY blocked independently of strategy)",
+        "src/nexus_scalp/signals/policy.py:1215-1229 — confidence gate: model confidence < active_threshold -> NO_TRADE regardless of model direction",
+        "src/nexus_scalp/signals/policy.py:1235-1242 — zone quality gate: confidence < ai_zone_confidence_threshold -> ZONE_QUALITY_FAIL",
+        "src/nexus_scalp/signals/policy.py:1179-1213 — same-level re-entry lockout blocks BUY if at same price level"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Strategy can trade independently of model",
+      "finding": "YES — RuleMatrixEngine.evaluate_pre_trade_entry() at signals/rule_matrix.py:491-551 operates as an INDEPENDENT strategy layer. It evaluates raw market microstructure signals (FVG sniper fill, Judas swing fade, order block tap, wick absorption, flash momentum, OFI reversal, news spike, etc.) with hardcoded confidences (0.80-0.95) and returns TradeProposals WITHOUT consulting model probabilities at all. When a rule fires, it REPLACES the policy proposal entirely (policy.py:975-1002 returns rule_proposal.model_copy(..., model_action=rule_proposal.action.value)). RuleMatrix entries bypass the model confidence gate entirely.",
+      "evidence": [
+        "src/nexus_scalp/signals/rule_matrix.py:491-551 — evaluate_pre_trade_entry: checks 11 rules sequentially, each returns TradeProposal with no model prob dependency",
+        "src/nexus_scalp/signals/rule_matrix.py:84-95 — _eval_rule_fvg_sniper_fill: action=BUY_MARKET, confidence=0.90, based only on fvg_bullish feature",
+        "src/nexus_scalp/signals/rule_matrix.py:112-150 — _eval_rule_judas_swing_fade: action=SELL/BUY_MARKET, no model input",
+        "src/nexus_scalp/signals/policy.py:975-1002 — rule_proposal REPLACES policy output, model_action overwritten, risk_allowed=True"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Model can trade independently of strategy",
+      "finding": "NO — the model cannot trade independently. Model inference output (probs from InferenceService.infer_probabilities) flows ONLY through SignalPolicy.evaluate_probabilities, which ALWAYS runs the full strategy gate chain (HTF alignment, SR alignment, zone quality, anti-flip, re-entry lockout, confidence gates). The model's directional BUY/SELL must pass every strategy gate to become a proposal. Even high-confidence model BUYs are rejected by HTF_TREND_FILTER or CONFIDENCE_GATE without strategy agreement. SMC_GOD_MODE is the sole bypass, and it still requires strategy-level microstructure confirmation (BOS + OB + sweep + FVG).",
+      "evidence": [
+        "src/nexus_scalp/signals/policy.py:1044-1086 — BUY path: model BUY MUST pass htf_buy_aligned or smc_god_mode_active, then sr_buy_allowed or smc_god_mode_active, then zone quality, then confidence gate",
+        "src/nexus_scalp/application/live/tick_pipeline.py:605-613 — proposal = signal_policy.evaluate_probabilities(probs=probs, ...) — model probs always gated by strategy",
+        "src/nexus_scalp/signals/policy.py:1136-1141 — even in SMC_GOD_MODE, 15% confidence penalty still applies"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Overrides — operator mode switching",
+      "finding": "Two override mechanisms exist: (1) RuntimeModeService.set_execution_mode() at runtime_mode.py:63 — operator hot-switch PAPER/SHADOW<->LIVE via UI/CLI, records _mode_override, swaps adapter, triggers cross-mode invalidation. (2) config.execution.mode persisted to disk and restored at boot — engine_boot reads mode and aligns adapter. _mode_override at live_engine.py:592 temporarily overrides mode for the process lifetime. Critical safety: mode change NEVER enables live dispatch by itself; RiskEngine + OrderLifecycleManager remain the authority.",
+      "evidence": [
+        "src/nexus_scalp/application/live/runtime_mode.py:63-182 — set_execution_mode: records override, swaps adapter, calls _invalidate_cross_mode_state",
+        "src/nexus_scalp/application/live/runtime_mode.py:184-286 — invalidate_cross_mode_state: session gen bump, policy cache purge, aggregator reseed, warmup reset",
+        "src/nexus_scalp/application/live_engine.py:586-592 — _mode_override field; live_engine.py:896-897 — persisted mode override applied at boot",
+        "src/nexus_scalp/application/live/runtime_mode.py:71-75 — comment: 'swapping the adapter NEVER enables live order dispatch by itself'"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Direct MT5 order authority",
+      "finding": "Order authority flows through a strict chain: SignalPolicy -> DecisionExecutor -> OrderLifecycleManager.dispatch_order() (execution/lifecycle/dispatch.py:227) -> mt5_adapter.execute_market_order() or place_pending_order(). RiskEngine.evaluate_proposal() MUST return non-None before dispatch (kill switch, circuit breakers, spread gate, RR gate, stops-level, max exposure). DispatchEngine.execute_order() (hedge path) also checks kill switch + SAFE_MODE + idempotency. DirectMT5Adapter.send_order() -> mt5.order_send() is the final broker call. HARD_MAX_LOTS=10.0 clamp is applied at dispatch time regardless of RiskEngine sizing.",
+      "evidence": [
+        "src/nexus_scalp/execution/lifecycle/dispatch.py:227-588 — dispatch_order: SAFE_MODE, kill switch, max exposure, HARD_MAX_LOTS clamp, market/pending dispatch",
+        "src/nexus_scalp/execution/lifecycle/dispatch.py:76-165 — execute_order (hedge): kill switch + SAFE_MODE guard added post-BUG-247",
+        "src/nexus_scalp/execution/lifecycle/dispatch.py:132 — success = bool(self.om.adapter.send_order(order)) — final broker call",
+        "src/nexus_scalp/risk/risk_engine.py:306-500 — evaluate_proposal: kill switch, breakers, max positions, spread, RR, stops-level, sizing — must return non-None",
+        "src/nexus_scalp/adapters/mt5/mt5_adapter.py:1043, 1177, 1229, 1337, 1437 — mt5.order_send() calls inside DirectMT5Adapter methods",
+        "src/nexus_scalp/execution/order_manager.py:82 — HARD_MAX_LOTS: float = 10.0 absolute ceiling"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "Execution assumptions and parity (paper vs live)",
+      "finding": "Paper adapter simulates fills with: (1) deterministic slippage (adverse only, seed-based), (2) auto-SL/TP execution on every tick (broker-managed stops), (3) spread 8-18c gold band (NOT the legacy 25-45c that blocked 100% of fills), (4) BUY fills at ask, SELL at bid. Live/Direct MT5 uses real broker order_send with retcode translation, freeze/stop level guards, and dynamic filling mode resolution. Paper parity check exists at src/nexus_scalp/risk/paper_parity.py. SHADOW mode uses the SAME live adapter as LIVE (only no-mutation boundary differs). Critical assumption: paper tick seed price = 2000.00 (metals), which caused the BUG-231 production incident when stale paper bars crossed to LIVE mode.",
+      "evidence": [
+        "src/nexus_scalp/adapters/paper/paper_adapter.py:1119-1830 — process_tick_execution: auto-SL/TP on every tick, broker-style semantics",
+        "src/nexus_scalp/adapters/paper/paper_adapter.py:1030-1064 — spread generation: 8-18c gold band (not legacy 25-45c), FX spread for FX",
+        "src/nexus_scalp/adapters/paper/paper_adapter.py:1104-1117 — _slippage_for_close: deterministic adverse only, seed-based",
+        "src/nexus_scalp/application/live/runtime_mode.py:127 — new_adapter.current_account_source = 'PAPER' after paper swap",
+        "src/nexus_scalp/application/live_engine.py:4268-4272 — 'SHADOW boots KEEP the live-data (prediction) adapter by contract'",
+        "src/nexus_scalp/application/live_engine.py:610-615 — PAPER boot tags all ledger rows as PAPER provenance",
+        "src/nexus_scalp/risk/paper_parity.py — paper parity module exists"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "topic": "Risk engine gate before order dispatch",
+      "finding": "Every primary entry and hedge must pass RiskEngine.evaluate_proposal() before dispatch. RiskEngine returns None (rejected) on: kill switch active, circuit breaker not allowed, NO_TRADE/WAIT action, max concurrent positions exceeded, max pending orders exceeded, conflicting exposure with limit orders, RR below threshold (min 1.8 default, 1.2 high-confidence), spread exceeds max_spread_points, stops-level violation, SL/TP too close. Hedge path and AI reversal both call evaluate_proposal; AI reversal returns None -> close-only (no flip). Primary entry dispatch at decision_executor.py:252-265 also fails closed on risk_order is None.",
+      "evidence": [
+        "src/nexus_scalp/risk/risk_engine.py:306-843 — evaluate_proposal: all rejection paths return None",
+        "src/nexus_scalp/risk/risk_engine.py:267-275 — enable/disable_kill_switch: _kill_switch_active blocks evaluate_proposal",
+        "src/nexus_scalp/application/live/decision_executor.py:252-265 — risk_order = risk_engine.evaluate_proposal(...); None -> ENTRY_BLOCKED",
+        "src/nexus_scalp/application/live/decision_executor.py:165-206 — AI reversal: directional proposal through evaluate_proposal; None -> close-only no flip",
+        "src/nexus_scalp/execution/lifecycle/dispatch.py:85-94 — execute_order: kill switch + safety state guard added post-BUG-247",
+        "src/nexus_scalp/risk/risk_engine.py:436-442 — RR gate: proposal.risk_reward_ratio < active_min_rr -> reject"
+      ],
+      "confidence": "high"
+    },
+    {
+      "topic": "50D model prediction vs 70D model coexistence",
+      "finding": "The 50D model (scalp_v1/50D) is the default champion. The 70D model (scalp_v3/70D with Base 0..49 + News 50..59 + Liquidity 60..69) coexists as a shadow/challenger OR as the champion when a validated 70D artifact is loaded. Shadow recording (ShadowRecorder.record_shadow_decision) runs BOTH 50D champion and governance shadow (70D) in parallel on the SAME feature vector. record_shadow70_observation runs independently on EVERY tick when 70D is enabled. The effective_feature_dim/schema_id are bundle-authoritative (CHG-0046 D1), never class bootstrap constants.",
+      "evidence": [
+        "src/nexus_scalp/application/live/shadow_recorder.py:39-190 — record_shadow_decision: champion vs governance shadow parallel",
+        "src/nexus_scalp/application/live/shadow_recorder.py:192-336 — record_shadow70_observation: runs every tick, BUG-105 hook, observation-only",
+        "src/nexus_scalp/application/live/shadow_recorder.py:55-60 — live_schema_id/live_dim from self.om.effective_* (bundle-authoritative)",
+        "src/nexus_scalp/application/live_engine.py:243-261 — effective_feature_dim from bundle scaler width",
+        "src/nexus_scalp/application/live/inference.py:182-222 — 50D inference path is the default; 70D requires VALID liquidity"
+      ],
+      "confidence": "high"
+    }
+  ]
+}
