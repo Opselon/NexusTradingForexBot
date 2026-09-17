@@ -71,8 +71,21 @@ needed Ruff formatting (fixed, checks re-run). No unresolved local test failure.
 An unnecessary clean clone /tmp/NexusTradingForexBotFresh was created during
 triage and left untouched; it is NOT the work artifact or authoritative state.
 
+### Remote verification and dependency unblock
+PR #249 initial code commit ada06ec2: 14 successful checks, 4 skipped, one
+failure (Dependency drift); Code Quality & Tests, Windows, macOS and security
+passed. Main baseline run 35149043181 has the identical stale-lock error as
+PR run 35169149893. Local drift check reproduced it; no dependency files had
+been changed by this wrapper fix.
+Existing PR #248 owned the fix. Independently verified its exact diff (only
+nvjitlink 13.4.52 -> 13.4.92 plus four hashes and handoff), ran the real resolver
+check (OK, 98 pins), and its three regression tests (passed). All PR checks
+were green. Squash merged #248 as 3b82a58c; merged corrected origin/main into
+this isolated branch using a normal merge, preserving history and shared WIP.
+No downgrade, pyproject edit, force push or workflow edit. PR #249 refreshed
+at 992c721c; final gates pending at this report checkpoint.
+
 ### Next
-Push only this scoped branch, open squash PR, and verify remote gates before
-claiming landed. Durable state and mirror retain PR/worktree information so a
+Verify PR #249 remote gates before claiming landed. Durable state and mirror retain PR/worktree information so a
 restart resumes adjudication instead of duplicating this fix. Role 8 follows
 once this item is closed; no workflow or secret edits by this job.
