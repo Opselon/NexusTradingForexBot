@@ -437,3 +437,6 @@ tests/unit/test_training_env_exact.py
 tests/unit/test_training_env_web.py
 tests/unit/test_training_env_worker.py
 tests/unit/test_training_stage_progress.py
+# BUG-303 (NSE-Swarm role 9 Observability, 2026-09-17): CI env probe, pip repair,
+# heartbeat, lane report, and telegram notify entry point robustness.
+tests/unit/test_bug303_ci_notify_env_and_report.py
