@@ -1,0 +1,121 @@
+name: Official model publication
+
+# Model releases are SEPARATE from application releases: this workflow only
+# runs on explicit owner dispatch from main (never on tags), publishes
+# `model-<version>` releases tagged with --latest=false (never `v*`), and
+# only then updates the `official-model-stable` channel manifest.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Model version X.Y.Z (no v prefix; must match candidate)"
+        required: true
+        type: string
+        default: ""
+      candidate:
+        description: "Draft candidate tag (must equal model-candidate-<version>)"
+        required: true
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: official-model-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-official-model:
+    name: Verify candidate and publish official model
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version }}
+      CANDIDATE: ${{ inputs.candidate }}
+      PYTHONPATH: src:.
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_INPUT: "1"
+      PIP_INDEX_URL: https://pypi.org/simple
+      PIP_EXTRA_INDEX_URL: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Install publication dependencies (without torch)
+        run: |
+          set -euo pipefail
+          # Use the repository's base-runtime pins, not its dev/release extras.
+          # Torch is intentionally deferred until candidate runtime validation.
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          def name(requirement):
+              return re.match(r"[A-Za-z0-9_.-]+", requirement).group().lower().replace("_", "-")
+
+          dependencies = tomllib.loads(Path("pyproject.toml").read_text())["project"]["dependencies"]
+          wanted = {name(dependency) for dependency in dependencies} - {"torch"}
+          pins = [line.strip() for line in Path("requirements.txt").read_text().splitlines()
+                  if line.strip() and not line.lstrip().startswith("#")]
+          selected = [pin for pin in pins if name(pin) in wanted]
+          missing = wanted - {name(pin) for pin in selected}
+          if missing:
+              raise SystemExit(f"Missing runtime dependency pins: {sorted(missing)}")
+          destination = Path(os.environ["RUNNER_TEMP"]) / "official-model-dependencies.txt"
+          destination.write_text("\n".join(selected) + "\n")
+          PY
+          python -m pip install -r "$RUNNER_TEMP/official-model-dependencies.txt" 'packaging>=24,<27'
+
+      - name: Validate publication request (fail closed, no shell interpolation)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/release/publish_official_model.py validate \
+            --version "$VERSION" --candidate "$CANDIDATE" \
+            --ref "$GITHUB_REF" --repo "$GITHUB_REPOSITORY"
+
+      - name: Fetch authorized candidate assets (bounded, allowlisted)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/release/publish_official_model.py fetch \
+            --candidate "$CANDIDATE" --dest candidate
+
+      - name: Install candidate-pinned CPU torch
+        run: |
+          set -euo pipefail
+          # The torch build used for runtime verification comes from the
+          # candidate's OWN compatibility.json (validated by runtime_spec:
+          # Python 3.11 + stable torch 2.6-2.19), never from workflow input.
+          read -r RT_PY RT_TORCH < <(python scripts/release/publish_official_model.py runtime-spec \
+            --compatibility candidate/compatibility.json | tr ',' ' ')
+          echo "Pinned verification runtime: python==$RT_PY torch==$RT_TORCH"
+          python -m pip install "torch==$RT_TORCH" --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Build, sign and verify local bundle (consumer chain)
+        env:
+          NSE_UPDATE_SIGNING_KEY: ${{ secrets.NSE_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          python scripts/release/build_official_bundle.py \
+            --bundle-dir candidate --out bundle --model-version "$VERSION"
+
+      - name: Publish versioned release then update stable channel (LAST)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/release/publish_official_model.py publish \
+            --bundle bundle --version "$VERSION"

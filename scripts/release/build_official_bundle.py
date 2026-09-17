@@ -1,27 +1,11 @@
 #!/usr/bin/env python3
-"""Publish an OFFICIAL Nexus model bundle (PATH A producer, BUG-293).
+"""Build a signed nexus_model_bundle_v1 revision-2 release bundle locally.
 
-Operator tool: packages a TRAINED serving bundle (canonical 70D variant)
-plus its dataset identity into the signed ``nexus_model_bundle_v1`` layout
-the client verifies (`nexus model-official`). Signing uses the SAME
-Ed25519 trust root as the update manifests — run in CI with
-``NSE_UPDATE_SIGNING_KEY`` or locally with the operator escrow key.
-
-    python scripts/release/build_official_bundle.py \
-        --bundle-dir artifacts/models/scalp/XAUUSD/70d_liquidity \
-        --dataset data/raw/XAUUSD_M1.parquet \
-        --out dist/official-bundle \
-        [--archive dist/model-bundle.zip] \
-        --bundle-id official-xauusd-scalp_v3-$(date +%Y%m%d)
-
-The tool REFUSES to publish anything that fails the client-side chain
-(verify_bundle_manifest against the EMBEDDED trust root after signing +
-re-download simulation via local re-verify): a bundle that its own clients
-would reject can never leave this script. Hosting (Google Drive / any HTTPS
-directory / GitHub release assets) is then a plain file upload by the
-operator; set the base URL via NEXUS_OFFICIAL_MODEL_BASE_URL.
-
-Exit codes: 0 published, 1 verification refused, 2 usage/material missing.
+Requires six candidate assets documented in docs/OFFICIAL_MODEL_PUBLICATION.md.
+Training/producer evidence is supplied truthfully by the owner, never generated
+by the publisher. NSE_UPDATE_SIGNING_KEY stays in the process environment.
+All consumer signature/schema/scaler/runtime/health checks must pass.
+No remote write occurs in this builder; use the main-only Actions workflow.
 """
 
 from __future__ import annotations
@@ -31,7 +15,6 @@ import json
 import os
 import shutil
 import sys
-import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -45,137 +28,144 @@ def _sha(path: Path) -> str:
     return rb.sha256_file(path)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--bundle-dir", required=True, type=Path,
-                    help="serving bundle dir (model.pt + model.scaler.npz + model.meta.json)")
-    ap.add_argument("--dataset", type=Path, default=None,
-                    help="optional dataset file to ship beside the weights (provenance)")
-    ap.add_argument("--out", required=True, type=Path, help="output bundle directory")
-    ap.add_argument("--archive", type=Path, default=None, help="also emit a .zip for Drive hosting")
-    ap.add_argument("--bundle-id", default="", help="official bundle id (default: auto)")
-    ap.add_argument("--model-version", default="1.0.0")
-    ap.add_argument("--key-id", default=None, help="signing key_id (default: ACTIVE_TRUST_ROOT)")
-    ap.add_argument("--signing-key", default=None,
-                    help="Ed25519 private seed hex (else $NSE_UPDATE_SIGNING_KEY)")
-    args = ap.parse_args()
+def prepare_manifest(src: Path, version: str, bundle_id: str = "", key_id: str = "") -> dict:
+    for name in ("trainer-manifest.json", "provenance.json", "compatibility.json"):
+        if not (src / name).is_file():
+            raise ValueError(f"missing {name}; true producer evidence is required")
+    provenance = json.loads((src / "provenance.json").read_text())
+    if not provenance.get("producer") or not provenance.get("training"):
+        raise ValueError("provenance requires true producer and training evidence")
+    from nexus_scalp.features import schema_contract as schema
+    from nexus_scalp.release.signing import trusted_keys
 
-    src = args.bundle_dir
-    missing = [n for n in ("model.pt", "model.scaler.npz", "model.meta.json") if not (src / n).exists()]
-    if missing:
-        print(f"usage error: bundle-dir missing {missing}", file=sys.stderr)
-        return 2
-    seed = args.signing_key or os.environ.get("NSE_UPDATE_SIGNING_KEY", "").strip()
-    if not seed:
-        print("usage error: no signing key (pass --signing-key or set NSE_UPDATE_SIGNING_KEY)", file=sys.stderr)
-        return 2
+    key_id = key_id or trusted_keys.ACTIVE_TRUST_ROOT
 
-    from nexus_scalp.release.signing.trusted_keys import ACTIVE_TRUST_ROOT
-
-    key_id = args.key_id or ACTIVE_TRUST_ROOT
-
-    meta = json.loads((src / "model.meta.json").read_text(encoding="utf-8"))
-    dim = int(meta.get("feature_schema_dimension") or 0)
-    classes = int(meta.get("model_head_classes") or meta.get("num_classes") or 0)
-    if (dim, classes) != (70, 3):
-        print(f"refused: bundle geometry {dim}D/{classes}c is not the canonical 70D/3-class", file=sys.stderr)
-        return 1
-
-    out = args.out
-    out.mkdir(parents=True, exist_ok=True)
-    for name in ("model.pt", "model.scaler.npz", "model.meta.json"):
-        shutil.copy2(src / name, out / name)
-    files: dict[str, dict[str, object]] = {
-        name: {"sha256": _sha(out / name), "size": (out / name).stat().st_size}
-        for name in ("model.pt", "model.scaler.npz", "model.meta.json")
-    }
-    dataset_block: dict[str, object] = {"id": "", "version": "", "sha256": ""}
-    if args.dataset is not None:
-        if not args.dataset.exists():
-            print(f"usage error: dataset file missing: {args.dataset}", file=sys.stderr)
-            return 2
-        shutil.copy2(args.dataset, out / args.dataset.name)
-        files[args.dataset.name] = {"sha256": _sha(out / args.dataset.name), "size": args.dataset.stat().st_size}
-        dataset_block = {
-            "id": f"ds-{args.dataset.name}",
-            "version": "1",
-            "sha256": _sha(out / args.dataset.name),
-        }
-
-    import datetime
-
-    bundle_id = args.bundle_id or (
-        f"official-xauusd-scalp_v3-{datetime.datetime.now(datetime.UTC).strftime('%Y%m%d')}"
+    compatibility = json.loads((src / "compatibility.json").read_text())
+    meta = json.loads((src / "model.meta.json").read_text())
+    names = (
+        "model.pt",
+        "model.scaler.npz",
+        "model.meta.json",
+        "trainer-manifest.json",
+        "provenance.json",
+        "compatibility.json",
     )
-    git_commit = ""
-    try:
-        git_commit = subprocess_commit()
-    except Exception:
-        pass
+    files = {
+        name: {
+            "sha256": _sha(src / name),
+            "size": (src / name).stat().st_size,
+            "url": f"https://github.com/Opselon/NexusTradingForexBot/releases/download/model-{version}/{name}",
+            "mirrors": [],
+        }
+        for name in names
+    }
     manifest = {
         "schema": off.BUNDLE_MANIFEST_SCHEMA,
-        "bundle_id": bundle_id,
-        "model_version": args.model_version,
-        "architecture": "ScalpNet",
-        "architecture_version": "1.0.0",
-        "feature_schema_id": str(meta.get("feature_schema_id") or "scalp_v3"),
-        "feature_schema_hash": str(meta.get("feature_schema_hash") or ""),
-        "dimension": 70,
+        "contract_version": 2,
+        "bundle_id": bundle_id or f"official-xauusd-scalp_v3-{version}",
+        "model_version": version,
+        "feature_schema_id": schema.SCHEMA_ID,
+        "feature_schema_hash": schema.feature_schema_hash(),
+        "dimension": schema.DIMENSION,
         "class_count": 3,
-        "model_sha256": files["model.pt"]["sha256"],
-        "metadata_sha256": files["model.meta.json"]["sha256"],
-        "scaler_sha256": files["model.scaler.npz"]["sha256"],
-        "dataset": dataset_block,
-        "training": {
-            "command": "scripts/release/build_official_bundle.py",
-            "git_commit": git_commit,
-            "published_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
-            "provenance_note": "built from a governed serving bundle — see registry for "
-            "walk-forward evidence (fold metrics ride in the trainer-side manifest)",
-        },
-        "files": files,
+        "producer": provenance["producer"],
+        "training": provenance["training"],
+        "consumer": compatibility["consumer"],
+        "files": {k: v for k, v in files.items() if k in names[:3]},
+        "evidence_files": {k: v for k, v in files.items() if k in names[3:]},
         "key_id": key_id,
         "signature": "",
+        "model_sha256": files["model.pt"]["sha256"],
+        "scaler_sha256": files["model.scaler.npz"]["sha256"],
+        "metadata_sha256": files["model.meta.json"]["sha256"],
     }
+    for key in (
+        "architecture",
+        "architecture_version",
+        "architecture_parameters",
+        "input_layout",
+        "class_labels",
+        "symbol",
+        "timeframe",
+    ):
+        manifest[key] = meta[key]
+    return manifest
+
+
+def build_bundle(
+    src: Path, out: Path, version: str, seed: str, bundle_id: str = "", key_id: str = ""
+) -> dict:
+    """Build locally, fail closed before exposing output; never publish remotely."""
+    import tempfile
+
     import nacl.signing
 
-    payload = off._canonical_payload(manifest)
-    manifest["signature"] = nacl.signing.SigningKey(bytes.fromhex(seed)).sign(payload).signature.hex()
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-    # CLIENT-SIDE SIMULATION: verify exactly what a client would verify,
-    # using the EMBEDDED trust root (the private key cannot make our own
-    # client trust a bundle it would reject).
+    if out.exists():
+        raise ValueError("output already exists; refusing overwrite")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".official-build-", dir=out.parent))
     try:
-        verified = off.verify_bundle_manifest(json.loads((out / "manifest.json").read_text(encoding="utf-8")))
-        for name, entry in verified["files"].items():
-            if _sha(out / name) != str(entry["sha256"]).lower():
-                raise off.OfficialBundleError("SHA256_MISMATCH", name)
-    except off.OfficialBundleError as exc:
-        print(f"REFUSED (client would reject): {exc}", file=sys.stderr)
-        shutil.rmtree(out, ignore_errors=True)
+        for name in (
+            "model.pt",
+            "model.scaler.npz",
+            "model.meta.json",
+            "trainer-manifest.json",
+            "provenance.json",
+            "compatibility.json",
+        ):
+            source = src / name
+            if source.is_symlink() or not source.is_file():
+                raise ValueError(f"missing/unsafe {name}")
+            shutil.copyfile(source, staging / name)
+        manifest = prepare_manifest(staging, version, bundle_id=bundle_id, key_id=key_id)
+        manifest["signature"] = (
+            nacl.signing.SigningKey(bytes.fromhex(seed))
+            .sign(off._canonical_payload(manifest))
+            .signature.hex()
+        )
+        off.verify_bundle_manifest(manifest)
+        (staging / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, allow_nan=False), encoding="utf-8"
+        )
+        off.OfficialBundleSource()._integrity_probe(staging)
+        os.replace(staging, out)
+        return manifest
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Build and verify a signed official bundle locally; does not publish."
+    )
+    ap.add_argument("--bundle-dir", required=True, type=Path)
+    ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--model-version", required=True)
+    ap.add_argument(
+        "--bundle-id",
+        default="",
+        help="official bundle id (default: official-xauusd-scalp_v3-<version>)",
+    )
+    ap.add_argument("--key-id", default="", help="signing key_id (default: ACTIVE_TRUST_ROOT)")
+    args = ap.parse_args()
+    seed = os.environ.get("NSE_UPDATE_SIGNING_KEY", "").strip()
+    if not args.bundle_dir.is_dir() or not seed:
+        print("usage error: bundle material or signing key missing", file=sys.stderr)
+        return 2
+    try:
+        build_bundle(
+            args.bundle_dir,
+            args.out,
+            args.model_version,
+            seed,
+            bundle_id=args.bundle_id,
+            key_id=args.key_id,
+        )
+    except Exception as exc:
+        print(f"REFUSED: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
-
-    if args.archive is not None:
-        args.archive.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(args.archive, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in sorted(out.iterdir()):
-                zf.write(f, f.name)
-        print(f"archive: {args.archive} ({args.archive.stat().st_size:,} bytes)")
-
-    print(f"official bundle published: {out}")
-    print(f"bundle_id={bundle_id} model_sha256={manifest['model_sha256'][:16]}… key_id={key_id}")
-    print("next: upload the directory (or the zip) to your host, then set")
-    print("      NEXUS_OFFICIAL_MODEL_BASE_URL=<https base url or drive:<fileid>>")
+    print(f"Verified local bundle: {args.out}. No remote publication performed.")
     return 0
-
-
-def subprocess_commit() -> str:
-    import subprocess
-
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
-    ).stdout.strip()
 
 
 if __name__ == "__main__":
