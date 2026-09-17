@@ -442,3 +442,8 @@ tests/unit/test_training_stage_progress.py
 tests/unit/test_bug303_ci_notify_env_and_report.py
 # ML-FEAT-001 (50D Normalization End-to-End Parity Verification)
 tests/unit/test_50d_normalization_parity.py
+# BUG-305 (NSE-Swarm role 10 Accounting/Forensics, 2026-09-18): audit G1
+# remainder — the runtime broker-offset override must reach EVERY consumer
+# (native MT5 history/tick windows + the live maintenance-window entry guard),
+# not just the epoch-conversion helper. Class-wide AST guard included.
+tests/unit/test_bug305_broker_offset_env_consumer_parity.py
