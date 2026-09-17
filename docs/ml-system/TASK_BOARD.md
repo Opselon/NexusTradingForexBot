@@ -1,54 +1,84 @@
-# NSE ML System Master Task Board
+# NSE ML System Master Task Board (v2 — Swarm Architecture)
 
-> **Definitive Operational Task Board for the Nexus Scalp Engine ML Subsystem**
-> Grounded in Forensic Source Code Evidence at HEAD `c6e7bffe`.
-
----
-
-## Canonical Documentation Suite
-
-| Document | Description | Status |
-|---|---|---|
-| [`01_SYSTEM_CONTRACT.md`](./01_SYSTEM_CONTRACT.md) | Single architectural source of truth, 12-gate system, 3 state machines | **COMPLETE & VERIFIED** |
-| [`02_DATA_CONTRACT.md`](./02_DATA_CONTRACT.md) | Feature schemas (50D/70D), normalization, dataset geometry, purge/embargo | **COMPLETE & VERIFIED** |
-| [`03_MODEL_ARCHITECTURE.md`](./03_MODEL_ARCHITECTURE.md) | ScalpNet 2D/3D dual path, 3-class contract, model vs strategy hierarchy | **COMPLETE & VERIFIED** |
-| [`04_TRAINING_VALIDATION_BENCHMARK.md`](./04_TRAINING_VALIDATION_BENCHMARK.md) | WalkForwardTrainer, candidate trainers, OOS economic expectancy, robustness | **COMPLETE & VERIFIED** |
-| [`05_INFERENCE_FORWARDTEST_GOVERNANCE.md`](./05_INFERENCE_FORWARDTEST_GOVERNANCE.md) | Live inference pipeline, policy gates, shadow mode, promotion API, freeze lifecycle | **COMPLETE & VERIFIED** |
-| [`06_TASK_LEDGER.md`](./06_TASK_LEDGER.md) | Master task inventory, dependency graph, execution phases, and risk analysis | **COMPLETE & VERIFIED** |
+> **Definitive Operational Task Board for the Nexus Scalp Engine Quant ML Subsystem**
+> Designed for Autonomous Multi-Agent Swarm Parallel Execution at HEAD `c6e7bffe`.
 
 ---
 
-## Active Task Board
-
-### Phase A: Ready for Immediate Execution (No Blockers)
-- [ ] **[TASK-001](./tasks/TASK-001.md):** 50D Feature Normalization Parity Verification `[P0]`
-- [ ] **[TASK-002](./tasks/TASK-002.md):** Deterministic Market Data Ingest & Dataset Pipeline Harness `[P0]`
-- [ ] **[TASK-011](./tasks/TASK-011.md):** Live Shadow Outcome Real-Time Resolution & Holding Metrics `[P2]`
-- [ ] **[TASK-014](./tasks/TASK-014.md):** MT5 Runtime Boundaries & Remote Gateway Linux Parity `[P2]`
-
-### Phase B: Human Architectural & Product Decisions Required
-- [ ] **[TASK-003](./tasks/TASK-003.md):** Strict 3-Class Contract Enforcement & Legacy 4-Logit WAIT Sunset `[P0]` `[HUMAN DECISION]`
-- [ ] **[TASK-006](./tasks/TASK-006.md):** Single Source of Truth Model State Machine Unification `[P1]` `[HUMAN DECISION]`
-- [ ] **[TASK-009](./tasks/TASK-009.md):** 2D Snapshot vs 3D Sequence Routing Benchmark & Decision `[P2]` `[HUMAN DECISION]`
-- [ ] **[TASK-010](./tasks/TASK-010.md):** 50D vs 70D Production Feasibility Audit & Migration Roadmap `[P2]` `[HUMAN DECISION]`
-- [ ] **[TASK-012](./tasks/TASK-012.md):** Online Fine-Tuning Safe Sandbox & Degradation Circuit Breakers `[P3]` `[HUMAN DECISION]`
-
-### Phase C: Pipeline & Governance Hardening (Unblocked after Phase A & B)
-- [ ] **[TASK-004](./tasks/TASK-004.md):** Model Promotion Pipeline Pre-Flight & OOS Economic Gate Verification `[P0]` *(Executable after TASK-001)*
-- [ ] **[TASK-005](./tasks/TASK-005.md):** Purge & Embargo Boundary Audit & Monotonicity Verification `[P1]` *(Executable after TASK-002)*
-- [ ] **[TASK-008](./tasks/TASK-008.md):** Persistent Governance Emergency Freeze Across Process Restarts `[P1]` *(Executable after TASK-006)*
-
-### Phase D: Distribution & Continuous Integration Gates
-- [ ] **[TASK-007](./tasks/TASK-007.md):** Signed Official Model Bundle Verification & Staging Slot Isolation `[P1]` *(Executable after TASK-004)*
-- [ ] **[TASK-013](./tasks/TASK-013.md):** CI Model Training Smoke vs Real Validation Gap & Benchmark Harness `[P2]` *(Executable after TASK-002, TASK-005)*
-- [ ] **[TASK-015](./tasks/TASK-015.md):** ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3]` *(Executable after TASK-003, TASK-007)*
+## 1. Canonical Documents
+- [01_SYSTEM_CONTRACT.md](01_SYSTEM_CONTRACT.md) — 12 Promotion Gates, 3 State Machines, Dual-Path Ingestion Contract
+- [02_DATA_CONTRACT.md](02_DATA_CONTRACT.md) — 50D Microstructure Schema, Triple-Barrier Geometry, Purge/Embargo Boundaries
+- [03_MODEL_ARCHITECTURE.md](03_MODEL_ARCHITECTURE.md) — ScalpNet Tensor Invariants, TCN Receptive Field, 3-Class Head
+- [04_TRAINING_VALIDATION_BENCHMARK.md](04_TRAINING_VALIDATION_BENCHMARK.md) — Walk-Forward Protocol, Purged Folds, Benchmark Metrics
+- [05_INFERENCE_FORWARDTEST_GOVERNANCE.md](05_INFERENCE_FORWARDTEST_GOVERNANCE.md) — Live Tick Forward Pass, Shadow Outcomes, Promotion Pipeline
+- [06_TASK_LEDGER.md](06_TASK_LEDGER.md) — Master Swarm Backlog (30 Tasks), Dependency DAG, Wave Scheduling & Collision Analysis
 
 ---
 
-## Human Approval Boundaries Summary
+## 2. Active Swarm Backlog (30 Tasks Across 12 Streams)
 
-1. **TASK-003 (3-Class Contract):** Formalize complete removal of legacy 4-logit WAIT support vs maintaining backwards compatibility shims.
-2. **TASK-006 (State Machine Authority):** Designate whether `PromotionState` (governance) or `ModelStatus` (lifecycle) is the single canonical source of model truth.
-3. **TASK-009 (Sequence Path):** Confirm whether 3D sequence modeling (TCN+Attention) should be retained as active research or deprecated in favor of 2D MLP ResNet.
-4. **TASK-010 (70D Migration):** Decide timeline and criteria for migrating live trading from 50D base features to 70D (Base + News + Liquidity).
-5. **TASK-012 (Online Learning):** Decide under what risk controls and operator supervision online fine-tuning should be enabled in live environments.
+### STREAM A: DATA FOUNDATION
+- [ML-DATA-001](tasks/ML-DATA-001.md) — Historical M1 Market Data Ingest & Parquet Storage Harness `[P0 | READY | AGENT-DATA]`
+- [ML-DATA-002](tasks/ML-DATA-002.md) — Dataset Integrity, Missing Value Sanitization & Manifest Hashing `[P1 | BLOCKED | AGENT-DATA]`
+
+### STREAM B: FEATURE ENGINEERING
+- [ML-FEAT-001](tasks/ML-FEAT-001.md) — 50D Feature Normalization End-to-End Parity Verification `[P0 | READY | AGENT-FEATURE]`
+- [ML-FEAT-002](tasks/ML-FEAT-002.md) — Feature Importance, Collinearity Clustering & Redundancy Pruning `[P2 | BLOCKED | AGENT-FEATURE]`
+- [ML-FEAT-003](tasks/ML-FEAT-003.md) — 70D Feature Feasibility, Feed Uptime & Gating Criteria `[P2 | BLOCKED | AGENT-FEATURE | HUMAN DECISION]`
+
+### STREAM C: LABELING SCIENCE
+- [ML-LABEL-001](tasks/ML-LABEL-001.md) — Friction-Aware Triple Barrier Horizon & ATR Multiplier Calibration `[P1 | BLOCKED | AGENT-LABEL]`
+- [ML-LABEL-002](tasks/ML-LABEL-002.md) — Sample Uniqueness Weighting & Label Overlap Anti-Leakage `[P1 | BLOCKED | AGENT-LABEL]`
+
+### STREAM D: MODEL ARCHITECTURE
+- [ML-ARCH-001](tasks/ML-ARCH-001.md) — ScalpNet Dual-Path Tensor Contract & 3-Class Head Sunset `[P0 | READY | AGENT-ML-ARCH | HUMAN DECISION]`
+- [ML-ARCH-002](tasks/ML-ARCH-002.md) — Causal TCN Dilation & Receptive Field Optimization `[P2 | BLOCKED | AGENT-ML-ARCH]`
+- [ML-ARCH-003](tasks/ML-ARCH-003.md) — Temporal Multihead Attention vs Positional Encoding Ablation `[P2 | BLOCKED | AGENT-ML-ARCH]`
+
+### STREAM E: TRAINING ENGINE & REGULARIZATION
+- [ML-TRAIN-001](tasks/ML-TRAIN-001.md) — Deterministic Training Engine, Seed Harness & AMP Precision `[P1 | BLOCKED | AGENT-ML-TRAIN]`
+- [ML-TRAIN-002](tasks/ML-TRAIN-002.md) — Loss Function Exploration: Class-Weighted Focal Loss vs Label Smoothing `[P2 | BLOCKED | AGENT-ML-TRAIN]`
+- [ML-TRAIN-003](tasks/ML-TRAIN-003.md) — Optimizer & Learning Rate Schedule Exploration (AdamW + Cosine Restarts) `[P2 | BLOCKED | AGENT-ML-TRAIN]`
+
+### STREAM F: EXPERIMENTATION & ABLATION
+- [ML-EXP-001](tasks/ML-EXP-001.md) — Immutable Experiment Registry & Artifact Manifest Schema `[P1 | BLOCKED | AGENT-ML-EXP]`
+- [ML-EXP-002](tasks/ML-EXP-002.md) — Architectural Ablation Harness: 2D MLP vs 3D TCN vs Attention `[P2 | BLOCKED | AGENT-ML-EXP | HUMAN DECISION]`
+- [ML-EXP-003](tasks/ML-EXP-003.md) — Bounded Hyperparameter Grid Search Runner `[P3 | BLOCKED | AGENT-ML-EXP]`
+
+### STREAM G: VALIDATION, OOS & ROBUSTNESS
+- [ML-VAL-001](tasks/ML-VAL-001.md) — Purged Walk-Forward Fold Monotonicity & Embargo Boundary Audit `[P1 | BLOCKED | AGENT-ML-VALIDATION]`
+- [ML-VAL-002](tasks/ML-VAL-002.md) — Probability Calibration & Expected Calibration Error (ECE) Evaluation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
+- [ML-VAL-003](tasks/ML-VAL-003.md) — Robustness Stress Testing: Friction Clamp, Slippage & Spread Perturbation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
+
+### STREAM H: REAL-TIME INFERENCE
+- [ML-INF-001](tasks/ML-INF-001.md) — Inference Preprocessing & Scaler Latency SLA (< 10ms) Verification `[P1 | BLOCKED | AGENT-INFERENCE]`
+
+### STREAM I: TRADING INTEGRATION & BACKTESTING
+- [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | BLOCKED | AGENT-BACKTEST]`
+
+### STREAM J: MODEL GOVERNANCE & LIFECYCLE
+- [ML-GOV-001](tasks/ML-GOV-001.md) — Promotion API Pre-Flight & OOS Economic Expectancy Gate Audit `[P0 | BLOCKED | AGENT-GOVERNANCE]`
+- [ML-GOV-002](tasks/ML-GOV-002.md) — Single Source of Truth Model State Machine Unification `[P1 | READY | AGENT-GOVERNANCE | HUMAN DECISION]`
+- [ML-GOV-003](tasks/ML-GOV-003.md) — Persistent Governance Emergency Freeze Across Process Restarts `[P1 | BLOCKED | AGENT-GOVERNANCE]`
+
+### STREAM K: PLATFORM & DISTRIBUTION
+- [ML-PLAT-001](tasks/ML-PLAT-001.md) — MT5 Runtime Boundaries & Remote Gateway Linux Parity `[P2 | READY | AGENT-PLATFORM]`
+- [ML-PLAT-002](tasks/ML-PLAT-002.md) — Signed Official Model Bundle Verification & Staging Slot Isolation `[P1 | BLOCKED | AGENT-PLATFORM]`
+
+### STREAM L: OBSERVABILITY, SAFETY & CI/CD
+- [ML-OBS-001](tasks/ML-OBS-001.md) — Live Shadow Outcome Real-Time Resolution & Holding Metrics Wiring `[P2 | READY | AGENT-OBSERVABILITY]`
+- [ML-OBS-002](tasks/ML-OBS-002.md) — Online Fine-Tuning Safe Sandbox, Quarantine Buffer & Circuit Breakers `[P3 | BLOCKED | AGENT-OBSERVABILITY | HUMAN DECISION]`
+- [ML-CI-001](tasks/ML-CI-001.md) — CI Model Training Smoke vs Real Validation Gap `[P2 | BLOCKED | AGENT-QA]`
+- [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | BLOCKED | AGENT-QA]`
+
+---
+
+## 3. Human Decision Gates Matrix
+
+The following tasks are strictly frozen from implementation until the human operator signs off on the corresponding architectural decision:
+
+1. **[ML-ARCH-001](tasks/ML-ARCH-001.md)**: Approve formal sunset and retirement of legacy 4-logit output (`WAIT` logit) across all future training runs and models.
+2. **[ML-GOV-002](tasks/ML-GOV-002.md)**: Designate the single canonical root model state machine: `PromotionState` (`governance.db`) vs `ModelStatus` (`lifecycle.db`).
+3. **[ML-EXP-002](tasks/ML-EXP-002.md)**: Empirical comparison decision: Retain and wire 3D TCN+Attention sequence buffer in live execution or officially retire 3D sequence modeling to favor 2D MLP ResNet.
+4. **[ML-FEAT-003](tasks/ML-FEAT-003.md)**: Approve live production gating criteria and infrastructure requirements for 70D schema adoption.
+5. **[ML-OBS-002](tasks/ML-OBS-002.md)**: Authorize activation of online fine-tuning on live broker demo/paper accounts under quarantined shadow buffers.
