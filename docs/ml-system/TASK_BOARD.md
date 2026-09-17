@@ -70,6 +70,7 @@
 - [ML-OBS-002](tasks/ML-OBS-002.md) — Online Fine-Tuning Safe Sandbox, Quarantine Buffer & Circuit Breakers `[P3 | BLOCKED | AGENT-OBSERVABILITY | HUMAN DECISION]`
 - [ML-CI-001](tasks/ML-CI-001.md) — CI Model Training Smoke vs Real Validation Gap `[P2 | BLOCKED | AGENT-QA]`
 - [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | BLOCKED | AGENT-QA]`
+- [ML-UI-001](tasks/ML-UI-001.md) — End-to-End Model UX & CLI Verification (Training, Predict & Confidence Trust) `[P1 | READY | AGENT-UI]`
 
 ---
 
