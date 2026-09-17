@@ -182,6 +182,8 @@ $buildInfo = @{
     --distpath (Join-Path $BuildDir "onedir") `
     --workpath (Join-Path $BuildDir "work") `
     --specpath $BuildDir `
+    --add-data "$Root\src\nexus_scalp;training_payload\src\nexus_scalp" `
+    --add-data "$Root\configs;training_payload\configs" `
     src\nexus_scalp\release\packaged_main.py
 if ($LASTEXITCODE -ne 0) { Fail "PyInstaller onedir build failed (exit $LASTEXITCODE)" }
 Pass "onedir build: $BuildDir\onedir\NexusScalpEngine\NexusScalpEngine.exe"
@@ -196,6 +198,8 @@ Pass "onedir build: $BuildDir\onedir\NexusScalpEngine\NexusScalpEngine.exe"
     --distpath (Join-Path $BuildDir "onefile") `
     --workpath (Join-Path $BuildDir "work-cli") `
     --specpath $BuildDir `
+    --add-data "$Root\src\nexus_scalp;training_payload\src\nexus_scalp" `
+    --add-data "$Root\configs;training_payload\configs" `
     src\nexus_scalp\release\cli_shim.py
 if ($LASTEXITCODE -ne 0) { Fail "PyInstaller onefile CLI build failed (exit $LASTEXITCODE)" }
 Pass "onefile CLI: $BuildDir\onefile\NexusScalpEngine-CLI.exe"

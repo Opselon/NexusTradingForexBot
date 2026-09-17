@@ -39,18 +39,25 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.web.provisioning_routes")
 
-REMEDY_MISMATCH = (
-    "The prepared training environment is a different interpreter — run the printed "
-    "training_command under that interpreter."
-)
-
 _IMPORT_ROOTS_ENV = "NEXUS_IMPORT_ROOTS"  # os.pathsep-separated allowed roots
 
 
 class _TrainRun:
     """One active background training run (single-flight: one at a time)."""
 
-    def __init__(self, request: TrainingRequest) -> None:
+    def __init__(
+        self,
+        request: TrainingRequest,
+        *,
+        source: str = "file",
+        dataset_adapter: Any = None,
+        prepare_environment: bool = False,
+    ) -> None:
+        # Route-level choices (kept OUT of the shared TrainingRequest — the
+        # pipeline owns that dataclass; this web layer owns its own fields).
+        self.source = source
+        self.dataset_adapter = dataset_adapter
+        self.prepare_environment = prepare_environment
         self.request = request
         self.cancel = threading.Event()
         request.cancel_event = self.cancel
@@ -71,6 +78,38 @@ class _TrainRun:
 _ACTIVE: _TrainRun | None = None
 _ACTIVE_LOCK = threading.Lock()
 _INSTALL_ACTIVE = False  # single-flight env install (explicit user action)
+_OFFICIAL_ACTIVE = False  # single-flight official download/install (shared reservation)
+
+
+def _backend(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValueError("accepted: auto | cpu | cuda")
+    value = raw.strip().lower()
+    if value in ("", "auto"):
+        return None
+    if value not in ("cpu", "cuda"):
+        raise ValueError("accepted: auto | cpu | cuda")
+    return value
+
+
+def _allowed_import_roots() -> list[Path]:
+    """One resolved allowlist for containment and operator copy instructions."""
+    import os
+
+    roots_env = str(os.environ.get(_IMPORT_ROOTS_ENV, "")).strip()
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for raw in [*roots_env.split(os.pathsep), "data/imports", "data/raw"]:
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        resolved = Path(cleaned).expanduser().resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            roots.append(resolved)
+    return roots
 
 
 def _allowed_import_path(raw: str) -> Path:
@@ -81,8 +120,7 @@ def _allowed_import_path(raw: str) -> Path:
     starts-with "data/raw"):
       1. reject null bytes and any ``..`` traversal segment BEFORE resolving;
       2. resolve to an absolute real path (symlinks followed);
-      3. containment via os.path.relpath + explicit '..' scan (relative walk,
-         not string prefix);
+      3. containment via Path.is_relative_to (not string prefix);
       4. the pipeline then only ever READS the file (training input).
     """
     import os
@@ -95,14 +133,11 @@ def _allowed_import_path(raw: str) -> Path:
         raise ValueError("path traversal segments are refused")
     p = Path(s).expanduser().resolve()  # codeql[py/path-injection] traversal segments
     # rejected above; the containment loop below admits ONLY paths under an
-    # operator-configured import root (relpath-walk, not string prefix), and
+    # operator-configured import root (path containment, not string prefix), and
     # the pipeline reads the file — never writes, never executes it.
     if p.suffix.lower() not in (".csv", ".parquet"):
         raise ValueError("unsupported file type (accepted: .csv, .parquet)")
-    roots_env = str(os.environ.get(_IMPORT_ROOTS_ENV, "")).strip()
-    roots = [Path(r).expanduser().resolve() for r in roots_env.split(os.pathsep) if r.strip()]
-    roots.append(Path("data/imports").resolve())
-    roots.append(Path("data/raw").resolve())
+    roots = _allowed_import_roots()
     for r in roots:
         if p.is_relative_to(r) and p != r:
             if not p.exists():
@@ -127,6 +162,7 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 "slot": coord.slot().as_dict(),
                 "recommended": coord.recommended_action(),
                 "provisioner": prov.read_provisioner_state(),
+                "allowed_import_roots": [str(root) for root in _allowed_import_roots()],
             }
         except Exception as exc:
             _log_err(exc, "provisioning status failed", endpoint="/api/provisioning/status")
@@ -145,8 +181,11 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
         )
 
         try:
+            be = _backend(backend)
+        except ValueError:
+            return _err(code="TRAIN_BACKEND_INVALID", message="accepted: auto | cpu | cuda")
+        try:
             manager = TrainingEnvironmentManager()
-            be = None if backend in ("", "auto") else backend
             rep = manager.status(backend=be)
             legacy = {
                 "python": rep.python.get("version"),
@@ -178,12 +217,24 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
         global _INSTALL_ACTIVE  # noqa: PLW0603 (single-flight registry)
         body = payload or {}
-        backend = str(body.get("backend", "") or "") or None
+        try:
+            backend = _backend(body.get("backend"))
+        except ValueError:
+            return _err(code="TRAIN_BACKEND_INVALID", message="accepted: auto | cpu | cuda")
         with _ACTIVE_LOCK:
+            if _ACTIVE is not None and not _ACTIVE.done.is_set():
+                return _err(
+                    code="TRAIN_ALREADY_RUNNING", message="training or preparation is active"
+                )
             if _INSTALL_ACTIVE:
                 return _err(
                     code="INSTALL_ALREADY_RUNNING",
                     message="an environment install is already running",
+                )
+            if _OFFICIAL_ACTIVE:
+                return _err(
+                    code="OFFICIAL_ALREADY_RUNNING",
+                    message="official model download or installation is active",
                 )
             _INSTALL_ACTIVE = True
         try:
@@ -207,12 +258,30 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     @router.post("/api/provisioning/official")
     def provisioning_official(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        global _OFFICIAL_ACTIVE  # noqa: PLW0603 (single-flight registry)
         if getattr(app.state, "engine", None) is not None:
             return _err(
                 code="MODEL_INSTALL_ENGINE_RUNNING",
                 message="Stop the engine before installing a model; use the stopped-engine setup or CLI.",
             )
         body = payload or {}
+        with _ACTIVE_LOCK:
+            if _ACTIVE is not None and not _ACTIVE.done.is_set():
+                return _err(
+                    code="TRAIN_ALREADY_RUNNING",
+                    message="training or preparation is active",
+                )
+            if _INSTALL_ACTIVE:
+                return _err(
+                    code="INSTALL_ALREADY_RUNNING",
+                    message="an environment install is already running",
+                )
+            if _OFFICIAL_ACTIVE:
+                return _err(
+                    code="OFFICIAL_ALREADY_RUNNING",
+                    message="an official model download or install is already running",
+                )
+            _OFFICIAL_ACTIVE = True
         try:
             coord = prov.FirstRunCoordinator()
             base = str(body.get("base_url", "") or "")
@@ -246,24 +315,69 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
         except Exception as exc:
             _log_err(exc, "official provisioning failed", endpoint="/api/provisioning/official")
             return _err(code="PROVISIONING_OFFICIAL_ERROR")
+        finally:
+            with _ACTIVE_LOCK:
+                _OFFICIAL_ACTIVE = False
 
     @router.post("/api/provisioning/train/start")
     def provisioning_train_start(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         global _ACTIVE  # noqa: PLW0603 (single-flight registry)
         body = payload or {}
+        source = str(body.get("source", "file") or "file")
+        if source not in ("file", "broker"):
+            return _err(code="TRAIN_INPUT_REJECTED", detail="source must be file or broker")
         try:
-            file = _allowed_import_path(str(body.get("file", "")))
+            file = None if source == "broker" else _allowed_import_path(str(body.get("file", "")))
         except ValueError as ve:
             return _err(code="TRAIN_INPUT_REJECTED", detail=str(ve))
+        try:
+            req_backend = _backend(body.get("backend"))
+        except ValueError:
+            return _err(code="TRAIN_BACKEND_INVALID", message="accepted: auto | cpu | cuda")
+        from nexus_scalp.model_provisioning.dataset_source import validate_dataset_request
+
+        symbol = str(body.get("symbol", "XAUUSD"))
+        timeframe = str(body.get("timeframe", "M1"))
+        try:
+            validate_dataset_request(
+                source=source,
+                source_file=file,
+                symbol=symbol,
+                timeframe=timeframe,
+                candles=body.get("candles"),
+            )
+            for key, default in (("folds", 6), ("epochs", 4)):
+                value = body.get(key, default)
+                if type(value) is not int or not 1 <= value <= 1000:
+                    raise ValueError(f"{key} must be an integer between 1 and 1000")
+        except (ValueError, OSError) as exc:
+            return _err(code="TRAIN_INPUT_REJECTED", detail=str(exc))
+        state = getattr(router, "state", None)
+        engine = getattr(state, "engine", None)
+        adapter = getattr(engine, "adapter", None) if engine is not None else None
+        adapter = adapter or getattr(state, "training_history_adapter", None)
+        if source == "broker" and engine is not None and adapter is None:
+            return _err(
+                code="TRAIN_INPUT_REJECTED",
+                detail="Active engine has no borrowable history provider; use a file",
+            )
         with _ACTIVE_LOCK:
+            if _OFFICIAL_ACTIVE:
+                return _err(
+                    code="OFFICIAL_ALREADY_RUNNING",
+                    message="official model download or installation is active",
+                )
+            if _INSTALL_ACTIVE:
+                return _err(
+                    code="INSTALL_ALREADY_RUNNING", message="environment installation is active"
+                )
             if _ACTIVE is not None and not _ACTIVE.done.is_set():
                 return _err(code="TRAIN_ALREADY_RUNNING", detail="one local training run at a time")
             candles = body.get("candles")
-            req_backend = str(body.get("backend", "") or "").strip().lower() or None
-            if req_backend not in (None, "cpu", "cuda"):
+            if source == "broker" and candles is None:
                 return _err(
-                    code="TRAIN_BACKEND_INVALID",
-                    message=f"accepted: cpu | cuda (got {req_backend!r})",
+                    code="TRAIN_INPUT_REJECTED",
+                    detail="broker source requires an explicit candle count (3000..100000)",
                 )
             request = TrainingRequest(
                 source_file=file,
@@ -273,49 +387,144 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 install=bool(body.get("install", True)),
                 backend=req_backend,
             )
-            run = _TrainRun(request)
-            _ACTIVE = run
-        chosen_backend = request.backend
-
-        # TRAINING GATE (BUG-301): the resolved environment must be READY in
-        # THIS process before training may start — the exact checklist + the
-        # blocking reason return here, never a silent VALIDATION_FAILED later.
-        from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
-
-        gate = TrainingEnvironmentManager().status(backend=chosen_backend)
-        if not gate.training_ready or not gate.in_process_ready:
-            with _ACTIVE_LOCK:
-                _ACTIVE = None
-            return _err(
-                code="TRAINING_ENV_BLOCKED",
-                step="environment",
-                message="Training cannot start. "
-                + "; ".join(f"{c.stage}={c.code or 'FAIL'}" for c in gate.failing())[:300]
-                or "environment ready but outside this process",
-                remedy=(
-                    gate.failing()[0].remedy
-                    if gate.failing()
-                    else gate.training_command or REMEDY_MISMATCH
-                ),
-                report=gate.as_dict(),
+            run = _TrainRun(
+                request,
+                source=source,
+                dataset_adapter=adapter,
+                prepare_environment=body.get("prepare_environment") is True,
             )
-
-        from nexus_scalp.model_provisioning.pipeline import train_local_model
+            _ACTIVE = run
 
         def _worker() -> None:
+            stage = "environment"
             try:
+                from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
+
+                run.record(
+                    ProgressEvent(
+                        stage="environment",
+                        status="active",
+                        message="Checking training environment",
+                    )
+                )
+                manager = TrainingEnvironmentManager()
+                gate = manager.status(backend=request.backend)
+                if run.cancel.is_set():
+                    run.result = {"outcome": "CANCELLED"}
+                    run.record(
+                        ProgressEvent(
+                            stage=stage, status="cancelled", message="Preparation cancelled"
+                        )
+                    )
+                    return
+                if not gate.training_ready and run.prepare_environment:
+                    run.record(
+                        ProgressEvent(
+                            stage="environment",
+                            status="active",
+                            message="Installing pinned dependencies (explicit consent)",
+                        )
+                    )
+                    manager.install(backend=request.backend)
+                    gate = manager.status(backend=request.backend)
+                if not gate.training_ready:
+                    failures = gate.failing()
+                    run.result = {
+                        "outcome": "TRAINING_ENV_BLOCKED",
+                        "reason": "Training environment is not ready",
+                        "remedy": failures[0].remedy
+                        if failures
+                        else "Re-check the training environment",
+                        "report": gate.as_dict(),
+                    }
+                    run.record(
+                        ProgressEvent(
+                            stage="environment", status="failed", message="TRAINING_ENV_BLOCKED"
+                        )
+                    )
+                    return
+                if run.cancel.is_set():
+                    run.result = {"outcome": "CANCELLED"}
+                    run.record(
+                        ProgressEvent(
+                            stage=stage, status="cancelled", message="Preparation cancelled"
+                        )
+                    )
+                    return
+                run.record(
+                    ProgressEvent(
+                        stage="environment", status="done", message="Training environment READY"
+                    )
+                )
+                from nexus_scalp.model_provisioning.dataset_source import prepare_training_dataset
+                from nexus_scalp.model_provisioning.pipeline import TrainingCancelledError
+
+                stage = "dataset"
+                try:
+                    request.source_file = prepare_training_dataset(
+                        source=run.source,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        source_file=request.source_file,
+                        adapter=run.dataset_adapter,
+                        candles=request.candles,
+                        progress=run.record,
+                        cancel_event=run.cancel,
+                    )
+                except TrainingCancelledError:
+                    run.result = {"outcome": "CANCELLED"}
+                    run.record(
+                        ProgressEvent(
+                            stage=stage, status="cancelled", message="Dataset preparation cancelled"
+                        )
+                    )
+                    return
+                except Exception as exc:
+                    _log_err(
+                        exc, "dataset preparation failed", endpoint="/api/provisioning/train/start"
+                    )
+                    run.result = {
+                        "outcome": "DATASET_BLOCKED",
+                        "reason": "Dataset is not usable — check the CSV/Parquet file or connected broker history",
+                    }
+                    run.record(
+                        ProgressEvent(stage=stage, status="failed", message="DATASET_BLOCKED")
+                    )
+                    return
+                stage = "train"
+                from nexus_scalp.model_provisioning.pipeline import train_local_model
+
                 run.result = train_local_model(request, progress=run.record)
             except Exception as exc:  # defensive: train_local_model should not raise
                 # Web-exposed payload carries the SAFE CATEGORY only (full
                 # detail stays server-side in the log) — py/stack-trace-exposure.
                 category = type(exc).__name__
                 logger.error("[PROVISION-WEB] event=TRAIN_WORKER_CRASH category=%s", category)
-                run.result = {"outcome": "VALIDATION_FAILED", "reason": f"unexpected {category}"}
-                run.record(ProgressEvent(stage="train", status="failed", message=category))
+                from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentError
+
+                run.result = {
+                    "outcome": "TRAINING_ENV_BLOCKED"
+                    if stage == "environment"
+                    else "VALIDATION_FAILED",
+                    "reason": f"unexpected {category}",
+                }
+                if isinstance(exc, TrainingEnvironmentError):
+                    run.result.update(code=exc.code.value, reason=exc.detail, remedy=exc.remedy)
+                run.record(
+                    ProgressEvent(
+                        stage=stage, status="failed", message=str(run.result.get("code", category))
+                    )
+                )
             finally:
                 run.done.set()
 
-        threading.Thread(target=_worker, name="nexus-local-train", daemon=True).start()
+        try:
+            threading.Thread(target=_worker, name="nexus-local-train", daemon=True).start()
+        except Exception as exc:
+            with _ACTIVE_LOCK:
+                _ACTIVE = None
+            _log_err(exc, "training worker launch failed", endpoint="/api/provisioning/train/start")
+            return _err(code="TRAIN_WORKER_START_ERROR")
         return {"success": True, "started": True}
 
     @router.get("/api/provisioning/train/progress")

@@ -24,6 +24,26 @@ release management. Those boundaries never mix.
 8. nexus start           # PAPER mode by default, never LIVE silently
 ```
 
+## First-setup model and local training
+
+See [Training Setup](TRAINING_SETUP.md) for supported data formats, consent,
+CPU/CUDA checks, cancellation, and the official-model publication blocker.
+
+| Command | Purpose / authorization |
+|---|---|
+| `nexus model-setup` | Interactive official-vs-local choice; `--json` is discovery only |
+| `nexus model-provision --status` | Serving-slot origin/integrity; no installation |
+| `nexus model-official` | Explicit signed official download, mandatory verification; requires a published trusted source |
+| `nexus model-train-env --backend cpu` | Read-only environment checks; never installs |
+| `nexus model-train-env --install --backend cpu` | Explicitly prepare exact pinned packages |
+| `nexus model-train-local --input bars.csv --backend cpu --prepare-environment` | Prepare if needed, validate real data, train in the READY interpreter |
+| `nexus model-train-local --source broker --candles 50000 --prepare-environment` | Explicit local MT5 history acquisition, then the same training path |
+
+`--json` never prompts; unattended package preparation requires
+`--prepare-environment`. `--no-install` retains the verified candidate.
+Training never promotes or overwrites a governed champion. Use
+`nexus model-train-local --help` for every option and examples.
+
 ## Exit-code contract (stable, Typer/Click-consistent)
 
 | Code | Meaning |
