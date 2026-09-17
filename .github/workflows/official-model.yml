@@ -93,6 +93,17 @@ jobs:
           python scripts/release/publish_official_model.py fetch \
             --candidate "$CANDIDATE" --dest candidate
 
+      - name: Install candidate-pinned CPU torch
+        run: |
+          set -euo pipefail
+          # The torch build used for runtime verification comes from the
+          # candidate's OWN compatibility.json (validated by runtime_spec:
+          # Python 3.11 + stable torch 2.6-2.19), never from workflow input.
+          read -r RT_PY RT_TORCH < <(python scripts/release/publish_official_model.py runtime-spec \
+            --compatibility candidate/compatibility.json | tr ',' ' ')
+          echo "Pinned verification runtime: python==$RT_PY torch==$RT_TORCH"
+          python -m pip install "torch==$RT_TORCH" --index-url https://download.pytorch.org/whl/cpu
+
       - name: Build, sign and verify local bundle (consumer chain)
         env:
           NSE_UPDATE_SIGNING_KEY: ${{ secrets.NSE_UPDATE_SIGNING_KEY }}

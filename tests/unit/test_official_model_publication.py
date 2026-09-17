@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -418,3 +420,108 @@ def test_key_id_and_bundle_id_threading_and_trust_root_resolution(tmp_path, monk
         )
     finally:
         trusted_keys.TRUSTED_UPDATE_KEYS.pop("test-e2e", None)
+
+
+def test_cli_fetch_and_publish_really_dispatch(tmp_path, monkeypatch, capsys):
+    """main() fetch/publish dispatch through the API object (fake in-process)."""
+    import json
+
+    pub = publisher()
+    calls = []
+
+    class FakeGh:
+        def release(self, tag):
+            calls.append(("release", tag))
+            if tag.startswith("model-candidate-"):
+                return {
+                    "draft": True,
+                    "tag_name": tag,
+                    "assets": [
+                        {"id": i + 1, "name": n, "size": 4, "state": "uploaded"}
+                        for i, n in enumerate(pub.CANDIDATE_FILES)
+                    ],
+                }
+            return None
+
+        def download(self, asset_id, dest, max_bytes):
+            calls.append(("download", asset_id))
+            Path(dest).write_bytes(b"1234")
+
+        def create(self, tag, draft):
+            calls.append(("create", tag, draft))
+
+        def upload(self, tag, paths, clobber=False):
+            calls.append(("upload", tag, tuple(p.name for p in paths), clobber))
+
+        def verify_assets(self, tag, paths):
+            calls.append(("verify", tag))
+
+        def publish(self, tag):
+            calls.append(("publish", tag))
+
+    monkeypatch.setattr(pub, "GhApi", FakeGh)
+    dest = tmp_path / "cand"
+    assert pub.main(["fetch", "--candidate", "model-candidate-1.2.3", "--dest", str(dest)]) == 0
+    assert len([c for c in calls if c[0] == "download"]) == 6
+    assert {p.name for p in dest.iterdir()} == set(pub.CANDIDATE_FILES)
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    evidence_fixture(bundle)
+    manifest = builder().prepare_manifest(bundle, "1.2.3")
+    (bundle / "manifest.json").write_text(json.dumps(manifest))
+    from nexus_scalp.model_provisioning import official
+
+    monkeypatch.setattr(official, "verify_bundle_manifest", lambda m: m)
+    calls.clear()
+    assert pub.main(["publish", "--bundle", str(bundle), "--version", "1.2.3"]) == 0
+    [c[1] for c in calls if c[0] in ("create", "upload", "publish")]
+    assert calls[0] == ("release", "model-1.2.3"), calls
+    assert ("upload", "official-model-stable", ("manifest.json",), True) in calls
+    assert calls[-1] == ("upload", "official-model-stable", ("manifest.json",), True), calls
+
+
+def test_cli_rejects_missing_bundle_and_bad_candidate(tmp_path, monkeypatch):
+    pub = publisher()
+    monkeypatch.setattr(pub, "GhApi", lambda: (_ for _ in ()).throw(AssertionError("no api")))
+    assert (
+        pub.main(["fetch", "--candidate", "model-candidate-x", "--dest", str(tmp_path / "d")]) != 0
+    )
+
+
+def test_cli_runtime_spec_prints_pinned_pair(tmp_path):
+    publisher()
+    src = tmp_path / "compatibility.json"
+    import json as _json
+
+    src.write_text(_json.dumps({"verification_runtime": {"python": "3.11", "pytorch": "2.14.0"}}))
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/release/publish_official_model.py"),
+            "runtime-spec",
+            "--compatibility",
+            str(src),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "3.11,2.14.0"
+    bad = tmp_path / "bad.json"
+    bad.write_text(_json.dumps({"verification_runtime": {"python": "3.11", "pytorch": "9.9.9"}}))
+    bad_proc = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/release/publish_official_model.py"),
+            "runtime-spec",
+            "--compatibility",
+            str(bad),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert bad_proc.returncode != 0
