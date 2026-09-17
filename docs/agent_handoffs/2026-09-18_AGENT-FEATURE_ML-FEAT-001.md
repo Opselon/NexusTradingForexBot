@@ -138,7 +138,8 @@ tests/unit/test_50d_normalization_parity.py::test_scenario4_nonfinite_inputs_han
 
 ## Git & Pull Request Tracking
 
-- **Commit SHA:** Pending commit
-- **PR Number:** Pending creation
-- **PR URL:** Pending creation
-- **Merge Commit SHA:** Pending merge
+- **Commit SHA:** `708cb98aecd0dc766fc13f35f05ef1e93f17e40f`
+- **PR Number:** #254
+- **PR URL:** https://github.com/Opselon/NexusTradingForexBot/pull/254
+- **Merge Commit SHA:** `bd61deb57be7f13e8b3c4ac2760350b60fe26507`
+- **Status:** MERGED & VERIFIED ON MAIN (6/6 tests passing on main tip)
