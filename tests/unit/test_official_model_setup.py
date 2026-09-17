@@ -32,13 +32,38 @@ def test_unpublished_official_has_actionable_safe_message(monkeypatch):
 
 
 def test_wizard_inline_javascript_compiles(tmp_path):
-    import re
+    from html.parser import HTMLParser
 
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js unavailable")
     html = Path("Web/first_setup.html").read_text(encoding="utf-8")
-    scripts = re.findall(r"(?is)<script(?:\s[^>]*)?>(.*?)</script\s*>", html)
+
+    class ScriptCollector(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.scripts: list[str] = []
+            self._in_script = False
+            self._chunks: list[str] = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "script":
+                self._in_script = True
+                self._chunks = []
+
+        def handle_endtag(self, tag):
+            if tag == "script" and self._in_script:
+                self._in_script = False
+                self.scripts.append("".join(self._chunks))
+
+        def handle_data(self, data):
+            if self._in_script:
+                self._chunks.append(data)
+
+    collector = ScriptCollector()
+    collector.feed(html)
+    collector.close()
+    scripts = collector.scripts
     assert scripts
     path = tmp_path / "wizard.cjs"
     path.write_text("\n".join(scripts), encoding="utf-8")
