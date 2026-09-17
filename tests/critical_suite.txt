@@ -440,3 +440,5 @@ tests/unit/test_training_stage_progress.py
 # BUG-303 (NSE-Swarm role 9 Observability, 2026-09-17): CI env probe, pip repair,
 # heartbeat, lane report, and telegram notify entry point robustness.
 tests/unit/test_bug303_ci_notify_env_and_report.py
+# ML-FEAT-001 (50D Normalization End-to-End Parity Verification)
+tests/unit/test_50d_normalization_parity.py
