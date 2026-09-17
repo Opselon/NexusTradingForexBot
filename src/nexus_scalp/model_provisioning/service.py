@@ -432,14 +432,21 @@ class FirstRunCoordinator:
 
         return bool(detect_ml_environment().get("torch"))
 
-    def download_official(self, work_dir: Path | None = None) -> dict[str, Any]:
+    def download_official(
+        self, work_dir: Path | None = None, *, cancel_event: Any = None
+    ) -> dict[str, Any]:
         """PATH A end-to-end (verify chain inside). Raises on any failure —
-        NEVER installs an unverified model, NEVER falls back silently."""
-        from nexus_scalp.release import bootstrap as rb
+        NEVER installs an unverified model, NEVER falls back silently.
 
+        The staged download is cleaned on every exit. The installer re-verifies
+        under the slot lock and returns the servability receipt; the
+        coordinator must trust that receipt instead of re-probing afterwards
+        (a post-lock probe races other writers and could never roll back)."""
         write_provisioner_state(LifecycleState.DOWNLOADING.value, path="official")
         try:
-            verified = self.official.download_and_verify(work_dir=work_dir)
+            verified = self.official.download_and_verify(
+                work_dir=work_dir, cancel_event=cancel_event
+            )
         except official_mod.OfficialBundleError as exc:
             write_provisioner_state(LifecycleState.REJECTED.value, path="official", error=str(exc))
             raise
@@ -447,16 +454,30 @@ class FirstRunCoordinator:
             LifecycleState.VERIFYING.value, path="official", bundle_id=verified.bundle_id
         )
         serving = serving_model_path()
-        install = official_mod.install_verified_bundle(verified, serving, origin=ORIGIN_OFFICIAL)
-        final = rb.bundle_status(serving)
-        ok = final["state"] == rb.STATE_OK
+        try:
+            install = official_mod.install_verified_bundle(
+                verified, serving, origin=ORIGIN_OFFICIAL, cancel_event=cancel_event
+            )
+        except official_mod.OfficialBundleError:
+            write_provisioner_state(
+                LifecycleState.REJECTED.value, path="official", bundle_id=verified.bundle_id
+            )
+            raise
+        finally:
+            official_mod.cleanup_dir(verified.dir)
+        ok = bool(install.get("servable"))
         write_provisioner_state(
             (LifecycleState.READY if ok else LifecycleState.REJECTED).value,
             path="official",
             bundle_id=verified.bundle_id,
             servable=ok,
         )
-        return {**install, "servable": ok, "origin": ORIGIN_OFFICIAL}
+        return {
+            **install,
+            "servable": ok,
+            "origin": ORIGIN_OFFICIAL,
+            "state": "ready" if ok else "rejected",
+        }
 
     def train_local(self, request: Any, progress: Any = None) -> dict[str, Any]:
         """PATH B entry (delegates to pipeline.train_local_model)."""

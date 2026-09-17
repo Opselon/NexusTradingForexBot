@@ -359,6 +359,7 @@ tests/unit/test_wft_fold_economics.py
 # --- wave-2: CI-integrity meta-gates (fast, they police the tier system itself) ---
 tests/ci/test_check_workflows.py
 tests/ci/test_classify_changes.py
+tests/ci/test_beforepush_wrapper.py
 tests/ci/test_critical_manifest_gate.py
 tests/ci/test_gate_scope_integrity.py
 tests/ci/test_mutation_runner_smoke.py

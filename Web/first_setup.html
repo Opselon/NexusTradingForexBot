@@ -72,7 +72,9 @@
       <p>Download the <b>official Nexus model</b> (dataset identity + weights).
          Verified before install: SHA256 per file, Ed25519 signature, schema,
          70D dimension, architecture, integrity gates. No local training —
-         works without PyTorch installed.</p>
+         the packaged install includes the inference runtime. Source installs
+         need a compatible PyTorch runtime before verification can complete.
+         Official origin does not authorize LIVE trading.</p>
       <div class="row" id="officialRow">
         <button id="btnOfficial">Download &amp; Install</button>
         <span class="note" id="officialNote"></span>
@@ -84,8 +86,8 @@
     <section class="card" id="cardB">
       <h2><span class="tag alt">LOCAL ONLY</span> 🧠 TRAIN YOUR OWN MODEL</h2>
       <p>Train on <b>your own broker export</b> (CSV / Parquet, MT5 columns).
-         Your market data stays on this computer — no upload or cloud training.
-         Requires the supported Python and pinned training dependencies shown below.</p>
+         Your market data never leaves this computer — no upload, no cloud,
+         no telemetry with candles. Requires Python + PyTorch locally.</p>
       <div id="cardBBody">
       <div class="row" id="envRow"><span class="note" id="envNote">checking environment…</span></div>
       <div class="row">
@@ -96,22 +98,14 @@
           <option value="cuda">NVIDIA CUDA GPU</option>
         </select>
         <button id="btnInstallEnv" class="ghost" style="display:none" onclick="installEnv(this)">Install required dependencies</button>
-        <button id="btnRecheck" class="ghost" onclick="refreshStatus()">Re-check</button>
       </div>
-      <div class="row"><label><input type="checkbox" id="prepConsent"> Prepare environment automatically if checks fail (installs the pinned training stack)</label></div>
       <div class="row">
-        <select id="sourceSel" title="File import never touches your broker; broker history is read-only">
-          <option value="file" selected>Import file (CSV / Parquet export)</option>
-          <option value="broker">Read MT5 XAUUSD M1 history (explicit opt-in, read-only)</option>
-        </select>
-        <input type="text" id="trainFile" placeholder="Server-side CSV or Parquet path (see permitted directories below)">
+        <input type="text" id="trainFile" placeholder="Local file path: C:\data\XAUUSD_M1.csv or .parquet">
       </div>
-      <p class="note" id="fileHelp">Re-check status to see the permitted directories on the server, then copy your export there and enter its path above.</p>
-      <p class="note" id="brokerNote"></p>
       </div>
       <div class="row">
         <select id="candlesSel" title="Candles used (most recent N bars — chronological tail)">
-          <option value="3000">3,000 candles (minimum)</option>
+          <option value="1000">1,000 candles</option>
           <option value="10000">10,000 candles</option>
           <option value="50000" selected>50,000 candles</option>
           <option value="">All available</option>
@@ -138,10 +132,8 @@
 <script>
 "use strict";
 const $ = (id)=>document.getElementById(id);
-const STAGES = ["environment","dataset","import","validate","prepare","features","train","validation","validate_model","verify","install"];
-const STAGE_LABELS = {features:"feature engineering (row-shaped 50/70D — no sequences used)", validation:"per-fold out-of-sample (OOS) validation"};
-let poll = null, after = 0, lastEnvReport = null, trainingActive = false, installActive = false, officialActive = false;
-function sourceChoice(){ return $("sourceSel") ? $("sourceSel").value : "file"; }
+const STAGES = ["import","validate","prepare","train","validate_model","verify","install"];
+let poll = null, after = 0, elapsed0 = 0, lastEnvReport = null;
 
 async function api(path, opts){
   const r = await fetch(path, Object.assign({credentials:"same-origin",headers:{"Content-Type":"application/json"}}, opts||{}));
@@ -163,16 +155,6 @@ async function refreshStatus(){
     let html = "<b class='"+cls+"'>"+esc(label)+"</b>";
     if(origin) html += " · origin <b>"+esc(origin)+"</b>";
     if(slot.path) html += "<br><span style='color:var(--dim)'>"+esc(slot.path)+"</span>";
-    $("sourceSel").options[1].disabled = false;
-    $("brokerNote").textContent = "Broker history uses the active engine adapter when available. Without an engine, it requires Windows, local MT5 support in this application and a logged-in terminal. Select 3000..100000 closed XAUUSD M1 candles (not All available). Connectivity and sufficient history are not verified until preparation; use a file if unavailable. Read-only: no orders are sent.";
-    const roots = Array.isArray(st.allowed_import_roots) ? st.allowed_import_roots : null;
-    if(roots && roots.length){
-      $("fileHelp").textContent = "Permitted import directories: "+roots.join("  ·  ")
-        +". Create one of these directories on the server if needed, copy your exported CSV or Parquet file into it, then enter its path above (relative paths resolve against the workspace).";
-      const separator = roots[0].includes("\\") ? "\\" : "/";
-      const root = roots[0].replace(/[\\/]+$/, "");
-      $("trainFile").placeholder = "Local file path: "+root+separator+"XAUUSD_M1.csv or .parquet";
-    }
     const rec = (st.recommended||{}).action;
     if(rec==="upgrade_from_starter")
       html += "<br><span class='note'>This slot runs the <b>DEV STARTER</b> (offline/CI fallback) — replace it below for production use.</span>";
@@ -184,13 +166,13 @@ async function refreshStatus(){
       html += "<br><span class='note'>Offline fallback CLI: <code>nexus model-provision --starter</code> (labeled DEV STARTER, never production).</span>";
     box.innerHTML = html;
     $("officialNote").textContent = st.recommended && st.recommended.official_configured===false
-      ? "official source not configured on this machine" : "";
+      ? "official source not configured on this machine"
+      : "Source configured; publication not checked — click Download & Install to verify.";
   }catch(e){ box.innerHTML = "<b class='bad'>Status unavailable</b> · "+esc(e.message); }
   try{
     const r = await api("/api/provisioning/environment?backend="+encodeURIComponent($("backendSel").value));
     renderEnv(r.report||{});
   }catch(e){ $("envNote").textContent="environment probe unavailable"; }
-  updateControls();
 }
 
 function renderEnv(rep){
@@ -198,9 +180,8 @@ function renderEnv(rep){
   const checks = rep.checks||[];
   const lines = checks.map(c=>{
     const mark = c.ok ? "<span class='okline'>OK</span>" : "<span class='err'>--</span>";
-    let line = mark+" "+esc(c.stage);
+    let line = mark+" "+c.stage;
     if(!c.ok && c.code) line += " <span class='err'>"+esc(c.code)+"</span>";
-    if(!c.ok && c.remedy) line += "<br><span class='note'>→ "+esc(c.remedy)+"</span>";
     return line;
   });
   const gpu = rep.gpu||{};
@@ -209,28 +190,14 @@ function renderEnv(rep){
     "env "+esc((rep.environment&&rep.environment.type)||(rep.environment&&rep.environment.found?"present":"none"))+" · "+
     "pytorch "+esc((rep.pytorch&&rep.pytorch.detected)||"MISSING")+" (required "+esc((rep.pytorch&&rep.pytorch.required)||"?")+") · "+
     "GPU "+esc(gpu.available?(gpu.name||"NVIDIA"):"none")+"<br>"+lines.join("<br>");
-  $("btnInstallEnv").style.display = rep.training_ready ? "none" : "";
-  updateControls();
-}
-
-function updateControls(){
-  const busy = trainingActive || installActive || officialActive;
-  $("btnOfficial").disabled = busy;
-  $("btnTrain").disabled = busy || !((lastEnvReport||{}).training_ready || $("prepConsent").checked);
-  $("btnInstallEnv").disabled = busy;
-  $("backendSel").disabled = busy;
-  $("prepConsent").disabled = busy;
-  $("btnRecheck").disabled = busy;
-  $("btnCancel").disabled = !trainingActive;
-  const fileSelected = sourceChoice()==="file";
-  $("trainFile").disabled = busy || !fileSelected;
-  $("trainFile").style.display = fileSelected ? "" : "none";
-  $("fileHelp").style.display = fileSelected ? "" : "none";
+  $("btnInstallEnv").style.display = (rep.training_ready && rep.in_process_ready) ? "none" : "";
+  $("btnTrain").disabled = !(rep.training_ready && rep.in_process_ready);
+  if(rep.training_ready && !rep.in_process_ready){
+    $("envNote").innerHTML += "<br><span class='note'>Environment READY in a separate interpreter: <code>"+esc(rep.training_command||"")+"</code></span>";
+  }
 }
 
 async function installEnv(btn){
-  if(trainingActive || installActive || officialActive) return;
-  installActive = true; updateControls();
   btn.disabled=true; const old=btn.textContent; btn.textContent="installing… (pinned stack, may take minutes)";
   const box = document.createElement("div"); box.className="err"; $("cardBBody").appendChild(box);
   try{
@@ -239,19 +206,17 @@ async function installEnv(btn){
     box.className="okline"; box.textContent = r.success? "environment READY — you can train now." : "install finished but checks still fail (see list).";
     if(r.report) renderEnv(r.report);
   }catch(e){ box.textContent = "Install failed: "+esc(e.message); }
-  finally{ installActive=false; btn.textContent=old; updateControls(); }
+  finally{ btn.disabled=false; btn.textContent=old; }
 }
 function trainBlockedReason(){
   const rep = lastEnvReport||{}; const bad=(rep.checks||[]).filter(c=>!c.ok);
-  if(!bad.length){ return "Re-check the environment or explicitly allow preparation before training."; }
+  if(!bad.length){ return "The prepared environment runs under a different interpreter — see the printed command."; }
   return bad.map(c=>c.stage+": "+(c.code||"FAIL")+(c.remedy?(" — "+c.remedy):"")).join("\n");
 }
 
 /* ---------------- PATH A ---------------- */
 $("btnOfficial").addEventListener("click", async ()=>{
-  if(trainingActive || installActive || officialActive) return;
-  officialActive=true; updateControls();
-  $("officialProgress").innerHTML="downloading + verifying…";
+  const btn=$("btnOfficial"); btn.disabled=true; $("officialProgress").innerHTML="downloading + verifying…";
   try{
     const out = await api("/api/provisioning/official",{method:"POST",body:"{}"});
     $("officialProgress").innerHTML = out.servable
@@ -259,24 +224,28 @@ $("btnOfficial").addEventListener("click", async ()=>{
       : "<div class='err'>installed but slot verification failed — run <code>nexus model-provision --status</code></div>";
   }catch(e){
     $("officialProgress").innerHTML = "<div class='err'>✗ "+esc(e.message)+"<br>Nothing was installed — the previous state is unchanged.</div>";
-  }finally{ officialActive=false; updateControls(); refreshStatus(); }
+  }finally{ btn.disabled=false; refreshStatus(); }
 });
 
 /* ---------------- PATH B ---------------- */
 function renderStages(events){
   const last = {};
-  events.forEach(ev=>{ last[ev.stage]=ev; });
+  events.forEach(ev=>{ last[ev.stage]=ev.status; });
   $("trainStages").innerHTML = STAGES.filter(s=>last[s]).map(s=>{
-    const ev = last[s], st = ev.status;
+    const st = last[s];
     const dot = st==="done"?"✓":(st==="failed"?"✗":(st==="cancelled"?"⏹":"●"));
-    const cls = ["done","active","failed","cancelled"].includes(st) ? st : "active";
-    const label = esc(STAGE_LABELS[s]||s);
-    return "<div class='stage "+cls+"'><span class='dot'>"+dot+"</span>"+label+(ev.message?" — "+esc(ev.message):"")+"</div>";
+    const frac = " "+(s==="train"?"training":"<span class='dimm'></span>");
+    return "<div class='stage "+esc(st)+"'><span class='dot'>"+dot+"</span>"+esc(s)+frac.replace('training',esc(s))+"</div>";
   }).join("");
 }
 function setMeter(ev){
-  if(typeof ev.fraction==="number" && Number.isFinite(ev.fraction)){
-    $("meterFill").style.width = Math.round(Math.max(0,Math.min(1,ev.fraction))*100)+"%";
+  if(ev.fraction!=null){
+    $("meterFill").style.width = Math.round(Math.min(1,ev.fraction)*100)+"%";
+    if(elapsed0){
+      const f=Math.min(0.999,ev.fraction);
+      const rem=(elapsed0/f-elapsed0);
+      $("trainMetrics").textContent += "\rETA ≈ "+Math.max(0,Math.round(rem))+"s (from measured progress)   ";
+    }
   }
 }
 async function pump(){
@@ -289,15 +258,11 @@ async function pump(){
       evs.forEach(ev=>{ setMeter(ev);
         if(ev.metrics && (ev.metrics.epoch||ev.metrics.loss!=null)){
           const m=ev.metrics;
-          const isFinal = m.phase==="final_fit";
-          const header = isFinal
-            ? "final fit   epoch "+(m.epoch!=null?m.epoch:"—")+"/"+(m.epochs!=null?m.epochs:"—")
-            : "fold "+(m.fold??"—")+"/"+(m.folds??"—")+"   epoch "+(m.epoch??"—")+"/"+(m.epochs??"—");
           $("trainMetrics").textContent =
-            header+
+            "fold "+m.fold+"/"+m.folds+"   epoch "+m.epoch+"/"+m.epochs+
             "\nloss        "+(m.loss!=null?Number(m.loss).toFixed(4):"—")+
             "\nval loss    "+(m.val_loss!=null?Number(m.val_loss).toFixed(4):"—")+
-            (isFinal ? "" : "\nfold elapsed "+(m.elapsed_sec!=null?m.elapsed_sec+"s":"—"));
+            "\nfold elapsed "+(m.elapsed_sec!=null?m.elapsed_sec+"s":"—");
         }
         if(ev.stage==="validate"&&ev.status==="done"&&ev.metrics&&ev.metrics.rows_total!=null){
           const d=ev.metrics;
@@ -311,36 +276,32 @@ async function pump(){
       allEvents = allEvents.concat(evs);
     }
     if(!p.active){
-      clearInterval(poll); poll=null; trainingActive=false; updateControls();
+      clearInterval(poll); poll=null; $("btnTrain").disabled=false; $("btnCancel").disabled=true;
       const res=p.result||{};
-      if(res.report) renderEnv(res.report);
       if(res.outcome==="INSTALLED") $("trainMetrics").textContent+="\n\n✓ model installed & verified — READY.";
       else if(res.outcome==="CANDIDATE") $("trainMetrics").textContent+="\n\ncandidate kept ("+(res.install_skipped||"--no-install")+") — use promotion to serve it.";
-      else if(res.outcome==="CANCELLED") $("trainMetrics").textContent+="\n\ncancelled — this run did not install a serving model. Partial training data or candidate files may remain on disk.";
+      else if(res.outcome==="CANCELLED") $("trainMetrics").textContent+="\n\ncancelled — no artifact was written.";
       else $("trainMetrics").textContent+="\n\n✗ "+(res.reason||res.outcome||"failed");
-      if(res.remedy) $("trainMetrics").textContent+="\n"+res.remedy;
       refreshStatus();
     }
   }catch(e){ /* transient */ }
 }
 let allEvents=[];
 $("btnTrain").addEventListener("click", async ()=>{
-  if(trainingActive || installActive || officialActive) return;
-  if(!(lastEnvReport||{}).training_ready && !$("prepConsent").checked){
-    $("diag").textContent=trainBlockedReason(); return;
-  }
   const file = $("trainFile").value.trim();
-  if(sourceChoice()==="file" && !file){ $("diag").innerHTML="<span class='err'>enter the path to your broker export first</span>"; return; }
-  trainingActive=true; updateControls(); after=0; allEvents=[];
+  if(!file){ $("diag").innerHTML="<span class='err'>enter the path to your broker export first</span>"; return; }
+  $("btnTrain").disabled=true; $("btnCancel").disabled=false; after=0; allEvents=[]; elapsed0=0;
   $("trainMetrics").textContent=""; $("diag").textContent=""; $("meterFill").style.width="0%";
   const candles = $("candlesSel").value;
   try{
-    await api("/api/provisioning/train/start",{method:"POST",body:JSON.stringify({source:$("sourceSel").value,file:file,candles:candles?parseInt(candles,10):null,backend:$("backendSel").value,prepare_environment:$("prepConsent").checked===true})});
-    poll = setInterval(pump, 1500);
+    await api("/api/provisioning/train/start",{method:"POST",body:JSON.stringify({file:file,candles:candles?parseInt(candles,10):null,backend:$("backendSel").value})});
+    elapsed0 = 0; setTimeout(()=>{elapsed0=1;},1000); // measured clock starts; ETA only after real progress
+    const t0=Date.now();
+    poll = setInterval(()=>{ if(elapsed0) elapsed0=(Date.now()-t0)/1000; pump(); }, 1500);
     pump();
   }catch(e){
     $("diag").innerHTML="<span class='err'>"+esc(e.message)+"</span>";
-    trainingActive=false; updateControls();
+    $("btnTrain").disabled=false; $("btnCancel").disabled=true;
     if(String(e.message).indexOf("TRAINING_ENV")>=0 || String(e.message).indexOf("TRAIN_BACKEND")>=0){
       $("diag").innerHTML = "<span class='err'><b>Training cannot start.</b><br>"+
         esc(trainBlockedReason()||e.message)+"</span>";
@@ -353,11 +314,8 @@ $("btnCancel").addEventListener("click", async ()=>{
        $("trainMetrics").textContent+="\ncancel requested — observed at the next epoch boundary"; }catch(e){}
 });
 
-$("sourceSel").addEventListener("change", updateControls);
-$("prepConsent").addEventListener("change", updateControls);
-$("backendSel").addEventListener("change", ()=>{lastEnvReport=null; updateControls(); refreshStatus();});
-updateControls();
-refreshStatus(); setInterval(()=>{if(!trainingActive && !installActive && !officialActive) refreshStatus();}, 15000);
+$("backendSel").addEventListener("change", refreshStatus);
+refreshStatus(); setInterval(refreshStatus, 15000);
 </script>
 </body>
 </html>

@@ -48,6 +48,12 @@ pytestmark = pytest.mark.skipif(
 _TEST_KEY_SEED = "11" * 32  # test-only Ed25519 seed (never production material)
 
 
+@pytest.fixture(autouse=True)
+def isolate_data_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PID/registry checks must never inspect an operator's data directory."""
+    monkeypatch.setattr(rb.rpaths, "get_data_root", lambda: tmp_path / "data")
+
+
 @pytest.fixture()
 def test_trust_root(monkeypatch: pytest.MonkeyPatch) -> str:
     """Point the trust root at a test key (verify path reads the map live)."""
@@ -62,35 +68,42 @@ def test_trust_root(monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 def _make_bundle_manifest(model_dir: Path, sha_map: dict[str, str]) -> dict[str, Any]:
+    from nexus_scalp.features.schema_contract import DIMENSION, SCHEMA_ID, feature_schema_hash
+    from nexus_scalp.model_provisioning.official_contract import (
+        RELEASE_BASE,
+        architecture_parameters,
+    )
+
+    provenance = json.loads((model_dir / "provenance.json").read_text(encoding="utf-8"))
+    compatibility = json.loads((model_dir / "compatibility.json").read_text(encoding="utf-8"))
     return {
         "schema": "nexus_model_bundle_v1",
-        "bundle_id": "official-test-1",
+        "contract_version": 2,
+        "bundle_id": "test-only-never-public",
         "model_version": "1.0.0",
         "architecture": "ScalpNet",
         "architecture_version": "1.0.0",
-        "feature_schema_id": "scalp_v3",
-        "feature_schema_hash": "ab" * 32,
-        "dimension": 70,
+        "architecture_parameters": architecture_parameters(),
+        "input_layout": "batch_features",
+        "feature_schema_id": SCHEMA_ID,
+        "feature_schema_hash": feature_schema_hash(),
+        "dimension": DIMENSION,
         "class_count": 3,
-        # The engine load-integrity verifier reads these bindings:
+        "class_labels": ["NO_TRADE", "BUY", "SELL"],
+        "symbol": "XAUUSD",
+        "timeframe": "M1",
         "model_sha256": sha_map["model.pt"],
         "metadata_sha256": sha_map["model.meta.json"],
         "scaler_sha256": sha_map["model.scaler.npz"],
-        "dataset": {"id": "ds-test", "version": "1", "sha256": "cd" * 32},
-        "training": {"command": "unit-test", "seed": 42},
+        **provenance,
+        "consumer": compatibility["consumer"],
         "files": {
-            "model.pt": {
-                "sha256": sha_map["model.pt"],
-                "size": (model_dir / "model.pt").stat().st_size,
-            },
-            "model.scaler.npz": {
-                "sha256": sha_map["model.scaler.npz"],
-                "size": (model_dir / "model.scaler.npz").stat().st_size,
-            },
-            "model.meta.json": {
-                "sha256": sha_map["model.meta.json"],
-                "size": (model_dir / "model.meta.json").stat().st_size,
-            },
+            name: {
+                "sha256": digest,
+                "size": (model_dir / name).stat().st_size,
+                "url": f"{RELEASE_BASE}/model-1.0.0/{name}",
+            }
+            for name, digest in sha_map.items()
         },
         "key_id": "test-root",
         "signature": "",
@@ -98,27 +111,24 @@ def _make_bundle_manifest(model_dir: Path, sha_map: dict[str, str]) -> dict[str,
 
 
 def _build_fake_official_dir(tmp_path: Path) -> Path:
-    """A real minted starter reused as the 'official' artifact (passes the
-    integrity probe), packed into a bundle dir with a signed manifest."""
+    """Local test-only trained tensors; NEVER a public model or relabeled starter."""
     import nacl.signing
 
     from nexus_scalp.model_provisioning import official as off
+    from tests.integration.test_official_model_distribution_e2e import (
+        build_test_only_trained_bundle,
+    )
 
-    bundle = tmp_path / "official-src"
-    bundle.mkdir()
-    rb.mint_starter_bundle(bundle / "model.pt")
-    # Re-write the bundle manifest WITHOUT the starter note (the signed
-    # external manifest is the authority PATH A verifies; starter
-    # classification is covered by its own test).
+    bundle = build_test_only_trained_bundle(tmp_path / "official-src")
     sha_map = {
-        "model.pt": rb.sha256_file(bundle / "model.pt"),
-        "model.scaler.npz": rb.sha256_file(bundle / "model.scaler.npz"),
-        "model.meta.json": rb.sha256_file(bundle / "model.meta.json"),
+        name: rb.sha256_file(bundle / name)
+        for name in ("model.pt", "model.scaler.npz", "model.meta.json")
     }
     manifest = _make_bundle_manifest(bundle, sha_map)
-    payload = off._canonical_payload(manifest)
     manifest["signature"] = (
-        nacl.signing.SigningKey(bytes.fromhex(_TEST_KEY_SEED)).sign(payload).signature.hex()
+        nacl.signing.SigningKey(bytes.fromhex(_TEST_KEY_SEED))
+        .sign(off._canonical_payload(manifest))
+        .signature.hex()
     )
     (bundle / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return bundle
@@ -154,7 +164,7 @@ def test_manifest_geometry_binding_enforced(tmp_path: Path, test_trust_root: str
     )
     with pytest.raises(OfficialBundleError) as err:
         off.verify_bundle_manifest(manifest)
-    assert err.value.code == "GEOMETRY_MISMATCH"
+    assert err.value.code == "CONTRACT_MISMATCH"
 
 
 # ---------------------------------------------------------------------------
@@ -214,12 +224,32 @@ def test_official_tampered_file_installs_nothing(
     assert prov.read_provisioner_state().get("state") == LifecycleState.REJECTED.value
 
 
+def test_official_rejects_signed_bootstrap_provenance(tmp_path: Path, test_trust_root: str) -> None:
+    """Even healthy tensors and a trusted signature cannot relabel a starter."""
+    import nacl.signing
+
+    from nexus_scalp.model_provisioning import official as off
+
+    root = _build_fake_official_dir(tmp_path)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["provisioner"] = "nexus.model_bootstrap"
+    manifest["note"] = "release bootstrap starter — not an official trained model"
+    manifest["signature"] = (
+        nacl.signing.SigningKey(bytes.fromhex(_TEST_KEY_SEED))
+        .sign(off._canonical_payload(manifest))
+        .signature.hex()
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(OfficialBundleError):
+        _CopySource(root).download_and_verify(work_dir=tmp_path / "staging")
+
+
 def test_install_rejects_unverified_bundle_shape(tmp_path: Path, test_trust_root: str) -> None:
-    """install_verified_bundle has no verification path of its own — it only
-    accepts a VerifiedBundle produced by the chain (unit-shape pin)."""
+    """Reject invalid caller shapes before staging or touching the serving slot."""
     from nexus_scalp.model_provisioning.official import install_verified_bundle
 
-    with pytest.raises((AttributeError, TypeError, KeyError)):
+    with pytest.raises(OfficialBundleError, match="INSTALL_UNVERIFIED"):
         install_verified_bundle(None, tmp_path / "model.pt")  # type: ignore[arg-type]
 
 

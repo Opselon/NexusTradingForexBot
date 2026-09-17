@@ -110,13 +110,23 @@ B4 [OPEN] No code-signing for the Windows installer (SmartScreen/AV
     Code Signing cert (~$200-400/yr, removes SmartScreen warning after
     reputation builds), (b) or MS Store distribution. Until then, ship
     SHA256SUMS + document the expected SmartScreen flow in README.
-B5 [OPEN] ed25519/minisign update signing STILL ABSENT (updater accepts
-    self-attested SHA256SUMS.txt from the same GitHub release). HIGHEST
-    remaining security ROI: one compromised release token = RCE on all
-    auto-updating clients. FIX: sign SHA256SUMS.txt with ed25519
-    (private key in Actions secret, pubkey embedded in the binary),
-    updater verifies before apply. ~1 day. Do this BEFORE enabling
-    silent auto-update for external users.
+B5 [FIXED-VERIFIED] Missing update signing/fetch CLOSED (2026-09-17,
+    checked at 2d67f4f589ab7a12df332a1fa4103b310aa39e93). Ed25519
+    verification uses the embedded key map (release/signing/trusted_keys.py:
+    25-29, update_manifest.py:187-246); discovery fetches the signed asset
+    (release/update_engine/discovery.py:427-501,807-825). No duplicate fix.
+    Real published v9.0.14 manifest signature AND full 271107575-byte ZIP
+    verified against the production embedded root. Actual network discovery
+    from installed 9.0.13 returns UPDATE_AVAILABLE / SIGNED_MANIFEST_OK.
+    Existing signing/fetch regression batteries: 28 passed, no edits.
+    This closes only the absent-signing/fetch claim, NOT a certification of
+    every update authorization/installation boundary. No installer executed.
+    Follow-up [OPEN] SIGNED-RELEASE-ID: release.yml:459 supplies github.run_id
+    as NSE_RELEASE_ID; signed v9.0.14 release_id=35124718835 while the real
+    GitHub release id=390121165. Fix publication identity semantics and
+    consumer comparisons together; do not enforce equality blindly and
+    break existing signed releases. Workflow edits are operator-owned.
+    Evidence/report: docs/agent_handoffs/swarm/2026-09-17_run8_signing.md.
 B6 [ACCEPTED-RISK] DPAPI on Windows / chmod-600 ACL file on Linux for
     secrets-at-rest (settings/secret_store.py). Documented weaker
     fallback; acceptable for the supported Windows deployment.

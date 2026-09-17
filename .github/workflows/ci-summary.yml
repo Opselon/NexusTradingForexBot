@@ -32,6 +32,7 @@ on:
       - "Docker Build & Publish"
       - "Nightly Deep QA"
       - "Nightly Client E2E (Docker)"
+      - "Official model publication"
       - "QA Deep Assurance"
     types: [completed]
 

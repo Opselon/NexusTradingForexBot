@@ -1,0 +1,73 @@
+{
+  "manifest": {
+    "schema": 1,
+    "key_id": "2026-09-root",
+    "version": "9.0.14",
+    "platform": "windows",
+    "architecture": "x64",
+    "artifact_name": "NexusScalpEngine-9.0.14-win-x64.zip",
+    "artifact_sha256": "422544eaa76a49afa5639da872270f2f6b4ba72819196d501683dffd4e98d004",
+    "artifact_size": 271107575,
+    "release_id": 35124718835,
+    "signature": "00c782131c749ccf6b49e1f6bb1a0896b7213a9b8c0215df1c5ba3a77e53c1293e6dfda350f279fadf267d152c87dae4f911816e66b97c65466cb8f83940420a"
+  },
+  "signature_verdict": {
+    "verified": true,
+    "key_id": "2026-09-root",
+    "covered_digest": "422544eaa76a49afa5639da872270f2f6b4ba72819196d501683dffd4e98d004"
+  },
+  "plan": {
+    "state": "CHECKING",
+    "status": "UPDATE_AVAILABLE",
+    "channel": "stable",
+    "platform": "windows-x64",
+    "architecture": "x64",
+    "current_version": "9.0.13",
+    "target_version": "9.0.14",
+    "artifact_name": "NexusScalpEngine-9.0.14-win-x64.zip",
+    "artifact_sha256": "422544eaa76a49afa5639da872270f2f6b4ba72819196d501683dffd4e98d004",
+    "artifact_url": "https://github.com/Opselon/NexusTradingForexBot/releases/download/v9.0.14/NexusScalpEngine-9.0.14-win-x64.zip",
+    "artifact_size": 271107575,
+    "release_notes_url": "https://github.com/Opselon/NexusTradingForexBot/releases/tag/v9.0.14",
+    "minimum_supported_version": null,
+    "migration_required_from": null,
+    "database_schema": null,
+    "config_schema": null,
+    "model_runtime_schema": null,
+    "migration_required": false,
+    "downgrade_blocked": false,
+    "model_policy": "UNCHANGED \u2014 application updates never promote or replace model artifacts; model updates require their own validated lifecycle",
+    "decisions": [
+      "digest found in checksum asset SHA256SUMS.txt",
+      "signed update manifest asset update-manifest.signed.json fetched; signature is verified next against the embedded Ed25519 trust root",
+      "release 9.0.14 offers NexusScalpEngine-9.0.14-win-x64.zip for x64",
+      "Ed25519-signed manifest + SHA-256 verified before install"
+    ],
+    "ready": true,
+    "release_id": 390121165,
+    "tag": "v9.0.14",
+    "version": "9.0.14",
+    "commit_sha": "main",
+    "published_at": "2026-09-16T17:15:22Z",
+    "draft": false,
+    "prerelease": false,
+    "revoked": false,
+    "upload_url": "https://uploads.github.com/repos/Opselon/NexusTradingForexBot/releases/390121165/assets{?name,label}",
+    "signature_status": "SIGNED_MANIFEST_OK",
+    "signed_manifest_key_id": "2026-09-root",
+    "minimum_client_version": null,
+    "minimum_model_version": null,
+    "model_version": null,
+    "model_sha256": null,
+    "schema_version": null,
+    "feature_dimension": null
+  },
+  "scope": "Real release, checksum, manifest and full 271107575-byte ZIP verified; no extraction, installation, engine or trading",
+  "payload_verdict": {
+    "verified": true,
+    "key_id": "2026-09-root",
+    "covered_digest": "422544eaa76a49afa5639da872270f2f6b4ba72819196d501683dffd4e98d004",
+    "payload_sha256": "422544eaa76a49afa5639da872270f2f6b4ba72819196d501683dffd4e98d004",
+    "payload_size": 271107575
+  }
+}

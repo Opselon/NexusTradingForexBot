@@ -354,9 +354,12 @@ def _paper_binds(path: Path, func: str | None = None) -> list[str]:
 
 
 def test_engine_boot_paper_bind_uses_factory() -> None:
-    binds = _paper_binds(
-        _REPO_ROOT / "src" / "nexus_scalp" / "cli" / "engine_boot.py", "_run_engine"
-    )
+    # The official-install slot lock wraps engine startup, so adapter
+    # selection now lives in _run_engine_locked; scan BOTH to keep the
+    # factory contract enforced wherever construction happens.
+    binds: list[str] = []
+    for func in ("_run_engine", "_run_engine_locked"):
+        binds += _paper_binds(_REPO_ROOT / "src" / "nexus_scalp" / "cli" / "engine_boot.py", func)
     assert any("build_paper_adapter" in c for c in binds), binds
     assert not any(c.endswith("PaperMT5Adapter") for c in binds), (
         "engine_boot still constructs PaperMT5Adapter directly — REPLAY config would be ignored"
