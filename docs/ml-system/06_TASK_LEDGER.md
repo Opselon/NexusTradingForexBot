@@ -51,7 +51,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 |---|---|---|---|---|---|---|---|---|
 | `ML-DATA-001` | A: Data | P0 | Historical M1 Ingest & Parquet Harness | **READY** | `AGENT-DATA` | NO | None | `PARALLEL_SAFE` |
 | `ML-DATA-002` | A: Data | P1 | Dataset Integrity, Sanitization & Hashing | **BLOCKED** | `AGENT-DATA` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
-| `ML-FEAT-001` | B: Features | P0 | 50D Normalization End-to-End Parity | **READY** | `AGENT-FEATURE` | NO | None | `PARALLEL_SAFE` |
+| `ML-FEAT-001` | B: Features | P0 | 50D Normalization End-to-End Parity | **DONE** (PR #254, `bd61deb5`) | `AGENT-FEATURE` | NO | None | `PARALLEL_SAFE` |
 | `ML-FEAT-002` | B: Features | P2 | Feature Importance & Collinearity Clustering | **BLOCKED** | `AGENT-FEATURE` | NO | `ML-DATA-001`, `ML-FEAT-001` | `PARALLEL_SAFE` |
 | `ML-FEAT-003` | B: Features | P2 | 70D Feasibility, Feed Uptime & Gating | **BLOCKED** | `AGENT-FEATURE` | **YES** | `ML-FEAT-001`, `ML-DATA-001` | `SERIAL_ONLY` |
 | `ML-LABEL-001` | C: Labeling | P1 | Friction-Aware Triple Barrier Horizon & ATR | **BLOCKED** | `AGENT-LABEL` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
