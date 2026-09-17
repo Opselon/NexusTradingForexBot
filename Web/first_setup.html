@@ -72,7 +72,9 @@
       <p>Download the <b>official Nexus model</b> (dataset identity + weights).
          Verified before install: SHA256 per file, Ed25519 signature, schema,
          70D dimension, architecture, integrity gates. No local training —
-         works without PyTorch installed.</p>
+         the packaged install includes the inference runtime. Source installs
+         need a compatible PyTorch runtime before verification can complete.
+         Official origin does not authorize LIVE trading.</p>
       <div class="row" id="officialRow">
         <button id="btnOfficial">Download &amp; Install</button>
         <span class="note" id="officialNote"></span>
@@ -164,7 +166,8 @@ async function refreshStatus(){
       html += "<br><span class='note'>Offline fallback CLI: <code>nexus model-provision --starter</code> (labeled DEV STARTER, never production).</span>";
     box.innerHTML = html;
     $("officialNote").textContent = st.recommended && st.recommended.official_configured===false
-      ? "official source not configured on this machine" : "";
+      ? "official source not configured on this machine"
+      : "Source configured; publication not checked — click Download & Install to verify.";
   }catch(e){ box.innerHTML = "<b class='bad'>Status unavailable</b> · "+esc(e.message); }
   try{
     const r = await api("/api/provisioning/environment?backend="+encodeURIComponent($("backendSel").value));
@@ -208,8 +211,7 @@ async function installEnv(btn){
 function trainBlockedReason(){
   const rep = lastEnvReport||{}; const bad=(rep.checks||[]).filter(c=>!c.ok);
   if(!bad.length){ return "The prepared environment runs under a different interpreter — see the printed command."; }
-  return bad.map(c=>c.stage+": "+(c.code||"FAIL")+(c.remedy?(" — "+c.remedy):"")).join("
-");
+  return bad.map(c=>c.stage+": "+(c.code||"FAIL")+(c.remedy?(" — "+c.remedy):"")).join("\n");
 }
 
 /* ---------------- PATH A ---------------- */
