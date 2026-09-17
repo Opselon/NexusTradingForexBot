@@ -382,6 +382,26 @@ def _spawn_daemon(cmd: list[str]) -> None:
 def _run_engine(
     cfg: AppConfig, *, gateway: bool, port: int, mode_override: ExecutionMode | None = None
 ) -> None:
+    """Locked startup: recovery BEFORE PID publication; installs excluded until shutdown."""
+    from nexus_scalp.model_provisioning import official_install
+
+    with official_install.model_slot_lock(official_install.serving_model_path(cfg)):
+        official_install.recover_official_install(official_install.serving_model_path(cfg))
+        _write_pid(_pidfile())
+        try:
+            _run_engine_locked(cfg, gateway=gateway, port=port, mode_override=mode_override)
+        finally:
+            _pidfile().unlink(missing_ok=True)
+
+
+def _write_pid(pidfile: Path) -> None:
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def _run_engine_locked(
+    cfg: AppConfig, *, gateway: bool, port: int, mode_override: ExecutionMode | None = None
+) -> None:
     # BUG-293: packaged launches must first anchor the runtime workspace
     # (double-click CWD is arbitrary) and mirror bundled configs into
     # <root>/configs so canonical consumers (execution_assumptions.json)

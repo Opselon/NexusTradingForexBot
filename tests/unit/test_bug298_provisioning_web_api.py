@@ -110,6 +110,7 @@ def test_official_unconfigured_fails_closed(
     hdr = _cookie(client)
     from nexus_scalp.model_provisioning import official as off
 
+    monkeypatch.setenv(off.OFFICIAL_BASE_URL_ENV, "")
     monkeypatch.setattr(off, "DEFAULT_OFFICIAL_BASE_URL", "")
     r = client.post("/api/provisioning/official", json={}, headers=hdr)
     body = r.json()
@@ -154,7 +155,7 @@ def test_import_guard_rejects_prefix_bypass_and_traversal(
         for bad in (
             "data/rawx/evil.csv",  # sibling prefix bypass
             "data/raw/../../secrets.csv",  # traversal
-            "data/raw\..\secrets.csv",  # traversal, alt separator
+            r"data/raw\..\secrets.csv",  # traversal, alt separator
             "data/raw/x.csv\x00.png",  # null byte
             "data/raw",  # the root itself
             "data/raw/missing.csv",  # non-existent under root

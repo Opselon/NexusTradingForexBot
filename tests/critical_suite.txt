@@ -431,3 +431,9 @@ tests/unit/test_backtest_report.py
 tests/unit/test_backtest_report_integration.py
 tests/unit/test_backtest_report_asset.py
 tests/unit/test_factory_backtest_report_projection.py
+# First Setup & Local Training Environment Provisioning
+tests/unit/test_training_dataset_source.py
+tests/unit/test_training_env_exact.py
+tests/unit/test_training_env_web.py
+tests/unit/test_training_env_worker.py
+tests/unit/test_training_stage_progress.py

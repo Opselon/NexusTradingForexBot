@@ -207,6 +207,11 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     @router.post("/api/provisioning/official")
     def provisioning_official(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        if getattr(app.state, "engine", None) is not None:
+            return _err(
+                code="MODEL_INSTALL_ENGINE_RUNNING",
+                message="Stop the engine before installing a model; use the stopped-engine setup or CLI.",
+            )
         body = payload or {}
         try:
             coord = prov.FirstRunCoordinator()
@@ -229,8 +234,14 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             return _err(
                 code="OFFICIAL_BUNDLE_REJECTED",
                 step=exc.code,
-                message="official bundle failed verification — nothing was installed "
-                "(run `nexus model-official` for the full reason)",
+                message=(
+                    "Official model is not published yet. Train locally or retry after publication."
+                    if exc.code == "OFFICIAL_MODEL_NOT_PUBLISHED"
+                    else "Verification is incomplete: install the supported runtime and retry."
+                    if exc.code == "VERIFICATION_PENDING"
+                    else "official bundle failed verification — nothing was installed "
+                    "(run `nexus model-official` for the full reason)"
+                ),
             )
         except Exception as exc:
             _log_err(exc, "official provisioning failed", endpoint="/api/provisioning/official")
