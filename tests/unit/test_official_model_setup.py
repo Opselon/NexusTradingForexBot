@@ -38,7 +38,7 @@ def test_wizard_inline_javascript_compiles(tmp_path):
     if node is None:
         pytest.skip("Node.js unavailable")
     html = Path("Web/first_setup.html").read_text(encoding="utf-8")
-    scripts = re.findall(r"(?i)<script(?:\s[^>]*)?>(.*?)</script>", html, re.S)
+    scripts = re.findall(r"(?is)<script(?:\s[^>]*)?>(.*?)</script\s*>", html)
     assert scripts
     path = tmp_path / "wizard.cjs"
     path.write_text("\n".join(scripts), encoding="utf-8")
