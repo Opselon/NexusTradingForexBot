@@ -1,21 +1,20 @@
-#!/usr/bin/env python3
-"""Canonical local pre-push validation gate (Linux/macOS/Bash wrapper).
-
-ONE canonical implementation lives in scripts/ci/check_local.py; the
-platform scripts (this file and beforePush.ps1) are thin wrappers that
-resolve the repository Python interpreter and delegate. The validation
-LOGIC (ruff lint/format, mypy, critical-suite manifest, push contract)
-is intentionally NOT duplicated here — see docs/LOCAL_QUALITY_GATE.md.
-
-Optional passthrough args are forwarded verbatim:
-    ./beforePush.sh --all      # whole-tree scope
-    ./beforePush.sh --staged   # staged files only
-    ./beforePush.sh --fix      # safe mechanical fixes
-    ./beforePush.sh --json     # machine-readable envelope
-    ./beforePush.sh --prepush  # canonical push-time contract (default
-                               # behavior is already push-scope)
-Exit codes mirror check_local.py: 0 pass, 1 failure, 2 usage/config error.
-"""
+#!/usr/bin/env bash
+# Canonical local pre-push validation gate (Linux/macOS/Bash wrapper).
+#
+# ONE canonical implementation lives in scripts/ci/check_local.py; the
+# platform scripts (this file and beforePush.ps1) are thin wrappers that
+# resolve the repository Python interpreter and delegate. The validation
+# LOGIC (ruff lint/format, mypy, critical-suite manifest, push contract)
+# is intentionally NOT duplicated here — see docs/LOCAL_QUALITY_GATE.md.
+#
+# Optional passthrough args are forwarded verbatim:
+#     ./beforePush.sh --all      # whole-tree scope
+#     ./beforePush.sh --staged   # staged files only
+#     ./beforePush.sh --fix      # safe mechanical fixes
+#     ./beforePush.sh --json     # machine-readable envelope
+#     ./beforePush.sh --prepush  # canonical push-time contract (default
+#                                # behavior is already push-scope)
+# Exit codes mirror check_local.py: 0 pass, 1 failure, 2 usage/config error.
 
 set -euo pipefail
 
