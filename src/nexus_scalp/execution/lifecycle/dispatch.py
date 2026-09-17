@@ -318,12 +318,13 @@ class DispatchEngine:
         #   * fail-closed: an unknown/failed server-time derivation blocks
         #     the entry (safe side — a tick with no timestamp cannot be
         #     proven in-session).
-        from nexus_scalp.adapters.mt5.providers import BROKER_SERVER_UTC_OFFSET_MINUTES
+        from nexus_scalp.adapters.mt5.providers import get_broker_server_utc_offset_minutes
         from nexus_scalp.research.economics import in_maintenance_window
 
         if _is_directional_entry(action):
             tick_ts = getattr(decision, "generated_at", None)
-            server_offset = BROKER_SERVER_UTC_OFFSET_MINUTES / 60.0
+            broker_offset_minutes = get_broker_server_utc_offset_minutes()
+            server_offset = broker_offset_minutes / 60.0
             in_window = (
                 in_maintenance_window(tick_ts, server_utc_offset_hours=server_offset)
                 if tick_ts is not None
@@ -337,7 +338,7 @@ class DispatchEngine:
                     getattr(action, "value", str(action)),
                     symbol,
                     tick_ts.isoformat() if tick_ts is not None else None,
-                    BROKER_SERVER_UTC_OFFSET_MINUTES,
+                    broker_offset_minutes,
                 )
                 emit_terminal_pending_outcome(
                     experience_engine=self.om.experience_engine,

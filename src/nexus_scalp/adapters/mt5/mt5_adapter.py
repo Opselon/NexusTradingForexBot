@@ -31,7 +31,6 @@ from nexus_scalp.adapters.mt5.diagnostics import (
     run_mt5_call,
 )
 from nexus_scalp.adapters.mt5.providers import (
-    BROKER_SERVER_UTC_OFFSET_MINUTES,
     AccountSnapshot,
     BrokerCalcSnapshot,
     BrokerTickSnapshot,
@@ -51,6 +50,7 @@ from nexus_scalp.adapters.mt5.providers import (
     build_rate_bar_snapshot,
     build_symbol_snapshot,
     build_tick_history_snapshot,
+    get_broker_server_utc_offset_minutes,
     normalize_utc,
     validate_ohlc_bars,
 )
@@ -607,14 +607,14 @@ class DirectMT5Adapter(IMT5Port):
             if from_utc is not None
             else (
                 datetime.now(UTC)
-                + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+                + timedelta(minutes=get_broker_server_utc_offset_minutes())
                 - timedelta(days=1)
             )
         )
         to_dt = (
             normalize_utc(to_utc)
             if to_utc is not None
-            else datetime.now(UTC) + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+            else datetime.now(UTC) + timedelta(minutes=get_broker_server_utc_offset_minutes())
         )
         if to_dt < from_dt:
             return []
@@ -653,14 +653,14 @@ class DirectMT5Adapter(IMT5Port):
             if from_utc is not None
             else (
                 datetime.now(UTC)
-                + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+                + timedelta(minutes=get_broker_server_utc_offset_minutes())
                 - timedelta(days=1)
             )
         )
         to_dt = (
             normalize_utc(to_utc)
             if to_utc is not None
-            else datetime.now(UTC) + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+            else datetime.now(UTC) + timedelta(minutes=get_broker_server_utc_offset_minutes())
         )
         if to_dt < from_dt:
             return []
@@ -791,8 +791,8 @@ class DirectMT5Adapter(IMT5Port):
             # terminal's server-local resolution lands on the requested UTC
             # range after the OUTPUT-side epoch conversion. Range sanity is
             # re-checked AFTER the shift.
-            from_dt = from_dt + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
-            to_dt = to_dt + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+            from_dt = from_dt + timedelta(minutes=get_broker_server_utc_offset_minutes())
+            to_dt = to_dt + timedelta(minutes=get_broker_server_utc_offset_minutes())
             if to_dt < from_dt:
                 return []
             raw, diag = run_mt5_call(
