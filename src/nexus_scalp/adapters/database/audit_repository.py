@@ -3804,14 +3804,13 @@ class AuditRepository:
                 '{"rsi_threshold": 85.0}',
             ),
         ]
-        for name, cat, params in rules:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO trading_rules_config (rule_name, is_enabled, category, parameters)
-                VALUES (?, 0, ?, ?);
-                """,
-                (name, cat, params),
-            )
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO trading_rules_config (rule_name, is_enabled, category, parameters)
+            VALUES (?, 0, ?, ?);
+            """,
+            rules,
+        )
 
     def get_trading_rules(self) -> list[dict[str, Any]]:
         """Retrieves all 30+ trading rules with their enablement status and parameters."""
