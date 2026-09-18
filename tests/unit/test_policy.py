@@ -592,3 +592,268 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
         assert "INSUFFICIENT_CONFIDENCE" in proposal.reason_code
         assert "Range Penalty: +0.15" in proposal.reason_code
         assert "Survival Mode: +0.10" in proposal.reason_code
+
+
+def test_evaluate_exposure_limits_under_max_exposure_returns_none():
+    """When total exposure is below MAX_TOTAL_EXPOSURE (1), returns None (gate passes)."""
+    policy = SignalPolicy()
+    tick = _make_tick()
+    now = datetime.now(UTC)
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=0,
+        active_positions_count=0,
+        active_pending_count=0,
+        order_manager=None,
+        live_tickets=[],
+        target_entry_price=2000.0,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=None,
+        now=now,
+    )
+    assert result is None
+
+
+def test_evaluate_exposure_limits_same_level_reentry_blocked():
+    """When a live ticket exists within $0.50 of target_entry_price, returns SAME_LEVEL_REENTRY_BLOCKED."""
+    policy = SignalPolicy()
+    tick = _make_tick()
+    now = datetime.now(UTC)
+    om = MockOrderManager(
+        live_tickets=[{"symbol": "XAUUSD", "magic": 888101, "price": 2000.20}]
+    )
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=0,
+        active_pending_count=1,
+        order_manager=om,
+        live_tickets=om.live_tickets,
+        target_entry_price=2000.00,  # diff = 0.20 < 0.50
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=None,
+        now=now,
+        expected_symbol="XAUUSD",
+        expected_magic=888101,
+        execution_id="exec-123",
+    )
+
+    assert result is not None
+    assert result.action == ActionType.NO_TRADE
+    assert result.reason_code == "SAME_LEVEL_REENTRY_BLOCKED"
+    assert result.execution_id == "exec-123"
+
+
+def test_evaluate_exposure_limits_max_exposure_active_position():
+    """When active_positions_count >= 1 and no same-level order, returns MAX_EXPOSURE_REACHED with EXECUTION_STATE_BLOCK."""
+    policy = SignalPolicy()
+    tick = _make_tick()
+    now = datetime.now(UTC)
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=1,
+        active_pending_count=0,
+        order_manager=None,
+        live_tickets=[],
+        target_entry_price=2000.0,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=None,
+        now=now,
+        execution_id="exec-456",
+    )
+
+    assert result is not None
+    assert result.action == ActionType.NO_TRADE
+    assert result.reason_code == "MAX_EXPOSURE_REACHED"
+    assert result.blocked_by == "EXECUTION_STATE_BLOCK"
+    assert result.decision_stage == "EXPOSURE_GATE"
+    assert result.execution_id == "exec-456"
+
+
+def test_evaluate_exposure_limits_pending_order_locked_time_gate():
+    """When active_pending_count >= 1 and time_delta <= 30s, returns PENDING_ORDER_LOCKED."""
+    policy = SignalPolicy()
+    tick = _make_tick()
+    now = datetime.now(UTC)
+
+    # Set locked pending order state within 30s lock window (e.g. 10s ago)
+    policy._locked_pending_time = now - timedelta(seconds=10)
+    policy._locked_pending_price = 2000.0
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=0,
+        active_pending_count=1,
+        order_manager=None,
+        live_tickets=[],
+        target_entry_price=2000.0,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=None,
+        now=now,
+    )
+
+    assert result is not None
+    assert result.action == ActionType.NO_TRADE
+    assert result.reason_code == "PENDING_ORDER_LOCKED"
+    assert result.blocked_by == "EXECUTION_STATE_BLOCK"
+
+
+def test_evaluate_exposure_limits_pending_order_locked_drift_gate():
+    """When active_pending_count >= 1, time_delta > 30s, but price_drift < 1.0 * atr, returns PENDING_ORDER_LOCKED."""
+    policy = SignalPolicy()
+    tick = _make_tick()  # bid=2000.0, ask=2000.2
+    now = datetime.now(UTC)
+
+    # Pending lock was set 40s ago (unlocked by time)
+    policy._locked_pending_time = now - timedelta(seconds=40)
+    # Default swing calculation without bars: low = bid - atr = 1998.0, high = ask + atr = 2002.2
+    # new_eq_price = round(1998.0 + 0.5 * (2002.2 - 1998.0), 2) = round(2000.1, 2) = 2000.10
+    # Set locked price close to new_eq_price so price_drift < 1.0 * atr (drift = 0.10 < 2.0)
+    policy._locked_pending_price = 2000.00
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=0,
+        active_pending_count=1,
+        order_manager=None,
+        live_tickets=[],
+        target_entry_price=2000.0,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=None,
+        now=now,
+    )
+
+    assert result is not None
+    assert result.action == ActionType.NO_TRADE
+    assert result.reason_code == "PENDING_ORDER_LOCKED"
+
+
+def test_evaluate_exposure_limits_pending_order_unlocked():
+    """When active_pending_count >= 1, time_delta > 30s, and price_drift >= 1.0 * atr, returns None (unlocked)."""
+    policy = SignalPolicy()
+    tick = _make_tick()  # bid=2000.0, ask=2000.2
+    now = datetime.now(UTC)
+
+    # Pending lock was set 40s ago (> 30s)
+    policy._locked_pending_time = now - timedelta(seconds=40)
+    # new_eq_price without bars will be 2000.10.
+    # Set locked price far away so drift = abs(2000.10 - 1990.0) = 10.1 >= 1.0 * atr (2.0)
+    policy._locked_pending_price = 1990.0
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=0,
+        active_pending_count=1,
+        order_manager=None,
+        live_tickets=[],
+        target_entry_price=2000.0,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=None,
+        now=now,
+    )
+
+    assert result is None
+
+
+def test_evaluate_exposure_limits_completed_bars_equilibrium_calc():
+    """Verify equilibrium price calculation correctly uses completed_bars when 20 or more bars are provided."""
+    from types import SimpleNamespace
+
+    policy = SignalPolicy()
+    tick = _make_tick()
+    now = datetime.now(UTC)
+
+    # Create 20 mock bars with known low (1900.0) and high (2000.0)
+    bars = [SimpleNamespace(low=1950.0, high=1980.0) for _ in range(19)]
+    bars.append(SimpleNamespace(low=1900.0, high=2000.0))  # swing low = 1900.0, high = 2000.0
+    # Expected equilibrium = 1900.0 + 0.5 * (2000.0 - 1900.0) = 1950.00
+
+    policy._locked_pending_time = now - timedelta(seconds=40)
+    # Set locked price to 1950.00 so drift = 0 < 2.0 (atr), resulting in PENDING_ORDER_LOCKED
+    policy._locked_pending_price = 1950.00
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=0,
+        active_pending_count=1,
+        order_manager=None,
+        live_tickets=[],
+        target_entry_price=2000.0,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=bars,
+        now=now,
+    )
+
+    assert result is not None
+    assert result.reason_code == "PENDING_ORDER_LOCKED"
+
+    # Now change locked price to 1940.0 so drift = 10.0 >= 2.0 (atr), resulting in None (unlocked)
+    policy._locked_pending_price = 1940.00
+    result_unlocked = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=0,
+        active_pending_count=1,
+        order_manager=None,
+        live_tickets=[],
+        target_entry_price=2000.0,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=bars,
+        now=now,
+    )
+    assert result_unlocked is None
+
+
+def test_evaluate_exposure_limits_expected_symbol_resolution():
+    """Verify expected_symbol auto-resolves when expected_symbol is passed as None."""
+    policy = SignalPolicy()
+    tick = _make_tick()  # symbol="XAUUSD"
+    now = datetime.now(UTC)
+
+    # Ticket matching tick symbol ("XAUUSD") and default magic (888101) within same level
+    om = MockOrderManager(
+        live_tickets=[{"symbol": "XAUUSD", "magic": 888101, "price": 2000.10}]
+    )
+
+    result = policy._evaluate_exposure_limits(
+        total_exposure=1,
+        active_positions_count=0,
+        active_pending_count=1,
+        order_manager=om,
+        live_tickets=om.live_tickets,
+        target_entry_price=2000.00,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.8,
+        atr=2.0,
+        completed_bars=None,
+        now=now,
+        expected_symbol=None,  # Should auto-resolve to tick symbol ("XAUUSD")
+    )
+
+    assert result is not None
+    assert result.reason_code == "SAME_LEVEL_REENTRY_BLOCKED"
