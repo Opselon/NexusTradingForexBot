@@ -26,9 +26,9 @@
 - [ML-FEAT-002](tasks/ML-FEAT-002.md) — Feature Importance, Collinearity Clustering & Redundancy Pruning `[P2 | BLOCKED | AGENT-FEATURE]`
 - [ML-FEAT-003](tasks/ML-FEAT-003.md) — 70D Feature Feasibility, Feed Uptime & Gating Criteria `[P2 | BLOCKED | AGENT-FEATURE | HUMAN DECISION]`
 
-### STREAM C: LABELING SCIENCE
-- [ML-LABEL-001](tasks/ML-LABEL-001.md) — Friction-Aware Triple Barrier Horizon & ATR Multiplier Calibration `[P1 | BLOCKED | AGENT-LABEL]`
-- [ML-LABEL-002](tasks/ML-LABEL-002.md) — Sample Uniqueness Weighting & Label Overlap Anti-Leakage `[P1 | BLOCKED | AGENT-LABEL]`
+### STREAM C: LABELING
+- [ML-LABEL-001](tasks/ML-LABEL-001.md) — Friction-Aware Triple Barrier Horizon & ATR Multiplier Calibration `[P1 | DONE | AGENT-LABEL]`
+- [ML-LABEL-002](tasks/ML-LABEL-002.md) — Sample Uniqueness Weighting & Label Overlap Anti-Leakage `[P1 | READY | AGENT-LABEL]`
 
 ### STREAM D: MODEL ARCHITECTURE
 - [ML-ARCH-001](tasks/ML-ARCH-001.md) — ScalpNet Dual-Path Tensor Contract & 3-Class Head Sunset `[P0 | READY | AGENT-ML-ARCH | HUMAN DECISION]`

@@ -327,6 +327,7 @@ tests/unit/test_paper_replay_mode.py
 tests/unit/test_p0_producer_regression.py
 tests/unit/test_champion_writer_governance.py
 tests/unit/test_label_integrity.py
+tests/unit/test_triple_barrier_parameters.py
 tests/unit/test_agent16_walkforward_purge_embargo_leakage.py
 tests/unit/test_economic_parity_harness.py
 tests/unit/test_market_data_integrity_ag13.py
