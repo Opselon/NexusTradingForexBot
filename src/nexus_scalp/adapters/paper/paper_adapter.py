@@ -936,95 +936,107 @@ class PaperMT5Adapter(IMT5Port):
             if _seed_now is not None and _seed_now != getattr(self, "_seed", None):
                 self._seed = _seed_now
                 self._rng = random.Random(_seed_now)
-        # PAPER REPLAY MODE: serve the REAL historical chronology while it
-        # lasts. The replay source owns pricing (recorded bid/ask, or the
-        # dataset-builder close+spread convention for bar records) and the
-        # HISTORICAL timestamp — wall-clock is never substituted in replay.
-        # Auto SL/TP execution and persistence still run on every replayed
-        # tick, so paper positions behave exactly as in synthetic mode.
+
         if getattr(self, "market_data_mode", "SYNTHETIC") == "REPLAY":
-            digits = self._quote_digits(symbol)
-            src = getattr(self, "_replay_source", None)
-            nxt = src.next_tick() if src is not None else None
-            if nxt is not None:
-                tick = TickData(
-                    symbol=symbol,
-                    timestamp=nxt["timestamp"],
-                    bid=round(float(nxt["bid"]), digits),
-                    ask=round(float(nxt["ask"]), digits),
-                    last=round(float(nxt["bid"]), digits),
-                    volume=float(nxt.get("volume", 0.0) or 0.0),
-                    flags=6,
-                )
-                self._current_price = tick.bid
-                self._last_tick = tick
-                self._last_tick_time = tick.timestamp
-                try:
-                    self._last_tick_iso = tick.timestamp.isoformat()
-                except Exception:
-                    self._last_tick_iso = None
-                try:
-                    self.process_tick_execution(tick)
-                except Exception as exc:  # defensive: tick feed must never break
-                    logger.error(
-                        "PAPER_SLTP_PROCESSING_FAILED",
-                        error=repr(exc),
-                        symbol=symbol,
-                    )
-                with contextlib.suppress(Exception):
-                    self._persist_state()
-                return tick
-            # End of historical data: REPLAY is fail-closed for market data —
-            # an exhausted replay source must NOT silently flip to a synthetic
-            # random walk (that would fabricate "market" experience). Surface
-            # the stall honestly: freeze on the last historical tick.
-            if self._last_tick is not None:
-                logger.warning(
-                    "[PAPER] event=REPLAY_EXHAUSTED — market data frozen at last "
-                    "historical tick (no synthetic fallback)"
-                )
-                return self._last_tick
-            raise ReplayDataUnavailableError(
-                "Paper REPLAY mode: no historical records available and no "
-                "seed tick — cannot serve market data."
-            )
+            return self._generate_replay_tick(symbol)
+
         if _seed_now is not None:
+            stress_tick = self._try_generate_delegated_stress_tick(symbol, _seed_now)
+            if stress_tick is not None:
+                return stress_tick
+
+        return self._generate_synthetic_walk_tick(symbol)
+
+    def _generate_replay_tick(self, symbol: str) -> TickData:
+        """PAPER REPLAY MODE: serve historical chronology while available."""
+        digits = self._quote_digits(symbol)
+        src = getattr(self, "_replay_source", None)
+        nxt = src.next_tick() if src is not None else None
+        if nxt is not None:
+            tick = TickData(
+                symbol=symbol,
+                timestamp=nxt["timestamp"],
+                bid=round(float(nxt["bid"]), digits),
+                ask=round(float(nxt["ask"]), digits),
+                last=round(float(nxt["bid"]), digits),
+                volume=float(nxt.get("volume", 0.0) or 0.0),
+                flags=6,
+            )
+            self._current_price = tick.bid
+            self._last_tick = tick
+            self._last_tick_time = tick.timestamp
+            try:
+                self._last_tick_iso = tick.timestamp.isoformat()
+            except Exception:
+                self._last_tick_iso = None
+            try:
+                self.process_tick_execution(tick)
+            except Exception as exc:  # defensive: tick feed must never break
+                logger.error(
+                    "PAPER_SLTP_PROCESSING_FAILED",
+                    error=repr(exc),
+                    symbol=symbol,
+                )
             with contextlib.suppress(Exception):
-                from nexus_scalp.market_data.paper_stress import PaperStressMarket  # type: ignore
+                self._persist_state()
+            return tick
+        # End of historical data: REPLAY is fail-closed for market data —
+        # an exhausted replay source must NOT silently flip to a synthetic
+        # random walk (that would fabricate "market" experience). Surface
+        # the stall honestly: freeze on the last historical tick.
+        if self._last_tick is not None:
+            logger.warning(
+                "[PAPER] event=REPLAY_EXHAUSTED — market data frozen at last "
+                "historical tick (no synthetic fallback)"
+            )
+            return self._last_tick
+        raise ReplayDataUnavailableError(
+            "Paper REPLAY mode: no historical records available and no "
+            "seed tick — cannot serve market data."
+        )
 
-                m = PaperStressMarket(seed=_seed_now)  # type: ignore
-                for _attr in ("next_tick", "get_tick", "generate_tick", "tick"):
-                    fn = getattr(m, _attr, None)
-                    if callable(fn):
-                        d = fn(symbol)
-                        if isinstance(d, dict) and "bid" in d and "ask" in d:
-                            digits = self._quote_digits(symbol)
-                            tick = TickData(
-                                symbol=symbol,
-                                timestamp=datetime.now(UTC),
-                                bid=round(float(d["bid"]), digits),
-                                ask=round(float(d["ask"]), digits),
-                                last=round(float(d.get("last", d["bid"])), digits),
-                                volume=float(d.get("volume", self._rng.randint(1, 15))),
-                                flags=int(d.get("flags", 6)),
-                            )
-                            self._current_price = tick.bid
-                            self._last_tick = tick
-                            self._last_tick_time = tick.timestamp
+    def _try_generate_delegated_stress_tick(self, symbol: str, seed: int) -> TickData | None:
+        """Generate tick snapshot using PaperStressMarket if present."""
+        with contextlib.suppress(Exception):
+            from nexus_scalp.market_data.paper_stress import PaperStressMarket  # type: ignore
+
+            m = PaperStressMarket(seed=seed)  # type: ignore
+            for _attr in ("next_tick", "get_tick", "generate_tick", "tick"):
+                fn = getattr(m, _attr, None)
+                if callable(fn):
+                    d = fn(symbol)
+                    if isinstance(d, dict) and "bid" in d and "ask" in d:
+                        digits = self._quote_digits(symbol)
+                        tick = TickData(
+                            symbol=symbol,
+                            timestamp=datetime.now(UTC),
+                            bid=round(float(d["bid"]), digits),
+                            ask=round(float(d["ask"]), digits),
+                            last=round(float(d.get("last", d["bid"])), digits),
+                            volume=float(d.get("volume", self._rng.randint(1, 15))),
+                            flags=int(d.get("flags", 6)),
+                        )
+                        self._current_price = tick.bid
+                        self._last_tick = tick
+                        self._last_tick_time = tick.timestamp
+                        try:
+                            self.process_tick_execution(tick)
+                        except Exception as exc:  # defensive: tick feed must never break
                             try:
-                                self.process_tick_execution(tick)
-                            except Exception as exc:  # defensive: tick feed must never break
-                                try:
-                                    from nexus_scalp.observability.logging import get_logger as _gl
+                                from nexus_scalp.observability.logging import get_logger as _gl
 
-                                    _gl("nexus_scalp.adapters.paper").error(
-                                        "PAPER_SLTP_PROCESSING_FAILED",
-                                        error=repr(exc),
-                                        symbol=symbol,
-                                    )
-                                except Exception:
-                                    pass
-                            return tick
+                                _gl("nexus_scalp.adapters.paper").error(
+                                    "PAPER_SLTP_PROCESSING_FAILED",
+                                    error=repr(exc),
+                                    symbol=symbol,
+                                )
+                            except Exception:
+                                pass
+                        return tick
+        return None
+
+    def _generate_synthetic_walk_tick(self, symbol: str) -> TickData:
+        """Generate synthetic AR(1) random walk tick snapshot."""
         digits = self._quote_digits(symbol)
         upper = (symbol or "").upper()
         scale = self._effective_spread_scale()
