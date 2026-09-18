@@ -313,7 +313,7 @@ def test_web_ui_assets_exist() -> None:
     # Legacy Web
     legacy_js = REPO_ROOT / "Web" / "model_studio_ui.js"
     assert legacy_js.is_file(), "Web/model_studio_ui.js must exist"
-    index_html = (REPO_ROOT / "Web" / "index.html").read_text()
+    index_html = (REPO_ROOT / "Web" / "index.html").read_text(encoding="utf-8")
     assert "tab-model-studio" in index_html
     assert "model_studio_ui.js" in index_html
 
@@ -323,5 +323,7 @@ def test_web_ui_assets_exist() -> None:
     assert (feature_dir / "ui" / "ModelStudioPage.tsx").is_file()
 
     # Feature registry
-    reg_ts = (REPO_ROOT / "frontend" / "src" / "app" / "featureRegistry.ts").read_text()
+    reg_ts = (REPO_ROOT / "frontend" / "src" / "app" / "featureRegistry.ts").read_text(
+        encoding="utf-8"
+    )
     assert "modelStudioMeta" in reg_ts
