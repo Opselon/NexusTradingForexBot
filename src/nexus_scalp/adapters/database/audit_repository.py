@@ -174,6 +174,31 @@ class AuditRepository:
         # and setup share one schema (2026-08-18 full-suite fix).
         if self._db_path == ":memory:":
             self._db_path = "file::memory:?cache=shared"
+
+        # BUG-149: the legacy relative default ("sqlite:///artifacts/audit.db")
+        # anchors to the raw process CWD. When frozen, anchor to the canonical
+        # runtime workspace (exe bundle) so every launch — double-click,
+        # shortcut, any shell CWD — uses ONE canonical artifact tree. Source
+        # runs (CWD == repo root) keep identical behavior.
+        # BUG-156: in-memory URIs are NOT filesystem paths — they must be
+        # excluded from workspace anchoring. Anchoring ":memory:" produced
+        # "CWD/:memory:" -> a nonexistent file path, and every
+        # "sqlite:///:memory:" AuditRepository raised OperationalError.
+        if (
+            self._is_sqlite
+            and self._db_path
+            and self._db_path != ":memory:"
+            and not self._db_path.startswith("file:")
+            and not Path(self._db_path).is_absolute()
+        ):
+            try:
+                from nexus_scalp.release.paths import get_runtime_workspace
+
+                self._db_path = str(get_runtime_workspace() / self._db_path)
+            except Exception:
+                pass
+            self._db_url = f"sqlite:///{self._db_path}"
+
         # Hold ONE persistent connection for the shared in-memory DB; the
         # shared cache is dropped when the last connection closes, so the
         # worker must reuse THIS connection (2026-08-18 full-suite fix).
@@ -244,30 +269,6 @@ class AuditRepository:
         # hot-swap is reflected per-row. AccountingCore excludes PAPER rows
         # from performance metrics.
         self.current_account_source: str = "LIVE"
-
-        # BUG-149: the legacy relative default ("sqlite:///artifacts/audit.db")
-        # anchors to the raw process CWD. When frozen, anchor to the canonical
-        # runtime workspace (exe bundle) so every launch — double-click,
-        # shortcut, any shell CWD — uses ONE canonical artifact tree. Source
-        # runs (CWD == repo root) keep identical behavior.
-        # BUG-156: in-memory URIs are NOT filesystem paths — they must be
-        # excluded from workspace anchoring. Anchoring ":memory:" produced
-        # "CWD/:memory:" -> a nonexistent file path, and every
-        # "sqlite:///:memory:" AuditRepository raised OperationalError.
-        if (
-            self._is_sqlite
-            and self._db_path
-            and self._db_path != ":memory:"
-            and not self._db_path.startswith("file:")
-            and not Path(self._db_path).is_absolute()
-        ):
-            try:
-                from nexus_scalp.release.paths import get_runtime_workspace
-
-                self._db_path = str(get_runtime_workspace() / self._db_path)
-            except Exception:
-                pass
-            self._db_url = f"sqlite:///{self._db_path}"
 
         # Retention policy (BUG-054). TEST env defaults: disposable signal
         # rows 7 days, POSITION_MOVING 3 days, guard telemetry 13 days.
