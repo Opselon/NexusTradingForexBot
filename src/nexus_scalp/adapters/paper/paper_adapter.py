@@ -907,48 +907,18 @@ class PaperMT5Adapter(IMT5Port):
     # Market data
     # ------------------------------------------------------------------
 
-    def get_last_tick(self, symbol: str) -> TickData:
-        """Generates realistic micro-movement tick snapshots.
+    def _sync_seed(self) -> int | None:
+        """Refresh per-instance seed/rng if environment seed changed mid-session."""
+        seed_now = getattr(self, "_seed", None)
+        if seed_now is None:
+            seed_now = _get_seed()
+            if seed_now is not None and seed_now != getattr(self, "_seed", None):
+                self._seed = seed_now
+                self._rng = random.Random(seed_now)
+        return seed_now
 
-        BUG-232: volatility scales with the instrument so the simulated
-        stream is a usable market (gold moves in 5-30 cent bursts with
-        occasional trend steps, not ±2 cents around a dead seed). The walk is
-        mean-reverting to the seed baseline so long sessions cannot drift to
-        absurd levels.
-
-        Determinism (capsizer): when ``NEXUS_PAPER_STRESS_SEED`` is set the
-        tick stream is reproducible — the adapter owns a per-instance
-        ``random.Random(self._seed)`` via ``_get_seed()`` so the same seed
-        yields the same sequence. Dynamics are AR(1) with ``phi=0.6`` and
-        persistent volatility blocks (calm/storm regimes of 15-45 ticks)
-        rather than independent uniform steps. If
-        ``market_data.paper_stress.PaperStressMarket`` is present and a seed
-        is set, ticks/bars delegate there; otherwise the local AR(1) fallback
-        is used. Spread baseline is tight ``8-18c`` for XAUUSD
-        (``_METAL_SPREAD_RANGE``) scaled by ``_effective_spread_scale()``.
-        """
-        # Delegation: when seeded and PaperStressMarket exists, prefer it.
-        # Keep narrow suppress so missing/incompatible module never breaks adapter.
-        _seed_now = getattr(self, "_seed", None)
-        if _seed_now is None:
-            _seed_now = _get_seed()
-            # refresh per-instance seed/rng if env changed mid-session
-            if _seed_now is not None and _seed_now != getattr(self, "_seed", None):
-                self._seed = _seed_now
-                self._rng = random.Random(_seed_now)
-
-        if getattr(self, "market_data_mode", "SYNTHETIC") == "REPLAY":
-            return self._generate_replay_tick(symbol)
-
-        if _seed_now is not None:
-            stress_tick = self._try_generate_delegated_stress_tick(symbol, _seed_now)
-            if stress_tick is not None:
-                return stress_tick
-
-        return self._generate_synthetic_walk_tick(symbol)
-
-    def _generate_replay_tick(self, symbol: str) -> TickData:
-        """PAPER REPLAY MODE: serve historical chronology while available."""
+    def _get_last_tick_replay(self, symbol: str) -> TickData:
+        """Serve historical tick replay data."""
         digits = self._quote_digits(symbol)
         src = getattr(self, "_replay_source", None)
         nxt = src.next_tick() if src is not None else None
@@ -995,8 +965,8 @@ class PaperMT5Adapter(IMT5Port):
             "seed tick — cannot serve market data."
         )
 
-    def _try_generate_delegated_stress_tick(self, symbol: str, seed: int) -> TickData | None:
-        """Generate tick snapshot using PaperStressMarket if present."""
+    def _get_last_tick_delegated(self, symbol: str, seed: int) -> TickData | None:
+        """Delegate tick generation to PaperStressMarket if present and seeded."""
         with contextlib.suppress(Exception):
             from nexus_scalp.market_data.paper_stress import PaperStressMarket  # type: ignore
 
@@ -1035,8 +1005,8 @@ class PaperMT5Adapter(IMT5Port):
                         return tick
         return None
 
-    def _generate_synthetic_walk_tick(self, symbol: str) -> TickData:
-        """Generate synthetic AR(1) random walk tick snapshot."""
+    def _get_last_tick_synthetic(self, symbol: str) -> TickData:
+        """Generates micro-movement tick snapshot via local AR(1) walk."""
         digits = self._quote_digits(symbol)
         upper = (symbol or "").upper()
         scale = self._effective_spread_scale()
@@ -1108,6 +1078,38 @@ class PaperMT5Adapter(IMT5Port):
         with contextlib.suppress(Exception):
             self._persist_state()
         return tick
+
+    def get_last_tick(self, symbol: str) -> TickData:
+        """Generates realistic micro-movement tick snapshots.
+
+        BUG-232: volatility scales with the instrument so the simulated
+        stream is a usable market (gold moves in 5-30 cent bursts with
+        occasional trend steps, not ±2 cents around a dead seed). The walk is
+        mean-reverting to the seed baseline so long sessions cannot drift to
+        absurd levels.
+
+        Determinism (capsizer): when ``NEXUS_PAPER_STRESS_SEED`` is set the
+        tick stream is reproducible — the adapter owns a per-instance
+        ``random.Random(self._seed)`` via ``_get_seed()`` so the same seed
+        yields the same sequence. Dynamics are AR(1) with ``phi=0.6`` and
+        persistent volatility blocks (calm/storm regimes of 15-45 ticks)
+        rather than independent uniform steps. If
+        ``market_data.paper_stress.PaperStressMarket`` is present and a seed
+        is set, ticks/bars delegate there; otherwise the local AR(1) fallback
+        is used. Spread baseline is tight ``8-18c`` for XAUUSD
+        (``_METAL_SPREAD_RANGE``) scaled by ``_effective_spread_scale()``.
+        """
+        seed_now = self._sync_seed()
+
+        if getattr(self, "market_data_mode", "SYNTHETIC") == "REPLAY":
+            return self._get_last_tick_replay(symbol)
+
+        if seed_now is not None:
+            delegated_tick = self._get_last_tick_delegated(symbol, seed_now)
+            if delegated_tick is not None:
+                return delegated_tick
+
+        return self._get_last_tick_synthetic(symbol)
 
     # ------------------------------------------------------------------
     # PAPER Reality Phase 2 — automatic SL/TP execution on every tick
