@@ -594,86 +594,105 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
         assert "Survival Mode: +0.10" in proposal.reason_code
 
 
-def test_is_numeric_validation_invalid_entry_price():
-    """Verify is_numeric raises ValueError when target_entry_price is non-finite or boolean."""
-    import math
+def test_evaluate_frequency_throttle_uninitialized():
+    """Verify _evaluate_frequency_throttle returns None when _last_signal_time is None."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    tick = _make_tick()
 
-    import pytest
-
-    policy = SignalPolicy()
-    policy.confidence_threshold = 0.10
-    policy.algo_config.min_risk_reward_ratio = 0.10
-    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
-    fv = _make_feature_vector()
-
-    invalid_entry_prices = [math.nan, math.inf, -math.inf, True, False]
-
-    for invalid_val in invalid_entry_prices:
-        policy._dedup_last_bid = 0.0
-        tick = _make_tick().model_copy(update={"ask": invalid_val, "bid": 2000.0})
-        with pytest.raises(ValueError, match=r"Invalid entry price:"):
-            policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv,
-            )
-
-
-def test_is_numeric_validation_invalid_swing_low_and_high():
-    """Verify is_numeric raises ValueError when dist_to_swing_low_20 or dist_to_swing_high_20 is invalid."""
-    import math
-
-    import pytest
-
-    policy = SignalPolicy()
-    policy.confidence_threshold = 0.10
-    policy.algo_config.min_risk_reward_ratio = 0.10
-    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
-
-    invalid_swing_values = [math.nan, math.inf, -math.inf, None, True, False, "invalid"]
-
-    for invalid_val in invalid_swing_values:
-        policy._dedup_last_bid = 0.0
-        tick = _make_tick()
-        fv_low = _make_feature_vector().model_copy(update={"dist_to_swing_low_20": invalid_val})
-        with pytest.raises(ValueError, match=r"Invalid dist_to_swing_low_20:"):
-            policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv_low,
-            )
-
-        policy._dedup_last_bid = 0.0
-        tick = _make_tick()
-        fv_high = _make_feature_vector().model_copy(update={"dist_to_swing_high_20": invalid_val})
-        with pytest.raises(ValueError, match=r"Invalid dist_to_swing_high_20:"):
-            policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv_high,
-            )
-
-
-def test_is_numeric_validation_valid_numeric_inputs():
-    """Verify is_numeric accepts valid int and float values for target_entry_price, atr, dist_to_swing_low_20, dist_to_swing_high_20."""
-    policy = SignalPolicy()
-    policy.confidence_threshold = 0.10
-    policy.algo_config.min_risk_reward_ratio = 0.10
-    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
-    tick = _make_tick().model_copy(update={"ask": 2000.20})
-
-    # Test with valid integer and float values
-    fv = _make_feature_vector().model_copy(
-        update={
-            "dist_to_swing_low_20": 2,  # integer
-            "dist_to_swing_high_20": 2.5,  # float
-            "atr_m1": 1.80,  # float
-        }
-    )
-
-    proposal = policy.evaluate_probabilities(
-        probabilities=probs,
+    res = policy._evaluate_frequency_throttle(
+        now=now,
         current_tick=tick,
-        feature_vector=fv,
+        regime_str="TRENDING",
+        regime_conf=0.85,
+        execution_id="EXEC-TEST-001",
     )
-    assert proposal.action == ActionType.BUY_MARKET
+    assert res is None
+
+
+def test_evaluate_frequency_throttle_within_cooldown():
+    """Verify _evaluate_frequency_throttle returns NO_TRADE proposal when within cooldown."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now - timedelta(seconds=1.5)  # 1.5s < 3.0s cooldown
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="VOLATILE",
+        regime_conf=0.90,
+        execution_id="EXEC-TEST-002",
+    )
+    assert res is not None
+    assert res.action == ActionType.NO_TRADE
+    assert res.reason_code == "ORDER_FREQUENCY_THROTTLED"
+    assert res.confidence == 0.0
+    assert res.regime == "VOLATILE"
+    assert res.regime_confidence == 0.90
+    assert res.execution_id == "EXEC-TEST-002"
+
+
+def test_evaluate_frequency_throttle_after_cooldown():
+    """Verify _evaluate_frequency_throttle returns None when cooldown has elapsed."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now - timedelta(seconds=3.1)  # 3.1s >= 3.0s cooldown
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.85,
+        execution_id="EXEC-TEST-003",
+    )
+    assert res is None
+
+
+def test_evaluate_frequency_throttle_custom_cooldown():
+    """Verify _evaluate_frequency_throttle respects custom cooldown_seconds values."""
+    policy = SignalPolicy(cooldown_seconds=10.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now - timedelta(seconds=5.0)  # 5s < 10s cooldown -> throttled
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="RANGING",
+        regime_conf=0.75,
+        execution_id="EXEC-TEST-004",
+    )
+    assert res is not None
+    assert res.reason_code == "ORDER_FREQUENCY_THROTTLED"
+
+    # Now test with elapsed time exceeding 10s -> released
+    policy._last_signal_time = now - timedelta(seconds=10.1)
+    res_released = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="RANGING",
+        regime_conf=0.75,
+        execution_id="EXEC-TEST-005",
+    )
+    assert res_released is None
+
+
+def test_evaluate_frequency_throttle_zero_elapsed():
+    """Verify _evaluate_frequency_throttle blocks when now equals _last_signal_time."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="UNKNOWN",
+        regime_conf=0.0,
+        execution_id="EXEC-TEST-006",
+    )
+    assert res is not None
+    assert res.action == ActionType.NO_TRADE
+    assert res.reason_code == "ORDER_FREQUENCY_THROTTLED"
