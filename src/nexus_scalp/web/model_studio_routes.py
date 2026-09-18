@@ -842,6 +842,19 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
     mat, _ = extract_dataset_features(df, dimension=req.dimension, max_rows=1000)
     n = mat.shape[0]
 
+    # A degenerate dataset (empty, or too few rows to split into train/val) must
+    # fail loudly. Previously train_size = max(int(n*0.8), 10) could exceed n and
+    # the randperm index blew up as an opaque IndexError deep in the batch loop.
+    _MIN_TRAIN_ROWS = 20
+    if n < _MIN_TRAIN_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"dataset too small to train: {n} usable row(s), need at least "
+                f"{_MIN_TRAIN_ROWS}. Download more candles or pick another dataset."
+            ),
+        )
+
     # Generate pseudo labels for 3 classes based on future price direction
     closes = (
         np.array(df["close"].to_numpy()[:n], dtype=np.float64)
@@ -860,8 +873,9 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
         elif fut_ret < -0.0005:
             y_labels[i] = 2
 
-    # Split train/val
-    train_size = max(int(n * 0.8), 10)
+    # Split train/val. Both sides must be non-empty so the epoch loop and the
+    # validation forward pass always see at least one row.
+    train_size = min(max(int(n * 0.8), 1), n - 1)
     X_train = torch.tensor(mat[:train_size], dtype=torch.float32)
     y_train = torch.tensor(y_labels[:train_size], dtype=torch.long)
     X_val = torch.tensor(mat[train_size:], dtype=torch.float32)

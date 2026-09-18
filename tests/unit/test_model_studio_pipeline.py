@@ -308,22 +308,28 @@ def test_safe_dataset_path_rejects_traversal_and_returns_none() -> None:
     assert _safe_dataset_path("data/raw/bad\x00.parquet") is None
 
 
-def test_safe_dataset_path_accepts_allowlisted_file(tmp_path: Path) -> None:
-    """A real parquet under data/raw resolves; the sibling prefix-bypass does not."""
+def test_safe_dataset_path_accepts_allowlisted_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real parquet under an allowlisted root resolves; the sibling prefix-bypass does not.
+
+    The root is redirected at a tmp dir on purpose: writing probe files into the
+    repo's shared data/raw lets a parallel test worker's dataset scan pick them up.
+    """
+    import nexus_scalp.web.model_studio_routes as msr
     from nexus_scalp.web.model_studio_routes import _safe_dataset_path
 
-    raw_dir = REPO_ROOT / "data" / "raw"
+    monkeypatch.setattr(msr, "REPO_ROOT", tmp_path)
+    raw_dir = tmp_path / "data" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     good = raw_dir / "CONTAINMENT_TEST.parquet"
     good.write_bytes(b"PAR1")
-    try:
-        assert _safe_dataset_path(str(good)) == good.resolve()
-        assert _safe_dataset_path("data/raw/CONTAINMENT_TEST.parquet") == good.resolve()
-        # "data/rawx" starts with "data/raw" as a STRING but is not contained.
-        assert _safe_dataset_path("data/rawx/CONTAINMENT_TEST.parquet") is None
-        assert _safe_dataset_path("data/raw/MISSING_FILE_XYZ.parquet") is None
-    finally:
-        good.unlink(missing_ok=True)
+
+    assert _safe_dataset_path(str(good)) == good.resolve()
+    assert _safe_dataset_path("data/raw/CONTAINMENT_TEST.parquet") == good.resolve()
+    # "data/rawx" starts with "data/raw" as a STRING but is not contained.
+    assert _safe_dataset_path("data/rawx/CONTAINMENT_TEST.parquet") is None
+    assert _safe_dataset_path("data/raw/MISSING_FILE_XYZ.parquet") is None
 
 
 def test_download_rejects_csv_outside_allowlisted_roots(api_client: TestClient) -> None:
