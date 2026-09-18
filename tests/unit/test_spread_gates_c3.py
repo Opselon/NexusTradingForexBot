@@ -45,6 +45,7 @@ from tests.unit.test_policy import _make_feature_vector, _make_tick
 _TICK_SEQ = [0]
 
 _PROBS_STRONG_BUY = [0.20, 0.55, 0.15, 0.05]
+_PROBS_STRONG_SELL = [0.20, 0.15, 0.55, 0.05]
 
 
 def _fresh_policy(**kwargs) -> SignalPolicy:
@@ -101,6 +102,23 @@ def _buy_candidate_fv(atr: float = 1.5) -> object:
             "liquidity_sweep_signal": 1,
             "dist_to_swing_low_20": 5.0,
             "dist_to_swing_high_20": 5.0,
+            "atr_m1": atr,
+        }
+    )
+
+
+def _sell_candidate_fv(atr: float = 1.5) -> object:
+    """A SELL candidate that passes every other gate (sweep + choch + large swings)."""
+    return _make_feature_vector().model_copy(
+        update={
+            "is_below_kumo": True,
+            "tenkan_sen": 1995.0,
+            "kijun_sen": 1997.0,
+            "live_tick_displacement": -0.9,
+            "choch_bearish": True,
+            "liquidity_sweep_signal": -1,
+            "dist_to_swing_low_20": 5.0,
+            "dist_to_swing_high_20": 1.0,
             "atr_m1": atr,
         }
     )
@@ -225,6 +243,28 @@ class TestSpreadTpRatioGate:
         proposal = _evaluate(policy, spread=0.0)
         assert proposal.blocked_by != "SPREAD_TP_RATIO"
         assert proposal.decision_stage != "SPREAD_TP_GATE"
+
+    def test_sell_candidate_uses_bid_for_tp_distance(self) -> None:
+        """SELL candidate evaluates TP distance using current_tick.bid.
+
+        bid=2000.0, ask=2001.20 -> spread=1.20.
+        Candidate TP distance from bid (2000.0) = 7.5.
+        Ratio = 1.20 / 7.5 = 0.16 > 0.15 -> block via SPREAD_TP_GATE.
+        """
+        policy = _fresh_policy(max_spread_pct_of_tp=0.15)
+        tick = _fresh_tick(spread=1.20, price=2000.0)
+        proposal = policy.evaluate_probabilities(
+            torch.tensor([_PROBS_STRONG_SELL], dtype=torch.float32),
+            tick,
+            _sell_candidate_fv(),
+            regime_state=_regime(),
+        )
+        assert proposal.action == ActionType.NO_TRADE
+        assert proposal.decision_stage == "SPREAD_TP_GATE"
+        assert proposal.blocked_by == "SPREAD_TP_RATIO"
+        checks = proposal.risk_checks or {}
+        assert checks["tp_distance_usd"] == pytest.approx(7.5, abs=0.01)
+        assert checks["spread_tp_ratio"] == pytest.approx(0.16, abs=0.01)
 
 
 # ---------------------------------------------------------------------------
