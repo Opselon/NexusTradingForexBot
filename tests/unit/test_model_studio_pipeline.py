@@ -289,3 +289,72 @@ def test_cli_dataset_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     pos_data = json.loads(raw_pos)
     assert pos_data["status"] == "OK"
     assert pos_data["total_samples"] > 0
+
+
+# =============================================================================
+# 7. Dataset Path Containment (CodeQL py/path-injection boundary)
+# =============================================================================
+
+
+def test_safe_dataset_path_rejects_traversal_and_returns_none() -> None:
+    """Traversal, null-byte, and out-of-root paths must be refused (not resolved)."""
+    from nexus_scalp.web.model_studio_routes import _safe_dataset_path
+
+    assert _safe_dataset_path("") is None
+    assert _safe_dataset_path("   ") is None
+    assert _safe_dataset_path("/etc/passwd") is None
+    assert _safe_dataset_path("../../etc/passwd") is None
+    assert _safe_dataset_path("data/raw/../../../etc/shadow") is None
+    assert _safe_dataset_path("data/raw/bad\x00.parquet") is None
+
+
+def test_safe_dataset_path_accepts_allowlisted_file(tmp_path: Path) -> None:
+    """A real parquet under data/raw resolves; the sibling prefix-bypass does not."""
+    from nexus_scalp.web.model_studio_routes import _safe_dataset_path
+
+    raw_dir = REPO_ROOT / "data" / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    good = raw_dir / "CONTAINMENT_TEST.parquet"
+    good.write_bytes(b"PAR1")
+    try:
+        assert _safe_dataset_path(str(good)) == good.resolve()
+        assert _safe_dataset_path("data/raw/CONTAINMENT_TEST.parquet") == good.resolve()
+        # "data/rawx" starts with "data/raw" as a STRING but is not contained.
+        assert _safe_dataset_path("data/rawx/CONTAINMENT_TEST.parquet") is None
+        assert _safe_dataset_path("data/raw/MISSING_FILE_XYZ.parquet") is None
+    finally:
+        good.unlink(missing_ok=True)
+
+
+def test_download_rejects_csv_outside_allowlisted_roots(api_client: TestClient) -> None:
+    """source=csv with an out-of-root csv_path is a 400, never a read attempt."""
+    res = api_client.post(
+        "/api/model-studio/datasets/download",
+        json={
+            "symbol": "XAUUSD",
+            "timeframe": "M5",
+            "bars": 1000,
+            "source": "csv",
+            "csv_path": "/etc/passwd",
+        },
+    )
+    assert res.status_code == 400
+    assert "csv_path" in res.json()["detail"]
+
+
+def test_download_sanitizes_symbol_for_output_filename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A traversal payload in symbol cannot escape data/raw on the WRITE side."""
+    monkeypatch.setattr("nexus_scalp.web.model_studio_routes.REPO_ROOT", tmp_path)
+    (tmp_path / "data" / "raw").mkdir(parents=True, exist_ok=True)
+
+    res = execute_download(
+        ModelStudioDownloadRequest(
+            symbol="../../evil", timeframe="M5", bars=1000, source="synthetic"
+        )
+    )
+    out = Path(res["dataset_path"])
+    assert ".." not in out.parts
+    assert out.name == "EVIL_M5.synthetic.parquet"
+    assert (tmp_path / "data" / "raw" / out.name).is_file()

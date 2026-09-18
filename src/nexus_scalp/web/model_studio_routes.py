@@ -36,6 +36,69 @@ logger = get_logger("nexus_scalp.web.model_studio_routes")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+# Operator-configurable allowlist of roots a Model Studio request may READ from.
+# Mirrors provisioning_routes._allowed_import_roots: model-studio dataset paths
+# come from the operator UI / REST body, so they are confined to declared roots
+# (containment via Path.is_relative_to, never string prefix) and only ever READ.
+_DATASET_ROOTS_ENV = "NEXUS_MODEL_STUDIO_ROOTS"
+_DEFAULT_DATASET_ROOTS = ("data/raw", "data/processed", "data/positions", "data")
+
+
+def _allowed_dataset_roots() -> list[Path]:
+    """One resolved allowlist of directories a dataset path may live under."""
+    import os
+
+    roots_env = str(os.environ.get(_DATASET_ROOTS_ENV, "")).strip()
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for raw in [*roots_env.split(os.pathsep), *_DEFAULT_DATASET_ROOTS]:
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        candidate = Path(cleaned).expanduser()
+        resolved = (
+            candidate.resolve() if candidate.is_absolute() else (REPO_ROOT / candidate).resolve()
+        )
+        if resolved not in seen:
+            seen.add(resolved)
+            roots.append(resolved)
+    return roots
+
+
+def _safe_dataset_path(raw: str) -> Path | None:
+    """Confine an operator-supplied dataset path to the allowlisted read roots.
+
+    Defense layers (closes CodeQL py/path-injection and the prefix-bypass class
+    a naive ``str.startswith`` check carries — "data/rawx" starts with "data/raw"):
+      1. reject null bytes and any ``..`` traversal segment BEFORE resolving;
+      2. resolve to an absolute real path (symlinks followed);
+      3. containment via Path.is_relative_to (never string prefix);
+      4. callers then only READ the file (never write, never execute).
+    Returns None when the path is malformed, out of bounds, or missing.
+    """
+    import os
+
+    s = str(raw or "").strip()
+    if not s or "\x00" in s:
+        return None
+    if any(part == ".." for part in Path(s).parts) or (os.altsep and ".." in s.split(os.altsep)):
+        return None
+    candidate = Path(s).expanduser()
+    resolved = candidate.resolve() if candidate.is_absolute() else (REPO_ROOT / candidate).resolve()
+    for root in _allowed_dataset_roots():
+        if resolved.is_relative_to(root) and resolved != root and resolved.is_file():
+            return resolved
+    return None
+
+
+def _read_dataset_frame(target: Path) -> pl.DataFrame:
+    """Read a allowlisted dataset as a Polars frame (parquet or csv only)."""
+    if target.suffix.lower() == ".parquet":
+        return pl.read_parquet(target)
+    if target.suffix.lower() == ".csv":
+        return pl.read_csv(target)
+    raise ValueError(f"unsupported dataset type: {target.suffix}")
+
 
 # =============================================================================
 # Request / Response Schemas
@@ -706,21 +769,15 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
     """Dispatches real PyTorch model training with chosen dataset and hyperparameters."""
     run_id = f"train_studio_{int(time.time())}"
 
-    target_path: Path | None = None
-    if req.dataset_path:
-        p = (REPO_ROOT / req.dataset_path).resolve()
-        if p.is_file():
-            target_path = p
+    target_path = _safe_dataset_path(req.dataset_path)
     if target_path is None:
         datasets = _scan_available_datasets()
         if datasets:
-            target_path = REPO_ROOT / datasets[0]["path"]
+            target_path = _safe_dataset_path(str(datasets[0]["path"]))
 
     # Load bars or create synthetic
-    if target_path and target_path.suffix.lower() == ".parquet":
-        df = pl.read_parquet(target_path)
-    elif target_path and target_path.suffix.lower() == ".csv":
-        df = pl.read_csv(target_path)
+    if target_path is not None:
+        df = _read_dataset_frame(target_path)
     else:
         from scripts.data.ingest_historical_candles import generate_synthetic_bars
 
@@ -828,23 +885,40 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
 
 def execute_download(req: ModelStudioDownloadRequest) -> dict[str, Any]:
     """Downloads market candles via MT5, synthetic generator, or CSV import."""
+    import re
+
     from scripts.data.ingest_historical_candles import ingest
 
     tf = req.timeframe.upper().strip()
     if tf not in ("M1", "M3", "M5", "M15"):
         tf = "M1"
 
-    out_dir = REPO_ROOT / "data" / "raw"
+    # Whitelist-sanitize symbol and source to prevent path injection
+    safe_symbol = re.sub(r"[^A-Za-z0-9_]", "", req.symbol.strip()).upper() or "XAUUSD"
+    safe_source = req.source.lower().strip()
+    if safe_source not in ("synthetic", "mt5", "csv"):
+        safe_source = "synthetic"
+
+    # Confine optional CSV input to allowlisted dataset roots
+    safe_csv_path: Path | None = None
+    if safe_source == "csv" and req.csv_path:
+        safe_csv_path = _safe_dataset_path(req.csv_path)
+        if safe_csv_path is None:
+            raise HTTPException(
+                status_code=400, detail="csv_path must be an existing file under data/"
+            )
+
+    out_dir = (REPO_ROOT / "data" / "raw").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{req.symbol.upper()}_{tf}.{req.source.lower()}.parquet"
+    out_path = out_dir / f"{safe_symbol}_{tf}.{safe_source}.parquet"
 
     try:
         res = ingest(
-            source=req.source.lower(),
-            symbol=req.symbol.upper(),
+            source=safe_source,
+            symbol=safe_symbol,
             timeframe=tf,
             count=req.bars,
-            csv_path=req.csv_path,
+            csv_path=safe_csv_path,
             output=out_path,
             seed=req.seed,
             min_rows=min(1000, req.bars),
@@ -991,23 +1065,15 @@ def extract_dataset_features(
 def execute_inspect_features(req: ModelStudioInspectFeaturesRequest) -> dict[str, Any]:
     """Inspects dataset features, calculates statistics, and validates normalization for 50D/70D."""
     dim = req.dimension if req.dimension in (50, 70) else 50
-    target_path = None
-    if req.dataset_path:
-        p = Path(req.dataset_path)
-        if not p.is_absolute():
-            p = REPO_ROOT / p
-        if p.is_file():
-            target_path = p
+    target_path = _safe_dataset_path(req.dataset_path)
 
     if target_path is None:
         datasets = _scan_available_datasets()
         if datasets:
-            target_path = REPO_ROOT / datasets[0]["path"]
+            target_path = _safe_dataset_path(str(datasets[0]["path"]))
 
-    if target_path and target_path.suffix.lower() == ".parquet":
-        df = pl.read_parquet(target_path)
-    elif target_path and target_path.suffix.lower() == ".csv":
-        df = pl.read_csv(target_path)
+    if target_path is not None:
+        df = _read_dataset_frame(target_path)
     else:
         from scripts.data.ingest_historical_candles import generate_synthetic_bars
 
@@ -1079,13 +1145,7 @@ def execute_generate_position_dataset(req: ModelStudioPositionDatasetRequest) ->
     """Generates specialized Position-State dataset for Layer-2 Position/Risk Management."""
     from nexus_scalp.model_generation.position_dataset_generator import generate_position_dataset
 
-    target_path = None
-    if req.source_dataset_path:
-        p = Path(req.source_dataset_path)
-        if not p.is_absolute():
-            p = REPO_ROOT / p
-        if p.is_file():
-            target_path = p
+    target_path = _safe_dataset_path(req.source_dataset_path)
 
     res = generate_position_dataset(
         source_path=target_path,
