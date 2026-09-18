@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -414,8 +415,16 @@ def stage_fast_tests(scope_files: list[str]) -> StageResult:
         if manifest_existing:
             # The FAST lane is the agent-loop gate: xdist -n 4 measured 20s on
             # an 8-core host (serial 66s; -n 8 slower — interpreter-start bound).
+            # Under low memory (< 6GB RAM, e.g. 3.9GB VMs), clamp to 2 workers to prevent OOM.
+            workers = os.environ.get("NSE_PYTEST_WORKERS")
+            if not workers:
+                try:
+                    ram_gb = (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")) / (1024**3)
+                    workers = "2" if ram_gb < 6.0 else "4"
+                except Exception:
+                    workers = "4"
             targets = manifest_existing
-            xdist_args = ["-n", "4", "--dist", "loadgroup"]
+            xdist_args = ["-n", str(workers), "--dist", "loadgroup"]
     args = [
         sys.executable,
         "-m",

@@ -70,7 +70,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-VAL-003` | G: Validation | P2 | Robustness Stress: Slippage & Spread Perturb | **BLOCKED** | `AGENT-ML-VALIDATION` | NO | `ML-VAL-001` | `PARALLEL_SAFE` |
 | `ML-INF-001` | H: Inference | P1 | Inference Preprocessing Latency SLA (<10ms) | **BLOCKED** | `AGENT-INFERENCE` | NO | `ML-FEAT-001`, `ML-ARCH-001` | `PARALLEL_SAFE` |
 | `ML-BT-001` | I: Backtest | P1 | Trading Quality Metrics vs Classification | **BLOCKED** | `AGENT-BACKTEST` | NO | `ML-VAL-001`, `ML-VAL-003` | `PARALLEL_SAFE` |
-| `ML-GOV-001` | J: Governance | P0 | Promotion API Pre-Flight & OOS Gate Audit | **BLOCKED** | `AGENT-GOVERNANCE` | NO | `ML-FEAT-001` | `PARALLEL_SAFE` |
+| `ML-GOV-001` | J: Governance | P0 | Promotion Pre-Flight & OOS Gate Audit | **IMPLEMENTED** | `AGENT-GOVERNANCE` | NO | `ML-FEAT-001` | `PARALLEL_SAFE` |
 | `ML-GOV-002` | J: Governance | P1 | Unified Model State Machine Root | **READY** | `AGENT-GOVERNANCE` | **YES** | None | `SERIAL_ONLY` |
 | `ML-GOV-003` | J: Governance | P1 | Persistent Governance Freeze Across Restarts | **BLOCKED** | `AGENT-GOVERNANCE` | NO | `ML-GOV-002` | `PARALLEL_SAFE` |
 | `ML-PLAT-001` | K: Platform | P2 | MT5 Runtime Boundaries & Linux Parity | **READY** | `AGENT-PLATFORM` | NO | None | `PARALLEL_SAFE` |
