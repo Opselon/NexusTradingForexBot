@@ -32,9 +32,18 @@ from typing import Any
 
 import polars as pl
 
-from nexus_scalp.model_generation.artifact_store import ArtifactConflictError, ArtifactStore
+from nexus_scalp.model_generation.artifact_store import (
+    ArtifactConflictError,
+    ArtifactStore,
+    sha256_file,
+)
+from nexus_scalp.model_generation.dataset_manifest import (
+    DatasetIntegrityError,
+    DatasetLoadResult,
+    DatasetManifest,
+    compute_dataset_hash,
+)
 from nexus_scalp.model_generation.lineage import LabelOrigin, stamp_manifest
-from nexus_scalp.model_generation.models import DatasetManifest
 from nexus_scalp.model_generation.sample_factory import SampleFactory, samples_to_frame
 from nexus_scalp.observability.logging import get_logger
 
@@ -272,11 +281,30 @@ class DatasetFactory:
             "end": str(ts_series.max() or ""),
         }
 
+        # ML-DATA-002: Cryptographic array content checksum and exact split indices
+        sha256_checksum = compute_dataset_hash(frame)
+        split_indices: dict[str, list[int]] = {}
+        if frame.height <= 50_000:
+            split_indices = {
+                "train": frame.with_row_index()
+                .filter(pl.col("_split") == "train")["index"]
+                .to_list(),
+                "val": frame.with_row_index().filter(pl.col("_split") == "val")["index"].to_list(),
+                "test": frame.with_row_index()
+                .filter(pl.col("_split") == "test")["index"]
+                .to_list(),
+                "purged": frame.with_row_index()
+                .filter(pl.col("_purged_split") == True)["index"]  # noqa: E712
+                .to_list(),
+            }
+
         manifest = DatasetManifest(
             dataset_id=real_id,
             dataset_version=generation_version,
+            row_count=frame.height,
             row_counts=counts,
             temporal_range=temporal_range,
+            date_range=temporal_range,
             symbol=symbol,
             timeframe=timeframe,
             feature_schema_id=cfg["feature_schema_id"],
@@ -290,6 +318,7 @@ class DatasetFactory:
                     "split_purge_bars": purge_bars,
                 }
             ),
+            split_indices=split_indices,
             purge_parameters={
                 "purge_gap_bars": getattr(self.sample_factory.labeler, "embargo_bars", 3),
                 "embargo_bars": getattr(self.sample_factory.labeler, "embargo_bars", 3),
@@ -306,12 +335,17 @@ class DatasetFactory:
             else "",
             news_data_range=news_digest.get("range", {}) if news_digest is not None else {},
             strategy_context_version=strategy_version,
+            sha256_checksum=sha256_checksum,
         )
 
         # MLFIX-T7: lineage stamp travels with the manifest (production
         # eligibility of any candidate trained on this dataset is decided
         # from this field, never inferred).
         manifest_payload = stamp_manifest(manifest.model_dump(mode="json"), label_origin)
+        manifest_payload["sha256_checksum"] = sha256_checksum
+        manifest_payload["row_count"] = frame.height
+        if split_indices:
+            manifest_payload["split_indices"] = split_indices
         # Content digest recorded in the manifest so a REBUILD with the same
         # deterministic id can prove content equality (idempotent reuse)
         # instead of tripping the immutability conflict (CHG-0061).
@@ -372,12 +406,147 @@ class DatasetFactory:
         handle["dataset_id"] = real_id
         handle["counts"] = counts
         handle["config_hash"] = c_hash
+        handle["row_count"] = frame.height
+        handle["sha256_checksum"] = sha256_checksum
         logger.info(
             "[DATASET] event=BUILT dataset_id=%s rows=%d",
             real_id,
             frame.height,
         )
         return handle
+
+    # ------------------------------------------------------------------
+    # Explicit save & load with cryptographic integrity verification (ML-DATA-002)
+    # ------------------------------------------------------------------
+
+    def save(
+        self,
+        dataset_id: str,
+        data: pl.DataFrame,
+        manifest: DatasetManifest | dict[str, Any] | None = None,
+        *,
+        feature_schema_hash: str = "",
+        symbol: str = "XAUUSD",
+        timeframe: str = "M1",
+        label_origin: str | LabelOrigin = LabelOrigin.CLEAN_HISTORICAL,
+        allow_overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Saves a dataset artifact (parquet + dataset_manifest.json) with cryptographic checksum.
+
+        Computes sha256_checksum over the raw features and labels, records
+        split indices/ranges if present, and saves through ArtifactStore.
+        """
+        checksum = compute_dataset_hash(data)
+        row_count = data.height
+
+        split_indices: dict[str, list[int]] = {}
+        split_counts: dict[str, int] = {"total": row_count}
+        if "_split" in data.columns and row_count <= 50_000:
+            for s in ("train", "val", "test", "purged"):
+                indices = data.with_row_index().filter(pl.col("_split") == s)["index"].to_list()
+                if indices:
+                    split_indices[s] = indices
+                    split_counts[s] = len(indices)
+
+        ts_col = data["timestamp"] if "timestamp" in data.columns else None
+        temporal_range = {
+            "start": str(ts_col.min()) if ts_col is not None and not ts_col.is_empty() else "",
+            "end": str(ts_col.max()) if ts_col is not None and not ts_col.is_empty() else "",
+        }
+
+        if manifest is None:
+            manifest_obj = DatasetManifest(
+                dataset_id=dataset_id,
+                row_count=row_count,
+                row_counts=split_counts,
+                temporal_range=temporal_range,
+                date_range=temporal_range,
+                symbol=symbol,
+                timeframe=timeframe,
+                feature_schema_hash=feature_schema_hash,
+                sha256_checksum=checksum,
+                split_indices=split_indices,
+            )
+            manifest_payload = manifest_obj.to_dict()
+        elif isinstance(manifest, DatasetManifest):
+            manifest_payload = manifest.to_dict()
+            manifest_payload["sha256_checksum"] = checksum
+            manifest_payload["row_count"] = row_count
+            if split_indices and not manifest_payload.get("split_indices"):
+                manifest_payload["split_indices"] = split_indices
+        else:
+            manifest_payload = dict(manifest)
+            manifest_payload["dataset_id"] = dataset_id
+            manifest_payload["sha256_checksum"] = checksum
+            manifest_payload["row_count"] = row_count
+            if split_indices and not manifest_payload.get("split_indices"):
+                manifest_payload["split_indices"] = split_indices
+
+        manifest_payload = stamp_manifest(manifest_payload, label_origin)
+        handle = self.store.save_dataset(
+            dataset_id,
+            data,
+            manifest_payload,
+            allow_overwrite=allow_overwrite,
+        )
+        handle["dataset_id"] = dataset_id
+        handle["row_count"] = row_count
+        handle["sha256_checksum"] = checksum
+        handle["manifest"] = manifest_payload
+        return handle
+
+    def load(self, dataset_id: str) -> DatasetLoadResult:
+        """Loads and cryptographically verifies a dataset artifact.
+
+        Checks:
+        1. Existence of parquet artifact and dataset_manifest.json.
+        2. Parquet file checksum matches manifest `dataset_hash`.
+        3. Array content hash matches manifest `sha256_checksum`.
+        4. Row count matches manifest `row_count`.
+
+        Raises `DatasetIntegrityError` if any value in the dataset array or
+        manifest has been modified, tampered, or corrupted.
+        """
+        p = self.store.dataset_path(dataset_id)
+        if not p.exists():
+            raise FileNotFoundError(f"Dataset artifact not found: {p}")
+
+        manifest_dict = self.store.read_dataset_manifest(dataset_id)
+        if manifest_dict is None:
+            raise DatasetIntegrityError(f"dataset {dataset_id!r}: missing manifest JSON")
+
+        manifest = DatasetManifest.from_dict(manifest_dict)
+
+        # 1. Parquet artifact file checksum check
+        expected_file_hash = str(manifest.dataset_hash or "")
+        if expected_file_hash:
+            actual_file_hash = sha256_file(p)
+            if actual_file_hash != expected_file_hash:
+                raise DatasetIntegrityError(
+                    f"dataset {dataset_id!r}: file hash mismatch "
+                    f"(manifest {expected_file_hash[:12]} != actual {actual_file_hash[:12]})"
+                )
+
+        # 2. Read DataFrame
+        frame = pl.read_parquet(p)
+
+        # 3. Row count check
+        if manifest.row_count > 0 and frame.height != manifest.row_count:
+            raise DatasetIntegrityError(
+                f"dataset {dataset_id!r}: row count mismatch "
+                f"(manifest {manifest.row_count} != actual {frame.height})"
+            )
+
+        # 4. Content array hash check
+        if manifest.sha256_checksum and manifest.sha256_checksum != manifest.dataset_hash:
+            actual_content_hash = compute_dataset_hash(frame)
+            if actual_content_hash != manifest.sha256_checksum:
+                raise DatasetIntegrityError(
+                    f"dataset {dataset_id!r}: array content hash mismatch "
+                    f"(manifest {manifest.sha256_checksum[:12]} != actual {actual_content_hash[:12]})"
+                )
+
+        return DatasetLoadResult(frame, manifest)
 
     # ------------------------------------------------------------------
     # Temporal split (chronological; purge/embargo preserved via labels)

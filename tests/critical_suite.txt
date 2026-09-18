@@ -104,6 +104,7 @@ tests/e2e/test_smoke_chain.py
 # that were landed but not executed in any CI gate until this wave.
 tests/unit/test_runtime_bars_normalize.py
 tests/unit/test_agent14_dataset_integrity.py
+tests/unit/test_dataset_manifest.py
 tests/unit/test_dataset_split_purge_bug244.py
 tests/unit/test_70d_dataset_parity_task3.py
 tests/unit/test_smoke_self.py

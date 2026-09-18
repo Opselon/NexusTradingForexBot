@@ -19,6 +19,8 @@ from nexus_scalp.model_generation.dataset_factory import DatasetFactory
 from nexus_scalp.model_generation.experiment_factory import EXPERIMENT_SPACE, ExperimentFactory
 from nexus_scalp.model_generation.model_factory import ModelFactory
 from nexus_scalp.model_generation.models import (
+    DatasetIntegrityError,
+    DatasetLoadResult,
     DatasetManifest,
     ExperimentConfig,
     LabelSchema,
@@ -102,6 +104,8 @@ __all__ = [
     "ArtifactStore",
     "CandidateTrainer",
     "DatasetFactory",
+    "DatasetIntegrityError",
+    "DatasetLoadResult",
     "DatasetManifest",
     "EntryDecision",
     "ExperimentConfig",

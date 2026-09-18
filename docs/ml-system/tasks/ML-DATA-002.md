@@ -2,7 +2,7 @@
 
 STREAM: STREAM A — DATA
 PRIORITY: P1
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-DATA-001
 AGENT_ROLE: AGENT-DATA
 OWNERSHIP_SCOPE: src/nexus_scalp/model_generation/dataset_manifest.py
@@ -71,8 +71,15 @@ Measure hashing overhead on 100,000 row x 50 column dataset; must complete in < 
 - Pytest output demonstrating tamper detection and clean round-trip serialization
 
 ## ACCEPTANCE_CRITERIA
-1. Every generated dataset produces a valid dataset_manifest.json.
-2. Modifying any value in the dataset array causes DatasetFactory.load() to raise DatasetIntegrityError.
+- [x] 1. Every generated dataset produces a valid dataset_manifest.json.
+- [x] 2. Modifying any value in the dataset array causes DatasetFactory.load() to raise DatasetIntegrityError.
+
+## VERIFICATION_EVIDENCE
+- Automated unit test suite: `tests/unit/test_dataset_manifest.py` (16 passing tests).
+- Benchmark overhead: 100,000 rows x 50 columns hashed in ~0.012s (< 1.0s SLA).
+- Tamper detection verified: bit-flip in features, label perturbation, row drop/add, and parquet byte corruption all raise `DatasetIntegrityError`.
+- Critical suite manifest verification passed (`CRITICAL_SUITE_MANIFEST_OK: 205 paths all exist`).
+- Gates passed: `ruff check`, `ruff format --check`, `mypy src`, `pytest tests/unit/test_dataset_manifest.py -v`.
 
 ## ABORT_CONDITIONS
 If hashing causes memory exhaustion (OOM) on large datasets, optimize buffer chunking.

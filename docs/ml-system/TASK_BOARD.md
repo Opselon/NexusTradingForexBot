@@ -19,7 +19,7 @@
 
 ### STREAM A: DATA FOUNDATION
 - [ML-DATA-001](tasks/ML-DATA-001.md) — Historical M1 Market Data Ingest & Parquet Storage Harness `[P0 | DONE | AGENT-DATA]`
-- [ML-DATA-002](tasks/ML-DATA-002.md) — Dataset Integrity, Missing Value Sanitization & Manifest Hashing `[P1 | BLOCKED | AGENT-DATA]`
+- [ML-DATA-002](tasks/ML-DATA-002.md) — Dataset Integrity, Missing Value Sanitization & Manifest Hashing `[P1 | DONE | AGENT-DATA]`
 
 ### STREAM B: FEATURE ENGINEERING
 - [ML-FEAT-001](tasks/ML-FEAT-001.md) — 50D Feature Normalization End-to-End Parity Verification `[P0 | DONE | AGENT-FEATURE]`
