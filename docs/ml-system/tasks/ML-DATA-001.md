@@ -2,7 +2,7 @@
 
 STREAM: STREAM A — DATA
 PRIORITY: P0
-STATUS: IMPLEMENTED
+STATUS: DONE
 DEPENDENCIES: None
 AGENT_ROLE: AGENT-DATA
 OWNERSHIP_SCOPE: data/, scripts/data/, src/nexus_scalp/market_data/
@@ -103,6 +103,8 @@ NO
 - **Execution Date**: `2026-09-18`
 - **Agent**: `AGENT-DATA`
 - **Branch**: `agent/feature/ML-DATA-001`
+- **PR**: [#259](https://github.com/Opselon/NexusTradingForexBot/pull/259) (Merge Commit: `d52bcde6c7375a9d6ad06ab29521eb3e432b6d1f`)
+- **Status**: `DONE` (Merged & Verified on Main)
 - **Script**: `scripts/data/ingest_historical_candles.py`
   - Supports 3 ingestion sources: `synthetic` (deterministic geometric Brownian motion + volatility jumps), `csv` (broker export with lenient schema matching), and `mt5` (live broker gateway integration via `MT5Adapter`).
   - Strict contract enforcement: monotonic UTC timestamps, positive prices, valid OHLC geometry ($high \ge \max(open, close), low \le \min(open, close)$), 0 NaNs/Nulls, min row count threshold.
