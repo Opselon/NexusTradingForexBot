@@ -358,3 +358,22 @@ def test_download_sanitizes_symbol_for_output_filename(
     assert ".." not in out.parts
     assert out.name == "EVIL_M5.synthetic.parquet"
     assert (tmp_path / "data" / "raw" / out.name).is_file()
+
+
+def test_explicit_invalid_dataset_path_fails_closed_with_400(api_client: TestClient) -> None:
+    """An explicit traversal / bad path in inspect-features/train/generate must 400.
+
+    Empty string still falls back safely to default/synthetic; an explicit bad key
+    never silently substitutes an unrelated dataset.
+    """
+    for endpoint, payload in (
+        ("/api/model-studio/datasets/inspect-features", {"dataset_path": "../../etc/passwd"}),
+        ("/api/model-studio/train", {"dataset_path": "../../etc/shadow", "epochs": 1}),
+        (
+            "/api/model-studio/position-dataset/generate",
+            {"source_dataset_path": "/etc/hosts"},
+        ),
+    ):
+        res = api_client.post(endpoint, json=payload)
+        assert res.status_code == 400, f"{endpoint} expected 400 on bad path, got {res.status_code}"
+        assert "not a selectable dataset" in res.json()["detail"]

@@ -124,6 +124,29 @@ def _safe_dataset_path(raw: str) -> Path | None:
     return None
 
 
+def _resolve_requested_dataset(raw: str) -> Path | None:
+    """Resolve a caller-named dataset, distinguishing "absent" from "refused".
+
+    ``raw`` empty/whitespace means the caller did not choose a dataset, so the
+    caller may fall back to a default. Anything else that fails to resolve is an
+    explicit-but-invalid selection and raises 400 — silently substituting a
+    different dataset would hide both traversal attempts and stale UI state.
+    """
+    key = str(raw or "").strip()
+    if not key:
+        return None
+    resolved = _safe_dataset_path(key)
+    if resolved is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"dataset_path {key!r} is not a selectable dataset; "
+                "pick a file listed by GET /api/model-studio/datasets"
+            ),
+        )
+    return resolved
+
+
 def _read_dataset_frame(target: Path) -> pl.DataFrame:
     """Read an inventory-derived dataset as a Polars frame (parquet or csv only)."""
     if target.suffix.lower() == ".parquet":
@@ -802,7 +825,7 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
     """Dispatches real PyTorch model training with chosen dataset and hyperparameters."""
     run_id = f"train_studio_{int(time.time())}"
 
-    target_path = _safe_dataset_path(req.dataset_path)
+    target_path = _resolve_requested_dataset(req.dataset_path)
     if target_path is None:
         datasets = _scan_available_datasets()
         if datasets:
@@ -1098,7 +1121,7 @@ def extract_dataset_features(
 def execute_inspect_features(req: ModelStudioInspectFeaturesRequest) -> dict[str, Any]:
     """Inspects dataset features, calculates statistics, and validates normalization for 50D/70D."""
     dim = req.dimension if req.dimension in (50, 70) else 50
-    target_path = _safe_dataset_path(req.dataset_path)
+    target_path = _resolve_requested_dataset(req.dataset_path)
 
     if target_path is None:
         datasets = _scan_available_datasets()
@@ -1178,7 +1201,7 @@ def execute_generate_position_dataset(req: ModelStudioPositionDatasetRequest) ->
     """Generates specialized Position-State dataset for Layer-2 Position/Risk Management."""
     from nexus_scalp.model_generation.position_dataset_generator import generate_position_dataset
 
-    target_path = _safe_dataset_path(req.source_dataset_path)
+    target_path = _resolve_requested_dataset(req.source_dataset_path)
 
     res = generate_position_dataset(
         source_path=target_path,
