@@ -2,13 +2,18 @@ import { useState, useEffect } from "react";
 
 import { modelStudioApi } from "../api";
 import type {
+  ActiveModelResponse,
   DatasetDownloadResponse,
+  HotLoadResponse,
   InspectFeaturesResponse,
+  InspectScalerResponse,
+  ModelRecordDto,
   ModelStudioDatasetItem,
   ModelStudioOverviewDto,
   PositionDatasetResponse,
   PredictResponse,
   StressTestResultRow,
+  VerifyModelResponse,
 } from "../model";
 
 export default function ModelStudioPage() {
@@ -20,6 +25,20 @@ export default function ModelStudioPage() {
   const [noise, setNoise] = useState<number>(0);
   const [threshold, setThreshold] = useState<number>(0.35);
   const [predictData, setPredictData] = useState<PredictResponse | null>(null);
+
+  // AI Hub / Model Registry & Hot-Loader state
+  const [models, setModels] = useState<ModelRecordDto[]>([]);
+  const [activeModel, setActiveModel] = useState<ActiveModelResponse["active_model"]>(null);
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
+  const [enableFineTune, setEnableFineTune] = useState<boolean>(false);
+  const [attachScaler, setAttachScaler] = useState<boolean>(true);
+  const [hotLoadBusy, setHotLoadBusy] = useState<boolean>(false);
+  const [hotLoadResult, setHotLoadResult] = useState<HotLoadResponse | null>(null);
+  const [hotLoadError, setHotLoadError] = useState<string>("");
+  const [verifyBusy, setVerifyBusy] = useState<boolean>(false);
+  const [verifyResult, setVerifyResult] = useState<VerifyModelResponse | null>(null);
+  const [scalerResult, setScalerResult] = useState<InspectScalerResponse | null>(null);
+  const [rollbackBusy, setRollbackBusy] = useState<boolean>(false);
 
   // 70D components
   const [components70, setComponents70] = useState<any[]>([]);
@@ -64,7 +83,99 @@ export default function ModelStudioPage() {
   useEffect(() => {
     fetchOverview();
     fetchDatasets();
+    fetchModels();
+    fetchActiveModel();
   }, []);
+
+  const fetchModels = async () => {
+    try {
+      const res = await modelStudioApi.listModels();
+      const list = res.models || [];
+      setModels(list);
+      if (list.length > 0 && list[0]) {
+        const champ = list.find((m) => m.is_active || m.id === res.active_champion_id);
+        const fallbackId = list[0].id;
+        setSelectedModelId((prev) => prev || (champ ? champ.id : fallbackId));
+      }
+    } catch (err) {
+      console.error("Failed to load models catalog:", err);
+    }
+  };
+
+  const fetchActiveModel = async () => {
+    try {
+      const res = await modelStudioApi.activeModel();
+      setActiveModel(res.active_model);
+      if (res.active_model) {
+        setEnableFineTune(Boolean(res.active_model.fine_tune_enabled));
+      }
+    } catch (err) {
+      console.error("Failed to load active model state:", err);
+    }
+  };
+
+  const handleHotLoad = async () => {
+    if (!selectedModelId) return;
+    setHotLoadBusy(true);
+    setHotLoadError("");
+    setHotLoadResult(null);
+    try {
+      const res = await modelStudioApi.hotLoad({
+        model_id: selectedModelId,
+        fine_tune_enabled: enableFineTune,
+        attach_scaler: attachScaler,
+        operator: "REACT_UI",
+      });
+      setHotLoadResult(res);
+      await fetchModels();
+      await fetchActiveModel();
+      await fetchOverview();
+    } catch (err) {
+      setHotLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHotLoadBusy(false);
+    }
+  };
+
+  const handleVerifyModel = async () => {
+    if (!selectedModelId) return;
+    setVerifyBusy(true);
+    setVerifyResult(null);
+    try {
+      const res = await modelStudioApi.verifyModel({ model_id: selectedModelId });
+      setVerifyResult(res);
+    } catch (err) {
+      console.error("Verify failed:", err);
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
+  const handleRollback = async () => {
+    if (!confirm("Roll back to previous active champion model from history?")) return;
+    setRollbackBusy(true);
+    try {
+      await modelStudioApi.rollback();
+      await fetchModels();
+      await fetchActiveModel();
+      await fetchOverview();
+    } catch (err) {
+      console.error("Rollback failed:", err);
+      alert("Rollback failed: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setRollbackBusy(false);
+    }
+  };
+
+  const handleInspectScaler = async () => {
+    if (!selectedModelId) return;
+    try {
+      const res = await modelStudioApi.inspectScaler(selectedModelId);
+      setScalerResult(res);
+    } catch (err) {
+      console.error("Inspect scaler failed:", err);
+    }
+  };
 
   const fetchOverview = async () => {
     try {
@@ -255,6 +366,8 @@ export default function ModelStudioPage() {
             onClick={() => {
               fetchOverview();
               fetchDatasets();
+              fetchModels();
+              fetchActiveModel();
             }}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
           >
@@ -614,6 +727,282 @@ export default function ModelStudioPage() {
           </div>
         </div>
       )}
+
+      {/* AI Hub: Model Registry, Hot-Loader & Runtime Lifecycle (API-First) */}
+      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl text-emerald-400">⚡</span>
+            <h2 className="text-sm font-bold text-white tracking-wide">
+              AI HUB: MODEL REGISTRY & RUNTIME HOT-LOADER
+            </h2>
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-bold border ${
+                activeModel
+                  ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                  : "bg-slate-800 text-slate-400 border-slate-700"
+              }`}
+            >
+              {activeModel ? `CHAMPION: ${activeModel.model_id} (${activeModel.dimension}D)` : "CHAMPION: NONE"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
+                activeModel?.fine_tune_enabled
+                  ? "bg-purple-500/20 text-purple-300 border-purple-500/30"
+                  : "bg-slate-800 text-slate-500 border-slate-700"
+              }`}
+            >
+              {activeModel?.fine_tune_enabled ? "FINE-TUNE: ON" : "FINE-TUNE: OFF"}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
+                activeModel?.scaler_ready
+                  ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/30"
+                  : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+              }`}
+            >
+              {activeModel?.scaler_ready ? "SCALER: ATTACHED" : "SCALER: STANDBY"}
+            </span>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-400">
+          Dynamically hot-load neural model weights and calibrated scaler sidecars into live engine memory without server restart. Supports persistent SQLite tracking, pre-load verification, fine-tune gating, and 1-click rollback.
+        </p>
+
+        {/* Active Model Info Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-center text-xs">
+          <div className="p-2 rounded bg-slate-950 border border-slate-800">
+            <div className="text-[10px] text-slate-500 uppercase font-bold">Active Model</div>
+            <div className="font-bold text-emerald-400 text-xs mt-0.5 truncate">
+              {activeModel?.model_id || "--"}
+            </div>
+          </div>
+          <div className="p-2 rounded bg-slate-950 border border-slate-800">
+            <div className="text-[10px] text-slate-500 uppercase font-bold">Dimension</div>
+            <div className="font-bold text-white text-xs mt-0.5">
+              {activeModel ? `${activeModel.dimension}D` : "--"}
+            </div>
+          </div>
+          <div className="p-2 rounded bg-slate-950 border border-slate-800">
+            <div className="text-[10px] text-slate-500 uppercase font-bold">Weights Hash</div>
+            <div className="font-mono text-emerald-400 text-xs mt-0.5 truncate">
+              {activeModel?.weights_sha256 ? activeModel.weights_sha256.substring(0, 12) : "--"}
+            </div>
+          </div>
+          <div className="p-2 rounded bg-slate-950 border border-slate-800">
+            <div className="text-[10px] text-slate-500 uppercase font-bold">Scaler Sidecar</div>
+            <div className="font-mono text-cyan-400 text-xs mt-0.5 truncate">
+              {activeModel?.scaler_path ? activeModel.scaler_path.split("/").pop() : "Default"}
+            </div>
+          </div>
+          <div className="p-2 rounded bg-slate-950 border border-slate-800">
+            <div className="text-[10px] text-slate-500 uppercase font-bold">Stage</div>
+            <div className="font-bold text-white text-xs mt-0.5">
+              {activeModel?.stage || "--"}
+            </div>
+          </div>
+          <div className="p-2 rounded bg-slate-950 border border-slate-800">
+            <div className="text-[10px] text-slate-500 uppercase font-bold">Inference Count</div>
+            <div className="font-bold text-cyan-400 text-xs mt-0.5">
+              {activeModel?.inference_count?.toLocaleString() ?? 0}
+            </div>
+          </div>
+        </div>
+
+        {/* Checkpoint Selection & Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs items-end">
+          <div className="md:col-span-2">
+            <label className="block text-slate-400 mb-1 font-semibold">
+              Select Model Checkpoint (SQLite Registry / Artifacts)
+            </label>
+            <select
+              value={selectedModelId}
+              onChange={(e) => setSelectedModelId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
+            >
+              {models.length === 0 && <option value="">No registered models found</option>}
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.is_active ? "★ " : ""}{m.id} [{m.dimension}D] {m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} (loss: {m.final_loss?.toFixed(4) || "0.0000"})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col justify-end space-y-1.5">
+            <label className="flex items-center space-x-2 text-slate-300 font-semibold cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableFineTune}
+                onChange={(e) => setEnableFineTune(e.target.checked)}
+                className="rounded bg-slate-950 border-slate-800 text-purple-600 focus:ring-purple-500"
+              />
+              <span>Enable Fine-Tune Mode</span>
+            </label>
+            <label className="flex items-center space-x-2 text-slate-300 font-semibold cursor-pointer">
+              <input
+                type="checkbox"
+                checked={attachScaler}
+                onChange={(e) => setAttachScaler(e.target.checked)}
+                className="rounded bg-slate-950 border-slate-800 text-cyan-600 focus:ring-cyan-500"
+              />
+              <span>Auto-Load Scaler Sidecar</span>
+            </label>
+          </div>
+
+          <div>
+            <button
+              onClick={handleHotLoad}
+              disabled={hotLoadBusy || !selectedModelId}
+              className="w-full px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition shadow-lg flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {hotLoadBusy ? "⚡ Hot-Loading..." : "⚡ Hot-Load Model"}
+            </button>
+          </div>
+        </div>
+
+        {/* Action Toolbar */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            onClick={handleVerifyModel}
+            disabled={verifyBusy || !selectedModelId}
+            className="px-3.5 py-2 rounded-lg bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 border border-blue-500/40 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {verifyBusy ? "Verifying..." : "✓ Verify Integrity Battery"}
+          </button>
+          <button
+            onClick={handleRollback}
+            disabled={rollbackBusy}
+            className="px-3.5 py-2 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {rollbackBusy ? "Rolling back..." : "↺ Rollback to Previous Champion"}
+          </button>
+          <button
+            onClick={handleInspectScaler}
+            disabled={!selectedModelId}
+            className="px-3.5 py-2 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-50"
+          >
+            📊 Inspect Scaler Vectors
+          </button>
+        </div>
+
+        {/* Hot-Load Success / Error Banner */}
+        {hotLoadResult && (
+          <div className="p-3 rounded-lg bg-slate-950 border border-emerald-500/40 text-xs space-y-1">
+            <div className="flex items-center justify-between font-bold text-emerald-400">
+              <span>✓ Model {hotLoadResult.model_id} ({hotLoadResult.dimension}D) Hot-Loaded</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20">
+                {hotLoadResult.warmup_latency_us} µs warmup
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400 font-mono">
+              SHA256: {hotLoadResult.weights_sha256} | Scaler: {hotLoadResult.scaler_attached ? hotLoadResult.scaler_path : "Unit"} | FT: {hotLoadResult.fine_tune_enabled ? "ON" : "OFF"}
+            </div>
+          </div>
+        )}
+        {hotLoadError && (
+          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+            Hot-load error: {hotLoadError}
+          </div>
+        )}
+
+        {/* Verification Results Battery */}
+        {verifyResult && (
+          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs space-y-2">
+            <div className="flex items-center justify-between font-bold">
+              <span className="text-blue-400">Pre-Load Checkpoint Verification Results</span>
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                  verifyResult.all_passed
+                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                    : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                }`}
+              >
+                {verifyResult.all_passed ? "ALL PASSED" : "WARNINGS"}
+              </span>
+            </div>
+            <div className="overflow-x-auto border border-slate-800 rounded">
+              <table className="w-full text-left font-mono text-[11px]">
+                <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
+                  <tr>
+                    <th className="py-1 px-2">Check Name</th>
+                    <th className="py-1 px-2 text-center">Status</th>
+                    <th className="py-1 px-2">Diagnostic Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {verifyResult.checks.map((c, i) => (
+                    <tr key={i} className="border-b border-slate-900 hover:bg-slate-900/40">
+                      <td className="py-1 px-2 font-bold text-white">{c.name}</td>
+                      <td className="py-1 px-2 text-center">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            c.passed ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+                          }`}
+                        >
+                          {c.passed ? "PASS" : "FAIL"}
+                        </span>
+                      </td>
+                      <td className="py-1 px-2 text-slate-300">{c.detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Scaler Vectors Table */}
+        {scalerResult && (
+          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs space-y-2">
+            <div className="flex items-center justify-between font-bold border-b border-slate-800 pb-1.5">
+              <span className="text-cyan-400">Attached Scaler Vectors ({scalerResult.dimension}D)</span>
+              <span className="text-[10px] font-mono text-cyan-300">
+                {scalerResult.features_count} features
+              </span>
+            </div>
+            {scalerResult.features.length === 0 ? (
+              <p className="text-slate-500 text-center py-2">{scalerResult.message || "No scaler data"}</p>
+            ) : (
+              <div className="overflow-x-auto max-h-48 overflow-y-auto border border-slate-800 rounded">
+                <table className="w-full text-left font-mono text-[11px]">
+                  <thead className="bg-slate-900 text-slate-400 uppercase text-[10px] sticky top-0">
+                    <tr>
+                      <th className="py-1 px-2"># Index</th>
+                      <th className="py-1 px-2 text-right">Mean (μ)</th>
+                      <th className="py-1 px-2 text-right">Std Dev (σ)</th>
+                      <th className="py-1 px-2 text-center">Clamping</th>
+                      <th className="py-1 px-2 text-center">Zero Variance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scalerResult.features.map((f) => (
+                      <tr key={f.index} className="border-b border-slate-900 hover:bg-slate-900/40">
+                        <td className="py-1 px-2 text-slate-400">feat_{f.index}</td>
+                        <td className="py-1 px-2 text-right text-emerald-400">{f.mean.toFixed(4)}</td>
+                        <td className="py-1 px-2 text-right text-cyan-400">{f.std.toFixed(4)}</td>
+                        <td className="py-1 px-2 text-center text-slate-500">[{f.clamp_min}, {f.clamp_max}]</td>
+                        <td className="py-1 px-2 text-center">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              f.zero_variance ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/20 text-emerald-400"
+                            }`}
+                          >
+                            {f.zero_variance ? "YES" : "NO"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Dataset Download & Ingestion (API-First) */}
       <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
