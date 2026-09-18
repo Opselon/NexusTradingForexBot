@@ -314,6 +314,8 @@ def position_dataset_generate_command(
     max_holding: int = typer.Option(30, "--max-holding", help="Max holding bars"),
     target_atr: float = typer.Option(2.0, "--target-atr", help="Target ATR multiplier"),
     friction: float = typer.Option(0.25, "--friction", help="Friction in pips"),
+    model: str = typer.Option("", "--model", "-m", help="Path to primary model checkpoint"),
+    scaler: str = typer.Option("", "--scaler", "-s", help="Path to companion scaler sidecar"),
     json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
 ) -> None:
     """Generate Layer-2 Position Management dataset with mathematical labeling & anti-leakage."""
@@ -324,6 +326,8 @@ def position_dataset_generate_command(
         max_holding_bars=max_holding,
         target_atr_multiplier=target_atr,
         friction_pips=friction,
+        model_path=model,
+        scaler_path=scaler,
     )
     res = execute_generate_position_dataset(req)
 
@@ -357,6 +361,49 @@ def position_dataset_generate_command(
     )
     table.add_row("Output Parquet Path", res.get("dataset_path") or res.get("output_path", ""))
     table.add_row("SHA-256 (prefix)", res["sha256"][:16])
+
+    console.print(table)
+
+
+@app.command("position-dataset-validate")
+def position_dataset_validate_command(
+    dataset: str = typer.Option(
+        ..., "--dataset", "-d", help="Path to Position Manager dataset (.parquet)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Validate structural, causal, and economic integrity of a Position Manager dataset."""
+    from nexus_scalp.web.model_studio_routes import (
+        ModelStudioPositionValidateRequest,
+        execute_validate_position_dataset,
+    )
+
+    req = ModelStudioPositionValidateRequest(dataset_path=dataset)
+    res = execute_validate_position_dataset(req)
+
+    if json_output:
+        typer.echo(json.dumps(res, indent=2))
+        return
+
+    table = Table(
+        title="Position Manager Dataset Validation Report",
+        border_style="cyan",
+    )
+    table.add_column("Metric", style="bold white")
+    table.add_column("Value", style="green" if res.get("valid") else "red")
+
+    table.add_row("Valid", "YES" if res.get("valid") else "NO")
+    table.add_row("Dataset ID", str(res.get("dataset_id", "")))
+    table.add_row("Row Count", f"{res.get('row_count', 0):,}")
+    table.add_row("Duplicates", str(res.get("duplicate_count", 0)))
+    table.add_row("NaN Values", str(res.get("nan_count", 0)))
+    table.add_row("Infinite Values", str(res.get("inf_count", 0)))
+    table.add_row("Monotonic Timestamps", "YES" if res.get("monotonic_timestamps") else "NO")
+    table.add_row("Trade Split Leakage", str(res.get("trade_split_leakage_count", 0)))
+    table.add_row("Hash Verified", "YES" if res.get("hash_verified") else "NO")
+
+    if res.get("violations"):
+        table.add_row("Violations", ", ".join(res["violations"]))
 
     console.print(table)
 

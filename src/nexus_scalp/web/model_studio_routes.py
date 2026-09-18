@@ -321,6 +321,12 @@ class ModelStudioPositionDatasetRequest(BaseModel):
         default=1.5, ge=0.5, le=5.0, description="Stop loss ATR"
     )
     friction_pips: float = Field(default=0.25, ge=0.0, le=5.0, description="Friction in pips")
+    model_path: str = Field(default="", description="Optional primary model checkpoint path")
+    scaler_path: str = Field(default="", description="Optional companion scaler sidecar path")
+
+
+class ModelStudioPositionValidateRequest(BaseModel):
+    dataset_path: str = Field(..., description="Path to Position Manager dataset (.parquet)")
 
 
 class ModelStudioHotLoadRequest(BaseModel):
@@ -1503,8 +1509,26 @@ def execute_generate_position_dataset(req: ModelStudioPositionDatasetRequest) ->
         target_atr_multiplier=req.target_atr_multiplier,
         stop_loss_atr_multiplier=req.stop_loss_atr_multiplier,
         friction_pips=req.friction_pips,
+        model_path=req.model_path if req.model_path else None,
+        scaler_path=req.scaler_path if req.scaler_path else None,
     )
-    return asdict(res)
+    return res.to_dict()
+
+
+def execute_validate_position_dataset(req: ModelStudioPositionValidateRequest) -> dict[str, Any]:
+    """Validates structural, causal, and economic integrity of a Position Manager dataset."""
+    from nexus_scalp.model_generation.position_replay import PositionDatasetValidator
+
+    target_path = _safe_dataset_path(req.dataset_path)
+    if target_path is None or not target_path.exists():
+        return {
+            "valid": False,
+            "error": f"Invalid or non-existent dataset path: {req.dataset_path}",
+            "violations": ["Target path outside allowlisted directory or missing."],
+        }
+
+    report = PositionDatasetValidator.validate(target_path)
+    return report.to_dict()
 
 
 # =============================================================================
@@ -2438,6 +2462,10 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.post("/api/model-studio/position-dataset/generate")
     def route_generate_position_dataset(req: ModelStudioPositionDatasetRequest) -> dict[str, Any]:
         return execute_generate_position_dataset(req)
+
+    @app.post("/api/model-studio/position-dataset/validate")
+    def route_validate_position_dataset(req: ModelStudioPositionValidateRequest) -> dict[str, Any]:
+        return execute_validate_position_dataset(req)
 
     @app.post("/api/model-studio/train")
     def route_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
