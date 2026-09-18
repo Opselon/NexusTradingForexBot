@@ -465,3 +465,5 @@ tests/integration/test_model_promotion_pipeline_e2e.py
 tests/unit/test_model_registry_hot_load.py
 # ML-RISK-001 (Position Replay & Economic Dataset Generation Engine)
 tests/unit/test_position_replay_pipeline.py
+# ML-LABEL-002 (Sample Uniqueness Weighting & Label Overlap Anti-Leakage)
+tests/unit/test_sample_weights.py

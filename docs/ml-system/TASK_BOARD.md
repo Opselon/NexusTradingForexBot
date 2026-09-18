@@ -28,7 +28,7 @@
 
 ### STREAM C: LABELING
 - [ML-LABEL-001](tasks/ML-LABEL-001.md) — Friction-Aware Triple Barrier Horizon & ATR Multiplier Calibration `[P1 | DONE | AGENT-LABEL]`
-- [ML-LABEL-002](tasks/ML-LABEL-002.md) — Sample Uniqueness Weighting & Label Overlap Anti-Leakage `[P1 | READY | AGENT-LABEL]`
+- [ML-LABEL-002](tasks/ML-LABEL-002.md) — Sample Uniqueness Weighting & Label Overlap Anti-Leakage `[P1 | DONE | AGENT-LABEL]`
 
 ### STREAM D: MODEL ARCHITECTURE
 - [ML-ARCH-001](tasks/ML-ARCH-001.md) — ScalpNet Dual-Path Tensor Contract & 3-Class Head Sunset `[P0 | READY | AGENT-ML-ARCH | HUMAN DECISION]`
