@@ -20,10 +20,16 @@ from nexus_scalp.cli.app_factory import app
 from nexus_scalp.cli.styling import console
 from nexus_scalp.web.model_studio_routes import (
     ModelStudioBenchmarkRequest,
+    ModelStudioDownloadRequest,
+    ModelStudioInspectFeaturesRequest,
+    ModelStudioPositionDatasetRequest,
     ModelStudioPredictRequest,
     ModelStudioStressRequest,
     ModelStudioTrainRequest,
     execute_benchmark,
+    execute_download,
+    execute_generate_position_dataset,
+    execute_inspect_features,
     execute_predict,
     execute_stress_test,
     execute_train,
@@ -201,3 +207,147 @@ def model_train_dataset_command(
             border_style="green",
         )
     )
+
+
+@app.command("dataset-download")
+def dataset_download_command(
+    symbol: str = typer.Option("XAUUSD", "--symbol", "-s", help="Symbol name (e.g. XAUUSD)"),
+    timeframe: str = typer.Option("M1", "--timeframe", "-tf", help="Timeframe: M1, M3, M5, or M15"),
+    bars: int = typer.Option(10000, "--bars", "-n", help="Number of candles to download"),
+    source: str = typer.Option("synthetic", "--source", help="Data source: synthetic, mt5, or csv"),
+    csv_path: str = typer.Option("", "--csv", help="Path to CSV if source=csv"),
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Download/ingest historical market candles with strict schema validation."""
+    req = ModelStudioDownloadRequest(
+        symbol=symbol,
+        timeframe=timeframe,
+        bars=bars,
+        source=source,
+        csv_path=csv_path or None,
+    )
+    res = execute_download(req)
+
+    if json_output:
+        console.print(json.dumps(res, indent=2))
+        return
+
+    table = Table(title=f"Market Dataset Download — {symbol} ({timeframe})", border_style="cyan")
+    table.add_column("Property", style="bold white")
+    table.add_column("Value", style="green")
+
+    table.add_row("Status", res["status"])
+    table.add_row("Rows Ingested", f"{res['rows']:,}")
+    table.add_row("Symbol / Timeframe", f"{res['symbol']} / {res['timeframe']}")
+    table.add_row("Source", res["source"])
+    table.add_row("Target Path", res["dataset_path"])
+    table.add_row("Size", res["size_display"])
+    table.add_row("Throughput", f"{res['throughput_bars_sec']:.0f} bars/sec")
+    console.print(table)
+
+
+@app.command("dataset-inspect")
+def dataset_inspect_command(
+    dataset: str = typer.Option("", "--dataset", "-d", help="Path to parquet/csv dataset"),
+    dimension: int = typer.Option(50, "--dim", help="Feature dimension (50 or 70)"),
+    max_rows: int = typer.Option(500, "--rows", help="Rows to inspect"),
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Inspect dataset features, normalize values, and report statistical distribution."""
+    req = ModelStudioInspectFeaturesRequest(
+        dataset_path=dataset,
+        dimension=dimension,
+        max_rows=max_rows,
+    )
+    res = execute_inspect_features(req)
+
+    if json_output:
+        console.print(json.dumps(res, indent=2))
+        return
+
+    table = Table(
+        title=f"Feature Inspection & Normalization ({dimension}D — {res['rows_processed']} rows)",
+        border_style="blue",
+    )
+    table.add_column("#", style="dim", justify="right")
+    table.add_column("Family", style="cyan")
+    table.add_column("Feature Name", style="bold white")
+    table.add_column("Raw Mean", justify="right")
+    table.add_column("Raw Std", justify="right")
+    table.add_column("Norm Sample", justify="right", style="green")
+    table.add_column("Status", justify="center")
+
+    for f in res["features"][:30]:
+        status_style = "green" if f["status"] == "HEALTHY" else "yellow"
+        table.add_row(
+            str(f["index"]),
+            f["family"],
+            f["name"],
+            f"{f['raw_mean']:.3f}",
+            f"{f['raw_std']:.3f}",
+            f"{f['normalized_sample']:.3f}",
+            f"[{status_style}]{f['status']}[/{status_style}]",
+        )
+
+    console.print(table)
+    console.print(
+        f"[bold]Summary:[/bold] Total Features: {res['total_features']} | "
+        f"[green]Healthy: {res['healthy_features']}[/green] | "
+        f"[yellow]Clamped: {res['clamped_features']}[/yellow] | "
+        f"[red]NaN: {res['nan_features']}[/red]"
+    )
+
+
+@app.command("position-dataset-generate")
+def position_dataset_generate_command(
+    dataset: str = typer.Option("", "--dataset", "-d", help="Path to source market candles"),
+    dimension: int = typer.Option(50, "--dim", help="Feature dimension (50 or 70)"),
+    bars: int = typer.Option(5000, "--bars", "-n", help="Bars limit"),
+    max_holding: int = typer.Option(30, "--max-holding", help="Max holding bars"),
+    target_atr: float = typer.Option(2.0, "--target-atr", help="Target ATR multiplier"),
+    friction: float = typer.Option(0.25, "--friction", help="Friction in pips"),
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Generate Layer-2 Position Management dataset with mathematical labeling & anti-leakage."""
+    req = ModelStudioPositionDatasetRequest(
+        source_dataset_path=dataset,
+        dimension=dimension,
+        bars_limit=bars,
+        max_holding_bars=max_holding,
+        target_atr_multiplier=target_atr,
+        friction_pips=friction,
+    )
+    res = execute_generate_position_dataset(req)
+
+    if json_output:
+        console.print(json.dumps(res, indent=2))
+        return
+
+    table = Table(
+        title="Layer-2 Position Management Dataset Generation",
+        border_style="magenta",
+    )
+    table.add_column("Metric", style="bold white")
+    table.add_column("Value", style="green")
+
+    table.add_row("Status", res["status"])
+    table.add_row("Total Position Samples", f"{res['total_samples']:,}")
+    table.add_row("Simulated Trades", f"{res['simulated_trades']:,}")
+    table.add_row("Mean Continuation Value", f"{res['mean_continuation_value']:+.3f} R")
+    table.add_row("Mean Holding Bars", f"{res['mean_holding_bars']:.1f} bars")
+    table.add_row(
+        "Actions Distribution",
+        f"KEEP: {res['actions_distribution'].get('KEEP', 0)} | "
+        f"CLOSE: {res['actions_distribution'].get('CLOSE', 0)} | "
+        f"REDUCE: {res['actions_distribution'].get('REDUCE', 0)}",
+    )
+    table.add_row(
+        "Chronological Splits",
+        f"Train: {res['splits'].get('train', 0)} | "
+        f"Val: {res['splits'].get('val', 0)} | "
+        f"OOS: {res['splits'].get('oos', 0)}",
+    )
+    table.add_row("Output Parquet Path", res.get("dataset_path") or res.get("output_path", ""))
+    table.add_row("SHA-256 (prefix)", res["sha256"][:16])
+
+    console.print(table)

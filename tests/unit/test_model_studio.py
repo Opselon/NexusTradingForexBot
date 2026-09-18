@@ -179,13 +179,15 @@ def test_latency_benchmark_profiler() -> None:
 
 
 def test_training_dispatch_lifecycle() -> None:
-    """Training dispatch must register state and report progress."""
+    """Training dispatch must run a real PyTorch loop and report completion."""
     req = ModelStudioTrainRequest(dimension=50, epochs=2, learning_rate=1e-4)
     res = execute_train(req)
     assert res["status"] == "OK"
     assert "run_id" in res
-    assert res["state"]["status"] == "IN_PROGRESS"
+    assert res["state"]["status"] == "DONE"
     assert res["state"]["epochs"] == 2
+    assert res["epochs_completed"] == 2
+    assert res["state"]["loss"] >= 0.0
 
 
 # =============================================================================

@@ -1,86 +1,20 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
-interface StudioOverview {
-  architecture?: string;
-  effective_dimension?: number;
-  model_source?: string;
-  parameter_count?: number;
-  trainable_parameters?: number;
-  weights_sha256?: string;
-  device?: string;
-  scaler_stats?: {
-    status?: string;
-    mean_min?: number;
-    mean_max?: number;
-    std_min?: number;
-    std_max?: number;
-    clamped_cols?: number;
-  };
-}
-
-interface DatasetItem {
-  name: string;
-  path: string;
-  size_display: string;
-  format: string;
-}
-
-interface LayerStat {
-  layer: string;
-  type: string;
-  shape: number[];
-  l2_norm: number;
-  mean: number;
-  std: number;
-  zero_fraction: number;
-}
-
-interface SaliencyDriver {
-  index: number;
-  gradient: number;
-}
-
-interface PredictResponse {
-  status: string;
-  dimension: number;
-  confidence: number;
-  confidence_margin: number;
-  shannon_entropy_bits: number;
-  predicted_label: string;
-  probabilities: {
-    no_trade: number;
-    buy: number;
-    sell: number;
-  };
-  numerical_validation: {
-    valid: boolean;
-    sum: number;
-    all_positive: boolean;
-  };
-  ood_metrics: {
-    max_z_score: number;
-    is_out_of_distribution: boolean;
-  };
-  latency_ms: {
-    total_e2e: number;
-  };
-  layer_inspection?: LayerStat[];
-  saliency?: {
-    top_positive_drivers?: SaliencyDriver[];
-    top_negative_drivers?: SaliencyDriver[];
-  };
-}
-
-interface StressTestResult {
-  test: string;
-  passed: boolean;
-  detail: string;
-}
+import { modelStudioApi } from "../api";
+import type {
+  DatasetDownloadResponse,
+  InspectFeaturesResponse,
+  ModelStudioDatasetItem,
+  ModelStudioOverviewDto,
+  PositionDatasetResponse,
+  PredictResponse,
+  StressTestResultRow,
+} from "../model";
 
 export default function ModelStudioPage() {
   const [dimension, setDimension] = useState<number>(50);
-  const [overview, setOverview] = useState<StudioOverview | null>(null);
-  const [datasets, setDatasets] = useState<DatasetItem[]>([]);
+  const [overview, setOverview] = useState<ModelStudioOverviewDto | null>(null);
+  const [datasets, setDatasets] = useState<ModelStudioDatasetItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [useLive, setUseLive] = useState<boolean>(true);
   const [noise, setNoise] = useState<number>(0);
@@ -98,9 +32,33 @@ export default function ModelStudioPage() {
   const [learningRate, setLearningRate] = useState<number>(0.0005);
   const [trainStatus, setTrainStatus] = useState<string>("");
   const [trainProgress, setTrainProgress] = useState<number>(0);
+  const [trainError, setTrainError] = useState<string>("");
+
+  // Dataset download state (API-first ingestion)
+  const [dlSymbol, setDlSymbol] = useState<string>("XAUUSD");
+  const [dlTimeframe, setDlTimeframe] = useState<string>("M5");
+  const [dlBars, setDlBars] = useState<number>(10000);
+  const [dlSource, setDlSource] = useState<string>("synthetic");
+  const [dlBusy, setDlBusy] = useState<boolean>(false);
+  const [dlResult, setDlResult] = useState<DatasetDownloadResponse | null>(null);
+  const [dlError, setDlError] = useState<string>("");
+
+  // Feature inspection state (50D / 70D)
+  const [inspectBusy, setInspectBusy] = useState<boolean>(false);
+  const [inspectResult, setInspectResult] = useState<InspectFeaturesResponse | null>(null);
+  const [inspectError, setInspectError] = useState<string>("");
+
+  // Layer-2 position-manager dataset state
+  const [posSource, setPosSource] = useState<string>("");
+  const [posMaxHolding, setPosMaxHolding] = useState<number>(30);
+  const [posTargetAtr, setPosTargetAtr] = useState<number>(2.0);
+  const [posFriction, setPosFriction] = useState<number>(0.25);
+  const [posBusy, setPosBusy] = useState<boolean>(false);
+  const [posResult, setPosResult] = useState<PositionDatasetResponse | null>(null);
+  const [posError, setPosError] = useState<string>("");
 
   // Stress & Benchmark
-  const [stressResults, setStressResults] = useState<StressTestResult[]>([]);
+  const [stressResults, setStressResults] = useState<StressTestResultRow[]>([]);
   const [benchStats, setBenchStats] = useState<any>(null);
 
   useEffect(() => {
@@ -110,11 +68,7 @@ export default function ModelStudioPage() {
 
   const fetchOverview = async () => {
     try {
-      const res = await fetch("/api/model-studio/overview");
-      if (res.ok) {
-        const d = await res.json();
-        setOverview(d);
-      }
+      setOverview(await modelStudioApi.overview());
     } catch (err) {
       console.error("Failed to load overview:", err);
     }
@@ -122,13 +76,13 @@ export default function ModelStudioPage() {
 
   const fetchDatasets = async () => {
     try {
-      const res = await fetch("/api/model-studio/datasets");
-      if (res.ok) {
-        const d = await res.json();
-        setDatasets(d.datasets || []);
-        if (d.datasets && d.datasets.length > 0) {
-          setSelectedDataset(d.datasets[0].path);
-        }
+      const d = await modelStudioApi.datasets();
+      const list = d.datasets || [];
+      setDatasets(list);
+      const first = list[0];
+      if (first) {
+        setSelectedDataset((prev) => prev || first.path);
+        setPosSource((prev) => prev || first.path);
       }
     } catch (err) {
       console.error("Failed to load datasets:", err);
@@ -137,13 +91,10 @@ export default function ModelStudioPage() {
 
   const handleFetch70d = async () => {
     try {
-      const res = await fetch("/api/model-studio/fetch-70d");
-      if (res.ok) {
-        const d = await res.json();
-        setComponents70(d.slots || []);
-        setContractValid(d.contract_valid);
-        setSchemaHash(d.schema_hash || "");
-      }
+      const d = await modelStudioApi.fetch70d();
+      setComponents70(d.slots || []);
+      setContractValid(d.contract_valid ?? null);
+      setSchemaHash(d.schema_hash || "");
     } catch (err) {
       console.error("Failed to fetch 70D:", err);
     }
@@ -152,23 +103,16 @@ export default function ModelStudioPage() {
   const handleInference = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/model-studio/predict", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dimension,
-          use_live_features: useLive,
-          fetch_live_70d: dimension === 70,
-          perturbation_sigma: noise,
-          simulate_policy_threshold: threshold,
-          inspect_layers: true,
-          compute_saliency: true,
-        }),
+      const d = await modelStudioApi.predict({
+        dimension,
+        use_live_features: useLive,
+        fetch_live_70d: dimension === 70,
+        perturbation_sigma: noise,
+        simulate_policy_threshold: threshold,
+        inspect_layers: true,
+        compute_saliency: true,
       });
-      if (res.ok) {
-        const d = await res.json();
-        setPredictData(d);
-      }
+      setPredictData(d);
     } catch (err) {
       console.error("Inference failed:", err);
     } finally {
@@ -178,15 +122,8 @@ export default function ModelStudioPage() {
 
   const handleStressTest = async () => {
     try {
-      const res = await fetch("/api/model-studio/stress-test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dimension }),
-      });
-      if (res.ok) {
-        const d = await res.json();
-        setStressResults(d.results || []);
-      }
+      const d = await modelStudioApi.stressTest(dimension);
+      setStressResults(d.results || []);
     } catch (err) {
       console.error("Stress test failed:", err);
     }
@@ -194,40 +131,89 @@ export default function ModelStudioPage() {
 
   const handleBenchmark = async () => {
     try {
-      const res = await fetch("/api/model-studio/benchmark", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dimension, iterations: 100 }),
-      });
-      if (res.ok) {
-        const d = await res.json();
-        setBenchStats(d);
-      }
+      setBenchStats(await modelStudioApi.benchmark(dimension, 100));
     } catch (err) {
       console.error("Benchmark failed:", err);
     }
   };
 
   const handleStartTrain = async () => {
+    setTrainError("");
     try {
-      const res = await fetch("/api/model-studio/train", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dataset_path: selectedDataset,
-          dimension,
-          epochs,
-          batch_size: 256,
-          learning_rate: learningRate,
-        }),
+      const d = await modelStudioApi.train({
+        dataset_path: selectedDataset,
+        dimension,
+        epochs,
+        batch_size: 256,
+        learning_rate: learningRate,
       });
-      if (res.ok) {
-        const d = await res.json();
-        setTrainStatus(`Dispatched: ${d.message}`);
-        setTrainProgress(33);
-      }
+      setTrainStatus(
+        `Done: ${d.epochs_completed} epochs | loss ${d.final_loss} | val ${d.final_val_loss} → ${d.checkpoint_path}`,
+      );
+      setTrainProgress(100);
     } catch (err) {
-      console.error("Training trigger failed:", err);
+      const detail = err instanceof Error ? err.message : String(err);
+      setTrainError(detail);
+      setTrainStatus("");
+      setTrainProgress(0);
+    }
+  };
+
+  const handleDownloadDataset = async () => {
+    setDlBusy(true);
+    setDlError("");
+    setDlResult(null);
+    try {
+      const d = await modelStudioApi.downloadDataset({
+        symbol: dlSymbol.trim().toUpperCase() || "XAUUSD",
+        timeframe: dlTimeframe,
+        bars: dlBars,
+        source: dlSource,
+      });
+      setDlResult(d);
+      await fetchDatasets();
+    } catch (err) {
+      setDlError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDlBusy(false);
+    }
+  };
+
+  const handleInspectFeatures = async () => {
+    setInspectBusy(true);
+    setInspectError("");
+    try {
+      const d = await modelStudioApi.inspectFeatures({
+        dataset_path: selectedDataset,
+        dimension,
+        max_rows: 500,
+      });
+      setInspectResult(d);
+    } catch (err) {
+      setInspectError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInspectBusy(false);
+    }
+  };
+
+  const handleGeneratePositionDataset = async () => {
+    setPosBusy(true);
+    setPosError("");
+    setPosResult(null);
+    try {
+      const d = await modelStudioApi.generatePositionDataset({
+        source_dataset_path: posSource,
+        dimension,
+        max_holding_bars: posMaxHolding,
+        target_atr_multiplier: posTargetAtr,
+        friction_pips: posFriction,
+      });
+      setPosResult(d);
+      await fetchDatasets();
+    } catch (err) {
+      setPosError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPosBusy(false);
     }
   };
 
@@ -629,16 +615,108 @@ export default function ModelStudioPage() {
         </div>
       )}
 
-      {/* Model Training Dispatch */}
+      {/* Dataset Download & Ingestion (API-First) */}
+      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+            <span>📥</span> DATASET DOWNLOAD & HISTORICAL MARKET INGESTION
+          </h2>
+          <span className="text-xs text-cyan-400 font-semibold">API First</span>
+        </div>
+        <p className="text-xs text-slate-400">
+          Download and ingest historical market candles (1m, 3m, 5m, 15m) with automatic schema normalization and UTC monotonicity verification.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Symbol</label>
+            <input
+              type="text"
+              value={dlSymbol}
+              onChange={(e) => setDlSymbol(e.target.value.toUpperCase())}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white uppercase font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Timeframe</label>
+            <select
+              value={dlTimeframe}
+              onChange={(e) => setDlTimeframe(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
+            >
+              <option value="M1">1 Minute (M1)</option>
+              <option value="M3">3 Minutes (M3)</option>
+              <option value="M5">5 Minutes (M5)</option>
+              <option value="M15">15 Minutes (M15)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Candle Count (Bars)</label>
+            <input
+              type="number"
+              min={500}
+              max={200000}
+              step={1000}
+              value={dlBars}
+              onChange={(e) => setDlBars(parseInt(e.target.value, 10) || 10000)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Source Adapter</label>
+            <select
+              value={dlSource}
+              onChange={(e) => setDlSource(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white"
+            >
+              <option value="synthetic">Synthetic (Realistic GBM + Microstructure)</option>
+              <option value="mt5">MetaTrader 5 (Live Terminal Feed)</option>
+              <option value="csv">CSV Import</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            onClick={handleDownloadDataset}
+            disabled={dlBusy}
+            className="px-5 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-extrabold text-xs transition shadow-lg flex items-center gap-2"
+          >
+            <span>{dlBusy ? "⏳" : "⬇"}</span> {dlBusy ? "Downloading..." : "Download Dataset"}
+          </button>
+        </div>
+
+        {dlError && (
+          <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+            {dlError}
+          </div>
+        )}
+
+        {dlResult && (
+          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs space-y-1">
+            <div className="flex items-center justify-between font-bold">
+              <span className="text-emerald-400">✓ {dlResult.message}</span>
+              <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                {dlResult.rows.toLocaleString()} bars | {dlResult.size_display}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400 font-mono">
+              Saved: {dlResult.dataset_path} | Throughput: {Math.round(dlResult.throughput_bars_sec)} bars/s | Elapsed: {dlResult.elapsed_sec.toFixed(2)}s
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Model Training Dispatch & Feature Inspection */}
       <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
-            <span>🎓</span> MODEL TRAINING DISPATCH & DATASET SELECTION
+            <span>🎓</span> MODEL TRAINING DISPATCH & FEATURE INSPECTION
           </h2>
           <span className="text-xs text-emerald-400 font-semibold">Algorithm Cycle Ready</span>
         </div>
         <p className="text-xs text-slate-400">
-          Select an ingested dataset to train a new model candidate directly into the trading algorithm cycle.
+          Select an ingested dataset to inspect/normalize 50D & 70D features and train a new model candidate.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
           <div className="md:col-span-2">
@@ -646,7 +724,7 @@ export default function ModelStudioPage() {
             <select
               value={selectedDataset}
               onChange={(e) => setSelectedDataset(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
             >
               {datasets.map((d) => (
                 <option key={d.path} value={d.path}>
@@ -677,12 +755,35 @@ export default function ModelStudioPage() {
             />
           </div>
         </div>
-        <button
-          onClick={handleStartTrain}
-          className="px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition shadow-lg flex items-center gap-2"
-        >
-          <span>▶</span> Start Model Training
-        </button>
+
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <button
+            onClick={handleStartTrain}
+            className="px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition shadow-lg flex items-center gap-2"
+          >
+            <span>▶</span> Start Model Training
+          </button>
+          <button
+            onClick={handleInspectFeatures}
+            disabled={inspectBusy}
+            className="px-4 py-2.5 rounded-lg bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 border border-blue-500/40 font-bold text-xs transition flex items-center gap-2"
+          >
+            <span>{inspectBusy ? "⏳" : "🔍"}</span> Inspect & Normalize Features (50D / 70D)
+          </button>
+        </div>
+
+        {inspectError && (
+          <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+            {inspectError}
+          </div>
+        )}
+
+        {trainError && (
+          <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+            {trainError}
+          </div>
+        )}
+
         {trainStatus && (
           <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2 text-xs">
             <div className="text-white font-bold">{trainStatus}</div>
@@ -691,6 +792,209 @@ export default function ModelStudioPage() {
                 className="h-full bg-emerald-500 transition-all duration-300"
                 style={{ width: `${trainProgress}%` }}
               />
+            </div>
+          </div>
+        )}
+
+        {/* Feature Inspection Results Panel */}
+        {inspectResult && (
+          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="font-bold text-white flex items-center gap-2">
+                <span>📊</span> Feature Normalization & Inspection Report ({inspectResult.dimension}D)
+              </div>
+              <div className="flex gap-2">
+                <span className="px-2 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  {inspectResult.rows_processed} Rows
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  {inspectResult.healthy_features} Healthy
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Total Features</div>
+                <div className="font-bold text-white text-sm mt-0.5">{inspectResult.total_features}</div>
+              </div>
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Healthy</div>
+                <div className="font-bold text-emerald-400 text-sm mt-0.5">{inspectResult.healthy_features}</div>
+              </div>
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Clamped (0-Var)</div>
+                <div className="font-bold text-amber-400 text-sm mt-0.5">{inspectResult.clamped_features}</div>
+              </div>
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Scaler Status</div>
+                <div className="font-bold text-cyan-400 text-sm mt-0.5">READY (Z-Score)</div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-56 overflow-y-auto border border-slate-800 rounded">
+              <table className="w-full text-left font-mono text-[11px]">
+                <thead className="bg-slate-900 text-slate-400 uppercase text-[10px] sticky top-0">
+                  <tr>
+                    <th className="py-1.5 px-2">#</th>
+                    <th className="py-1.5 px-2">Family</th>
+                    <th className="py-1.5 px-2">Feature Name</th>
+                    <th className="py-1.5 px-2 text-right">Raw Mean</th>
+                    <th className="py-1.5 px-2 text-right">Raw Std</th>
+                    <th className="py-1.5 px-2 text-right">Norm Sample</th>
+                    <th className="py-1.5 px-2 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspectResult.features.slice(0, 30).map((f) => (
+                    <tr key={f.index} className="border-b border-slate-800/40 hover:bg-slate-900/40">
+                      <td className="py-1 px-2 text-slate-500">{f.index}</td>
+                      <td className={`py-1 px-2 font-bold ${f.family === "BASE" ? "text-cyan-400" : f.family === "NEWS" ? "text-amber-400" : "text-purple-400"}`}>
+                        {f.family}
+                      </td>
+                      <td className="py-1 px-2 text-white">{f.name}</td>
+                      <td className="py-1 px-2 text-right text-slate-300">{f.raw_mean.toFixed(3)}</td>
+                      <td className="py-1 px-2 text-right text-slate-300">{f.raw_std.toFixed(3)}</td>
+                      <td className="py-1 px-2 text-right text-emerald-400">{f.normalized_sample.toFixed(3)}</td>
+                      <td className="py-1 px-2 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${f.status === "HEALTHY" ? "text-emerald-400 bg-emerald-500/10" : "text-amber-400 bg-amber-500/10"}`}>
+                          {f.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Layer-2 ML: Position Management Dataset Generator */}
+      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+            <span>🧩</span> LAYER-2 ML: POSITION MANAGEMENT DATASET GENERATOR
+          </h2>
+          <span className="text-xs text-purple-400 font-semibold">Risk & Continuation Value Model</span>
+        </div>
+        <p className="text-xs text-slate-400">
+          Simulate trade decisions across historical bars to generate position-state samples (unrealized R, position age, ATR) with anti-leakage mathematical labeling (KEEP / CLOSE / REDUCE) and chronological purge/embargo splitting.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Source Market Dataset</label>
+            <select
+              value={posSource}
+              onChange={(e) => setPosSource(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
+            >
+              {datasets.map((d) => (
+                <option key={d.path} value={d.path}>
+                  {d.name} ({d.size_display})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Max Holding Horizon (Bars)</label>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              value={posMaxHolding}
+              onChange={(e) => setPosMaxHolding(parseInt(e.target.value, 10) || 30)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Target ATR Multiplier</label>
+            <input
+              type="number"
+              step="0.5"
+              min="0.5"
+              max="10"
+              value={posTargetAtr}
+              onChange={(e) => setPosTargetAtr(parseFloat(e.target.value) || 2.0)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">Friction (Pips)</label>
+            <input
+              type="number"
+              step="0.05"
+              min="0"
+              max="5"
+              value={posFriction}
+              onChange={(e) => setPosFriction(parseFloat(e.target.value) || 0.25)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-2 text-white font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            onClick={handleGeneratePositionDataset}
+            disabled={posBusy}
+            className="px-5 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-extrabold text-xs transition shadow-lg flex items-center gap-2"
+          >
+            <span>{posBusy ? "⏳" : "⚙"}</span> {posBusy ? "Simulating & Generating..." : "Generate Position Dataset"}
+          </button>
+        </div>
+
+        {posError && (
+          <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+            {posError}
+          </div>
+        )}
+
+        {posResult && (
+          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-3 text-xs">
+            <div className="flex items-center justify-between font-bold">
+              <span className="text-purple-400 flex items-center gap-1.5">✓ Position Dataset Generated</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                {(posResult.sha256 || "").substring(0, 16)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Total Samples</div>
+                <div className="font-bold text-white text-sm mt-0.5">{posResult.total_samples.toLocaleString()}</div>
+              </div>
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Simulated Trades</div>
+                <div className="font-bold text-cyan-400 text-sm mt-0.5">{posResult.simulated_trades.toLocaleString()}</div>
+              </div>
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Mean Cont. Value</div>
+                <div className="font-bold text-emerald-400 text-sm mt-0.5">
+                  {(posResult.mean_continuation_value >= 0 ? "+" : "") + posResult.mean_continuation_value.toFixed(3)} R
+                </div>
+              </div>
+              <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Mean Hold Bars</div>
+                <div className="font-bold text-amber-300 text-sm mt-0.5">{posResult.mean_holding_bars.toFixed(1)} bars</div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800 text-[11px] font-mono">
+              <div className="flex gap-2">
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  KEEP: {posResult.actions_distribution?.KEEP || 0}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                  CLOSE: {posResult.actions_distribution?.CLOSE || 0}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  REDUCE: {posResult.actions_distribution?.REDUCE || 0}
+                </span>
+              </div>
+              <div className="text-slate-400 truncate max-w-xs sm:max-w-md">
+                Saved: {posResult.dataset_path}
+              </div>
             </div>
           </div>
         )}

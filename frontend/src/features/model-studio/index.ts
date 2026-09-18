@@ -1,6 +1,9 @@
 /** Neural Model Studio feature — deep learning inspection, prediction, 70D assembly & training. */
 import { defineFeature, featurePage } from "@/app/featureModule";
 
+export { modelStudioApi } from "./api";
+export * from "./model";
+
 export default defineFeature({
   meta: {
     route: "/model-studio",
