@@ -455,3 +455,5 @@ tests/unit/test_data_ingest.py
 # parity — official_install._sync_file os.fsync on "rb" fails with EBADF (CRT _commit
 # requires write access); test_model_studio.py charmap UnicodeDecodeError on UTF-8 Web/index.html.
 tests/unit/test_bug306_windows_ci_compat.py
+# ML-GOV-001 (Model Promotion Pipeline Pre-Flight & OOS Economic Gate Verification)
+tests/integration/test_model_promotion_pipeline_e2e.py
