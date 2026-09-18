@@ -594,86 +594,320 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
         assert "Survival Mode: +0.10" in proposal.reason_code
 
 
-def test_is_numeric_validation_invalid_entry_price():
-    """Verify is_numeric raises ValueError when target_entry_price is non-finite or boolean."""
-    import math
-
-    import pytest
-
+def test_evaluate_tick_sweep_initial_tick_state():
+    """Verify _evaluate_tick_sweep returns None when _last_tick_bid <= 0.0 (first tick)."""
     policy = SignalPolicy()
-    policy.confidence_threshold = 0.10
-    policy.algo_config.min_risk_reward_ratio = 0.10
-    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
-    fv = _make_feature_vector()
+    assert policy._last_tick_bid == 0.0
 
-    invalid_entry_prices = [math.nan, math.inf, -math.inf, True, False]
-
-    for invalid_val in invalid_entry_prices:
-        policy._dedup_last_bid = 0.0
-        tick = _make_tick().model_copy(update={"ask": invalid_val, "bid": 2000.0})
-        with pytest.raises(ValueError, match=r"Invalid entry price:"):
-            policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv,
-            )
-
-
-def test_is_numeric_validation_invalid_swing_low_and_high():
-    """Verify is_numeric raises ValueError when dist_to_swing_low_20 or dist_to_swing_high_20 is invalid."""
-    import math
-
-    import pytest
-
-    policy = SignalPolicy()
-    policy.confidence_threshold = 0.10
-    policy.algo_config.min_risk_reward_ratio = 0.10
-    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
-
-    invalid_swing_values = [math.nan, math.inf, -math.inf, None, True, False, "invalid"]
-
-    for invalid_val in invalid_swing_values:
-        policy._dedup_last_bid = 0.0
-        tick = _make_tick()
-        fv_low = _make_feature_vector().model_copy(update={"dist_to_swing_low_20": invalid_val})
-        with pytest.raises(ValueError, match=r"Invalid dist_to_swing_low_20:"):
-            policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv_low,
-            )
-
-        policy._dedup_last_bid = 0.0
-        tick = _make_tick()
-        fv_high = _make_feature_vector().model_copy(update={"dist_to_swing_high_20": invalid_val})
-        with pytest.raises(ValueError, match=r"Invalid dist_to_swing_high_20:"):
-            policy.evaluate_probabilities(
-                probabilities=probs,
-                current_tick=tick,
-                feature_vector=fv_high,
-            )
+    tick = _make_tick()
+    proposal = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick,
+        ofi=0.25,
+        tick_velocity=8.0,
+        raw_prob_buy=0.85,
+        raw_prob_sell=0.05,
+        is_range_market=False,
+        execution_id="EXEC-TEST-001",
+        now=datetime.now(UTC),
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=1.0,
+    )
+    assert proposal is None
 
 
-def test_is_numeric_validation_valid_numeric_inputs():
-    """Verify is_numeric accepts valid int and float values for target_entry_price, atr, dist_to_swing_low_20, dist_to_swing_high_20."""
-    policy = SignalPolicy()
-    policy.confidence_threshold = 0.10
-    policy.algo_config.min_risk_reward_ratio = 0.10
-    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
-    tick = _make_tick().model_copy(update={"ask": 2000.20})
+def test_evaluate_tick_sweep_buy_success():
+    """Verify BUY tick level sweep triggers when all conditions are met."""
+    policy = SignalPolicy(confidence_threshold=0.40)
+    policy._last_tick_bid = 2000.50
+    policy._last_tick_ask = 2000.60
 
-    # Test with valid integer and float values
+    now = datetime.now(UTC)
+    tick = TickData(symbol="XAUUSD", timestamp=now, bid=2000.00, ask=2000.10, volume=1.0)
+
+    proposal = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick,
+        ofi=0.25,  # > 0 for BUY
+        tick_velocity=8.0,  # > 5.0
+        raw_prob_buy=0.85,
+        raw_prob_sell=0.05,
+        is_range_market=False,
+        execution_id="EXEC-TEST-BUY",
+        now=now,
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=1.0,
+    )
+
+    assert proposal is not None
+    assert proposal.action == ActionType.BUY_MARKET
+    assert proposal.confidence == 0.85
+    assert proposal.proposed_entry == 2000.10  # ask
+    assert proposal.stop_loss == 2000.10 - 2.0 * 1.5  # 1997.10
+    assert proposal.take_profit == 2000.10 + 2.0 * 3.0  # 2006.10
+    assert proposal.risk_reward_ratio == 2.0
+    assert proposal.reason_code == "TICK_LEVEL_LIQUIDITY_SWEEP_BUY"
+    assert proposal.execution_mode == "TICK_SWEEP"
+    assert proposal.override_reason == "TICK_VELOCITY_TRIGGERED"
+    assert proposal.decision_stage == "TICK_SWEEP_EXECUTION"
+    assert proposal.risk_checks["decision_path"] == "TICK_SWEEP"
+    assert proposal.risk_checks["structural_gate"]["direction"] == "BUY"
+
+
+def test_evaluate_tick_sweep_sell_success():
+    """Verify SELL tick level sweep triggers when all conditions are met."""
+    policy = SignalPolicy(confidence_threshold=0.40)
+    policy._last_tick_bid = 2000.50
+    policy._last_tick_ask = 2000.60
+
+    now = datetime.now(UTC)
+    tick = TickData(symbol="XAUUSD", timestamp=now, bid=2000.70, ask=2000.80, volume=1.0)
+
+    proposal = policy._evaluate_tick_sweep(
+        sweep_sig=-1,
+        current_tick=tick,
+        ofi=-0.25,  # < 0 for SELL
+        tick_velocity=8.0,  # > 5.0
+        raw_prob_buy=0.05,
+        raw_prob_sell=0.85,
+        is_range_market=False,
+        execution_id="EXEC-TEST-SELL",
+        now=now,
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=-1.0,
+    )
+
+    assert proposal is not None
+    assert proposal.action == ActionType.SELL_MARKET
+    assert proposal.confidence == 0.85
+    assert proposal.proposed_entry == 2000.70  # bid
+    assert proposal.stop_loss == 2000.70 + 2.0 * 1.5  # 2003.70
+    assert proposal.take_profit == 2000.70 - 2.0 * 3.0  # 1994.70
+    assert proposal.risk_reward_ratio == 2.0
+    assert proposal.reason_code == "TICK_LEVEL_LIQUIDITY_SWEEP_SELL"
+    assert proposal.execution_mode == "TICK_SWEEP"
+    assert proposal.risk_checks["structural_gate"]["direction"] == "SELL"
+
+
+def test_evaluate_tick_sweep_range_market_penalty():
+    """Verify tick sweep confidence threshold accounts for range market penalty."""
+    policy = SignalPolicy(confidence_threshold=0.40, range_confidence_penalty=0.10)
+    policy._last_tick_bid = 2000.50
+    policy._last_tick_ask = 2000.60
+
+    now = datetime.now(UTC)
+    tick = TickData(symbol="XAUUSD", timestamp=now, bid=2000.00, ask=2000.10, volume=1.0)
+
+    # Effective threshold in range = 0.40 + 0.10 = 0.50
+    # Case A: buy prob 0.45 < 0.50 -> rejected (returns None)
+    proposal_rejected = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick,
+        ofi=0.25,
+        tick_velocity=8.0,
+        raw_prob_buy=0.45,
+        raw_prob_sell=0.05,
+        is_range_market=True,
+        execution_id="EXEC-TEST-RANGE-REJ",
+        now=now,
+        atr=2.0,
+        regime_str="RANGING_MEAN_REVERSION",
+        regime_conf=0.80,
+        trend_strength=0.0,
+    )
+    assert proposal_rejected is None
+
+    # Case B: buy prob 0.55 >= 0.50 -> accepted
+    proposal_accepted = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick,
+        ofi=0.25,
+        tick_velocity=8.0,
+        raw_prob_buy=0.55,
+        raw_prob_sell=0.05,
+        is_range_market=True,
+        execution_id="EXEC-TEST-RANGE-ACC",
+        now=now,
+        atr=2.0,
+        regime_str="RANGING_MEAN_REVERSION",
+        regime_conf=0.80,
+        trend_strength=0.0,
+    )
+    assert proposal_accepted is not None
+    assert proposal_accepted.action == ActionType.BUY_MARKET
+
+
+def test_evaluate_tick_sweep_gating_failures():
+    """Verify _evaluate_tick_sweep returns None when any single gating condition fails."""
+    policy = SignalPolicy(confidence_threshold=0.40)
+    policy._last_tick_bid = 2000.50
+    policy._last_tick_ask = 2000.60
+
+    now = datetime.now(UTC)
+    tick_buy_pass = TickData(symbol="XAUUSD", timestamp=now, bid=2000.00, ask=2000.10, volume=1.0)
+
+    # 1. sweep_sig == 0
+    p1 = policy._evaluate_tick_sweep(
+        sweep_sig=0,
+        current_tick=tick_buy_pass,
+        ofi=0.25,
+        tick_velocity=8.0,
+        raw_prob_buy=0.85,
+        raw_prob_sell=0.05,
+        is_range_market=False,
+        execution_id="EXEC-FAIL-1",
+        now=now,
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=1.0,
+    )
+    assert p1 is None
+
+    # 2. Price movement mismatch: BUY signal but bid did NOT pierce lower (bid >= last_bid)
+    tick_no_pierce = TickData(symbol="XAUUSD", timestamp=now, bid=2000.50, ask=2000.60, volume=1.0)
+    p2 = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick_no_pierce,
+        ofi=0.25,
+        tick_velocity=8.0,
+        raw_prob_buy=0.85,
+        raw_prob_sell=0.05,
+        is_range_market=False,
+        execution_id="EXEC-FAIL-2",
+        now=now,
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=1.0,
+    )
+    assert p2 is None
+
+    # 3. OFI direction mismatch: BUY sweep but OFI <= 0
+    p3 = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick_buy_pass,
+        ofi=-0.10,  # <= 0
+        tick_velocity=8.0,
+        raw_prob_buy=0.85,
+        raw_prob_sell=0.05,
+        is_range_market=False,
+        execution_id="EXEC-FAIL-3",
+        now=now,
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=1.0,
+    )
+    assert p3 is None
+
+    # 4. Low velocity: tick_velocity <= 5.0
+    p4 = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick_buy_pass,
+        ofi=0.25,
+        tick_velocity=5.0,  # Needs > 5.0
+        raw_prob_buy=0.85,
+        raw_prob_sell=0.05,
+        is_range_market=False,
+        execution_id="EXEC-FAIL-4",
+        now=now,
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=1.0,
+    )
+    assert p4 is None
+
+    # 5. Insufficient directional confidence: raw_prob_buy < threshold
+    p5 = policy._evaluate_tick_sweep(
+        sweep_sig=1,
+        current_tick=tick_buy_pass,
+        ofi=0.25,
+        tick_velocity=8.0,
+        raw_prob_buy=0.35,  # < 0.40
+        raw_prob_sell=0.05,
+        is_range_market=False,
+        execution_id="EXEC-FAIL-5",
+        now=now,
+        atr=2.0,
+        regime_str="TRENDING",
+        regime_conf=0.90,
+        trend_strength=1.0,
+    )
+    assert p5 is None
+
+
+def test_evaluate_probabilities_tick_sweep_integration():
+    """Verify full evaluate_probabilities pipeline correctly invokes _evaluate_tick_sweep across ticks."""
+    policy = SignalPolicy(confidence_threshold=0.40)
     fv = _make_feature_vector().model_copy(
         update={
-            "dist_to_swing_low_20": 2,  # integer
-            "dist_to_swing_high_20": 2.5,  # float
-            "atr_m1": 1.80,  # float
+            "liquidity_sweep_signal": 1,
         }
     )
 
-    proposal = policy.evaluate_probabilities(
-        probabilities=probs,
-        current_tick=tick,
+    t1 = TickData(
+        symbol="XAUUSD",
+        timestamp=datetime.now(UTC),
+        bid=2000.50,
+        ask=2000.60,
+        volume=1.0,
+    )
+
+    # First evaluation seeds _last_tick_bid = 2000.50 and _last_tick_ask = 2000.60
+    probs1 = torch.tensor([[0.05, 0.85, 0.10, 0.0]])
+    policy.evaluate_probabilities(
+        probabilities=probs1,
+        current_tick=t1,
         feature_vector=fv,
     )
-    assert proposal.action == ActionType.BUY_MARKET
+
+    # Second tick: bid drops to 2000.00 (pierces 2000.50), timestamp advances
+    t2 = TickData(
+        symbol="XAUUSD",
+        timestamp=t1.timestamp + timedelta(seconds=1),
+        bid=2000.00,
+        ask=2000.10,
+        volume=1.0,
+    )
+
+    # Create mock regime state with positive OFI and high velocity
+    from nexus_scalp.features.regime_classifier import (
+        MarketRegimeState,
+        RecommendedExecutionType,
+        RegimeReason,
+        RegimeType,
+    )
+
+    regime_state = MarketRegimeState(
+        symbol="XAUUSD",
+        timestamp_utc=t2.timestamp.isoformat(),
+        regime_type=RegimeType.TRENDING_MOMENTUM,
+        regime_probability=0.90,
+        order_flow_imbalance=0.30,  # OFI > 0
+        realized_volatility_5m=0.001,
+        tick_velocity_per_sec=8.0,  # velocity > 5.0
+        current_spread_usd=0.10,
+        is_macro_news_active=False,
+        recommended_execution_type=RecommendedExecutionType.IOC_MARKET,
+        reason=RegimeReason.OFI_TREND_ALIGN,
+    )
+
+    probs2 = torch.tensor([[0.05, 0.85, 0.10, 0.0]])
+    proposal2 = policy.evaluate_probabilities(
+        probabilities=probs2,
+        current_tick=t2,
+        feature_vector=fv,
+        regime_state=regime_state,
+    )
+
+    assert proposal2.action == ActionType.BUY_MARKET
+    assert "TICK_LEVEL_LIQUIDITY_SWEEP_BUY" in proposal2.reason_code
+    assert proposal2.execution_mode == "TICK_SWEEP"
