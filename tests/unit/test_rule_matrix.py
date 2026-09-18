@@ -557,3 +557,61 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
     )
     assert score3 == 70
     assert any("TIME_IN_LOSS_DECAY_PENALTY" in r for r in reasons)
+
+
+def test_pre_trade_entry_gap_and_go_momentum(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    """Verifies evaluation of _eval_rule_gap_and_go_momentum across disabled state, session window gate, and trade signals."""
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+
+    # Case A: Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_GAP_AND_GO_MOMENTUM", True)
+    rule_engine.refresh_cache(force=True)
+
+    # Case B: Outside Monday 00:00 gate (e.g. Wednesday 14:00) -> returns None
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = datetime(2026, 3, 4, 14, 0, 0)  # Wednesday
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+            assert proposal is None
+
+    # Case C: Monday 00:00 window, Bullish signal (probs[1] > probs[2]) -> BUY_MARKET TradeProposal
+    monday_00_00 = datetime(2026, 3, 2, 0, 0, 15)  # 2026-03-02 is a Monday (weekday=0)
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = monday_00_00
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+
+            assert proposal_buy is not None
+            assert proposal_buy.action == ActionType.BUY_MARKET
+            assert proposal_buy.proposed_entry == tick.ask
+            assert proposal_buy.stop_loss == round(tick.ask - 1.5, 2)
+            assert proposal_buy.take_profit == round(tick.ask + 2.0, 2)
+            assert proposal_buy.confidence == 0.81
+            assert proposal_buy.risk_reward_ratio == 1.33
+            assert proposal_buy.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
+
+    # Case D: Monday 00:00 window, Bearish signal (probs[1] <= probs[2]) -> SELL_MARKET TradeProposal
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = monday_00_00
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.2, 0.7])
+
+            assert proposal_sell is not None
+            assert proposal_sell.action == ActionType.SELL_MARKET
+            assert proposal_sell.proposed_entry == tick.bid
+            assert proposal_sell.stop_loss == round(tick.bid + 1.5, 2)
+            assert proposal_sell.take_profit == round(tick.bid - 2.0, 2)
+            assert proposal_sell.confidence == 0.81
+            assert proposal_sell.risk_reward_ratio == 1.33
+            assert proposal_sell.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
