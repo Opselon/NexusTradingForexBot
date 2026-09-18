@@ -114,7 +114,8 @@ class AlgorithmSnapshot:
     order_block_lookback_bars: int = 30
     ai_flip_relative_bias_threshold: float = 0.60
     ai_flip_min_delta: float = 0.10
-    # TASK-AUDREV-C3: spread gates (percent-of-TP cap + session percentile).
+    # BUG-249 & TASK-AUDREV-C3: spread gates.
+    max_spread_atr_ratio: float = 0.18
     max_spread_pct_of_tp: float = 0.15
     spread_session_percentile: float = 70.0
     spread_session_gate_enabled: bool = True
@@ -308,6 +309,7 @@ class RuntimeConfiguration:
                 "order_block_lookback_bars": self.algo.order_block_lookback_bars,
                 "ai_flip_relative_bias_threshold": self.algo.ai_flip_relative_bias_threshold,
                 "ai_flip_min_delta": self.algo.ai_flip_min_delta,
+                "max_spread_atr_ratio": self.algo.max_spread_atr_ratio,
                 # TASK-AUDREV-C3 spread gates.
                 "max_spread_pct_of_tp": self.algo.max_spread_pct_of_tp,
                 "spread_session_percentile": self.algo.spread_session_percentile,
@@ -385,6 +387,7 @@ class RuntimeConfiguration:
             order_block_lookback_bars=self.algo.order_block_lookback_bars,
             ai_flip_relative_bias_threshold=self.algo.ai_flip_relative_bias_threshold,
             ai_flip_min_delta=self.algo.ai_flip_min_delta,
+            max_spread_atr_ratio=self.algo.max_spread_atr_ratio,
             max_spread_pct_of_tp=self.algo.max_spread_pct_of_tp,
             spread_session_percentile=self.algo.spread_session_percentile,
             spread_session_gate_enabled=self.algo.spread_session_gate_enabled,
@@ -589,6 +592,7 @@ _VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "algo.ai_zone_confidence_threshold": lambda v: (
         isinstance(v, (int, float)) and 0.50 <= float(v) <= 0.99
     ),
+    "algo.max_spread_atr_ratio": lambda v: isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0,
     "algo.max_spread_pct_of_tp": lambda v: isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0,
     "algo.spread_session_percentile": lambda v: (
         isinstance(v, (int, float)) and 50.0 <= float(v) <= 99.0
@@ -811,6 +815,7 @@ def build_runtime_configuration(
             order_block_lookback_bars=int(cur["algo.order_block_lookback_bars"]),
             ai_flip_relative_bias_threshold=float(cur["algo.ai_flip_relative_bias_threshold"]),
             ai_flip_min_delta=float(cur["algo.ai_flip_min_delta"]),
+            max_spread_atr_ratio=float(cur["algo.max_spread_atr_ratio"]),
             max_spread_pct_of_tp=float(cur["algo.max_spread_pct_of_tp"]),
             spread_session_percentile=float(cur["algo.spread_session_percentile"]),
             spread_session_gate_enabled=bool(cur["algo.spread_session_gate_enabled"]),
@@ -870,6 +875,7 @@ def _empty_values() -> dict[str, Any]:
         "algo.order_block_lookback_bars": 30,
         "algo.ai_flip_relative_bias_threshold": 0.60,
         "algo.ai_flip_min_delta": 0.10,
+        "algo.max_spread_atr_ratio": 0.18,
         "algo.max_spread_pct_of_tp": 0.15,
         "algo.spread_session_percentile": 70.0,
         "algo.spread_session_gate_enabled": True,
@@ -928,6 +934,7 @@ def _apply_bootstrap(cur: dict[str, Any], bootstrap: AppConfig) -> dict[str, Any
     out["algo.order_block_lookback_bars"] = al.order_block_lookback_bars
     out["algo.ai_flip_relative_bias_threshold"] = al.ai_flip_relative_bias_threshold
     out["algo.ai_flip_min_delta"] = al.ai_flip_min_delta
+    out["algo.max_spread_atr_ratio"] = al.max_spread_atr_ratio
     out["algo.max_spread_pct_of_tp"] = al.max_spread_pct_of_tp
     out["algo.spread_session_percentile"] = al.spread_session_percentile
     out["algo.spread_session_gate_enabled"] = al.spread_session_gate_enabled

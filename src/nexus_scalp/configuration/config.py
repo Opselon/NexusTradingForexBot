@@ -102,10 +102,9 @@ class AlgoConfig(BaseModel):
     ai_flip_relative_bias_threshold: float = Field(default=0.60, ge=0.51, le=0.85)
     ai_flip_min_delta: float = Field(default=0.10, ge=0.02, le=0.30)
 
-    # TASK-AUDREV-C3 spread gates (audit rev2). Gate (a): live spread must not
-    # exceed this fraction of the candidate TP distance (scalp edge lives in
-    # spread/TP, not spread/ATR). Gate (b): live spread must not exceed the
-    # Nth percentile of the current session's paper-fill spread distribution.
+    # BUG-249 & TASK-AUDREV-C3 spread gates: max spread as fraction of M1 ATR,
+    # fraction of candidate TP distance, and session percentile threshold.
+    max_spread_atr_ratio: float = Field(default=0.18, ge=0.0, le=1.0)
     max_spread_pct_of_tp: float = Field(default=0.15, ge=0.0, le=1.0)
     spread_session_percentile: float = Field(default=70.0, ge=50.0, le=99.0)
     spread_session_gate_enabled: bool = True

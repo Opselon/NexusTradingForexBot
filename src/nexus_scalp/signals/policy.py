@@ -58,7 +58,8 @@ class SignalPolicy:
         telemetry_interval_sec: float = 4.0,  # Throttles console logging output every 4 seconds max
         range_min_displacement: float = 0.15,  # Reduced displacement threshold for Gold ($0.15)
         range_confidence_penalty: float = 0.10,  # Reduced range penalty to encourage micro-scalps
-        max_spread_atr_ratio: float = 0.18,  # Maximum allowed spread as 18% of current M1 ATR
+        max_spread_atr_ratio: float
+        | None = None,  # Maximum allowed spread as fraction of current M1 ATR
         # TASK-AUDREV-C3 (audit rev2) spread gates:
         max_spread_pct_of_tp: float
         | None = None,  # Max spread as fraction of candidate TP distance
@@ -91,7 +92,6 @@ class SignalPolicy:
         self.telemetry_interval = telemetry_interval_sec
         self.range_min_displacement = range_min_displacement
         self.range_confidence_penalty = range_confidence_penalty
-        self.max_spread_atr_ratio = max_spread_atr_ratio
         self.flip_confidence_penalty = flip_confidence_penalty
         self.flip_memory_seconds = flip_memory_seconds
         self.min_allowed_rr = min_allowed_rr
@@ -101,12 +101,15 @@ class SignalPolicy:
         # approved. None/empty resolves fail-closed to ["XAUUSD"].
         self.enabled_symbols = [s.upper() for s in (enabled_symbols or ["XAUUSD"])] or ["XAUUSD"]
 
-        # TASK-AUDREV-C3 (audit rev2) spread gates. Threshold ownership follows
+        # BUG-249 & TASK-AUDREV-C3 spread gates. Threshold ownership follows
         # the confidence_threshold pattern: AlgoConfig is the canonical default
         # source; explicit constructor overrides remain possible for
         # replay/research freezes. Placed after self.algo_config assignment so
         # the None sentinel resolves from AlgoConfig (getattr fallback keeps
         # this robust against frozen/replayed AlgoConfig shapes).
+        if max_spread_atr_ratio is None:
+            max_spread_atr_ratio = float(getattr(self.algo_config, "max_spread_atr_ratio", 0.18))
+        self.max_spread_atr_ratio = float(max_spread_atr_ratio)
         if max_spread_pct_of_tp is None:
             max_spread_pct_of_tp = float(getattr(self.algo_config, "max_spread_pct_of_tp", 0.15))
         self.max_spread_pct_of_tp = float(max_spread_pct_of_tp)
