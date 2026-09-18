@@ -825,26 +825,45 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
     """Dispatches real PyTorch model training with chosen dataset and hyperparameters."""
     run_id = f"train_studio_{int(time.time())}"
 
+    explicit_dataset = bool(str(req.dataset_path or "").strip())
     target_path = _resolve_requested_dataset(req.dataset_path)
-    if target_path is None:
-        datasets = _scan_available_datasets()
-        if datasets:
-            target_path = _safe_dataset_path(str(datasets[0]["path"]))
 
-    # Load bars or create synthetic
+    df: pl.DataFrame | None = None
     if target_path is not None:
-        df = _read_dataset_frame(target_path)
-    else:
+        try:
+            loaded = _read_dataset_frame(target_path)
+            if loaded.height >= 20 or explicit_dataset:
+                df = loaded
+        except Exception:
+            if explicit_dataset:
+                raise
+
+    if df is None and not explicit_dataset:
+        datasets = _scan_available_datasets()
+        for cand in datasets:
+            cand_p = _safe_dataset_path(str(cand["path"]))
+            if cand_p is not None:
+                try:
+                    loaded = _read_dataset_frame(cand_p)
+                    if loaded.height >= 20:
+                        df = loaded
+                        target_path = cand_p
+                        break
+                except Exception:
+                    continue
+
+    if df is None:
         from scripts.data.ingest_historical_candles import generate_synthetic_bars
 
         df = generate_synthetic_bars(symbol="XAUUSD", count=1000, seed=req.seed)
+        target_path = None
 
+    assert df is not None
     mat, _ = extract_dataset_features(df, dimension=req.dimension, max_rows=1000)
     n = mat.shape[0]
 
     # A degenerate dataset (empty, or too few rows to split into train/val) must
-    # fail loudly. Previously train_size = max(int(n*0.8), 10) could exceed n and
-    # the randperm index blew up as an opaque IndexError deep in the batch loop.
+    # fail loudly.
     _MIN_TRAIN_ROWS = 20
     if n < _MIN_TRAIN_ROWS:
         raise HTTPException(
