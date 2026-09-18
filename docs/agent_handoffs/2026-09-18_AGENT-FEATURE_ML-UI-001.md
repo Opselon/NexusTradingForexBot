@@ -5,6 +5,9 @@
 - **Agent**: `AGENT-UI` / `AGENT-FEATURE`
 - **Date**: `2026-09-18`
 - **Branch**: `agent/feature/ML-UI-STUDIO`
+- **PR**: [#257](https://github.com/Opselon/NexusTradingForexBot/pull/257)
+- **Merge Commit**: `947cd6ae64c424778a9efd01dd8c39ef19e1bbc4`
+- **Status**: `DONE` (Merged & Verified on Main)
 - **Goal**: Implement complete Neural Model Studio & Deep Learning inspection tab across both Legacy UI (`Web/`) and React UI (`frontend/`), CLI commands (`model-quality`, `model-predict`, `model-stress-test`, `model-train-dataset`), 50D/70D model switching, live 70D component assembly (Base 0..49, News 50..59, Liquidity 60..69), layer-by-layer activation norms, feature saliency, uncertainty entropy, numerical validation, OOD scoring, and training dispatch with dataset selection.
 
 ---
