@@ -5,7 +5,8 @@
 - **Agent**: `AGENT-GOVERNANCE`
 - **Date**: `2026-09-18`
 - **Branch**: `agent/feature/ML-GOV-001`
-- **Status**: `IMPLEMENTED` (Ready for PR & Merge)
+- **Status**: `DONE` (PR #262 merged to `main`, commit `266d3ae6e63e4dec51d62d44f59764b0ce1f76a1`)
+- **PR**: [#262](https://github.com/Opselon/NexusTradingForexBot/pull/262)
 - **Goal**: Verify and harden the `POST /api/models/promotion/execute` transaction pipeline, ensuring no candidate can become Champion without passing the OOS economic expectancy floor (>= 0.02R) and acquiring the exclusive PromotionLock.
 
 ## Key Changes

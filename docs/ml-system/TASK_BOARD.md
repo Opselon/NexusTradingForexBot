@@ -57,7 +57,7 @@
 - [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | BLOCKED | AGENT-BACKTEST]`
 
 ### STREAM J: MODEL GOVERNANCE & LIFECYCLE
-- [ML-GOV-001](tasks/ML-GOV-001.md) — Promotion API Pre-Flight & OOS Gate Audit `[P0 | IMPLEMENTED | AGENT-GOVERNANCE]`
+- [ML-GOV-001](tasks/ML-GOV-001.md) — Promotion API Pre-Flight & OOS Gate Audit `[P0 | DONE | AGENT-GOVERNANCE]`
 - [ML-GOV-002](tasks/ML-GOV-002.md) — Single Source of Truth Model State Machine Unification `[P1 | READY | AGENT-GOVERNANCE | HUMAN DECISION]`
 - [ML-GOV-003](tasks/ML-GOV-003.md) — Persistent Governance Emergency Freeze Across Process Restarts `[P1 | BLOCKED | AGENT-GOVERNANCE]`
 
