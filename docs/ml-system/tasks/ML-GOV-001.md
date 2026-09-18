@@ -2,7 +2,7 @@
 
 STREAM: STREAM J — GOVERNANCE
 PRIORITY: P0
-STATUS: IMPLEMENTED
+STATUS: DONE
 DEPENDENCIES: ML-FEAT-001
 AGENT_ROLE: AGENT-GOVERNANCE
 OWNERSHIP_SCOPE: src/nexus_scalp/web/model_governance_routes.py
@@ -102,8 +102,9 @@ Low. AGENT-GOVERNANCE owns governance test.
 - **Execution Date**: `2026-09-18`
 - **Agent**: `AGENT-GOVERNANCE`
 - **Branch**: `agent/feature/ML-GOV-001`
+- **PR**: [#262](https://github.com/Opselon/NexusTradingForexBot/pull/262) (Merged, Squash-commit `266d3ae6e63e4dec51d62d44f59764b0ce1f76a1`)
 - **Test Suite**: `tests/integration/test_model_promotion_pipeline_e2e.py`
-- **Test Results**: 8 passed in 11.49s (100% pass rate)
+- **Test Results**: 8 passed in 10.31s (100% pass rate on `origin/main`)
   - `test_promotion_requires_valid_operator_token_and_actor`: VERIFIED (missing token/actor rejected)
   - `test_promotion_rejects_sub_floor_oos_expectancy`: VERIFIED (expectancies 0.01R and -0.05R rejected)
   - `test_promotion_frozen_blocks_execution`: VERIFIED (emergency freeze blocks promotion)
@@ -112,4 +113,4 @@ Low. AGENT-GOVERNANCE owns governance test.
   - `test_promotion_atomic_rollback_on_activation_failure`: VERIFIED (candidate REJECTED, old champ preserved)
   - `test_promotion_atomic_rollback_on_post_verification_failure`: VERIFIED (rollback_activate invoked)
   - `test_promotion_transaction_happy_path_and_benchmark`: VERIFIED (committed in < 500ms)
-- **Quality Gates**: `ruff check` (pass), `ruff format` (pass), `mypy` (pass), `critical_suite` (202 passed).
+- **Quality Gates**: `ruff check` (pass), `ruff format` (pass), `mypy` (pass), `critical_suite` (203 passed).
