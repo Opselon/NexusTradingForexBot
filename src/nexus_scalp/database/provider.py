@@ -74,6 +74,8 @@ DEFAULT_DB_FILES: dict[str, str] = {
     # Isolated strategy research DB (2026-08-20): generated-strategy memory
     # lives in its own file, never in the audit DB.
     "strategies": "strategies.db",
+    # Isolated neural model registry & hot-load lifecycle DB
+    "models": "models.db",
 }
 
 

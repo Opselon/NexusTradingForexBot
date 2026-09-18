@@ -25,6 +25,8 @@ async function loadModelStudioOverview() {
         scalerEl.className = scalerStatus === 'READY' ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold';
         
         loadModelStudioDatasets();
+        loadModelStudioModels();
+        loadActiveModelInfo();
     } catch (e) {
         console.error('Failed to load studio overview:', e);
     }
@@ -494,6 +496,331 @@ async function generatePositionDataset() {
         alert('Position dataset error: ' + e.message);
     } finally {
         btn.innerHTML = '<i class="fa-solid fa-gears mr-2"></i> Generate Position Dataset';
+    }
+}
+
+// =============================================================================
+// AI Hub: Model Registry & Hot-Loader Functions (API-First)
+// =============================================================================
+
+async function loadModelStudioModels() {
+    try {
+        const res = await fetch('/api/model-studio/models');
+        if (!res.ok) return;
+        const data = await res.json();
+        const sel = document.getElementById('studio-model-select');
+        if (!sel) return;
+        
+        sel.innerHTML = '';
+        if (!data.models || data.models.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.innerText = 'No model checkpoints registered yet';
+            sel.appendChild(opt);
+            return;
+        }
+
+        data.models.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            const isChamp = m.is_active || m.id === data.active_champion_id;
+            const ftTag = m.fine_tune_enabled ? '[FT:ON]' : '[FT:OFF]';
+            const lossTag = m.final_loss ? ` (loss: ${m.final_loss.toFixed(4)})` : '';
+            opt.innerText = `${isChamp ? '★ ' : ''}${m.id} [${m.dimension}D] ${ftTag}${lossTag}`;
+            if (isChamp) {
+                opt.selected = true;
+            }
+            sel.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('Failed to load models catalog:', e);
+    }
+}
+
+async function loadActiveModelInfo() {
+    try {
+        const res = await fetch('/api/model-studio/models/active');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        const champBadge = document.getElementById('active-champion-badge');
+        const ftBadge = document.getElementById('active-finetune-badge');
+        const scalerBadge = document.getElementById('active-scaler-badge');
+        
+        if (data.status === 'NO_ACTIVE_MODEL' || !data.active_model) {
+            if (champBadge) champBadge.innerText = 'CHAMPION: NONE';
+            if (ftBadge) ftBadge.innerText = 'FINE-TUNE: OFF';
+            if (scalerBadge) scalerBadge.innerText = 'SCALER: STANDBY';
+            return;
+        }
+
+        const act = data.active_model;
+        if (champBadge) {
+            champBadge.innerText = `CHAMPION: ${act.model_id} (${act.dimension}D)`;
+            champBadge.className = 'px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+        }
+        if (ftBadge) {
+            ftBadge.innerText = act.fine_tune_enabled ? 'FINE-TUNE: ON' : 'FINE-TUNE: OFF';
+            ftBadge.className = act.fine_tune_enabled
+                ? 'px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                : 'px-2 py-0.5 rounded text-[10px] font-mono bg-gray-500/20 text-gray-400 border border-gray-500/30';
+        }
+        if (scalerBadge) {
+            scalerBadge.innerText = act.scaler_ready ? 'SCALER: ATTACHED' : 'SCALER: UNIT';
+            scalerBadge.className = act.scaler_ready
+                ? 'px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                : 'px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        }
+
+        document.getElementById('active-model-id').innerText = act.model_id;
+        document.getElementById('active-model-dim').innerText = act.dimension + 'D';
+        document.getElementById('active-model-sha').innerText = (act.weights_sha256 || '').substring(0, 12);
+        document.getElementById('active-model-scaler-path').innerText = act.scaler_path ? act.scaler_path.split('/').pop() : 'Default';
+        document.getElementById('active-model-inf-count').innerText = (act.inference_count || 0).toLocaleString();
+        
+        const ftToggle = document.getElementById('studio-toggle-finetune');
+        if (ftToggle) ftToggle.checked = Boolean(act.fine_tune_enabled);
+    } catch (e) {
+        console.error('Failed to load active model state:', e);
+    }
+}
+
+async function hotLoadSelectedModel() {
+    const sel = document.getElementById('studio-model-select');
+    const modelId = sel ? sel.value : '';
+    if (!modelId) {
+        alert('Please select a model checkpoint to hot-load.');
+        return;
+    }
+
+    const ftToggle = document.getElementById('studio-toggle-finetune');
+    const scToggle = document.getElementById('studio-toggle-scaler');
+    const fineTune = ftToggle ? ftToggle.checked : false;
+    const attachScaler = scToggle ? scToggle.checked : true;
+
+    const btn = document.getElementById('btn-hot-load-model');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Hot-Loading...';
+
+    try {
+        const res = await fetch('/api/model-studio/models/hot-load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model_id: modelId,
+                fine_tune_enabled: fineTune,
+                attach_scaler: attachScaler,
+                operator: 'UI_OPERATOR'
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Hot-load error: ' + (data.detail || res.statusText));
+            return;
+        }
+
+        // Show feedback
+        const fb = document.getElementById('studio-hotload-feedback');
+        document.getElementById('hotload-feedback-title').innerHTML = `<i class="fa-solid fa-check mr-1.5"></i> Model <b>${data.model_id}</b> (${data.dimension}D) Hot-Loaded`;
+        document.getElementById('hotload-feedback-latency').innerText = `${data.warmup_latency_us} µs warmup`;
+        document.getElementById('hotload-feedback-detail').innerText = `SHA256: ${data.weights_sha256} | Scaler: ${data.scaler_attached ? data.scaler_path : 'Unit Scaler'} | Fine-Tune: ${data.fine_tune_enabled ? 'ENABLED' : 'DISABLED'}`;
+        fb.classList.remove('hidden');
+
+        document.getElementById('active-model-latency').innerText = `${data.warmup_latency_us} µs`;
+
+        await loadModelStudioModels();
+        await loadActiveModelInfo();
+        await loadModelStudioOverview();
+    } catch (e) {
+        console.error('Hot load exception:', e);
+        alert('Hot load failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-bolt mr-1.5"></i> Hot-Load Model';
+    }
+}
+
+async function verifySelectedModel() {
+    const sel = document.getElementById('studio-model-select');
+    const modelId = sel ? sel.value : '';
+    if (!modelId) {
+        alert('Please select a model checkpoint to verify.');
+        return;
+    }
+
+    const btn = document.getElementById('btn-verify-model');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Verifying...';
+
+    try {
+        const res = await fetch('/api/model-studio/models/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_id: modelId })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Verification error: ' + (data.detail || res.statusText));
+            return;
+        }
+
+        const badge = document.getElementById('verify-verdict-badge');
+        badge.innerText = data.all_passed ? 'ALL PASSED' : 'WARNINGS FOUND';
+        badge.className = data.all_passed
+            ? 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+            : 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+
+        const tbody = document.getElementById('studio-verify-table-body');
+        tbody.innerHTML = '';
+        (data.checks || []).forEach(c => {
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-borderClr/20 hover:bg-surfaceLight/10';
+            tr.innerHTML = `
+                <td class="py-1 px-2 font-bold text-white">${c.name}</td>
+                <td class="py-1 px-2 text-center">
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${c.passed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">
+                        ${c.passed ? 'PASS' : 'FAIL'}
+                    </span>
+                </td>
+                <td class="py-1 px-2 text-gray-300">${c.detail}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('studio-verify-feedback').classList.remove('hidden');
+    } catch (e) {
+        console.error('Verify error:', e);
+        alert('Verification failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-circle-check mr-1.5"></i> Verify Integrity Battery';
+    }
+}
+
+async function rollbackChampionModel() {
+    if (!confirm('Roll back to the previous champion model from audit history?')) {
+        return;
+    }
+
+    const btn = document.getElementById('btn-rollback-model');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Rolling back...';
+
+    try {
+        const res = await fetch('/api/model-studio/models/rollback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Rollback error: ' + (data.detail || res.statusText));
+            return;
+        }
+
+        alert(`Rollback successful! Active champion restored to ${data.model_id}.`);
+        await loadModelStudioModels();
+        await loadActiveModelInfo();
+        await loadModelStudioOverview();
+    } catch (e) {
+        console.error('Rollback error:', e);
+        alert('Rollback failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-rotate-left mr-1.5"></i> Rollback to Previous Champion';
+    }
+}
+
+async function inspectModelScaler() {
+    const sel = document.getElementById('studio-model-select');
+    const modelId = sel ? sel.value : '';
+    if (!modelId) {
+        alert('Please select a model to inspect scaler sidecar.');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/model-studio/models/${encodeURIComponent(modelId)}/scaler`);
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Scaler inspect error: ' + (data.detail || res.statusText));
+            return;
+        }
+
+        const badge = document.getElementById('scaler-dim-badge');
+        badge.innerText = `${data.dimension}D Vector (${data.features_count || 0} features)`;
+
+        const tbody = document.getElementById('studio-scaler-inspect-table-body');
+        tbody.innerHTML = '';
+
+        if (!data.features || data.features.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="5" class="text-center py-3 text-gray-500">${data.message || 'No sidecar scaler found'}</td>`;
+            tbody.appendChild(tr);
+        } else {
+            data.features.forEach(f => {
+                const tr = document.createElement('tr');
+                tr.className = 'border-b border-borderClr/20 hover:bg-surfaceLight/10';
+                tr.innerHTML = `
+                    <td class="py-1 px-2 font-mono text-gray-400">feat_${f.index}</td>
+                    <td class="py-1 px-2 text-right font-mono text-emerald-400">${f.mean.toFixed(4)}</td>
+                    <td class="py-1 px-2 text-right font-mono text-cyan-400">${f.std.toFixed(4)}</td>
+                    <td class="py-1 px-2 text-center font-mono text-textMuted">[${f.clamp_min}, ${f.clamp_max}]</td>
+                    <td class="py-1 px-2 text-center">
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${f.zero_variance ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}">
+                            ${f.zero_variance ? 'YES' : 'NO'}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('studio-scaler-inspect-card').classList.remove('hidden');
+    } catch (e) {
+        console.error('Inspect scaler error:', e);
+        alert('Inspect scaler failed: ' + e.message);
+    }
+}
+
+async function fineTuneSelectedModel() {
+    const sel = document.getElementById('studio-model-select');
+    const modelId = sel ? sel.value : '';
+    const dSel = document.getElementById('studio-dataset-select');
+    const datasetPath = dSel ? dSel.value : '';
+
+    const btn = document.getElementById('btn-finetune-model');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Fine-Tuning...';
+
+    try {
+        const res = await fetch('/api/model-studio/models/fine-tune', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                base_model_id: modelId,
+                dataset_path: datasetPath,
+                epochs: 3,
+                learning_rate: 0.0001,
+                freeze_backbone: true
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Fine-tune error: ' + (data.detail || res.statusText));
+            return;
+        }
+
+        alert(`Fine-tuning complete!\nNew model checkpoint: ${data.fine_tuned_model_id}\nFinal Loss: ${data.final_loss.toFixed(4)}\nFrozen parameters: ${data.frozen_parameters}`);
+        await loadModelStudioModels();
+    } catch (e) {
+        console.error('Fine-tune error:', e);
+        alert('Fine-tune failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-bullseye mr-1.5"></i> Fine-Tune On Selected Dataset';
     }
 }
 

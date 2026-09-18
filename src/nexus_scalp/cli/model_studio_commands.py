@@ -13,6 +13,7 @@ import json
 from datetime import UTC, datetime
 
 import typer
+from fastapi import HTTPException
 from rich.panel import Panel
 from rich.table import Table
 
@@ -21,18 +22,25 @@ from nexus_scalp.cli.styling import console
 from nexus_scalp.web.model_studio_routes import (
     ModelStudioBenchmarkRequest,
     ModelStudioDownloadRequest,
+    ModelStudioHotLoadRequest,
     ModelStudioInspectFeaturesRequest,
     ModelStudioPositionDatasetRequest,
     ModelStudioPredictRequest,
     ModelStudioStressRequest,
     ModelStudioTrainRequest,
+    ModelStudioVerifyRequest,
+    execute_active_model,
     execute_benchmark,
     execute_download,
     execute_generate_position_dataset,
+    execute_hot_load,
     execute_inspect_features,
+    execute_list_models,
     execute_predict,
+    execute_rollback,
     execute_stress_test,
     execute_train,
+    execute_verify,
     get_studio_overview,
 )
 
@@ -65,7 +73,7 @@ def model_quality_command(
     }
 
     if json_output:
-        console.print(json.dumps(data, indent=2))
+        typer.echo(json.dumps(data, indent=2))
         return
 
     table = Table(title=f"ScalpNet {dimension}D Model Quality & Neural Audit", border_style="cyan")
@@ -113,7 +121,7 @@ def model_predict_command(
     res = execute_predict(req, None)
 
     if json_output:
-        console.print(json.dumps(res, indent=2))
+        typer.echo(json.dumps(res, indent=2))
         return
 
     probs = res["probabilities"]
@@ -150,7 +158,7 @@ def model_stress_test_command(
     res = execute_stress_test(req, None)
 
     if json_output:
-        console.print(json.dumps(res, indent=2))
+        typer.echo(json.dumps(res, indent=2))
         return
 
     table = Table(title=f"Adversarial Stress Test Suite ({dimension}D)", border_style="magenta")
@@ -191,7 +199,7 @@ def model_train_dataset_command(
     res = execute_train(req)
 
     if json_output:
-        console.print(json.dumps(res, indent=2))
+        typer.echo(json.dumps(res, indent=2))
         return
 
     console.print(
@@ -229,7 +237,7 @@ def dataset_download_command(
     res = execute_download(req)
 
     if json_output:
-        console.print(json.dumps(res, indent=2))
+        typer.echo(json.dumps(res, indent=2))
         return
 
     table = Table(title=f"Market Dataset Download — {symbol} ({timeframe})", border_style="cyan")
@@ -262,7 +270,7 @@ def dataset_inspect_command(
     res = execute_inspect_features(req)
 
     if json_output:
-        console.print(json.dumps(res, indent=2))
+        typer.echo(json.dumps(res, indent=2))
         return
 
     table = Table(
@@ -320,7 +328,7 @@ def position_dataset_generate_command(
     res = execute_generate_position_dataset(req)
 
     if json_output:
-        console.print(json.dumps(res, indent=2))
+        typer.echo(json.dumps(res, indent=2))
         return
 
     table = Table(
@@ -349,5 +357,168 @@ def position_dataset_generate_command(
     )
     table.add_row("Output Parquet Path", res.get("dataset_path") or res.get("output_path", ""))
     table.add_row("SHA-256 (prefix)", res["sha256"][:16])
+
+    console.print(table)
+
+
+@app.command("model-list")
+def model_list_command(
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """List all registered neural model checkpoints in the SQLite catalog."""
+    res = execute_list_models()
+    if json_output:
+        typer.echo(json.dumps(res, indent=2))
+        return
+
+    table = Table(
+        title=f"AI Hub Model Registry Catalog ({res['count']} checkpoints)",
+        border_style="cyan",
+    )
+    table.add_column("Model ID", style="bold white")
+    table.add_column("Dim", style="cyan")
+    table.add_column("Stage", style="yellow")
+    table.add_column("Loss", style="green")
+    table.add_column("Val Loss", style="green")
+    table.add_column("Fine-Tune", style="magenta")
+    table.add_column("Active", style="bold green")
+
+    active_id = res.get("active_champion_id")
+    for m in res.get("models", []):
+        is_act = "★ CHAMPION" if m.get("id") == active_id or m.get("is_active") else ""
+        table.add_row(
+            str(m.get("id")),
+            f"{m.get('dimension')}D",
+            str(m.get("stage", "STAGING")),
+            f"{m.get('final_loss', 0.0):.4f}",
+            f"{m.get('final_val_loss', 0.0):.4f}",
+            "YES" if m.get("fine_tune_enabled") else "NO",
+            is_act,
+        )
+
+    console.print(table)
+
+
+@app.command("model-hot-load")
+def model_hot_load_command(
+    model_id: str = typer.Argument(..., help="Model ID, filename, or relative path to .pt file"),
+    fine_tune: bool = typer.Option(
+        False, "--fine-tune/--no-fine-tune", help="Enable fine-tuning mode"
+    ),
+    attach_scaler: bool = typer.Option(
+        True, "--attach-scaler/--no-attach-scaler", help="Attach matching scaler"
+    ),
+    operator: str = typer.Option("CLI_USER", "--operator", help="Operator identity"),
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Hot-load a model checkpoint and scaler into live memory without restarting."""
+    req = ModelStudioHotLoadRequest(
+        model_id=model_id,
+        fine_tune_enabled=fine_tune,
+        attach_scaler=attach_scaler,
+        operator=operator,
+    )
+    res = execute_hot_load(req)
+    if json_output:
+        typer.echo(json.dumps(res, indent=2))
+        return
+
+    panel = Panel(
+        f"[bold green]⚡ Model Hot-Loaded Successfully into Active Runtime Memory[/bold green]\n\n"
+        f"[bold white]Model ID:[/bold white] {res['model_id']}\n"
+        f"[bold white]Dimension:[/bold white] {res['dimension']}D\n"
+        f"[bold white]Architecture:[/bold white] {res['architecture']}\n"
+        f"[bold white]Weights SHA256:[/bold white] {res['weights_sha256'][:16]}...\n"
+        f"[bold white]Scaler Attached:[/bold white] {'YES' if res['scaler_attached'] else 'NO (default unit scaler)'}\n"
+        f"[bold white]Fine-Tune Enabled:[/bold white] {'YES' if res['fine_tune_enabled'] else 'NO'}\n"
+        f"[bold white]Warmup Latency:[/bold white] {res['warmup_latency_us']} µs\n"
+        f"[bold white]Stage:[/bold white] {res['stage']}\n"
+        f"[bold white]Loaded At:[/bold white] {res['loaded_at']}",
+        title="AI Hub Hot-Loader",
+        border_style="green",
+    )
+    console.print(panel)
+
+
+@app.command("model-active")
+def model_active_command(
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Show details of the currently hot-loaded active champion model in memory."""
+    res = execute_active_model()
+    if json_output:
+        typer.echo(json.dumps(res, indent=2))
+        return
+
+    if res.get("status") == "NO_ACTIVE_MODEL":
+        console.print("[yellow]No model is currently hot-loaded in memory.[/yellow]")
+        return
+
+    act = res.get("active_model", {})
+    panel = Panel(
+        f"[bold green]Active Champion Model State[/bold green]\n\n"
+        f"[bold white]Model ID:[/bold white] {act.get('model_id')}\n"
+        f"[bold white]Dimension:[/bold white] {act.get('dimension')}D\n"
+        f"[bold white]Architecture:[/bold white] {act.get('architecture')}\n"
+        f"[bold white]Weights SHA256:[/bold white] {act.get('weights_sha256')[:16]}...\n"
+        f"[bold white]Weights Path:[/bold white] {act.get('weights_path')}\n"
+        f"[bold white]Scaler Path:[/bold white] {act.get('scaler_path') or 'None'}\n"
+        f"[bold white]Fine-Tune Mode:[/bold white] {'ENABLED' if act.get('fine_tune_enabled') else 'DISABLED'}\n"
+        f"[bold white]Inference Count:[/bold white] {act.get('inference_count')}\n"
+        f"[bold white]Stage:[/bold white] {act.get('stage')}\n"
+        f"[bold white]Loaded At:[/bold white] {act.get('loaded_at')}",
+        title="AI Hub Active Runtime Model",
+        border_style="cyan",
+    )
+    console.print(panel)
+
+
+@app.command("model-rollback")
+def model_rollback_command(
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Roll back active model to the previously active champion model from history."""
+    try:
+        res = execute_rollback()
+    except HTTPException as err:
+        if json_output:
+            typer.echo(json.dumps({"status": "ERROR", "detail": err.detail}, indent=2))
+        else:
+            console.print(f"[bold red]✗ {err.detail}[/bold red]")
+        raise typer.Exit(code=1) from err
+
+    if json_output:
+        typer.echo(json.dumps(res, indent=2))
+        return
+
+    console.print(f"[bold green]✓ {res['message']}[/bold green]")
+
+
+@app.command("model-verify")
+def model_verify_command(
+    model_id: str = typer.Argument(..., help="Model ID or checkpoint path to verify"),
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """Run pre-load verification battery (tensors, NaN check, weights variance, smoke inference)."""
+    req = ModelStudioVerifyRequest(model_id=model_id)
+    res = execute_verify(req)
+    if json_output:
+        typer.echo(json.dumps(res, indent=2))
+        return
+
+    table = Table(
+        title=f"Pre-Load Verification Battery for {model_id}",
+        border_style="green" if res.get("all_passed") else "red",
+    )
+    table.add_column("Check", style="bold white")
+    table.add_column("Passed", style="cyan")
+    table.add_column("Detail", style="green")
+
+    for c in res.get("checks", []):
+        table.add_row(
+            c.get("name"),
+            "✓ YES" if c.get("passed") else "✗ NO",
+            str(c.get("detail")),
+        )
 
     console.print(table)
