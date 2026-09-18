@@ -45,7 +45,7 @@ _DEFAULT_DATASET_ROOTS = ("data/raw", "data/processed", "data/positions", "data"
 
 
 def _allowed_dataset_roots() -> list[Path]:
-    """One resolved allowlist of directories a dataset path may live under."""
+    """Resolved allowlist of directories a dataset path may live under."""
     import os
 
     roots_env = str(os.environ.get(_DATASET_ROOTS_ENV, "")).strip()
@@ -65,16 +65,49 @@ def _allowed_dataset_roots() -> list[Path]:
     return roots
 
 
-def _safe_dataset_path(raw: str) -> Path | None:
-    """Confine an operator-supplied dataset path to the allowlisted read roots.
+def _dataset_candidates() -> list[tuple[str, str, Path]]:
+    """Server-derived inventory of selectable dataset files: (name, relpath, path).
 
-    Defense layers (closes CodeQL py/path-injection and the prefix-bypass class
-    a naive ``str.startswith`` check carries — "data/rawx" starts with "data/raw"):
-      1. reject null bytes and any ``..`` traversal segment BEFORE resolving;
-      2. resolve to an absolute real path (symlinks followed);
-      3. containment via Path.is_relative_to (never string prefix);
-      4. callers then only READ the file (never write, never execute).
-    Returns None when the path is malformed, out of bounds, or missing.
+    The Path objects produced here are derived ONLY from REPO_ROOT and the root
+    allowlist — never from request input — so downstream reads stay untainted.
+    """
+    found: list[tuple[str, str, Path]] = []
+    seen: set[Path] = set()
+    for root in _allowed_dataset_roots():
+        if not root.is_dir():
+            continue
+        for p in sorted([*root.glob("*.parquet"), *root.glob("*.csv")]):
+            if not p.is_file():
+                continue
+            # Skip temp/partial artifacts written by our own atomic installers.
+            if p.name.startswith(".") or ".tmp" in p.name:
+                continue
+            real = p.resolve()
+            if real in seen:
+                continue
+            seen.add(real)
+            try:
+                rel = str(real.relative_to(REPO_ROOT))
+            except ValueError:
+                rel = str(real)
+            found.append((real.name, rel, real))
+    return found
+
+
+def _safe_dataset_path(raw: str) -> Path | None:
+    """Select an operator-named dataset from the SERVER-DERIVED inventory.
+
+    Security model (closes CodeQL py/path-injection and the string-prefix
+    bypass class — "data/rawx" starts with "data/raw"):
+      1. the caller's string is used ONLY as a lookup key against the inventory
+         built by ``_dataset_candidates()`` from the root allowlist;
+      2. no Path is ever constructed from request input, so the value that
+         reaches the filesystem read always originates server-side;
+      3. ``..`` segments and null bytes are rejected outright (fail-closed for
+         callers that pass through malformed input);
+      4. the resolved file must sit under an allowlisted root;
+      5. callers only ever READ the file (never write, never execute).
+    Returns None when the name matches nothing selectable.
     """
     import os
 
@@ -83,16 +116,16 @@ def _safe_dataset_path(raw: str) -> Path | None:
         return None
     if any(part == ".." for part in Path(s).parts) or (os.altsep and ".." in s.split(os.altsep)):
         return None
-    candidate = Path(s).expanduser()
-    resolved = candidate.resolve() if candidate.is_absolute() else (REPO_ROOT / candidate).resolve()
-    for root in _allowed_dataset_roots():
-        if resolved.is_relative_to(root) and resolved != root and resolved.is_file():
-            return resolved
+
+    expanded = os.path.expanduser(s)
+    for name, rel, path in _dataset_candidates():
+        if expanded in (name, rel, str(path)):
+            return path
     return None
 
 
 def _read_dataset_frame(target: Path) -> pl.DataFrame:
-    """Read a allowlisted dataset as a Polars frame (parquet or csv only)."""
+    """Read an inventory-derived dataset as a Polars frame (parquet or csv only)."""
     if target.suffix.lower() == ".parquet":
         return pl.read_parquet(target)
     if target.suffix.lower() == ".csv":
