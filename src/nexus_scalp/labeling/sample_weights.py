@@ -39,9 +39,10 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import polars as pl
@@ -676,7 +677,7 @@ def create_weighted_dataloader(
         # Clamp near-zero weights so sampler does not crash
         w_tensor = torch.clamp(w_tensor, min=1e-6)
         sampler = WeightedRandomSampler(
-            weights=w_tensor,
+            weights=cast(Sequence[float], w_tensor),
             num_samples=len(dataset),
             replacement=True,
         )
