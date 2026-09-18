@@ -55,7 +55,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-FEAT-002` | B: Features | P2 | Feature Importance & Collinearity Clustering | **BLOCKED** | `AGENT-FEATURE` | NO | `ML-DATA-001`, `ML-FEAT-001` | `PARALLEL_SAFE` |
 | `ML-FEAT-003` | B: Features | P2 | 70D Feasibility, Feed Uptime & Gating | **BLOCKED** | `AGENT-FEATURE` | **YES** | `ML-FEAT-001`, `ML-DATA-001` | `SERIAL_ONLY` |
 | `ML-LABEL-001` | C: Labeling | P1 | Friction-Aware Triple Barrier Horizon & ATR | **DONE** | `AGENT-LABEL` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
-| `ML-LABEL-002` | C: Labeling | P1 | Sample Uniqueness & Overlap Anti-Leakage | **READY** | `AGENT-LABEL` | NO | `ML-LABEL-001` | `PARALLEL_SAFE` |
+| `ML-LABEL-002` | C: Labeling | P1 | Sample Uniqueness & Overlap Anti-Leakage | **DONE** | `AGENT-LABEL` | NO | `ML-LABEL-001` | `PARALLEL_SAFE` |
 | `ML-ARCH-001` | D: Architecture | P0 | ScalpNet Dual-Path & 3-Class Head Sunset | **READY** | `AGENT-ML-ARCH` | **YES** | None | `SERIAL_ONLY` |
 | `ML-ARCH-002` | D: Architecture | P2 | Causal TCN Dilation & Receptive Field | **BLOCKED** | `AGENT-ML-ARCH` | NO | `ML-ARCH-001`, `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-ARCH-003` | D: Architecture | P2 | Temporal Attention vs Positional Encoding | **BLOCKED** | `AGENT-ML-ARCH` | NO | `ML-ARCH-002` | `PARALLEL_SAFE` |

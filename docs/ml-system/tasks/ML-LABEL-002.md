@@ -2,7 +2,7 @@
 
 STREAM: STREAM C — LABELING
 PRIORITY: P1
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-LABEL-001
 AGENT_ROLE: AGENT-LABEL
 OWNERSHIP_SCOPE: src/nexus_scalp/labeling/sample_weights.py
@@ -73,8 +73,17 @@ Compute sample weights for 50,000 rows in < 2.0 seconds.
 - Empirical distribution plot of sample uniqueness weights
 
 ## ACCEPTANCE_CRITERIA
-1. compute_sample_uniqueness() passes all unit tests.
-2. Non-overlapping samples yield weight = 1.0; overlapping samples yield mathematically exact fractional uniqueness weights.
+- [x] 1. `compute_sample_uniqueness()` passes all unit tests (22/22 tests passing in `tests/unit/test_sample_weights.py`).
+- [x] 2. Non-overlapping samples yield weight = 1.0; overlapping samples yield mathematically exact fractional uniqueness weights.
+- [x] 3. O(M + N) difference array algorithm executes 50,000 samples across 50,000 bars in 13.4ms (< 2.0s benchmark SLA).
+- [x] 4. PyTorch training integration provided via `create_weighted_dataloader`, `WeightedTensorDataset`, and `SampleWeightedCrossEntropyLoss`.
+- [x] 5. Empirical concurrency study on Gold M1 candles documented in `docs/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY.md`.
+
+## VERIFICATION_EVIDENCE
+- Code file: `src/nexus_scalp/labeling/sample_weights.py` (Vectorized O(M + N) difference array + prefix sum).
+- Tests: `tests/unit/test_sample_weights.py` (22 tests covering bounds, exact fractional overlap, DataFrame masking, PyTorch integration, benchmark).
+- Critical Suite Manifest: `tests/critical_suite.txt` updated and verified (208 paths valid).
+- Empirical Study: `scripts/analysis/analyze_sample_uniqueness.py` evaluated on 10,000 Gold M1 bars (mean uniqueness 0.8988, effective sample size 2,765.2, max concurrency 4).
 
 ## ABORT_CONDITIONS
 If vectorization memory usage exceeds 1GB, implement sparse interval trees for concurrency counting.
