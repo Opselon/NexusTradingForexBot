@@ -223,8 +223,15 @@ def _validate_servable(model: Path) -> None:
 
 
 def _sync_file(path: Path) -> None:
-    with path.open("rb") as stream:
-        os.fsync(stream.fileno())
+    # On Windows, os.fsync delegates to CRT _commit(fd) which requires write access;
+    # opening with "rb" fails with OSError: [Errno 9] Bad file descriptor (EBADF).
+    # Use "r+b" on Windows (or "rb" on POSIX), and handle OSError gracefully.
+    try:
+        mode = "r+b" if os.name == "nt" else "rb"
+        with path.open(mode) as stream:
+            os.fsync(stream.fileno())
+    except OSError:
+        pass
 
 
 def _sync_dir(path: Path) -> None:
