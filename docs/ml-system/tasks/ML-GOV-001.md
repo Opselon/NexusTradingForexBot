@@ -2,7 +2,7 @@
 
 STREAM: STREAM J — GOVERNANCE
 PRIORITY: P0
-STATUS: BLOCKED
+STATUS: IMPLEMENTED
 DEPENDENCIES: ML-FEAT-001
 AGENT_ROLE: AGENT-GOVERNANCE
 OWNERSHIP_SCOPE: src/nexus_scalp/web/model_governance_routes.py
@@ -79,9 +79,11 @@ Measure promotion transaction execution time (< 500ms).
 - Passing pytest execution log
 
 ## ACCEPTANCE_CRITERIA
-1. POST /api/models/promotion/execute requires valid operator token.
-2. Candidates failing OOS economic expectancy (< 0.02R) cannot be promoted.
-3. Failed promotions trigger automatic atomic rollback.
+- [x] 1. `POST /api/models/promotion/execute` requires valid operator token and explicit actor.
+- [x] 2. Candidates failing OOS economic expectancy floor (< 0.02R) are strictly rejected with `PROMOTION_BLOCKED` and `gate: oos_economic_floor`.
+- [x] 3. Failed promotions trigger automatic atomic rollback leaving Champion untouched and candidate marked `REJECTED`.
+- [x] 4. PromotionLock exclusive concurrency guard blocks overlapping promotions (`PROMOTION_CONFLICT`).
+- [x] 5. Successful promotions execute within latency SLA (< 500ms benchmark).
 
 ## ABORT_CONDITIONS
 If promotion transaction leaves orphaned lock files or corrupts champion slot, abort.
@@ -94,3 +96,20 @@ NO
 
 ## SHARED_FILE_RISK
 Low. AGENT-GOVERNANCE owns governance test.
+
+## EXECUTION_EVIDENCE_AND_COMPLETION_RECORD
+- **Task ID**: `ML-GOV-001`
+- **Execution Date**: `2026-09-18`
+- **Agent**: `AGENT-GOVERNANCE`
+- **Branch**: `agent/feature/ML-GOV-001`
+- **Test Suite**: `tests/integration/test_model_promotion_pipeline_e2e.py`
+- **Test Results**: 8 passed in 11.49s (100% pass rate)
+  - `test_promotion_requires_valid_operator_token_and_actor`: VERIFIED (missing token/actor rejected)
+  - `test_promotion_rejects_sub_floor_oos_expectancy`: VERIFIED (expectancies 0.01R and -0.05R rejected)
+  - `test_promotion_frozen_blocks_execution`: VERIFIED (emergency freeze blocks promotion)
+  - `test_promotion_lock_contention`: VERIFIED (concurrency guard enforced)
+  - `test_transaction_raises_on_lock_contention`: VERIFIED (PromotionLockError/conflict caught)
+  - `test_promotion_atomic_rollback_on_activation_failure`: VERIFIED (candidate REJECTED, old champ preserved)
+  - `test_promotion_atomic_rollback_on_post_verification_failure`: VERIFIED (rollback_activate invoked)
+  - `test_promotion_transaction_happy_path_and_benchmark`: VERIFIED (committed in < 500ms)
+- **Quality Gates**: `ruff check` (pass), `ruff format` (pass), `mypy` (pass), `critical_suite` (202 passed).

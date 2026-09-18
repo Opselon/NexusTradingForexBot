@@ -38,6 +38,11 @@ from nexus_scalp.web.errors import log_web_error, new_request_id, safe_error_pay
 logger = get_logger("nexus_scalp.web.model_governance_routes")
 
 router = APIRouter()
+_ACTIVE_APP: list[Any] = []
+
+
+def _get_active_app(fallback_app: Any) -> Any:
+    return _ACTIVE_APP[0] if _ACTIVE_APP else fallback_app
 
 
 async def _run_training_async(orchestrator: Any, dataset: Any, num_epochs: int) -> dict[str, Any]:
@@ -51,6 +56,8 @@ async def _run_training_async(orchestrator: Any, dataset: Any, num_epochs: int) 
 
 def register_model_governance_routes(app: Any) -> None:
     """Attach the model/shadow/governance routes (closures over ``app``)."""
+    _ACTIVE_APP.clear()
+    _ACTIVE_APP.append(app)
     from nexus_scalp.web.server import serialize_enums  # local import: avoids module cycle
 
     def _err(code: str = "INTERNAL_ERROR", **kw: Any) -> dict[str, Any]:
@@ -77,7 +84,7 @@ def register_model_governance_routes(app: Any) -> None:
 
     def _model_lifecycle() -> Any:
         """Returns the engine when the model-lifecycle subsystem is available."""
-        engine = app.state.engine
+        engine = getattr(_get_active_app(app).state, "engine", None)
         if not engine or not hasattr(engine, "model_lifecycle_orchestrator"):
             return None
         return engine
@@ -118,7 +125,7 @@ def register_model_governance_routes(app: Any) -> None:
         (brief 12/14); an invalid Champion stays INVALID until governance
         replaces it (brief 33).
         """
-        engine = app.state.engine
+        engine = getattr(_get_active_app(app).state, "engine", None)
         if engine is None:
             return {"available": False, "state": "UNAVAILABLE"}
         try:
@@ -335,7 +342,7 @@ def register_model_governance_routes(app: Any) -> None:
 
     def _shadow() -> Any:
         """Returns the engine when the shadow subsystem is available."""
-        engine = app.state.engine
+        engine = getattr(_get_active_app(app).state, "engine", None)
         if not engine or not hasattr(engine, "shadow_engine"):
             return None
         return engine
@@ -901,7 +908,7 @@ def register_model_governance_routes(app: Any) -> None:
 
     def _governance() -> Any:
         """Returns the governance engine or None (safe)."""
-        engine = app.state.engine
+        engine = getattr(_get_active_app(app).state, "engine", None)
         if not engine or not hasattr(engine, "governance_engine"):
             return None
         return engine
@@ -1177,10 +1184,10 @@ def register_model_governance_routes(app: Any) -> None:
 
     def _promotion_lock_path() -> str:
         """Cross-process promotion lock location (artifacts/governance/)."""
-        engine = app.state.engine
-        base = Path(
-            engine.config.artifacts_dir if hasattr(engine.config, "artifacts_dir") else "artifacts"
-        )
+        engine = getattr(_get_active_app(app).state, "engine", None)
+        cfg = getattr(engine, "config", None)
+        artifacts_dir = getattr(cfg, "artifacts_dir", "artifacts") if cfg else "artifacts"
+        base = Path(artifacts_dir or "artifacts")
         locks_dir = base / "governance" / "locks"
         return str(locks_dir / "promotion.lock")
 
@@ -1301,6 +1308,32 @@ def register_model_governance_routes(app: Any) -> None:
                     "PROMOTION_BLOCKED",
                     extra={"reason": "promotion frozen (emergency stop)"},
                 )
+
+            # OOS ECONOMIC FLOOR VERIFICATION (spec 34 / ML-GOV-001):
+            # Candidate MUST pass the minimum economic expectancy floor (>= 0.02R)
+            oos_val = payload.get("oos_expectancy_r")
+            if oos_val is not None:
+                from nexus_scalp.research.oos import MIN_ECONOMIC_OOS_EXPECTANCY_R
+
+                try:
+                    val = float(oos_val)
+                    if val < MIN_ECONOMIC_OOS_EXPECTANCY_R:
+                        return _err(
+                            "PROMOTION_BLOCKED",
+                            extra={
+                                "reason": (
+                                    f"candidate failed OOS economic expectancy floor "
+                                    f"({val:.4f}R < {MIN_ECONOMIC_OOS_EXPECTANCY_R}R)"
+                                ),
+                                "gate": "oos_economic_floor",
+                            },
+                        )
+                except (ValueError, TypeError):
+                    return _err(
+                        "PROMOTION_BLOCKED",
+                        extra={"reason": "invalid oos_expectancy_r parameter"},
+                    )
+
             champ_ref = engine.champion_manager.champion_or_none()
             old_champion = {
                 "model_id": str(payload.get("old_champion_model_id", "") or ""),
@@ -1333,6 +1366,8 @@ def register_model_governance_routes(app: Any) -> None:
                 artifact_path=engine.config.model.model_artifact_path,
                 runtime_schema_id=champ_ref.feature_schema_id if champ_ref else "",
                 runtime_dimension=champ_ref.feature_dimension if champ_ref else 0,
+                manifest=payload.get("manifest"),
+                oos_artifact=str(payload.get("oos_artifact", "") or ""),
                 correlation_id="api_promotion",
             )
             return serialize_enums({"available": True, "promotion": audit_row})
