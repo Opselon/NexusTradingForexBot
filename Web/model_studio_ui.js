@@ -36,13 +36,16 @@ async function loadModelStudioDatasets() {
         if (!res.ok) return;
         const data = await res.json();
         const sel = document.getElementById('studio-dataset-select');
-        sel.innerHTML = '';
+        const posSel = document.getElementById('studio-position-dataset-select');
+        if (sel) sel.innerHTML = '';
+        if (posSel) posSel.innerHTML = '';
         
         if (!data.datasets || data.datasets.length === 0) {
             const opt = document.createElement('option');
             opt.value = '';
             opt.innerText = 'No local datasets found (synthetic will be used)';
-            sel.appendChild(opt);
+            if (sel) sel.appendChild(opt);
+            if (posSel) posSel.appendChild(opt.cloneNode(true));
             return;
         }
         
@@ -50,7 +53,8 @@ async function loadModelStudioDatasets() {
             const opt = document.createElement('option');
             opt.value = ds.path;
             opt.innerText = `${ds.name} (${ds.size_display})`;
-            sel.appendChild(opt);
+            if (sel) sel.appendChild(opt);
+            if (posSel) posSel.appendChild(opt.cloneNode(true));
         });
     } catch (e) {
         console.error('Failed to load datasets:', e);
@@ -335,6 +339,161 @@ async function pollStudioTraining() {
         }
     } catch (e) {
         console.error('Polling error:', e);
+    }
+}
+
+async function downloadStudioDataset() {
+    const btn = document.getElementById('btn-download-dataset');
+    const symbol = document.getElementById('studio-download-symbol').value || 'XAUUSD';
+    const timeframe = document.getElementById('studio-download-timeframe').value || 'M5';
+    const bars = parseInt(document.getElementById('studio-download-bars').value, 10) || 10000;
+    const source = document.getElementById('studio-download-source').value || 'synthetic';
+    
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Downloading...';
+    try {
+        const res = await fetch('/api/model-studio/datasets/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: symbol,
+                timeframe: timeframe,
+                bars: bars,
+                source: source
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Download failed: ' + (data.detail || JSON.stringify(data)));
+            return;
+        }
+        
+        const fb = document.getElementById('studio-download-feedback');
+        fb.classList.remove('hidden');
+        document.getElementById('download-status-msg').innerText = data.message;
+        document.getElementById('download-size-badge').innerText = `${data.rows.toLocaleString()} bars | ${data.size_display}`;
+        document.getElementById('download-detail-text').innerText = `Saved: ${data.dataset_path} | Throughput: ${Math.round(data.throughput_bars_sec)} bars/s | Elapsed: ${data.elapsed_sec.toFixed(2)}s`;
+        
+        await loadModelStudioDatasets();
+    } catch (e) {
+        console.error('Dataset download error:', e);
+        alert('Download error: ' + e.message);
+    } finally {
+        btn.innerHTML = '<i class="fa-solid fa-download mr-2"></i> Download Dataset';
+    }
+}
+
+async function inspectStudioFeatures() {
+    const btn = document.getElementById('btn-inspect-features');
+    const sel = document.getElementById('studio-dataset-select');
+    const datasetPath = sel ? sel.value : '';
+    
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Inspecting...';
+    try {
+        const res = await fetch('/api/model-studio/datasets/inspect-features', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dataset_path: datasetPath,
+                dimension: currentStudioDim,
+                max_rows: 500
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Feature inspection failed: ' + (data.detail || JSON.stringify(data)));
+            return;
+        }
+        
+        document.getElementById('feat-stat-total').innerText = data.total_features;
+        document.getElementById('feat-stat-healthy').innerText = data.healthy_features;
+        document.getElementById('feat-stat-clamped').innerText = data.clamped_features;
+        document.getElementById('feat-stat-scaler').innerText = data.scaler_ready ? 'READY (Z-Score)' : 'NO';
+        
+        const badgesContainer = document.getElementById('studio-features-summary-badges');
+        badgesContainer.innerHTML = `
+            <span class="px-2 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30">${data.dimension}D Schema</span>
+            <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">${data.rows_processed} Rows Processed</span>
+        `;
+        
+        const tbody = document.getElementById('studio-features-table-body');
+        tbody.innerHTML = '';
+        data.features.slice(0, 30).forEach(f => {
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-borderClr/30 hover:bg-surfaceLight/10';
+            const statusStyle = f.status === 'HEALTHY' ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold';
+            const famStyle = f.family === 'BASE' ? 'text-cyan-400' : f.family === 'NEWS' ? 'text-amber-300' : 'text-purple-400';
+            tr.innerHTML = `
+                <td class="py-1 px-2 text-textMuted">${f.index}</td>
+                <td class="py-1 px-2 ${famStyle}">${f.family}</td>
+                <td class="py-1 px-2 text-white font-semibold">${f.name}</td>
+                <td class="py-1 px-2 text-right text-gray-300">${f.raw_mean.toFixed(3)}</td>
+                <td class="py-1 px-2 text-right text-gray-300">${f.raw_std.toFixed(3)}</td>
+                <td class="py-1 px-2 text-right text-emerald-300">${f.normalized_sample.toFixed(3)}</td>
+                <td class="py-1 px-2 text-center ${statusStyle}">${f.status}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        document.getElementById('studio-features-inspection-container').classList.remove('hidden');
+    } catch (e) {
+        console.error('Feature inspection error:', e);
+        alert('Feature inspection error: ' + e.message);
+    } finally {
+        btn.innerHTML = '<i class="fa-solid fa-magnifying-glass-chart mr-2"></i> Inspect & Normalize Features (50D / 70D)';
+    }
+}
+
+async function generatePositionDataset() {
+    const btn = document.getElementById('btn-generate-position-dataset');
+    const sel = document.getElementById('studio-position-dataset-select');
+    const datasetPath = sel ? sel.value : '';
+    const maxHolding = parseInt(document.getElementById('studio-position-holding').value, 10) || 30;
+    const targetAtr = parseFloat(document.getElementById('studio-position-atr').value) || 2.0;
+    const friction = parseFloat(document.getElementById('studio-position-friction').value) || 0.25;
+    
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Simulating & Generating...';
+    try {
+        const res = await fetch('/api/model-studio/position-dataset/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_dataset_path: datasetPath,
+                dimension: currentStudioDim,
+                max_holding_bars: maxHolding,
+                target_atr_multiplier: targetAtr,
+                friction_pips: friction
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert('Position dataset generation failed: ' + (data.detail || JSON.stringify(data)));
+            return;
+        }
+        
+        document.getElementById('pos-stat-samples').innerText = data.total_samples.toLocaleString();
+        document.getElementById('pos-stat-trades').innerText = data.simulated_trades.toLocaleString();
+        document.getElementById('pos-stat-cont-val').innerText = (data.mean_continuation_value >= 0 ? '+' : '') + data.mean_continuation_value.toFixed(3) + ' R';
+        document.getElementById('pos-stat-hold').innerText = data.mean_holding_bars.toFixed(1) + ' bars';
+        document.getElementById('pos-checksum-badge').innerText = (data.sha256 || '').substring(0, 16);
+        
+        const dist = data.actions_distribution || {};
+        const labelsContainer = document.getElementById('pos-labels-badge');
+        labelsContainer.innerHTML = `
+            <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">KEEP: ${dist.KEEP || 0}</span>
+            <span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">CLOSE: ${dist.CLOSE || 0}</span>
+            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">REDUCE: ${dist.REDUCE || 0}</span>
+        `;
+        
+        const pathEl = document.getElementById('pos-path-display');
+        pathEl.innerText = `Saved: ${data.dataset_path}`;
+        
+        document.getElementById('studio-position-results-card').classList.remove('hidden');
+        await loadModelStudioDatasets();
+    } catch (e) {
+        console.error('Position dataset generation error:', e);
+        alert('Position dataset error: ' + e.message);
+    } finally {
+        btn.innerHTML = '<i class="fa-solid fa-gears mr-2"></i> Generate Position Dataset';
     }
 }
 
