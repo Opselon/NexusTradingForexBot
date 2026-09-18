@@ -18,7 +18,7 @@
 ## 2. Active Swarm Backlog (30 Tasks Across 12 Streams)
 
 ### STREAM A: DATA FOUNDATION
-- [ML-DATA-001](tasks/ML-DATA-001.md) — Historical M1 Market Data Ingest & Parquet Storage Harness `[P0 | READY | AGENT-DATA]`
+- [ML-DATA-001](tasks/ML-DATA-001.md) — Historical M1 Market Data Ingest & Parquet Storage Harness `[P0 | IMPLEMENTED | AGENT-DATA]`
 - [ML-DATA-002](tasks/ML-DATA-002.md) — Dataset Integrity, Missing Value Sanitization & Manifest Hashing `[P1 | BLOCKED | AGENT-DATA]`
 
 ### STREAM B: FEATURE ENGINEERING

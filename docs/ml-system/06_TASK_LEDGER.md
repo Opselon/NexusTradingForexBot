@@ -49,7 +49,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 
 | Task ID | Stream | Priority | Title | Status | Agent Role | Human Decision | Dependencies | Parallel Class |
 |---|---|---|---|---|---|---|---|---|
-| `ML-DATA-001` | A: Data | P0 | Historical M1 Ingest & Parquet Harness | **READY** | `AGENT-DATA` | NO | None | `PARALLEL_SAFE` |
+| `ML-DATA-001` | A: Data | P0 | Historical M1 Market Data Ingest & Parquet Storage | **IMPLEMENTED** | `AGENT-DATA` | NO | None | `PARALLEL_SAFE` |
 | `ML-DATA-002` | A: Data | P1 | Dataset Integrity, Sanitization & Hashing | **BLOCKED** | `AGENT-DATA` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-FEAT-001` | B: Features | P0 | 50D Normalization End-to-End Parity | **DONE** (PR #254, `bd61deb5`) | `AGENT-FEATURE` | NO | None | `PARALLEL_SAFE` |
 | `ML-FEAT-002` | B: Features | P2 | Feature Importance & Collinearity Clustering | **BLOCKED** | `AGENT-FEATURE` | NO | `ML-DATA-001`, `ML-FEAT-001` | `PARALLEL_SAFE` |
