@@ -11,12 +11,19 @@
 
 import { getLegacy, send } from "@/api/client";
 import type {
+  ActiveModelResponse,
   BenchmarkResponse,
   DatasetDownloadRequest,
   DatasetDownloadResponse,
   Fetch70dResponse,
+  FineTuneModelRequest,
+  FineTuneModelResponse,
+  HotLoadRequest,
+  HotLoadResponse,
   InspectFeaturesRequest,
   InspectFeaturesResponse,
+  InspectScalerResponse,
+  ModelsListResponse,
   ModelStudioDatasetsDto,
   ModelStudioOverviewDto,
   ModelStudioTrainProgress,
@@ -26,6 +33,8 @@ import type {
   PositionDatasetResponse,
   PredictResponse,
   StressTestResponse,
+  VerifyModelRequest,
+  VerifyModelResponse,
 } from "./model";
 
 const BASE = "/api/model-studio";
@@ -79,4 +88,33 @@ export const modelStudioApi = {
 
   benchmark: (dimension: number, iterations = 100): Promise<BenchmarkResponse> =>
     send<BenchmarkResponse>(`${BASE}/benchmark`, { dimension, iterations }),
+
+  // ---- AI Hub / Model Registry & Hot-Loader ---------------------------------
+  /** GET /api/model-studio/models — list all registered checkpoints in SQLite catalog. */
+  listModels: (signal?: AbortSignal): Promise<ModelsListResponse> =>
+    getLegacy<ModelsListResponse>(`${BASE}/models`, signal),
+
+  /** POST /api/model-studio/models/hot-load — hot-load checkpoint & scaler into live memory. */
+  hotLoad: (req: HotLoadRequest): Promise<HotLoadResponse> =>
+    send<HotLoadResponse>(`${BASE}/models/hot-load`, req),
+
+  /** GET /api/model-studio/models/active — get active runtime champion model status. */
+  activeModel: (signal?: AbortSignal): Promise<ActiveModelResponse> =>
+    getLegacy<ActiveModelResponse>(`${BASE}/models/active`, signal),
+
+  /** POST /api/model-studio/models/rollback — atomically roll back to previous champion. */
+  rollback: (): Promise<HotLoadResponse> =>
+    send<HotLoadResponse>(`${BASE}/models/rollback`, {}),
+
+  /** POST /api/model-studio/models/verify — pre-load verification battery. */
+  verifyModel: (req: VerifyModelRequest): Promise<VerifyModelResponse> =>
+    send<VerifyModelResponse>(`${BASE}/models/verify`, req),
+
+  /** GET /api/model-studio/models/{id}/scaler — inspect mean/std vectors of attached scaler. */
+  inspectScaler: (modelId: string, signal?: AbortSignal): Promise<InspectScalerResponse> =>
+    getLegacy<InspectScalerResponse>(`${BASE}/models/${encodeURIComponent(modelId)}/scaler`, signal),
+
+  /** POST /api/model-studio/models/fine-tune — fine-tune model on dataset with frozen backbone. */
+  fineTune: (req: FineTuneModelRequest): Promise<FineTuneModelResponse> =>
+    send<FineTuneModelResponse>(`${BASE}/models/fine-tune`, req),
 };

@@ -459,3 +459,5 @@ tests/unit/test_data_ingest.py
 tests/unit/test_bug306_windows_ci_compat.py
 # ML-GOV-001 (Model Promotion Pipeline Pre-Flight & OOS Economic Gate Verification)
 tests/integration/test_model_promotion_pipeline_e2e.py
+# ML-UI-003 (AI Hub: Model Registry, SQLite Catalog & Live Runtime Hot-Loader)
+tests/unit/test_model_registry_hot_load.py

@@ -247,3 +247,133 @@ export interface Fetch70dResponse {
   contract_valid?: boolean;
   schema_hash?: string;
 }
+
+// ---- AI Hub / Model Registry & Hot-Loader DTOs ------------------------------
+
+export interface ModelRecordDto {
+  id: string;
+  name: string;
+  version: string;
+  dimension: number;
+  architecture: string;
+  weights_path: string;
+  scaler_path: string;
+  manifest_path?: string;
+  sha256: string;
+  epochs: number;
+  final_loss: number;
+  final_val_loss: number;
+  dataset_path: string;
+  is_active: boolean;
+  fine_tune_enabled: boolean;
+  stage: string;
+  created_at: string;
+  loaded_at: string | null;
+  metrics?: Record<string, unknown>;
+}
+
+export interface ModelsListResponse {
+  status: string;
+  count: number;
+  active_champion_id: string | null;
+  models: ModelRecordDto[];
+}
+
+export interface HotLoadRequest {
+  model_id: string;
+  fine_tune_enabled?: boolean;
+  attach_scaler?: boolean;
+  operator?: string;
+}
+
+export interface HotLoadResponse {
+  status: string;
+  message: string;
+  model_id: string;
+  dimension: number;
+  architecture: string;
+  weights_sha256: string;
+  scaler_attached: boolean;
+  scaler_path: string;
+  fine_tune_enabled: boolean;
+  warmup_latency_us: number;
+  stage: string;
+  loaded_at: string;
+}
+
+export interface ActiveModelResponse {
+  status: string;
+  active_model: {
+    model_id: string;
+    dimension: number;
+    architecture: string;
+    weights_sha256: string;
+    weights_path: string;
+    scaler_path: string;
+    scaler_ready: boolean;
+    fine_tune_enabled: boolean;
+    stage: string;
+    loaded_at: string;
+    inference_count: number;
+  } | null;
+  message?: string;
+}
+
+export interface VerifyModelRequest {
+  model_id: string;
+}
+
+export interface VerifyModelCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface VerifyModelResponse {
+  status: string;
+  model_id: string;
+  dimension: number;
+  all_passed: boolean;
+  checks: VerifyModelCheck[];
+}
+
+export interface ScalerFeatureVector {
+  index: number;
+  mean: number;
+  std: number;
+  zero_variance: boolean;
+  clamp_min: number;
+  clamp_max: number;
+}
+
+export interface InspectScalerResponse {
+  status: string;
+  model_id: string;
+  dimension: number;
+  features_count: number;
+  message?: string;
+  features: ScalerFeatureVector[];
+}
+
+export interface FineTuneModelRequest {
+  base_model_id?: string;
+  dataset_path?: string;
+  epochs?: number;
+  learning_rate?: number;
+  freeze_backbone?: boolean;
+  seed?: number;
+}
+
+export interface FineTuneModelResponse {
+  status: string;
+  message: string;
+  fine_tuned_model_id: string;
+  parent_model_id: string;
+  epochs: number;
+  final_loss: number;
+  frozen_parameters: number;
+  trainable_parameters: number;
+  weights_path: string;
+  scaler_path: string;
+  sha256: string;
+}

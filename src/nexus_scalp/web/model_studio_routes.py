@@ -15,9 +15,12 @@ for PyTorch ScalpNet models across 50D (`scalp_v1`) and 70D (`scalp_v3`):
 from __future__ import annotations
 
 import hashlib
+import json
 import math
+import threading
 import time
-from dataclasses import asdict
+import zipfile
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +32,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from nexus_scalp.features.schema import active_dimension, active_schema
+from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
 
@@ -156,6 +160,95 @@ def _read_dataset_frame(target: Path) -> pl.DataFrame:
     raise ValueError(f"unsupported dataset type: {target.suffix}")
 
 
+# Operator-configurable allowlist of roots a Model Studio request may READ/LOAD models from.
+_MODEL_ROOTS_ENV = "NEXUS_MODEL_STUDIO_MODEL_ROOTS"
+_DEFAULT_MODEL_ROOTS = (
+    "artifacts/model_generation/checkpoints",
+    "artifacts/models",
+    "artifacts/model_generation/models",
+    "models",
+)
+
+
+def _allowed_model_roots() -> list[Path]:
+    """Resolved allowlist of directories a model checkpoint may live under."""
+    import os
+
+    roots_env = str(os.environ.get(_MODEL_ROOTS_ENV, "")).strip()
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for raw in [*roots_env.split(os.pathsep), *_DEFAULT_MODEL_ROOTS]:
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        candidate = Path(cleaned).expanduser()
+        resolved = (
+            candidate.resolve() if candidate.is_absolute() else (REPO_ROOT / candidate).resolve()
+        )
+        if resolved not in seen:
+            seen.add(resolved)
+            roots.append(resolved)
+    return roots
+
+
+def _model_candidates() -> list[tuple[str, str, str, Path]]:
+    """Server-derived inventory of selectable model files: (id, name, relpath, path)."""
+    found: list[tuple[str, str, str, Path]] = []
+    seen: set[Path] = set()
+    for root in _allowed_model_roots():
+        if not root.is_dir():
+            continue
+        for p in sorted(root.rglob("*.pt")):
+            if not p.is_file():
+                continue
+            if p.name.startswith(".") or ".tmp" in p.name:
+                continue
+            real = p.resolve()
+            if real in seen:
+                continue
+            seen.add(real)
+            try:
+                rel = str(real.relative_to(REPO_ROOT))
+            except ValueError:
+                rel = str(real)
+            found.append((p.stem, p.name, rel, real))
+    return found
+
+
+def _safe_model_path(raw: str) -> Path | None:
+    """Select an operator-named model checkpoint from server-derived inventory."""
+    import os
+
+    s = str(raw or "").strip()
+    if not s or "\x00" in s:
+        return None
+    if any(part == ".." for part in Path(s).parts) or (os.altsep and ".." in s.split(os.altsep)):
+        return None
+
+    expanded = os.path.expanduser(s)
+    for model_id, name, rel, path in _model_candidates():
+        if expanded in (model_id, name, rel, str(path)):
+            return path
+    return None
+
+
+def _resolve_requested_model(raw: str) -> Path | None:
+    """Resolve caller-named model checkpoint, raising 400 on explicit-but-invalid."""
+    key = str(raw or "").strip()
+    if not key:
+        return None
+    resolved = _safe_model_path(key)
+    if resolved is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"model {key!r} is not a selectable checkpoint; "
+                "pick a model listed by GET /api/model-studio/models"
+            ),
+        )
+    return resolved
+
+
 # =============================================================================
 # Request / Response Schemas
 # =============================================================================
@@ -230,6 +323,54 @@ class ModelStudioPositionDatasetRequest(BaseModel):
     friction_pips: float = Field(default=0.25, ge=0.0, le=5.0, description="Friction in pips")
 
 
+class ModelStudioHotLoadRequest(BaseModel):
+    model_id: str = Field(..., description="Checkpoint ID, filename, or relative path")
+    fine_tune_enabled: bool = Field(default=False, description="Enable fine-tuning mode")
+    attach_scaler: bool = Field(default=True, description="Auto-load sidecar scaler (.scaler.npz)")
+    operator: str = Field(default="OPERATOR", description="Operator identity")
+
+
+class ModelStudioFineTuneRequest(BaseModel):
+    base_model_id: str = Field(default="", description="Base checkpoint ID (uses active if empty)")
+    dataset_path: str = Field(default="", description="Dataset path for fine-tuning")
+    epochs: int = Field(default=3, ge=1, le=50, description="Fine-tune epochs")
+    learning_rate: float = Field(
+        default=1e-4, ge=1e-6, le=1e-1, description="Fine-tune learning rate"
+    )
+    freeze_backbone: bool = Field(default=True, description="Freeze non-classifier layers")
+    seed: int = Field(default=42, description="Random seed")
+
+
+class ModelStudioVerifyRequest(BaseModel):
+    model_id: str = Field(..., description="Model ID or filename to verify")
+
+
+class ModelStudioRegisterRequest(BaseModel):
+    path: str = Field(..., description="Filesystem path to .pt weights")
+    name: str = Field(default="", description="Friendly model name")
+    dimension: int = Field(default=50, description="Feature dimension (50 or 70)")
+
+
+class ModelStudioCanaryRequest(BaseModel):
+    model_id: str = Field(..., description="Model ID to load as canary")
+
+
+class ModelStudioTagRequest(BaseModel):
+    model_id: str = Field(..., description="Model ID to tag")
+    stage: str = Field(default="STAGING", description="Stage: CHAMPION, CANARY, STAGING, ARCHIVED")
+    fine_tune_enabled: bool | None = Field(default=None, description="Fine-tune permission")
+
+
+class ModelStudioExportRequest(BaseModel):
+    model_id: str = Field(..., description="Model ID to export")
+
+
+class ModelStudioDriftRequest(BaseModel):
+    dataset_path: str = Field(default="", description="Dataset path to compare against")
+    dimension: int = Field(default=50, description="Feature dimension (50 or 70)")
+    max_rows: int = Field(default=500, ge=50, le=10000, description="Row sample limit")
+
+
 # In-memory training progress tracker for studio
 _STUDIO_TRAIN_STATE: dict[str, Any] = {
     "status": "IDLE",
@@ -250,8 +391,66 @@ _STUDIO_TRAIN_STATE: dict[str, Any] = {
 # =============================================================================
 
 
+class _StudioLoadedScaler:
+    """Live scaler bundle holding mean and std vectors for hot-loaded models."""
+
+    def __init__(self, mean: np.ndarray, std: np.ndarray, dim: int) -> None:
+        self.mean = mean.astype(np.float32)
+        self.std = np.maximum(std.astype(np.float32), 1e-3)
+        self._dim = dim
+
+    def is_ready(self) -> bool:
+        return bool(np.all(np.isfinite(self.std)) and np.all(self.std > 0.0))
+
+    def dimension(self) -> int:
+        return self._dim
+
+    def transform(self, x: np.ndarray) -> np.ndarray:
+        if not self.is_ready():
+            return np.clip(x, -5.0, 5.0)
+        m = self.mean[: x.shape[-1]]
+        s = self.std[: x.shape[-1]]
+        return np.clip((x - m) / s, -5.0, 5.0)
+
+    def transform_50d(self, x: np.ndarray) -> np.ndarray:
+        return self.transform(x)
+
+
+@dataclass
+class StudioActiveBundle:
+    model_id: str
+    dimension: int
+    model: ScalpNet
+    scaler: Any
+    weights_sha256: str
+    weights_path: str
+    scaler_path: str
+    fine_tune_enabled: bool
+    stage: str
+    loaded_at: str
+    inference_count: int = 0
+
+
+_STUDIO_BUNDLE_LOCK = threading.RLock()
+
+
+class _StudioBundleHolder:
+    active: StudioActiveBundle | None = None
+    canary: StudioActiveBundle | None = None
+
+
 def _get_active_model_and_scaler(engine: Any, dimension: int) -> tuple[torch.nn.Module, Any, str]:
-    """Resolves model and scaler for inference testing (live bundle or fresh instance)."""
+    """Resolves model and scaler for inference testing (hot-loaded, live bundle, or fresh instance)."""
+    with _STUDIO_BUNDLE_LOCK:
+        if _StudioBundleHolder.active is not None:
+            if _StudioBundleHolder.active.dimension == dimension:
+                _StudioBundleHolder.active.inference_count += 1
+                return (
+                    _StudioBundleHolder.active.model,
+                    _StudioBundleHolder.active.scaler,
+                    f"HOT_LOADED:{_StudioBundleHolder.active.model_id}",
+                )
+
     if engine is not None and getattr(engine, "_bundle", None) is not None:
         with engine._bundle_lock:
             bundle = engine._bundle
@@ -954,20 +1153,80 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
     # Save checkpoint
     ckpt_dir = REPO_ROOT / "artifacts" / "model_generation" / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    ckpt_path = ckpt_dir / f"{run_id}_{req.dimension}d.pt"
+    model_id = f"{run_id}_{req.dimension}d"
+    ckpt_path = ckpt_dir / f"{model_id}.pt"
     torch.save(model.state_dict(), ckpt_path)
 
+    # Compute and save scaler sidecar
+    scaler_path = ckpt_dir / f"{model_id}.scaler.npz"
+    scaler_mean = np.mean(mat, axis=0).astype(np.float32)
+    scaler_std = np.maximum(np.std(mat, axis=0), 1e-3).astype(np.float32)
+    np.savez(scaler_path, mean=scaler_mean, std=scaler_std, dimension=req.dimension)
+
+    hasher = hashlib.sha256()
+    with open(ckpt_path, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    weights_sha256 = hasher.hexdigest()
+
+    # Save metadata manifest
+    manifest_path = ckpt_dir / f"{model_id}.meta.json"
+    manifest_data = {
+        "model_id": model_id,
+        "architecture": "ScalpNet",
+        "dimension": req.dimension,
+        "epochs": req.epochs,
+        "final_loss": final_loss,
+        "final_val_loss": final_val_loss,
+        "weights_sha256": weights_sha256,
+        "created_at": datetime.now(UTC).isoformat(),
+        "dataset_path": str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
+    }
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2)
+
+    # Register into SQLite model registry
+    registry = get_model_registry()
+    rec = ModelRecord(
+        id=model_id,
+        name=ckpt_path.name,
+        version="1.0.0",
+        dimension=req.dimension,
+        architecture="ScalpNet",
+        weights_path=str(ckpt_path.relative_to(REPO_ROOT)),
+        scaler_path=str(scaler_path.relative_to(REPO_ROOT)),
+        manifest_path=str(manifest_path.relative_to(REPO_ROOT)),
+        sha256=weights_sha256,
+        epochs=req.epochs,
+        final_loss=final_loss,
+        final_val_loss=final_val_loss,
+        dataset_path=str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
+        fine_tune_enabled=True,
+        stage="STAGING",
+        metrics={
+            "final_loss": final_loss,
+            "final_val_loss": final_val_loss,
+            "train_size": train_size,
+        },
+    )
+    registry.register_model(rec)
+
     _STUDIO_TRAIN_STATE["checkpoint_path"] = str(ckpt_path.relative_to(REPO_ROOT))
+    _STUDIO_TRAIN_STATE["scaler_path"] = str(scaler_path.relative_to(REPO_ROOT))
 
     return {
         "status": "OK",
         "run_id": run_id,
+        "model_id": model_id,
         "message": f"Training completed successfully for {req.dimension}D model ({req.epochs} epochs).",
         "target_dataset": str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
         "epochs_completed": req.epochs,
         "final_loss": final_loss,
         "final_val_loss": final_val_loss,
         "checkpoint_path": str(ckpt_path.relative_to(REPO_ROOT)),
+        "scaler_path": str(scaler_path.relative_to(REPO_ROOT)),
+        "sha256": weights_sha256,
+        "registered_in_db": True,
         "state": dict(_STUDIO_TRAIN_STATE),
     }
 
@@ -1249,6 +1508,895 @@ def execute_generate_position_dataset(req: ModelStudioPositionDatasetRequest) ->
 
 
 # =============================================================================
+# Model Registry & Hot-Load Core Execution Engines (15 API-First Features)
+# =============================================================================
+
+
+def execute_list_models() -> dict[str, Any]:
+    """1. Lists all models from the SQLite registry and syncs filesystem checkpoints."""
+    registry = get_model_registry()
+    registry.sync_filesystem_checkpoints()
+    models = registry.list_models(include_archived=False)
+
+    with _STUDIO_BUNDLE_LOCK:
+        active_id = _StudioBundleHolder.active.model_id if _StudioBundleHolder.active else None
+
+    # Fallback to DB active if in-memory bundle is not set
+    if active_id is None:
+        db_active = registry.get_active_model()
+        if db_active is not None:
+            active_id = db_active.id
+
+    records_out = []
+    for m in models:
+        d = asdict(m)
+        d["is_active"] = m.id == active_id
+        records_out.append(d)
+
+    return {
+        "status": "OK",
+        "count": len(records_out),
+        "active_champion_id": active_id,
+        "models": records_out,
+    }
+
+
+def execute_hot_load(req: ModelStudioHotLoadRequest, engine: Any = None) -> dict[str, Any]:
+    """2. Hot-loads model weights and scaler sidecar atomically into memory."""
+    registry = get_model_registry()
+    rec = registry.get_model(req.model_id)
+
+    target_path: Path | None = None
+    if rec is not None and rec.weights_path:
+        cand = (REPO_ROOT / rec.weights_path).resolve()
+        if cand.is_file():
+            target_path = cand
+
+    if target_path is None:
+        target_path = _resolve_requested_model(req.model_id)
+
+    if target_path is None or not target_path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model checkpoint {req.model_id!r} could not be resolved or found.",
+        )
+
+    # Safe deserialization (PyTorch weights_only=True)
+    try:
+        weights = torch.load(target_path, map_location="cpu", weights_only=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to safely load model checkpoint: {exc}",
+        ) from exc
+
+    # Infer dimension from weights input projection
+    dim = 50
+    if "input_projection.weight" in weights:
+        dim = int(weights["input_projection.weight"].shape[1])
+    elif rec is not None and rec.dimension in (50, 70):
+        dim = rec.dimension
+
+    # Instantiate model and load state
+    model = ScalpNet(num_features=dim, num_classes=3)
+    model.load_state_dict(weights)
+    model.eval()
+
+    # Resolve or create scaler
+    scaler_attached = False
+    scaler_path_str = ""
+    scaler: Any = None
+
+    if req.attach_scaler:
+        cand_scalers = []
+        if rec and rec.scaler_path:
+            cand_scalers.append((REPO_ROOT / rec.scaler_path).resolve())
+        cand_scalers.append(target_path.with_suffix(".scaler.npz"))
+        cand_scalers.append(target_path.parent / f"{target_path.stem}.scaler.npz")
+
+        for sc_path in cand_scalers:
+            if sc_path.is_file():
+                try:
+                    sc_data = np.load(sc_path)
+                    mean_arr = sc_data["mean"]
+                    std_arr = sc_data["std"]
+                    scaler = _StudioLoadedScaler(mean_arr, std_arr, dim)
+                    scaler_attached = True
+                    try:
+                        scaler_path_str = str(sc_path.relative_to(REPO_ROOT))
+                    except ValueError:
+                        scaler_path_str = str(sc_path)
+                    break
+                except Exception as sc_err:
+                    logger.warning(f"Failed to load scaler {sc_path}: {sc_err}")
+
+    if scaler is None:
+        scaler = _StudioLoadedScaler(
+            np.zeros(dim, dtype=np.float32), np.ones(dim, dtype=np.float32), dim
+        )
+
+    # Warm-up forward pass & latency profiling
+    t0 = time.perf_counter()
+    with torch.no_grad():
+        dummy_x = torch.zeros((1, dim), dtype=torch.float32)
+        dummy_out = model(dummy_x)
+        assert dummy_out.shape == (1, 3)
+    latency_us = float((time.perf_counter() - t0) * 1e6)
+
+    # Calculate weights SHA256
+    hasher = hashlib.sha256()
+    with open(target_path, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    weights_sha256 = hasher.hexdigest()
+
+    model_id = rec.id if rec else target_path.stem
+    try:
+        weights_rel = str(target_path.relative_to(REPO_ROOT))
+    except ValueError:
+        weights_rel = str(target_path)
+
+    # Create active bundle and atomically swap
+    bundle = StudioActiveBundle(
+        model_id=model_id,
+        dimension=dim,
+        model=model,
+        scaler=scaler,
+        weights_sha256=weights_sha256,
+        weights_path=weights_rel,
+        scaler_path=scaler_path_str,
+        fine_tune_enabled=req.fine_tune_enabled,
+        stage="CHAMPION",
+        loaded_at=datetime.now(UTC).isoformat(),
+    )
+
+    with _STUDIO_BUNDLE_LOCK:
+        _StudioBundleHolder.active = bundle
+
+    # Update SQLite Registry
+    if rec is None:
+        rec = ModelRecord(
+            id=model_id,
+            name=target_path.name,
+            version="1.0.0",
+            dimension=dim,
+            architecture="ScalpNet",
+            weights_path=weights_rel,
+            scaler_path=scaler_path_str,
+            sha256=weights_sha256,
+            fine_tune_enabled=req.fine_tune_enabled,
+            stage="CHAMPION",
+        )
+        registry.register_model(rec)
+
+    registry.set_active_champion(
+        model_id,
+        operator=req.operator,
+        fine_tune_enabled=req.fine_tune_enabled,
+        latency_p50_us=latency_us,
+    )
+
+    # Cascade to engine if present
+    if engine is not None and getattr(engine, "_bundle", None) is not None:
+        try:
+            with engine._bundle_lock:
+                engine._bundle.model = model
+                engine._bundle.scaler = scaler
+        except Exception as eng_exc:
+            logger.warning(f"Engine bundle sync warning: {eng_exc}")
+
+    return {
+        "status": "OK",
+        "message": f"Model {model_id} ({dim}D) successfully hot-loaded into active memory.",
+        "model_id": model_id,
+        "dimension": dim,
+        "architecture": "ScalpNet",
+        "weights_sha256": weights_sha256,
+        "scaler_attached": scaler_attached,
+        "scaler_path": scaler_path_str,
+        "fine_tune_enabled": req.fine_tune_enabled,
+        "warmup_latency_us": round(latency_us, 2),
+        "stage": "CHAMPION",
+        "loaded_at": bundle.loaded_at,
+    }
+
+
+def execute_active_model() -> dict[str, Any]:
+    """3. Returns the runtime state of the currently hot-loaded model."""
+    with _STUDIO_BUNDLE_LOCK:
+        if _StudioBundleHolder.active is None:
+            registry = get_model_registry()
+            db_act = registry.get_active_model()
+            if db_act is not None:
+                try:
+                    execute_hot_load(
+                        ModelStudioHotLoadRequest(
+                            model_id=db_act.id,
+                            fine_tune_enabled=db_act.fine_tune_enabled,
+                            attach_scaler=True,
+                            operator="PERSISTENT_RESTORE",
+                        )
+                    )
+                except Exception as exc:
+                    logger.warning(f"Failed to auto-restore champion from DB: {exc}")
+
+        if _StudioBundleHolder.active is None:
+            return {
+                "status": "NO_ACTIVE_MODEL",
+                "active_model": None,
+                "message": "No model is currently hot-loaded in memory.",
+            }
+        b = _StudioBundleHolder.active
+        return {
+            "status": "OK",
+            "active_model": {
+                "model_id": b.model_id,
+                "dimension": b.dimension,
+                "architecture": "ScalpNet",
+                "weights_sha256": b.weights_sha256,
+                "weights_path": b.weights_path,
+                "scaler_path": b.scaler_path,
+                "scaler_ready": bool(b.scaler and b.scaler.is_ready()),
+                "fine_tune_enabled": b.fine_tune_enabled,
+                "stage": b.stage,
+                "loaded_at": b.loaded_at,
+                "inference_count": b.inference_count,
+            },
+        }
+
+
+def execute_rollback(engine: Any = None) -> dict[str, Any]:
+    """4. Atomically rolls back to the previous active champion model from history."""
+    registry = get_model_registry()
+    prev = registry.get_previous_active_model()
+    if prev is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No previous champion model found in audit history to roll back to.",
+        )
+
+    hot_req = ModelStudioHotLoadRequest(
+        model_id=prev.id,
+        fine_tune_enabled=prev.fine_tune_enabled,
+        attach_scaler=True,
+        operator="ROLLBACK",
+    )
+    res = execute_hot_load(hot_req, engine=engine)
+    res["message"] = f"Successfully rolled back champion model to {prev.id}."
+    res["action"] = "ROLLBACK"
+    return res
+
+
+def execute_fine_tune(req: ModelStudioFineTuneRequest) -> dict[str, Any]:
+    """5. Dispatches fine-tuning from a base model checkpoint with backbone freezing options."""
+    registry = get_model_registry()
+
+    base_id = req.base_model_id.strip()
+    base_rec: ModelRecord | None = None
+    if base_id:
+        base_rec = registry.get_model(base_id)
+    else:
+        with _STUDIO_BUNDLE_LOCK:
+            if _StudioBundleHolder.active:
+                base_id = _StudioBundleHolder.active.model_id
+                base_rec = registry.get_model(base_id)
+        if base_rec is None:
+            base_rec = registry.get_active_model()
+
+    if base_rec is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Base model for fine-tuning could not be found.",
+        )
+
+    if not base_rec.fine_tune_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Base model {base_rec.id} is locked; fine_tune_enabled is False.",
+        )
+
+    target_weights = (REPO_ROOT / base_rec.weights_path).resolve()
+    if not target_weights.is_file():
+        raise HTTPException(status_code=400, detail="Base model weights file missing.")
+
+    weights = torch.load(target_weights, map_location="cpu", weights_only=True)
+    dim = base_rec.dimension
+    model = ScalpNet(num_features=dim, num_classes=3)
+    model.load_state_dict(weights)
+    model.train()
+
+    # Freeze backbone if requested
+    frozen_count = 0
+    trainable_count = 0
+    if req.freeze_backbone:
+        for name, param in model.named_parameters():
+            if "classifier" not in name:
+                param.requires_grad = False
+                frozen_count += param.numel()
+            else:
+                trainable_count += param.numel()
+    else:
+        for param in model.parameters():
+            trainable_count += param.numel()
+
+    # Load dataset
+    df: pl.DataFrame | None = None
+    target_path = _resolve_requested_dataset(req.dataset_path)
+    if target_path is not None:
+        df = _read_dataset_frame(target_path)
+    else:
+        from scripts.data.ingest_historical_candles import generate_synthetic_bars
+
+        df = generate_synthetic_bars(symbol="XAUUSD", count=500, seed=req.seed)
+
+    assert df is not None
+    mat, _ = extract_dataset_features(df, dimension=dim, max_rows=500)
+    n = mat.shape[0]
+    if n < 10:
+        raise HTTPException(status_code=400, detail="Dataset too small for fine-tuning.")
+
+    closes = (
+        np.array(df["close"].to_numpy()[:n], dtype=np.float64)
+        if "close" in df.columns
+        else np.linspace(2000.0, 2020.0, n, dtype=np.float64)
+    )
+    y_labels = np.zeros(n, dtype=np.int64)
+    for i in range(n - 3):
+        diff = closes[i + 3] - closes[i]
+        if diff > 0.1:
+            y_labels[i] = 1
+        elif diff < -0.1:
+            y_labels[i] = 2
+
+    X_t = torch.tensor(mat, dtype=torch.float32)
+    y_t = torch.tensor(y_labels, dtype=torch.long)
+
+    optimizer = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=req.learning_rate,
+    )
+    criterion = torch.nn.CrossEntropyLoss()
+
+    final_loss = 0.0
+    for _ in range(req.epochs):
+        optimizer.zero_grad()
+        out = model(X_t)
+        loss = criterion(out, y_t)
+        loss.backward()
+        optimizer.step()
+        final_loss = float(loss.item())
+
+    # Save fine-tuned model
+    ts = int(time.time())
+    ft_id = f"{base_rec.id}_ft_{ts}"
+    ckpt_dir = REPO_ROOT / "artifacts" / "model_generation" / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    ft_path = ckpt_dir / f"{ft_id}.pt"
+    torch.save(model.state_dict(), ft_path)
+
+    # Save matching scaler
+    ft_scaler_path = ckpt_dir / f"{ft_id}.scaler.npz"
+    mean_ft = np.mean(mat, axis=0).astype(np.float32)
+    std_ft = np.maximum(np.std(mat, axis=0), 1e-3).astype(np.float32)
+    np.savez(ft_scaler_path, mean=mean_ft, std=std_ft, dimension=dim)
+
+    hasher = hashlib.sha256()
+    with open(ft_path, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    ft_sha256 = hasher.hexdigest()
+
+    new_rec = ModelRecord(
+        id=ft_id,
+        name=ft_path.name,
+        version="1.1.0",
+        dimension=dim,
+        architecture="ScalpNet",
+        weights_path=str(ft_path.relative_to(REPO_ROOT)),
+        scaler_path=str(ft_scaler_path.relative_to(REPO_ROOT)),
+        sha256=ft_sha256,
+        epochs=req.epochs,
+        final_loss=final_loss,
+        final_val_loss=final_loss,
+        dataset_path=str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
+        fine_tune_enabled=True,
+        stage="STAGING",
+        metrics={
+            "parent_model_id": base_rec.id,
+            "freeze_backbone": req.freeze_backbone,
+            "frozen_parameters": frozen_count,
+            "trainable_parameters": trainable_count,
+            "final_loss": final_loss,
+        },
+    )
+    registry.register_model(new_rec)
+
+    return {
+        "status": "OK",
+        "message": f"Model {ft_id} fine-tuned successfully from {base_rec.id}.",
+        "fine_tuned_model_id": ft_id,
+        "parent_model_id": base_rec.id,
+        "epochs": req.epochs,
+        "final_loss": final_loss,
+        "frozen_parameters": frozen_count,
+        "trainable_parameters": trainable_count,
+        "weights_path": new_rec.weights_path,
+        "scaler_path": new_rec.scaler_path,
+        "sha256": ft_sha256,
+    }
+
+
+def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
+    """6. Performs dry-run verification battery on a model checkpoint and its sidecars."""
+    registry = get_model_registry()
+    rec = registry.get_model(req.model_id)
+
+    target_path: Path | None = None
+    if rec and rec.weights_path:
+        cand = (REPO_ROOT / rec.weights_path).resolve()
+        if cand.is_file():
+            target_path = cand
+    if target_path is None:
+        target_path = _resolve_requested_model(req.model_id)
+
+    if target_path is None or not target_path.is_file():
+        raise HTTPException(status_code=400, detail=f"Model {req.model_id!r} not found.")
+
+    checks: list[dict[str, Any]] = []
+    checks.append({"name": "FILE_EXISTS", "passed": True, "detail": str(target_path.name)})
+
+    weights: dict[str, torch.Tensor] = {}
+    try:
+        weights = torch.load(target_path, map_location="cpu", weights_only=True)
+        checks.append(
+            {
+                "name": "SAFE_DESERIALIZATION",
+                "passed": True,
+                "detail": "weights_only=True passed",
+            }
+        )
+    except Exception as exc:
+        checks.append({"name": "SAFE_DESERIALIZATION", "passed": False, "detail": str(exc)})
+        return {"status": "FAILED", "all_passed": False, "checks": checks}
+
+    all_finite = True
+    nan_layers = []
+    for k, v in weights.items():
+        if torch.is_tensor(v):
+            if not torch.all(torch.isfinite(v)).item():
+                all_finite = False
+                nan_layers.append(k)
+    checks.append(
+        {
+            "name": "NUMERICAL_FINITENESS",
+            "passed": all_finite,
+            "detail": "All weights finite" if all_finite else f"Non-finite values in: {nan_layers}",
+        }
+    )
+
+    non_zero = True
+    for _k, v in weights.items():
+        if (
+            v.dim() >= 2
+            and "weight" in _k
+            and torch.is_tensor(v)
+            and v.dtype == torch.float32
+            and v.numel() > 1
+        ):
+            if float(torch.std(v).item()) < 1e-7:
+                non_zero = False
+                break
+    checks.append(
+        {
+            "name": "WEIGHT_VARIANCE",
+            "passed": non_zero,
+            "detail": (
+                "Non-zero variance verified across layers"
+                if non_zero
+                else "Warning: low/zero variance detected"
+            ),
+        }
+    )
+
+    dim = 50
+    if "input_projection.weight" in weights:
+        dim = int(weights["input_projection.weight"].shape[1])
+    model: ScalpNet | None = None
+    try:
+        model = ScalpNet(num_features=dim, num_classes=3)
+        model.load_state_dict(weights)
+        model.eval()
+        checks.append(
+            {
+                "name": "ARCHITECTURE_LOAD",
+                "passed": True,
+                "detail": f"ScalpNet {dim}D initialized",
+            }
+        )
+    except Exception as m_err:
+        checks.append({"name": "ARCHITECTURE_LOAD", "passed": False, "detail": str(m_err)})
+
+    if model is not None:
+        try:
+            with torch.no_grad():
+                x = torch.zeros((1, dim), dtype=torch.float32)
+                out = model(x)
+                passed_smoke = out.shape == (1, 3) and bool(torch.all(torch.isfinite(out)).item())
+                checks.append(
+                    {
+                        "name": "SMOKE_INFERENCE",
+                        "passed": passed_smoke,
+                        "detail": f"Output shape: {list(out.shape)}",
+                    }
+                )
+        except Exception as s_err:
+            checks.append({"name": "SMOKE_INFERENCE", "passed": False, "detail": str(s_err)})
+    else:
+        checks.append(
+            {"name": "SMOKE_INFERENCE", "passed": False, "detail": "Model failed to instantiate"}
+        )
+
+    scaler_cand = target_path.with_suffix(".scaler.npz")
+    scaler_present = scaler_cand.is_file()
+    checks.append(
+        {
+            "name": "SCALER_SIDECAR",
+            "passed": scaler_present,
+            "detail": (
+                f"Sidecar found: {scaler_cand.name}"
+                if scaler_present
+                else "Sidecar not found (default unit scaler used)"
+            ),
+        }
+    )
+
+    all_passed = all(c["passed"] for c in checks if c["name"] != "SCALER_SIDECAR")
+    return {
+        "status": "OK" if all_passed else "WARNING",
+        "model_id": req.model_id,
+        "dimension": dim,
+        "all_passed": all_passed,
+        "checks": checks,
+    }
+
+
+def execute_register_model(req: ModelStudioRegisterRequest) -> dict[str, Any]:
+    """7. Registers an external or discovered model checkpoint into the SQLite catalog."""
+    target_path = _resolve_requested_model(req.path)
+    if target_path is None or not target_path.is_file():
+        raise HTTPException(status_code=400, detail=f"File {req.path!r} not found.")
+
+    weights = torch.load(target_path, map_location="cpu", weights_only=True)
+    dim = req.dimension
+    if "input_projection.weight" in weights:
+        dim = int(weights["input_projection.weight"].shape[1])
+
+    hasher = hashlib.sha256()
+    with open(target_path, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    sha = hasher.hexdigest()
+
+    model_id = req.name.strip() or target_path.stem
+    rel_path = str(target_path.relative_to(REPO_ROOT))
+
+    scaler_cand = target_path.with_suffix(".scaler.npz")
+    scaler_rel = str(scaler_cand.relative_to(REPO_ROOT)) if scaler_cand.is_file() else ""
+
+    rec = ModelRecord(
+        id=model_id,
+        name=target_path.name,
+        version="1.0.0",
+        dimension=dim,
+        architecture="ScalpNet",
+        weights_path=rel_path,
+        scaler_path=scaler_rel,
+        sha256=sha,
+        fine_tune_enabled=True,
+        stage="STAGING",
+    )
+    registry = get_model_registry()
+    saved = registry.register_model(rec)
+    return {"status": "OK", "model": asdict(saved)}
+
+
+def execute_delete_model(model_id: str) -> dict[str, Any]:
+    """8. Safely removes a model from the registry (guarded against active champion)."""
+    registry = get_model_registry()
+    with _STUDIO_BUNDLE_LOCK:
+        if _StudioBundleHolder.active and _StudioBundleHolder.active.model_id == model_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete active champion model. Hot-load a different model first.",
+            )
+
+    rec = registry.get_model(model_id)
+    if rec and rec.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete active champion model recorded in database.",
+        )
+
+    deleted = registry.delete_model(model_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+
+    return {"status": "OK", "deleted": True, "model_id": model_id}
+
+
+def execute_get_scaler(model_id: str) -> dict[str, Any]:
+    """9. Inspects the scaler vector parameters (means, stds) for a model."""
+    registry = get_model_registry()
+    rec = registry.get_model(model_id)
+
+    scaler_file: Path | None = None
+    dim = 50
+    if rec:
+        dim = rec.dimension
+        if rec.scaler_path:
+            cand = (REPO_ROOT / rec.scaler_path).resolve()
+            if cand.is_file():
+                scaler_file = cand
+
+    if scaler_file is None:
+        target_model = _safe_model_path(model_id)
+        if target_model:
+            cand = target_model.with_suffix(".scaler.npz")
+            if cand.is_file():
+                scaler_file = cand
+
+    if scaler_file is None or not scaler_file.is_file():
+        return {
+            "status": "NO_SCALER_SIDECAR",
+            "model_id": model_id,
+            "dimension": dim,
+            "features": [],
+            "message": "No dedicated scaler sidecar found for this model; standard unit scaling will apply.",
+        }
+
+    data = np.load(scaler_file)
+    mean_vec = data["mean"]
+    std_vec = data["std"]
+    dim = int(data.get("dimension", len(mean_vec)))
+
+    features = []
+    for idx in range(len(mean_vec)):
+        features.append(
+            {
+                "index": idx,
+                "mean": round(float(mean_vec[idx]), 4),
+                "std": round(float(std_vec[idx]), 4),
+                "zero_variance": bool(float(std_vec[idx]) <= 1e-4),
+                "clamp_min": -5.0,
+                "clamp_max": 5.0,
+            }
+        )
+
+    return {
+        "status": "OK",
+        "model_id": model_id,
+        "dimension": dim,
+        "features_count": len(features),
+        "features": features,
+    }
+
+
+def execute_canary(req: ModelStudioCanaryRequest) -> dict[str, Any]:
+    """10. Hot-loads a candidate model into a shadow canary slot."""
+    target_path = _resolve_requested_model(req.model_id)
+    if target_path is None or not target_path.is_file():
+        raise HTTPException(status_code=400, detail=f"Model {req.model_id!r} not found.")
+
+    weights = torch.load(target_path, map_location="cpu", weights_only=True)
+    dim = 50
+    if "input_projection.weight" in weights:
+        dim = int(weights["input_projection.weight"].shape[1])
+
+    model = ScalpNet(num_features=dim, num_classes=3)
+    model.load_state_dict(weights)
+    model.eval()
+
+    scaler = _StudioLoadedScaler(
+        np.zeros(dim, dtype=np.float32), np.ones(dim, dtype=np.float32), dim
+    )
+
+    bundle = StudioActiveBundle(
+        model_id=req.model_id,
+        dimension=dim,
+        model=model,
+        scaler=scaler,
+        weights_sha256="",
+        weights_path=str(target_path.relative_to(REPO_ROOT)),
+        scaler_path="",
+        fine_tune_enabled=False,
+        stage="CANARY",
+        loaded_at=datetime.now(UTC).isoformat(),
+    )
+
+    with _STUDIO_BUNDLE_LOCK:
+        _StudioBundleHolder.canary = bundle
+
+    registry = get_model_registry()
+    registry.update_model_stage(req.model_id, stage="CANARY")
+
+    return {
+        "status": "OK",
+        "message": f"Model {req.model_id} successfully loaded into CANARY shadow slot.",
+        "canary_model_id": req.model_id,
+        "dimension": dim,
+        "stage": "CANARY",
+    }
+
+
+def execute_history(limit: int = 50) -> dict[str, Any]:
+    """11. Returns audit trail of model hot-swaps, rollbacks, and loads from SQLite."""
+    registry = get_model_registry()
+    events = registry.get_load_history(limit=limit)
+    return {"status": "OK", "count": len(events), "history": events}
+
+
+def execute_export_model(req: ModelStudioExportRequest) -> dict[str, Any]:
+    """12. Packages model weights, scaler, and manifest into a zip bundle."""
+    registry = get_model_registry()
+    rec = registry.get_model(req.model_id)
+    if rec is None or not rec.weights_path:
+        raise HTTPException(status_code=404, detail=f"Model {req.model_id!r} not found.")
+
+    weights_file = (REPO_ROOT / rec.weights_path).resolve()
+    if not weights_file.is_file():
+        raise HTTPException(status_code=404, detail="Model weights file missing.")
+
+    export_dir = REPO_ROOT / "artifacts" / "model_generation" / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = export_dir / f"{rec.id}_bundle.zip"
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(weights_file, arcname=weights_file.name)
+        if rec.scaler_path:
+            sc_file = (REPO_ROOT / rec.scaler_path).resolve()
+            if sc_file.is_file():
+                zf.write(sc_file, arcname=sc_file.name)
+        if rec.manifest_path:
+            mf_file = (REPO_ROOT / rec.manifest_path).resolve()
+            if mf_file.is_file():
+                zf.write(mf_file, arcname=mf_file.name)
+        else:
+            meta_json = json.dumps(asdict(rec), indent=2)
+            zf.writestr("model.meta.json", meta_json)
+
+    size = zip_path.stat().st_size
+    hasher = hashlib.sha256()
+    with open(zip_path, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+
+    return {
+        "status": "OK",
+        "model_id": rec.id,
+        "export_path": str(zip_path.relative_to(REPO_ROOT)),
+        "size_bytes": size,
+        "sha256": hasher.hexdigest(),
+    }
+
+
+def execute_tag_model(req: ModelStudioTagRequest) -> dict[str, Any]:
+    """13. Updates the deployment stage and fine-tune permissions for a model."""
+    valid_stages = ("CHAMPION", "CANARY", "STAGING", "ARCHIVED")
+    stage_upper = req.stage.upper().strip()
+    if stage_upper not in valid_stages:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stage: {req.stage}. Must be one of {valid_stages}",
+        )
+
+    registry = get_model_registry()
+    updated = registry.update_model_stage(
+        req.model_id,
+        stage=stage_upper,
+        fine_tune_enabled=req.fine_tune_enabled,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Model {req.model_id!r} not found.")
+
+    return {"status": "OK", "model": asdict(updated)}
+
+
+def execute_benchmark_live(iterations: int = 100) -> dict[str, Any]:
+    """14. Live profiling of inference latency and throughput of the hot-loaded active model."""
+    with _STUDIO_BUNDLE_LOCK:
+        if _StudioBundleHolder.active is None:
+            raise HTTPException(status_code=400, detail="No active model hot-loaded to benchmark.")
+        model = _StudioBundleHolder.active.model
+        scaler = _StudioBundleHolder.active.scaler
+        dim = _StudioBundleHolder.active.dimension
+        model_id = _StudioBundleHolder.active.model_id
+
+    latencies_us: list[float] = []
+    dummy = np.random.randn(1, dim).astype(np.float32)
+
+    with torch.no_grad():
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            scaled = scaler.transform(dummy)
+            t_tensor = torch.tensor(scaled, dtype=torch.float32)
+            _ = model(t_tensor)
+            latencies_us.append((time.perf_counter() - t0) * 1e6)
+
+    p50 = float(np.percentile(latencies_us, 50))
+    p90 = float(np.percentile(latencies_us, 90))
+    p99 = float(np.percentile(latencies_us, 99))
+    throughput = 1e6 / p50 if p50 > 0 else 0.0
+
+    return {
+        "status": "OK",
+        "model_id": model_id,
+        "dimension": dim,
+        "iterations": iterations,
+        "p50_latency_us": round(p50, 2),
+        "p90_latency_us": round(p90, 2),
+        "p99_latency_us": round(p99, 2),
+        "throughput_samples_per_sec": round(throughput, 1),
+    }
+
+
+def execute_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
+    """15. Detects feature distribution drift between active scaler and candidate dataset."""
+    with _STUDIO_BUNDLE_LOCK:
+        if _StudioBundleHolder.active is None:
+            raise HTTPException(
+                status_code=400, detail="No active model hot-loaded for drift check."
+            )
+        scaler = _StudioBundleHolder.active.scaler
+        dim = _StudioBundleHolder.active.dimension
+        model_id = _StudioBundleHolder.active.model_id
+
+    target_path = _resolve_requested_dataset(req.dataset_path)
+    df: pl.DataFrame | None = None
+    if target_path:
+        df = _read_dataset_frame(target_path)
+    else:
+        from scripts.data.ingest_historical_candles import generate_synthetic_bars
+
+        df = generate_synthetic_bars(symbol="XAUUSD", count=req.max_rows, seed=42)
+
+    mat, names = extract_dataset_features(df, dimension=dim, max_rows=req.max_rows)
+    data_means = np.mean(mat, axis=0)
+
+    scaler_means = getattr(scaler, "mean", np.zeros(dim))
+    scaler_stds = getattr(scaler, "std", np.ones(dim))
+
+    drift_scores = []
+    high_drift_features = []
+    for idx in range(min(dim, len(data_means), len(scaler_means))):
+        shift = abs(float(data_means[idx]) - float(scaler_means[idx])) / max(
+            float(scaler_stds[idx]), 1e-3
+        )
+        drift_scores.append(shift)
+        feat_name = names[idx] if idx < len(names) else f"feature_{idx}"
+        if shift > 2.5:
+            high_drift_features.append(
+                {
+                    "feature": feat_name,
+                    "z_score_shift": round(shift, 3),
+                    "data_mean": round(float(data_means[idx]), 3),
+                    "scaler_mean": round(float(scaler_means[idx]), 3),
+                }
+            )
+
+    mean_drift = float(np.mean(drift_scores)) if drift_scores else 0.0
+
+    return {
+        "status": "OK",
+        "model_id": model_id,
+        "dataset": str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
+        "overall_drift_score": round(mean_drift, 4),
+        "drift_detected": bool(len(high_drift_features) > 0 or mean_drift > 1.5),
+        "high_drift_count": len(high_drift_features),
+        "high_drift_features": high_drift_features,
+    }
+
+
+# =============================================================================
 # Router Registration
 # =============================================================================
 
@@ -1308,3 +2456,69 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     def route_benchmark(req: ModelStudioBenchmarkRequest) -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
         return execute_benchmark(req, engine)
+
+    # -------------------------------------------------------------------------
+    # AI Hub / Model Registry & Hot-Load Endpoints (15 API-First Capabilities)
+    # -------------------------------------------------------------------------
+
+    @app.get("/api/model-studio/models")
+    def route_list_models() -> dict[str, Any]:
+        return execute_list_models()
+
+    @app.post("/api/model-studio/models/hot-load")
+    def route_hot_load(req: ModelStudioHotLoadRequest) -> dict[str, Any]:
+        engine = getattr(app.state, "engine", None)
+        return execute_hot_load(req, engine=engine)
+
+    @app.get("/api/model-studio/models/active")
+    def route_active_model() -> dict[str, Any]:
+        return execute_active_model()
+
+    @app.post("/api/model-studio/models/rollback")
+    def route_rollback() -> dict[str, Any]:
+        engine = getattr(app.state, "engine", None)
+        return execute_rollback(engine=engine)
+
+    @app.post("/api/model-studio/models/fine-tune")
+    def route_fine_tune(req: ModelStudioFineTuneRequest) -> dict[str, Any]:
+        return execute_fine_tune(req)
+
+    @app.post("/api/model-studio/models/verify")
+    def route_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
+        return execute_verify(req)
+
+    @app.post("/api/model-studio/models/register")
+    def route_register_model(req: ModelStudioRegisterRequest) -> dict[str, Any]:
+        return execute_register_model(req)
+
+    @app.delete("/api/model-studio/models/{model_id}")
+    def route_delete_model(model_id: str) -> dict[str, Any]:
+        return execute_delete_model(model_id)
+
+    @app.get("/api/model-studio/models/{model_id}/scaler")
+    def route_get_scaler(model_id: str) -> dict[str, Any]:
+        return execute_get_scaler(model_id)
+
+    @app.post("/api/model-studio/models/canary")
+    def route_canary(req: ModelStudioCanaryRequest) -> dict[str, Any]:
+        return execute_canary(req)
+
+    @app.get("/api/model-studio/models/history")
+    def route_history(limit: int = 50) -> dict[str, Any]:
+        return execute_history(limit=limit)
+
+    @app.post("/api/model-studio/models/export")
+    def route_export_model(req: ModelStudioExportRequest) -> dict[str, Any]:
+        return execute_export_model(req)
+
+    @app.post("/api/model-studio/models/tag")
+    def route_tag_model(req: ModelStudioTagRequest) -> dict[str, Any]:
+        return execute_tag_model(req)
+
+    @app.post("/api/model-studio/models/benchmark-live")
+    def route_benchmark_live() -> dict[str, Any]:
+        return execute_benchmark_live()
+
+    @app.post("/api/model-studio/models/drift-check")
+    def route_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
+        return execute_drift_check(req)
