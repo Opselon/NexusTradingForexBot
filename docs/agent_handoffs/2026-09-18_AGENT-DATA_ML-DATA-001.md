@@ -5,8 +5,10 @@
 - **Agent**: `AGENT-DATA`
 - **Date**: `2026-09-18`
 - **Branch**: `agent/feature/ML-DATA-001`
+- **PR**: [#259](https://github.com/Opselon/NexusTradingForexBot/pull/259)
+- **Merge Commit**: `d52bcde6c7375a9d6ad06ab29521eb3e432b6d1f`
+- **Status**: `DONE` (Merged & Verified on Main)
 - **Goal**: Build reproducible, automated ingestion CLI to download historical M1 candles from MT5 (or import CSV / synthetic) and store standardized, validated market bars passing canonical dataset contracts into Parquet storage.
-- **Status**: `IMPLEMENTED` (Ready for PR & Merge)
 
 ---
 
