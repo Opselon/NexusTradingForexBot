@@ -13,6 +13,8 @@ Contract (file:line refs):
 
 from __future__ import annotations
 
+import datetime
+
 import numpy as np
 import polars as pl
 import torch
@@ -63,7 +65,7 @@ def test_gap_invalidates_window_and_not_else() -> None:
     frame = _synthetic_70d_frame(n=40)
     rows = list(frame.iter_rows(named=True))
     for j in range(20, len(rows)):
-        rows[j]["timestamp"] = rows[j]["timestamp"] + np.timedelta64(20 * 60_000_000, "us")
+        rows[j]["timestamp"] = rows[j]["timestamp"] + datetime.timedelta(minutes=20)
     fixed = pl.DataFrame(rows)
     builder = SequenceBuilder(seq_len=16, max_gap_us=CANONICAL_MAX_GAP_US)
     seq = builder.build(fixed, news_enabled=False)

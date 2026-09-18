@@ -413,13 +413,38 @@ def db_path_for_audit() -> str:
     return str(db_path_for_domain("audit", base))
 
 
+DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
+    "http://localhost",
+    "http://localhost:8000",
+    "http://localhost:3000",
+    "http://127.0.0.1",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:3000",
+    "http://[::1]",
+    "http://[::1]:8000",
+    "http://[::1]:3000",
+)
+
+
+def _get_allowed_cors_origins() -> list[str]:
+    """Returns the list of allowed CORS origins.
+
+    Defaults to local dashboard origins (localhost / 127.0.0.1 / [::1] on ports 8000 and 3000).
+    Can be overridden via NSE_CORS_ORIGINS or NEXUS_CORS_ORIGINS environment variables.
+    """
+    raw_env = os.environ.get("NSE_CORS_ORIGINS") or os.environ.get("NEXUS_CORS_ORIGINS")
+    if raw_env and raw_env.strip():
+        return [origin.strip() for origin in raw_env.split(",") if origin.strip()]
+    return list(DEFAULT_CORS_ORIGINS)
+
+
 def create_app(engine_ref: Any = None) -> FastAPI:
     """Creates and configures the FastAPI web server instance."""
     app = FastAPI(title="Nexus Scalp Engine Control Center", version="0.1.0")
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_get_allowed_cors_origins(),
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
