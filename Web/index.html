@@ -119,6 +119,11 @@
                             <i class="fa-solid fa-brain text-lg w-5 text-accentCyan"></i>
                             <span>AI Intel Hub</span>
                         </button>
+            <button onclick="switchTab('tab-model-studio', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left text-accentCyan hover:bg-surfaceLight/50">
+                <i class="fa-solid fa-network-wired text-lg w-5 text-accentCyan"></i>
+                <span>Neural Studio (50D/70D)</span>
+                <span class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">DEEP</span>
+            </button>
                         <button onclick="switchTab('tab-research', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
                             <i class="fa-solid fa-flask-vial text-lg w-5 text-accentCyan"></i>
                             <span>Strategy Research</span>
@@ -3574,6 +3579,342 @@
                 </div>
             </section>
 
+            <!-- ========================================================================= -->
+            <!-- TAB: DEEP LEARNING & NEURAL MODEL STUDIO (ML-UI-001)                      -->
+            <!-- ========================================================================= -->
+            <section id="tab-model-studio" class="tab-content hidden space-y-6">
+                <!-- Header / Mode Switcher -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xl">🧠</span>
+                            <h2 class="text-lg font-black tracking-wide text-white">NEURAL MODEL STUDIO & DEEP LEARNING</h2>
+                            <span id="studio-dim-badge" class="px-2 py-0.5 rounded text-xs font-black bg-accentCyan/20 text-accentCyan border border-accentCyan/30">50D</span>
+                        </div>
+                        <p class="text-xs text-textMuted mt-1">Full-transparency neural network inspection, interactive prediction, 70D live assembly, and dataset training.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-400 font-semibold mr-1">Dimension:</span>
+                        <button id="studio-btn-50d" onclick="setStudioDimension(50)" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-accentCyan text-black transition">50D (scalp_v1)</button>
+                        <button id="studio-btn-70d" onclick="setStudioDimension(70)" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-surfaceLight/50 text-gray-300 hover:text-white transition">70D (scalp_v3)</button>
+                        <button onclick="loadModelStudioOverview()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-surfaceLight hover:bg-borderClr text-gray-200 transition border border-borderClr">
+                            <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Overview Stat Cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-3">
+                        <div class="text-[10px] uppercase font-bold text-textMuted">Architecture</div>
+                        <div id="studio-arch" class="text-sm font-extrabold text-white mt-1">ScalpNet</div>
+                    </div>
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-3">
+                        <div class="text-[10px] uppercase font-bold text-textMuted">Source</div>
+                        <div id="studio-source" class="text-sm font-extrabold text-accentCyan mt-1">--</div>
+                    </div>
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-3">
+                        <div class="text-[10px] uppercase font-bold text-textMuted">Parameters</div>
+                        <div id="studio-params" class="text-sm font-extrabold text-white mt-1">--</div>
+                    </div>
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-3">
+                        <div class="text-[10px] uppercase font-bold text-textMuted">Weights Hash</div>
+                        <div id="studio-weights-hash" class="text-sm font-mono text-emerald-400 mt-1">--</div>
+                    </div>
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-3">
+                        <div class="text-[10px] uppercase font-bold text-textMuted">Device</div>
+                        <div id="studio-device" class="text-sm font-extrabold text-white mt-1">cpu</div>
+                    </div>
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-3">
+                        <div class="text-[10px] uppercase font-bold text-textMuted">Scaler Status</div>
+                        <div id="studio-scaler-status" class="text-sm font-bold text-emerald-400 mt-1">--</div>
+                    </div>
+                </div>
+
+                <!-- 70D Assembly & Live Component Fetcher (Shown when 70D is active) -->
+                <div id="studio-70d-assembly-panel" class="hidden bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-borderClr pb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="text-base text-amber-400">⚡</span>
+                            <h3 class="text-sm font-bold text-white">70D MULTI-SOURCE COMPONENT ASSEMBLY</h3>
+                            <span id="studio-70d-contract-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400 border border-gray-500/30">WAITING FETCH</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-[11px] text-gray-400 font-mono">Schema Hash: <span id="studio-70d-hash" class="text-white">--</span></span>
+                            <button id="btn-fetch-70d" onclick="fetchLive70dComponents()" class="px-3 py-1 rounded bg-accentCyan/20 text-accentCyan hover:bg-accentCyan/30 border border-accentCyan/40 text-xs font-bold transition">
+                                <i class="fa-solid fa-arrows-rotate mr-1"></i> Fetch Live 70D
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-textMuted">Assembles 50 Base features (live tick stream) + 10 News features (NewsEngine) + 10 Liquidity features (LiquidityGovernor) under strict schema hash verification.</p>
+                    <div id="studio-70d-slots-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-56 overflow-y-auto pr-1"></div>
+                </div>
+
+                <!-- Interactive Neural Inference Panel -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Controls Column -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
+                        <h3 class="text-sm font-bold text-white flex items-center">
+                            <i class="fa-solid fa-sliders mr-2 text-accentCyan"></i>
+                            INFERENCE CONTROLS
+                        </h3>
+                        <div class="space-y-3 text-xs">
+                            <div class="flex items-center justify-between p-2 rounded bg-darkBg border border-borderClr">
+                                <label for="studio-use-live-toggle" class="text-gray-300 font-semibold cursor-pointer">Use Live Tick Stream</label>
+                                <input id="studio-use-live-toggle" type="checkbox" checked class="w-4 h-4 text-accentCyan rounded">
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 mb-1 font-semibold">Adversarial Noise Jitter (sigma: 0.0 - 1.0)</label>
+                                <input id="studio-noise-input" type="number" step="0.05" min="0" max="1" value="0.0" class="w-full bg-darkBg border border-borderClr rounded px-2.5 py-1.5 text-xs text-white">
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 mb-1 font-semibold">Policy Threshold Simulation (0.10 - 0.90)</label>
+                                <input id="studio-threshold-input" type="number" step="0.05" min="0.1" max="0.9" value="0.35" class="w-full bg-darkBg border border-borderClr rounded px-2.5 py-1.5 text-xs text-white">
+                            </div>
+                            <button id="btn-run-inference" onclick="runStudioInference()" class="w-full py-2.5 rounded-lg bg-accentCyan hover:bg-cyan-400 text-black font-extrabold text-xs transition shadow-lg flex items-center justify-center">
+                                <i class="fa-solid fa-bolt mr-2"></i> Run Neural Inference
+                            </button>
+                        </div>
+
+                        <!-- Numerical & OOD Badges -->
+                        <div class="pt-2 border-t border-borderClr space-y-2 text-xs">
+                            <div class="flex justify-between">
+                                <span class="text-textMuted">Numerical Integrity:</span>
+                                <span id="studio-num-valid" class="text-gray-400">--</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-textMuted">Distribution Health:</span>
+                                <span id="studio-ood-badge" class="text-gray-400">--</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-textMuted">Inference Latency:</span>
+                                <span id="studio-latency-val" class="font-mono text-white">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Prediction Results Column -->
+                    <div class="lg:col-span-2 bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
+                        <div class="flex items-center justify-between border-b border-borderClr pb-2">
+                            <h3 class="text-sm font-bold text-white flex items-center">
+                                <i class="fa-solid fa-chart-pie mr-2 text-emerald-400"></i>
+                                PROBABILITY DISTRIBUTION & DECISION
+                            </h3>
+                            <div id="studio-decision-badge" class="text-sm font-black text-amber-400 bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/30">
+                                NO_TRADE
+                            </div>
+                        </div>
+
+                        <!-- Probability Bars -->
+                        <div class="space-y-3">
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1">
+                                    <span class="text-gray-400">NO_TRADE</span>
+                                    <span id="studio-val-notrade" class="text-gray-300">--</span>
+                                </div>
+                                <div class="w-full h-3 bg-darkBg rounded-full overflow-hidden border border-borderClr">
+                                    <div id="studio-prob-notrade" class="h-full bg-amber-400 transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1">
+                                    <span class="text-emerald-400">BUY_MARKET</span>
+                                    <span id="studio-val-buy" class="text-emerald-300">--</span>
+                                </div>
+                                <div class="w-full h-3 bg-darkBg rounded-full overflow-hidden border border-borderClr">
+                                    <div id="studio-prob-buy" class="h-full bg-emerald-400 transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1">
+                                    <span class="text-rose-400">SELL_MARKET</span>
+                                    <span id="studio-val-sell" class="text-rose-300">--</span>
+                                </div>
+                                <div class="w-full h-3 bg-darkBg rounded-full overflow-hidden border border-borderClr">
+                                    <div id="studio-prob-sell" class="h-full bg-rose-400 transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Calibration / Uncertainty Stats -->
+                        <div class="grid grid-cols-3 gap-3 pt-2 text-center">
+                            <div class="p-2.5 rounded-lg bg-darkBg border border-borderClr">
+                                <div class="text-[10px] text-textMuted uppercase font-bold">Top Confidence</div>
+                                <div id="studio-confidence-val" class="text-base font-extrabold text-white mt-1">--</div>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-darkBg border border-borderClr">
+                                <div class="text-[10px] text-textMuted uppercase font-bold">Top-2 Margin</div>
+                                <div id="studio-margin-val" class="text-base font-extrabold text-accentCyan mt-1">--</div>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-darkBg border border-borderClr">
+                                <div class="text-[10px] text-textMuted uppercase font-bold">Shannon Entropy</div>
+                                <div id="studio-entropy-val" class="text-base font-extrabold text-amber-300 mt-1">--</div>
+                            </div>
+                        </div>
+
+                        <!-- Feature Saliency (Top Drivers) -->
+                        <div class="pt-2 border-t border-borderClr space-y-2">
+                            <div class="text-xs font-bold text-white flex items-center">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-1.5 text-accentCyan"></i>
+                                Top Feature Drivers (Gradient Saliency dScore / dX)
+                            </div>
+                            <div class="space-y-1 text-xs">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold text-emerald-400 w-16">Positive:</span>
+                                    <div id="studio-saliency-pos" class="flex flex-wrap gap-1.5"></div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold text-rose-400 w-16">Negative:</span>
+                                    <div id="studio-saliency-neg" class="flex flex-wrap gap-1.5"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deep Layer Activations & Internal Neurons -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-white flex items-center">
+                            <i class="fa-solid fa-microchip mr-2 text-sky-400"></i>
+                            LAYER-BY-LAYER NEURAL ACTIVATIONS & NORMS
+                        </h3>
+                        <span class="text-[11px] text-textMuted">Monitors forward hook activation L2 norms, means, and sparsity</span>
+                    </div>
+                    <div class="overflow-x-auto border border-borderClr rounded-lg">
+                        <table class="w-full text-left">
+                            <thead class="bg-darkBg text-textMuted text-[10px] uppercase border-b border-borderClr">
+                                <tr>
+                                    <th class="py-1.5 px-2">Layer Name</th>
+                                    <th class="py-1.5 px-2">Type</th>
+                                    <th class="py-1.5 px-2">Tensor Shape</th>
+                                    <th class="py-1.5 px-2">L2 Norm</th>
+                                    <th class="py-1.5 px-2">Mean</th>
+                                    <th class="py-1.5 px-2">Std Dev</th>
+                                    <th class="py-1.5 px-2">Sparsity (Zero %)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studio-layer-body">
+                                <tr>
+                                    <td colspan="7" class="text-center py-3 text-xs text-gray-500">Run neural inference to inspect internal activations.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Model Training Dispatch with Dataset Selection -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
+                    <div class="flex items-center justify-between border-b border-borderClr pb-2">
+                        <h3 class="text-sm font-bold text-white flex items-center">
+                            <i class="fa-solid fa-graduation-cap mr-2 text-emerald-400"></i>
+                            MODEL TRAINING DISPATCH & DATASET SELECTION
+                        </h3>
+                        <span class="text-xs text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i>Algorithm Cycle Ready</span>
+                    </div>
+                    <p class="text-xs text-textMuted">Select a training dataset and initiate training into the engine algorithm cycle.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                        <div class="md:col-span-2">
+                            <label class="block text-gray-400 mb-1 font-semibold">Select Dataset (Parquet / CSV)</label>
+                            <select id="studio-dataset-select" class="w-full bg-darkBg border border-borderClr rounded px-2.5 py-2 text-white">
+                                <option value="">Loading datasets...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1 font-semibold">Epochs</label>
+                            <input id="studio-epochs-input" type="number" min="1" max="50" value="3" class="w-full bg-darkBg border border-borderClr rounded px-2.5 py-2 text-white">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1 font-semibold">Learning Rate</label>
+                            <input id="studio-lr-input" type="number" step="0.0001" value="0.0005" class="w-full bg-darkBg border border-borderClr rounded px-2.5 py-2 text-white">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <button id="btn-start-train" onclick="startStudioTraining()" class="px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition shadow-lg flex items-center">
+                            <i class="fa-solid fa-play mr-2"></i> Start Model Training
+                        </button>
+                        <input id="studio-batch-input" type="hidden" value="256">
+                    </div>
+
+                    <!-- Training Progress Card -->
+                    <div id="studio-train-progress-box" class="hidden p-3 rounded-lg bg-darkBg border border-borderClr space-y-2 text-xs">
+                        <div class="flex justify-between font-bold">
+                            <span id="train-status-msg" class="text-white">Training in progress...</span>
+                            <span id="train-epoch-text" class="text-emerald-400">Epoch 1 / 3</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-surfaceLight rounded-full overflow-hidden">
+                            <div id="train-prog-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 33%"></div>
+                        </div>
+                        <div id="train-loss-text" class="text-[11px] text-gray-400 font-mono">Loss: 0.684 | Val Loss: 0.691</div>
+                    </div>
+                </div>
+
+                <!-- Adversarial Stress Test & Latency Profiling -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Stress Testing -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-bold text-white flex items-center">
+                                <i class="fa-solid fa-shield-halved mr-2 text-pink-400"></i>
+                                ADVERSARIAL STRESS TEST
+                            </h3>
+                            <button id="btn-stress-test" onclick="runStudioStressTest()" class="px-3 py-1.5 rounded-lg bg-pink-500/20 text-pink-300 hover:bg-pink-500/30 border border-pink-500/40 text-xs font-bold transition">
+                                <i class="fa-solid fa-flask mr-1"></i> Run Stress Battery
+                            </button>
+                        </div>
+                        <p class="text-xs text-textMuted">Injects constant zero-variance features, flash-crash shocks (+-10^6), NaNs, and boundary dimensions.</p>
+                        
+                        <div id="studio-stress-results-card" class="hidden overflow-x-auto border border-borderClr rounded-lg">
+                            <table class="w-full text-left">
+                                <thead class="bg-darkBg text-textMuted text-[10px] uppercase border-b border-borderClr">
+                                    <tr>
+                                        <th class="py-1.5 px-2">Scenario</th>
+                                        <th class="py-1.5 px-2">Verdict</th>
+                                        <th class="py-1.5 px-2">Detail</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="studio-stress-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Latency Profiling -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-bold text-white flex items-center">
+                                <i class="fa-solid fa-stopwatch mr-2 text-cyan-400"></i>
+                                LATENCY BENCHMARK
+                            </h3>
+                            <button id="btn-benchmark" onclick="runStudioBenchmark()" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 text-xs font-bold transition">
+                                <i class="fa-solid fa-gauge-high mr-1"></i> Profile 100 Passes
+                            </button>
+                        </div>
+                        <p class="text-xs text-textMuted">Measures forward pass latency percentiles and throughput on current hardware.</p>
+
+                        <div id="studio-bench-results-card" class="hidden grid grid-cols-4 gap-2 pt-2 text-center text-xs">
+                            <div class="p-2 rounded bg-darkBg border border-borderClr">
+                                <div class="text-[10px] text-textMuted uppercase font-bold">P50</div>
+                                <div id="bench-p50" class="font-mono text-white font-bold mt-1">--</div>
+                            </div>
+                            <div class="p-2 rounded bg-darkBg border border-borderClr">
+                                <div class="text-[10px] text-textMuted uppercase font-bold">P90</div>
+                                <div id="bench-p90" class="font-mono text-white font-bold mt-1">--</div>
+                            </div>
+                            <div class="p-2 rounded bg-darkBg border border-borderClr">
+                                <div class="text-[10px] text-textMuted uppercase font-bold">P99</div>
+                                <div id="bench-p99" class="font-mono text-emerald-400 font-bold mt-1">--</div>
+                            </div>
+                            <div class="p-2 rounded bg-darkBg border border-borderClr">
+                                <div class="text-[10px] text-textMuted uppercase font-bold">Throughput</div>
+                                <div id="bench-throughput" class="font-mono text-cyan-400 font-bold mt-1">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
         </main>
     </div>
 
@@ -3819,6 +4160,7 @@
         });
     })();
     </script>
+    <script src="model_studio_ui.js"></script>
     <script src="tv_widget.js"></script>
 </body>
 </html>
