@@ -2725,6 +2725,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_provisioning_routes(app, _err, _log_err)
 
+    # MODEL STUDIO / DEEP LEARNING ROUTES: /api/model-studio/*
+    # Comprehensive neural network inspection, interactive prediction testing (50D/70D),
+    # live 70D component fetch, layer activations, saliency, OOD, stress tests and training.
+    from nexus_scalp.web.model_studio_routes import register_model_studio_routes
+
+    register_model_studio_routes(app, _err, _log_err)
+
     # REPLAY-ON-CHART session routes (CHG-0043, REPLAY_API v1): the chart's
     # operator surface for the REAL historical decision pipeline. Records
     # loader serves the LOCAL dataset cache only (no network, no MT5 on this

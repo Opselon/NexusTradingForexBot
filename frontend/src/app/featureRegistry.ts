@@ -28,6 +28,7 @@ import incidentsMeta from "@/features/incidents";
 import commandCenterMeta from "@/features/command-center";
 import controlCenterMeta from "@/features/control-center";
 import factoryMeta from "@/features/factory";
+import modelStudioMeta from "@/features/model-studio";
 
 export type FeatureSectionName = "OPERATIONS" | "MARKET & RESEARCH" | "SAFETY & GOVERNANCE" | "PLATFORM";
 
@@ -69,6 +70,7 @@ function toFeature(mod: FeatureModule): RegisteredFeature {
 const FEATURES: RegisteredFeature[] = [
   newsMeta,
   aiAnalysisMeta,
+  modelStudioMeta,
   researchMeta,
   marketplaceMeta,
   factoryMeta,
