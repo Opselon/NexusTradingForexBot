@@ -451,3 +451,7 @@ tests/unit/test_bug305_broker_offset_env_consumer_parity.py
 tests/unit/test_model_studio.py
 # ML-DATA-001 (Historical M1 Market Data Ingest & Parquet Storage Harness)
 tests/unit/test_data_ingest.py
+# BUG-306 (NSE-Swarm role 11 CI/GitOps, 2026-09-18): Windows CI critical suite
+# parity — official_install._sync_file os.fsync on "rb" fails with EBADF (CRT _commit
+# requires write access); test_model_studio.py charmap UnicodeDecodeError on UTF-8 Web/index.html.
+tests/unit/test_bug306_windows_ci_compat.py
