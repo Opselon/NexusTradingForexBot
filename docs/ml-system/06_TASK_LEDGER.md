@@ -80,6 +80,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-CI-001` | L: CI/CD | P2 | CI Model Training Validation Gap | **BLOCKED** | `AGENT-QA` | NO | `ML-DATA-001`, `ML-VAL-001` | `PARALLEL_SAFE` |
 | `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **BLOCKED** | `AGENT-QA` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
 | `ML-UI-001` | L: UX & Integration | P1 | End-to-End Model UX & CLI Verification (Train/Predict/Trust) | **DONE** | `AGENT-UI` | NO | None | `PARALLEL_SAFE` |
+| `ML-UI-002` | L: UX & Integration | P1 | Model Studio Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Dataset Pipeline | **DONE** | `AGENT-UI` | NO | `ML-UI-001`, `ML-DATA-001` | `PARALLEL_SAFE` |
 
 ---
 

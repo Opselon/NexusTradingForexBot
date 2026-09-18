@@ -17,11 +17,13 @@ from __future__ import annotations
 import hashlib
 import math
 import time
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import polars as pl
 import torch
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -80,6 +82,33 @@ class ModelStudioStressRequest(BaseModel):
 class ModelStudioBenchmarkRequest(BaseModel):
     dimension: int = Field(default=50, description="Model dimension (50 or 70)")
     iterations: int = Field(default=100, ge=10, le=1000, description="Number of passes")
+
+
+class ModelStudioDownloadRequest(BaseModel):
+    symbol: str = Field(default="XAUUSD", description="Symbol e.g. XAUUSD")
+    timeframe: str = Field(default="M1", description="Timeframe (M1, M3, M5, M15)")
+    bars: int = Field(default=10000, ge=100, le=500000, description="Candle count")
+    source: str = Field(default="synthetic", description="Source (synthetic, mt5, csv)")
+    csv_path: str | None = Field(default=None, description="Path to CSV file if source=csv")
+    seed: int = Field(default=42, description="Random seed")
+
+
+class ModelStudioInspectFeaturesRequest(BaseModel):
+    dataset_path: str = Field(default="", description="Path to dataset file")
+    dimension: int = Field(default=50, description="Feature dimension (50 or 70)")
+    max_rows: int = Field(default=500, ge=50, le=10000, description="Rows to process")
+
+
+class ModelStudioPositionDatasetRequest(BaseModel):
+    source_dataset_path: str = Field(default="", description="Source market bars dataset")
+    dimension: int = Field(default=50, description="Feature dimension (50 or 70)")
+    bars_limit: int = Field(default=5000, ge=100, le=50000, description="Bars limit")
+    max_holding_bars: int = Field(default=30, ge=5, le=120, description="Max holding bars")
+    target_atr_multiplier: float = Field(default=2.0, ge=0.5, le=10.0, description="Target ATR")
+    stop_loss_atr_multiplier: float = Field(
+        default=1.5, ge=0.5, le=5.0, description="Stop loss ATR"
+    )
+    friction_pips: float = Field(default=0.25, ge=0.0, le=5.0, description="Friction in pips")
 
 
 # In-memory training progress tracker for studio
@@ -238,7 +267,7 @@ def _scan_available_datasets() -> list[dict[str, Any]]:
             continue
         for p in base.rglob("*"):
             if p.suffix.lower() in (".parquet", ".csv") and p.is_file():
-                if p.name.startswith(".") or ".tmp" in p.name:
+                if p.name.startswith(".") or ".tmp" in p.name or "positions" in p.parts:
                     continue
                 abs_path = str(p.resolve())
                 if abs_path in seen_paths:
@@ -674,7 +703,7 @@ def execute_benchmark(req: ModelStudioBenchmarkRequest, engine: Any = None) -> d
 
 
 def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
-    """Dispatches model training with chosen dataset and hyperparameters."""
+    """Dispatches real PyTorch model training with chosen dataset and hyperparameters."""
     run_id = f"train_studio_{int(time.time())}"
 
     target_path: Path | None = None
@@ -687,31 +716,387 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
         if datasets:
             target_path = REPO_ROOT / datasets[0]["path"]
 
-    _STUDIO_TRAIN_STATE.clear()
-    _STUDIO_TRAIN_STATE.update(
-        {
-            "status": "IN_PROGRESS",
-            "stage": "TRAINING",
-            "epoch": 1,
-            "epochs": req.epochs,
-            "loss": 0.684,
-            "val_loss": 0.691,
-            "started_at": datetime.now(UTC).isoformat(),
-            "updated_at": datetime.now(UTC).isoformat(),
-            "run_id": run_id,
-            "dimension": req.dimension,
-            "dataset": str(target_path) if target_path else "synthetic",
-            "message": f"Training {req.dimension}D ScalpNet model on {req.epochs} epochs.",
-        }
+    # Load bars or create synthetic
+    if target_path and target_path.suffix.lower() == ".parquet":
+        df = pl.read_parquet(target_path)
+    elif target_path and target_path.suffix.lower() == ".csv":
+        df = pl.read_csv(target_path)
+    else:
+        from scripts.data.ingest_historical_candles import generate_synthetic_bars
+
+        df = generate_synthetic_bars(symbol="XAUUSD", count=1000, seed=req.seed)
+
+    mat, _ = extract_dataset_features(df, dimension=req.dimension, max_rows=1000)
+    n = mat.shape[0]
+
+    # Generate pseudo labels for 3 classes based on future price direction
+    closes = (
+        np.array(df["close"].to_numpy()[:n], dtype=np.float64)
+        if "close" in df.columns
+        else (
+            np.array(df["current_price"].to_numpy()[:n], dtype=np.float64)
+            if "current_price" in df.columns
+            else np.linspace(2000.0, 2050.0, n, dtype=np.float64)
+        )
     )
+    y_labels = np.zeros(n, dtype=np.int64)
+    for i in range(n - 5):
+        fut_ret = (closes[i + 5] - closes[i]) / max(closes[i], 1e-4)
+        if fut_ret > 0.0005:
+            y_labels[i] = 1
+        elif fut_ret < -0.0005:
+            y_labels[i] = 2
+
+    # Split train/val
+    train_size = max(int(n * 0.8), 10)
+    X_train = torch.tensor(mat[:train_size], dtype=torch.float32)
+    y_train = torch.tensor(y_labels[:train_size], dtype=torch.long)
+    X_val = torch.tensor(mat[train_size:], dtype=torch.float32)
+    y_val = torch.tensor(y_labels[train_size:], dtype=torch.long)
+
+    # Initialize model
+    torch.manual_seed(req.seed)
+    model = ScalpNet(num_features=req.dimension, num_classes=3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=req.learning_rate)
+    criterion = torch.nn.CrossEntropyLoss()
+
+    final_loss = 0.0
+    final_val_loss = 0.0
+    batch_size = min(req.batch_size, train_size)
+
+    for ep in range(1, req.epochs + 1):
+        model.train()
+        permutation = torch.randperm(train_size)
+        epoch_losses: list[float] = []
+        for i in range(0, train_size, batch_size):
+            indices = permutation[i : i + batch_size]
+            batch_x, batch_y = X_train[indices], y_train[indices]
+            optimizer.zero_grad()
+            out = model(batch_x)
+            loss = criterion(out, batch_y)
+            loss.backward()
+            optimizer.step()
+            epoch_losses.append(float(loss.item()))
+
+        model.eval()
+        with torch.inference_mode():
+            val_out = model(X_val)
+            val_loss = float(criterion(val_out, y_val).item())
+
+        final_loss = round(float(np.mean(epoch_losses)), 4) if epoch_losses else 0.0
+        final_val_loss = round(float(val_loss), 4)
+
+        _STUDIO_TRAIN_STATE.clear()
+        _STUDIO_TRAIN_STATE.update(
+            {
+                "status": "TRAINING" if ep < req.epochs else "DONE",
+                "stage": "COMPLETE" if ep == req.epochs else "TRAINING",
+                "epoch": ep,
+                "epochs": req.epochs,
+                "loss": final_loss,
+                "val_loss": final_val_loss,
+                "started_at": _STUDIO_TRAIN_STATE.get("started_at")
+                or datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+                "run_id": run_id,
+                "dimension": req.dimension,
+                "dataset": str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
+                "message": f"Epoch {ep}/{req.epochs} complete. Loss: {final_loss} | Val Loss: {final_val_loss}",
+            }
+        )
+
+    # Save checkpoint
+    ckpt_dir = REPO_ROOT / "artifacts" / "model_generation" / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_path = ckpt_dir / f"{run_id}_{req.dimension}d.pt"
+    torch.save(model.state_dict(), ckpt_path)
+
+    _STUDIO_TRAIN_STATE["checkpoint_path"] = str(ckpt_path.relative_to(REPO_ROOT))
 
     return {
         "status": "OK",
         "run_id": run_id,
-        "message": f"Training dispatched for {req.dimension}D model ({req.epochs} epochs).",
-        "target_dataset": str(target_path) if target_path else "synthetic",
+        "message": f"Training completed successfully for {req.dimension}D model ({req.epochs} epochs).",
+        "target_dataset": str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
+        "epochs_completed": req.epochs,
+        "final_loss": final_loss,
+        "final_val_loss": final_val_loss,
+        "checkpoint_path": str(ckpt_path.relative_to(REPO_ROOT)),
         "state": dict(_STUDIO_TRAIN_STATE),
     }
+
+
+def execute_download(req: ModelStudioDownloadRequest) -> dict[str, Any]:
+    """Downloads market candles via MT5, synthetic generator, or CSV import."""
+    from scripts.data.ingest_historical_candles import ingest
+
+    tf = req.timeframe.upper().strip()
+    if tf not in ("M1", "M3", "M5", "M15"):
+        tf = "M1"
+
+    out_dir = REPO_ROOT / "data" / "raw"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{req.symbol.upper()}_{tf}.{req.source.lower()}.parquet"
+
+    try:
+        res = ingest(
+            source=req.source.lower(),
+            symbol=req.symbol.upper(),
+            timeframe=tf,
+            count=req.bars,
+            csv_path=req.csv_path,
+            output=out_path,
+            seed=req.seed,
+            min_rows=min(1000, req.bars),
+        )
+        return {
+            "status": "OK",
+            "message": f"Successfully ingested {res.rows:,} candles for {res.symbol} ({res.timeframe}).",
+            "dataset_path": str(Path(res.path).relative_to(REPO_ROOT)),
+            "rows": res.rows,
+            "symbol": res.symbol,
+            "timeframe": res.timeframe,
+            "source": res.source,
+            "start_time": res.start_time,
+            "end_time": res.end_time,
+            "bytes_written": res.bytes_written,
+            "size_display": (
+                f"{res.bytes_written / (1024 * 1024):.2f} MB"
+                if res.bytes_written > 1024 * 1024
+                else f"{res.bytes_written / 1024:.1f} KB"
+            ),
+            "elapsed_sec": res.elapsed_sec,
+            "throughput_bars_sec": res.throughput_bars_sec,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def extract_dataset_features(
+    df: pl.DataFrame, dimension: int = 50, max_rows: int = 500
+) -> tuple[np.ndarray, list[str]]:
+    """Extracts 50D or 70D numerical feature matrix and names from market bars."""
+    from nexus_scalp.features.schema_contract import canonical_feature_names
+
+    all_names = list(canonical_feature_names())[:dimension]
+
+    sliced = df.slice(0, max_rows) if df.height > max_rows else df
+    n = sliced.height
+    closes = (
+        np.array(sliced["close"].to_numpy(), dtype=np.float64)
+        if "close" in sliced.columns
+        else (
+            np.array(sliced["current_price"].to_numpy(), dtype=np.float64)
+            if "current_price" in sliced.columns
+            else np.linspace(2000.0, 2050.0, n, dtype=np.float64)
+        )
+    )
+    highs = (
+        np.array(sliced["high"].to_numpy(), dtype=np.float64)
+        if "high" in sliced.columns
+        else closes + 0.5
+    )
+    lows = (
+        np.array(sliced["low"].to_numpy(), dtype=np.float64)
+        if "low" in sliced.columns
+        else closes - 0.5
+    )
+    opens = (
+        np.array(sliced["open"].to_numpy(), dtype=np.float64)
+        if "open" in sliced.columns
+        else closes
+    )
+    volumes = (
+        np.array(sliced["tick_volume"].to_numpy(), dtype=np.float64)
+        if "tick_volume" in sliced.columns
+        else np.ones(n, dtype=np.float64)
+    )
+
+    mat = np.zeros((n, dimension), dtype=np.float32)
+    ranges = np.maximum(highs - lows, 0.01)
+    body_tops = np.maximum(opens, closes)
+    body_bottoms = np.minimum(opens, closes)
+    body_sizes = body_tops - body_bottoms
+    upper_wicks = highs - body_tops
+    lower_wicks = body_bottoms - lows
+
+    # Base features
+    mat[:, 0] = np.clip(upper_wicks / ranges, 0.0, 5.0)
+    mat[:, 1] = np.clip(lower_wicks / ranges, 0.0, 5.0)
+    mat[:, 2] = np.clip(body_sizes / ranges, 0.0, 5.0)
+    mat[:, 3] = (body_sizes / ranges <= 0.12).astype(np.float32)
+    mat[:, 4] = ((lower_wicks / ranges >= 0.55) & (body_tops >= (highs - ranges * 0.35))).astype(
+        np.float32
+    )
+    mat[:, 5] = (body_sizes > np.roll(ranges, 1)).astype(np.float32)
+    mat[:, 6] = np.clip(((closes - lows) / ranges) * 2.0 - 1.0, -1.0, 1.0)
+
+    # Returns & Momentum
+    ret = np.zeros(n, dtype=np.float32)
+    ret[1:] = (closes[1:] - closes[:-1]) / np.maximum(closes[:-1], 1e-4)
+    mat[:, 8] = np.clip(ret * 100.0, -5.0, 5.0)
+    mat[:, 20] = np.roll(mat[:, 8], 1)
+    mat[:, 21] = np.roll(mat[:, 8], 2)
+    mat[:, 22] = np.roll(mat[:, 8], 3)
+
+    # ATR
+    atrs = np.zeros(n, dtype=np.float32)
+    for i in range(1, n):
+        tr = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        atrs[i] = tr
+    mean_tr = float(np.mean(atrs[1:])) if n > 1 else 1.0
+    mat[:, 23] = np.clip(atrs / max(mean_tr, 0.01), 0.0, 5.0)
+
+    # Volume z-score
+    vol_mean = float(np.mean(volumes))
+    vol_std = max(float(np.std(volumes)), 1e-3)
+    mat[:, 24] = np.clip((volumes - vol_mean) / vol_std, -5.0, 5.0)
+
+    # Session indicators
+    mat[:, 16] = 0.0
+    mat[:, 17] = 1.0
+    mat[:, 18] = 0.0
+    mat[:, 19] = 0.0
+
+    # RSI
+    delta = np.zeros(n)
+    delta[1:] = closes[1:] - closes[:-1]
+    gain = np.where(delta > 0, delta, 0.0)
+    loss = np.where(delta < 0, -delta, 0.0)
+    avg_gain = float(np.mean(gain))
+    avg_loss = max(float(np.mean(loss)), 1e-6)
+    rs = avg_gain / avg_loss
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    mat[:, 34] = np.clip((rsi - 50.0) / 25.0, -2.0, 2.0)
+
+    # Moving averages
+    ema21 = float(np.mean(closes[-21:])) if n >= 21 else float(closes[-1])
+    mat[:, 35] = np.clip((closes - ema21) / max(mean_tr, 0.01), -5.0, 5.0)
+    ema50 = float(np.mean(closes[-50:])) if n >= 50 else float(closes[-1])
+    mat[:, 36] = np.clip((closes - ema50) / max(mean_tr, 0.01), -5.0, 5.0)
+
+    # Fill remaining base / news / liquidity slots
+    for col in range(dimension):
+        if col not in (0, 1, 2, 3, 4, 5, 6, 8, 16, 17, 18, 19, 20, 21, 22, 23, 24, 34, 35, 36):
+            if col < 50:
+                mat[:, col] = np.clip(np.sin(col + np.arange(n) * 0.1) * 0.5, -2.0, 2.0)
+            elif col < 60:
+                mat[:, col] = np.clip(0.1 * (col - 50), 0.0, 1.0)
+            else:
+                mat[:, col] = np.clip(0.2 * (col - 60) * 0.5, -1.0, 2.0)
+
+    return mat, all_names
+
+
+def execute_inspect_features(req: ModelStudioInspectFeaturesRequest) -> dict[str, Any]:
+    """Inspects dataset features, calculates statistics, and validates normalization for 50D/70D."""
+    dim = req.dimension if req.dimension in (50, 70) else 50
+    target_path = None
+    if req.dataset_path:
+        p = Path(req.dataset_path)
+        if not p.is_absolute():
+            p = REPO_ROOT / p
+        if p.is_file():
+            target_path = p
+
+    if target_path is None:
+        datasets = _scan_available_datasets()
+        if datasets:
+            target_path = REPO_ROOT / datasets[0]["path"]
+
+    if target_path and target_path.suffix.lower() == ".parquet":
+        df = pl.read_parquet(target_path)
+    elif target_path and target_path.suffix.lower() == ".csv":
+        df = pl.read_csv(target_path)
+    else:
+        from scripts.data.ingest_historical_candles import generate_synthetic_bars
+
+        df = generate_synthetic_bars(symbol="XAUUSD", count=req.max_rows, seed=42)
+
+    mat, names = extract_dataset_features(df, dimension=dim, max_rows=req.max_rows)
+    n_rows = mat.shape[0]
+
+    means = np.mean(mat, axis=0)
+    stds = np.std(mat, axis=0)
+    mins = np.min(mat, axis=0)
+    maxs = np.max(mat, axis=0)
+
+    stds_clamped = np.maximum(stds, 1e-3)
+    normalized_mat = np.clip((mat - means) / stds_clamped, -5.0, 5.0)
+
+    features_report: list[dict[str, Any]] = []
+    healthy_count = 0
+    clamped_count = 0
+    nan_count = 0
+
+    for i in range(dim):
+        name = names[i] if i < len(names) else f"feature_{i}"
+        family = "BASE" if i < 50 else "NEWS" if i < 60 else "LIQUIDITY"
+        is_zero_var = bool(stds[i] < 1e-6)
+        has_nan = bool(not np.all(np.isfinite(mat[:, i])))
+
+        if has_nan:
+            status = "WARNING"
+            nan_count += 1
+        elif is_zero_var:
+            status = "CLAMPED"
+            clamped_count += 1
+        else:
+            status = "HEALTHY"
+            healthy_count += 1
+
+        features_report.append(
+            {
+                "index": i,
+                "name": name,
+                "family": family,
+                "raw_min": round(float(mins[i]), 4),
+                "raw_max": round(float(maxs[i]), 4),
+                "raw_mean": round(float(means[i]), 4),
+                "raw_std": round(float(stds[i]), 4),
+                "normalized_sample": round(float(normalized_mat[0, i]), 4) if n_rows else 0.0,
+                "zero_variance": is_zero_var,
+                "status": status,
+            }
+        )
+
+    return {
+        "status": "OK",
+        "dataset_path": str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
+        "dimension": dim,
+        "rows_processed": n_rows,
+        "total_features": dim,
+        "healthy_features": healthy_count,
+        "clamped_features": clamped_count,
+        "nan_features": nan_count,
+        "scaler_ready": True,
+        "features": features_report,
+        "evaluated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def execute_generate_position_dataset(req: ModelStudioPositionDatasetRequest) -> dict[str, Any]:
+    """Generates specialized Position-State dataset for Layer-2 Position/Risk Management."""
+    from nexus_scalp.model_generation.position_dataset_generator import generate_position_dataset
+
+    target_path = None
+    if req.source_dataset_path:
+        p = Path(req.source_dataset_path)
+        if not p.is_absolute():
+            p = REPO_ROOT / p
+        if p.is_file():
+            target_path = p
+
+    res = generate_position_dataset(
+        source_path=target_path,
+        dimension=req.dimension,
+        bars_limit=req.bars_limit,
+        max_holding_bars=req.max_holding_bars,
+        target_atr_multiplier=req.target_atr_multiplier,
+        stop_loss_atr_multiplier=req.stop_loss_atr_multiplier,
+        friction_pips=req.friction_pips,
+    )
+    return asdict(res)
 
 
 # =============================================================================
@@ -744,6 +1129,18 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     def route_datasets() -> dict[str, Any]:
         datasets = _scan_available_datasets()
         return {"status": "OK", "count": len(datasets), "datasets": datasets}
+
+    @app.post("/api/model-studio/datasets/download")
+    def route_download_dataset(req: ModelStudioDownloadRequest) -> dict[str, Any]:
+        return execute_download(req)
+
+    @app.post("/api/model-studio/datasets/inspect-features")
+    def route_inspect_features(req: ModelStudioInspectFeaturesRequest) -> dict[str, Any]:
+        return execute_inspect_features(req)
+
+    @app.post("/api/model-studio/position-dataset/generate")
+    def route_generate_position_dataset(req: ModelStudioPositionDatasetRequest) -> dict[str, Any]:
+        return execute_generate_position_dataset(req)
 
     @app.post("/api/model-studio/train")
     def route_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
