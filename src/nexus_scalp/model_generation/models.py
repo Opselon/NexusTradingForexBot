@@ -30,6 +30,29 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from nexus_scalp.model_generation.dataset_manifest import (
+    DatasetIntegrityError,
+    DatasetLoadResult,
+    DatasetManifest,
+    compute_dataset_hash,
+)
+
+__all__ = [
+    "DatasetIntegrityError",
+    "DatasetLoadResult",
+    "DatasetManifest",
+    "ExperimentConfig",
+    "LabelSchema",
+    "ModelArchitecture",
+    "ModelManifest",
+    "NeuralLabel",
+    "NewsContextSchema",
+    "SampleContract",
+    "SetupContract",
+    "StrategyContract",
+    "compute_dataset_hash",
+]
+
 # =============================================================================
 # LABEL SCHEMA (spec 2 / 42)
 # =============================================================================
@@ -350,44 +373,9 @@ class ModelManifest(BaseModel):
 
 
 # =============================================================================
-# DATASET MANIFEST (spec 8)
+# DATASET MANIFEST (spec 8 / ML-DATA-002)
 # =============================================================================
-
-
-class DatasetManifest(BaseModel):
-    """Self-describing dataset artifact identity."""
-
-    model_config = ConfigDict(frozen=True)
-
-    dataset_id: str = Field(...)
-    dataset_version: str = Field(default="1.0.0")
-    source_identity_hash: str = Field(default="")
-    row_counts: dict[str, int] = Field(default_factory=dict)  # train/val/test
-    temporal_range: dict[str, str] = Field(default_factory=dict)
-    symbol: str = Field(default="XAUUSD")
-    timeframe: str = Field(default="M1")
-    feature_schema_id: str = Field(default="scalp_v1")
-    label_schema_id: str = Field(default="triple_barrier_3class_v1")
-    label_config_hash: str = Field(default="")
-    split_config_hash: str = Field(default="")
-    purge_parameters: dict[str, Any] = Field(default_factory=dict)
-    embargo_parameters: dict[str, Any] = Field(default_factory=dict)
-    generation_version: str = Field(default="1.0.0")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    source_experience_range: dict[str, str] = Field(default_factory=dict)
-    news_schema_id: str = Field(default="")
-    news_data_range: dict[str, str] = Field(default_factory=dict)
-    news_version: str = Field(default="")
-    strategy_context_version: str = Field(default="")
-    dataset_hash: str = Field(default="")
-    #: TASK-03-70D-PARITY: canonical feature-schema content hash (scalp_v3).
-    #: Training/replay/inference compare this SAME value (brief 5/40).
-    feature_schema_hash: str = Field(default="")
-
-    @field_validator("created_at")
-    @classmethod
-    def _utc(cls, v: datetime) -> datetime:
-        return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
+# Re-exported from nexus_scalp.model_generation.dataset_manifest
 
 
 # =============================================================================
