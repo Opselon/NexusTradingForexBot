@@ -98,6 +98,12 @@ try:
 except Exception:
     pass
 
+# MODEL STUDIO — Neural inspection, prediction, stress testing, and training (ML-UI-001)
+try:
+    import nexus_scalp.cli.model_studio_commands as _model_studio_commands  # noqa: F401
+except Exception:
+    pass
+
 
 def _resolve_facade_seam(name: str, default: Any) -> Any:
     """Late-binding seam for test monkeypatching through the cli.main facade.
