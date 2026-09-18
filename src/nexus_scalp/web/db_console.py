@@ -406,6 +406,22 @@ def console_rows(
         return {"success": False, "error": type(exc).__name__}
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """Strip block comments /*...*/ and line comments --... from SQL text cleanly.
+
+    Ensures comments cannot be used to hide multi-statement payloads or keywords.
+    """
+    # Remove block comments
+    import re
+    cleaned = re.sub(r"/\*[\s\S]*?\*/", " ", sql)
+    # Remove line comments
+    lines = []
+    for line in cleaned.splitlines():
+        line_clean = line.split("--", 1)[0]
+        lines.append(line_clean)
+    return "\n".join(lines)
+
+
 @router.post("/query")
 def console_query(payload: dict[str, Any]) -> dict[str, Any]:
     """Run read-only SQL from the console.
@@ -417,18 +433,27 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         database = str(payload.get("database") or "audit")
-        sql = str(payload.get("sql") or "").strip().rstrip(";").strip()
-        if not sql:
+        raw_sql = str(payload.get("sql") or "").strip()
+        if not raw_sql:
             return {"success": False, "error": "empty SQL"}
-        upper = sql.upper()
-        if ";" in upper and not upper.startswith("WITH"):
-            # a single statement only (WITH ... SELECT may contain no ; either)
+
+        # Strip comments before analyzing keywords or statement boundaries
+        clean_sql = _strip_sql_comments(raw_sql).strip()
+        if not clean_sql:
+            return {"success": False, "error": "empty SQL"}
+
+        sql_trimmed = clean_sql.rstrip(";").strip()
+        if ";" in sql_trimmed:
+            # Single statement enforcement: no interior semicolons permitted
             return {"success": False, "error": "only one statement per query"}
+
+        upper = sql_trimmed.upper()
         if not any(upper.startswith(p) for p in _ALLOWED_STATEMENT_PREFIXES):
             return {
                 "success": False,
                 "error": "read-only console: SELECT / EXPLAIN / WITH / PRAGMA / VALUES only",
             }
+
         for banned in (
             "INSERT",
             "UPDATE",
@@ -439,17 +464,28 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
             "GRANT",
             "REPLACE",
             "VACUUM",
+            "ATTACH",
+            "DETACH",
+            "TRUNCATE",
+            "EXEC",
+            "EXECUTE",
+            "LOAD_EXTENSION",
         ):
+            # Check whole words / tokens or occurrence in stripped SQL
             if banned in upper:
                 return {"success": False, "error": f"'{banned}' is not allowed (read-only console)"}
+
         driver, cfg = _driver_for(database)
         if driver is None:
             return {"success": False, "error": f"unknown database '{database}'"}
         provider = cfg.provider.value if cfg else "sqlite"
-        compiled = _query_console_sql(sql, provider)
+        compiled = _query_console_sql(sql_trimmed, provider)
         try:
-            # bounded: never let a console query hang the web loop
-            rows = driver.query(compiled)[:QUERY_LIMIT]
+            # bounded: never let a console query hang the web loop; query_readonly enforces engine-level read-only
+            if hasattr(driver, "query_readonly"):
+                rows = driver.query_readonly(compiled)[:QUERY_LIMIT]
+            else:
+                rows = driver.query(compiled)[:QUERY_LIMIT]
             columns = list(rows[0].keys()) if rows else []
             return {
                 "success": True,

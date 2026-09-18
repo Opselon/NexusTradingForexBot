@@ -112,6 +112,12 @@ class DatabaseDriver(ABC):
     def query(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> list[dict[str, Any]]:
         """SELECT rows as dicts."""
 
+    def query_readonly(
+        self, sql: str, args: Sequence[Any] = (), conn: Any = None
+    ) -> list[dict[str, Any]]:
+        """SELECT rows as dicts with read-only safety checks where supported."""
+        return self.query(sql, args, conn=conn)
+
     @abstractmethod
     def query_one(
         self, sql: str, args: Sequence[Any] = (), conn: Any = None

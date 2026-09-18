@@ -555,13 +555,18 @@ class TestDbConsoleDatabases:
         assert r.json()["resynced"] is True
 
     def test_rows_endpoint_paginated_and_capped(self):
+        from pathlib import Path
         from nexus_scalp.database.config import load_database_config
+        from nexus_scalp.settings.service import SettingsDatabase
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
             pytest.skip(
                 "audit is on PostgreSQL; db_console rows test requires SQLite application_settings"
             )
+
+        sdb = SettingsDatabase(Path(cfg.sqlite_connect_path))
+        sdb.close()
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -587,11 +592,16 @@ class TestDbConsoleDatabases:
         assert len(r2.json()["rows"]) <= MAX_ROWS
 
     def test_columns_endpoint(self):
+        from pathlib import Path
         from nexus_scalp.database.config import load_database_config
+        from nexus_scalp.settings.service import SettingsDatabase
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
             pytest.skip("audit is on PostgreSQL; columns test requires SQLite application_settings")
+
+        sdb = SettingsDatabase(Path(cfg.sqlite_connect_path))
+        sdb.close()
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -612,11 +622,16 @@ class TestDbConsoleDatabases:
 
 class TestDbConsoleQueryGuard:
     def test_select_allowed(self):
+        from pathlib import Path
         from nexus_scalp.database.config import load_database_config
+        from nexus_scalp.settings.service import SettingsDatabase
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
             pytest.skip("audit is on PostgreSQL; query test requires SQLite application_settings")
+
+        sdb = SettingsDatabase(Path(cfg.sqlite_connect_path))
+        sdb.close()
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -669,14 +684,55 @@ class TestDbConsoleQueryGuard:
         )
         assert r.json()["success"] is False
 
-    def test_quick_sql_top100(self):
+    def test_comment_injection_and_attach_rejected(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        for bypass in (
+            "SELECT 1 /* comment */; DROP TABLE application_settings",
+            "SELECT * FROM application_settings -- comment \n ; DELETE FROM application_settings",
+            "ATTACH DATABASE ':memory:' AS aux",
+            "SELECT 1; ATTACH DATABASE '/tmp/pwn.db' AS pwn",
+            "EXEC ('SELECT 1')",
+            "TRUNCATE TABLE application_settings",
+        ):
+            r = c.post("/api/db/console/query", json={"database": "audit", "sql": bypass})
+            body = r.json()
+            assert body["success"] is False, f"expected rejection for bypass attempt: {bypass}"
+
+    def test_query_readonly_authorizer_enforcement(self):
         from nexus_scalp.database.config import load_database_config
+        from nexus_scalp.database.drivers import get_driver
+
+        cfg = load_database_config("audit")
+        drv = get_driver(cfg)
+        try:
+            # query_readonly should raise an Exception on attempted mutative or DDL actions at C/SQLite level
+            with pytest.raises(Exception):
+                drv.query_readonly("CREATE TABLE authorizer_test (id INT)")
+            with pytest.raises(Exception):
+                drv.query_readonly("ATTACH DATABASE ':memory:' AS aux")
+        finally:
+            drv.close()
+
+    def test_quick_sql_top100(self):
+        from pathlib import Path
+        from nexus_scalp.database.config import load_database_config
+        from nexus_scalp.settings.service import SettingsDatabase
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
             pytest.skip(
                 "audit is on PostgreSQL; quick-sql test requires SQLite application_settings"
             )
+
+        sdb = SettingsDatabase(Path(cfg.sqlite_connect_path))
+        sdb.close()
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
