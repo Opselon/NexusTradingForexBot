@@ -1700,8 +1700,8 @@ class SignalPolicy:
             swing_low_20 = current_tick.bid - atr
             swing_high_20 = current_tick.ask + atr
             if completed_bars is not None and len(completed_bars) >= 20:
-                swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
-                swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
+                swing_low_20 = min(b.low for b in completed_bars[-20:])
+                swing_high_20 = max(b.high for b in completed_bars[-20:])
             target_entry_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
 
             if proposed_action == ActionType.BUY_LIMIT and target_entry_price >= current_tick.ask:
@@ -1866,8 +1866,8 @@ class SignalPolicy:
                 swing_low_20 = current_tick.bid - atr
                 swing_high_20 = current_tick.ask + atr
                 if completed_bars is not None and len(completed_bars) >= 20:
-                    swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
-                    swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
+                    swing_low_20 = min(b.low for b in completed_bars[-20:])
+                    swing_high_20 = max(b.high for b in completed_bars[-20:])
                 new_eq_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
 
                 time_delta = (
