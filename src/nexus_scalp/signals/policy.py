@@ -2460,8 +2460,8 @@ class SignalPolicy:
         swing_highs = []
         swing_lows = []
         for i in range(5, len(completed_bars) - 5):
-            window_highs = [b.high for b in completed_bars[i - 5 : i + 6]]
-            window_lows = [b.low for b in completed_bars[i - 5 : i + 6]]
+            window_highs = highs[i - 5 : i + 6]
+            window_lows = lows[i - 5 : i + 6]
             if completed_bars[i].high == max(window_highs):
                 swing_highs.append((i, completed_bars[i].high))
             if completed_bars[i].low == min(window_lows):
@@ -2548,14 +2548,8 @@ class SignalPolicy:
                 )
 
             # Liquidity sweeps
-            recent_high_10 = (
-                max([b.high for b in completed_bars[max(0, i - 11) : i]])
-                if i > 0
-                else b_current.high
-            )
-            recent_low_10 = (
-                min([b.low for b in completed_bars[max(0, i - 11) : i]]) if i > 0 else b_current.low
-            )
+            recent_high_10 = max(highs[max(0, i - 11) : i]) if i > 0 else b_current.high
+            recent_low_10 = min(lows[max(0, i - 11) : i]) if i > 0 else b_current.low
 
             if b_current.low < recent_low_10 and b_current.close > recent_low_10:
                 liq_markers.append(
