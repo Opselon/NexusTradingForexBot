@@ -224,3 +224,58 @@ def test_broker_trade_fallback_still_works(repo):
     core = AccountingCore(audit_repo=repo, adapter=None)
     # audit_broker_trades empty -> empty list (no fabrication)
     assert core.load_trades() == []
+
+
+def test_account_source_fallback_to_current_account_source(repo):
+    """When account_source is omitted, it falls back to repo.current_account_source."""
+    import sqlite3
+
+    repo.current_account_source = "PAPER"
+    repo.log_ledger_opened(
+        ticket=200001,
+        symbol="XAUUSD",
+        direction="BUY",
+        volume=0.1,
+        entry_price=3000.0,
+        timestamp_str="2026-09-03T12:00:00+00:00",
+    )
+    repo.log_ledger_closed(
+        ticket=200001,
+        symbol="XAUUSD",
+        direction="BUY",
+        volume=0.1,
+        entry_price=3000.0,
+        exit_price=3005.0,
+        status="CLOSED",
+        pnl=50.0,
+        commission=0.0,
+        swap=0.0,
+        duration_sec=30.0,
+        timestamp_str="2026-09-03T12:00:30+00:00",
+    )
+    _flush(repo)
+
+    con = sqlite3.connect(repo._db_path)
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT account_source FROM audit_ledger WHERE ticket=200001").fetchone()
+    con.close()
+    assert row["account_source"] == "PAPER"
+
+    core = AccountingCore(audit_repo=repo, adapter=None)
+    tickets = [t.ticket for t in core.load_trades()]
+    assert 200001 not in tickets, "PAPER fallback trade must be excluded from AccountingCore"
+
+    repo.current_account_source = "LIVE"
+    _live_open_close(repo, 152569689999, 10.0, 4327.0, 4328.0)
+    _flush(repo)
+
+    con = sqlite3.connect(repo._db_path)
+    con.row_factory = sqlite3.Row
+    row_live = con.execute(
+        "SELECT account_source FROM audit_ledger WHERE ticket=152569689999"
+    ).fetchone()
+    con.close()
+    assert row_live["account_source"] == "LIVE"
+
+    tickets_after = [t.ticket for t in core.load_trades()]
+    assert 152569689999 in tickets_after

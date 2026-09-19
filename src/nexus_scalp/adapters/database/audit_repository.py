@@ -2772,7 +2772,7 @@ class AuditRepository:
             # repository attribute the engine keeps synced to the bound
             # adapter — never resolved later at worker time, so a hot-swap
             # between enqueue and flush cannot misattribute the row.
-            str(getattr(self, "current_account_source", "") or ""),
+            str(getattr(self, "current_account_source", "") or "LIVE"),
         )
 
         self._enqueue_financial(query, args)
@@ -2959,7 +2959,7 @@ class AuditRepository:
             float(ai_confidence_at_open),
             market_regime_at_open,
             float(initial_sl_price),
-            str(account_source or ""),
+            str(account_source or getattr(self, "current_account_source", "") or "LIVE"),
         )
         self._enqueue_financial(query, args)
 
@@ -3415,7 +3415,7 @@ class AuditRepository:
             exit_evidence,
             float(exit_reason_confidence or 0.0),
             reversal_events_json or "[]",
-            str(account_source or ""),
+            str(account_source or getattr(self, "current_account_source", "") or "LIVE"),
         )
         self._enqueue_financial(query, args)
 
