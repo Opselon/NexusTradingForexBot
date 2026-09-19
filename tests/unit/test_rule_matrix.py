@@ -677,3 +677,63 @@ def test_pre_trade_entry_gap_and_go_momentum(
             assert proposal_sell.confidence == 0.81
             assert proposal_sell.risk_reward_ratio == 1.33
             assert proposal_sell.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
+
+
+def test_pre_trade_entry_bollinger_burst_fade(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+    fv.is_at_extreme_high = True
+    fv.is_at_extreme_low = False
+
+    # Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal is None
+
+    # Enable rule and evaluate
+    temp_audit_repo.toggle_trading_rule("RULE_BOLLINGER_BURST_FADE", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 1. Extreme High -> SELL MARKET
+    proposal_high = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_high is not None
+    assert proposal_high.action == ActionType.SELL_MARKET
+    assert proposal_high.symbol == tick.symbol
+    assert proposal_high.proposed_entry == tick.bid
+    assert proposal_high.stop_loss == round(tick.bid + 1.6, 2)
+    assert proposal_high.take_profit == round(tick.bid - 2.2, 2)
+    assert proposal_high.confidence == 0.84
+    assert proposal_high.risk_reward_ratio == 1.38
+    assert proposal_high.reason_code == "RULE_BOLLINGER_BURST_FADE"
+
+    # 2. Extreme Low -> BUY MARKET
+    fv.is_at_extreme_high = False
+    fv.is_at_extreme_low = True
+    proposal_low = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_low is not None
+    assert proposal_low.action == ActionType.BUY_MARKET
+    assert proposal_low.symbol == tick.symbol
+    assert proposal_low.proposed_entry == tick.ask
+    assert proposal_low.stop_loss == round(tick.ask - 1.6, 2)
+    assert proposal_low.take_profit == round(tick.ask + 2.2, 2)
+    assert proposal_low.confidence == 0.84
+    assert proposal_low.risk_reward_ratio == 1.38
+    assert proposal_low.reason_code == "RULE_BOLLINGER_BURST_FADE"
+
+    # 3. Neither extreme -> returns None
+    fv.is_at_extreme_high = False
+    fv.is_at_extreme_low = False
+    proposal_none = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_none is None
+
+    # 4. Attributes missing on fv -> returns None
+    fv_empty = object()
+    proposal_empty = rule_engine._eval_rule_bollinger_burst_fade(tick, fv_empty)  # type: ignore[arg-type]
+    assert proposal_empty is None
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
