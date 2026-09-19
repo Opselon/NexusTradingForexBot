@@ -677,3 +677,105 @@ def test_is_numeric_validation_valid_numeric_inputs():
         feature_vector=fv,
     )
     assert proposal.action == ActionType.BUY_MARKET
+
+
+def test_get_active_tickets_info_none_or_invalid_order_manager():
+    """Verify _get_active_tickets_info handles None and invalid order manager objects gracefully."""
+    policy = SignalPolicy()
+
+    # None order manager
+    res_none = policy._get_active_tickets_info(order_manager=None)
+    assert res_none == (0, 0, None, None, [], {})
+
+    # Invalid order manager (missing get_active_live_tickets method)
+    res_invalid = policy._get_active_tickets_info(order_manager=object())
+    assert res_invalid == (0, 0, None, None, [], {})
+
+
+def test_get_active_tickets_info_empty_live_tickets():
+    """Verify _get_active_tickets_info handles empty ticket list."""
+    policy = SignalPolicy()
+    om = MockOrderManager(live_tickets=[])
+
+    res = policy._get_active_tickets_info(order_manager=om)
+    assert res == (0, 0, None, None, [], {})
+
+
+def test_get_active_tickets_info_positions_and_pending_filtering():
+    """Verify _get_active_tickets_info accurately filters and parses active positions and pending orders."""
+    policy = SignalPolicy()
+    live_tickets = [
+        {
+            "ticket": 101,
+            "symbol": "XAUUSD",
+            "magic": 888101,
+            "type": "POSITION",
+            "direction": "buy",
+        },
+        {
+            "ticket": 102,
+            "symbol": "XAUUSD",
+            "magic_number": 888101,  # Uses magic_number fallback key
+            "type": "PENDING",
+            "price": 2005.50,
+        },
+        {
+            "ticket": 103,
+            "symbol": "EURUSD",  # Symbol mismatch
+            "magic": 888101,
+            "type": "POSITION",
+            "direction": "sell",
+        },
+        {
+            "ticket": 104,
+            "symbol": "XAUUSD",
+            "magic": 999999,  # Magic mismatch
+            "type": "POSITION",
+            "direction": "buy",
+        },
+    ]
+    om = MockOrderManager(live_tickets=live_tickets)
+
+    pos_cnt, pend_cnt, p_price, p_ticket, tickets, held_dirs = policy._get_active_tickets_info(
+        order_manager=om, expected_symbol="XAUUSD", expected_magic=888101
+    )
+
+    assert pos_cnt == 1
+    assert pend_cnt == 1
+    assert p_price == 2005.50
+    assert p_ticket == 102
+    assert tickets == live_tickets
+    assert held_dirs == {101: "BUY"}
+
+
+def test_get_active_tickets_info_default_symbol_resolution():
+    """Verify _get_active_tickets_info falls back to _c4_last_identity_tick or default symbol when expected_symbol is None."""
+    policy = SignalPolicy()
+
+    ticket_gbp = {
+        "ticket": 201,
+        "symbol": "GBPUSD",
+        "magic": 888101,
+        "type": "POSITION",
+        "direction": "sell",
+    }
+    om_gbp = MockOrderManager(live_tickets=[ticket_gbp])
+
+    # Case 1: _c4_last_identity_tick is set
+    gbp_tick = TickData(
+        symbol="GBPUSD", timestamp=datetime.now(UTC), bid=1.2500, ask=1.2502, volume=1.0
+    )
+    policy._c4_last_identity_tick = gbp_tick
+
+    pos_cnt, pend_cnt, _, _, _, held_dirs = policy._get_active_tickets_info(
+        order_manager=om_gbp, expected_symbol=None, expected_magic=888101
+    )
+    assert pos_cnt == 1
+    assert held_dirs == {201: "SELL"}
+
+    # Case 2: _c4_last_identity_tick is None -> falls back to "XAUUSD"
+    policy._c4_last_identity_tick = None
+    pos_cnt_xau, _, _, _, _, _ = policy._get_active_tickets_info(
+        order_manager=om_gbp, expected_symbol=None, expected_magic=888101
+    )
+    assert pos_cnt_xau == 0  # GBPUSD ticket fails to match default XAUUSD expected symbol
