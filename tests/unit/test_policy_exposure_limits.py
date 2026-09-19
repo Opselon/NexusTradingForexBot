@@ -64,9 +64,7 @@ def test_exposure_limits_same_level_reentry_blocked() -> None:
     policy = SignalPolicy()
     tick = _make_tick()
     now = tick.timestamp
-    live_tickets = [
-        {"symbol": "XAUUSD", "magic": 888101, "price": 2000.00, "type": "POSITION"}
-    ]
+    live_tickets = [{"symbol": "XAUUSD", "magic": 888101, "price": 2000.00, "type": "POSITION"}]
     om = DummyOrderManager(live_tickets=live_tickets)
 
     proposal = policy._evaluate_exposure_limits(
@@ -97,9 +95,7 @@ def test_exposure_limits_max_exposure_reached_active_position() -> None:
     policy = SignalPolicy()
     tick = _make_tick()
     now = tick.timestamp
-    live_tickets = [
-        {"symbol": "XAUUSD", "magic": 888101, "price": 1980.00, "type": "POSITION"}
-    ]
+    live_tickets = [{"symbol": "XAUUSD", "magic": 888101, "price": 1980.00, "type": "POSITION"}]
     om = DummyOrderManager(live_tickets=live_tickets)
 
     proposal = policy._evaluate_exposure_limits(
@@ -317,9 +313,7 @@ def test_exposure_limits_explicit_custom_symbol_and_magic() -> None:
     tick = _make_tick(symbol="EURUSD")
     now = tick.timestamp
 
-    live_tickets = [
-        {"symbol": "EURUSD", "magic": 123456, "price": 1.1000, "type": "POSITION"}
-    ]
+    live_tickets = [{"symbol": "EURUSD", "magic": 123456, "price": 1.1000, "type": "POSITION"}]
     om = DummyOrderManager(live_tickets=live_tickets)
 
     proposal = policy._evaluate_exposure_limits(
