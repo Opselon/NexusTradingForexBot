@@ -2451,7 +2451,6 @@ class SignalPolicy:
         if not completed_bars or len(completed_bars) < 20:
             return {"rectangles": [], "bos_lines": [], "midlines": [], "liq_markers": []}
 
-
         rectangles = []
         bos_lines = []
         midlines = []
