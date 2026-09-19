@@ -4,7 +4,7 @@ import os
 import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import torch
@@ -253,54 +253,66 @@ def test_pre_trade_entry_judas_and_orderblock(
     assert proposal_ob.reason_code == "RULE_ORDERBLOCK_TAP_RESERVE"
 
 
-def test_pre_trade_entry_end_of_hour_squeeze(
+def test_eval_rule_orderblock_tap_reserve(
     rule_engine: RuleMatrixEngine,
     temp_audit_repo: AuditRepository,
 ) -> None:
+    """Comprehensive unit test for _eval_rule_orderblock_tap_reserve covering all branches."""
     tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
-    fv = MagicMock()
-    probs_buy = [0.1, 0.6, 0.3]  # probs[1] > probs[2] -> BUY_MARKET
-    probs_sell = [0.1, 0.2, 0.7]  # probs[1] <= probs[2] -> SELL_MARKET
 
-    # 1. Disabled by default -> returns None
-    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, probs_buy)
-    assert proposal is None
+    # Test 1: Disabled rule state -> evaluate_pre_trade_entry returns None
+    fv_bullish = MagicMock()
+    fv_bullish.order_block_type = 1
+    proposal_disabled = rule_engine.evaluate_pre_trade_entry(
+        tick, fv_bullish, None, [0.33, 0.33, 0.34]
+    )
+    assert proposal_disabled is None
 
-    # Enable rule
-    temp_audit_repo.toggle_trading_rule("RULE_END_OF_HOUR_SQUEEZE", True)
+    # Enable RULE_ORDERBLOCK_TAP_RESERVE
+    temp_audit_repo.toggle_trading_rule("RULE_ORDERBLOCK_TAP_RESERVE", True)
     rule_engine.refresh_cache(force=True)
 
-    # 2. When minute != 59 -> returns None
-    with patch("nexus_scalp.signals.rule_matrix.datetime") as mock_dt:
-        mock_dt.now.return_value = datetime(2025, 1, 1, 10, 30, 0)
-        proposal_not_59 = rule_engine.evaluate_pre_trade_entry(tick, fv, None, probs_buy)
-        assert proposal_not_59 is None
+    # Test 2: Bullish Order Block (order_block_type = 1) -> BUY_MARKET
+    proposal_bullish = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_bullish)
+    assert proposal_bullish is not None
+    assert proposal_bullish.symbol == "XAUUSD"
+    assert proposal_bullish.action == ActionType.BUY_MARKET
+    assert proposal_bullish.confidence == 0.85
+    assert proposal_bullish.proposed_entry == tick.ask
+    assert proposal_bullish.stop_loss == round(tick.ask - 1.2, 2)
+    assert proposal_bullish.take_profit == round(tick.ask + 2.0, 2)
+    assert proposal_bullish.risk_reward_ratio == 1.67
+    assert proposal_bullish.reason_code == "RULE_ORDERBLOCK_TAP_RESERVE"
+    assert proposal_bullish.request_id.startswith("RULE_ORDERBLOCK_TAP_RESERVE_")
 
-    # 3. When minute == 59 and probs[1] > probs[2] -> BUY_MARKET
-    with patch("nexus_scalp.signals.rule_matrix.datetime") as mock_dt:
-        mock_now = datetime(2025, 1, 1, 10, 59, 0)
-        mock_dt.now.return_value = mock_now
-        proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, None, probs_buy)
-        assert proposal_buy is not None
-        assert proposal_buy.action == ActionType.BUY_MARKET
-        assert proposal_buy.reason_code == "RULE_END_OF_HOUR_SQUEEZE"
-        assert proposal_buy.proposed_entry == tick.ask
-        assert proposal_buy.stop_loss == round(tick.ask - 1.5, 2)
-        assert proposal_buy.take_profit == round(tick.ask + 2.0, 2)
-        assert proposal_buy.confidence == 0.82
-        assert proposal_buy.risk_reward_ratio == 1.33
+    # Test 3: Bearish Order Block (order_block_type = -1) -> SELL_MARKET
+    fv_bearish = MagicMock()
+    fv_bearish.order_block_type = -1
+    proposal_bearish = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_bearish)
+    assert proposal_bearish is not None
+    assert proposal_bearish.symbol == "XAUUSD"
+    assert proposal_bearish.action == ActionType.SELL_MARKET
+    assert proposal_bearish.confidence == 0.85
+    assert proposal_bearish.proposed_entry == tick.bid
+    assert proposal_bearish.stop_loss == round(tick.bid + 1.2, 2)
+    assert proposal_bearish.take_profit == round(tick.bid - 2.0, 2)
+    assert proposal_bearish.risk_reward_ratio == 1.67
+    assert proposal_bearish.reason_code == "RULE_ORDERBLOCK_TAP_RESERVE"
+    assert proposal_bearish.request_id.startswith("RULE_ORDERBLOCK_TAP_RESERVE_")
 
-    # 4. When minute == 59 and probs[1] <= probs[2] -> SELL_MARKET
-    with patch("nexus_scalp.signals.rule_matrix.datetime") as mock_dt:
-        mock_now = datetime(2025, 1, 1, 10, 59, 0)
-        mock_dt.now.return_value = mock_now
-        proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, None, probs_sell)
-        assert proposal_sell is not None
-        assert proposal_sell.action == ActionType.SELL_MARKET
-        assert proposal_sell.reason_code == "RULE_END_OF_HOUR_SQUEEZE"
-        assert proposal_sell.proposed_entry == tick.bid
-        assert proposal_sell.stop_loss == round(tick.bid + 1.5, 2)
-        assert proposal_sell.take_profit == round(tick.bid - 2.0, 2)
+    # Test 4: Neutral Order Block (order_block_type = 0) -> None
+    fv_neutral = MagicMock()
+    fv_neutral.order_block_type = 0
+    proposal_neutral = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_neutral)
+    assert proposal_neutral is None
+
+    # Test 5: Missing order_block_type attribute -> None
+    class EmptyFeatureVector:
+        pass
+
+    fv_empty = EmptyFeatureVector()
+    proposal_empty = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_empty)  # type: ignore[arg-type]
+    assert proposal_empty is None
 
 
 # ============================================================================
@@ -607,3 +619,121 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
     )
     assert score3 == 70
     assert any("TIME_IN_LOSS_DECAY_PENALTY" in r for r in reasons)
+
+
+def test_pre_trade_entry_gap_and_go_momentum(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    """Verifies evaluation of _eval_rule_gap_and_go_momentum across disabled state, session window gate, and trade signals."""
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+
+    # Case A: Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_GAP_AND_GO_MOMENTUM", True)
+    rule_engine.refresh_cache(force=True)
+
+    # Case B: Outside Monday 00:00 gate (e.g. Wednesday 14:00) -> returns None
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = datetime(2026, 3, 4, 14, 0, 0)  # Wednesday
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+            assert proposal is None
+
+    # Case C: Monday 00:00 window, Bullish signal (probs[1] > probs[2]) -> BUY_MARKET TradeProposal
+    monday_00_00 = datetime(2026, 3, 2, 0, 0, 15)  # 2026-03-02 is a Monday (weekday=0)
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = monday_00_00
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+
+            assert proposal_buy is not None
+            assert proposal_buy.action == ActionType.BUY_MARKET
+            assert proposal_buy.proposed_entry == tick.ask
+            assert proposal_buy.stop_loss == round(tick.ask - 1.5, 2)
+            assert proposal_buy.take_profit == round(tick.ask + 2.0, 2)
+            assert proposal_buy.confidence == 0.81
+            assert proposal_buy.risk_reward_ratio == 1.33
+            assert proposal_buy.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
+
+    # Case D: Monday 00:00 window, Bearish signal (probs[1] <= probs[2]) -> SELL_MARKET TradeProposal
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = monday_00_00
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.2, 0.7])
+
+            assert proposal_sell is not None
+            assert proposal_sell.action == ActionType.SELL_MARKET
+            assert proposal_sell.proposed_entry == tick.bid
+            assert proposal_sell.stop_loss == round(tick.bid + 1.5, 2)
+            assert proposal_sell.take_profit == round(tick.bid - 2.0, 2)
+            assert proposal_sell.confidence == 0.81
+            assert proposal_sell.risk_reward_ratio == 1.33
+            assert proposal_sell.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
+
+
+def test_pre_trade_entry_bollinger_burst_fade(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+    fv.is_at_extreme_high = True
+    fv.is_at_extreme_low = False
+
+    # Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal is None
+
+    # Enable rule and evaluate
+    temp_audit_repo.toggle_trading_rule("RULE_BOLLINGER_BURST_FADE", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 1. Extreme High -> SELL MARKET
+    proposal_high = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_high is not None
+    assert proposal_high.action == ActionType.SELL_MARKET
+    assert proposal_high.symbol == tick.symbol
+    assert proposal_high.proposed_entry == tick.bid
+    assert proposal_high.stop_loss == round(tick.bid + 1.6, 2)
+    assert proposal_high.take_profit == round(tick.bid - 2.2, 2)
+    assert proposal_high.confidence == 0.84
+    assert proposal_high.risk_reward_ratio == 1.38
+    assert proposal_high.reason_code == "RULE_BOLLINGER_BURST_FADE"
+
+    # 2. Extreme Low -> BUY MARKET
+    fv.is_at_extreme_high = False
+    fv.is_at_extreme_low = True
+    proposal_low = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_low is not None
+    assert proposal_low.action == ActionType.BUY_MARKET
+    assert proposal_low.symbol == tick.symbol
+    assert proposal_low.proposed_entry == tick.ask
+    assert proposal_low.stop_loss == round(tick.ask - 1.6, 2)
+    assert proposal_low.take_profit == round(tick.ask + 2.2, 2)
+    assert proposal_low.confidence == 0.84
+    assert proposal_low.risk_reward_ratio == 1.38
+    assert proposal_low.reason_code == "RULE_BOLLINGER_BURST_FADE"
+
+    # 3. Neither extreme -> returns None
+    fv.is_at_extreme_high = False
+    fv.is_at_extreme_low = False
+    proposal_none = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_none is None
+
+    # 4. Attributes missing on fv -> returns None
+    fv_empty = object()
+    proposal_empty = rule_engine._eval_rule_bollinger_burst_fade(tick, fv_empty)  # type: ignore[arg-type]
+    assert proposal_empty is None
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
