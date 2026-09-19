@@ -554,6 +554,9 @@ class SignalPolicy:
         cand_actual_rr = None
 
         if is_buy_cand or is_sell_cand:
+            # Entry price for a BUY candidate is Ask; for a SELL candidate is Bid.
+            cand_entry_price = current_tick.ask if is_buy_cand else current_tick.bid
+
             # Validate input types to prevent silent errors and expose invalid mock issues
             def is_numeric(val: Any) -> bool:
                 if val is None:
@@ -562,8 +565,8 @@ class SignalPolicy:
                     return math.isfinite(float(val))
                 return False
 
-            if not is_numeric(target_entry_price):
-                raise ValueError(f"Invalid entry price: {target_entry_price}")
+            if not is_numeric(cand_entry_price):
+                raise ValueError(f"Invalid entry price: {cand_entry_price}")
             if not is_numeric(atr):
                 raise ValueError(f"Invalid ATR value: {atr}")
 
@@ -574,20 +577,20 @@ class SignalPolicy:
             if not is_numeric(dist_sh_20):
                 raise ValueError(f"Invalid dist_to_swing_high_20: {dist_sh_20}")
 
-            swing_low_reconstructed = target_entry_price - (dist_sl_20 * atr)
-            swing_high_reconstructed = target_entry_price + (dist_sh_20 * atr)
+            swing_low_reconstructed = cand_entry_price - (dist_sl_20 * atr)
+            swing_high_reconstructed = cand_entry_price + (dist_sh_20 * atr)
             span_b = self._sanitize_float(
-                getattr(feature_vector, "senkou_span_b", 0.0), target_entry_price
+                getattr(feature_vector, "senkou_span_b", 0.0), cand_entry_price
             )
 
             if is_buy_cand:
                 cand_sl_levels = [
                     v
                     for v in (swing_low_reconstructed, kijun, span_b)
-                    if is_numeric(v) and 0.0 < v < target_entry_price
+                    if is_numeric(v) and 0.0 < v < cand_entry_price
                 ]
                 structural_level_sl = (
-                    max(cand_sl_levels) if cand_sl_levels else (target_entry_price - atr)
+                    max(cand_sl_levels) if cand_sl_levels else (cand_entry_price - atr)
                 )
                 cand_stop_loss = round(
                     structural_level_sl - (atr * self.algo_config.atr_sl_buffer_multiplier), 2
@@ -596,19 +599,19 @@ class SignalPolicy:
                 cand_tp_levels = [
                     v
                     for v in (swing_high_reconstructed, span_b)
-                    if is_numeric(v) and v > target_entry_price
+                    if is_numeric(v) and v > cand_entry_price
                 ]
                 cand_take_profit = round(
-                    max(cand_tp_levels) if cand_tp_levels else (target_entry_price + atr * 2.0), 2
+                    max(cand_tp_levels) if cand_tp_levels else (cand_entry_price + atr * 2.0), 2
                 )
             else:
                 cand_sl_levels = [
                     v
                     for v in (swing_high_reconstructed, kijun, span_b)
-                    if is_numeric(v) and v > target_entry_price
+                    if is_numeric(v) and v > cand_entry_price
                 ]
                 structural_level_sl = (
-                    min(cand_sl_levels) if cand_sl_levels else (target_entry_price + atr)
+                    min(cand_sl_levels) if cand_sl_levels else (cand_entry_price + atr)
                 )
                 cand_stop_loss = round(
                     structural_level_sl + (atr * self.algo_config.atr_sl_buffer_multiplier), 2
@@ -617,14 +620,14 @@ class SignalPolicy:
                 cand_tp_levels = [
                     v
                     for v in (swing_low_reconstructed, span_b)
-                    if is_numeric(v) and 0.0 < v < target_entry_price
+                    if is_numeric(v) and 0.0 < v < cand_entry_price
                 ]
                 cand_take_profit = round(
-                    min(cand_tp_levels) if cand_tp_levels else (target_entry_price - atr * 2.0), 2
+                    min(cand_tp_levels) if cand_tp_levels else (cand_entry_price - atr * 2.0), 2
                 )
 
             # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
-            risk_amount = max(abs(target_entry_price - cand_stop_loss), 1e-5)
+            risk_amount = max(abs(cand_entry_price - cand_stop_loss), 1e-5)
             active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
             if cand_confidence >= self.algo_config.high_confidence_threshold:
                 min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
@@ -634,12 +637,12 @@ class SignalPolicy:
             active_tp_rr = min(self.min_allowed_rr, active_min_rr)
             min_required_tp_dist = risk_amount * active_tp_rr
             if is_buy_cand:
-                if cand_take_profit < target_entry_price + min_required_tp_dist:
-                    cand_take_profit = round(target_entry_price + min_required_tp_dist, 2)
-            elif cand_take_profit > target_entry_price - min_required_tp_dist:
-                cand_take_profit = round(target_entry_price - min_required_tp_dist, 2)
+                if cand_take_profit < cand_entry_price + min_required_tp_dist:
+                    cand_take_profit = round(cand_entry_price + min_required_tp_dist, 2)
+            elif cand_take_profit > cand_entry_price - min_required_tp_dist:
+                cand_take_profit = round(cand_entry_price - min_required_tp_dist, 2)
 
-            reward_amount = abs(cand_take_profit - target_entry_price)
+            reward_amount = abs(cand_take_profit - cand_entry_price)
             cand_actual_rr = round(reward_amount / risk_amount, 2)
 
         # Ensure we sanitize/convert mock objects to safe types to prevent TypeError in God Mode
@@ -745,7 +748,8 @@ class SignalPolicy:
         spread_tp_ratio = 0.0
         spread_tp_exceeded = False
         if (is_buy_cand or is_sell_cand) and cand_take_profit is not None:
-            tp_distance = abs(cand_take_profit - target_entry_price)
+            cand_entry_price = current_tick.ask if is_buy_cand else current_tick.bid
+            tp_distance = abs(cand_take_profit - cand_entry_price)
             if tp_distance <= 0.0:
                 # Fail-closed: a zero/negative reward leg is untradeable.
                 spread_tp_exceeded = current_spread > 0.0

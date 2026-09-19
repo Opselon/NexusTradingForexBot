@@ -413,6 +413,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
+training-env/
 
 # Distribution / Packaging / Build outputs
 build/
