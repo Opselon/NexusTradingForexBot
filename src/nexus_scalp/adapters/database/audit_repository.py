@@ -47,6 +47,24 @@ logger = get_logger("nexus_scalp.adapters.audit_db")
 _DEFAULT_AUDIT_DB_URL = "sqlite:///artifacts/audit.db"
 
 
+def resolve_audit_db_url(db_url: str = _DEFAULT_AUDIT_DB_URL, config: Any = None) -> str:
+    """Resolves the database URL for AuditRepository (BUG-223 isolation contract).
+
+    Precedence order:
+      1. Explicit `config` (DatabaseConfig): derives connect URL from config.
+      2. Implicit default (`db_url == _DEFAULT_AUDIT_DB_URL`): honors `NEXUS_AUDIT_DB`
+         environment override if present (BUG-223 isolation seam);
+      3. Explicit `db_url` parameter: caller keeps full authority.
+    """
+    if config is not None:
+        return f"sqlite:///{config.sqlite_connect_path}"
+    if db_url == _DEFAULT_AUDIT_DB_URL:
+        env_db = os.environ.get("NEXUS_AUDIT_DB", "").strip()
+        if env_db:
+            return f"sqlite:///{Path(env_db).as_posix()}"
+    return db_url
+
+
 class RuntimeRiskStateReadError(RuntimeError):
     """The persisted safety-state row could not be read (DB uncertain).
 
@@ -147,22 +165,8 @@ class AuditRepository:
         telemetry_retention_days: float = 13.0,
         purge_batch_size: int = 500,
     ) -> None:
-        if config is not None:
-            # DATABASE PORTABILITY: the caller resolved the authoritative
-            # DatabaseConfig (settings/env); derive the SQLite connect path.
-            db_url = f"sqlite:///{config.sqlite_connect_path}"
-        # BUG-223: the implicit default is CWD/workspace-anchored
-        # (BUG-149), so a bare construction under a repo-root pytest run
-        # resolves to the PRODUCTION artifacts/audit.db and unit tests
-        # wrote test_req rows into it (957 contaminated rows found
-        # 2026-08-31..09-02). Honor NEXUS_AUDIT_DB for the implicit
-        # default ONLY - explicit db_url/config callers keep authority.
-        elif db_url == _DEFAULT_AUDIT_DB_URL:
-            env_db = os.environ.get("NEXUS_AUDIT_DB", "").strip()
-            if env_db:
-                db_url = f"sqlite:///{Path(env_db).as_posix()}"
-        self._db_url = db_url
-        self._is_sqlite = db_url.startswith("sqlite")
+        self._db_url = resolve_audit_db_url(db_url, config)
+        self._is_sqlite = self._db_url.startswith("sqlite")
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
         # sqlite:///:memory: opens a PRIVATE empty DB per connection; the
         # background worker would never see the schema created here. Use a
