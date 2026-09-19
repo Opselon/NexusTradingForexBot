@@ -253,63 +253,66 @@ def test_pre_trade_entry_judas_and_orderblock(
     assert proposal_ob.reason_code == "RULE_ORDERBLOCK_TAP_RESERVE"
 
 
-def test_pre_trade_entry_news_spike_fade(
+def test_eval_rule_orderblock_tap_reserve(
     rule_engine: RuleMatrixEngine,
     temp_audit_repo: AuditRepository,
 ) -> None:
-    from nexus_scalp.features.regime_classifier import MarketRegimeState, RegimeType
-
+    """Comprehensive unit test for _eval_rule_orderblock_tap_reserve covering all branches."""
     tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
-    fv = MagicMock()
-    fv.live_tick_displacement = 3.0
 
-    news_regime = MagicMock()
-    news_regime.regime_type = RegimeType.MACRO_NEWS_FREEZE
+    # Test 1: Disabled rule state -> evaluate_pre_trade_entry returns None
+    fv_bullish = MagicMock()
+    fv_bullish.order_block_type = 1
+    proposal_disabled = rule_engine.evaluate_pre_trade_entry(
+        tick, fv_bullish, None, [0.33, 0.33, 0.34]
+    )
+    assert proposal_disabled is None
 
-    normal_regime = MagicMock()
-    normal_regime.regime_type = RegimeType.RANGING_MEAN_REVERSION
-
-    # 1. Disabled by default -> returns None
-    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
-    assert proposal is None
-
-    # Enable rule
-    temp_audit_repo.toggle_trading_rule("RULE_NEWS_SPIKE_FADE", True)
+    # Enable RULE_ORDERBLOCK_TAP_RESERVE
+    temp_audit_repo.toggle_trading_rule("RULE_ORDERBLOCK_TAP_RESERVE", True)
     rule_engine.refresh_cache(force=True)
 
-    # 2. regime_state is None -> returns None
-    assert rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34]) is None
+    # Test 2: Bullish Order Block (order_block_type = 1) -> BUY_MARKET
+    proposal_bullish = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_bullish)
+    assert proposal_bullish is not None
+    assert proposal_bullish.symbol == "XAUUSD"
+    assert proposal_bullish.action == ActionType.BUY_MARKET
+    assert proposal_bullish.confidence == 0.85
+    assert proposal_bullish.proposed_entry == tick.ask
+    assert proposal_bullish.stop_loss == round(tick.ask - 1.2, 2)
+    assert proposal_bullish.take_profit == round(tick.ask + 2.0, 2)
+    assert proposal_bullish.risk_reward_ratio == 1.67
+    assert proposal_bullish.reason_code == "RULE_ORDERBLOCK_TAP_RESERVE"
+    assert proposal_bullish.request_id.startswith("RULE_ORDERBLOCK_TAP_RESERVE_")
 
-    # 3. Not MACRO_NEWS_FREEZE regime -> returns None
-    assert rule_engine.evaluate_pre_trade_entry(tick, fv, normal_regime, [0.33, 0.33, 0.34]) is None
+    # Test 3: Bearish Order Block (order_block_type = -1) -> SELL_MARKET
+    fv_bearish = MagicMock()
+    fv_bearish.order_block_type = -1
+    proposal_bearish = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_bearish)
+    assert proposal_bearish is not None
+    assert proposal_bearish.symbol == "XAUUSD"
+    assert proposal_bearish.action == ActionType.SELL_MARKET
+    assert proposal_bearish.confidence == 0.85
+    assert proposal_bearish.proposed_entry == tick.bid
+    assert proposal_bearish.stop_loss == round(tick.bid + 1.2, 2)
+    assert proposal_bearish.take_profit == round(tick.bid - 2.0, 2)
+    assert proposal_bearish.risk_reward_ratio == 1.67
+    assert proposal_bearish.reason_code == "RULE_ORDERBLOCK_TAP_RESERVE"
+    assert proposal_bearish.request_id.startswith("RULE_ORDERBLOCK_TAP_RESERVE_")
 
-    # 4. MACRO_NEWS_FREEZE, but |disp| < 2.5 -> returns None
-    fv.live_tick_displacement = 2.4
-    assert rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34]) is None
+    # Test 4: Neutral Order Block (order_block_type = 0) -> None
+    fv_neutral = MagicMock()
+    fv_neutral.order_block_type = 0
+    proposal_neutral = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_neutral)
+    assert proposal_neutral is None
 
-    # 5. Massive positive displacement (disp >= 2.5) -> Fade with SELL_MARKET
-    fv.live_tick_displacement = 2.8
-    proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
-    assert proposal_sell is not None
-    assert proposal_sell.action == ActionType.SELL_MARKET
-    assert proposal_sell.proposed_entry == tick.bid
-    assert proposal_sell.stop_loss == round(tick.bid + 3.0, 2)
-    assert proposal_sell.take_profit == round(tick.bid - 4.5, 2)
-    assert proposal_sell.reason_code == "RULE_NEWS_SPIKE_FADE"
-    assert proposal_sell.confidence == 0.85
-    assert proposal_sell.risk_reward_ratio == 1.50
+    # Test 5: Missing order_block_type attribute -> None
+    class EmptyFeatureVector:
+        pass
 
-    # 6. Massive negative displacement (disp <= -2.5) -> Fade with BUY_MARKET
-    fv.live_tick_displacement = -3.2
-    proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
-    assert proposal_buy is not None
-    assert proposal_buy.action == ActionType.BUY_MARKET
-    assert proposal_buy.proposed_entry == tick.ask
-    assert proposal_buy.stop_loss == round(tick.ask - 3.0, 2)
-    assert proposal_buy.take_profit == round(tick.ask + 4.5, 2)
-    assert proposal_buy.reason_code == "RULE_NEWS_SPIKE_FADE"
-    assert proposal_buy.confidence == 0.85
-    assert proposal_buy.risk_reward_ratio == 1.50
+    fv_empty = EmptyFeatureVector()
+    proposal_empty = rule_engine._eval_rule_orderblock_tap_reserve(tick, fv_empty)  # type: ignore[arg-type]
+    assert proposal_empty is None
 
 
 # ============================================================================
@@ -616,3 +619,125 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
     )
     assert score3 == 70
     assert any("TIME_IN_LOSS_DECAY_PENALTY" in r for r in reasons)
+
+
+def test_pre_trade_entry_gap_and_go_momentum(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    """Verifies evaluation of _eval_rule_gap_and_go_momentum across disabled state, session window gate, and trade signals."""
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+
+    # Case A: Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_GAP_AND_GO_MOMENTUM", True)
+    rule_engine.refresh_cache(force=True)
+
+    # Case B: Outside Monday 00:00 gate (e.g. Wednesday 14:00) -> returns None
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = datetime(2026, 3, 4, 14, 0, 0)  # Wednesday
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+            assert proposal is None
+
+    # Case C: Monday 00:00 window, Bullish signal (probs[1] > probs[2]) -> BUY_MARKET TradeProposal
+    monday_00_00 = datetime(2026, 3, 2, 0, 0, 15)  # 2026-03-02 is a Monday (weekday=0)
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = monday_00_00
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+
+            assert proposal_buy is not None
+            assert proposal_buy.action == ActionType.BUY_MARKET
+            assert proposal_buy.proposed_entry == tick.ask
+            assert proposal_buy.stop_loss == round(tick.ask - 1.5, 2)
+            assert proposal_buy.take_profit == round(tick.ask + 2.0, 2)
+            assert proposal_buy.confidence == 0.81
+            assert proposal_buy.risk_reward_ratio == 1.33
+            assert proposal_buy.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
+
+    # Case D: Monday 00:00 window, Bearish signal (probs[1] <= probs[2]) -> SELL_MARKET TradeProposal
+    with MagicMock() as mock_dt:
+        mock_dt.now.return_value = monday_00_00
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("nexus_scalp.signals.rule_matrix.datetime", mock_dt)
+            proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.2, 0.7])
+
+            assert proposal_sell is not None
+            assert proposal_sell.action == ActionType.SELL_MARKET
+            assert proposal_sell.proposed_entry == tick.bid
+            assert proposal_sell.stop_loss == round(tick.bid + 1.5, 2)
+            assert proposal_sell.take_profit == round(tick.bid - 2.0, 2)
+            assert proposal_sell.confidence == 0.81
+            assert proposal_sell.risk_reward_ratio == 1.33
+            assert proposal_sell.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
+
+
+def test_pre_trade_entry_news_spike_fade(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    from nexus_scalp.features.regime_classifier import MarketRegimeState, RegimeType
+
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+    fv.live_tick_displacement = 3.0
+
+    news_regime = MagicMock()
+    news_regime.regime_type = RegimeType.MACRO_NEWS_FREEZE
+
+    normal_regime = MagicMock()
+    normal_regime.regime_type = RegimeType.RANGING_MEAN_REVERSION
+
+    # 1. Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_NEWS_SPIKE_FADE", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 2. regime_state is None -> returns None
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34]) is None
+
+    # 3. Not MACRO_NEWS_FREEZE regime -> returns None
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, normal_regime, [0.33, 0.33, 0.34]) is None
+
+    # 4. MACRO_NEWS_FREEZE, but |disp| < 2.5 -> returns None
+    fv.live_tick_displacement = 2.4
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34]) is None
+
+    # 5. Massive positive displacement (disp >= 2.5) -> Fade with SELL_MARKET
+    fv.live_tick_displacement = 2.8
+    proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
+    assert proposal_sell is not None
+    assert proposal_sell.action == ActionType.SELL_MARKET
+    assert proposal_sell.proposed_entry == tick.bid
+    assert proposal_sell.stop_loss == round(tick.bid + 3.0, 2)
+    assert proposal_sell.take_profit == round(tick.bid - 4.5, 2)
+    assert proposal_sell.reason_code == "RULE_NEWS_SPIKE_FADE"
+    assert proposal_sell.confidence == 0.85
+    assert proposal_sell.risk_reward_ratio == 1.50
+
+    # 6. Massive negative displacement (disp <= -2.5) -> Fade with BUY_MARKET
+    fv.live_tick_displacement = -3.2
+    proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
+    assert proposal_buy is not None
+    assert proposal_buy.action == ActionType.BUY_MARKET
+    assert proposal_buy.proposed_entry == tick.ask
+    assert proposal_buy.stop_loss == round(tick.ask - 3.0, 2)
+    assert proposal_buy.take_profit == round(tick.ask + 4.5, 2)
+    assert proposal_buy.reason_code == "RULE_NEWS_SPIKE_FADE"
+    assert proposal_buy.confidence == 0.85
+    assert proposal_buy.risk_reward_ratio == 1.50
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
