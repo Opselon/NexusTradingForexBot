@@ -425,3 +425,181 @@ def test_c4_alias_key_prefers_magic_then_falls_back() -> None:
     )
 
     assert "SAME_LEVEL_REENTRY_BLOCKED" in proposal.reason_code
+
+
+# ---------------------------------------------------------------------------
+# (f) _expected_live_ticket_identity defensive fallbacks & type safety tests
+# ---------------------------------------------------------------------------
+
+
+class _DummyTickWithoutSymbol:
+    """Class intentionally missing the `symbol` attribute."""
+
+    timestamp = datetime.now(UTC)
+    bid = 2000.0
+    ask = 2000.2
+
+
+def test_expected_live_ticket_identity_symbol_fallbacks() -> None:
+    """Verify symbol fallback logic when tick symbol is missing, None, or empty."""
+    policy = _policy_with_default_identity()
+
+    # 1. Object without symbol attribute
+    no_sym_tick = _DummyTickWithoutSymbol()
+    sym, magic = policy._expected_live_ticket_identity(no_sym_tick)  # type: ignore[arg-type]
+    assert sym == "XAUUSD"
+    assert magic == HARDCODED_MAGIC
+
+    # 2. Object with symbol=None
+    none_sym_tick = type("DummyTick", (), {"symbol": None})()
+    sym, magic = policy._expected_live_ticket_identity(none_sym_tick)  # type: ignore[arg-type]
+    assert sym == "XAUUSD"
+
+    # 3. TickData with empty string symbol=""
+    empty_sym_tick = TickData(
+        symbol="",
+        timestamp=datetime.now(UTC),
+        bid=2000.0,
+        ask=2000.2,
+    )
+    sym, magic = policy._expected_live_ticket_identity(empty_sym_tick)
+    assert sym == "XAUUSD"
+
+    # 4. Valid symbol
+    gbp_tick = TickData(
+        symbol="GBPUSD",
+        timestamp=datetime.now(UTC),
+        bid=1.2500,
+        ask=1.2502,
+    )
+    sym, magic = policy._expected_live_ticket_identity(gbp_tick)
+    assert sym == "GBPUSD"
+
+
+def test_expected_live_ticket_identity_magic_fallbacks() -> None:
+    """Verify magic fallback logic when config sections or magic_number are missing/falsy."""
+    policy = _policy_with_default_identity()
+    tick = TickData(
+        symbol="XAUUSD",
+        timestamp=datetime.now(UTC),
+        bid=2000.0,
+        ask=2000.2,
+    )
+
+    # 1. algo_config is None
+    policy.algo_config = None  # type: ignore[assignment]
+    sym, magic = policy._expected_live_ticket_identity(tick)
+    assert sym == "XAUUSD"
+    assert magic == HARDCODED_MAGIC
+
+    # 2. algo_config.execution is None
+    policy = _policy_with_configured_identity("XAUUSD", 888101)
+    policy.algo_config.execution = None  # type: ignore[assignment]
+    sym, magic = policy._expected_live_ticket_identity(tick)
+    assert magic == HARDCODED_MAGIC
+
+    # 3. algo_config.execution.magic_number is None
+    policy = _policy_with_configured_identity("XAUUSD", 888101)
+    policy.algo_config.execution.magic_number = None  # type: ignore[assignment]
+    sym, magic = policy._expected_live_ticket_identity(tick)
+    assert magic == HARDCODED_MAGIC
+
+    # 4. algo_config.execution.magic_number is 0 (falsy)
+    policy = _policy_with_configured_identity("XAUUSD", 888101)
+    policy.algo_config.execution.magic_number = 0  # type: ignore[assignment]
+    sym, magic = policy._expected_live_ticket_identity(tick)
+    assert magic == HARDCODED_MAGIC
+
+
+def test_expected_live_ticket_identity_string_magic_conversion() -> None:
+    """Verify string representation of magic number is properly converted to integer."""
+    policy = _policy_with_configured_identity("XAUUSD", 888101)
+    tick = TickData(
+        symbol="XAUUSD",
+        timestamp=datetime.now(UTC),
+        bid=2000.0,
+        ask=2000.2,
+    )
+
+    policy.algo_config.execution.magic_number = "999888"  # type: ignore[assignment]
+    sym, magic = policy._expected_live_ticket_identity(tick)
+    assert sym == "XAUUSD"
+    assert magic == 999888
+    assert isinstance(magic, int)
+
+
+def test_get_active_tickets_info_identity_fallbacks() -> None:
+    """Verify _get_active_tickets_info resolves expected symbol & magic via last identity tick or defaults."""
+    policy = _policy_with_configured_identity("EURUSD", 777123)
+    om = MockOrderManager(
+        live_tickets=[
+            {
+                "ticket": 2001,
+                "symbol": "EURUSD",
+                "price": 2000.00,
+                "magic": 777123,
+                "type": "POSITION",
+                "direction": "BUY",
+            },
+            {
+                "ticket": 2002,
+                "symbol": "XAUUSD",
+                "price": 2000.00,
+                "magic": 888101,
+                "type": "POSITION",
+                "direction": "BUY",
+            },
+        ]
+    )
+
+    # 1. Before evaluation: _c4_last_identity_tick is None -> defaults to ("XAUUSD", 888101)
+    (
+        pos_count,
+        pend_count,
+        _,
+        _,
+        _,
+        held_dirs,
+    ) = policy._get_active_tickets_info(order_manager=om, expected_symbol=None)
+    assert pos_count == 1
+    assert 2002 in held_dirs  # Matches XAUUSD/888101 ticket
+
+    # 2. Evaluate a tick for EURUSD -> sets _c4_last_identity_tick
+    eur_tick = TickData(
+        symbol="EURUSD",
+        timestamp=datetime.now(UTC),
+        bid=2000.0,
+        ask=2000.2,
+    )
+    _ = policy.evaluate_probabilities(
+        probabilities=torch.tensor([[0.01, 0.98, 0.01, 0.0]]),
+        current_tick=eur_tick,
+        feature_vector=_feature_vector("EURUSD", eur_tick),
+        order_manager=om,
+    )
+
+    # Calling _get_active_tickets_info directly now uses _c4_last_identity_tick ("EURUSD", 777123)
+    (
+        pos_count,
+        pend_count,
+        _,
+        _,
+        _,
+        held_dirs,
+    ) = policy._get_active_tickets_info(order_manager=om, expected_symbol=None)
+    assert pos_count == 1
+    assert 2001 in held_dirs  # Matches EURUSD/777123 ticket
+
+    # 3. Calling _get_active_tickets_info with explicit arguments overrides state
+    (
+        pos_count,
+        pend_count,
+        _,
+        _,
+        _,
+        held_dirs,
+    ) = policy._get_active_tickets_info(
+        order_manager=om, expected_symbol="XAUUSD", expected_magic=888101
+    )
+    assert pos_count == 1
+    assert 2002 in held_dirs
