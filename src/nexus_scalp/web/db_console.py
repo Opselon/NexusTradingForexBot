@@ -410,11 +410,30 @@ def _strip_sql_comments(sql: str) -> str:
     """Strip block comments /*...*/ and line comments --... from SQL text cleanly.
 
     Ensures comments cannot be used to hide multi-statement payloads or keywords.
-    """
-    # Remove block comments
-    import re
 
-    cleaned = re.sub(r"/\*[\s\S]*?\*/", " ", sql)
+    Implementation notes:
+    - ``_FORBIDDEN`` (driver guard) already rejects any ``/*``/``*/`` at the execute
+      sink, so a nested/unterminated comment cannot reach the engine; here we only
+      neutralize them for keyword/semicicolon analysis.
+    - Uses a linear character scan instead of a backtracking regex so pathological
+      inputs (e.g. many ``a/*`` repetitions) cannot blow up (CodeQL py/redos).
+    """
+    # Remove block comments: linear scan, no nested quantifier backtracking.
+    cleaned_chars: list[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        if sql[i] == "/" and i + 1 < n and sql[i + 1] == "*":
+            end = sql.find("*/", i + 2)
+            if end == -1:
+                # unterminated block comment: drop the rest (guard also rejects it)
+                break
+            cleaned_chars.append(" ")
+            i = end + 2
+        else:
+            cleaned_chars.append(sql[i])
+            i += 1
+    cleaned = "".join(cleaned_chars)
     # Remove line comments
     lines = []
     for line in cleaned.splitlines():
