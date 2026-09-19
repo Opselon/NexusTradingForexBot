@@ -622,9 +622,7 @@ def test_evaluate_exposure_limits_same_level_reentry_blocked():
     policy = SignalPolicy()
     tick = _make_tick()
     now = datetime.now(UTC)
-    om = MockOrderManager(
-        live_tickets=[{"symbol": "XAUUSD", "magic": 888101, "price": 2000.20}]
-    )
+    om = MockOrderManager(live_tickets=[{"symbol": "XAUUSD", "magic": 888101, "price": 2000.20}])
 
     result = policy._evaluate_exposure_limits(
         total_exposure=1,
@@ -835,9 +833,7 @@ def test_evaluate_exposure_limits_expected_symbol_resolution():
     now = datetime.now(UTC)
 
     # Ticket matching tick symbol ("XAUUSD") and default magic (888101) within same level
-    om = MockOrderManager(
-        live_tickets=[{"symbol": "XAUUSD", "magic": 888101, "price": 2000.10}]
-    )
+    om = MockOrderManager(live_tickets=[{"symbol": "XAUUSD", "magic": 888101, "price": 2000.10}])
 
     result = policy._evaluate_exposure_limits(
         total_exposure=1,
