@@ -152,71 +152,61 @@ def test_pre_trade_entry_fvg_sniper(
     assert proposal_sell.proposed_entry == tick.bid
 
 
-def test_eval_rule_judas_swing_fade(
+def test_eval_rule_fvg_sniper_fill_direct(
     rule_engine: RuleMatrixEngine,
 ) -> None:
-    """Directly tests _eval_rule_judas_swing_fade for short, long, boundary, and missing attribute conditions."""
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    """Direct unit test for _eval_rule_fvg_sniper_fill covering bullish, bearish, none, and missing attrs."""
+    ts = datetime.now(UTC)
+    tick = TickData(symbol="XAUUSD", timestamp=ts, bid=2334.20, ask=2334.40)
 
-    # Scenario 1: Broke previous high + strong negative displacement -> Short proposal
-    fv_short = MagicMock()
-    fv_short.broke_previous_high = True
-    fv_short.broke_previous_low = False
-    fv_short.live_tick_displacement = -0.35
+    # 1. Bullish FVG -> BUY proposal with exact calculations
+    fv_bullish = MagicMock()
+    fv_bullish.fvg_bullish_active = True
+    fv_bullish.fvg_bearish_active = False
 
-    proposal_short = rule_engine._eval_rule_judas_swing_fade(tick, fv_short)
-    assert proposal_short is not None
-    assert proposal_short.symbol == "XAUUSD"
-    assert proposal_short.action == ActionType.SELL_MARKET
-    assert proposal_short.confidence == 0.88
-    assert proposal_short.proposed_entry == 2334.20
-    assert proposal_short.stop_loss == 2336.00  # 2334.20 + 1.8
-    assert proposal_short.take_profit == 2332.00  # 2334.20 - 2.2
-    assert proposal_short.risk_reward_ratio == 1.22
-    assert proposal_short.reason_code == "RULE_JUDAS_SWING_FADE"
+    proposal_buy = rule_engine._eval_rule_fvg_sniper_fill(tick, fv_bullish)
+    assert proposal_buy is not None
+    assert proposal_buy.symbol == "XAUUSD"
+    assert proposal_buy.generated_at == ts
+    assert proposal_buy.action == ActionType.BUY_MARKET
+    assert proposal_buy.confidence == 0.90
+    assert proposal_buy.proposed_entry == 2334.40
+    assert proposal_buy.stop_loss == round(2334.40 - 1.5, 2)
+    assert proposal_buy.take_profit == round(2334.40 + 2.5, 2)
+    assert proposal_buy.risk_reward_ratio == 1.67
+    assert proposal_buy.reason_code == "RULE_FVG_SNIPER_FILL"
+    assert proposal_buy.request_id.startswith("RULE_FVG_SNIPER_FILL_")
 
-    # Scenario 2: Broke previous low + strong positive displacement -> Long proposal
-    fv_long = MagicMock()
-    fv_long.broke_previous_high = False
-    fv_long.broke_previous_low = True
-    fv_long.live_tick_displacement = 0.35
+    # 2. Bearish FVG -> SELL proposal with exact calculations
+    fv_bearish = MagicMock()
+    fv_bearish.fvg_bullish_active = False
+    fv_bearish.fvg_bearish_active = True
 
-    proposal_long = rule_engine._eval_rule_judas_swing_fade(tick, fv_long)
-    assert proposal_long is not None
-    assert proposal_long.symbol == "XAUUSD"
-    assert proposal_long.action == ActionType.BUY_MARKET
-    assert proposal_long.confidence == 0.88
-    assert proposal_long.proposed_entry == 2334.40
-    assert proposal_long.stop_loss == 2332.60  # 2334.40 - 1.8
-    assert proposal_long.take_profit == 2336.60  # 2334.40 + 2.2
-    assert proposal_long.risk_reward_ratio == 1.22
-    assert proposal_long.reason_code == "RULE_JUDAS_SWING_FADE"
+    proposal_sell = rule_engine._eval_rule_fvg_sniper_fill(tick, fv_bearish)
+    assert proposal_sell is not None
+    assert proposal_sell.symbol == "XAUUSD"
+    assert proposal_sell.generated_at == ts
+    assert proposal_sell.action == ActionType.SELL_MARKET
+    assert proposal_sell.confidence == 0.90
+    assert proposal_sell.proposed_entry == 2334.20
+    assert proposal_sell.stop_loss == round(2334.20 + 1.5, 2)
+    assert proposal_sell.take_profit == round(2334.20 - 2.5, 2)
+    assert proposal_sell.risk_reward_ratio == 1.67
+    assert proposal_sell.reason_code == "RULE_FVG_SNIPER_FILL"
+    assert proposal_sell.request_id.startswith("RULE_FVG_SNIPER_FILL_")
 
-    # Scenario 3: Boundary displacement values (-0.30 and 0.30 exactly) -> None
-    fv_bound_short = MagicMock()
-    fv_bound_short.broke_previous_high = True
-    fv_bound_short.broke_previous_low = False
-    fv_bound_short.live_tick_displacement = -0.30
-    assert rule_engine._eval_rule_judas_swing_fade(tick, fv_bound_short) is None
+    # 3. Neither FVG active -> returns None
+    fv_inactive = MagicMock()
+    fv_inactive.fvg_bullish_active = False
+    fv_inactive.fvg_bearish_active = False
 
-    fv_bound_long = MagicMock()
-    fv_bound_long.broke_previous_high = False
-    fv_bound_long.broke_previous_low = True
-    fv_bound_long.live_tick_displacement = 0.30
-    assert rule_engine._eval_rule_judas_swing_fade(tick, fv_bound_long) is None
+    proposal_none = rule_engine._eval_rule_fvg_sniper_fill(tick, fv_inactive)
+    assert proposal_none is None
 
-    # Scenario 4: Neither high nor low broken -> None
-    fv_none = MagicMock()
-    fv_none.broke_previous_high = False
-    fv_none.broke_previous_low = False
-    fv_none.live_tick_displacement = -0.50
-    assert rule_engine._eval_rule_judas_swing_fade(tick, fv_none) is None
-
-    # Scenario 5: Missing attributes on feature vector -> None safely via getattr defaults
-    class EmptyFeatureVector:
-        pass
-
-    assert rule_engine._eval_rule_judas_swing_fade(tick, EmptyFeatureVector()) is None
+    # 4. Feature vector missing attributes (spec object without attributes) -> returns None
+    fv_missing = object()
+    proposal_missing = rule_engine._eval_rule_fvg_sniper_fill(tick, fv_missing)
+    assert proposal_missing is None
 
 
 def test_pre_trade_entry_judas_and_orderblock(
