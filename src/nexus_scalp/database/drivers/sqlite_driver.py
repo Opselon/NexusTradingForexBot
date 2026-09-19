@@ -208,11 +208,63 @@ class SQLiteDriver(DatabaseDriver):
             if own and not self.is_in_memory:
                 c.close()
 
+    @staticmethod
+    def _readonly_authorizer(
+        action: int, arg1: str | None, arg2: str | None, db_name: str | None, trigger: str | None
+    ) -> int:
+        """SQLite Authorizer callback that strictly restricts queries to read-only operations."""
+        # Allowed read-only action codes in SQLite C API:
+        # SQLITE_SELECT (21), SQLITE_READ (20), SQLITE_FUNCTION (31), SQLITE_RECURSIVE (33)
+        allowed_actions = {
+            sqlite3.SQLITE_SELECT,
+            sqlite3.SQLITE_READ,
+            getattr(sqlite3, "SQLITE_FUNCTION", 31),
+            getattr(sqlite3, "SQLITE_RECURSIVE", 33),
+        }
+        if action in allowed_actions:
+            return sqlite3.SQLITE_OK
+
+        # PRAGMA integrity_check, table_info, database_list, etc.
+        pragma_code = getattr(sqlite3, "SQLITE_PRAGMA", 19)
+        if action == pragma_code:
+            safe_pragmas = {
+                "integrity_check",
+                "table_info",
+                "database_list",
+                "foreign_key_list",
+                "index_list",
+                "index_info",
+                "user_version",
+                "schema_version",
+                "page_count",
+                "freelist_count",
+                "encoding",
+                "compile_options",
+            }
+            if arg1 and arg1.lower() in safe_pragmas and arg2 is None:
+                return sqlite3.SQLITE_OK
+
+        return sqlite3.SQLITE_DENY
+
     def query(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> list[dict[str, Any]]:
         """Run a SELECT and return rows as dicts (row_factory applied)."""
         own = conn is None
         c = conn or self.connect()
         try:
+            cur = c.execute(assert_safe_sql(sql), tuple(args))
+            return [dict(r) for r in cur.fetchall()]
+        finally:
+            if own:
+                c.close()
+
+    def query_readonly(
+        self, sql: str, args: Sequence[Any] = (), conn: Any = None
+    ) -> list[dict[str, Any]]:
+        """Run a read-only query with SQLite C-level authorizer enforced."""
+        own = conn is None
+        c = conn or self.connect()
+        try:
+            c.set_authorizer(self._readonly_authorizer)
             cur = c.execute(assert_safe_sql(sql), tuple(args))
             return [dict(r) for r in cur.fetchall()]
         finally:
