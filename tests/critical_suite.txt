@@ -467,3 +467,6 @@ tests/unit/test_model_registry_hot_load.py
 tests/unit/test_position_replay_pipeline.py
 # ML-LABEL-002 (Sample Uniqueness Weighting & Label Overlap Anti-Leakage)
 tests/unit/test_sample_weights.py
+
+# ML-INF-001 (Inference Preprocessing & Scaler Latency SLA < 10ms)
+tests/performance/test_inference_latency_sla.py
