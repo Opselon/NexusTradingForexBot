@@ -79,6 +79,7 @@ def test_bug149_relative_file_path_still_anchored(
     repo = AuditRepository(db_url="sqlite:///artifacts/audit_bug149_probe.db")
     try:
         assert repo._db_path == str(ws / "artifacts" / "audit_bug149_probe.db")
+        assert repo.dead_letter_store._db_path == str(ws / "artifacts" / "audit_bug149_probe.db")
         assert (ws / "artifacts").is_dir(), "anchored artifact dir must be created"
     finally:
         repo.close()
