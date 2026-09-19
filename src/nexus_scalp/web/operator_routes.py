@@ -58,6 +58,10 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
+from fastapi import Depends
+
+from nexus_scalp.web.auth import require_web_auth
+
 #: audit_signals columns exposed in LIST views (fixed projection - the raw
 #: payload blob stays server-side; detail endpoint returns it explicitly).
 _SIGNAL_LIST_COLUMNS = (
@@ -198,7 +202,7 @@ def register_operator_routes(
     # ------------------------------------------------------------------
     # GET /api/operator/summary - one call feeding the overview screen
     # ------------------------------------------------------------------
-    @app.get("/api/operator/summary")
+    @app.get("/api/operator/summary", dependencies=[Depends(require_web_auth)])
     def operator_summary() -> dict[str, Any]:
         state = get_system_state()
         summary: dict[str, Any] = {
@@ -311,7 +315,7 @@ def register_operator_routes(
     # ------------------------------------------------------------------
     # GET /api/operator/decisions - filterable decision history
     # ------------------------------------------------------------------
-    @app.get("/api/operator/decisions")
+    @app.get("/api/operator/decisions", dependencies=[Depends(require_web_auth)])
     def operator_decisions(
         hours: float | None = None,
         action: str | None = None,
@@ -379,7 +383,7 @@ def register_operator_routes(
     # ------------------------------------------------------------------
     # GET /api/operator/decisions/{id} - full evidence for one decision
     # ------------------------------------------------------------------
-    @app.get("/api/operator/decisions/{decision_id}")
+    @app.get("/api/operator/decisions/{decision_id}", dependencies=[Depends(require_web_auth)])
     def operator_decision_detail(decision_id: int) -> dict[str, Any]:
         con = _connect_ro()
         if con is None:
@@ -455,7 +459,7 @@ def register_operator_routes(
     # ------------------------------------------------------------------
     # GET /api/operator/funnel - terminal-stage + gate distributions
     # ------------------------------------------------------------------
-    @app.get("/api/operator/funnel")
+    @app.get("/api/operator/funnel", dependencies=[Depends(require_web_auth)])
     def operator_funnel(hours: float | None = None) -> dict[str, Any]:
         con = _connect_ro()
         if con is None:
@@ -517,7 +521,7 @@ def register_operator_routes(
     # ------------------------------------------------------------------
     # GET /api/operator/no-trade - NO_TRADE forensics
     # ------------------------------------------------------------------
-    @app.get("/api/operator/no-trade")
+    @app.get("/api/operator/no-trade", dependencies=[Depends(require_web_auth)])
     def operator_no_trade(hours: float | None = None, limit: int = 25) -> dict[str, Any]:
         limit = max(1, min(int(limit), 100))
         con = _connect_ro()
@@ -600,7 +604,7 @@ def register_operator_routes(
     # ------------------------------------------------------------------
     # GET /api/operator/orders - recent dispatch evidence + latency stats
     # ------------------------------------------------------------------
-    @app.get("/api/operator/orders")
+    @app.get("/api/operator/orders", dependencies=[Depends(require_web_auth)])
     def operator_orders(limit: int = 50) -> dict[str, Any]:
         limit = max(1, min(int(limit), 200))
         con = _connect_ro()

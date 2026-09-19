@@ -358,3 +358,54 @@ class TestSanitization:
         rows = client.get("/api/operator/decisions?limit=5").json()["rows"]
         for row in rows:
             assert "payload" not in row, "raw blob must stay server-side in list views"
+
+
+# ---------------------------------------------------------------------------
+# Route-level authentication enforcement
+# ---------------------------------------------------------------------------
+
+
+class TestOperatorRouteAuthentication:
+    def test_unauthenticated_request_rejected(self, _deterministic_operator_env: None) -> None:
+        app = create_app(engine_ref=None)
+        unauth_client = TestClient(app)
+        for endpoint in (
+            "/api/operator/summary",
+            "/api/operator/decisions",
+            "/api/operator/funnel",
+            "/api/operator/no-trade",
+            "/api/operator/orders",
+        ):
+            r = unauth_client.get(endpoint)
+            assert r.status_code == 401, (endpoint, r.status_code, r.text)
+
+    def test_invalid_token_rejected(self, _deterministic_operator_env: None) -> None:
+        app = create_app(engine_ref=None)
+        unauth_client = TestClient(app)
+        r = unauth_client.get(
+            "/api/operator/summary",
+            headers={"Authorization": "Bearer invalid-token-12345"},
+        )
+        assert r.status_code == 401
+
+    def test_x_nse_token_header_accepted(self, _deterministic_operator_env: None) -> None:
+        app = create_app(engine_ref=None)
+        unauth_client = TestClient(app)
+        r = unauth_client.get(
+            "/api/operator/summary",
+            headers={"X-NSE-Token": FAKE_WEB_AUTH_TOKEN},
+        )
+        assert r.status_code == 200
+
+    def test_query_param_token_accepted(self, _deterministic_operator_env: None) -> None:
+        app = create_app(engine_ref=None)
+        unauth_client = TestClient(app)
+        r = unauth_client.get(f"/api/operator/summary?token={FAKE_WEB_AUTH_TOKEN}")
+        assert r.status_code == 200
+
+    def test_cookie_token_accepted(self, _deterministic_operator_env: None) -> None:
+        app = create_app(engine_ref=None)
+        unauth_client = TestClient(app)
+        unauth_client.cookies.set("nse_web_auth", FAKE_WEB_AUTH_TOKEN)
+        r = unauth_client.get("/api/operator/summary")
+        assert r.status_code == 200
