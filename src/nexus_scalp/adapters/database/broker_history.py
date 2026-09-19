@@ -573,28 +573,13 @@ def create_history_tables(conn: sqlite3.Connection) -> None:
                 conn.execute(trimmed)
 
 
-def sync_broker_history(
+def _sync_orders(
     conn: sqlite3.Connection,
-    *,
     orders: list[dict[str, Any]],
-    deals: list[dict[str, Any]],
-    symbol: str,
-    sync_from: datetime | None = None,
-    sync_to: datetime | None = None,
-) -> dict[str, Any]:
-    """
-    Inserts the normalized broker order/deal rows and reconstructed logical
-    trades with EXACT broker-ticket idempotency. Returns sync telemetry.
-    """
-    started = time.perf_counter()
-    create_history_tables(conn)
-
+    synced_at: str,
+) -> int:
     orders_sorted = sorted(orders, key=lambda o: _i(o.get("ticket")))
-    deals_sorted = sorted(deals, key=lambda d: _i(d.get("ticket")))
-
     orders_dup = 0
-    deals_dup = 0
-    trades_dup = 0
     for o in orders_sorted:
         row = normalize_order_row(o)
         cur = conn.execute(
@@ -623,12 +608,21 @@ def sync_broker_history(
                 row["reason"],
                 row["comment"],
                 row["external_id"],
-                datetime.now(UTC).isoformat(),
+                synced_at,
             ),
         )
         if cur.rowcount == 0:
             orders_dup += 1
+    return orders_dup
 
+
+def _sync_deals(
+    conn: sqlite3.Connection,
+    deals: list[dict[str, Any]],
+    synced_at: str,
+) -> int:
+    deals_sorted = sorted(deals, key=lambda d: _i(d.get("ticket")))
+    deals_dup = 0
     for d in deals_sorted:
         row = normalize_deal_row(d)
         cur = conn.execute(
@@ -655,14 +649,20 @@ def sync_broker_history(
                 row["net_result"],
                 row["comment"],
                 row["external_id"],
-                datetime.now(UTC).isoformat(),
+                synced_at,
             ),
         )
         if cur.rowcount == 0:
             deals_dup += 1
+    return deals_dup
 
-    trades = reconstruct_trades(orders=orders, deals=deals, symbol=symbol)
-    now_iso = datetime.now(UTC).isoformat()
+
+def _sync_trades(
+    conn: sqlite3.Connection,
+    trades: list[LogicalTrade],
+    synced_at: str,
+) -> tuple[int, int]:
+    trades_dup = 0
     still_open = 0
     for t in trades:
         # A position with no OUT-deal inside the fetched window is still OPEN at
@@ -706,12 +706,25 @@ def sync_broker_history(
                 t.exit_comment,
                 t.duration_sec,
                 t.source,
-                now_iso,
+                synced_at,
             ),
         )
         if cur.rowcount == 0:
             trades_dup += 1
+    return trades_dup, still_open
 
+
+def _update_history_meta(
+    conn: sqlite3.Connection,
+    *,
+    symbol: str,
+    sync_from: datetime | None,
+    sync_to: datetime | None,
+    synced_at: str,
+    num_orders: int,
+    num_deals: int,
+    num_trades: int,
+) -> None:
     conn.execute(
         "INSERT INTO audit_broker_history_meta (id, symbol, last_sync_from, "
         "last_sync_to, last_synced_at, last_orders, last_deals, last_trades) "
@@ -725,11 +738,46 @@ def sync_broker_history(
             symbol,
             sync_from.isoformat() if sync_from else None,
             sync_to.isoformat() if sync_to else None,
-            now_iso,
-            len(orders),
-            len(deals),
-            len(trades),
+            synced_at,
+            num_orders,
+            num_deals,
+            num_trades,
         ),
+    )
+
+
+def sync_broker_history(
+    conn: sqlite3.Connection,
+    *,
+    orders: list[dict[str, Any]],
+    deals: list[dict[str, Any]],
+    symbol: str,
+    sync_from: datetime | None = None,
+    sync_to: datetime | None = None,
+) -> dict[str, Any]:
+    """
+    Inserts the normalized broker order/deal rows and reconstructed logical
+    trades with EXACT broker-ticket idempotency. Returns sync telemetry.
+    """
+    started = time.perf_counter()
+    create_history_tables(conn)
+
+    now_iso = datetime.now(UTC).isoformat()
+    orders_dup = _sync_orders(conn, orders, now_iso)
+    deals_dup = _sync_deals(conn, deals, now_iso)
+
+    trades = reconstruct_trades(orders=orders, deals=deals, symbol=symbol)
+    trades_dup, still_open = _sync_trades(conn, trades, now_iso)
+
+    _update_history_meta(
+        conn,
+        symbol=symbol,
+        sync_from=sync_from,
+        sync_to=sync_to,
+        synced_at=now_iso,
+        num_orders=len(orders),
+        num_deals=len(deals),
+        num_trades=len(trades),
     )
     conn.commit()
 
