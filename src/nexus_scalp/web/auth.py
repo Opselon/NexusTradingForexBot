@@ -31,6 +31,8 @@ import hmac
 import os
 import secrets
 
+from fastapi import HTTPException, Request
+
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.web.auth")
@@ -240,6 +242,67 @@ _LIVE_WEB_AUTH_TOKEN: dict[str, str | None] = {"token": None}
 def web_auth_token_in_process() -> str | None:
     """Token resolved by install_web_auth in THIS process (never generates)."""
     return _LIVE_WEB_AUTH_TOKEN["token"]
+
+
+def require_web_auth(request: Request) -> str:
+    """FastAPI dependency enforcing token authentication on sensitive routes.
+
+    Extracts token from Authorization header (Bearer), X-NSE-Token header,
+    cookie (nse_web_auth), or ?token= query parameter and validates against
+    the active web auth token using constant-time comparison.
+    """
+    path = request.url.path
+    if is_public_path(path):
+        return ""
+
+    if os.environ.get("NSE_WEB_AUTH_DISABLE", "").strip() == "1":
+        return ""
+
+    expected_token = current_web_auth_token() or web_auth_token_in_process()
+    if expected_token is None:
+        try:
+            expected_token, _ = _resolve_token()
+            _LIVE_WEB_AUTH_TOKEN["token"] = expected_token
+        except Exception:
+            expected_token = None
+
+    if expected_token is None:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "ok": False,
+                "error": {
+                    "code": "AUTH_CONFIG_ERROR",
+                    "message": "web auth token unresolvable (fail-closed)",
+                },
+            },
+        )
+
+    supplied = None
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        supplied = auth[7:].strip() or None
+    if not supplied:
+        supplied = request.headers.get("x-nse-token", "").strip() or None
+    if not supplied and not os.environ.get(WEB_AUTH_COOKIE_DISABLE_ENV, "").strip():
+        supplied = request.cookies.get(WEB_AUTH_COOKIE_NAME, "").strip() or None
+    if not supplied:
+        supplied = request.query_params.get("token", "").strip() or None
+
+    if supplied and hmac.compare_digest(supplied.encode("utf-8"), expected_token.encode("utf-8")):
+        return supplied
+
+    raise HTTPException(
+        status_code=401,
+        detail={
+            "ok": False,
+            "error": {
+                "code": "UNAUTHORIZED",
+                "message": "missing or invalid web auth token",
+            },
+        },
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 class WebAuthMiddleware:
