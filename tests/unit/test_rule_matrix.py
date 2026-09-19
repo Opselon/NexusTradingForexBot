@@ -261,9 +261,7 @@ def test_pre_trade_entry_flash_momentum_scrape(
     fv = MagicMock()
 
     # 1. Disabled by default -> returns None
-    proposal = rule_engine.evaluate_pre_trade_entry(
-        tick, fv, None, [0.1, 0.8, 0.1]
-    )
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
     assert proposal is None
 
     # Enable rule
@@ -271,9 +269,7 @@ def test_pre_trade_entry_flash_momentum_scrape(
     rule_engine.refresh_cache(force=True)
 
     # 2. regime_state is None or tick velocity < 15.0 -> returns None
-    proposal_no_regime = rule_engine.evaluate_pre_trade_entry(
-        tick, fv, None, [0.1, 0.8, 0.1]
-    )
+    proposal_no_regime = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
     assert proposal_no_regime is None
 
     regime_low_velocity = MagicMock()
