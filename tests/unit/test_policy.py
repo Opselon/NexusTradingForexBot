@@ -597,6 +597,7 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
 def test_is_numeric_validation_invalid_entry_price():
     """Verify is_numeric raises ValueError when target_entry_price is non-finite or boolean."""
     import math
+
     import pytest
 
     policy = SignalPolicy()
@@ -621,6 +622,7 @@ def test_is_numeric_validation_invalid_entry_price():
 def test_is_numeric_validation_invalid_swing_low_and_high():
     """Verify is_numeric raises ValueError when dist_to_swing_low_20 or dist_to_swing_high_20 is invalid."""
     import math
+
     import pytest
 
     policy = SignalPolicy()
