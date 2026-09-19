@@ -594,6 +594,91 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
         assert "Survival Mode: +0.10" in proposal.reason_code
 
 
+def test_is_numeric_validation_invalid_entry_price():
+    """Verify is_numeric raises ValueError when target_entry_price is non-finite or boolean."""
+    import math
+
+    import pytest
+
+    policy = SignalPolicy()
+    policy.confidence_threshold = 0.10
+    policy.algo_config.min_risk_reward_ratio = 0.10
+    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
+    fv = _make_feature_vector()
+
+    invalid_entry_prices = [math.nan, math.inf, -math.inf, True, False]
+
+    for invalid_val in invalid_entry_prices:
+        policy._dedup_last_bid = 0.0
+        tick = _make_tick().model_copy(update={"ask": invalid_val, "bid": 2000.0})
+        with pytest.raises(ValueError, match=r"Invalid entry price:"):
+            policy.evaluate_probabilities(
+                probabilities=probs,
+                current_tick=tick,
+                feature_vector=fv,
+            )
+
+
+def test_is_numeric_validation_invalid_swing_low_and_high():
+    """Verify is_numeric raises ValueError when dist_to_swing_low_20 or dist_to_swing_high_20 is invalid."""
+    import math
+
+    import pytest
+
+    policy = SignalPolicy()
+    policy.confidence_threshold = 0.10
+    policy.algo_config.min_risk_reward_ratio = 0.10
+    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
+
+    invalid_swing_values = [math.nan, math.inf, -math.inf, None, True, False, "invalid"]
+
+    for invalid_val in invalid_swing_values:
+        policy._dedup_last_bid = 0.0
+        tick = _make_tick()
+        fv_low = _make_feature_vector().model_copy(update={"dist_to_swing_low_20": invalid_val})
+        with pytest.raises(ValueError, match=r"Invalid dist_to_swing_low_20:"):
+            policy.evaluate_probabilities(
+                probabilities=probs,
+                current_tick=tick,
+                feature_vector=fv_low,
+            )
+
+        policy._dedup_last_bid = 0.0
+        tick = _make_tick()
+        fv_high = _make_feature_vector().model_copy(update={"dist_to_swing_high_20": invalid_val})
+        with pytest.raises(ValueError, match=r"Invalid dist_to_swing_high_20:"):
+            policy.evaluate_probabilities(
+                probabilities=probs,
+                current_tick=tick,
+                feature_vector=fv_high,
+            )
+
+
+def test_is_numeric_validation_valid_numeric_inputs():
+    """Verify is_numeric accepts valid int and float values for target_entry_price, atr, dist_to_swing_low_20, dist_to_swing_high_20."""
+    policy = SignalPolicy()
+    policy.confidence_threshold = 0.10
+    policy.algo_config.min_risk_reward_ratio = 0.10
+    probs = torch.tensor([[0.01, 0.98, 0.01, 0.0]])  # BUY candidate
+    tick = _make_tick().model_copy(update={"ask": 2000.20})
+
+    # Test with valid integer and float values
+    fv = _make_feature_vector().model_copy(
+        update={
+            "dist_to_swing_low_20": 2,  # integer
+            "dist_to_swing_high_20": 2.5,  # float
+            "atr_m1": 1.80,  # float
+        }
+    )
+
+    proposal = policy.evaluate_probabilities(
+        probabilities=probs,
+        current_tick=tick,
+        feature_vector=fv,
+    )
+    assert proposal.action == ActionType.BUY_MARKET
+
+
 def test_evaluate_frequency_throttle_uninitialized():
     """Verify _evaluate_frequency_throttle returns None when _last_signal_time is None."""
     policy = SignalPolicy(cooldown_seconds=3.0)
