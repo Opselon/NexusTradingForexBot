@@ -130,6 +130,45 @@ class TestBug249SpreadAtrGate:
         assert proposal.blocked_by != "SPREAD_ATR_RATIO"
         assert "SPREAD_ATR_RATIO_EXCEEDED" not in proposal.reason_code
 
+    def test_algo_config_plumbing_and_policy_resolution(self) -> None:
+        """AlgoConfig owns max_spread_atr_ratio default; SignalPolicy resolves it."""
+        from pydantic import ValidationError
+
+        from nexus_scalp.configuration.config import AlgoConfig
+        from nexus_scalp.configuration.runtime_config import (
+            RuntimeConfiguration,
+            build_runtime_configuration,
+        )
+
+        cfg = AlgoConfig()
+        assert cfg.max_spread_atr_ratio == pytest.approx(0.18)
+
+        # Validation bounds
+        with pytest.raises(ValidationError):
+            AlgoConfig(max_spread_atr_ratio=-0.1)
+        with pytest.raises(ValidationError):
+            AlgoConfig(max_spread_atr_ratio=1.5)
+
+        # SignalPolicy resolution from AlgoConfig
+        custom_algo = AlgoConfig(max_spread_atr_ratio=0.25)
+        pol = SignalPolicy(algo_config=custom_algo)
+        assert pol.max_spread_atr_ratio == pytest.approx(0.25)
+
+        # Explicit constructor parameter overrides AlgoConfig
+        override_pol = SignalPolicy(max_spread_atr_ratio=0.12, algo_config=custom_algo)
+        assert override_pol.max_spread_atr_ratio == pytest.approx(0.12)
+
+        # Runtime configuration snapshot round-trip
+        res = build_runtime_configuration(
+            version=1,
+            base=RuntimeConfiguration(version=0, updated_at="", source="", correlation_id=""),
+            updates={"algo.max_spread_atr_ratio": 0.22},
+        )
+        assert res.errors == []
+        assert res.snapshot is not None
+        assert res.snapshot.algo.max_spread_atr_ratio == pytest.approx(0.22)
+        assert res.snapshot.to_algo_config().max_spread_atr_ratio == pytest.approx(0.22)
+
 
 class TestBug251ReversalConfidenceSemantics:
     def test_large_no_trade_mass_suppresses_false_reversal(self) -> None:
