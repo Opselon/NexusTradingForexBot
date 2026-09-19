@@ -677,3 +677,65 @@ def test_pre_trade_entry_gap_and_go_momentum(
             assert proposal_sell.confidence == 0.81
             assert proposal_sell.risk_reward_ratio == 1.33
             assert proposal_sell.reason_code == "RULE_GAP_AND_GO_MOMENTUM"
+
+
+def test_pre_trade_entry_contrarian_retail_trap(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+
+    # 1. Disabled by default -> returns None regardless of RSI
+    fv.rsi_m15 = 90.0
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_CONTRARIAN_RETAIL_TRAP", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 2. Overbought trap (rsi_m15 > 85.0) -> Short proposal
+    fv.rsi_m15 = 88.0
+    proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34])
+    assert proposal_sell is not None
+    assert proposal_sell.action == ActionType.SELL_MARKET
+    assert proposal_sell.symbol == "XAUUSD"
+    assert proposal_sell.proposed_entry == tick.bid
+    assert proposal_sell.stop_loss == round(tick.bid + 1.4, 2)
+    assert proposal_sell.take_profit == round(tick.bid - 2.4, 2)
+    assert proposal_sell.confidence == 0.89
+    assert proposal_sell.risk_reward_ratio == 1.71
+    assert proposal_sell.reason_code == "RULE_CONTRARIAN_RETAIL_TRAP"
+
+    # 3. Oversold trap (rsi_m15 < 15.0) -> Long proposal
+    fv.rsi_m15 = 12.0
+    proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34])
+    assert proposal_buy is not None
+    assert proposal_buy.action == ActionType.BUY_MARKET
+    assert proposal_buy.symbol == "XAUUSD"
+    assert proposal_buy.proposed_entry == tick.ask
+    assert proposal_buy.stop_loss == round(tick.ask - 1.4, 2)
+    assert proposal_buy.take_profit == round(tick.ask + 2.4, 2)
+    assert proposal_buy.confidence == 0.89
+    assert proposal_buy.risk_reward_ratio == 1.71
+    assert proposal_buy.reason_code == "RULE_CONTRARIAN_RETAIL_TRAP"
+
+    # 4. Neutral RSI conditions (15.0 <= rsi <= 85.0) -> returns None
+    fv.rsi_m15 = 50.0
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34]) is None
+
+    # 5. Exact boundary conditions: 85.0 and 15.0 -> returns None
+    fv.rsi_m15 = 85.0
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34]) is None
+    fv.rsi_m15 = 15.0
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34]) is None
+
+    # 6. Feature vector missing rsi_m15 attribute fallback (defaults to 50.0 -> returns None)
+    fv_no_rsi = MagicMock(spec=[])  # spec=[] ensures hasattr(fv_no_rsi, "rsi_m15") is False
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv_no_rsi, None, [0.33, 0.33, 0.34]) is None
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
