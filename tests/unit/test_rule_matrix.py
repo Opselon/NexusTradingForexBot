@@ -727,6 +727,65 @@ def test_pre_trade_entry_bollinger_burst_fade(
     assert proposal_empty is None
 
 
+def test_pre_trade_entry_news_spike_fade(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    from nexus_scalp.features.regime_classifier import MarketRegimeState, RegimeType
+
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+    fv.live_tick_displacement = 3.0
+
+    news_regime = MagicMock()
+    news_regime.regime_type = RegimeType.MACRO_NEWS_FREEZE
+
+    normal_regime = MagicMock()
+    normal_regime.regime_type = RegimeType.RANGING_MEAN_REVERSION
+
+    # 1. Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_NEWS_SPIKE_FADE", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 2. regime_state is None -> returns None
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34]) is None
+
+    # 3. Not MACRO_NEWS_FREEZE regime -> returns None
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, normal_regime, [0.33, 0.33, 0.34]) is None
+
+    # 4. MACRO_NEWS_FREEZE, but |disp| < 2.5 -> returns None
+    fv.live_tick_displacement = 2.4
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34]) is None
+
+    # 5. Massive positive displacement (disp >= 2.5) -> Fade with SELL_MARKET
+    fv.live_tick_displacement = 2.8
+    proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
+    assert proposal_sell is not None
+    assert proposal_sell.action == ActionType.SELL_MARKET
+    assert proposal_sell.proposed_entry == tick.bid
+    assert proposal_sell.stop_loss == round(tick.bid + 3.0, 2)
+    assert proposal_sell.take_profit == round(tick.bid - 4.5, 2)
+    assert proposal_sell.reason_code == "RULE_NEWS_SPIKE_FADE"
+    assert proposal_sell.confidence == 0.85
+    assert proposal_sell.risk_reward_ratio == 1.50
+
+    # 6. Massive negative displacement (disp <= -2.5) -> Fade with BUY_MARKET
+    fv.live_tick_displacement = -3.2
+    proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, news_regime, [0.33, 0.33, 0.34])
+    assert proposal_buy is not None
+    assert proposal_buy.action == ActionType.BUY_MARKET
+    assert proposal_buy.proposed_entry == tick.ask
+    assert proposal_buy.stop_loss == round(tick.ask - 3.0, 2)
+    assert proposal_buy.take_profit == round(tick.ask + 4.5, 2)
+    assert proposal_buy.reason_code == "RULE_NEWS_SPIKE_FADE"
+    assert proposal_buy.confidence == 0.85
+    assert proposal_buy.risk_reward_ratio == 1.50
+
+
 # ============================================================================
 # PRE-TRADE FILTER RULES TESTS
 # ============================================================================
