@@ -996,3 +996,107 @@ def test_evaluate_probabilities_tick_sweep_integration():
     assert proposal2.action == ActionType.BUY_MARKET
     assert "TICK_LEVEL_LIQUIDITY_SWEEP_BUY" in proposal2.reason_code
     assert proposal2.execution_mode == "TICK_SWEEP"
+
+
+def test_evaluate_frequency_throttle_uninitialized():
+    """Verify _evaluate_frequency_throttle returns None when _last_signal_time is None."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.85,
+        execution_id="EXEC-TEST-001",
+    )
+    assert res is None
+
+
+def test_evaluate_frequency_throttle_within_cooldown():
+    """Verify _evaluate_frequency_throttle returns NO_TRADE proposal when within cooldown."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now - timedelta(seconds=1.5)  # 1.5s < 3.0s cooldown
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="VOLATILE",
+        regime_conf=0.90,
+        execution_id="EXEC-TEST-002",
+    )
+    assert res is not None
+    assert res.action == ActionType.NO_TRADE
+    assert res.reason_code == "ORDER_FREQUENCY_THROTTLED"
+    assert res.confidence == 0.0
+    assert res.regime == "VOLATILE"
+    assert res.regime_confidence == 0.90
+    assert res.execution_id == "EXEC-TEST-002"
+
+
+def test_evaluate_frequency_throttle_after_cooldown():
+    """Verify _evaluate_frequency_throttle returns None when cooldown has elapsed."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now - timedelta(seconds=3.1)  # 3.1s >= 3.0s cooldown
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="TRENDING",
+        regime_conf=0.85,
+        execution_id="EXEC-TEST-003",
+    )
+    assert res is None
+
+
+def test_evaluate_frequency_throttle_custom_cooldown():
+    """Verify _evaluate_frequency_throttle respects custom cooldown_seconds values."""
+    policy = SignalPolicy(cooldown_seconds=10.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now - timedelta(seconds=5.0)  # 5s < 10s cooldown -> throttled
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="RANGING",
+        regime_conf=0.75,
+        execution_id="EXEC-TEST-004",
+    )
+    assert res is not None
+    assert res.reason_code == "ORDER_FREQUENCY_THROTTLED"
+
+    # Now test with elapsed time exceeding 10s -> released
+    policy._last_signal_time = now - timedelta(seconds=10.1)
+    res_released = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="RANGING",
+        regime_conf=0.75,
+        execution_id="EXEC-TEST-005",
+    )
+    assert res_released is None
+
+
+def test_evaluate_frequency_throttle_zero_elapsed():
+    """Verify _evaluate_frequency_throttle blocks when now equals _last_signal_time."""
+    policy = SignalPolicy(cooldown_seconds=3.0)
+    now = datetime.now(UTC)
+    policy._last_signal_time = now
+    tick = _make_tick()
+
+    res = policy._evaluate_frequency_throttle(
+        now=now,
+        current_tick=tick,
+        regime_str="UNKNOWN",
+        regime_conf=0.0,
+        execution_id="EXEC-TEST-006",
+    )
+    assert res is not None
+    assert res.action == ActionType.NO_TRADE
+    assert res.reason_code == "ORDER_FREQUENCY_THROTTLED"
