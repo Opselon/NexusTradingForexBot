@@ -632,9 +632,7 @@ def test_evaluate_exposure_limits_same_level_reentry_blocked():
     tick = _make_tick()
     now = datetime.now(UTC)
     om = MockOrderManager(
-        live_tickets=[
-            {"symbol": "XAUUSD", "magic": 888101, "price": 2000.00, "type": "POSITION"}
-        ]
+        live_tickets=[{"symbol": "XAUUSD", "magic": 888101, "price": 2000.00, "type": "POSITION"}]
     )
 
     result = policy._evaluate_exposure_limits(
@@ -832,9 +830,7 @@ def test_evaluate_exposure_limits_default_expected_symbol_resolution():
     )
     now = datetime.now(UTC)
     om = MockOrderManager(
-        live_tickets=[
-            {"symbol": "GBPUSD", "magic": 888101, "price": 1.2500, "type": "POSITION"}
-        ]
+        live_tickets=[{"symbol": "GBPUSD", "magic": 888101, "price": 1.2500, "type": "POSITION"}]
     )
 
     result = policy._evaluate_exposure_limits(
