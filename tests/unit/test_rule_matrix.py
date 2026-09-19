@@ -603,3 +603,130 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
     )
     assert score3 == 70
     assert any("TIME_IN_LOSS_DECAY_PENALTY" in r for r in reasons)
+
+
+def test_eval_rule_judas_swing_fade(
+    rule_engine: RuleMatrixEngine,
+) -> None:
+    """Directly tests _eval_rule_judas_swing_fade for short, long, boundary, and missing attribute conditions."""
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+
+    # Scenario 1: Broke previous high + strong negative displacement -> Short proposal
+    fv_short = MagicMock()
+    fv_short.broke_previous_high = True
+    fv_short.broke_previous_low = False
+    fv_short.live_tick_displacement = -0.35
+
+    proposal_short = rule_engine._eval_rule_judas_swing_fade(tick, fv_short)
+    assert proposal_short is not None
+    assert proposal_short.symbol == "XAUUSD"
+    assert proposal_short.action == ActionType.SELL_MARKET
+    assert proposal_short.confidence == 0.88
+    assert proposal_short.proposed_entry == 2334.20
+    assert proposal_short.stop_loss == 2336.00  # 2334.20 + 1.8
+    assert proposal_short.take_profit == 2332.00  # 2334.20 - 2.2
+    assert proposal_short.risk_reward_ratio == 1.22
+    assert proposal_short.reason_code == "RULE_JUDAS_SWING_FADE"
+
+    # Scenario 2: Broke previous low + strong positive displacement -> Long proposal
+    fv_long = MagicMock()
+    fv_long.broke_previous_high = False
+    fv_long.broke_previous_low = True
+    fv_long.live_tick_displacement = 0.35
+
+    proposal_long = rule_engine._eval_rule_judas_swing_fade(tick, fv_long)
+    assert proposal_long is not None
+    assert proposal_long.symbol == "XAUUSD"
+    assert proposal_long.action == ActionType.BUY_MARKET
+    assert proposal_long.confidence == 0.88
+    assert proposal_long.proposed_entry == 2334.40
+    assert proposal_long.stop_loss == 2332.60  # 2334.40 - 1.8
+    assert proposal_long.take_profit == 2336.60  # 2334.40 + 2.2
+    assert proposal_long.risk_reward_ratio == 1.22
+    assert proposal_long.reason_code == "RULE_JUDAS_SWING_FADE"
+
+    # Scenario 3: Boundary displacement values (-0.30 and 0.30 exactly) -> None
+    fv_bound_short = MagicMock()
+    fv_bound_short.broke_previous_high = True
+    fv_bound_short.broke_previous_low = False
+    fv_bound_short.live_tick_displacement = -0.30
+    assert rule_engine._eval_rule_judas_swing_fade(tick, fv_bound_short) is None
+
+    fv_bound_long = MagicMock()
+    fv_bound_long.broke_previous_high = False
+    fv_bound_long.broke_previous_low = True
+    fv_bound_long.live_tick_displacement = 0.30
+    assert rule_engine._eval_rule_judas_swing_fade(tick, fv_bound_long) is None
+
+    # Scenario 4: Neither high nor low broken -> None
+    fv_none = MagicMock()
+    fv_none.broke_previous_high = False
+    fv_none.broke_previous_low = False
+    fv_none.live_tick_displacement = -0.50
+    assert rule_engine._eval_rule_judas_swing_fade(tick, fv_none) is None
+
+    # Scenario 5: Missing attributes on feature vector -> None safely via getattr defaults
+    class EmptyFeatureVector:
+        pass
+
+    assert rule_engine._eval_rule_judas_swing_fade(tick, EmptyFeatureVector()) is None
+
+
+def test_pre_trade_entry_bollinger_burst_fade(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+    fv.is_at_extreme_high = True
+    fv.is_at_extreme_low = False
+
+    # Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal is None
+
+    # Enable rule and evaluate
+    temp_audit_repo.toggle_trading_rule("RULE_BOLLINGER_BURST_FADE", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 1. Extreme High -> SELL MARKET
+    proposal_high = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_high is not None
+    assert proposal_high.action == ActionType.SELL_MARKET
+    assert proposal_high.symbol == tick.symbol
+    assert proposal_high.proposed_entry == tick.bid
+    assert proposal_high.stop_loss == round(tick.bid + 1.6, 2)
+    assert proposal_high.take_profit == round(tick.bid - 2.2, 2)
+    assert proposal_high.confidence == 0.84
+    assert proposal_high.risk_reward_ratio == 1.38
+    assert proposal_high.reason_code == "RULE_BOLLINGER_BURST_FADE"
+
+    # 2. Extreme Low -> BUY MARKET
+    fv.is_at_extreme_high = False
+    fv.is_at_extreme_low = True
+    proposal_low = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_low is not None
+    assert proposal_low.action == ActionType.BUY_MARKET
+    assert proposal_low.symbol == tick.symbol
+    assert proposal_low.proposed_entry == tick.ask
+    assert proposal_low.stop_loss == round(tick.ask - 1.6, 2)
+    assert proposal_low.take_profit == round(tick.ask + 2.2, 2)
+    assert proposal_low.confidence == 0.84
+    assert proposal_low.risk_reward_ratio == 1.38
+    assert proposal_low.reason_code == "RULE_BOLLINGER_BURST_FADE"
+
+    # 3. Neither extreme -> returns None
+    fv.is_at_extreme_high = False
+    fv.is_at_extreme_low = False
+    proposal_none = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_none is None
+
+    # 4. Attributes missing on fv -> returns None
+    fv_empty = object()
+    proposal_empty = rule_engine._eval_rule_bollinger_burst_fade(tick, fv_empty)  # type: ignore[arg-type]
+    assert proposal_empty is None
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
