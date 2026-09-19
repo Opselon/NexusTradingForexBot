@@ -209,7 +209,9 @@ class SQLiteDriver(DatabaseDriver):
                 c.close()
 
     @staticmethod
-    def _readonly_authorizer(action: int, arg1: str | None, arg2: str | None, db_name: str | None, trigger: str | None) -> int:
+    def _readonly_authorizer(
+        action: int, arg1: str | None, arg2: str | None, db_name: str | None, trigger: str | None
+    ) -> int:
         """SQLite Authorizer callback that strictly restricts queries to read-only operations."""
         # Allowed read-only action codes in SQLite C API:
         # SQLITE_SELECT (21), SQLITE_READ (20), SQLITE_FUNCTION (31), SQLITE_RECURSIVE (33)
@@ -255,7 +257,9 @@ class SQLiteDriver(DatabaseDriver):
             if own:
                 c.close()
 
-    def query_readonly(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> list[dict[str, Any]]:
+    def query_readonly(
+        self, sql: str, args: Sequence[Any] = (), conn: Any = None
+    ) -> list[dict[str, Any]]:
         """Run a read-only query with SQLite C-level authorizer enforced."""
         own = conn is None
         c = conn or self.connect()

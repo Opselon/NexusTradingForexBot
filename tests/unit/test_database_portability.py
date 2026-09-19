@@ -556,6 +556,7 @@ class TestDbConsoleDatabases:
 
     def test_rows_endpoint_paginated_and_capped(self):
         from pathlib import Path
+
         from nexus_scalp.database.config import load_database_config
         from nexus_scalp.settings.service import SettingsDatabase
 
@@ -593,6 +594,7 @@ class TestDbConsoleDatabases:
 
     def test_columns_endpoint(self):
         from pathlib import Path
+
         from nexus_scalp.database.config import load_database_config
         from nexus_scalp.settings.service import SettingsDatabase
 
@@ -623,6 +625,7 @@ class TestDbConsoleDatabases:
 class TestDbConsoleQueryGuard:
     def test_select_allowed(self):
         from pathlib import Path
+
         from nexus_scalp.database.config import load_database_config
         from nexus_scalp.settings.service import SettingsDatabase
 
@@ -706,22 +709,26 @@ class TestDbConsoleQueryGuard:
             assert body["success"] is False, f"expected rejection for bypass attempt: {bypass}"
 
     def test_query_readonly_authorizer_enforcement(self):
+        import sqlite3
+
         from nexus_scalp.database.config import load_database_config
         from nexus_scalp.database.drivers import get_driver
 
         cfg = load_database_config("audit")
         drv = get_driver(cfg)
         try:
-            # query_readonly should raise an Exception on attempted mutative or DDL actions at C/SQLite level
-            with pytest.raises(Exception):
+            # query_readonly must raise sqlite3.DatabaseError on attempted mutative or
+            # DDL actions blocked by the C-level authorizer (SQLITE_DENY -> not authorized).
+            with pytest.raises(sqlite3.DatabaseError):
                 drv.query_readonly("CREATE TABLE authorizer_test (id INT)")
-            with pytest.raises(Exception):
+            with pytest.raises(sqlite3.DatabaseError):
                 drv.query_readonly("ATTACH DATABASE ':memory:' AS aux")
         finally:
             drv.close()
 
     def test_quick_sql_top100(self):
         from pathlib import Path
+
         from nexus_scalp.database.config import load_database_config
         from nexus_scalp.settings.service import SettingsDatabase
 

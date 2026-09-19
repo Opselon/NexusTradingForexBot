@@ -413,6 +413,7 @@ def _strip_sql_comments(sql: str) -> str:
     """
     # Remove block comments
     import re
+
     cleaned = re.sub(r"/\*[\s\S]*?\*/", " ", sql)
     # Remove line comments
     lines = []
