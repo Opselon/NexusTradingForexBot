@@ -169,7 +169,7 @@ class InferenceService:
     # Delegates to LiveFreshnessService (Cluster 3 extraction).
     # ==================================================================
 
-    def infer_probabilities(self, fv) -> torch.Tensor:
+    def infer_probabilities(self: Any, fv: Any) -> torch.Tensor:
         import time as _time
 
         # --- honest staged latency trace (monotonic, TASK: latency forensics) ---
@@ -268,7 +268,7 @@ class InferenceService:
         if seq_x is not None:
             x = seq_x
         else:
-            x = torch.tensor(x_np, dtype=torch.float32)
+            x = torch.from_numpy(x_np)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
         _trace.mark(LatencyStage.T4_TENSOR_DONE)
 
@@ -289,13 +289,15 @@ class InferenceService:
 
         # HONEST Model Forward stage (T5..T6) — nothing else in between.
         _trace.mark(LatencyStage.T5_MODEL_START)
-        bundle.model.eval()
+        if bundle.model.training:
+            bundle.model.eval()
         # Latency fix: intra-op multithreading on a 267k-param net is pure
         # overhead under host contention (~60ms vs 0.25ms single-threaded,
         # same logits — verified). Pin to 1 thread for the forward and
         # restore; safe under the bundle lock (no concurrent model call).
         _prior_threads = torch.get_num_threads()
-        torch.set_num_threads(1)
+        if _prior_threads != 1:
+            torch.set_num_threads(1)
         try:
             with torch.inference_mode():
                 logits = bundle.model(x, return_logits=True)
@@ -312,7 +314,8 @@ class InferenceService:
 
                 probs = masked_softmax(logits)
         finally:
-            torch.set_num_threads(_prior_threads)
+            if _prior_threads != 1:
+                torch.set_num_threads(_prior_threads)
         _trace.mark(LatencyStage.T6_MODEL_DONE)
 
         self._inference_count = getattr(self, "_inference_count", 0) + 1

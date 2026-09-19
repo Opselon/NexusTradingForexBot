@@ -51,7 +51,7 @@
 - [ML-VAL-003](tasks/ML-VAL-003.md) — Robustness Stress Testing: Friction Clamp, Slippage & Spread Perturbation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
 
 ### STREAM H: REAL-TIME INFERENCE
-- [ML-INF-001](tasks/ML-INF-001.md) — Inference Preprocessing & Scaler Latency SLA (< 10ms) Verification `[P1 | BLOCKED | AGENT-INFERENCE]`
+- [ML-INF-001](tasks/ML-INF-001.md) — Inference Preprocessing & Scaler Latency SLA (< 10ms) Verification `[P1 | DONE | AGENT-INFERENCE]`
 
 ### STREAM I: TRADING INTEGRATION & BACKTESTING
 - [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | BLOCKED | AGENT-BACKTEST]`

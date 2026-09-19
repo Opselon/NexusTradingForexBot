@@ -2,8 +2,8 @@
 
 STREAM: STREAM H — INFERENCE
 PRIORITY: P1
-STATUS: BLOCKED
-DEPENDENCIES: ML-FEAT-001
+STATUS: DONE (2026-09-19; verified p99 = 1.8561 ms over 50,000 ticks on CPU — PR #312)
+DEPENDENCIES: ML-FEAT-001 (DONE)
 AGENT_ROLE: AGENT-INFERENCE
 OWNERSHIP_SCOPE: src/nexus_scalp/application/live/inference.py
 HUMAN_DECISION_REQUIRED: NO
@@ -65,8 +65,24 @@ Inspect whether tensor memory allocations (torch.from_numpy) occur inside the ti
 - Pytest assertion log confirming p99 < 10ms
 
 ## ACCEPTANCE_CRITERIA
-1. tests/performance/test_inference_latency_sla.py passes.
-2. p99 inference latency strictly < 10.0 milliseconds on host CPU.
+1. tests/performance/test_inference_latency_sla.py passes. [x] VERIFIED — 4/4 tests green (pytest -v -s, slim Linux venv).
+2. p99 inference latency strictly < 10.0 milliseconds on host CPU. [x] VERIFIED — p99 = 1.8561 ms over 50,000 ticks (SLA headroom 5.4x); p50 = 1.2549 ms, p95 = 1.4014 ms, throughput 778.9 inf/sec.
+
+## VERIFICATION_EVIDENCE (2026-09-19, AGENT-INFERENCE, slim venv .venv-linux)
+- Command: `PYTHONPATH=src:. .venv-linux/bin/python -m pytest tests/performance/test_inference_latency_sla.py -v -s`
+  - Result: 4 passed in 65.57s (full 50k benchmark + 70D path + fail-closed contract checks).
+- 50,000-tick benchmark report (production 50D ScalpNet, 3-class, torch 2.14.0+cpu, 1000-pass warmup):
+  - Min 0.6559 ms | p50 1.2549 ms | p90 1.3250 ms | p95 1.4014 ms | p99 1.8561 ms | Max 11.6767 ms
+  - Mean 1.2835 ms (+/- 0.2321 ms); wall 64.191 s; throughput 778.9 inf/sec; SLA verdict PASSED.
+- 70D path (5,000 ticks, scalp_v3): p99 < 10 ms, p50 < 5 ms — PASSED.
+- Regression guards: tests/unit/test_runtime_failure_injection.py + test_temporal_sequence_contract.py — 27 passed (no behavior change from the hot-path edits).
+- Lint/format: ruff check + ruff format --check clean on both touched files; mypy: Success (no issues).
+- Manifest: tests/critical_suite.txt 210 paths, verify_critical_suite_manifest.py CRITICAL_SUITE_MANIFEST_OK.
+
+## OPTIMIZATIONS_APPLIED (within OWNERSHIP_SCOPE, behavior-preserving)
+1. `torch.tensor(x_np, dtype=torch.float32)` -> `torch.from_numpy(x_np)` (zero-copy view; x_np is already float32 C-contiguous from `np.array(..., dtype=np.float32)`).
+2. `bundle.model.eval()` guarded by `if bundle.model.training` — avoids redundant state mutation on every tick (module already in eval mode after load).
+3. `torch.set_num_threads(1)` / restore made conditional (`if _prior_threads != 1`) — the two host side-effects were unconditional per tick even when the value was already correct; removes redundant atomics on the hot path.
 
 ## ABORT_CONDITIONS
 If p99 latency exceeds 10ms, profile bottleneck (feature math vs torch forward) and report.
