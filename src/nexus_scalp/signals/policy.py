@@ -2548,14 +2548,8 @@ class SignalPolicy:
                 )
 
             # Liquidity sweeps
-            recent_high_10 = (
-                max(highs[max(0, i - 11) : i])
-                if i > 0
-                else b_current.high
-            )
-            recent_low_10 = (
-                min(lows[max(0, i - 11) : i]) if i > 0 else b_current.low
-            )
+            recent_high_10 = max(highs[max(0, i - 11) : i]) if i > 0 else b_current.high
+            recent_low_10 = min(lows[max(0, i - 11) : i]) if i > 0 else b_current.low
 
             if b_current.low < recent_low_10 and b_current.close > recent_low_10:
                 liq_markers.append(
