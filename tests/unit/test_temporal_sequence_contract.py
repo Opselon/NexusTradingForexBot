@@ -13,8 +13,6 @@ Contract (file:line refs):
 
 from __future__ import annotations
 
-import datetime
-
 import numpy as np
 import polars as pl
 import torch
@@ -64,8 +62,14 @@ def test_gap_invalidates_window_and_not_else() -> None:
     # string-sort adjacency (the single-row shift would be re-sorted past the gap).
     frame = _synthetic_70d_frame(n=40)
     rows = list(frame.iter_rows(named=True))
+    gap_delta = np.timedelta64(20 * 60_000_000, "us")
     for j in range(20, len(rows)):
-        rows[j]["timestamp"] = rows[j]["timestamp"] + datetime.timedelta(minutes=20)
+        ts = rows[j]["timestamp"]
+        rows[j]["timestamp"] = (
+            (np.datetime64(ts) + gap_delta).item()
+            if not isinstance(ts, np.datetime64)
+            else ts + gap_delta
+        )
     fixed = pl.DataFrame(rows)
     builder = SequenceBuilder(seq_len=16, max_gap_us=CANONICAL_MAX_GAP_US)
     seq = builder.build(fixed, news_enabled=False)
