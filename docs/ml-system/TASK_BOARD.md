@@ -23,7 +23,7 @@
 
 ### STREAM B: FEATURE ENGINEERING
 - [ML-FEAT-001](tasks/ML-FEAT-001.md) — 50D Feature Normalization End-to-End Parity Verification `[P0 | DONE | AGENT-FEATURE]`
-- [ML-FEAT-002](tasks/ML-FEAT-002.md) — Feature Importance, Collinearity Clustering & Redundancy Pruning `[P2 | BLOCKED | AGENT-FEATURE]`
+- [ML-FEAT-002](tasks/ML-FEAT-002.md) — Feature Importance, Collinearity Clustering & Redundancy Pruning `[P2 | DONE | AGENT-FEATURE]`
 - [ML-FEAT-003](tasks/ML-FEAT-003.md) — 70D Feature Feasibility, Feed Uptime & Gating Criteria `[P2 | BLOCKED | AGENT-FEATURE | HUMAN DECISION]`
 
 ### STREAM C: LABELING

@@ -473,3 +473,5 @@ tests/unit/test_sample_weights.py
 tests/unit/test_purge_embargo_monotonicity.py
 # ML-PLAT-002 (Signed Official Model Bundle Verification & Staging Slot Isolation)
 tests/integration/test_official_model_tamper_proofing.py
+# ML-FEAT-002 (Feature Importance, Collinearity Clustering & Redundancy Pruning)
+tests/unit/test_feature_importance.py
