@@ -48,13 +48,13 @@
 ### STREAM G: VALIDATION, OOS & ROBUSTNESS
 - [ML-VAL-001](tasks/ML-VAL-001.md) — Purged Walk-Forward Monotonicity & Embargo `[P1 | DONE | AGENT-ML-VALIDATION]`
 - [ML-VAL-002](tasks/ML-VAL-002.md) — Probability Calibration & Expected Calibration Error (ECE) Evaluation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
-- [ML-VAL-003](tasks/ML-VAL-003.md) — Robustness Stress Testing: Friction Clamp, Slippage & Spread Perturbation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
+- [ML-VAL-003](tasks/ML-VAL-003.md) — Robustness Stress Testing: Friction Clamp, Slippage & Spread Perturbation `[P2 | DONE | AGENT-ML-VALIDATION]`
 
 ### STREAM H: REAL-TIME INFERENCE
 - [ML-INF-001](tasks/ML-INF-001.md) — Inference Preprocessing & Scaler Latency SLA (< 10ms) Verification `[P1 | DONE | AGENT-INFERENCE]`
 
 ### STREAM I: TRADING INTEGRATION & BACKTESTING
-- [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | DONE (PR #316) | AGENT-BACKTEST]`
+- [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | BLOCKED | AGENT-BACKTEST]`
 - [ML-RISK-001](tasks/ML-RISK-001.md) — Position Replay & Economic Dataset Generation Engine `[P0 | DONE | AGENT-RISK]`
 
 ### STREAM J: MODEL GOVERNANCE & LIFECYCLE
