@@ -573,6 +573,15 @@ class TestResolvePendingOutcomes:
         runners differ by >10x from the dev host). The machine-independent
         contract is therefore SCALING: 4x the resolved decisions must not
         multiply the cost by more than a small constant factor.
+
+        TIMING-HYGIENE: the first leg also pays one-time cold costs
+        (lazy ShadowRecorder/ShadowStore imports, SQLite page-cache warmup)
+        that the second leg does not. On a loaded 4-worker xdist grid that
+        cold cost dominates the 40-row small leg and manufactures a
+        super-linear ratio (3.76x measured on CI, passing serially in
+        2.6s on an idle host). A warmup leg retires those one-time costs
+        before either timed measurement, so the ratio measures the
+        algorithm, not the import/cache state.
         """
         base_ts = datetime(2026, 9, 20, 8, 0, 0, tzinfo=UTC)
         n_small, n_large = 40, 160
@@ -623,6 +632,9 @@ class TestResolvePendingOutcomes:
             assert counts["resolved"] == n, f"leg {run_id}: {counts}"
             return elapsed
 
+        # Warmup leg: retire one-time cold costs (lazy imports, SQLite
+        # page-cache warmup) before either timed measurement.
+        _one_leg("run_bench_warm", n_small)
         t_small = _one_leg("run_bench_s", n_small)
         t_large = _one_leg("run_bench_l", n_large)
         # Linear-or-better scaling: 4x decisions must not cost >3.5x time.
