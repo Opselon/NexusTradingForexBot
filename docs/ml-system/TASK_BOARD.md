@@ -54,7 +54,7 @@
 - [ML-INF-001](tasks/ML-INF-001.md) — Inference Preprocessing & Scaler Latency SLA (< 10ms) Verification `[P1 | DONE | AGENT-INFERENCE]`
 
 ### STREAM I: TRADING INTEGRATION & BACKTESTING
-- [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | DONE (PR #316) | AGENT-BACKTEST]`
+- [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | BLOCKED | AGENT-BACKTEST]`
 - [ML-RISK-001](tasks/ML-RISK-001.md) — Position Replay & Economic Dataset Generation Engine `[P0 | DONE | AGENT-RISK]`
 
 ### STREAM J: MODEL GOVERNANCE & LIFECYCLE
@@ -64,7 +64,7 @@
 
 ### STREAM K: PLATFORM & DISTRIBUTION
 - [ML-PLAT-001](tasks/ML-PLAT-001.md) — MT5 Runtime Boundaries & Remote Gateway Linux Parity `[P2 | READY | AGENT-PLATFORM]`
-- [ML-PLAT-002](tasks/ML-PLAT-002.md) — Signed Official Model Bundle Verification & Staging Slot Isolation `[P1 | BLOCKED | AGENT-PLATFORM]`
+- [ML-PLAT-002](tasks/ML-PLAT-002.md) — Signed Official Model Bundle Verification & Staging Slot Isolation `[P1 | DONE | AGENT-PLATFORM]`
 
 ### STREAM L: OBSERVABILITY, SAFETY & CI/CD
 - [ML-OBS-001](tasks/ML-OBS-001.md) — Live Shadow Outcome Real-Time Resolution & Holding Metrics Wiring `[P2 | READY | AGENT-OBSERVABILITY]`
