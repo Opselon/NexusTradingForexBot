@@ -14,7 +14,7 @@ import sys
 import tempfile
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,11 @@ def install_verified_bundle(
         raise _error("INSTALL_ORIGIN_INVALID", "acquisition cannot grant governance authority")
     if Path(serving_model_path).name != "model.pt":
         raise _error("INSTALL_UNSAFE_PATH", "canonical model.pt basename required")
+    # ML-PLAT-002: verify the SOURCE directory before staging anything. The
+    # staging copy loop below reads ``verified.dir`` directly; a file that went
+    # missing after verification surfaced as a bare shutil FileNotFoundError
+    # (fail-OPEN, error code lost) instead of a signed-contract failure.
+    _verify_files(Path(verified.dir))
     with model_slot_lock(serving_model_path):
         _assert_engine_stopped()
         _cancel(cancel_event)
@@ -75,7 +80,29 @@ def install_verified_bundle(
                 source = verified.dir / name
                 if source.is_symlink():
                     raise _error("INSTALL_UNSAFE_PATH", name)
+                if not source.is_file():
+                    raise _error("FILE_MISSING", name)
                 shutil.copy2(source, stage / name)
+            # ML-PLAT-002: the signed contract the caller holds (verified.manifest)
+            # is authoritative, not the on-disk manifest.json copy — a tampered
+            # signature/key_id/digest in the caller's dict must land in the
+            # staged bytes so _verify_files can reject it, instead of the stale
+            # on-disk copy silently re-verifying and bypassing the probe.
+            # Preserve the original on-disk bytes when they encode the SAME
+            # contract (publisher serialization), so published and installed
+            # manifest bytes stay byte-identical for downstream comparators.
+            source_manifest = verified.dir / "manifest.json"
+            staged_bytes: bytes | None = None
+            if source_manifest.is_file():
+                with suppress(ValueError, OSError):
+                    on_disk = json.loads(source_manifest.read_text(encoding="utf-8"))
+                    if on_disk == verified.manifest:
+                        staged_bytes = source_manifest.read_bytes()
+            if staged_bytes is None:
+                staged_bytes = json.dumps(verified.manifest, indent=2, allow_nan=False).encode(
+                    "utf-8"
+                )
+            (stage / "manifest.json").write_bytes(staged_bytes)
             manifest = _verify_files(stage)
             _validate_servable(stage / "model.pt")
             state = {
