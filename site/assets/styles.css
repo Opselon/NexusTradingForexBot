@@ -347,6 +347,10 @@ a.pn:hover{text-decoration:none; border-color:var(--accent); box-shadow:var(--sh
   .content{padding:18px 16px 60px}
   .search{min-width:120px; flex:1 1 auto}
   .header-actions{flex-wrap:wrap}
+  /* Keep the ⌘K palette trigger legible once the header starts wrapping:
+     its label was the first thing to clip when space ran out. */
+  .header-actions .chip{white-space:nowrap; flex:0 0 auto}
+  .header-actions .lang-picker summary,.header-actions .theme-picker summary{white-space:nowrap; flex:0 0 auto}
   .hero-copy{padding:24px 18px 20px} .hero-pro h1{font-size:2rem}
   .bento{grid-template-columns:1fr} .bento-card,.bento-card.narrow,.bento-card.wide{grid-column:span 1}
   .pipe{grid-template-columns:repeat(2,1fr)}

@@ -52,7 +52,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-DATA-001` | A: Data | P0 | Historical M1 Market Data Ingest & Parquet Storage | **DONE** (PR #259, `d52bcde6`) | `AGENT-DATA` | NO | None | `PARALLEL_SAFE` |
 | `ML-DATA-002` | A: Data | P1 | Dataset Integrity, Sanitization & Hashing | **DONE** | `AGENT-DATA` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-FEAT-001` | B: Features | P0 | 50D Normalization End-to-End Parity | **DONE** (PR #254, `bd61deb5`) | `AGENT-FEATURE` | NO | None | `PARALLEL_SAFE` |
-| `ML-FEAT-002` | B: Features | P2 | Feature Importance & Collinearity Clustering | **BLOCKED** | `AGENT-FEATURE` | NO | `ML-DATA-001`, `ML-FEAT-001` | `PARALLEL_SAFE` |
+| `ML-FEAT-002` | B: Features | P2 | Feature Importance & Collinearity Clustering | **DONE** | `AGENT-FEATURE` | NO | `ML-DATA-001`, `ML-FEAT-001` | `PARALLEL_SAFE` |
 | `ML-FEAT-003` | B: Features | P2 | 70D Feasibility, Feed Uptime & Gating | **BLOCKED** | `AGENT-FEATURE` | **YES** | `ML-FEAT-001`, `ML-DATA-001` | `SERIAL_ONLY` |
 | `ML-LABEL-001` | C: Labeling | P1 | Friction-Aware Triple Barrier Horizon & ATR | **DONE** | `AGENT-LABEL` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-LABEL-002` | C: Labeling | P1 | Sample Uniqueness & Overlap Anti-Leakage | **DONE** | `AGENT-LABEL` | NO | `ML-LABEL-001` | `PARALLEL_SAFE` |
@@ -67,7 +67,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-EXP-003` | F: Experimentation | P3 | Bounded Hyperparameter Grid Search Runner | **BLOCKED** | `AGENT-ML-EXP` | NO | `ML-EXP-001`, `ML-TRAIN-003` | `PARALLEL_SAFE` |
 | `ML-VAL-001` | G: Validation | P1 | Purged Walk-Forward Monotonicity & Embargo | **DONE** | `AGENT-ML-VALIDATION` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-VAL-002` | G: Validation | P2 | Probability Calibration & ECE Evaluation | **BLOCKED** | `AGENT-ML-VALIDATION` | NO | `ML-EXP-002` | `PARALLEL_SAFE` |
-| `ML-VAL-003` | G: Validation | P2 | Robustness Stress: Slippage & Spread Perturb | **BLOCKED** | `AGENT-ML-VALIDATION` | NO | `ML-VAL-001` | `PARALLEL_SAFE` |
+| `ML-VAL-003` | G: Validation | P2 | Robustness Stress: Slippage & Spread Perturb | **DONE** | `AGENT-ML-VALIDATION` | NO | `ML-VAL-001` | `PARALLEL_SAFE` |
 | `ML-INF-001` | H: Inference | P1 | Inference Preprocessing Latency SLA (<10ms) | **DONE** | `AGENT-INFERENCE` | NO | `ML-FEAT-001`, `ML-ARCH-001` | `PARALLEL_SAFE` |
 | `ML-BT-001` | I: Backtest | P1 | Trading Quality Metrics vs Classification | **BLOCKED** | `AGENT-BACKTEST` | NO | `ML-VAL-001`, `ML-VAL-003` | `PARALLEL_SAFE` |
 | `ML-RISK-001` | I: Risk & Position | P0 | Position Replay & Economic Dataset Generation Engine | **DONE** | `AGENT-RISK` | NO | `ML-DATA-001`, `ML-UI-003` | `PARALLEL_SAFE` |
