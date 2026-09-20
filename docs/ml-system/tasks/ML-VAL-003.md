@@ -2,12 +2,60 @@
 
 STREAM: STREAM G — VALIDATION/OOS
 PRIORITY: P2
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-VAL-001
 AGENT_ROLE: AGENT-ML-VALIDATION
 OWNERSHIP_SCOPE: src/nexus_scalp/research/robustness.py
 HUMAN_DECISION_REQUIRED: NO
 PARALLELIZATION_CLASS: PARALLEL_SAFE
+
+## COMPLETION (2026-09-20, AGENT-ML-VALIDATION)
+
+Delivered `tests/unit/test_robustness_stress_scenarios.py` (33 tests, all green)
+exercising the full `RobustnessEngine.evaluate` -> `gate_robustness` (GATE8)
+chain. Registered in `tests/critical_suite.txt` (manifest verified: 211 paths).
+
+Verification evidence:
+- 33/33 new tests pass; 58/0 across the combined friction/robustness suites
+  (`test_robustness_stress_scenarios.py` + `test_bug299_friction_cap_saturation.py`
+  + `test_zero_friction_guard_e1.py`).
+- ruff check + ruff format --check + mypy clean on the new file.
+- `scripts/ci/verify_critical_suite_manifest.py`: CRITICAL_SUITE_MANIFEST_OK.
+
+Coverage map vs IMPLEMENTATION_PLAN:
+1. mock trade series with known R-distribution -> `_dataset(win_frac, win_r, risk)`.
+2. baseline friction evaluation -> every test asserts `baseline_expectancy_r`.
+3. severe friction (spread +50 ticks, slip +2 ticks) -> `test_gate8_rejects_*`.
+4. GATE8 rejects degradation > ceiling -> `test_gate8_rejects_fragile_candidate`
+   (0.48R measured degradation vs the 0.25R engine ceiling).
+5. GATE8 passes robust trades -> `test_gate8_passes_robust_candidate`.
+- BENCHMARK_PLAN: 1,000-trade records x 4 friction levels, ordered + deterministic.
+- INVESTIGATION_PLAN (spread > take-profit distance): the per-trade friction
+  floor `min(friction_frac, 0.5)` saturates rather than scaling — pinned in
+  `test_friction_r_floor_caps_single_trade_cost_at_half_r`.
+- ABORT_CONDITION: the ceiling is load-bearing and never relaxed past the
+  task's 50% bound (`test_ceiling_is_never_relaxed_past_task_bound`); no FAIL
+  shape is swallowed (`test_gate8_never_swallows_a_fail`).
+
+Two ACCEPTED-RISK findings pinned (documented in the module docstring and in
+`docs/agent_handoffs/2026-09-20_AGENT-ML-VALIDATION_ML-VAL-003.md`, NOT
+suppressed):
+- An EMPTY dataset evaluates to PASS (no sample-count floor in robustness.py);
+  GATE1/GATE7 block such a candidate earlier in
+  `ModelLifecycleOrchestrator._evaluate_gates` (orchestrator.py:352-380).
+- A NEGATIVE-BASELINE model can PASS GATE8: GATE8 is a relative gate by design
+  (spec 16/35); absolute profitability is owned by GATE7
+  (`MIN_ECONOMIC_OOS_EXPECTANCY_R = 0.02`, research/oos.py:41).
+
+Key contract discovery: `compute_backtest` clamps per-trade friction at 0.5R
+(`min(friction_frac, 0.5)`, research/metrics.py), so the MAXIMUM measurable
+degradation is 0.5R. The task text's "50% degradation" is therefore the
+theoretical ceiling of the friction model; the binding constraint is the
+engine's stricter `MAX_ACCEPTABLE_DEGRADATION_R = 0.25R` (robustness.py:29),
+which honours the task bound rather than relaxing it. GATE8's negative-
+expectancy clause (`worst < 0 and max_deg > ceiling/2`) can only fire for a
+ceiling in (0.5, 1.0) — it is a genuine second line of defence, not the
+primary trigger.
 
 ## OBJECTIVE
 Verify and harden RobustnessGate (GATE8) by subjecting candidate model trading decisions to spread perturbation (+1 to +5 pips) and execution slippage (+1 to +2 ticks), asserting degradation <= 50%.
