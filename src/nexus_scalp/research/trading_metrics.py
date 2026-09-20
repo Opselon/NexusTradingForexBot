@@ -325,8 +325,12 @@ def _friction_r_per_trade(
     ``frac = (friction_ticks * price_tick) / risk_distance`` clamped at
     ``FRICTION_R_CAP``; trades with no recorded risk distance pay the linear
     per-tick fallback ``0.01 * friction_ticks``.
+
+    Vectorised: the per-trade deduction is computed once for ALL trades in a
+    single pass (this is the hot path of the 5-level slippage decay curve and
+    of the canonical-friction view in calculate_economic_metrics).
     """
-    if assumptions is None:
+    if assumptions is None or not ordered:
         return 0.0
     friction_ticks = float(assumptions.spread_ticks + assumptions.slippage_ticks + extra_ticks)
     if friction_ticks <= 0.0:
@@ -334,15 +338,21 @@ def _friction_r_per_trade(
     tick = float(assumptions.price_tick)
     if tick <= 0.0:
         return 0.0
-    deducted: list[float] = []
-    for t in ordered:
-        risk = t.risk_distance
-        if risk is not None and risk > 1e-9:
-            frac = (friction_ticks * tick) / risk
-            deducted.append(min(frac, FRICTION_R_CAP))
-        else:
-            deducted.append(0.01 * friction_ticks)
-    return float(np.mean(deducted)) if deducted else 0.0
+
+    risk = np.asarray(
+        [
+            (t.risk_distance if (t.risk_distance is not None and t.risk_distance > 1e-9) else 0.0)
+            for t in ordered
+        ],
+        dtype=float,
+    )
+    # Trades WITH a usable risk distance: frac = ticks * price_tick / risk,
+    # clamped at the 0.5R ceiling. Vectorised min() over the array.
+    has_risk = risk > 1e-9
+    frac = np.full_like(risk, 0.01 * friction_ticks)  # linear per-tick fallback
+    if bool(np.any(has_risk)):
+        frac[has_risk] = np.minimum((friction_ticks * tick) / risk[has_risk], FRICTION_R_CAP)
+    return float(np.mean(frac))
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +436,12 @@ def calculate_economic_metrics(
     friction_r = _friction_r_per_trade(ordered, assumptions)
     net_expectancy = expectancy_r - friction_r
 
+    # NOTE: the decay curve is computed ONCE here and is deliberately NOT
+    # recomputed by callers. calculate_economic_metrics already returns the
+    # full slippage_decay list on the report, so a caller that needs the curve
+    # should read `metrics.slippage_decay` rather than calling
+    # compute_slippage_decay(trades) again — that would re-price the sequence 5
+    # more times (once per grid level) for an identical result.
     decay = compute_slippage_decay(ordered, assumptions=assumptions)
 
     assumption_provenance: dict[str, Any] = {
