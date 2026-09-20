@@ -75,7 +75,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-GOV-002` | J: Governance | P1 | Unified Model State Machine Root | **READY** | `AGENT-GOVERNANCE` | **YES** | None | `SERIAL_ONLY` |
 | `ML-GOV-003` | J: Governance | P1 | Persistent Governance Freeze Across Restarts | **BLOCKED** | `AGENT-GOVERNANCE` | NO | `ML-GOV-002` | `PARALLEL_SAFE` |
 | `ML-PLAT-001` | K: Platform | P2 | MT5 Runtime Boundaries & Linux Parity | **DONE 2026-09-20 (PR #322)** | `AGENT-PLATFORM` | NO | None | `PARALLEL_SAFE` |
-| `ML-PLAT-002` | K: Platform | P1 | Signed Official Bundle Verification & Slots | **BLOCKED** | `AGENT-PLATFORM` | NO | `ML-GOV-001` | `PARALLEL_SAFE` |
+| `ML-PLAT-002` | K: Platform | P1 | Signed Official Bundle Verification & Slots | **DONE** | `AGENT-PLATFORM` | NO | `ML-GOV-001` | `PARALLEL_SAFE` |
 | `ML-OBS-001` | L: Observability | P2 | Live Shadow Outcome Real-Time Resolution | **READY** | `AGENT-OBSERVABILITY` | NO | None | `PARALLEL_SAFE` |
 | `ML-OBS-002` | L: Observability | P3 | Online Fine-Tuning Safe Sandbox | **BLOCKED** | `AGENT-OBSERVABILITY` | **YES** | `ML-GOV-001`, `ML-GOV-003` | `SERIAL_ONLY` |
 | `ML-CI-001` | L: CI/CD | P2 | CI Model Training Validation Gap | **BLOCKED** | `AGENT-QA` | NO | `ML-DATA-001`, `ML-VAL-001` | `PARALLEL_SAFE` |
