@@ -477,3 +477,5 @@ tests/integration/test_official_model_tamper_proofing.py
 tests/unit/test_feature_importance.py
 # ML-OBS-001 (Live Shadow Outcome Real-Time Resolution and Holding Metrics Wiring)
 tests/unit/test_live_shadow_outcome_resolution.py
+# ML-PLAT-001 (MT5 Runtime Boundaries & Remote Gateway Linux Parity Verification)
+tests/integration/test_mt5_adapter_parity.py
