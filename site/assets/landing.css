@@ -292,9 +292,11 @@ body.landing-page .sec-card p{color:var(--l-dim)}
 body.landing-page .whats-new, body.landing-page .timeline-block{
   padding:22px; border:1px solid var(--l-line); border-radius:18px; background:var(--l-panel)}
 body.landing-page .wn-list{color:var(--l-dim)}
+body.landing-page .wn-list li{color:var(--l-ink); line-height:1.6}
 body.landing-page .wn-list li::marker{color:var(--l-cyan)}
 body.landing-page .tl-item{border-color:var(--l-line); background:rgba(8,14,28,.5); color:var(--l-ink)}
 body.landing-page .tl-tag{color:var(--l-cyan)}
+body.landing-page .tl-date{color:var(--l-dim)}
 body.landing-page .cta{background:linear-gradient(135deg, rgba(34,211,238,.12), rgba(79,124,255,.08)), var(--l-panel);
   border-color:var(--l-line); color:var(--l-ink)}
 body.landing-page .cta p{color:var(--l-dim)}
