@@ -76,7 +76,13 @@ body.landing-page section[id]{scroll-margin-top:150px}
 .lnav-status{margin-inline-start:6px; display:inline-flex; align-items:center; gap:7px;
   font-size:.7rem; font-weight:800; letter-spacing:.12em; color:#9fe9f5;
   border:1px solid rgba(52,211,153,.35); border-radius:999px; padding:5px 12px}
-@media (max-width:640px){.land-nav{border-radius:18px; justify-content:flex-start; overflow-x:auto}}
+@media (max-width:640px){
+  .land-nav{border-radius:16px; justify-content:flex-start; overflow-x:auto;
+    scroll-snap-type:x proximity; scrollbar-width:none; -webkit-overflow-scrolling:touch}
+  .land-nav::-webkit-scrollbar{display:none}
+  .lnav-link{scroll-snap-align:center; padding:8px 12px}
+  .lnav-status{scroll-snap-align:center; margin-inline-start:2px}
+}
 
 /* ---------- hero ---------- */
 .land-hero{padding:72px 0 34px}
@@ -189,7 +195,13 @@ body.landing-page .bento-icon{background:rgba(34,211,238,.1); border-color:var(-
   color:#c9f7ea; background:rgba(4,10,18,.72); border:1px solid var(--l-line); border-radius:999px; padding:4px 10px}
 .mode-panel h3{margin:0 0 6px}
 .mode-panel p{margin:0 0 14px; color:var(--l-dim); line-height:1.7}
-.mode-panel .chip{color:var(--l-cyan); border-color:rgba(34,211,238,.35)}
+/* .chip carries a base --card (white in the default light theme); pin it
+   or the Docs link renders as a solid white button on the dark panel. */
+body.landing-page .mode-panel .chip{color:#9fe9f5; border-color:rgba(34,211,238,.4);
+  background:rgba(34,211,238,.1); display:inline-flex; align-items:center; gap:6px;
+  border-radius:var(--radius-pill); padding:6px 14px; font-size:.8rem; font-weight:700;
+  text-decoration:none}
+body.landing-page .mode-panel .chip:hover{border-color:var(--l-cyan); background:rgba(34,211,238,.2); text-decoration:none}
 
 /* ---------- research lab ---------- */
 .res-grid{display:grid; grid-template-columns:minmax(230px,.6fr) 1fr; gap:26px; align-items:start}
@@ -306,12 +318,17 @@ body.landing-page .land-sec.in, body.landing-page .land-hero.in{opacity:1; trans
   .land-hero{padding-top:36px}
   .why-grid{grid-template-columns:1fr}
   .mode-panel.is-active{grid-template-columns:1fr; padding:18px}
-  .mp-env{aspect-ratio:1.6}
+  .mp-env{aspect-ratio:1.6; max-width:220px; margin:0 auto}
+  .mode-switch{gap:6px}
+  .mode-tab{padding:10px 16px; font-size:.76rem}
   .hex-wrap{height:auto; display:grid; grid-template-columns:1fr 1fr; gap:10px; place-items:stretch}
   .hex-wrap::before{display:none}
   .hx-node{position:static; transform:none; width:auto; margin:0}
   .hex-core{width:auto; clip-path:none; border-radius:16px; border:1px solid var(--l-line); padding:16px}
   .st-grid{grid-template-columns:1fr 1fr}
+  .land-sec{margin:56px 0}
+  .pulse-grid{grid-template-columns:1fr 1fr}
+  .res-grid{gap:18px}
 }
 
 /* ---------- RTL ---------- */
