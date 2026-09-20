@@ -3597,6 +3597,29 @@ class LiveEngine:
             self._bar_handler_instance = eng
         return eng
 
+    def _resolve_shadow_outcomes(self, last_bar) -> None:
+        """Delegate: live shadow outcome resolution (ML-OBS-001, seam L1).
+
+        Resolves PENDING shadow decisions whose horizon expired against the
+        engine's completed-bar series. Runs at bar-close cadence via
+        BarHandler.on_new_bar; the implementation is owned by ShadowRecorder
+        and is failure-isolated + order-authority-free (NON_GOALS).
+        """
+        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+
+        ShadowRecorder(self).resolve_pending_outcomes(bars=self.aggregator.get_completed_bars())
+
+    @property
+    def _shadow_recorder(self):
+        """Lazily composed shadow recorder (P1 seam L1)."""
+        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+
+        eng = getattr(self, "_shadow_recorder_instance", None)
+        if eng is None:
+            eng = ShadowRecorder(self)
+            self._shadow_recorder_instance = eng
+        return eng
+
     def _build_freshness_snapshot(self):  # type: ignore[no-untyped-def]
         from nexus_scalp.application.live_freshness import LiveFreshnessSnapshot
 

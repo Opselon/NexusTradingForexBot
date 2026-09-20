@@ -719,3 +719,110 @@ def test_pre_trade_entry_wick_absorption(
 # ============================================================================
 # PRE-TRADE FILTER RULES TESTS
 # ============================================================================
+
+
+def test_pre_trade_entry_vwap_elastic_band(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+    fv.cross_asset_z_score = 4.0
+
+    # 1. Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_VWAP_ELASTIC_BAND", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 2. Stretch Sell (z_score >= 3.5) -> SELL_MARKET
+    proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34])
+    assert proposal_sell is not None
+    assert proposal_sell.action == ActionType.SELL_MARKET
+    assert proposal_sell.reason_code == "RULE_VWAP_ELASTIC_BAND"
+    assert proposal_sell.proposed_entry == tick.bid
+    assert proposal_sell.stop_loss == round(tick.bid + 1.5, 2)
+    assert proposal_sell.take_profit == round(tick.bid - 2.5, 2)
+    assert proposal_sell.confidence == 0.91
+
+    # 3. Stretch Buy (z_score <= -3.5) -> BUY_MARKET
+    fv.cross_asset_z_score = -4.0
+    proposal_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34])
+    assert proposal_buy is not None
+    assert proposal_buy.action == ActionType.BUY_MARKET
+    assert proposal_buy.reason_code == "RULE_VWAP_ELASTIC_BAND"
+    assert proposal_buy.proposed_entry == tick.ask
+    assert proposal_buy.stop_loss == round(tick.ask - 1.5, 2)
+    assert proposal_buy.take_profit == round(tick.ask + 2.5, 2)
+    assert proposal_buy.confidence == 0.91
+
+    # 4. Neutral z_score (-3.5 < z_score < 3.5) -> None
+    fv.cross_asset_z_score = 1.2
+    proposal_neutral = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34])
+    assert proposal_neutral is None
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
+
+
+def test_pre_trade_entry_tick_imbalance_reversal(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+    regime_state = MagicMock()
+
+    # 1. Disabled by default -> returns None
+    regime_state.order_flow_imbalance = -0.85
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, regime_state, [0.33, 0.33, 0.34])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_TICK_IMBALANCE_REVERSAL", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 2. regime_state is None -> returns None
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.33, 0.33, 0.34]) is None
+
+    # 3. Neutral OFI (-0.79 to +0.79) -> returns None
+    regime_state.order_flow_imbalance = -0.79
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, regime_state, [0.33, 0.33, 0.34]) is None
+
+    regime_state.order_flow_imbalance = 0.79
+    assert rule_engine.evaluate_pre_trade_entry(tick, fv, regime_state, [0.33, 0.33, 0.34]) is None
+
+    # 4. Extreme selling pressure (OFI <= -0.80) -> BUY_MARKET at ask
+    regime_state.order_flow_imbalance = -0.80
+    prop_buy = rule_engine.evaluate_pre_trade_entry(tick, fv, regime_state, [0.33, 0.33, 0.34])
+    assert prop_buy is not None
+    assert prop_buy.action == ActionType.BUY_MARKET
+    assert prop_buy.reason_code == "RULE_TICK_IMBALANCE_REVERSAL"
+    assert prop_buy.proposed_entry == tick.ask
+    assert prop_buy.stop_loss == round(tick.ask - 1.1, 2)
+    assert prop_buy.take_profit == round(tick.ask + 1.8, 2)
+    assert prop_buy.confidence == 0.87
+    assert prop_buy.risk_reward_ratio == 1.63
+    assert prop_buy.symbol == tick.symbol
+
+    # 5. Extreme buying pressure (OFI >= 0.80) -> SELL_MARKET at bid
+    regime_state.order_flow_imbalance = 0.85
+    prop_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, regime_state, [0.33, 0.33, 0.34])
+    assert prop_sell is not None
+    assert prop_sell.action == ActionType.SELL_MARKET
+    assert prop_sell.reason_code == "RULE_TICK_IMBALANCE_REVERSAL"
+    assert prop_sell.proposed_entry == tick.bid
+    assert prop_sell.stop_loss == round(tick.bid + 1.1, 2)
+    assert prop_sell.take_profit == round(tick.bid - 1.8, 2)
+    assert prop_sell.confidence == 0.87
+    assert prop_sell.risk_reward_ratio == 1.63
+    assert prop_sell.symbol == tick.symbol
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================

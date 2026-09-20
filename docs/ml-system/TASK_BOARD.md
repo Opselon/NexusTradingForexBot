@@ -23,7 +23,7 @@
 
 ### STREAM B: FEATURE ENGINEERING
 - [ML-FEAT-001](tasks/ML-FEAT-001.md) — 50D Feature Normalization End-to-End Parity Verification `[P0 | DONE | AGENT-FEATURE]`
-- [ML-FEAT-002](tasks/ML-FEAT-002.md) — Feature Importance, Collinearity Clustering & Redundancy Pruning `[P2 | BLOCKED | AGENT-FEATURE]`
+- [ML-FEAT-002](tasks/ML-FEAT-002.md) — Feature Importance, Collinearity Clustering & Redundancy Pruning `[P2 | DONE | AGENT-FEATURE]`
 - [ML-FEAT-003](tasks/ML-FEAT-003.md) — 70D Feature Feasibility, Feed Uptime & Gating Criteria `[P2 | BLOCKED | AGENT-FEATURE | HUMAN DECISION]`
 
 ### STREAM C: LABELING
@@ -67,7 +67,7 @@
 - [ML-PLAT-002](tasks/ML-PLAT-002.md) — Signed Official Model Bundle Verification & Staging Slot Isolation `[P1 | DONE | AGENT-PLATFORM]`
 
 ### STREAM L: OBSERVABILITY, SAFETY & CI/CD
-- [ML-OBS-001](tasks/ML-OBS-001.md) — Live Shadow Outcome Real-Time Resolution & Holding Metrics Wiring `[P2 | READY | AGENT-OBSERVABILITY]`
+- [ML-OBS-001](tasks/ML-OBS-001.md) — Live Shadow Outcome Real-Time Resolution & Holding Metrics Wiring `[P2 | DONE (PR pending) | AGENT-OBSERVABILITY]`
 - [ML-OBS-002](tasks/ML-OBS-002.md) — Online Fine-Tuning Safe Sandbox, Quarantine Buffer & Circuit Breakers `[P3 | BLOCKED | AGENT-OBSERVABILITY | HUMAN DECISION]`
 - [ML-CI-001](tasks/ML-CI-001.md) — CI Model Training Smoke vs Real Validation Gap `[P2 | BLOCKED | AGENT-QA]`
 - [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | BLOCKED | AGENT-QA]`

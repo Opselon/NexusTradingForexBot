@@ -34,6 +34,27 @@ class BarHandler:
         self.om = om
 
     def on_new_bar(self, tick: TickData, fv, last_bar) -> None:
+        # ---------------------------------------------------------------------
+        # ML-OBS-001 (STREAM L — Observability): live shadow outcome resolution.
+        # Each PENDING shadow decision receives its realized R-multiples + holding
+        # statistics once its evaluation horizon has expired, so a Challenger is
+        # evaluable in REAL TIME instead of waiting for offline replay.
+        #
+        # BAR-CLOSE cadence only (this handler is entered once per completed M1
+        # bar — never per tick), and ShadowRecorder.resolve_pending_outcomes is
+        # failure-isolated + read/queued-write: zero synchronous SQLite commits,
+        # so INV-001 (no DB I/O on the tick hot path) is preserved. Runs FIRST
+        # so the online-fine-tune width guard's early return can never skip it.
+        # The resolution owns NO order authority (NON_GOALS).
+        # ---------------------------------------------------------------------
+        try:
+            self.om._resolve_shadow_outcomes(last_bar)
+        except Exception as obs_err:
+            logger.warning(
+                "[SHADOW] event=OUTCOME_HOOK_FAILED error=%s (isolated; trading unaffected)",
+                obs_err,
+            )
+
         # BUG-061: candle-close gate — feed the completed bar into the local
         # candle-intelligence subsystem and capture its decision (entry/hold/
         # fast-exit bias). Failure is isolated; never disturbs the tick path.

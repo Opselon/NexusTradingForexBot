@@ -52,7 +52,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-DATA-001` | A: Data | P0 | Historical M1 Market Data Ingest & Parquet Storage | **DONE** (PR #259, `d52bcde6`) | `AGENT-DATA` | NO | None | `PARALLEL_SAFE` |
 | `ML-DATA-002` | A: Data | P1 | Dataset Integrity, Sanitization & Hashing | **DONE** | `AGENT-DATA` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-FEAT-001` | B: Features | P0 | 50D Normalization End-to-End Parity | **DONE** (PR #254, `bd61deb5`) | `AGENT-FEATURE` | NO | None | `PARALLEL_SAFE` |
-| `ML-FEAT-002` | B: Features | P2 | Feature Importance & Collinearity Clustering | **BLOCKED** | `AGENT-FEATURE` | NO | `ML-DATA-001`, `ML-FEAT-001` | `PARALLEL_SAFE` |
+| `ML-FEAT-002` | B: Features | P2 | Feature Importance & Collinearity Clustering | **DONE** | `AGENT-FEATURE` | NO | `ML-DATA-001`, `ML-FEAT-001` | `PARALLEL_SAFE` |
 | `ML-FEAT-003` | B: Features | P2 | 70D Feasibility, Feed Uptime & Gating | **BLOCKED** | `AGENT-FEATURE` | **YES** | `ML-FEAT-001`, `ML-DATA-001` | `SERIAL_ONLY` |
 | `ML-LABEL-001` | C: Labeling | P1 | Friction-Aware Triple Barrier Horizon & ATR | **DONE** | `AGENT-LABEL` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-LABEL-002` | C: Labeling | P1 | Sample Uniqueness & Overlap Anti-Leakage | **DONE** | `AGENT-LABEL` | NO | `ML-LABEL-001` | `PARALLEL_SAFE` |
@@ -76,7 +76,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-GOV-003` | J: Governance | P1 | Persistent Governance Freeze Across Restarts | **BLOCKED** | `AGENT-GOVERNANCE` | NO | `ML-GOV-002` | `PARALLEL_SAFE` |
 | `ML-PLAT-001` | K: Platform | P2 | MT5 Runtime Boundaries & Linux Parity | **DONE 2026-09-20 (PR #322)** | `AGENT-PLATFORM` | NO | None | `PARALLEL_SAFE` |
 | `ML-PLAT-002` | K: Platform | P1 | Signed Official Bundle Verification & Slots | **DONE** | `AGENT-PLATFORM` | NO | `ML-GOV-001` | `PARALLEL_SAFE` |
-| `ML-OBS-001` | L: Observability | P2 | Live Shadow Outcome Real-Time Resolution | **READY** | `AGENT-OBSERVABILITY` | NO | None | `PARALLEL_SAFE` |
+| `ML-OBS-001` | L: Observability | P2 | Live Shadow Outcome Real-Time Resolution | **DONE** (PR pending) | `AGENT-OBSERVABILITY` | NO | None | `PARALLEL_SAFE` |
 | `ML-OBS-002` | L: Observability | P3 | Online Fine-Tuning Safe Sandbox | **BLOCKED** | `AGENT-OBSERVABILITY` | **YES** | `ML-GOV-001`, `ML-GOV-003` | `SERIAL_ONLY` |
 | `ML-CI-001` | L: CI/CD | P2 | CI Model Training Validation Gap | **BLOCKED** | `AGENT-QA` | NO | `ML-DATA-001`, `ML-VAL-001` | `PARALLEL_SAFE` |
 | `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **BLOCKED** | `AGENT-QA` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
