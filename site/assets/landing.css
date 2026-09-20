@@ -16,7 +16,29 @@ body.landing-page{
 body.landing-page .layout{display:block; min-height:0}
 body.landing-page .sidebar{display:none}
 body.landing-page .content{max-width:1240px; margin:0 auto; padding:0 24px 90px; animation:none}
-body.landing-page .site-header{background:rgba(4,7,15,.72); border-bottom-color:rgba(94,234,212,.12)}
+/* Header: transparent-dark chrome on the cinematic landing page.
+   Tokens are opaque-dark variants of --card/--border/--fg/--muted so the
+   search box, language and theme pickers keep readable contrast over the
+   deep-navy atmosphere (they previously inherited the light-theme --card). */
+body.landing-page .site-header{background:rgba(6,10,20,.86); border-bottom-color:rgba(94,234,212,.14)}
+body.landing-page .header-actions{gap:8px}
+body.landing-page .header-actions .search{
+  min-width:200px; background:rgba(6,12,24,.75); border-color:rgba(94,234,212,.22);
+  color:var(--l-ink)}
+body.landing-page .header-actions .search::placeholder{color:#7d8fb0}
+body.landing-page .header-actions .search:focus{border-color:var(--l-cyan); box-shadow:0 0 0 3px rgba(34,211,238,.18)}
+body.landing-page .header-actions .chip,
+body.landing-page .lang-picker summary,
+body.landing-page .theme-picker summary{
+  background:rgba(6,12,24,.75); border-color:rgba(94,234,212,.22); color:var(--l-ink)}
+body.landing-page .lang-picker[open] summary,
+body.landing-page .theme-picker[open] summary{border-color:var(--l-cyan); box-shadow:0 0 0 3px rgba(34,211,238,.18)}
+body.landing-page .lang-menu{background:rgba(8,14,28,.97); border-color:rgba(94,234,212,.22); box-shadow:0 18px 50px rgba(0,0,0,.6)}
+body.landing-page .lang-menu a{color:var(--l-ink)} body.landing-page .lang-menu a:hover{background:rgba(34,211,238,.1)}
+body.landing-page .lang-current{color:var(--l-dim); background:rgba(34,211,238,.08)}
+body.landing-page .theme-menu button{color:var(--l-ink)} body.landing-page .theme-menu button:hover{background:rgba(34,211,238,.1)}
+body.landing-page .repo-link{background:rgba(6,12,24,.75); border-color:rgba(94,234,212,.22); color:var(--l-ink)}
+body.landing-page .repo-link:hover{border-color:var(--l-cyan)}
 body.landing-page .brand-mark{background:linear-gradient(135deg,var(--l-cyan),var(--l-blue)); box-shadow:0 0 18px rgba(34,211,238,.45)}
 body.landing-page .page-footer{border-top:1px solid var(--l-line); background:transparent}
 body.landing-page .land-sec{margin:88px 0}
@@ -162,11 +184,18 @@ body.landing-page .bento-icon{background:rgba(34,211,238,.1); border-color:var(-
   border-radius:12px; margin:8px 0}
 .rl-dot{position:absolute; inset-inline-start:16px; top:50%; transform:translateY(-50%); width:12px; height:12px;
   border-radius:50%; background:var(--l-bg); border:2px solid var(--l-cyan); box-shadow:0 0 12px rgba(34,211,238,.6)}
+body.landing-page .table-wrap{background:var(--l-panel); border:1px solid var(--l-line); border-radius:16px; padding:6px 10px;
+  backdrop-filter:blur(10px)}
 body.landing-page .table-wrap table{background:transparent}
 body.landing-page .table-wrap th, body.landing-page .table-wrap td{border-color:rgba(148,164,196,.14); color:var(--l-ink)}
-body.landing-page .table-wrap th{color:var(--l-dim)}
+body.landing-page .table-wrap th{color:var(--l-dim); font-size:.68rem; letter-spacing:.16em; text-transform:uppercase; padding:12px 14px}
+body.landing-page .table-wrap td{padding:12px 14px}
+body.landing-page .table-wrap tbody tr{border-color:rgba(148,164,196,.1)}
+body.landing-page .table-wrap tbody tr:hover{background:rgba(34,211,238,.05)}
 body.landing-page .table-wrap a{color:var(--l-cyan)}
-.chip-rej{color:#fb7185; border-color:rgba(251,113,133,.4); background:rgba(225,29,72,.12)}
+body.landing-page .table-wrap .chip{display:inline-flex; align-items:center; justify-content:center;
+  border-radius:var(--radius-pill); padding:5px 14px; font-size:.76rem; letter-spacing:.04em; white-space:nowrap}
+.chip-rej{color:#fda4af; border-color:rgba(251,113,133,.55); background:rgba(225,29,72,.18)}
 .neg-note{margin-top:14px; padding:14px 16px; border:1px solid rgba(251,191,36,.28); border-radius:14px;
   background:rgba(251,191,36,.06); color:#fcd9a4; font-size:.88rem; line-height:1.6}
 
