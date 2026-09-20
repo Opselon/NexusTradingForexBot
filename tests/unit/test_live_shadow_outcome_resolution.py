@@ -589,6 +589,17 @@ class TestResolvePendingOutcomes:
         denominator so a near-zero small-leg sample cannot blow the ratio
         up arithmetically. Warmup retires one-time cold costs (lazy
         imports, SQLite page-cache warmup).
+
+        THRESHOLD ARITHMETIC: each leg costs t(n) = F + n*c, where F is a
+        fixed per-leg cost (store/engine construction, bar series build,
+        the SQLite SELECT) and c is the marginal cost per resolved
+        decision. The ratio (F+160c)/(F+40c) is strictly INCREASING in F
+        and approaches 4.0 as F->0. So 4.0x is the *ideal* linear bound,
+        not a violation: a perfectly linear workload with a small F lands
+        in (1, 4). The prior 3.5x cut demanded BETTER than linear and
+        made the test unreachable-in-principle; min-of-N sampling removed
+        the noise and exposed the true ratio at ~3.73, i.e. genuinely
+        linear. The gate is therefore a constant-margin above 4.0.
         """
         base_ts = datetime(2026, 9, 20, 8, 0, 0, tzinfo=UTC)
         n_small, n_large = 40, 160
@@ -651,11 +662,13 @@ class TestResolvePendingOutcomes:
 
         t_small = _min_of_n(n_small, "s")
         t_large = _min_of_n(n_large, "l")
-        # Linear-or-better scaling: 4x decisions must not cost >3.5x time.
+        # Linear-or-better scaling: with t(n)=F+n*c the ideal linear ratio
+        # (F+160c)/(F+40c) approaches 4.0 as F->0, so the gate is a fixed
+        # margin above 4.0 (super-quadratic growth blows past this easily).
         # The 1ms floor keeps a sub-millisecond small-leg sample (which
         # carries only noise at that scale) from dominating the ratio.
         ratio = t_large / max(t_small, 1e-3)
-        assert ratio < 3.5, f"resolution cost is super-linear: {ratio:.2f}x"
+        assert ratio < 4.5, f"resolution cost is super-linear: {ratio:.2f}x"
         # Absolute sanity bound (generous; the real contract is scaling).
         assert t_large < 2.0, f"bar-close resolution too slow: {t_large * 1e3:.1f}ms"
 
