@@ -475,3 +475,5 @@ tests/unit/test_purge_embargo_monotonicity.py
 tests/integration/test_official_model_tamper_proofing.py
 # ML-FEAT-002 (Feature Importance, Collinearity Clustering & Redundancy Pruning)
 tests/unit/test_feature_importance.py
+# ML-OBS-001 (Live Shadow Outcome Real-Time Resolution and Holding Metrics Wiring)
+tests/unit/test_live_shadow_outcome_resolution.py

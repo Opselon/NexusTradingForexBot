@@ -17,6 +17,8 @@ swallowed — a shadow fault must NEVER affect production execution.
 from __future__ import annotations
 
 import contextlib
+import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -26,6 +28,78 @@ from nexus_scalp.features.regime_classifier import MarketRegimeState
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.shadow_recorder")
+
+#: ML-OBS-001: upper bound on PENDING decisions resolved per bar close. The
+#: horizon is 120 minutes, so at most ~120 decisions can expire per M1 bar in
+#: the extreme; 512 covers a burst of backfilled decisions with headroom while
+#: keeping the per-bar work strictly bounded (never an unbounded scan).
+_MAX_PENDING_PER_BAR: int = 512
+
+#: ML-OBS-001: the live bar-mode spread, IDENTICAL to the certified replay
+#: convention (shadow/replay.BAR_MODE_SYNTHETIC_SPREAD_USD). Live resolution
+#: and offline replay must walk the SAME market path semantics — a divergent
+#: spread here would make a live RESOLVED row disagree with its replay twin.
+_BAR_MODE_SPREAD_USD: float = 0.20
+
+
+def _bar_ticks(pending: list[dict[str, Any]], bars: list[Any]) -> list[Any]:
+    """Builds the shared market path for resolution from completed bars.
+
+    The completed-bar series is the engine's authoritative market history at
+    bar close: monotonic, sealed, and already validated for finite prices. A
+    bar contributes a single (bid=close, ask=close+spread) observation — the
+    exact convention the certified offline replay uses, so a decision
+    resolved live and the same decision resolved by replay cannot diverge.
+
+    Only bars at/after the EARLIEST pending decision can contribute (earlier
+    bars are dead weight), and the path is capped to the horizon window of
+    the LAST pending decision (nothing beyond it can be walked).
+    """
+    if not pending or not bars:
+        return []
+    earliest: datetime | None = None
+    latest: datetime | None = None
+    horizon = timedelta(minutes=_HORIZON_MINUTES)
+    for row in pending:
+        try:
+            ts = datetime.fromisoformat(str(row.get("timestamp", "")))
+        except (TypeError, ValueError):
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        if earliest is None or ts < earliest:
+            earliest = ts
+        if latest is None or ts > latest:
+            latest = ts
+    if earliest is None or latest is None:
+        return []
+    end_limit = latest + horizon
+    from nexus_scalp.shadow.outcomes import PairedTick
+
+    out: list[PairedTick] = []
+    for b in bars:
+        try:
+            ts = b.timestamp
+            close = float(b.close)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        if ts < earliest:
+            continue
+        if ts > end_limit:
+            # Bars are monotonic: nothing past this can be walked.
+            break
+        bid = close
+        ask = close + _BAR_MODE_SPREAD_USD
+        out.append(PairedTick(timestamp=ts, bid=bid, ask=ask))
+    return out
+
+
+#: Evaluation horizon (minutes) for the live resolver. Mirrors the certified
+#: default so the live path and offline replay evaluate one decision over the
+#: SAME window length.
+_HORIZON_MINUTES: int = 120
 
 
 class ShadowRecorder:
@@ -188,6 +262,142 @@ class ShadowRecorder:
         except Exception as e:
             # Shadow is observability only: a failure here NEVER disturbs live.
             logger.error("[SHADOW] event=RECORD_FAILURE (isolated)", error=str(e))
+
+    def resolve_pending_outcomes(
+        self, *, bars: list[Any], at: datetime | None = None
+    ) -> dict[str, float]:
+        """ML-OBS-001: resolve expired shadow decisions on bar close.
+
+        Walks each PENDING shadow decision whose evaluation horizon has
+        provably closed over the SAME live market path and fills its realized
+        R-multiples + holding statistics, transitioning outcome_status from
+        PENDING to RESOLVED. Runs at the BAR-CLOSE cadence (never per tick),
+        reads are bounded, and every write is enqueued on the audit background
+        worker — zero synchronous SQLite commits (INV-001 intact).
+
+        Failure-isolated: any resolver fault logs and returns; the live path
+        is never disturbed. Zero order authority (NON_GOALS): this method
+        never places, modifies or closes a trade; it computes hypothetical
+        outcomes only.
+
+        ``bars`` are the engine's completed M1 bars (monotonic, sealed). The
+        resolver derives bid/ask per bar exactly like the certified replay
+        convention (bar close / close + spread) so the live resolution cannot
+        disagree with the offline replay semantics.
+
+        Returns a counters dict (resolved / unresolved / failed / skipped /
+        market_coverage_ms) for observability and the <5ms budget probe.
+        """
+        counts = {
+            "resolved": 0,
+            "unresolved": 0,
+            "failed": 0,
+            "skipped": 0,
+            "market_coverage_ms": 0.0,
+        }
+        engine = getattr(self.om, "shadow_engine", None)
+        store = getattr(engine, "store", None) if engine is not None else None
+        if engine is None or store is None:
+            return counts
+        if not getattr(engine, "active_run_id", ""):
+            # No live shadow run: nothing to resolve (offline replay owns the
+            # historical runs). Avoids touching rows of a finished run.
+            return counts
+        # Fast path: no challenger is attached -> no decisions were recorded
+        # by THIS engine instance, so no PENDING rows exist for this run.
+        if engine.active_challenger is None:
+            return counts
+        try:
+            from nexus_scalp.shadow.outcomes import DEFAULT_HORIZON_MINUTES
+
+            horizon_minutes = int(DEFAULT_HORIZON_MINUTES)
+            # A decision is resolvable only once its FULL horizon is in the
+            # past; resolving earlier would walk a truncated market path and
+            # mark a still-open position NOT_RECORDED (the abort class the
+            # ABORT_CONDITIONS guards).
+            cutoff = (at or datetime.now(UTC)) - timedelta(minutes=horizon_minutes)
+            pending = store.list_pending_decisions(
+                run_id=engine.active_run_id,
+                older_than=cutoff,
+                limit=_MAX_PENDING_PER_BAR,
+            )
+            if not pending:
+                return counts
+            # The market path is built ONCE per bar: only bars at/after the
+            # earliest decision can contribute, and the vector is monotonic
+            # (completed bars are append-only and sealed). Bar-mode spread
+            # matches the replay convention exactly (bid=close,
+            # ask=close+spread) so live and offline resolution agree.
+            t_market_start = time.perf_counter()
+            ticks = _bar_ticks(pending, bars)
+            counts["market_coverage_ms"] = round((time.perf_counter() - t_market_start) * 1e3, 3)
+            if not ticks:
+                # No market coverage for any pending decision yet: leave them
+                # PENDING rather than writing NOT_RECORDED (honest deferral).
+                counts["skipped"] = len(pending)
+                return counts
+            for row in pending:
+                try:
+                    fields, ok = self._resolve_one(row, ticks, horizon_minutes)
+                    if not ok:
+                        counts["unresolved"] += 1
+                        continue
+                    store.apply_resolved_outcome(str(row.get("shadow_decision_id", "")), fields)
+                    counts["resolved"] += 1
+                except Exception as e_row:
+                    counts["failed"] += 1
+                    logger.warning(
+                        "[SHADOW] event=OUTCOME_RESOLVE_FAILED decision_id=%s error=%s (isolated)",
+                        row.get("shadow_decision_id"),
+                        str(e_row),
+                    )
+        except Exception as e:
+            logger.error("[SHADOW] event=OUTCOME_RESOLUTION_FAILED (isolated)", error=str(e))
+        return counts
+
+    def _resolve_one(
+        self, row: dict[str, Any], ticks: list[Any], horizon_minutes: int
+    ) -> tuple[dict[str, Any], bool]:
+        """Resolves ONE pending decision row against the shared tick path.
+
+        Returns (update_fields, ok). ``ok`` is False when the outcome is not
+        computable from the recorded geometry / market coverage — in that case
+        the row stays PENDING (the next bar retries it once the horizon
+        closes) instead of being written as NOT_RECORDED, because a missing
+        market path at bar close is a COVERAGE gap, not a final verdict.
+        """
+        from nexus_scalp.shadow.outcomes import apply_to_record_fields, resolve_paired
+
+        try:
+            decision_ts = datetime.fromisoformat(str(row.get("timestamp", "")))
+        except (TypeError, ValueError):
+            return {}, False
+        if decision_ts.tzinfo is None:
+            decision_ts = decision_ts.replace(tzinfo=UTC)
+        # The shadow side's recorded geometry. The challenger's action lives in
+        # challenger_action (the engine records BOTH sides at record time);
+        # the geometry columns hold the paired risk parameters.
+        champ_action = str(row.get("champion_action") or "NO_TRADE")
+        shadow_action = str(row.get("shadow_action") or row.get("challenger_action") or "NO_TRADE")
+        outcome = resolve_paired(
+            champion_action=champ_action,
+            champion_entry=float(row.get("champion_entry") or 0.0),
+            champion_sl=float(row.get("champion_sl") or 0.0),
+            champion_tp=float(row.get("champion_tp") or 0.0),
+            shadow_action=shadow_action,
+            shadow_entry=float(row.get("shadow_entry") or 0.0),
+            shadow_sl=float(row.get("shadow_sl") or 0.0),
+            shadow_tp=float(row.get("shadow_tp") or 0.0),
+            ticks=ticks,
+            decision_ts=decision_ts,
+            horizon_minutes=horizon_minutes,
+        )
+        if outcome.champion.r is None or outcome.shadow.r is None:
+            # A side is NOT_RECORDED (unusable geometry or no coverage). The
+            # resolve_paired contract writes NOT_RECORDED in that case, which
+            # is the honest terminal state for a geometry-free decision.
+            return apply_to_record_fields(outcome), False
+        return apply_to_record_fields(outcome), True
 
     def record_shadow70_observation(
         self,
