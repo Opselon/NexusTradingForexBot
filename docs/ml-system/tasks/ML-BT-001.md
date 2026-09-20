@@ -2,7 +2,7 @@
 
 STREAM: STREAM I — BACKTEST/FORWARD TEST
 PRIORITY: P1
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-DATA-001
 AGENT_ROLE: AGENT-BACKTEST
 OWNERSHIP_SCOPE: src/nexus_scalp/research/trading_metrics.py
@@ -73,10 +73,66 @@ Evaluate 10,000 simulated trade executions; verify metric computation completes 
 
 ## ACCEPTANCE_CRITERIA
 1. calculate_economic_metrics() passes all mathematical unit tests.
+   - **[x] DONE** — 70/70 tests green in `tests/unit/test_trading_metrics.py`
+     (`PYTHONPATH=src:. .venv-linux/bin/python -m pytest ... -p no:xdist`).
+     Every number hand-computed from canonical definitions, none derived from
+     the implementation under test; see VERIFICATION_EVIDENCE below.
 2. Slippage decay curve correctly computes expectancy degradation across tick friction.
+   - **[x] DONE** — `compute_slippage_decay()` implements the canonical friction
+     model (`research.metrics._friction_sensitivity` parity, per-trade
+     `min(friction_frac, FRICTION_R_CAP=0.5)`), the task grid `[0,1,2,3,5]`
+     ticks, monotonic degradation, and the linear `0.01 * ticks` fallback for
+     trades without a recorded risk distance. Pinned by 16 dedicated tests
+     incl. the 0.5R ceiling saturation case.
 
 ## ABORT_CONDITIONS
 If trade list is empty or contains non-finite values, raise ValueError.
+- **[x] HONOURED** — `_validate()` raises `ValueError` on empty/None input and
+  on any non-finite value; `TradeRecord` additionally rejects non-finite values
+  at construction (model_validator + `ge=0.0` Field guards). Pinned by 7 tests.
+
+## STATUS
+**DONE** — implemented, verified, critical-suite registered, PR opened.
+
+## VERIFICATION_EVIDENCE
+- `src/nexus_scalp/research/trading_metrics.py` (new, 621L): `TradeRecord`,
+  `SlippageDecayPoint`, `EconomicMetrics` (pydantic, frozen),
+  `calculate_economic_metrics()`, `compute_slippage_decay()`,
+  `attach_classification_metrics()`, `economic_metrics_to_report()`.
+- `tests/unit/test_trading_metrics.py` (new): **70 tests, 0 failures** in 0.31s.
+- Linters: `ruff check .` repo-wide = All checks passed;
+  `ruff format --check .` repo-wide = 2203 files already formatted;
+  `mypy src/nexus_scalp/research/trading_metrics.py` = Success, no issues.
+- Manifest: `scripts/ci/verify_critical_suite_manifest.py` =
+  `CRITICAL_SUITE_MANIFEST_OK: 211 paths all exist` (new test registered).
+- BENCHMARK_PLAN met: 10,000 simulated trades computed in **14.7ms**
+  (budget 50ms); the 5-level decay curve on 10k trades also < 50ms.
+- Regression check: neighbouring friction/robustness/validation suites
+  (`test_bug299_friction_cap_saturation`, `test_zero_friction_guard_e1`,
+  `test_purge_embargo_monotonicity`, `test_sample_weights`) = 61 passed, 0
+  failures — no drift introduced in the shared friction contract.
+- Sample economic metrics JSON report produced (classification and economic
+  families side by side; see `economic_metrics_to_report()`).
+
+## CONTRACT_DISCOVERIES (pinned for downstream tasks)
+1. **Drawdown peak convention** — the repo oracle `research.metrics.drawdown_metrics`
+   (metrics.py:40-83) defines `peak_t = max(0, cum_0..cum_t)` (0-floored running
+   high updated AFTER the trade is booked). This module is byte-identical to it,
+   verified by a 200-sequence randomized cross-check test. TWO naive formulas are
+   wrong: bare `np.maximum.accumulate(cum)` (under-reports losing sequences:
+   `[-1,-2,-3]` -> 5.0R instead of 6.0R) and a strictly left-aligned peak
+   (`0..t-1`, over-reports: `[2,-1,3,-1,-1]` -> 4.0R instead of 2.0R).
+   Any future drawdown change must keep all three implementations in lockstep
+   (`metrics.drawdown_metrics`, `shadow.comparison._max_drawdown`, this module).
+2. **Friction ceiling is 0.5R** — `FRICTION_R_CAP=0.5` is the friction model's own
+   theoretical ceiling (a single trade can never lose more than 0.5R to
+   spread+slippage), so MAX measurable expectancy degradation is exactly 0.5R.
+   Consistent with the ML-VAL-003 finding on `compute_backtest`; the ceiling was
+   NOT relaxed here (NON_GOALS honoured).
+3. **Relative degradation** — the decay curve's `degradation_pct` reuses the
+   repo's canonical `research.metrics.compute_relative_degradation` (metrics.py:86,
+   BUG-140 Phase 6) rather than inventing a second ratio, so this curve can never
+   disagree with the OOS gate family.
 
 ## HUMAN_DECISION_REQUIRED
 NO

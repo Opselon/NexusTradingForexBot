@@ -470,3 +470,6 @@ tests/unit/test_sample_weights.py
 
 # ML-VAL-001 (Purged Walk-Forward Fold Monotonicity & Embargo Boundary Audit)
 tests/unit/test_purge_embargo_monotonicity.py
+
+# ML-BT-001 (Trading Quality Metric Suite: expectancy R, profit factor, slippage decay)
+tests/unit/test_trading_metrics.py
