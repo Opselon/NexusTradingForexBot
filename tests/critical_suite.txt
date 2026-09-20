@@ -471,3 +471,5 @@ tests/unit/test_sample_weights.py
 
 # ML-VAL-001 (Purged Walk-Forward Fold Monotonicity & Embargo Boundary Audit)
 tests/unit/test_purge_embargo_monotonicity.py
+# ML-PLAT-002 (Signed Official Model Bundle Verification & Staging Slot Isolation)
+tests/integration/test_official_model_tamper_proofing.py

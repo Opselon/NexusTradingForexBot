@@ -64,7 +64,7 @@
 
 ### STREAM K: PLATFORM & DISTRIBUTION
 - [ML-PLAT-001](tasks/ML-PLAT-001.md) — MT5 Runtime Boundaries & Remote Gateway Linux Parity `[P2 | READY | AGENT-PLATFORM]`
-- [ML-PLAT-002](tasks/ML-PLAT-002.md) — Signed Official Model Bundle Verification & Staging Slot Isolation `[P1 | BLOCKED | AGENT-PLATFORM]`
+- [ML-PLAT-002](tasks/ML-PLAT-002.md) — Signed Official Model Bundle Verification & Staging Slot Isolation `[P1 | DONE | AGENT-PLATFORM]`
 
 ### STREAM L: OBSERVABILITY, SAFETY & CI/CD
 - [ML-OBS-001](tasks/ML-OBS-001.md) — Live Shadow Outcome Real-Time Resolution & Holding Metrics Wiring `[P2 | READY | AGENT-OBSERVABILITY]`
