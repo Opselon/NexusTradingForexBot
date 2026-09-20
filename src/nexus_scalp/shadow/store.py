@@ -20,7 +20,9 @@ never blocked.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
+from datetime import datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
@@ -31,6 +33,7 @@ from nexus_scalp.shadow.models import (
     ShadowDecisionRecord,
     ShadowRun,
 )
+from nexus_scalp.shadow.outcomes import STATUS_RESOLVED
 
 logger = get_logger("nexus_scalp.shadow.store")
 
@@ -79,6 +82,38 @@ _INSERT_PROMOTION_SQL = """
         champion_version, final_score, eligible, vetoes, reasons, evaluated_at,
         payload
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+"""
+
+#: ML-OBS-001: bounded UPDATE of a shadow_decisions row's resolved outcome
+#: fields. The row was written by save_decision with outcome_status='PENDING';
+#: the certified tick resolver fills the SAME columns afterwards. Scanned by
+#: name (never SELECT *: the additive migration makes the column set
+#: version-dependent across legacy databases).
+#:
+#: NOTE: the resolved ENTRY/EXIT prices (apply_to_record_fields returns
+#: hypothetical_entry / hypothetical_exit) have no DB columns — the
+#: CHG-0046 additive migration added the shadow_* outcome columns but never
+#: the champion side's price pair, and save_decision does not write them
+#: either. The realized-R contract (hypothetical_r / shadow_r / delta_r +
+#: mfe/mae/holding/exit_reason/status) is fully persisted; persisting the
+#: entry/exit pair is a separate additive-migration change outside this task.
+_UPDATE_OUTCOME_SQL = """
+    UPDATE shadow_decisions SET
+        hypothetical_pnl_usd = ?,
+        hypothetical_r = ?,
+        mfe_r = ?,
+        mae_r = ?,
+        holding_duration_sec = ?,
+        exit_reason = ?,
+        shadow_r = ?,
+        shadow_mfe_r = ?,
+        shadow_mae_r = ?,
+        shadow_pnl_usd = ?,
+        shadow_holding_sec = ?,
+        shadow_exit_reason = ?,
+        delta_r = ?,
+        outcome_status = ?
+    WHERE shadow_decision_id = ? AND outcome_status = 'PENDING';
 """
 
 
@@ -455,8 +490,142 @@ class ShadowStore:
             return False
 
     # ------------------------------------------------------------------
-    # Reads
+    # ML-OBS-001: outcome resolution (bar-close cadence, never per-tick)
     # ------------------------------------------------------------------
+
+    def list_pending_decisions(
+        self,
+        run_id: str | None = None,
+        older_than: datetime | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Reads PENDING (unresolved) shadow decisions for resolution.
+
+        ML-OBS-001: the resolver walks the shared market path for each PENDING
+        decision whose evaluation horizon has expired. ``older_than`` bounds
+        the scan to decisions whose horizon provably closed (a decision whose
+        horizon is still open must NOT be resolved yet — the walk would stop
+        at the coverage limit and mark a live position NOT_RECORDED).
+
+        Read-only and bounded: ``limit`` is clamped to MAX_READ_LIMIT, so even
+        a run with millions of decisions never materializes an unbounded row
+        set on a bar-close path.
+        """
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
+            return []
+        bounded = max(1, min(int(limit), MAX_READ_LIMIT))
+        sql = (
+            "SELECT shadow_decision_id, run_id, timestamp, symbol, "
+            "champion_action, champion_entry, champion_sl, champion_tp, "
+            "challenger_action, shadow_entry, shadow_sl, "
+            "shadow_tp, feature_schema_id, feature_dimension, "
+            "valid_comparison, outcome_status FROM shadow_decisions "
+            "WHERE outcome_status = 'PENDING'"
+        )
+        clauses: list[str] = []
+        args: list[Any] = []
+        if run_id:
+            clauses.append("run_id = ?")
+            args.append(run_id)
+        if older_than is not None:
+            clauses.append("timestamp <= ?")
+            args.append(older_than.isoformat())
+        if clauses:
+            sql += " AND " + " AND ".join(clauses)
+        sql += " ORDER BY timestamp ASC LIMIT ?;"
+        out: list[dict[str, Any]] = []
+        try:
+            conn = self.audit_repo._connect_sqlite(timeout=5.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(sql, (*args, bounded)).fetchall()
+            finally:
+                conn.close()
+            for r in rows:
+                out.append(dict(r))
+        except Exception as e:
+            logger.error("[SHADOW] list_pending_decisions failed", error=str(e))
+        return out
+
+    def apply_resolved_outcome(self, decision_id: str, fields: dict[str, Any]) -> bool:
+        """Updates ONE shadow_decisions row with its resolved outcome.
+
+        Guarded by ``outcome_status = 'PENDING'``: a row already RESOLVED (by
+        this path or by an offline replay) is never rewritten — historical
+        evidence is immutable once resolved (INV-007 / spec 25).
+
+        The write is ENQUEUED on the audit background worker exactly like the
+        original save_decision, so the bar-close path issues zero synchronous
+        SQLite commits (INV-001: the resolution hook is off the per-tick path
+        and the write itself never blocks the caller).
+        """
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
+            return False
+        self.ensure_schema()
+        args = (
+            float(fields.get("hypothetical_pnl_usd", 0.0) or 0.0),
+            float(fields.get("hypothetical_r", 0.0) or 0.0),
+            float(fields.get("mfe_r", 0.0) or 0.0),
+            float(fields.get("mae_r", 0.0) or 0.0),
+            float(fields.get("holding_duration_sec", 0.0) or 0.0),
+            str(fields.get("exit_reason", "") or ""),
+            _nullable_float(fields.get("shadow_r")),
+            _nullable_float(fields.get("shadow_mfe_r")),
+            _nullable_float(fields.get("shadow_mae_r")),
+            _nullable_float(fields.get("shadow_pnl_usd")),
+            _nullable_float(fields.get("shadow_holding_sec")),
+            str(fields.get("shadow_exit_reason", "") or ""),
+            _nullable_float(fields.get("delta_r")),
+            str(fields.get("outcome_status", STATUS_RESOLVED) or STATUS_RESOLVED),
+            str(decision_id),
+        )
+        try:
+            self.audit_repo._queue.put_nowait((_UPDATE_OUTCOME_SQL, args))
+            return True
+        except Exception as e:
+            logger.error(
+                "[SHADOW] apply_resolved_outcome failed",
+                decision_id=str(decision_id),
+                error=str(e),
+            )
+            return False
+
+    def count_outcome_status(self, run_id: str | None = None) -> dict[str, int]:
+        """Outcome-status histogram for a run (observability / tests).
+
+        Counts by name, never SELECT *: legacy databases predating the
+        SHADOW_EVIDENCE v2 additive migration have no outcome_status column,
+        in which case every row reads as NOT_RECORDED (the honest default).
+        """
+        out: dict[str, int] = {}
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
+            return out
+        self.ensure_schema()
+        where = "WHERE run_id = ?" if run_id else ""
+        params: tuple[Any, ...] = (run_id,) if run_id else ()
+        try:
+            conn = self.audit_repo._connect_sqlite(timeout=5.0)
+            try:
+                cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
+                if "outcome_status" not in cols:
+                    # Legacy table: nothing was ever resolved by this path.
+                    row = conn.execute(
+                        f"SELECT COUNT(*) FROM shadow_decisions {where};", params
+                    ).fetchone()
+                    out["NOT_RECORDED"] = int(row[0]) if row else 0
+                    return out
+                rows = conn.execute(
+                    f"SELECT outcome_status, COUNT(*) FROM shadow_decisions {where} "
+                    "GROUP BY outcome_status;",
+                    params,
+                ).fetchall()
+                for r in rows:
+                    out[str(r[0])] = int(r[1])
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[SHADOW] count_outcome_status failed", error=str(e))
+        return out
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         if not self.audit_repo or not self.audit_repo._is_sqlite:
@@ -617,3 +786,17 @@ class ShadowStore:
         except Exception as e:
             logger.error("[SHADOW] summary failed", error=str(e))
         return out
+
+
+def _nullable_float(v: Any) -> float | None:
+    """None-preserving float coercion (None = NOT_RECORDED, never 0.0)."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    # Non-finite results (NaN/inf) are unusable geometry, not a number.
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return f

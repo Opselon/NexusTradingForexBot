@@ -470,3 +470,6 @@ tests/unit/test_sample_weights.py
 
 # ML-VAL-001 (Purged Walk-Forward Fold Monotonicity & Embargo Boundary Audit)
 tests/unit/test_purge_embargo_monotonicity.py
+
+# ML-OBS-001 (Live Shadow Outcome Real-Time Resolution and Holding Metrics Wiring)
+tests/unit/test_live_shadow_outcome_resolution.py
