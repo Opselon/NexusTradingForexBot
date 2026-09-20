@@ -48,7 +48,7 @@
 ### STREAM G: VALIDATION, OOS & ROBUSTNESS
 - [ML-VAL-001](tasks/ML-VAL-001.md) — Purged Walk-Forward Monotonicity & Embargo `[P1 | DONE | AGENT-ML-VALIDATION]`
 - [ML-VAL-002](tasks/ML-VAL-002.md) — Probability Calibration & Expected Calibration Error (ECE) Evaluation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
-- [ML-VAL-003](tasks/ML-VAL-003.md) — Robustness Stress Testing: Friction Clamp, Slippage & Spread Perturbation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
+- [ML-VAL-003](tasks/ML-VAL-003.md) — Robustness Stress Testing: Friction Clamp, Slippage & Spread Perturbation `[P2 | DONE | AGENT-ML-VALIDATION]`
 
 ### STREAM H: REAL-TIME INFERENCE
 - [ML-INF-001](tasks/ML-INF-001.md) — Inference Preprocessing & Scaler Latency SLA (< 10ms) Verification `[P1 | DONE | AGENT-INFERENCE]`
