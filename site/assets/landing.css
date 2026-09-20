@@ -40,6 +40,16 @@ body.landing-page .theme-menu button{color:var(--l-ink)} body.landing-page .them
 body.landing-page .repo-link{background:rgba(6,12,24,.75); border-color:rgba(94,234,212,.22); color:var(--l-ink)}
 body.landing-page .repo-link:hover{border-color:var(--l-cyan)}
 body.landing-page .brand-mark{background:linear-gradient(135deg,var(--l-cyan),var(--l-blue)); box-shadow:0 0 18px rgba(34,211,238,.45)}
+/* Brand cluster: the header paints a dark canvas but the document stays in
+   the default light theme, so base --fg/--card tokens resolve to dark ink on
+   a white pill. Pin them to the landing palette explicitly. */
+body.landing-page .brand-link{color:var(--l-ink)}
+body.landing-page .brand-dim{color:var(--l-dim)}
+body.landing-page .brand-badge{
+  color:#9fe9f5; background:rgba(6,12,24,.75);
+  border-color:rgba(94,234,212,.28)}
+body.landing-page .nav-toggle{background:rgba(6,12,24,.75); border-color:rgba(94,234,212,.28)}
+body.landing-page .nav-toggle span{background:var(--l-ink)}
 body.landing-page .page-footer{border-top:1px solid var(--l-line); background:transparent}
 body.landing-page .land-sec{margin:88px 0}
 body.landing-page .section-head h2{font-size:clamp(1.45rem,2.6vw,2rem); letter-spacing:-.02em}
@@ -55,7 +65,10 @@ body.landing-page .wn-more{color:var(--l-cyan)}
 body.landing-page section[id]{scroll-margin-top:150px}
 .land-nav{position:sticky; top:calc(var(--header-h, 64px) + 8px); z-index:5; display:flex; flex-wrap:wrap;
   gap:4px; justify-content:center; align-items:center; margin:14px auto 0; padding:8px 14px;
-  border-radius:999px; max-width:100%}
+  border-radius:999px; max-width:100%;
+  background:rgba(8,14,28,.72); border:1px solid var(--l-line);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  box-shadow:0 10px 30px rgba(0,0,0,.45)}
 .lnav-link{font-size:.72rem; letter-spacing:.06em; font-weight:700; color:var(--l-dim);
   padding:6px 10px; border-radius:999px; white-space:nowrap}
 .lnav-link:hover{color:var(--l-cyan); background:rgba(34,211,238,.08); text-decoration:none}
@@ -79,7 +92,11 @@ body.landing-page section[id]{scroll-margin-top:150px}
 .lh-actions{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px}
 .lh-actions .btn-primary{background:linear-gradient(120deg,var(--l-cyan),var(--l-teal)); color:#04121a;
   border:none; box-shadow:0 8px 30px rgba(34,211,238,.35)}
-.lh-actions .btn{border:1px solid var(--l-line); color:var(--l-ink); background:var(--l-panel)}
+/* Hero buttons: they inherit base .btn tokens, which in the default light
+   theme are a white-ish card — invisible labels on the dark hero. Pin them. */
+body.landing-page .lh-actions .btn{border:1px solid var(--l-line); color:var(--l-ink); background:var(--l-panel);
+  backdrop-filter:blur(10px)}
+body.landing-page .lh-actions .btn:hover{border-color:rgba(34,211,238,.55)}
 .lh-chips{color:var(--l-dim); font-size:.8rem; letter-spacing:.03em}
 .lh-visual{display:flex; flex-direction:column; gap:18px; min-width:0}
 
