@@ -470,3 +470,5 @@ tests/unit/test_sample_weights.py
 
 # ML-VAL-001 (Purged Walk-Forward Fold Monotonicity & Embargo Boundary Audit)
 tests/unit/test_purge_embargo_monotonicity.py
+# ML-FEAT-002 (Feature Importance, Collinearity Clustering & Redundancy Pruning)
+tests/unit/test_feature_importance.py
