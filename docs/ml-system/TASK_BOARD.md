@@ -63,7 +63,7 @@
 - [ML-GOV-003](tasks/ML-GOV-003.md) — Persistent Governance Emergency Freeze Across Process Restarts `[P1 | BLOCKED | AGENT-GOVERNANCE]`
 
 ### STREAM K: PLATFORM & DISTRIBUTION
-- [ML-PLAT-001](tasks/ML-PLAT-001.md) — MT5 Runtime Boundaries & Remote Gateway Linux Parity `[P2 | READY | AGENT-PLATFORM]`
+- [ML-PLAT-001](tasks/ML-PLAT-001.md) — MT5 Runtime Boundaries & Remote Gateway Linux Parity `[P2 | DONE 2026-09-20 | AGENT-PLATFORM]` (PR #322: 49/49 parity tests; zero production diff — NON_GOALS honored)
 - [ML-PLAT-002](tasks/ML-PLAT-002.md) — Signed Official Model Bundle Verification & Staging Slot Isolation `[P1 | DONE | AGENT-PLATFORM]`
 
 ### STREAM L: OBSERVABILITY, SAFETY & CI/CD
