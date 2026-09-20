@@ -2,7 +2,7 @@
 
 STREAM: STREAM I — TRADING INTEGRATION, RISK & POSITION MANAGEMENT
 PRIORITY: P0 / Research-Critical
-STATUS: IN_PROGRESS
+STATUS: DONE (PR #268 merged 2026-09-05; re-verified at main 8ce87fe1 2026-09-20: 15/15 tests in tests/unit/test_position_replay_pipeline.py pass in 3.71s, Python 3.11.16; manifest-registered; all 18 acceptance criteria below checked)
 DEPENDENCIES: ML-DATA-001, ML-DATA-002, ML-FEAT-001, ML-UI-003
 BLOCKS: Future Layer-2 Position Manager Training (ML-RISK-002)
 AGENT_ROLE: AGENT-RISK
