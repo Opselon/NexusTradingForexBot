@@ -470,3 +470,6 @@ tests/unit/test_sample_weights.py
 
 # ML-VAL-001 (Purged Walk-Forward Fold Monotonicity & Embargo Boundary Audit)
 tests/unit/test_purge_embargo_monotonicity.py
+
+# ML-PLAT-001 (MT5 Runtime Boundaries & Remote Gateway Linux Parity Verification)
+tests/integration/test_mt5_adapter_parity.py

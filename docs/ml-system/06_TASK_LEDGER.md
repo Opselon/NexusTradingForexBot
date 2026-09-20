@@ -74,7 +74,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-GOV-001` | J: Governance | P0 | Promotion Pre-Flight & OOS Gate Audit | **DONE** (PR #262, `266d3ae6`) | `AGENT-GOVERNANCE` | NO | `ML-FEAT-001` | `PARALLEL_SAFE` |
 | `ML-GOV-002` | J: Governance | P1 | Unified Model State Machine Root | **READY** | `AGENT-GOVERNANCE` | **YES** | None | `SERIAL_ONLY` |
 | `ML-GOV-003` | J: Governance | P1 | Persistent Governance Freeze Across Restarts | **BLOCKED** | `AGENT-GOVERNANCE` | NO | `ML-GOV-002` | `PARALLEL_SAFE` |
-| `ML-PLAT-001` | K: Platform | P2 | MT5 Runtime Boundaries & Linux Parity | **READY** | `AGENT-PLATFORM` | NO | None | `PARALLEL_SAFE` |
+| `ML-PLAT-001` | K: Platform | P2 | MT5 Runtime Boundaries & Linux Parity | **DONE 2026-09-20 (PR #322)** | `AGENT-PLATFORM` | NO | None | `PARALLEL_SAFE` |
 | `ML-PLAT-002` | K: Platform | P1 | Signed Official Bundle Verification & Slots | **BLOCKED** | `AGENT-PLATFORM` | NO | `ML-GOV-001` | `PARALLEL_SAFE` |
 | `ML-OBS-001` | L: Observability | P2 | Live Shadow Outcome Real-Time Resolution | **READY** | `AGENT-OBSERVABILITY` | NO | None | `PARALLEL_SAFE` |
 | `ML-OBS-002` | L: Observability | P3 | Online Fine-Tuning Safe Sandbox | **BLOCKED** | `AGENT-OBSERVABILITY` | **YES** | `ML-GOV-001`, `ML-GOV-003` | `SERIAL_ONLY` |
