@@ -623,11 +623,14 @@ class TestResolvePendingOutcomes:
             ]
             from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
 
-            t0 = time.perf_counter()
+            # process_time() is wall-clock minus time the OS scheduled other
+            # work onto this CPU; unlike perf_counter() it is not inflated by
+            # xdist grid contention, so the ratio measures the algorithm.
+            t0 = time.process_time()
             counts = ShadowRecorder(FakeOm(engine)).resolve_pending_outcomes(
                 bars=bars, at=base_ts + timedelta(minutes=200)
             )
-            elapsed = time.perf_counter() - t0
+            elapsed = time.process_time() - t0
             flush(temp_audit_repo)
             assert counts["resolved"] == n, f"leg {run_id}: {counts}"
             return elapsed
