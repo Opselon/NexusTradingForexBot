@@ -888,3 +888,66 @@ def test_pre_trade_entry_contrarian_retail_trap(
 # ============================================================================
 # PRE-TRADE FILTER RULES TESTS
 # ============================================================================
+
+
+def test_pre_trade_entry_flash_momentum_scrape(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+    fv = MagicMock()
+
+    # 1. Disabled by default -> returns None
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal is None
+
+    # Enable rule
+    temp_audit_repo.toggle_trading_rule("RULE_FLASH_MOMENTUM_SCRAPE", True)
+    rule_engine.refresh_cache(force=True)
+
+    # 2. regime_state is None or tick velocity < 15.0 -> returns None
+    proposal_no_regime = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.1, 0.8, 0.1])
+    assert proposal_no_regime is None
+
+    regime_low_velocity = MagicMock()
+    regime_low_velocity.tick_velocity_per_sec = 10.0
+    proposal_low_vel = rule_engine.evaluate_pre_trade_entry(
+        tick, fv, regime_low_velocity, [0.1, 0.8, 0.1]
+    )
+    assert proposal_low_vel is None
+
+    # 3. High velocity (>= 15.0) and Bullish signal (probs[1] > probs[2]) -> BUY_MARKET
+    regime_high_velocity = MagicMock()
+    regime_high_velocity.tick_velocity_per_sec = 16.5
+
+    probs_bullish = [0.1, 0.7, 0.2]  # probs[1]=0.7 > probs[2]=0.2
+    proposal_buy = rule_engine.evaluate_pre_trade_entry(
+        tick, fv, regime_high_velocity, probs_bullish
+    )
+    assert proposal_buy is not None
+    assert proposal_buy.action == ActionType.BUY_MARKET
+    assert proposal_buy.reason_code == "RULE_FLASH_MOMENTUM_SCRAPE"
+    assert proposal_buy.proposed_entry == tick.ask
+    assert proposal_buy.stop_loss == round(tick.ask - 1.5, 2)
+    assert proposal_buy.take_profit == round(tick.ask + 3.0, 2)
+    assert proposal_buy.risk_reward_ratio == 2.0
+    assert proposal_buy.confidence == 0.95
+
+    # 4. High velocity (>= 15.0) and Bearish signal (probs[1] <= probs[2]) -> SELL_MARKET
+    probs_bearish = [0.1, 0.2, 0.7]  # probs[1]=0.2 < probs[2]=0.7
+    proposal_sell = rule_engine.evaluate_pre_trade_entry(
+        tick, fv, regime_high_velocity, probs_bearish
+    )
+    assert proposal_sell is not None
+    assert proposal_sell.action == ActionType.SELL_MARKET
+    assert proposal_sell.reason_code == "RULE_FLASH_MOMENTUM_SCRAPE"
+    assert proposal_sell.proposed_entry == tick.bid
+    assert proposal_sell.stop_loss == round(tick.bid + 1.5, 2)
+    assert proposal_sell.take_profit == round(tick.bid - 3.0, 2)
+    assert proposal_sell.risk_reward_ratio == 2.0
+    assert proposal_sell.confidence == 0.95
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
