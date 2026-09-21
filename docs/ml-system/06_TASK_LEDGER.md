@@ -62,7 +62,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-TRAIN-001` | E: Training | P1 | Deterministic Training, Seeds & AMP Precision | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-ARCH-001`, `ML-DATA-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-002` | E: Training | P2 | Loss Functions: Focal Loss vs Label Smoothing | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001`, `ML-LABEL-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
-| `ML-EXP-001` | F: Experimentation | P1 | Immutable Experiment Registry Schema | **BLOCKED** | `AGENT-ML-EXP` | NO | `ML-DATA-002` | `PARALLEL_SAFE` |
+| `ML-EXP-001` | F: Experimentation | P1 | Immutable Experiment Registry Schema | **DONE** | `AGENT-ML-EXP` | NO | `ML-DATA-002` | `PARALLEL_SAFE` |
 | `ML-EXP-002` | F: Experimentation | P2 | Architectural Ablation: 2D vs 3D vs Attention | **BLOCKED** | `AGENT-ML-EXP` | **YES** | `ML-EXP-001`, `ML-ARCH-003`, `ML-TRAIN-003` | `SERIAL_ONLY` |
 | `ML-EXP-003` | F: Experimentation | P3 | Bounded Hyperparameter Grid Search Runner | **BLOCKED** | `AGENT-ML-EXP` | NO | `ML-EXP-001`, `ML-TRAIN-003` | `PARALLEL_SAFE` |
 | `ML-VAL-001` | G: Validation | P1 | Purged Walk-Forward Monotonicity & Embargo | **DONE** | `AGENT-ML-VALIDATION` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |

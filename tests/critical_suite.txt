@@ -479,3 +479,5 @@ tests/unit/test_feature_importance.py
 tests/unit/test_live_shadow_outcome_resolution.py
 # ML-PLAT-001 (MT5 Runtime Boundaries & Remote Gateway Linux Parity Verification)
 tests/integration/test_mt5_adapter_parity.py
+# ML-EXP-001 (Immutable Experiment Registry & Artifact Manifest Schema)
+tests/unit/test_experiment_registry.py

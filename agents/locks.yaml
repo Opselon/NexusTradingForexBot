@@ -13,6 +13,9 @@ exclusive_locks:
     task: ML-VAL-003
     expiry: 2026-09-21
 
+# Released this cycle: src/nexus_scalp/model_lab/experiment_registry.py
+# (ML-EXP-001, AGENT-ML-EXP) — landed in PR #335.
+
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)
 # - src/nexus_scalp/execution/order_manager.py  (BUG-081 forensics in progress, snapshot 2026-08-18)
