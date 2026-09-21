@@ -118,9 +118,9 @@ class TestLabelingDiagnostics:
             for i in range(W, len(cl)):
                 atr[i] = (atr[i - 1] * (W - 1) + tr[i]) / W
         bars = bars.with_columns(pl.Series("atr_m1", atr))
-        out = TripleBarrierLabeler(no_trade_stride_bars=2, include_diagnostics=True).label_dataframe(
-            bars, include_diagnostics=True
-        )
+        out = TripleBarrierLabeler(
+            no_trade_stride_bars=2, include_diagnostics=True
+        ).label_dataframe(bars, include_diagnostics=True)
         ev = out.filter(pl.col("is_eval_sample"))
         counts = {d["label"]: d["count"] for d in ev["label"].value_counts().to_dicts()}
         n = max(1, ev.height)
