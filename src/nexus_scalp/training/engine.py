@@ -47,6 +47,7 @@ from __future__ import annotations
 import contextlib
 import random
 from collections.abc import Callable, Iterator, Sequence
+from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
@@ -182,7 +183,10 @@ class AMPContext:
         except TypeError:  # pragma: no cover - torch < 2.4
             self.scaler = torch.cuda.amp.GradScaler(enabled=self.enabled)
         self._dtype = dtype or (torch.float16 if self.enabled else torch.float32)
-        self._autocast: contextlib._GeneratorContextManager[None] | None = None
+        # torch.autocast is its own context-manager class (not a
+        # _GeneratorContextManager), so the slot is typed against the abstract
+        # base to satisfy mypy on both torch<2.4 and torch>=2.4 shapes.
+        self._autocast: AbstractContextManager[None] | None = None
 
     def __enter__(self) -> AMPContext:
         if self.enabled:
