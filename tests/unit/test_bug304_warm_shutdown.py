@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import os
 import queue
+import signal
 import threading
 import time
 from typing import Any
@@ -376,6 +377,35 @@ async def test_drain_after_hard_cancel_completes_on_a_second_call():
     status = await sup.wait_for_shutdown()
     assert status["phase"] == PHASE_CLOSED
     assert engine.shutdown_completed is True
+
+
+@pytest.mark.asyncio
+async def test_request_side_also_stops_the_engine_loop():
+    """The signal path must not just RECORD a request — it must end the loop.
+
+    Live-log finding 2026-09-22: repeated ``CTRL_SHUTDOWN REQUESTED`` lines
+    with no ``COMPLETE``. RuntimeLoop polls ``engine._running``; if the
+    request side never flips it, the loop keeps ticking forever and the
+    gather's ``finally`` drain never runs.
+    """
+    engine = _FakeEngine()
+    sup = ShutdownSupervisor(engine=engine)
+    # simulate the signal handler entry point only
+    sup.install_signal_handlers()
+    sup.request_shutdown("console_close")
+    assert engine._running is False, "the loop's stop flag must flip on request"
+
+
+def test_signal_handler_flips_the_engine_flag():
+    """The installed signal callable itself ends the loop (not just the API)."""
+    engine = _FakeEngine()
+    sup = ShutdownSupervisor(engine=engine)
+    sup.install_signal_handlers()
+    handler = signal.getsignal(signal.SIGBREAK)
+    assert engine._running is True
+    if callable(handler):
+        handler(signal.SIGBREAK, None)  # type: ignore[arg-type]
+    assert engine._running is False
 
 
 @pytest.mark.asyncio

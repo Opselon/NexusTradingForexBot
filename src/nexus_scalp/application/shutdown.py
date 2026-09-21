@@ -142,6 +142,13 @@ class ShutdownSupervisor:
         Returns True when this call is the FIRST request, False on every
         subsequent one. Safe from signal handlers and the Windows
         console-control thread: it only flips state and pokes the loop.
+
+        This is also the single point that ends the tick loop:
+        RuntimeLoop polls ``engine._running``, so flipping it here is what
+        lets the while-loop exit and fall through to the engine's own
+        teardown. Before BUG-304 the request side only recorded state and
+        the loop never stopped (live log 2026-09-22: repeated
+        CTRL_SHUTDOWN REQUESTED lines, no COMPLETE).
         """
         with self._lock:
             first = self._requested_at is None
@@ -149,6 +156,11 @@ class ShutdownSupervisor:
                 self._requested_at = time.time()
                 self._reason = reason
                 logger.info("[SHUTDOWN] event=REQUESTED reason=%s phase=DRAIN", reason)
+        # End the loop on EVERY request path (signal, API, KeyboardInterrupt):
+        # a repeat request from a second Ctrl+C must not find the loop still
+        # ticking because the first came from a path that forgot to flip it.
+        with contextlib.suppress(Exception):
+            self._engine._running = False
         return first
 
     def mark_closed(self, *, outcome: str, error: str = "") -> None:
@@ -270,6 +282,14 @@ class ShutdownSupervisor:
 
         def _schedule(reason: str) -> None:
             self.request_shutdown(reason)
+            # The loop polls engine._running; flipping it here is what makes
+            # the while-loop exit so RuntimeLoop falls through to its own
+            # _shutdown_async and the gather's `finally` drain runs. Without
+            # this the request was recorded but nothing ever stopped the
+            # loop (observed in the 2026-09-22 live log: repeated
+            # CTRL_SHUTDOWN REQUESTED lines, no COMPLETE).
+            with contextlib.suppress(Exception):
+                self._engine._running = False
             if _loop is not None and _loop.is_running():
                 with contextlib.suppress(RuntimeError):
                     _loop.call_soon_threadsafe(self._async_kick)
