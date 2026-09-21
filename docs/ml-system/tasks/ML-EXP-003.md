@@ -2,7 +2,7 @@
 
 STREAM: STREAM F — EXPERIMENTATION
 PRIORITY: P2
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-EXP-001, ML-TRAIN-001
 AGENT_ROLE: AGENT-ML-EXP
 OWNERSHIP_SCOPE: scripts/experiments/hyperparam_search.py
@@ -72,8 +72,14 @@ Execute 4-trial mini sweep; assert all 4 trials recorded in registry with distin
 - Pytest output
 
 ## ACCEPTANCE_CRITERIA
-1. Grid search runner executes bounded sweeps without crashing.
-2. All trials logged to ExperimentRegistry with complete reproducibility manifests.
+- [x] 1. Grid search runner executes bounded sweeps without crashing.
+- [x] 2. All trials logged to ExperimentRegistry with complete reproducibility manifests.
+
+## VERIFICATION_EVIDENCE
+- **Battery**: 47/47 tests in `tests/unit/test_hyperparam_search.py` (spec validation, Cartesian materialization, unique deterministic seeds, filesystem-safe ids, 4-trial mini sweep per BENCHMARK_PLAN, NaN/inf abort handling, immutable re-run idempotency, tamper-checkable manifests, reproduction bundle round-trips, shipped example YAML valid & bounded, CLI entrypoint).
+- **Linters**: `ruff check`, `ruff format --check`, `mypy --explicit-package-bases` clean on both `scripts/experiments/hyperparam_search.py` and `tests/unit/test_hyperparam_search.py`.
+- **Manifest**: `tests/critical_suite.txt` 216 -> 217 paths, verified with `scripts/ci/verify_critical_suite_manifest.py`.
+- **Artifacts**: `scripts/experiments/hyperparam_search.py`, `scripts/experiments/grid_search.example.yaml`, `tests/unit/test_hyperparam_search.py`.
 
 ## ABORT_CONDITIONS
 If any trial encounters NaN loss, log failure and continue to next trial without crashing runner.
