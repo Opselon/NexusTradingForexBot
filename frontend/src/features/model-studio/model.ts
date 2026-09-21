@@ -59,6 +59,81 @@ export interface ModelStudioOverviewDto {
   };
 }
 
+/**
+ * Granularity order for the dataset selector (TASK-POSA-002).
+ *
+ * Backend `_dataset_candidates()` returns `sorted([*.parquet, *.csv])` which is
+ * purely lexicographic: `XAUUSD_D1.parquet` sorts BEFORE `XAUUSD_M1.parquet`,
+ * and the UI's `first.path` fallback then silently binds the DAILY file
+ * whenever the operator has no prior selection ("select M1, it jumps back to
+ * D1"). Sorting by granularity puts M1 first, matching the engine's trading
+ * timeframe and the default `dlTimeframe` state.
+ *
+ * Unrecognised suffixes sort last, deterministically, so an unknown file can
+ * never outrank a known granularity.
+ */
+export const TIMEFRAME_GRANULARITY_ORDER: readonly string[] = [
+  "M1",
+  "M3",
+  "M5",
+  "M15",
+  "M30",
+  "H1",
+  "H4",
+  "D1",
+  "W1",
+  "MN1",
+];
+
+export type TimeframeGranularity = (typeof TIMEFRAME_GRANULARITY_ORDER)[number];
+
+/**
+ * Granularity rank for a dataset filename — 0 is the finest (M1). Falls back to
+ * `TIMEFRAME_GRANULARITY_ORDER.length` for anything unrecognised.
+ */
+export function timeframeRank(filename: string): number {
+  const stem = filename.replace(/\.(parquet|csv)$/i, "");
+  const m = /[_-](M1|M3|M5|M15|M30|H1|H4|D1|W1|MN1)$/i.exec(stem);
+  if (!m) return TIMEFRAME_GRANULARITY_ORDER.length;
+  // TS2532 under noUncheckedIndexedAccess: array access is T | undefined even
+  // on a RegExpMatchArray / readonly tuple, so bind the group explicitly.
+  const suffix = m[1];
+  if (!suffix) return TIMEFRAME_GRANULARITY_ORDER.length;
+  const matched = suffix.toUpperCase();
+  const idx = TIMEFRAME_GRANULARITY_ORDER.findIndex((tf) => tf === matched);
+  return idx === -1 ? TIMEFRAME_GRANULARITY_ORDER.length : idx;
+}
+
+/**
+ * Stable per-symbol precedence so two files of the same granularity never rely
+ * on filesystem ordering (which differs between Parquet globs and CSV globs).
+ */
+const SOURCE_PRECEDENCE: readonly string[] = ["mt5", "synthetic", "csv"];
+
+function sourceRank(filename: string): number {
+  const lower = filename.toLowerCase();
+  for (let i = 0; i < SOURCE_PRECEDENCE.length; i++) {
+    if (lower.includes(`.${SOURCE_PRECEDENCE[i]}.parquet`)) return i;
+  }
+  // `.parquet` with no source segment (the legacy naming `XAUUSD_M1.parquet`)
+  // outranks the raw `.csv` sibling it was derived from, but stays below any
+  // explicitly sourced parquet.
+  return lower.endsWith(".parquet") ? SOURCE_PRECEDENCE.length : SOURCE_PRECEDENCE.length + 1;
+}
+
+/**
+ * Deterministic, granularity-first comparator for dataset selector entries.
+ * Finest timeframe first, then preferred source, then filename as the final tie
+ * break. Pure function (no network, no side effects).
+ */
+export function compareDatasetsByGranularity<T extends { name: string }>(a: T, b: T): number {
+  const gr = timeframeRank(a.name) - timeframeRank(b.name);
+  if (gr !== 0) return gr;
+  const sr = sourceRank(a.name) - sourceRank(b.name);
+  if (sr !== 0) return sr;
+  return a.name.localeCompare(b.name);
+}
+
 /** Timeframe options the ingestion adapter accepts (server clamps to M1). */
 export const DOWNLOAD_TIMEFRAMES = ["M1", "M3", "M5", "M15"] as const;
 
