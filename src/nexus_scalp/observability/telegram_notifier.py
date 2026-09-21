@@ -314,6 +314,10 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         self._worker_crash: str = ""
         self._worker_running = False
         self._last_dns_poisoned = False
+        # AUTH circuit-breaker: set by the transport on a live Telegram 401.
+        # send() then drops further messages at enqueue (rate-limited log)
+        # instead of cycling 4 log lines per message against a dead token.
+        self._auth_dead: bool = False
         # BUG-129: throttle the BLOCKED_NOT_CONFIGURED log (fires on every
         # send() attempt while Telegram is unconfigured; on a hot path that
         # produced ~13 spam warnings per second).
@@ -498,6 +502,33 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
             self._failed_count += 1
             self._last_failure = time.time()
             self._last_failure_category = TELEGRAM_CONFIG_ERROR
+            if callback:
+                with contextlib.suppress(Exception):
+                    callback(None)
+            return None
+
+        # AUTH circuit-breaker (tripped by the transport on a live HTTP 401):
+        # the token Telegram itself rejected. Retrying is pointless and the
+        # per-message ENQUEUE->SEND_START->SEND_FAILED->FAILED_FINAL cycle
+        # burns 4 log lines per message (~15/s on a busy tick path). Drop at
+        # enqueue with a single rate-limited WARNING; health counters stay
+        # truthful so health_state() still reports the auth failure.
+        if getattr(self, "_auth_dead", False):
+            now_log = time.time()
+            self._failed_count += 1
+            self._last_failure = now_log
+            self._last_failure_category = TELEGRAM_AUTH_ERROR
+            if (now_log - self._last_blocked_log_time) >= 60.0:
+                self._last_blocked_log_time = now_log
+                logger.warning(
+                    "[TELEGRAM] event=DROPPED_DEAD_TOKEN severity=%s "
+                    "reason=AUTH_BREAKER_TRIPPED (token rejected by Telegram; restart with a valid token) "
+                    "notification_id=%s correlation_id=%s failed_since_start=%d",
+                    severity,
+                    new_correlation_id("notif"),
+                    correlation_id or "-",
+                    self._failed_count,
+                )
             if callback:
                 with contextlib.suppress(Exception):
                     callback(None)
