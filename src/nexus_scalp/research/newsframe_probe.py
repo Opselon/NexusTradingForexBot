@@ -1,5 +1,7 @@
 """Phase 0 item 3: NEWS 50..59 end-to-end trace + news frame quality from the live DB."""
+
 from __future__ import annotations
+
 import json
 import sys
 from datetime import UTC, datetime
@@ -19,7 +21,6 @@ from nexus_scalp.model_generation.news_bridge import (  # noqa: E402
 )
 from nexus_scalp.news.config import NewsConfig  # noqa: E402
 from nexus_scalp.news.database import NewsDatabase  # noqa: E402
-from nexus_scalp.features.schema_contract import NEWS_10D_NAMES  # noqa: E402
 
 
 def main() -> None:
@@ -68,7 +69,9 @@ def main() -> None:
         info["per_field"] = diag["per_field"]
         info["readiness"] = news_benchmark_readiness(nf)
 
-    (OUT / "news_frame_report.json").write_text(json.dumps(info, indent=2, default=str), encoding="utf-8")
+    (OUT / "news_frame_report.json").write_text(
+        json.dumps(info, indent=2, default=str), encoding="utf-8"
+    )
     print(json.dumps(info, indent=2, default=str)[:6000])
 
 

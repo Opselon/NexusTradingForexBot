@@ -54,7 +54,7 @@ _MAX_HISTORY = 200
 
 def get_position_adviser_service() -> PositionAdviserService:
     """The canonical adviser instance shared by the API and the decide system."""
-    global _SERVICE
+    global _SERVICE  # noqa: PLW0603  # module-level singleton; refreshed in place, never rebound at call time
     if _SERVICE is None:
         _SERVICE = PositionAdviserService()
     return _SERVICE

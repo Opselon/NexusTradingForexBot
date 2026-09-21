@@ -4,6 +4,7 @@
 # inspect scope, coordinate semantically, do NOT blindly modify the same path.
 # Release locks when done (remove entry or mark released).
 
+exclusive_locks: []
 exclusive_locks:
   - path: tests/unit/test_robustness_stress_scenarios.py
     owner: AGENT-ML-VALIDATION
@@ -12,6 +13,23 @@ exclusive_locks:
     since: 2026-09-20
     task: ML-VAL-003
     expiry: 2026-09-21
+  - path: src/nexus_scalp/training/optimizers.py
+    owner: AGENT-ML-TRAIN
+    exclusive: true
+    scope: ML-TRAIN-003 optimizer & LR-scheduler factory (AdamW + Cosine Restarts) — RELEASED (task DONE, PR opened)
+    since: 2026-09-21
+    task: ML-TRAIN-003
+    expiry: 2026-09-21
+  - path: tests/unit/test_optimizers_schedulers.py
+    owner: AGENT-ML-TRAIN
+    exclusive: true
+    scope: ML-TRAIN-003 optimizer & scheduler test battery — RELEASED (task DONE, PR opened)
+    since: 2026-09-21
+    task: ML-TRAIN-003
+    expiry: 2026-09-21
+
+# Released this cycle: src/nexus_scalp/model_lab/experiment_registry.py
+# (ML-EXP-001, AGENT-ML-EXP) — landed in PR #335.
 
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)

@@ -40,10 +40,6 @@ from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
-from nexus_scalp.position_adviser.integration import (
-    apply_advisory_to_hold_score,
-    build_position_state_for_adviser,
-)
 from nexus_scalp.execution.lifecycle import (
     PendingOrderLifecycle,
     TicketState,
@@ -73,6 +69,10 @@ from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
+from nexus_scalp.position_adviser.integration import (
+    apply_advisory_to_hold_score,
+    build_position_state_for_adviser,
+)
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 logger = get_logger("nexus_scalp.execution.order_manager")
@@ -2948,6 +2948,7 @@ class OrderLifecycleManager:
                 impact_price_delta=impact_price_delta,
                 atr=atr,
                 smart_metrics=smart_metrics,
+                spread=spread,
                 now=now,
             )
 
@@ -3387,6 +3388,7 @@ class OrderLifecycleManager:
         impact_price_delta: float,
         atr: float,
         smart_metrics: dict[str, Any],
+        spread: float = 0.0,
         now: datetime | None = None,
     ) -> tuple[int, list[str], int]:
         """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
@@ -3444,10 +3446,11 @@ class OrderLifecycleManager:
                     ticket=ticket, hold_score=hold_score, position_state=state, service=adviser
                 )
                 if advisory is not None:
-                    invalidate_reasons = list(invalidate_reasons) + [
+                    invalidate_reasons = [
+                        *invalidate_reasons,
                         "POSITION_ADVISER("
                         f"{advisory['action']},conf={advisory['confidence']:.4f},"
-                        f"adj={advisory['hold_score_adjustment']:.2f})"
+                        f"adj={advisory['hold_score_adjustment']:.2f})",
                     ]
             except Exception as exc:  # fail closed; never break position management
                 logger.warning("[ADVISER] event=INTEGRATION_SKIP ticket=%s error=%s", ticket, exc)
