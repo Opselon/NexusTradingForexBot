@@ -24,10 +24,10 @@ import {
   counterTone,
   type ExposureTotals,
   floorPairTone,
-  gateFunnel,
   limitTone,
   limitUtilization,
 } from "@/lib/riskVizMath";
+import { gateEvidence, verdictWord } from "@/lib/riskGateTrace";
 import "./pro-risk.css";
 
 type ToneClass = "ok" | "warn" | "bad" | "unknown";
@@ -279,40 +279,37 @@ export function MarginArc({
   );
 }
 
-const VERDICT_LABEL: Record<"pass" | "fail" | "unknown", string> = {
-  pass: "PASS",
-  fail: "FAIL",
-  unknown: UNKNOWN_LABEL,
-};
-
 /**
  * GateFunnel — last-proposal `risk_checks` as a chip row.
  *
- * PASS/FAIL chips echo the backend `passed`/`allowed` booleans 1:1; any entry
- * whose payload carries neither boolean is an UNKNOWN chip, never FAIL (see
- * riskVizMath.gateVerdict). An empty payload says "no gates recorded" — a
- * different claim from "all unknown", so it is worded separately.
+ * `risk_checks` is a flat EVIDENCE record of metric PAIRS (value + limit in
+ * sibling keys), not a gate-verdict map, so a chip here is derived by pairing
+ * the siblings and comparing them (lib/riskGateTrace) — a PASS/FAIL chip is
+ * the arithmetic restatement of two backend numbers, never an invented
+ * verdict. An entry whose limit is absent is an UNKNOWN chip, never FAIL; an
+ * empty payload says "no gates recorded" — a different claim from "all
+ * unknown", so it is worded separately.
  */
 export function GateFunnel({
   checks,
   emptyMessage = "No gate trace on the last proposal (risk_checks absent or empty).",
 }: {
-  /** V1RiskStatus.risk_checks — untrusted record, narrowed inside gateFunnel. */
+  /** V1RiskStatus.risk_checks — untrusted record, narrowed inside gateEvidence. */
   checks: RiskChecks | null | undefined;
   emptyMessage?: string;
 }) {
-  const funnel = gateFunnel(checks);
+  const funnel = gateEvidence(checks);
   if (funnel.total === 0) return <p className="rv-funnel__empty">{emptyMessage}</p>;
   return (
     <div className="rv-funnel" aria-label="Risk gate funnel">
       {funnel.rows.map((row) => (
-        <span key={row.name} className={`rv-chip tone-${row.verdict}`} title={row.reason ?? undefined}>
+        <span key={row.name} className={`rv-chip tone-${row.verdict}`} title={row.detail ?? undefined}>
           <span className="rv-chip__n">{row.name.replace(/_/g, " ")}</span>
-          <span className="rv-chip__v">{VERDICT_LABEL[row.verdict]}</span>
+          <span className="rv-chip__v">{verdictWord(row.verdict)}</span>
         </span>
       ))}
       <span className="rv-funnel__count">
-        {funnel.pass} pass · {funnel.fail} fail · {funnel.unknown} unknown — verdicts from backend booleans only
+        {funnel.pass} pass · {funnel.fail} fail · {funnel.unknown} unknown — value vs its own backend limit
       </span>
     </div>
   );
