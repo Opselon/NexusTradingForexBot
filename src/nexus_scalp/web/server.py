@@ -1915,6 +1915,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_marketplace() -> FileResponse:
         return FileResponse(WEB_DIR / "marketplace.js")
 
+    # ML-SYSTEM / Neural Model Studio (2026-09-21): same class of gap as
+    # marketplace.js above — index.html loads model_studio_ui.js via a <script>
+    # tag but NO route served it, so the whole tab was dead: every button
+    # failed with `Uncaught ReferenceError: <studio fn> is not defined` and the
+    # model/dataset selects stayed stuck at "Loading models catalog…" /
+    # "Loading datasets…" (their loaders live in this same file).
+    @app.get("/model_studio_ui.js")
+    def serve_model_studio_ui() -> FileResponse:
+        """Serves the Neural Model Studio panel JS (all 18 studio handlers)."""
+        return FileResponse(WEB_DIR / "model_studio_ui.js")
+
     @app.get("/tv_widget.html")
     def serve_tv_widget_html() -> FileResponse:
         return FileResponse(WEB_DIR / "tv_widget.html")

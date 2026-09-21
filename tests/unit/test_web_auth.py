@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -100,6 +101,66 @@ async def test_public_paths_pass_without_token(auth_env):
         await mw(_asgi_scope(p), receive, send)
     assert calls == ["/api/health", "/health", "/static/app.js", "/assets/x.css"]
     assert all(m.get("status") in (200, None) for m in sent if m["type"] == "http.response.start")
+
+
+def _index_html_script_srcs() -> list[str]:
+    repo_root = Path(web_auth.__file__).resolve().parents[3]
+    index = repo_root / "Web" / "index.html"
+    if not index.is_file():  # pragma: no cover - wheel-only install
+        return []
+    html = index.read_text(encoding="utf-8", errors="replace")
+    out = []
+    for tag in re.finditer(r'<script[^>]*\bsrc=["\']([^"\']+)["\']', html):
+        src = tag.group(1).split("?")[0].split("#")[0].strip()
+        if not src or src.startswith(("http", "data:")):
+            continue
+        # The browser resolves root-relative src against the document URL, so a
+        # bare "app.js" becomes the request "/app.js" — compare the same way
+        # the middleware / router will see it at request time.
+        out.append("/" + src.lstrip("/"))
+    return out
+
+
+def test_every_index_html_script_asset_is_allowlisted():
+    """Neural Model Studio regression (2026-09-21): model_studio_ui.js was the
+    only repo-root <script> in Web/index.html missing from the auth allowlist.
+    The middleware answered it with the raw 401 JSON envelope; the browser
+    parsed that JSON as JavaScript, so the whole file failed to evaluate and
+    every button on the tab threw "Uncaught ReferenceError: <fn> is not
+    defined". A script asset can never bootstrap a cookie (it is not a
+    document), so it MUST be public or the tab is dead on arrival.
+    """
+    srcs = _index_html_script_srcs()
+    if not srcs:
+        pytest.skip("Web/index.html not shipped in this install")
+    unauthed = sorted(s for s in srcs if not web_auth.is_public_path(s))
+    assert not unauthed, (
+        "These <script> assets are NOT in the auth allowlist, so a tokenless "
+        "browser GET gets the 401 JSON envelope instead of JavaScript and the "
+        f"whole file fails to parse: {unauthed}"
+    )
+
+
+def test_every_index_html_script_asset_has_a_serve_route():
+    """Neural Model Studio regression (2026-09-21), part 2: even once
+    allowlisted, model_studio_ui.js had NO FastAPI route, so the request 404'd
+    instead of 401'ing — same dead tab, same "not defined" errors. Static
+    assets are served per-file here, so every <script> needs its own route.
+    """
+    from nexus_scalp.web import server as web_server
+
+    srcs = _index_html_script_srcs()
+    if not srcs:
+        pytest.skip("Web/index.html not shipped in this install")
+    routes = {
+        r.path for r in web_server.create_app().routes if getattr(r, "path", None)
+    }
+    unrouted = sorted(s for s in srcs if s not in routes)
+    assert not unrouted, (
+        "These <script> assets have no serve route in web/server.py — the "
+        "browser gets a 404 and the file never loads, killing every function "
+        f"defined in it: {unrouted}"
+    )
 
 
 @pytest.mark.asyncio
