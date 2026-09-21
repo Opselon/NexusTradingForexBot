@@ -48,6 +48,10 @@ from nexus_scalp.domain.models import (
     TickData,
     TradeOrder,
 )
+# BUG-308: parity with the live boundary readers — the broker returns the
+# still-forming current bar in the same payload as its sealed history; marking
+# it complete would hand reseed() a future anchor and starve the live tick feed.
+from nexus_scalp.indicators.resample import is_current_bar_forming
 from nexus_scalp.market_data.bar_aggregator import BarData
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.ports.mt5_port import IMT5Port
@@ -1416,17 +1420,22 @@ class PaperMT5Adapter(IMT5Port):
             close_p = round(open_p + drift, digits)
             high_p = round(max(open_p, close_p) + abs(drift) * 0.5, digits)
             low_p = round(min(open_p, close_p) - abs(drift) * 0.5, digits)
+            bar_ts = now - timedelta(minutes=bar_minutes * i)
+            # BUG-308 parity with the live boundary readers: only the oldest
+            # count-1 bars are sealed; the newest generated minute is the
+            # forming one and must reach reseed() as such or the monotonic
+            # tick anchor lands a full minute in the future.
             bars.append(
                 BarData(
                     symbol=symbol,
                     timeframe=str(timeframe).upper(),
-                    timestamp=now - timedelta(minutes=bar_minutes * i),
+                    timestamp=bar_ts,
                     open=open_p,
                     high=high_p,
                     low=low_p,
                     close=close_p,
                     tick_volume=self._rng.randint(50, 250),
-                    is_complete=True,
+                    is_complete=not is_current_bar_forming(bar_ts, str(timeframe).upper(), now=now),
                 )
             )
             price = close_p
