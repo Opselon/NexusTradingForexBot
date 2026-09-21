@@ -322,6 +322,13 @@ class ShutdownSupervisor:
         except ImportError:  # pragma: no cover
             return
 
+        # WINFUNCTYPE / windll exist only on Windows; on Linux/macOS the
+        # console-close hook has no equivalent, so the whole registration is
+        # a no-op there. Guarding here also keeps mypy green on the CI runner
+        # (ctypes has no windll attribute off Windows).
+        if not hasattr(ctypes, "windll") or not hasattr(ctypes, "WINFUNCTYPE"):
+            return
+
         handler_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
 
         def _handler(ctrl: int) -> int:
