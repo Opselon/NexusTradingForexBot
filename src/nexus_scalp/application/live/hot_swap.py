@@ -134,6 +134,26 @@ class HotSwapService:
                 }
             # Safe deserialization + declared-width verification (dimension
             # gate: the artifact's own declared contract, as before).
+            # ML-PHASE1 STEP-7: the authoritative serving-contract validator
+            # runs on the hot-load path too — schema/scaler/feature-order/
+            # temporal-contract/registry-identity rejection, not only width.
+            from nexus_scalp.model_lifecycle.serving_contract import (
+                validate_serving_contract,
+            )
+
+            contract = validate_serving_contract(new_path)
+            if not contract.ok:
+                logger.error(
+                    "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED reason=%s detail=%s",
+                    contract.reason,
+                    contract.as_dict(),
+                )
+                return {
+                    "success": False,
+                    "reason": contract.reason,
+                    "detail": contract.as_dict(),
+                    "runtime_applied": False,
+                }
             expected_dim = self.om._expected_num_features_for_artifact(new_path)
 
             def _safe_state():

@@ -336,6 +336,17 @@ class ModelBundleStore:
                 )
             else:
                 _anch(model_path, actual_bytes_hash=None)
+            # ML-PHASE1 STEP-7: the authoritative serving-contract validator.
+            # The checks above are width/fingerprint only; this adds schema,
+            # scaler, feature-order, temporal-contract and registry-identity
+            # rejection so an incompatible model NEVER becomes authoritative.
+            # Failures are IncompatibleArtifactError (fail closed) and are
+            # surfaced BEFORE the loaded model can be handed to the engine.
+            from nexus_scalp.model_lifecycle.serving_contract import (
+                require_serving_contract,
+            )
+
+            require_serving_contract(model_path)
             return model
 
         logger.info(
