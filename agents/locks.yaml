@@ -4,7 +4,14 @@
 # inspect scope, coordinate semantically, do NOT blindly modify the same path.
 # Release locks when done (remove entry or mark released).
 
-exclusive_locks: []
+exclusive_locks:
+  - path: src/nexus_scalp/research/calibration.py
+    owner: AGENT-ML-VALIDATION
+    exclusive: true
+    scope: ML-VAL-002 probability calibration & ECE (released — task DONE, PR opened)
+    since: 2026-09-21
+    task: ML-VAL-002
+    expiry: 2026-09-21
 exclusive_locks:
   - path: tests/unit/test_robustness_stress_scenarios.py
     owner: AGENT-ML-VALIDATION
