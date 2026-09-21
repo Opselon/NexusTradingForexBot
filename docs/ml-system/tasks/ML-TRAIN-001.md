@@ -2,7 +2,7 @@
 
 STREAM: STREAM E — TRAINING
 PRIORITY: P1
-STATUS: BLOCKED
+STATUS: DONE (2026-09-21; 22/22 tests in tests/unit/test_training_determinism.py pass, torch 2.14.0+cpu, Python 3.11.16 — bitwise-identical weights at seed 42/42 with max|w1-w2| = 0.0, divergent at 42 vs 43; AMP path finite-gradient-verified; manifest-registered and verified; PR pending)
 DEPENDENCIES: ML-DATA-001
 AGENT_ROLE: AGENT-ML-TRAIN
 OWNERSHIP_SCOPE: src/nexus_scalp/training/engine.py
@@ -74,6 +74,54 @@ Train two consecutive runs; assert max(abs(weights1 - weights2)) == 0.0.
 1. Identical seeds produce bitwise identical model weights.
 2. Different seeds produce divergent models.
 3. AMP executes without NaN gradients.
+
+### VERIFICATION EVIDENCE (2026-09-21, AGENT-ML-TRAIN)
+Executed `tests/unit/test_training_determinism.py` on torch 2.14.0+cpu, Python 3.11.16:
+
+- [x] **AC-1 — identical seeds → bitwise identical weights.**
+      `test_identical_seeds_produce_bitwise_identical_weights`: two full
+      3-epoch runs at seed=42 → `max|w1 - w2| == 0.0` across every state_dict
+      tensor (scalars compared by value). Companion guard
+      `test_state_dict_weights_are_not_all_zero` proves the weights are
+      non-trivial, so the zero-difference is a real determinism result and not
+      a vacuous all-zero state dict.
+- [x] **AC-2 — different seeds → divergent models.**
+      `test_different_seeds_produce_divergent_models`: seed=42 vs seed=43 →
+      `max(diff) > 0.0`. Plus `test_init_only_divergence_between_seeds` proves
+      weight INIT alone already diverges, and
+      `test_seed_ordering_before_model_construction` proves identical seeds
+      give identical init even at zero epochs (regression guard for the
+      BUG-101 "seed after construction" hazard).
+- [x] **AC-3 — AMP executes without NaN gradients.**
+      `test_amp_context_runs_without_nan_gradients` runs the full
+      backward+step under `AMPContext(enabled=True)` on CPU and asserts every
+      parameter gradient is present and `torch.isfinite(...).all()`.
+      `test_amp_disabled_path_matches_plain_step` asserts the disabled path is
+      numerically a plain FP32 step, and
+      `test_amp_context_cpu_default_is_pass_through` pins the CPU default as a
+      no-op pass-through.
+- [x] Deterministic-algorithms abort condition honoured:
+      `torch.use_deterministic_algorithms(True, warn_only=True)` degrades a
+      host version gap to a warning instead of raising
+      (ML-TRAIN-001 ABORT_CONDITIONS).
+- [x] `DataLoader` residual non-determinism closed:
+      `make_deterministic_loader` defaults `num_workers=0` (the INVESTIGATION_PLAN
+      finding: a worker pool re-seeds from OS entropy at fork), seeds a
+      dedicated `torch.Generator`, and provides a deterministic
+      `worker_init_fn` for callers that deliberately opt into workers.
+      `test_deterministic_loader_batch_order_is_reproducible` proves batch order
+      is stable across two independently built loaders.
+- [x] `set_deterministic_seed` is idempotent and re-entrant:
+      `test_set_deterministic_seed_reproducibly_advances_rng` proves python /
+      numpy / torch RNG streams are identical after re-seeding with the same
+      value.
+- [x] Registered in `tests/critical_suite.txt`; verified with
+      `scripts/ci/verify_critical_suite_manifest.py` →
+      `CRITICAL_SUITE_MANIFEST_OK: 216 paths all exist`.
+- [x] Quality gates: `ruff check .` repo-wide → All checks passed;
+      `ruff format --check .` repo-wide → 2219 files already formatted;
+      `mypy src/nexus_scalp/training/engine.py` → no errors;
+      `scripts/ci/check_dependency_drift.py` → OK (98 pins).
 
 ## ABORT_CONDITIONS
 If deterministic operations are not supported by host PyTorch version, fall back gracefully with a documented warning.
