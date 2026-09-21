@@ -1,0 +1,48 @@
+# Bounded hyperparameter grid search spec (ML-EXP-003)
+#
+# The runner materializes the Cartesian product of `axes` in a FIXED
+# deterministic order (sorted axis names, sorted values), executes each
+# trial serially, registers it into the immutable ExperimentRegistry,
+# and writes artifacts/experiments/sweeps/<name>/leaderboard.json.
+#
+# HARD CEILING: the materialized grid must fit `max_trials` (default 20,
+# see scripts/experiments/hyperparam_search.py:MAX_TRIALS). An
+# over-specified grid is a CONFIGURATION ERROR, not a slow weekend —
+# this is the NON_GOALS guard against unbounded search.
+
+name: lr_wd_dropout_sweep
+
+# Optional: pin the base seed. Trial i uses seed + i, so seeds are unique
+# across the grid and stable between runs of the same spec.
+seed: 42
+
+# Optional: ranking metric for the leaderboard (must be a metric your
+# trial runner reports). Direction is derived from the name by
+# ExperimentRegistry.top_n (val_loss descends, sharpe/f1 ascend).
+metric: val_loss
+
+# Optional: ceiling override (must be >= 1; MAX_TRIALS is the default).
+max_trials: 16
+
+# The search space. Every axis must be one of KNOWN_AXES:
+#   learning_rate | weight_decay | dropout | hidden_dim
+#   loss | batch_size | epochs
+# Each value is a number or a list of numbers; a scalar becomes a
+# single-point axis.
+axes:
+  learning_rate: [0.0005, 0.001, 0.003, 0.01]
+  weight_decay: [0.0, 0.0001]
+  dropout: [0.10, 0.20]
+
+# Frozen config merged into every trial's recorded model_config —
+# architecture, dataset identity and loss stay FIXED while only the
+# axes vary (controlled experiment). dataset_id/dataset_hash land in the
+# registry's reproduction bundle.
+base_config:
+  model_family: STUDENT_MLP
+  input_dimension: 70
+  num_classes: 3
+  sequence_length: 1
+  loss: focal_smoothing
+  dataset_id: ds_lab_001
+  dataset_hash: "0000000000000000000000000000000000000000000000000000000000000000"
