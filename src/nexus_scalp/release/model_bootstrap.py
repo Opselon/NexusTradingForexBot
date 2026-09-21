@@ -125,11 +125,24 @@ def write_sidecars(model: Path, *, note: str) -> dict[str, str]:
     art.mkdir(parents=True, exist_ok=True)
     scaler = art / "model.scaler.npz"
     np.savez(scaler, mean=np.zeros(70), std=np.ones(70))
+    # The class-head count is read from the checkpoint this function stamps,
+    # so the meta and the tensor can never disagree (the mint's num_classes
+    # literal is not restated here).
+    import torch
+
+    _cls = torch.load(model, map_location="cpu", weights_only=True).get("classifier.weight")
+    if not hasattr(_cls, "shape"):
+        raise ProvisioningError(
+            "PROVISIONING_ERROR: minted checkpoint has no classifier weight "
+            "tensor, so the class-head count is not derivable — fix the mint "
+            "recipe; never relax the serving gate."
+        )
     (art / "model.meta.json").write_text(
         json.dumps(
             {
                 "feature_schema_id": SCHEMA_ID,
                 "feature_schema_dimension": 70,
+                "model_head_classes": int(_cls.shape[0]),
                 "model_sha256": sha256_file(model),
                 "note": note,
             },
