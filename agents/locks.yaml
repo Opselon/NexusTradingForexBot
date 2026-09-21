@@ -4,21 +4,7 @@
 # inspect scope, coordinate semantically, do NOT blindly modify the same path.
 # Release locks when done (remove entry or mark released).
 
-exclusive_locks:
-  - path: src/nexus_scalp/training/engine.py
-    owner: AGENT-ML-TRAIN
-    exclusive: true
-    scope: ML-TRAIN-001 deterministic training engine + AMP + seed harness
-    since: 2026-09-21
-    task: ML-TRAIN-001
-    expiry: 2026-09-28
-  - path: tests/unit/test_training_determinism.py
-    owner: AGENT-ML-TRAIN
-    exclusive: true
-    scope: ML-TRAIN-001 determinism test battery
-    since: 2026-09-21
-    task: ML-TRAIN-001
-    expiry: 2026-09-28
+exclusive_locks: []
 
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)
