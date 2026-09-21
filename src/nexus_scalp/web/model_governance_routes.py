@@ -41,6 +41,18 @@ router = APIRouter()
 _ACTIVE_APP: list[Any] = []
 
 
+def _shadow70_verdict(row: dict[str, Any]) -> str:
+    """Verdict shown for one persisted 70D observation (BUG-278).
+
+    A row that never compared anything (runtime not READY, vector rejected,
+    inference failed/timed out) reports its error code — never the neutral
+    placeholder ``shadow_action`` dressed up as a real disagreement class.
+    """
+    if int(row.get("valid", 0) or 0) == 1 and not (row.get("error_code") or ""):
+        return str(row.get("disagreement") or "")
+    return str(row.get("error_code") or "NOT_COMPARED")
+
+
 def _get_active_app(fallback_app: Any) -> Any:
     return _ACTIVE_APP[0] if _ACTIVE_APP else fallback_app
 
@@ -399,10 +411,18 @@ def register_model_governance_routes(app: Any) -> None:
                         "shadow_action": r.get("shadow_action", ""),
                         "champion_confidence": r.get("champion_confidence", 0.0),
                         "shadow_confidence": r.get("shadow_confidence", 0.0),
-                        "disagreement": r.get("disagreement", ""),
+                        "confidence_delta": r.get("confidence_delta", 0.0),
+                        # BUG-278: a row that never compared anything exposes
+                        # its error code as the verdict, never the neutral
+                        # placeholder shadow_action dressed up as a real
+                        # disagreement class.
+                        "disagreement": _shadow70_verdict(r),
+                        "valid": bool(r.get("valid", 0)),
+                        "error_code": r.get("error_code", ""),
                         "regime": r.get("regime", ""),
                         "news_state": r.get("news_state", ""),
                         "liquidity_state": r.get("liquidity_state", ""),
+                        "sample_source": r.get("sample_source", ""),
                         "outcome": r.get("outcome", "PENDING"),
                     }
                     for r in store.list_observations(limit=20)

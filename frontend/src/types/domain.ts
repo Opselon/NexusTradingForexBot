@@ -379,10 +379,20 @@ export interface Shadow70Observation {
   shadow_action: string;
   champion_confidence: number;
   shadow_confidence: number;
+  confidence_delta?: number;
+  /**
+   * Verdict for the row. Real comparisons carry the disagreement class; a row
+   * that never compared anything (runtime IDLE / vector rejected / inference
+   * failed) carries its error_code instead (BUG-278) so an operator can never
+   * read "the shadow refused to trade" from a tick with no shadow model.
+   */
   disagreement: string;
+  valid?: boolean;
+  error_code?: string;
   regime: string;
   news_state: string;
   liquidity_state: string;
+  sample_source?: string;
   outcome: string;
 }
 
