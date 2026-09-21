@@ -77,11 +77,14 @@ body.landing-page section[id]{scroll-margin-top:150px}
   font-size:.7rem; font-weight:800; letter-spacing:.12em; color:#9fe9f5;
   border:1px solid rgba(52,211,153,.35); border-radius:999px; padding:5px 12px}
 @media (max-width:640px){
-  .land-nav{border-radius:16px; justify-content:flex-start; overflow-x:auto;
+  /* nowrap is required or items wrap into a tall box and overflow-x has
+     nothing to scroll — the base rule sets flex-wrap:wrap. */
+  .land-nav{border-radius:16px; justify-content:flex-start; flex-wrap:nowrap;
+    overflow-x:auto; overscroll-behavior-x:contain; min-width:0;
     scroll-snap-type:x proximity; scrollbar-width:none; -webkit-overflow-scrolling:touch}
   .land-nav::-webkit-scrollbar{display:none}
-  .lnav-link{scroll-snap-align:center; padding:8px 12px}
-  .lnav-status{scroll-snap-align:center; margin-inline-start:2px}
+  .lnav-link{scroll-snap-align:center; padding:8px 12px; flex:0 0 auto}
+  .lnav-status{scroll-snap-align:center; margin-inline-start:2px; flex:0 0 auto}
 }
 
 /* ---------- hero ---------- */
@@ -225,8 +228,10 @@ body.landing-page .table-wrap a{color:var(--l-cyan)}
 body.landing-page .table-wrap .chip{display:inline-flex; align-items:center; justify-content:center;
   border-radius:var(--radius-pill); padding:5px 14px; font-size:.76rem; letter-spacing:.04em; white-space:nowrap}
 .chip-rej{color:#fda4af; border-color:rgba(251,113,133,.55); background:rgba(225,29,72,.18)}
-.neg-note{margin-top:14px; padding:14px 16px; border:1px solid rgba(251,191,36,.28); border-radius:14px;
-  background:rgba(251,191,36,.06); color:#fcd9a4; font-size:.88rem; line-height:1.6}
+/* Negative-evidence callout: shares the rose family of the NOT_ELIGIBLE
+   badge it explains, so the rejection reads as one visual statement. */
+.neg-note{margin-top:14px; padding:14px 16px; border:1px solid rgba(251,113,133,.38); border-radius:14px;
+  background:linear-gradient(135deg, rgba(225,29,72,.16), rgba(120,20,50,.08)); color:#fecdd3; font-size:.88rem; line-height:1.6}
 
 /* ---------- market demo ---------- */
 .demo-stage{position:relative; border-radius:20px; overflow:hidden; border:1px solid var(--l-line);
