@@ -273,6 +273,13 @@ def _client_with_bundle(bundle: Any, registry: Any = None) -> TestClient:
     return TestClient(app)
 
 
+def _client_with_app(engine: Any) -> TestClient:
+    """Mount a full engine object (accessor methods, not just namespace attrs)."""
+    app = create_v1_app()
+    app.state.engine = engine
+    return TestClient(app)
+
+
 def test_model_identity_never_returns_non_json_objects() -> None:
     client = _client_with_bundle(_FakeBundle(), _FakeRegistry())
     r = client.get("/api/v1/model/identity")
@@ -323,3 +330,79 @@ def test_model_identity_reports_unregistered_state_without_placeholders() -> Non
     # an unregistered model must not emit a row of empty-string fields
     for key in ("artifact_id", "model_role", "config_version"):
         assert key not in data or data[key]
+
+
+# ---------------------------------------------------------------------------
+# OBS-METADATA regression (2026-09-21): GET /api/v1/model/contracts must
+# resolve the MODEL side of the contract from the serving runtime, not from
+# ModelBundle.manifest. ModelBundle is a frozen dataclass of exactly
+# (model, scaler, artifact_path) and has no manifest attribute, so the old
+# read was always None and every live deployment reported
+# result=UNKNOWN / reason=NO_MODEL_METADATA while serving a validated 70D
+# scalp_v3 champion -- a false UNKNOWN that hides a real PASS.
+# ---------------------------------------------------------------------------
+
+
+class _EffectiveEngine:
+    """Engine stub exposing the bundle-derived effective contract accessors."""
+
+    _bundle = _FakeBundle()
+
+    def effective_feature_dim(self) -> int:
+        return 70
+
+    def effective_feature_schema_id(self) -> str:
+        return "scalp_v3"
+
+
+class _UnregisteredEngine:
+    """Bundle loaded but no registered provenance (cold pre-registration boot)."""
+
+    _bundle = _FakeBundle()
+    model_registry = None
+
+    def effective_feature_dim(self) -> int:
+        return 50
+
+    def effective_feature_schema_id(self) -> str:
+        return "scalp_v1"
+
+
+def test_model_contracts_reports_real_model_metadata() -> None:
+    r = _client_with_app(_EffectiveEngine()).get("/api/v1/model/contracts")
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["feature_schema_ids"]
+    compat = data["compatible_model_schemas"]
+    assert compat["model_schema_id"] == "scalp_v3"
+    assert compat["model_dimension"] == 70
+    assert compat["runtime_schema_id"] == "scalp_v3"
+    assert compat["runtime_dimension"] == 70
+    assert compat["result"] == "PASS", compat
+    assert compat["reason"] == "SCHEMA_DIMENSION_MATCH"
+    assert data["serving_bundle_present"] is True
+
+
+def test_model_contracts_reports_mismatch_not_unknown() -> None:
+    """A 50D model under the canonical 70D runtime must BLOCK, not UNKNOWN."""
+    r = _client_with_app(_UnregisteredEngine()).get("/api/v1/model/contracts")
+    assert r.status_code == 200, r.text
+    compat = r.json()["data"]["compatible_model_schemas"]
+    assert compat["model_schema_id"] == "scalp_v1"
+    assert compat["model_dimension"] == 50
+    assert compat["result"] == "BLOCK", compat
+    assert compat["reason"] == "SCHEMA_MISMATCH"
+
+
+def test_model_contracts_absent_engine_is_honest_unknown() -> None:
+    """No engine attached -> UNKNOWN with a real reason, never a fabricated PASS."""
+    app = create_v1_app()
+    app.state.engine = None
+    r = TestClient(app).get("/api/v1/model/contracts")
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    compat = data["compatible_model_schemas"]
+    assert compat["model_schema_id"] is None
+    assert compat["model_dimension"] is None
+    assert compat["result"] == "UNKNOWN"
+    assert compat["reason"] == "NO_MODEL_METADATA"

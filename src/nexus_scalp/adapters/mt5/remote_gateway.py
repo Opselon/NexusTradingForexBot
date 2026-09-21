@@ -27,6 +27,10 @@ from nexus_scalp.domain.models import (
     TickData,
     TradeOrder,
 )
+# BUG-308: the broker returns the still-forming current bar in the same payload
+# as its sealed history; marking it complete would hand reseed() a future anchor
+# (last_bar + 1m) and the out-of-order guard would drop every real tick of it.
+from nexus_scalp.indicators.resample import is_current_bar_forming
 from nexus_scalp.market_data.bar_aggregator import BarData
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.ports.gateway_port import IGatewayPort
@@ -168,7 +172,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
                     low=float(b["low"]),
                     close=float(b["close"]),
                     tick_volume=int(b["tick_volume"]),
-                    is_complete=True,
+                    is_complete=not is_current_bar_forming(dt, str(timeframe).upper()),
                 )
             )
         return bars

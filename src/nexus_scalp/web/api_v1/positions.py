@@ -257,12 +257,53 @@ def model_contracts(request: Request) -> Any:
         from nexus_scalp.features.inference_validator import compatible_model_schema
         from nexus_scalp.features.schema_contract import DIMENSION, SCHEMA_ID
 
-        _bundle = getattr(engine, "_bundle", None) if engine is not None else None
-        _manifest = getattr(_bundle, "manifest", None) if _bundle is not None else None
-        _model_schema_id = getattr(_manifest, "schema_id", None) if _manifest is not None else None
-        _model_dimension = getattr(_manifest, "dimension", None) if _manifest is not None else None
-        if _model_dimension is None and _manifest is not None:
-            _model_dimension = getattr(_manifest, "feature_count", None)
+        # The model side of the contract is NOT the bundle: ModelBundle carries
+        # only (model, scaler, artifact_path) and has no manifest attribute, so
+        # the previous bundle.manifest read was always None and every live
+        # deployment reported UNKNOWN/NO_MODEL_METADATA even while serving a
+        # validated 70D scalp_v3 champion. Resolve the model contract from the
+        # same authoritative places the runtime itself uses
+        # (LiquidityGovernor._model_contract): engine effective accessors first
+        # (the loaded bundle's own scaler/tensor width), then the model
+        # registry's current provenance, then the class bootstrap. Real values
+        # only; every field stays None when nothing is loaded.
+        _model_schema_id: str | None = None
+        _model_dimension: int | None = None
+        if engine is not None:
+            _bundle = getattr(engine, "_bundle", None)
+            if _bundle is not None:
+                _dim_fn = getattr(engine, "effective_feature_dim", None)
+                _schema_fn = getattr(engine, "effective_feature_schema_id", None)
+                try:
+                    _model_dimension = (
+                        int(_dim_fn())
+                        if callable(_dim_fn)
+                        else getattr(engine, "FEATURE_DIM", None)
+                    )
+                except Exception:
+                    _model_dimension = None
+                try:
+                    _model_schema_id = (
+                        str(_schema_fn())
+                        if callable(_schema_fn)
+                        else getattr(engine, "FEATURE_SCHEMA_ID", None)
+                    )
+                except Exception:
+                    _model_schema_id = None
+            if _model_schema_id is None or _model_dimension is None:
+                _registry = getattr(engine, "model_registry", None)
+                try:
+                    _prov = _registry.current if _registry is not None else None
+                except Exception:
+                    _prov = None
+                if _prov is not None:
+                    _model_schema_id = getattr(_prov, "feature_schema_id", None) or _model_schema_id
+                    _prov_dim = getattr(_prov, "feature_dimension", None)
+                    if _prov_dim is not None:
+                        try:
+                            _model_dimension = int(_prov_dim) or _model_dimension
+                        except Exception:
+                            pass
         try:
             _model_dimension = int(_model_dimension) if _model_dimension is not None else None
         except Exception:

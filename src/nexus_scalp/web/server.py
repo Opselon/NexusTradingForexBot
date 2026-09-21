@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FEATURE_NAMES
+from nexus_scalp.indicators.resample import is_current_bar_forming as _is_current_rate_bar_forming
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.debug_research_routes import (
     ModelTestRequest,  # noqa: F401
@@ -2105,7 +2106,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                         low=float(r.low),
                                         close=float(r.close),
                                         tick_volume=int(r.tick_volume or 0),
-                                        is_complete=True,
+                                        is_complete=not _is_current_rate_bar_forming(r.time_utc, str(timeframe).upper()),
                                     )
                                     for r in rate_bars_dt
                                 ]
