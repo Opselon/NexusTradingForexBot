@@ -479,3 +479,16 @@ tests/unit/test_feature_importance.py
 tests/unit/test_live_shadow_outcome_resolution.py
 # ML-PLAT-001 (MT5 Runtime Boundaries & Remote Gateway Linux Parity Verification)
 tests/integration/test_mt5_adapter_parity.py
+
+# ML-PHASE1-DATA-CONTRACT (2026-09-21): the 70D canonical data contract,
+# labeling identity, fail-closed serving validator, provenance census, and
+# shadow70/news-coverage gates landed by agent/feature/ML-PHASE1-DATA-CONTRACT.
+# These suites existed but ran in NO CI gate, so the contract they pin was
+# unverified on every push.
+tests/unit/test_ml_phase1_data_contract.py
+tests/unit/test_ml_phase1_labeling_identity.py
+tests/unit/test_ml_phase1_serving_contract.py
+tests/unit/test_ml_phase1_census_consistency.py
+tests/unit/test_70d_parity_task3.py
+tests/unit/test_bug278_shadow70_not_compared.py
+tests/unit/test_model_studio_dataset_order.py
