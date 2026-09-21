@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from nexus_scalp.web.model_studio_routes import (
@@ -73,6 +74,39 @@ class TestGranularityRanking:
         """
         names = [c[0] for c in _dataset_candidates()]
         assert any(n.startswith("pos_ds_") for n in names), "no pos_ds_ datasets in inventory"
+
+
+class TestAutoTuneBaseline:
+    """The majority-class baseline must be the TRUE label floor.
+
+    Regression for a defect the first implementation shipped: the baseline was
+    derived from the winning model's prediction distribution (max predicted
+    class / oos_rows), which measures the model's own bias, not the accuracy a
+    constant classifier actually reaches. It reported 0.6443 where the honest
+    floor is 0.6823 (CLOSE 305/447), i.e. it made the model look closer to
+    acceptable than it is. Now derived from the dataset's true OOS labels.
+    """
+
+    def test_baseline_uses_true_oos_labels(self) -> None:
+        import os
+
+        os.environ["NSE_WEB_AUTH_DISABLE"] = "1"
+        from nexus_scalp.web.position_adviser_routes import (
+            _majority_class_baseline,
+        )
+
+        path = (
+            Path(__file__).resolve().parents[2]
+            / "artifacts"
+            / "datasets"
+            / "pos_ds_1efac560133fe03d.parquet"
+        )
+        if not path.is_file():
+            pytest.skip("reference position dataset not present")
+        baseline = _majority_class_baseline(path)
+        assert baseline is not None
+        # CLOSE is the true majority class in the oos split: 305 / 447.
+        assert baseline == pytest.approx(305 / 447, abs=1e-6)
 
 
 class TestIngestionFailsLoud:

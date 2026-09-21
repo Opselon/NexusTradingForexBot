@@ -32,7 +32,10 @@ from nexus_scalp.position_adviser.models import (
     ActivationCheckResult,
 )
 from nexus_scalp.position_adviser.service import PositionAdviserService
-from nexus_scalp.position_adviser.trainer import train_position_adviser
+from nexus_scalp.position_adviser.trainer import (
+    OOS_SPLITS,
+    train_position_adviser,
+)
 
 logger = get_logger("nexus_scalp.web.position_adviser_routes")
 
@@ -409,6 +412,34 @@ def route_datasets() -> dict[str, Any]:
     return {"status": "OK", "count": len(out), "datasets": out}
 
 
+def _majority_class_baseline(dataset_path: Path) -> float | None:
+    """Accuracy of always predicting the most frequent TRUE OOS label.
+
+    Deliberately NOT derived from any model's prediction distribution: that
+    measures the model's own bias, not the honest floor a constant classifier
+    reaches, and would make a weak model look closer to acceptable than it is.
+    """
+    import polars as pl
+
+    abs_path = dataset_path if dataset_path.is_absolute() else (_repo_root() / dataset_path)
+    df = (
+        pl.read_parquet(abs_path)
+        if abs_path.suffix.lower() == ".parquet"
+        else pl.read_csv(abs_path)
+    )
+    labels = df.filter(pl.col("split").is_in(OOS_SPLITS))["optimal_action"]
+    if labels.len() == 0:
+        return None
+    counts = labels.value_counts()
+    # polars types the max() of an untyped column broadly; narrow it here at
+    # the boundary. A non-numeric result is impossible for a count column, so
+    # this cast documents that rather than hiding a real type hole.
+    top: object = counts["count"].max()
+    if top is None:
+        return None
+    return float(top) / float(labels.len())  # type: ignore[arg-type]
+
+
 @router.post("/auto-tune")
 def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
     """Grid-search adviser hyperparameters and keep the best by OOS loss.
@@ -443,7 +474,10 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
 
     trials: list[dict[str, Any]] = []
     best: dict[str, Any] | None = None
-    majority_baseline: float | None = None
+    # The majority-class baseline is the honest floor any constant classifier
+    # reaches on the TRUE OOS labels — never a model's prediction distribution.
+    majority_baseline = _majority_class_baseline(ds)
+
     for seed, lr, bs in grid:
         mid = f"pos_adviser_tune_{int(time.time())}_{seed}_{abs(hash((lr, bs))) % 100000}"
         try:
@@ -470,10 +504,8 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
                 }
             )
             continue
-        # Majority-class baseline: the accuracy any constant classifier gets.
-        if majority_baseline is None and res.oos_rows:
-            counts = res.oos_action_distribution or {}
-            majority_baseline = max(counts.values()) / float(res.oos_rows) if counts else None
+        # NOTE: the majority baseline is derived from the dataset's TRUE OOS
+        # labels above, not from this trial's prediction distribution.
         trials.append(
             {
                 "model_id": res.model_id,
