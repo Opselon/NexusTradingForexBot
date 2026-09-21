@@ -2,12 +2,39 @@
 
 STREAM: STREAM E — TRAINING
 PRIORITY: P2
-STATUS: BLOCKED
-DEPENDENCIES: ML-TRAIN-001
+STATUS: DONE
+DEPENDENCIES: ML-TRAIN-001 (DONE)
 AGENT_ROLE: AGENT-ML-TRAIN
 OWNERSHIP_SCOPE: src/nexus_scalp/training/optimizers.py
 HUMAN_DECISION_REQUIRED: NO
 PARALLELIZATION_CLASS: PARALLEL_SAFE
+
+## COMPLETION_RECORD (2026-09-21, AGENT-ML-TRAIN)
+- New module `src/nexus_scalp/training/optimizers.py`: `build_optimizer_and_scheduler`
+  (adam / adamw / sgd / lookahead) + 6 schedulers (none / cosine / cosine_restarts /
+  plateau / one_cycle / linear_decay), warmup decorator, `step_scheduler` cadence
+  driver, `current_lrs` reader. Lookahead is a stdlib+torch implementation
+  (no third-party dep, per NON_GOALS).
+- Integrated into `CandidateTrainer` (`model_generation/training.py`) and
+  `WalkForwardTrainer` (`training/walk_forward_trainer.py`, opt-in
+  `optimizer_config=` — default preserves the exact historical recipe and records
+  it in `last_convergence_metadata["optimizer_recipe"]`).
+- Audit report: `docs/research/OPTIMIZER_SCHEDULER_AUDIT.md` (incl. the constant
+  vs cosine benchmark table and its honest reading).
+- Tests: `tests/unit/test_optimizers_schedulers.py` — 52/52 passing, zero
+  PyTorch warnings (step-order + matrix runs under `warnings.simplefilter("error")`).
+- Regression: 108/108 across test_walk_forward_trainer / test_model_generation_phase13
+  / test_model_lab. ruff + format + mypy clean.
+- PR: see `docs/agent_handoffs/2026-09-21_AGENT-ML-TRAIN_ML-TRAIN-003.md`.
+
+### Acceptance criteria
+- [x] 1. Optimizer factory cleanly instantiates AdamW and schedulers.
+- [x] 2. Unit tests confirm LR decays according to schedule without warnings.
+
+### Evidence
+- `pytest tests/unit/test_optimizers_schedulers.py -v` → 52 passed, 0 warnings.
+- `docs/research/OPTIMIZER_SCHEDULER_AUDIT.md` §4 (criteria) + §3 (benchmark).
+- `git grep -n "scheduler_step_every_batch"` — both trainers honor the cadence flag.
 
 ## OBJECTIVE
 Integrate AdamW with decoupled weight decay and CosineAnnealingWarmRestarts learning rate schedule into the training pipeline, evaluating convergence stability and out-of-sample generalization.
