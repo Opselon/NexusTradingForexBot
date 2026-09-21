@@ -44,7 +44,7 @@
 - [ML-TRAIN-003](tasks/ML-TRAIN-003.md) — Optimizer & Learning Rate Schedule Exploration (AdamW + Cosine Restarts) `[P2 | BLOCKED | AGENT-ML-TRAIN]`
 
 ### STREAM F: EXPERIMENTATION & ABLATION
-- [ML-EXP-001](tasks/ML-EXP-001.md) — Immutable Experiment Registry & Artifact Manifest Schema `[P1 | BLOCKED | AGENT-ML-EXP]`
+- [ML-EXP-001](tasks/ML-EXP-001.md) — Immutable Experiment Registry & Artifact Manifest Schema `[P1 | DONE | AGENT-ML-EXP]`
 - [ML-EXP-002](tasks/ML-EXP-002.md) — Architectural Ablation Harness: 2D MLP vs 3D TCN vs Attention `[P2 | BLOCKED | AGENT-ML-EXP | HUMAN DECISION]`
 - [ML-EXP-003](tasks/ML-EXP-003.md) — Bounded Hyperparameter Grid Search Runner `[P3 | BLOCKED | AGENT-ML-EXP]`
 
