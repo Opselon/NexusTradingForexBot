@@ -59,7 +59,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-ARCH-001` | D: Architecture | P0 | ScalpNet Dual-Path & 3-Class Head Sunset | **READY** | `AGENT-ML-ARCH` | **YES** | None | `SERIAL_ONLY` |
 | `ML-ARCH-002` | D: Architecture | P2 | Causal TCN Dilation & Receptive Field | **BLOCKED** | `AGENT-ML-ARCH` | NO | `ML-ARCH-001`, `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-ARCH-003` | D: Architecture | P2 | Temporal Attention vs Positional Encoding | **BLOCKED** | `AGENT-ML-ARCH` | NO | `ML-ARCH-002` | `PARALLEL_SAFE` |
-| `ML-TRAIN-001` | E: Training | P1 | Deterministic Training, Seeds & AMP Precision | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-ARCH-001`, `ML-DATA-002` | `PARALLEL_SAFE` |
+| `ML-TRAIN-001` | E: Training | P1 | Deterministic Training, Seeds & AMP Precision | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-ARCH-001`, `ML-DATA-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-002` | E: Training | P2 | Loss Functions: Focal Loss vs Label Smoothing | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001`, `ML-LABEL-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
 | `ML-EXP-001` | F: Experimentation | P1 | Immutable Experiment Registry Schema | **BLOCKED** | `AGENT-ML-EXP` | NO | `ML-DATA-002` | `PARALLEL_SAFE` |

@@ -4,14 +4,7 @@
 # inspect scope, coordinate semantically, do NOT blindly modify the same path.
 # Release locks when done (remove entry or mark released).
 
-exclusive_locks:
-  - path: tests/unit/test_robustness_stress_scenarios.py
-    owner: AGENT-ML-VALIDATION
-    exclusive: true
-    scope: ML-VAL-003 robustness stress battery (GATE8 hardening)
-    since: 2026-09-20
-    task: ML-VAL-003
-    expiry: 2026-09-21
+exclusive_locks: []
 
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)
