@@ -4250,6 +4250,115 @@
                     </div>
                 </div>
 
+                <!-- LAYER-2 ML: Position Decision Adviser (keep / close / reduce) -->
+                <div id="studio-adviser-panel" class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                    <div class="flex items-center justify-between border-b border-borderClr pb-2">
+                        <h3 class="text-sm font-bold text-white flex items-center">
+                            <i class="fa-solid fa-scale-balanced mr-2 text-cyan-400"></i>
+                            LAYER-2 ML: POSITION DECISION ADVISER
+                        </h3>
+                        <span class="text-xs font-bold uppercase" id="adviser-activation-badge">DISABLED</span>
+                    </div>
+                    <p class="text-xs text-textMuted">
+                        Deep-learning adviser for the <strong>decide system</strong>: on every live position it scores
+                        <span class="text-emerald-400 font-bold">KEEP</span> /
+                        <span class="text-rose-400 font-bold">CLOSE</span> /
+                        <span class="text-amber-300 font-bold">REDUCE</span> from real position state (unrealized R,
+                        age, ATR, spread). It can only ever make a close verdict <strong>more conservative</strong> —
+                        it never opens, sizes, or extends a position. Default is <strong>DISABLED</strong>, so the
+                        decide system runs exactly as before.
+                    </p>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Model</div>
+                            <div id="adviser-stat-model" class="font-bold text-white text-sm mt-0.5 truncate">NONE</div>
+                        </div>
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Applied</div>
+                            <div id="adviser-stat-applied" class="font-bold text-emerald-400 text-sm mt-0.5">0</div>
+                        </div>
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Evaluated</div>
+                            <div id="adviser-stat-evaluated" class="font-bold text-cyan-400 text-sm mt-0.5">0</div>
+                        </div>
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Refused</div>
+                            <div id="adviser-stat-refused" class="font-bold text-amber-300 text-sm mt-0.5">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Training + Auto Mode -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="rounded-lg border border-borderClr p-3 space-y-2">
+                            <div class="text-xs font-bold text-cyan-400">Train (fine-tune by hand)</div>
+                            <div class="text-xs">
+                                <label class="block text-gray-400 mb-1 font-semibold">Position dataset</label>
+                                <select id="adviser-dataset-select" class="w-full bg-darkBg border border-borderClr rounded px-2.5 py-2 text-white font-mono">
+                                    <option value="">Loading datasets...</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end gap-2 text-xs">
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Epochs</label>
+                                    <input id="adviser-train-epochs" type="number" min="1" max="100" value="12" class="w-20 bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <button id="btn-adviser-train" onclick="trainPositionAdviser()" class="px-3 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs">Train Adviser</button>
+                            </div>
+                            <div id="adviser-train-msg" class="text-[11px] text-textMuted"></div>
+                        </div>
+
+                        <div class="rounded-lg border border-purple-500/40 bg-purple-500/5 p-3 space-y-2">
+                            <div class="text-xs font-bold text-purple-300">✦ Auto Mode — find the best</div>
+                            <div class="text-[11px] text-textMuted">Sweeps learning rate × batch size × seed, keeps the lowest <strong>out-of-sample loss</strong> model and loads it. Losing weights are pruned.</div>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Epochs / trial</label>
+                                    <input id="adviser-tune-epochs" type="number" min="1" max="100" value="12" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Max trials</label>
+                                    <input id="adviser-tune-max" type="number" min="1" max="60" value="6" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Learning rates</label>
+                                    <input id="adviser-tune-lrs" type="text" value="5e-4, 1e-3, 2e-3" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Batch sizes</label>
+                                    <input id="adviser-tune-bs" type="text" value="64, 128, 256" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                            </div>
+                            <div class="text-xs">
+                                <label class="block text-gray-400 mb-1 font-semibold">Seeds</label>
+                                <input id="adviser-tune-seeds" type="text" value="42, 1337, 2024" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                            </div>
+                            <button id="btn-adviser-autotune" onclick="autoTunePositionAdviser()" class="w-full px-3 py-2 rounded bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs">▶ Auto-Tune &amp; Load Best</button>
+                            <div id="adviser-tune-msg" class="text-[11px] text-textMuted"></div>
+                        </div>
+                    </div>
+
+                    <!-- Trained models -->
+                    <div class="space-y-2">
+                        <div class="text-xs font-bold text-cyan-400">Trained Advisers</div>
+                        <div id="adviser-models-list" class="space-y-1.5 text-[11px]"></div>
+                    </div>
+
+                    <!-- Activation ladder -->
+                    <div class="space-y-2">
+                        <div class="text-xs font-bold text-cyan-400">Activation Ladder</div>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <button id="btn-adviser-disable" onclick="setAdviserActivation('DISABLED')" class="px-3 py-1.5 rounded border border-borderClr text-gray-300 hover:border-gray-500 font-bold">Disable</button>
+                            <button id="btn-adviser-paper" onclick="setAdviserActivation('PAPER')" class="px-3 py-1.5 rounded border border-amber-600/60 text-amber-300 font-bold">Paper (log only)</button>
+                            <button id="btn-adviser-live" onclick="setAdviserActivation('LIVE')" class="px-3 py-1.5 rounded border border-emerald-600/60 text-emerald-300 font-bold">Live (requires checks)</button>
+                        </div>
+                        <button id="btn-adviser-checks" onclick="runAdviserChecks()" class="px-3 py-1.5 rounded border border-borderClr text-gray-300 hover:border-cyan-600 text-xs font-bold">Run Broker &amp; Position Checks</button>
+                        <div id="adviser-checks-list" class="space-y-1 text-[11px]"></div>
+                    </div>
+
+                    <div id="adviser-error" class="hidden p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs"></div>
+                </div>
+
                 <!-- Adversarial Stress Test & Latency Profiling -->
                 <div id="studio-qa-panel" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Stress Testing -->
@@ -4561,6 +4670,7 @@
     })();
     </script>
     <script src="model_studio_ui.js?v=20260922a"></script>
+<script src="position_adviser_ui.js?v=20260922a"></script>
     <script src="tv_widget.js"></script>
 </body>
 </html>

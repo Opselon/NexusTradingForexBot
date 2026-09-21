@@ -452,3 +452,43 @@ export interface FineTuneModelResponse {
   scaler_path: string;
   sha256: string;
 }
+
+/* ----------------------- artifact locations ------------------------------ */
+/* GET /api/model-studio/artifact-locations — server-derived on-disk roots. */
+
+/** Known artifact roots the studio writes; keys match the server's map. */
+export type ArtifactLocationKey =
+  | "datasets"
+  | "position_datasets"
+  | "position_datasets_alt"
+  | "model_checkpoints"
+  | "training_datasets"
+  | "registry_database";
+
+export interface ArtifactLocationEntry {
+  absolute_path: string;
+  relative_path: string;
+  exists: boolean;
+  is_dir: boolean;
+  file_count: number;
+}
+
+export interface ArtifactLocationsResponse {
+  status: string;
+  repo_root: string;
+  separator?: string;
+  locations: Record<ArtifactLocationKey, ArtifactLocationEntry>;
+}
+
+/** Display metadata for each artifact root (legacy STUDIO_LOCATION_META). */
+export const ARTIFACT_LOCATION_META: Record<
+  ArtifactLocationKey,
+  { label: string; hint: string }
+> = {
+  datasets: { label: "Market Datasets", hint: "data/raw" },
+  position_datasets: { label: "Position Datasets", hint: "artifacts/datasets" },
+  position_datasets_alt: { label: "Position Datasets (data/positions)", hint: "data/positions" },
+  model_checkpoints: { label: "Model Checkpoints", hint: "artifacts/.../checkpoints" },
+  training_datasets: { label: "Training Datasets", hint: "artifacts/.../datasets" },
+  registry_database: { label: "SQLite Registry", hint: "artifacts/models.db" },
+};

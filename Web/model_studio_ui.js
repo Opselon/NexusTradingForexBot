@@ -94,7 +94,8 @@ function studioCopyFallback(value, done) {
 
 const STUDIO_LOCATION_META = {
     datasets: { label: 'Market Datasets', icon: 'fa-database', hint: 'data/raw' },
-    position_datasets: { label: 'Position Datasets', icon: 'fa-arrows-split-up-and-left', hint: 'data/positions' },
+    position_datasets: { label: 'Position Datasets', icon: 'fa-arrows-split-up-and-left', hint: 'artifacts/datasets' },
+    position_datasets_alt: { label: 'Position Datasets (data/positions)', icon: 'fa-arrows-split-up-and-left', hint: 'data/positions' },
     model_checkpoints: { label: 'Model Checkpoints', icon: 'fa-cube', hint: 'artifacts/.../checkpoints' },
     training_datasets: { label: 'Training Datasets', icon: 'fa-graduation-cap', hint: 'artifacts/.../datasets' },
     registry_database: { label: 'SQLite Registry', icon: 'fa-table', hint: 'artifacts/models.db' },
@@ -1262,6 +1263,10 @@ window.addEventListener('DOMContentLoaded', () => {
                 loadModelStudioOverview();
                 loadStudioArtifactLocations();
                 initStudioSubnav();
+                // Layer-2 Position Decision Adviser panel boot.
+                loadAdviserDatasets();
+                loadAdviserModels();
+                refreshAdviserStatus();
             }
         };
     }

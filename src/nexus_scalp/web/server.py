@@ -2768,6 +2768,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_model_studio_routes(app, _err, _log_err)
 
+    # POSITION DECISION ADVISER ROUTES (TASK-POSA-001): /api/position-adviser/*.
+    # Optional Layer-2 keep/close adviser. New router — deliberately separate
+    # from the model-studio routes. The service singleton it installs is the
+    # SAME instance the decide system reaches, so a UI activation is visible to
+    # the engine immediately. Default activation is DISABLED.
+    from nexus_scalp.web.position_adviser_routes import register_position_adviser_routes
+
+    register_position_adviser_routes(app)
+
     # REPLAY-ON-CHART session routes (CHG-0043, REPLAY_API v1): the chart's
     # operator surface for the REAL historical decision pipeline. Records
     # loader serves the LOCAL dataset cache only (no network, no MT5 on this

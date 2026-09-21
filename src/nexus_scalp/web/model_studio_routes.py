@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import threading
 import time
 import zipfile
@@ -60,7 +61,16 @@ def _repo_root() -> Path:
 # come from the operator UI / REST body, so they are confined to declared roots
 # (containment via Path.is_relative_to, never string prefix) and only ever READ.
 _DATASET_ROOTS_ENV = "NEXUS_MODEL_STUDIO_ROOTS"
-_DEFAULT_DATASET_ROOTS = ("data/raw", "data/processed", "data/positions", "data")
+# artifacts/datasets is the generator's real output root (position_replay
+# writes pos_ds_*.parquet there); without it the inventory — and therefore the
+# safe-path dataset selectors — cannot see the datasets it just produced.
+_DEFAULT_DATASET_ROOTS = (
+    "data/raw",
+    "data/processed",
+    "data/positions",
+    "artifacts/datasets",
+    "data",
+)
 
 
 def _allowed_dataset_roots() -> list[Path]:
@@ -84,11 +94,72 @@ def _allowed_dataset_roots() -> list[Path]:
     return roots
 
 
+_TIMEFRAME_GRANULARITY_ORDER = (
+    "M1",
+    "M3",
+    "M5",
+    "M15",
+    "M30",
+    "H1",
+    "H4",
+    "D1",
+    "W1",
+    "MN1",
+)
+_UNKNOWN_GRANULARITY_RANK = len(_TIMEFRAME_GRANULARITY_ORDER)
+_TIMEFRAME_SUFFIX_RE = re.compile(r"[_-](M1|M3|M5|M15|M30|H1|H4|D1|W1|MN1)$", re.IGNORECASE)
+_SOURCE_PRECEDENCE = (".mt5.", ".synthetic.", ".csv.")
+
+# Static: compiled once. No unbounded backtracking on a bounded alternation of
+# fixed literals, so this is linear in the filename length (CodeQL safe).
+_DATASET_NAME_SUFFIX_RE = re.compile(r"\.(parquet|csv)$", re.IGNORECASE)
+
+
+def _granularity_rank(filename: str) -> int:
+    """Finest timeframe first: M1=0 ... MN1=9, unknown suffix last.
+
+    The engine trades XAUUSD M1, so the operator's default selection must be
+    M1, not the lexicographic-first ``XAUUSD_D1``.
+    """
+    stem = _DATASET_NAME_SUFFIX_RE.sub("", filename)
+    m = _TIMEFRAME_SUFFIX_RE.search(stem)
+    if not m:
+        return _UNKNOWN_GRANULARITY_RANK
+    try:
+        return _TIMEFRAME_GRANULARITY_ORDER.index(m.group(1).upper())
+    except ValueError:
+        return _UNKNOWN_GRANULARITY_RANK
+
+
+def _source_rank(filename: str) -> int:
+    """Broker truth first: mt5 parquet beat synthetic beat derived CSV."""
+    lower = filename.lower()
+    for i, seg in enumerate(_SOURCE_PRECEDENCE):
+        if seg in lower:
+            return i
+    # A parquet with no source segment (legacy ``XAUUSD_M1.parquet``) still
+    # outranks the raw CSV sibling it was derived from.
+    return len(_SOURCE_PRECEDENCE) if lower.endswith(".parquet") else len(_SOURCE_PRECEDENCE) + 1
+
+
+def _dataset_sort_key(entry: tuple[str, str, Path]) -> tuple[int, int, str]:
+    """Granularity, then source, then filename — deterministic across OSes."""
+    name = entry[0]
+    return (_granularity_rank(name), _source_rank(name), name)
+
+
 def _dataset_candidates() -> list[tuple[str, str, Path]]:
     """Server-derived inventory of selectable dataset files: (name, relpath, path).
 
     The Path objects produced here are derived ONLY from REPO_ROOT and the root
     allowlist — never from request input — so downstream reads stay untainted.
+
+    The inventory is ranked GRANULARITY-FIRST (M1 first), not lexicographically:
+    ``sorted()`` puts ``XAUUSD_D1.parquet`` before ``XAUUSD_M1.parquet``, and
+    every UI's "first entry" default then binds the DAILY file. That is the
+    "select 1Min and it falls back to 1Day" defect; ranking at the source fixes
+    both consoles (legacy Web/ and React frontend/) with one change, instead of
+    duplicating the comparator per UI.
     """
     found: list[tuple[str, str, Path]] = []
     seen: set[Path] = set()
@@ -110,6 +181,7 @@ def _dataset_candidates() -> list[tuple[str, str, Path]]:
             except ValueError:
                 rel = str(real)
             found.append((real.name, rel, real))
+    found.sort(key=_dataset_sort_key)
     return found
 
 
@@ -1275,7 +1347,17 @@ def execute_download(req: ModelStudioDownloadRequest) -> dict[str, Any]:
 
     tf = req.timeframe.upper().strip()
     if tf not in ("M1", "M3", "M5", "M15"):
-        tf = "M1"
+        # A requested timeframe silently clamped to M1 is a silent reversion:
+        # the operator asked for one thing and the system stored another, and
+        # the generated position dataset then carries a wrong timeframe label.
+        # Fail loud instead — the UI surfaces this ``detail`` verbatim.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"timeframe '{req.timeframe}' is not supported. "
+                "Model Studio ingestion accepts only M1, M3, M5, M15."
+            ),
+        )
 
     # Whitelist-sanitize symbol and source to prevent path injection
     safe_symbol = re.sub(r"[^A-Za-z0-9_]", "", req.symbol.strip()).upper() or "XAUUSD"
@@ -1358,7 +1440,13 @@ def get_artifact_locations() -> dict[str, Any]:
 
     locations = {
         "datasets": _entry(root / "data" / "raw"),
-        "position_datasets": _entry(root / "data" / "positions"),
+        # The generator actually writes pos_ds_*.parquet to artifacts/datasets
+        # (position_replay._default_out_path), not data/positions. Report BOTH
+        # so the "Position Datasets EMPTY" indicator stops lying while 7 real
+        # datasets sit on disk, and keep data/positions for the allowlist that
+        # lets the operator place a dataset there deliberately.
+        "position_datasets": _entry(root / "artifacts" / "datasets"),
+        "position_datasets_alt": _entry(root / "data" / "positions"),
         "model_checkpoints": _entry(root / "artifacts" / "model_generation" / "checkpoints"),
         "training_datasets": _entry(root / "artifacts" / "model_generation" / "datasets"),
         "registry_database": _entry(root / "artifacts" / "models.db"),

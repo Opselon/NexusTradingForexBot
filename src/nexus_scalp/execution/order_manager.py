@@ -40,6 +40,10 @@ from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
+from nexus_scalp.position_adviser.integration import (
+    apply_advisory_to_hold_score,
+    build_position_state_for_adviser,
+)
 from nexus_scalp.execution.lifecycle import (
     PendingOrderLifecycle,
     TicketState,
@@ -588,6 +592,11 @@ class OrderLifecycleManager:
         # S6-escalation: hold-score state owner (dicts moved to
         # hold_score_ledger.HoldScoreLedger; compat properties below).
         self._hold_scores = HoldScoreLedger()
+        # TASK-POSA-001: optional Layer-2 Position Decision Adviser. Lazily
+        # resolved from the web-layer singleton; None while the API has never
+        # been touched. Activation defaults to DISABLED, so this never affects
+        # the hold/close decide path until an operator explicitly enables it.
+        self._position_adviser: Any = None
 
         # Throttling & spread tracking for dynamic hold score
         self._rolling_spreads: list[float] = []
@@ -678,6 +687,26 @@ class OrderLifecycleManager:
     def _ticket_state_store(self) -> TicketStateStore:
         """Composition seam for tests and extracted lifecycle modules."""
         return self._states
+
+    @property
+    def _adviser(self) -> Any:
+        """TASK-POSA-001: lazily resolve the shared Position Decision Adviser.
+
+        Resolved from the web-layer singleton so the UI and the decide system
+        always see the SAME instance (an activation in the UI is visible here
+        immediately). Returns None when the adviser was never installed, and
+        the caller treats None / disabled identically: no influence at all.
+        """
+        if self._position_adviser is None:
+            try:
+                from nexus_scalp.web.position_adviser_routes import (
+                    get_position_adviser_service,
+                )
+
+                self._position_adviser = get_position_adviser_service()
+            except Exception:
+                return None
+        return self._position_adviser
 
     # -----------------------------------------------------------------
     # P0 seam S7: pending-order lifecycle owner (composition root).
@@ -3389,6 +3418,40 @@ class OrderLifecycleManager:
             current_pnl_usd=pos.profit,
             base_hold_score=base_hold_score,
         )
+
+        # TASK-POSA-001: optional Layer-2 Position Decision Adviser. Applied
+        # AFTER the giveback safety override and BEFORE the tracker store, so
+        # the adviser can only ever LOWER an already-final score — never lift
+        # one, never extend a position, never weaken a protection verdict. When
+        # the adviser is DISABLED (the default) the score is stored unchanged
+        # and the decide path is byte-identical to its pre-adviser behaviour.
+        adviser = self._adviser
+        if adviser is not None and adviser.enabled:
+            try:
+                state = build_position_state_for_adviser(
+                    pos=pos,
+                    ticket=ticket,
+                    price_current=price_current,
+                    atr=atr,
+                    spread=spread,
+                    initial_risk_usd=float(self._initial_risks.get(ticket, 0.0) or 0.0),
+                    holding_duration_sec=0.0,
+                    signal_age=float(self._signal_ages.get(ticket, 0.0) or 0.0),
+                    model_probability=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
+                    model_confidence=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
+                )
+                hold_score, advisory = apply_advisory_to_hold_score(
+                    ticket=ticket, hold_score=hold_score, position_state=state, service=adviser
+                )
+                if advisory is not None:
+                    invalidate_reasons = list(invalidate_reasons) + [
+                        "POSITION_ADVISER("
+                        f"{advisory['action']},conf={advisory['confidence']:.4f},"
+                        f"adj={advisory['hold_score_adjustment']:.2f})"
+                    ]
+            except Exception as exc:  # fail closed; never break position management
+                logger.warning("[ADVISER] event=INTEGRATION_SKIP ticket=%s error=%s", ticket, exc)
+
         self._hold_score_tracker[ticket] = hold_score
 
         return hold_score, invalidate_reasons, base_hold_score
