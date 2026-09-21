@@ -51,6 +51,27 @@ from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserN
 
 logger = get_logger("nexus_scalp.position_adviser.service")
 
+#: Trusted containment root for adviser artifacts. Request-supplied paths are
+#: resolved and MUST land inside this root or the sink refuses them (BUG-270
+#: convention: containment at the sink, before any file-system/deserialize op).
+_ADVISER_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _contained_artifact_path(p: Path) -> Path | None:
+    """Resolve ``p`` and return it ONLY if it stays inside ``_ADVISER_ROOT``.
+
+    Returns ``None`` (never raises with the path in it) when the resolved path
+    escapes the containment root — the caller logs and rejects. This barrier
+    sits immediately before every sink (``is_file()``, ``torch.load``,
+    ``np.load``) so user-controlled values can never reach them uncontained.
+    """
+    root = _ADVISER_ROOT.resolve()
+    try:
+        p.resolve().relative_to(root)
+    except ValueError:
+        return None
+    return p.resolve()
+
 
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -219,6 +240,10 @@ class PositionAdviserService:
         model_id: str | None = None,
     ) -> dict[str, Any]:
         """Load an adviser checkpoint + scaler sidecar into memory, atomically."""
+        # CONTAINMENT BARRIER (BUG-270 convention): the request-supplied path is
+        # resolved and must land inside the repo root BEFORE any sink
+        # (is_file / torch.load / np.load) sees it. A rejected path is logged
+        # server-side and returned as a generic status — never echoed back.
         wp = Path(weights_path)
         sp = Path(scaler_path)
         # Normalise both: resolve handles the "relative to CWD" case AND makes
@@ -226,19 +251,29 @@ class PositionAdviserService:
         # previous `elif` skipped absolute-but-unresolved inputs.
         if not wp.is_absolute():
             wp = Path.cwd() / wp
-        wp = wp.resolve()
         if not sp.is_absolute():
             sp = Path.cwd() / sp
-        sp = sp.resolve()
+        wp_c = _contained_artifact_path(wp)
+        sp_c = _contained_artifact_path(sp)
+        if wp_c is None or sp_c is None:
+            logger.warning(
+                "[ADVISER] event=LOAD_REJECTED reason=path_outside_repo weights=%s scaler=%s",
+                wp,
+                sp,
+            )
+            return {"status": "REJECTED", "reason": "path rejected: outside repository root"}
+        wp = wp_c
+        sp = sp_c
         if not wp.is_file():
-            return {"status": "REJECTED", "reason": f"weights file not found: {wp}"}
+            return {"status": "REJECTED", "reason": "weights file not found"}
         if not sp.is_file():
-            return {"status": "REJECTED", "reason": f"scaler file not found: {sp}"}
+            return {"status": "REJECTED", "reason": "scaler file not found"}
 
         try:
             weights = torch.load(wp, map_location="cpu", weights_only=True)
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"failed to load weights: {exc}"}
+            logger.warning("[ADVISER] event=WEIGHTS_LOAD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "failed to load weights (see server logs)"}
 
         if not isinstance(weights, dict) or "net.0.weight" not in weights:
             return {
@@ -297,7 +332,8 @@ class PositionAdviserService:
                 feature_dim=ADVISER_FEATURE_DIM,
             )
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"failed to load scaler: {exc}"}
+            logger.warning("[ADVISER] event=SCALER_LOAD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "failed to load scaler (see server logs)"}
         if not scaler.is_ready():
             return {"status": "REJECTED", "reason": "scaler not ready (non-finite stats)"}
 
