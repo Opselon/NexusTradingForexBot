@@ -53,6 +53,7 @@ def _repo_root() -> Path:
     """
     return REPO_ROOT
 
+
 # Operator-configurable allowlist of roots a Model Studio request may READ from.
 # Mirrors provisioning_routes._allowed_import_roots: model-studio dataset paths
 # come from the operator UI / REST body, so they are confined to declared roots
@@ -74,9 +75,7 @@ def _allowed_dataset_roots() -> list[Path]:
             continue
         candidate = Path(cleaned).expanduser()
         resolved = (
-            candidate.resolve()
-            if candidate.is_absolute()
-            else (_repo_root() / candidate).resolve()
+            candidate.resolve() if candidate.is_absolute() else (_repo_root() / candidate).resolve()
         )
         if resolved not in seen:
             seen.add(resolved)
@@ -203,9 +202,7 @@ def _allowed_model_roots() -> list[Path]:
             continue
         candidate = Path(cleaned).expanduser()
         resolved = (
-            candidate.resolve()
-            if candidate.is_absolute()
-            else (_repo_root() / candidate).resolve()
+            candidate.resolve() if candidate.is_absolute() else (_repo_root() / candidate).resolve()
         )
         if resolved not in seen:
             seen.add(resolved)
@@ -252,10 +249,7 @@ def _safe_model_path(raw: str) -> Path | None:
     # inventory relpath uses os.sep while operator strings may not.
     normalized = expanded.replace("\\", "/")
     for model_id, name, rel, path in _model_candidates():
-        if (
-            expanded in (model_id, name, rel, str(path))
-            or normalized == rel.replace("\\", "/")
-        ):
+        if expanded in (model_id, name, rel, str(path)) or normalized == rel.replace("\\", "/"):
             return path
     return None
 
@@ -2130,7 +2124,11 @@ def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
             with torch.no_grad():
                 x = torch.zeros((1, dim), dtype=torch.float32)
                 out = model(x)
-                passed_smoke = out.shape == (1, 3) and bool(torch.all(torch.isfinite(out)).item())
+                # Width follows the resolved head (legacy 4-logit checkpoints
+                # emit 4 — WAIT is a policy state, not a label); finiteness is
+                # the real correctness predicate.
+                expected = (1, _resolve_head_classes(target_path, weights))
+                passed_smoke = out.shape == expected and bool(torch.all(torch.isfinite(out)).item())
                 checks.append(
                     {
                         "name": "SMOKE_INFERENCE",
