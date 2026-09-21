@@ -18,6 +18,7 @@ import contextlib
 import hashlib
 import json
 import math
+import os
 import threading
 import time
 import zipfile
@@ -1327,6 +1328,49 @@ def execute_download(req: ModelStudioDownloadRequest) -> dict[str, Any]:
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def get_artifact_locations() -> dict[str, Any]:
+    """Read-only map of the studio on-disk artifact roots (absolute + repo-relative).
+
+    The UI shows "where did this dataset/model actually land" for every artifact the
+    studio writes. Paths here are SERVER-DERIVED (resolved from the repo root, never
+    from request input) and are read-only: existence flags only, no file contents.
+    """
+    root = _repo_root()
+
+    def _rel(path: Path) -> str:
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            return str(path)
+
+    def _entry(path: Path) -> dict[str, Any]:
+        return {
+            "absolute_path": str(path),
+            "relative_path": _rel(path),
+            "exists": bool(path.exists()),
+            "is_dir": bool(path.is_dir()),
+            "file_count": (
+                sum(1 for _ in path.iterdir()) if path.is_dir() and path.exists() else 0
+            ),
+        }
+
+    locations = {
+        "datasets": _entry(root / "data" / "raw"),
+        "position_datasets": _entry(root / "data" / "positions"),
+        "model_checkpoints": _entry(root / "artifacts" / "model_generation" / "checkpoints"),
+        "training_datasets": _entry(root / "artifacts" / "model_generation" / "datasets"),
+        "registry_database": _entry(root / "artifacts" / "models.db"),
+    }
+
+    # Windows shells render backslash separators; the UI normalizes either way.
+    return {
+        "status": "OK",
+        "repo_root": str(root),
+        "separator": os.sep,
+        "locations": locations,
+    }
 
 
 def extract_dataset_features(
@@ -2643,3 +2687,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.post("/api/model-studio/models/drift-check")
     def route_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
         return execute_drift_check(req)
+
+    @app.get("/api/model-studio/artifact-locations")
+    def route_artifact_locations() -> dict[str, Any]:
+        return get_artifact_locations()

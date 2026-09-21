@@ -253,6 +253,39 @@ def test_api_benchmark_route(client: TestClient) -> None:
     assert data["latency_p50_ms"] > 0.0
 
 
+def test_api_artifact_locations_route(client: TestClient) -> None:
+    """GET /api/model-studio/artifact-locations resolves the on-disk roots.
+
+    The Neural Model Studio surfaces "where did this artifact actually land" for
+    every dataset/checkpoint/registry file it writes. The response is
+    server-derived (never from request input) and read-only, and must report a
+    repo_root the UI can shorten absolute paths against.
+    """
+    from nexus_scalp.web.model_studio_routes import _repo_root
+
+    resp = client.get("/api/model-studio/artifact-locations")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "OK"
+    assert data["repo_root"] == str(_repo_root())
+
+    locs = data["locations"]
+    # Every advertised root carries the path contract the UI renders.
+    for key in ("datasets", "model_checkpoints", "registry_database"):
+        entry = locs[key]
+        assert {"absolute_path", "relative_path", "exists", "is_dir", "file_count"} <= set(entry)
+        # Relative paths are repo-relative: no drive letter, no leading separator.
+        rel = str(entry["relative_path"])
+        assert not rel.startswith("/")
+        assert not rel.startswith("\\")
+        assert ":" not in rel
+
+    # The checkpoints root is a real directory in this checkout.
+    assert locs["model_checkpoints"]["exists"] is True
+    assert locs["model_checkpoints"]["is_dir"] is True
+    assert locs["model_checkpoints"]["file_count"] > 0
+
+
 # =============================================================================
 # CLI Commands Integration
 # =============================================================================
