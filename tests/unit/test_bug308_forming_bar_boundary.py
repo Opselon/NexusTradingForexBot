@@ -38,7 +38,10 @@ def _bar(ts: datetime, close: float, complete: bool = True) -> BarData:
 
 def _m1_window(now: datetime, n: int = 6) -> list[BarData]:
     """Broker-shaped window ending on the still-forming current minute."""
-    bars = [_bar(now.replace(second=0, microsecond=0) - timedelta(minutes=m), 2600.0 + m) for m in range(n - 1, 0, -1)]
+    bars = [
+        _bar(now.replace(second=0, microsecond=0) - timedelta(minutes=m), 2600.0 + m)
+        for m in range(n - 1, 0, -1)
+    ]
     bars.append(_bar(now.replace(second=0, microsecond=0), 2600.0, complete=False))
     return bars
 
@@ -111,7 +114,10 @@ def test_reseed_with_sealed_current_bar_clamps_future_anchor() -> None:
     unconditionally is the invariant the clamp protects: the anchor never
     points past the last completed bar's own minute."""
     agg = BarAggregator(SYMBOL, timeframe_minutes=1)
-    bars = [_bar(NOW.replace(second=0, microsecond=0) - timedelta(minutes=m), 2600.0 + m) for m in range(5, 0, -1)]
+    bars = [
+        _bar(NOW.replace(second=0, microsecond=0) - timedelta(minutes=m), 2600.0 + m)
+        for m in range(5, 0, -1)
+    ]
     bars.append(_bar(NOW.replace(second=0, microsecond=0), 2600.0, complete=True))
     agg.reseed(bars)
     last_completed = agg.get_completed_bars()[-1].timestamp
@@ -132,7 +138,10 @@ def test_reseed_clamps_a_real_future_anchor(monkeypatch: pytest.MonkeyPatch) -> 
         type("FakeDT", (), {"now": staticmethod(lambda tz=None: fixed_now)}),
     )
     agg = BarAggregator(SYMBOL, timeframe_minutes=1)
-    bars = [_bar(NOW.replace(second=0, microsecond=0) - timedelta(minutes=m), 2600.0 + m) for m in range(4, 0, -1)]
+    bars = [
+        _bar(NOW.replace(second=0, microsecond=0) - timedelta(minutes=m), 2600.0 + m)
+        for m in range(4, 0, -1)
+    ]
     bars.append(_bar(NOW.replace(second=0, microsecond=0), 2600.0, complete=True))
     agg.reseed(bars)
     assert agg._last_accepted_ts <= fixed_now
@@ -181,7 +190,9 @@ def test_stale_tick_before_reseed_is_still_dropped() -> None:
     agg.reseed(_m1_window(NOW))
     stale = NOW.replace(second=0, microsecond=0) - timedelta(minutes=10)
     volume_before = agg._volume
-    assert agg.process_tick(TickData(symbol=SYMBOL, timestamp=stale, bid=2590.0, ask=2590.2)) is None
+    assert (
+        agg.process_tick(TickData(symbol=SYMBOL, timestamp=stale, bid=2590.0, ask=2590.2)) is None
+    )
     assert agg._volume == volume_before
 
 

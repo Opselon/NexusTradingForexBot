@@ -27,6 +27,7 @@ from nexus_scalp.domain.models import (
     TickData,
     TradeOrder,
 )
+
 # BUG-308: the broker returns the still-forming current bar in the same payload
 # as its sealed history; marking it complete would hand reseed() a future anchor
 # (last_bar + 1m) and the out-of-order guard would drop every real tick of it.
