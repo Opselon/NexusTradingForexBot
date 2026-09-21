@@ -24,7 +24,6 @@
  */
 
 import type { ConnectionState, RealtimeStatus, WsTickPayload } from "@/types/realtime";
-import { isTickPayload } from "@/types/realtime";
 import type { EngineSnapshot } from "@/types/domain";
 import { runtimeConfig, ENDPOINTS, STORAGE_KEYS } from "./config";
 import { resolveToken } from "./auth";
@@ -32,6 +31,14 @@ import { coreEvents } from "./events";
 
 type Listener = (snapshot: EngineSnapshot) => void;
 type StatusListener = (status: RealtimeStatus) => void;
+
+/**
+ * Sections the backend deliberately omits from incremental `tick` frames
+ * (web/server.py `sse_telemetry_stream`): only the full `state` event carries
+ * them. Listed here so the merge can expire them instead of inheriting the
+ * last full snapshot's copies as if they were current.
+ */
+const TICK_DROPPED_SECTIONS = ["bars", "features", "predictions"] as const;
 
 function sseUrl(): string {
   // EventSource cannot send headers — the backend also accepts ?token=.
@@ -119,6 +126,8 @@ export class NseRealtimeClient {
   private watchdogTimer: number | null = null;
   private closedByUser = false;
   private hardFailures = 0;
+  /** Wall-clock of the last stream open — the CONNECTING watchdog anchor. */
+  private connectedAt: number | null = null;
   /** Names of the sections carried by the most recent accepted tick frame. */
   private lastTickSections: string[] = [];
 
@@ -166,10 +175,18 @@ export class NseRealtimeClient {
     // honest.
     this.watchdogTimer = window.setInterval(() => {
       if (this.closedByUser) return;
+      if (this.state !== "connected") return;
+      const reference =
+        this.lastMessageAt !== null
+          ? this.lastMessageAt
+          : // A connection that opened but never delivered a frame has no
+            // lastMessageAt — anchor to the open time, otherwise a silently
+            // dead stream would hold "CONNECTING" forever with no retry.
+            this.connectedAt;
+      if (reference === null) return;
       if (
-        this.state === "connected" &&
-        this.lastMessageAt !== null &&
-        Date.now() - this.lastMessageAt > runtimeConfig.timeouts.realtimeStaleMs + runtimeConfig.timeouts.realtimeHeartbeatGraceMs
+        Date.now() - reference >
+        runtimeConfig.timeouts.realtimeStaleMs + runtimeConfig.timeouts.realtimeHeartbeatGraceMs
       ) {
         this.reconnectNow();
       }
@@ -216,6 +233,7 @@ export class NseRealtimeClient {
     es.onopen = () => {
       this.reconnectAttempts = 0;
       this.hardFailures = 0;
+      this.connectedAt = Date.now();
       this.setState("connected");
     };
 
@@ -257,12 +275,27 @@ export class NseRealtimeClient {
     }
     this.lastMessageAt = Date.now();
 
-    if (isTick && isTickPayload(payload)) {
-      const { event: _e, ...sections } = payload;
-      this.snapshot = this.snapshot ? { ...this.snapshot, ...sections } : { ...emptySnapshot(), ...sections };
+    if (isTick) {
+      // Transport-level discrimination, not a payload field: the SSE route
+      // (web/server.py) labels frames with the SSE `event:` line only — the
+      // JSON body carries no `event` key, so isTickPayload() never matched
+      // and every incremental frame was silently dropped. Sections from a
+      // tick merge into the last full state; a tick arriving before any
+      // full state is merged onto an empty snapshot.
+      const sections = { ...payload };
+      // The backend OMITS bars/features/predictions from tick frames (only
+      // the full `state` event carries them). A shallow merge would keep the
+      // last full snapshot's lists forever, presenting data from a prior
+      // state as if it belonged to this version. Drop the sections this
+      // transport is known not to carry so the UI can fall back to its
+      // staleness presentation instead of showing stale lists as current.
+      for (const dropped of TICK_DROPPED_SECTIONS) delete (sections as Record<string, unknown>)[dropped];
+      this.snapshot = this.snapshot
+        ? { ...this.snapshot, ...sections }
+        : { ...emptySnapshot(), ...sections };
       this.lastTickSections = Object.keys(sections);
       coreEvents.publish("realtime:tick", { sections: this.lastTickSections, state_version: version ?? null });
-    } else if (!isTick) {
+    } else {
       this.snapshot = payload as EngineSnapshot;
     }
     const snap = this.snapshot;
