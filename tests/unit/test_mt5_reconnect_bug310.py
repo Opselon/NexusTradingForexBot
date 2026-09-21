@@ -27,6 +27,7 @@ import pytest
 @dataclass(frozen=True)
 class _TermInfo:
     """Minimal stand-in for mt5.terminal_info() (is_connected reads .connected)."""
+
     connected: bool
 
 
