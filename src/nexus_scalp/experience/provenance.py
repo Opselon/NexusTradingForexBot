@@ -35,6 +35,52 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.experience.provenance")
 
 
+#: ML-PHASE1 STEP-8: the canonical (schema id -> dimension) contract. A
+#: registration whose pair is not in this map (or disagrees with it) is
+#: rejected BEFORE the identity is stamped onto any experience.
+_SCHEMA_DIMENSIONS: dict[str, int] = {
+    "scalp_v1": 50,
+    "scalp_v2": 60,
+    "scalp_v3": 70,
+}
+
+
+def _validate_schema_dimension_pair(feature_schema_id: str, feature_dimension: int) -> None:
+    """Reject a self-inconsistent (schema id, dimension) registration.
+
+    A 70D (scalp_v3) model must never be recorded as 50D: the pair is
+    unresolvable by any audit/forensic reader. This guards FUTURE writes —
+    the 990 historical ``scalp_v3/50D`` rows are left untouched and are
+    superseded, never rewritten.
+    """
+    sid = str(feature_schema_id or "").strip()
+    if not sid:
+        raise ValueError(
+            "provenance: feature_schema_id is required to register a model "
+            "(a 70D inference must never be recorded without its schema identity)"
+        )
+    expected = _SCHEMA_DIMENSIONS.get(sid)
+    if expected is None:
+        # An unregistered schema is not necessarily wrong, but an UNKNOWN id
+        # with a dimension that collides with a registered one IS: it would
+        # let a 70D model adopt the 50D identity. Fail closed.
+        for known_sid, known_dim in _SCHEMA_DIMENSIONS.items():
+            if known_dim == int(feature_dimension) and known_sid != sid:
+                raise ValueError(
+                    f"provenance: unregistered schema id '{sid}' collides with the "
+                    f"canonical {known_sid}/{known_dim}D contract (declared "
+                    f"dimension {feature_dimension}) — refusing to stamp an "
+                    "ambiguous identity onto future experiences"
+                )
+        return
+    if int(feature_dimension) != expected:
+        raise ValueError(
+            f"provenance: schema '{sid}' is a {expected}D contract but "
+            f"feature_dimension={feature_dimension} was declared — a {expected}D "
+            "inference must never be recorded as a different dimension"
+        )
+
+
 def fingerprint_artifact(path: Path | str, chunk_size: int = 1 << 20) -> str:
     """
     SHA256 prefix of a model artifact, or "" when it does not exist.
@@ -94,7 +140,16 @@ class ModelRegistry:
         `replaced=True` marks a hot-swap/retrain event. Registering a new model
         NEVER modifies or deletes any experience: prior rows keep pointing at
         the provenance that actually produced them.
+
+        ML-PHASE1 STEP-8 (future-write contract): the declared
+        (feature_schema_id, feature_dimension) pair must be SELF-CONSISTENT
+        before it is stamped onto any future experience. A 70D (scalp_v3)
+        model may never be registered as 50D, which is the exact defect class
+        that left 990 historical audit_experiences rows reading
+        scalp_v3/50D — an impossible pair no reader can resolve. Historical
+        rows are NOT rewritten; this guards FUTURE writes only.
         """
+        _validate_schema_dimension_pair(feature_schema_id, feature_dimension)
         fingerprint = fingerprint_artifact(artifact_path)
         model_id = f"{model_role.lower()}_{feature_schema_id}_{feature_dimension}d"
         provenance = ModelProvenance(
