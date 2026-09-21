@@ -3260,6 +3260,16 @@ class LiveEngine:
                 active_positions=active_positions,
                 current_pos_count=current_pos_count,
             )
+            # BUG-311 (2026-09-22): feed the clean pass into the circuit. The
+            # breaker's own reset rule is deliberately conservative (a full
+            # error_window_sec must pass since the LAST error — one success
+            # never zeroes a flapping fault), but without ANY success signal
+            # the counter could never recover, so a transient 10-minute fault
+            # (e.g. an unimportable module being rewritten concurrently) left
+            # the engine permanently DEGRADED until an operator ran the CLI
+            # release command. record_success is a no-op until that window
+            # has fully elapsed, so this cannot mask an active fault.
+            self._hot_path_circuit.record_success(time.time())
         except Exception as pipeline_err:
             # =================================================================
             # HOT-PATH CONSECUTIVE-ERROR CIRCUIT BREAKER (P1, runtime-safety
@@ -3795,10 +3805,30 @@ class LiveEngine:
         regime_state: MarketRegimeState,
         proposal: TradeProposal,
     ) -> None:
-        """Delegate: 50D shadow recording (owned by ShadowRecorder, L1)."""
-        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+        """Delegate: 50D shadow recording (owned by ShadowRecorder, L1).
 
-        ShadowRecorder(self).record_shadow_decision(tick, fv, regime_state, proposal)
+        SHADOW-ISOLATION (BUG-311, 2026-09-22): the module import + recorder
+        construction live OUTSIDE the recorder's own internal try/except, so
+        an unimportable/half-written shadow_recorder module propagated
+        ImportError up through TickPipeline.run_post_policy_stages into the
+        hot-path consecutive-error circuit — 83 errors in 600s tripped the
+        breaker and blocked all NEW ENTRIES. A purely observational subsystem
+        (spec 17: "a shadow fault must NEVER affect production execution")
+        had taken down live trading. The whole delegation is isolated here,
+        at the seam, so no recorder-side import/construction fault can ever
+        reach the hot path. The recorder's body was already isolated; this
+        closes the gap the import itself left open.
+        """
+        try:
+            from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+
+            ShadowRecorder(self).record_shadow_decision(tick, fv, regime_state, proposal)
+        except Exception as exc:
+            logger.error(
+                "[SHADOW] event=DELEGATE_FAILURE (isolated; trading unaffected) "
+                "hook=record_shadow_decision error=%s",
+                exc,
+            )
 
     def _record_shadow70_observation(
         self,
@@ -3806,10 +3836,21 @@ class LiveEngine:
         fv: Any,
         proposal: TradeProposal,
     ) -> None:
-        """Delegate: 70D shadow observation (owned by ShadowRecorder, L1)."""
-        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+        """Delegate: 70D shadow observation (owned by ShadowRecorder, L1).
 
-        ShadowRecorder(self).record_shadow70_observation(tick, fv, proposal)
+        SHADOW-ISOLATION (BUG-311): see _record_shadow_decision — the import
+        is isolated here for the same reason (INV-018: observability only).
+        """
+        try:
+            from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+
+            ShadowRecorder(self).record_shadow70_observation(tick, fv, proposal)
+        except Exception as exc:
+            logger.error(
+                "[SHADOW] event=DELEGATE_FAILURE (isolated; trading unaffected) "
+                "hook=record_shadow70_observation error=%s",
+                exc,
+            )
 
     @staticmethod
     def _retrain_swap_decision(
