@@ -234,6 +234,13 @@ export class NseRealtimeClient {
       this.reconnectAttempts = 0;
       this.hardFailures = 0;
       this.connectedAt = Date.now();
+      // A new stream is a new server generation: an engine restart rewinds
+      // state_version (v18000 -> v900 on the observed restart), and the
+      // out-of-order guard would drop EVERY frame against the old baseline
+      // forever — the feed starves while REST polling keeps the header
+      // fresh (observed 2026-09-21). Monotonicity only holds WITHIN a
+      // stream, so re-baseline here; the guard still applies per stream.
+      this.lastVersion = null;
       this.setState("connected");
     };
 
