@@ -36,18 +36,21 @@
 - [ML-ARCH-003](tasks/ML-ARCH-003.md) — Temporal Multihead Attention vs Positional Encoding Ablation `[P2 | BLOCKED | AGENT-ML-ARCH]`
 
 ### STREAM E: TRAINING ENGINE & REGULARIZATION
-- [ML-TRAIN-001](tasks/ML-TRAIN-001.md) — Deterministic Training Engine, Seed Harness & AMP Precision `[P1 | BLOCKED | AGENT-ML-TRAIN]`
+- [ML-TRAIN-001](tasks/ML-TRAIN-001.md) — Deterministic Training Engine, Seed Harness & AMP Precision `[P1 | DONE | AGENT-ML-TRAIN]`
 - [ML-TRAIN-002](tasks/ML-TRAIN-002.md) — Loss Function Exploration: Class-Weighted Focal Loss vs Label Smoothing `[P2 | BLOCKED | AGENT-ML-TRAIN]`
+- [ML-TRAIN-003](tasks/ML-TRAIN-003.md) — Optimizer & Learning Rate Schedule Exploration (AdamW + Cosine Restarts) `[P2 | DONE | AGENT-ML-TRAIN]`
+- [ML-TRAIN-001](tasks/ML-TRAIN-001.md) — Deterministic Training Engine, Seed Harness & AMP Precision `[P1 | BLOCKED | AGENT-ML-TRAIN]`
+- [ML-TRAIN-002](tasks/ML-TRAIN-002.md) — Loss Function Exploration: Class-Weighted Focal Loss vs Label Smoothing `[P2 | DONE | AGENT-ML-TRAIN]`
 - [ML-TRAIN-003](tasks/ML-TRAIN-003.md) — Optimizer & Learning Rate Schedule Exploration (AdamW + Cosine Restarts) `[P2 | BLOCKED | AGENT-ML-TRAIN]`
 
 ### STREAM F: EXPERIMENTATION & ABLATION
-- [ML-EXP-001](tasks/ML-EXP-001.md) — Immutable Experiment Registry & Artifact Manifest Schema `[P1 | BLOCKED | AGENT-ML-EXP]`
+- [ML-EXP-001](tasks/ML-EXP-001.md) — Immutable Experiment Registry & Artifact Manifest Schema `[P1 | DONE | AGENT-ML-EXP]`
 - [ML-EXP-002](tasks/ML-EXP-002.md) — Architectural Ablation Harness: 2D MLP vs 3D TCN vs Attention `[P2 | BLOCKED | AGENT-ML-EXP | HUMAN DECISION]`
-- [ML-EXP-003](tasks/ML-EXP-003.md) — Bounded Hyperparameter Grid Search Runner `[P3 | BLOCKED | AGENT-ML-EXP]`
+- [ML-EXP-003](tasks/ML-EXP-003.md) — Bounded Hyperparameter Grid Search Runner `[P3 | DONE | AGENT-ML-EXP]`
 
 ### STREAM G: VALIDATION, OOS & ROBUSTNESS
 - [ML-VAL-001](tasks/ML-VAL-001.md) — Purged Walk-Forward Monotonicity & Embargo `[P1 | DONE | AGENT-ML-VALIDATION]`
-- [ML-VAL-002](tasks/ML-VAL-002.md) — Probability Calibration & Expected Calibration Error (ECE) Evaluation `[P2 | BLOCKED | AGENT-ML-VALIDATION]`
+- [ML-VAL-002](tasks/ML-VAL-002.md) — Probability Calibration & Expected Calibration Error (ECE) Evaluation `[P2 | DONE | AGENT-ML-VALIDATION]`
 - [ML-VAL-003](tasks/ML-VAL-003.md) — Robustness Stress Testing: Friction Clamp, Slippage & Spread Perturbation `[P2 | DONE | AGENT-ML-VALIDATION]`
 
 ### STREAM H: REAL-TIME INFERENCE

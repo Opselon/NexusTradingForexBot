@@ -233,7 +233,13 @@ class CandidateTrainer:
             torch.from_numpy(labels[train_idx]),
         )
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        # ML-TRAIN-003: optimizer + LR scheduler resolved from the central
+        # factory so the candidate path and the walk-forward path share ONE
+        # recipe (AdamW decoupled decay + cosine schedule with optional
+        # warmup). Replaces the hard-coded Adam(lr=1e-3); the factory call is
+        # deferred to after loader construction so steps_per_epoch is exact.
+        _opt_cfg = dict((experiment.training or {}).get("optimizer_config") or {})
+        _opt_cfg.setdefault("learning_rate", lr)
 
         # ------------------------------------------------------------------
         # Class imbalance recipe (mirrors WalkForwardTrainer production path):
@@ -278,6 +284,14 @@ class CandidateTrainer:
         )
         loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
 
+        from nexus_scalp.training.optimizers import build_optimizer_and_scheduler
+
+        _opt_bundle = build_optimizer_and_scheduler(
+            model, _opt_cfg, epochs=epochs_n, steps_per_epoch=len(loader)
+        )
+        optimizer = _opt_bundle["optimizer"]
+        _scheduler = _opt_bundle["scheduler"]
+
         model.train()
         for _ in range(epochs_n):
             for xb, yb in loader:
@@ -298,6 +312,12 @@ class CandidateTrainer:
                     }
                 torch.nn.utils.clip_grad_norm_(model.parameters(), MAX_GRAD_NORM)
                 optimizer.step()
+                if _scheduler is not None and _opt_bundle["scheduler_step_every_batch"]:
+                    _scheduler.step()
+
+            # per-EPOCH step for epoch-cadence schedules (cosine/plateau/...)
+            if _scheduler is not None and not _opt_bundle["scheduler_step_every_batch"]:
+                _scheduler.step()
 
         # eval on validation (SCALED with the train-fitted transform)
         model.eval()
@@ -364,7 +384,8 @@ class CandidateTrainer:
             dataset_id=experiment.dataset_id,
             random_seed=seed,
             training_config=experiment.training,
-            optimizer="adam",
+            optimizer=_opt_bundle["config"].get("optimizer", "adamw"),
+            scheduler=_opt_bundle["config"].get("scheduler", "none"),
             strategy_id=experiment.strategy_id,
             strategy_version=experiment.strategy_version,
             news_enabled=experiment.news_enabled,

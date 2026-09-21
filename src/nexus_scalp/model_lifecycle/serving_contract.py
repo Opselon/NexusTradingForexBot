@@ -60,7 +60,10 @@ class IncompatibleArtifactError(RuntimeError):
 
 
 def _read_meta(model_path: Path) -> dict[str, Any] | None:
-    for name in ("model.meta.json", "meta.json"):
+    # The shipped bundles persist their descriptor under ``manifest.json``
+    # (see model_lifecycle promotion: ``model_sha256`` / ``manifest_version`` /
+    # trained-tensor keys). Any of the supported names satisfies the contract.
+    for name in ("model.meta.json", "meta.json", "manifest.json"):
         p = (
             model_path.with_name(name)
             if name != "model.meta.json"

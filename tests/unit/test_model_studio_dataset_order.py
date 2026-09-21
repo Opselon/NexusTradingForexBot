@@ -61,6 +61,10 @@ class TestGranularityRanking:
         Before the fix the first entry was XAUUSD_D1.csv, which is what the
         selector bound whenever the operator had no prior selection.
         """
+        # data/raw is operator-owned and gitignored; a clean CI checkout has no
+        # real series, so the real-inventory assertion skips rather than fails.
+        if not Path("data/raw/XAUUSD_M1.csv").is_file():
+            pytest.skip("real M1 series not present (data/raw is gitignored)")
         names = [c[0] for c in _dataset_candidates()]
         assert names, "test inventory is empty"
         assert names[0].startswith("XAUUSD_M1"), f"M1 is not first; first is {names[0]}"
@@ -72,6 +76,10 @@ class TestGranularityRanking:
         safe-path selectors — could not see the datasets the generator had
         just written.
         """
+        # The pos_ds_* fixtures are generated local artifacts (gitignored); a
+        # clean CI checkout has none, so the inventory-coverage assertion skips.
+        if not any(Path("artifacts/datasets").glob("pos_ds_*.parquet")):
+            pytest.skip("no pos_ds_* position-dataset fixtures present")
         names = [c[0] for c in _dataset_candidates()]
         assert any(n.startswith("pos_ds_") for n in names), "no pos_ds_ datasets in inventory"
 

@@ -176,8 +176,16 @@ class AdviserScaler:
     def is_ready(self) -> bool:
         return self.feature_dim > 0 and bool(np.all(np.isfinite(self.std)))
 
-    def to_arrays(self) -> dict[str, np.ndarray]:
-        return {"mean": self.mean, "std": self.std, "dimension": np.int64(self.feature_dim)}
+    def to_arrays(self) -> dict[str, np.ndarray | np.integer]:
+        # ``dimension`` is intentionally a scalar (np.int64): np.savez wraps
+        # every value via np.asarray at the call site, so a scalar is stored
+        # as a 0-d array. The union keeps the declared type honest for both
+        # the array fields and the scalar dimension field.
+        return {
+            "mean": self.mean,
+            "std": self.std,
+            "dimension": np.int64(self.feature_dim),
+        }
 
 
 def _sha256_file(path: Path) -> str:
@@ -391,7 +399,17 @@ def train_position_adviser(
     manifest_path = out / f"{mid}.meta.json"
 
     torch.save(model.state_dict(), weights_path)
-    np.savez(scaler_path, **{k: np.asarray(v) for k, v in scaler.to_arrays().items()})
+    # np.savez's stub types the **kwargs of its first overload as bool, so a
+    # **dict unpacking is flagged regardless of the value type. Name the
+    # fields explicitly; asarray normalises the scalar dimension to a 0-d
+    # array exactly as the previous dict-comprehension did.
+    _sa = scaler.to_arrays()
+    np.savez(
+        scaler_path,
+        mean=np.asarray(_sa["mean"]),
+        std=np.asarray(_sa["std"]),
+        dimension=np.asarray(_sa["dimension"]),
+    )
     sha = _sha256_file(weights_path)
 
     manifest = {

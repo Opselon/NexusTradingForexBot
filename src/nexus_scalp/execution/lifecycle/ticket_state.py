@@ -51,6 +51,12 @@ class TicketState:
     entry_tp: float = 0.0
     entry_direction: str = ""
     entry_confidence: float = 0.0
+    # Seconds between the signal that proposed this ticket and its fill.
+    # Populated by the reconciliation layer; the Layer-2 position adviser
+    # consumes it (holding_duration / signal_age contract input). Defaults
+    # to 0.0, which the dict view reports as ABSENT — callers get their own
+    # default via .get(), exactly like the other entry-baseline fields.
+    entry_signal_age_sec: float = 0.0
     entry_regime: str = ""
     entry_reason: str = ""
     entry_timestamp: datetime | None = None

@@ -5,6 +5,13 @@
 # Release locks when done (remove entry or mark released).
 
 exclusive_locks:
+  - path: src/nexus_scalp/research/calibration.py
+    owner: AGENT-ML-VALIDATION
+    exclusive: true
+    scope: ML-VAL-002 probability calibration & ECE (released — task DONE, PR opened)
+    since: 2026-09-21
+    task: ML-VAL-002
+    expiry: 2026-09-21
   - path: tests/unit/test_robustness_stress_scenarios.py
     owner: AGENT-ML-VALIDATION
     exclusive: true
@@ -12,6 +19,28 @@ exclusive_locks:
     since: 2026-09-20
     task: ML-VAL-003
     expiry: 2026-09-21
+  - path: src/nexus_scalp/training/optimizers.py
+    owner: AGENT-ML-TRAIN
+    exclusive: true
+    scope: ML-TRAIN-003 optimizer & LR-scheduler factory (AdamW + Cosine Restarts) — RELEASED (task DONE, PR opened)
+    since: 2026-09-21
+    task: ML-TRAIN-003
+    expiry: 2026-09-21
+  - path: tests/unit/test_optimizers_schedulers.py
+    owner: AGENT-ML-TRAIN
+    exclusive: true
+    scope: ML-TRAIN-003 optimizer & scheduler test battery — RELEASED (task DONE, PR opened)
+    since: 2026-09-21
+    task: ML-TRAIN-003
+    expiry: 2026-09-21
+
+# Released this cycle:
+# - src/nexus_scalp/model_lab/experiment_registry.py (ML-EXP-001, AGENT-ML-EXP) — landed in PR #335
+# - scripts/experiments/hyperparam_search.py + tests/unit/test_hyperparam_search.py
+#   (ML-EXP-003, AGENT-ML-EXP) — branch agent/ml-exp/ml-exp-003
+# - tests/unit/test_robustness_stress_scenarios.py (ML-VAL-003, AGENT-ML-VALIDATION) — landed in PR #324
+# - src/nexus_scalp/training/optimizers.py + tests/unit/test_optimizers_schedulers.py
+#   (ML-TRAIN-003, AGENT-ML-TRAIN) — landed in PR #333
 
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)
