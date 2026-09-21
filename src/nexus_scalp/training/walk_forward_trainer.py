@@ -271,6 +271,13 @@ class WalkForwardTrainer:
         # mid-batch, so a cancel leaves the artifact path untouched).
         progress_cb: Any | None = None,
         cancel_event: Any | None = None,
+        # ML-TRAIN-003: optimizer + LR-scheduler recipe is resolved from the
+        # central training.optimizers factory. ``None`` preserves the exact
+        # historical default (AdamW lr=self.learning_rate, weight_decay=1e-4,
+        # CosineAnnealingLR T_max=self.epochs) — behavior is identical until a
+        # caller opts in. The factory centralizes step-cadence correctness for
+        # every schedule type (see step_scheduler).
+        optimizer_config: dict[str, Any] | None = None,
         # None retains historical auto-selection; explicit requests never fall back.
         backend: str | None = None,
     ) -> None:
@@ -296,6 +303,7 @@ class WalkForwardTrainer:
         # BUG-293 progress/cancel seams (None => dormant; never on the tick path).
         self._progress_cb = progress_cb
         self._cancel_event = cancel_event
+        self.optimizer_config = dict(optimizer_config) if optimizer_config else None
         _p = Path(artifact_save_path)
         assert_not_champion_path(
             _p,
@@ -357,6 +365,9 @@ class WalkForwardTrainer:
         # P0-2026-09-04: explicit dataset provenance binding (None = unbound;
         # non-smoke publications require a bound dataset via bind_dataset()).
         self._dataset_provenance: dict[str, Any] | None = None
+        # ML-TRAIN-003: last optimizer/scheduler recipe resolved by the factory;
+        # stamped into last_convergence_metadata for bundle auditability.
+        self._last_optimizer_recipe: dict[str, Any] | None = None
         if self.class_count not in (TRAINED_CLASS_COUNT, 4):
             raise ValueError(
                 f"Invalid class_count {self.class_count}: neural contract strictly requires "
@@ -703,11 +714,35 @@ class WalkForwardTrainer:
             train_loader = self._make_loader(train_ds, dyn_batch, shuffle=True)
             test_loader = self._make_loader(test_ds, dyn_batch, shuffle=False)
             model = self._create_model(num_features=len(feature_cols))
-            optimizer = torch.optim.AdamW(
-                model.parameters(), lr=self.learning_rate, weight_decay=1e-4
-            )
+            if self.optimizer_config:
+                from nexus_scalp.training.optimizers import build_optimizer_and_scheduler
+
+                _bundle = build_optimizer_and_scheduler(
+                    model,
+                    {**self.optimizer_config, "learning_rate": self.learning_rate},
+                    epochs=self.epochs,
+                    steps_per_epoch=len(train_loader),
+                )
+                optimizer = _bundle["optimizer"]
+                scheduler = _bundle["scheduler"] or torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=self.epochs
+                )
+                _opt_step_every_batch = bool(_bundle["scheduler_step_every_batch"])
+                self._last_optimizer_recipe = _bundle["config"]
+            else:
+                optimizer = torch.optim.AdamW(
+                    model.parameters(), lr=self.learning_rate, weight_decay=1e-4
+                )
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
+                _opt_step_every_batch = False
+                self._last_optimizer_recipe = {
+                    "optimizer": "adamw",
+                    "scheduler": "cosine",
+                    "learning_rate": self.learning_rate,
+                    "weight_decay": 1e-4,
+                    "epochs": self.epochs,
+                }
             criterion = nn.CrossEntropyLoss(weight=weights_tensor)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
             best_val_loss = float("inf")
             best_state: dict[str, torch.Tensor] | None = None
             patience_counter = 0
@@ -727,8 +762,15 @@ class WalkForwardTrainer:
             )
             for _epoch in range(self.epochs):
                 self._check_cancelled()
-                train_loss = self._train_one_epoch(model, train_loader, optimizer, criterion)
-                scheduler.step()
+                train_loss = self._train_one_epoch(
+                    model,
+                    train_loader,
+                    optimizer,
+                    criterion,
+                    scheduler=scheduler if _opt_step_every_batch else None,
+                )
+                if not _opt_step_every_batch:
+                    scheduler.step()
                 val_loss = self._evaluate_loss(model, test_loader, criterion)
                 epochs_run = _epoch + 1
                 fold_train_losses.append(float(train_loss))
@@ -840,24 +882,45 @@ class WalkForwardTrainer:
         full_ds = ScalpDataset(X_full, y, self.device)
         full_loader = self._make_loader(full_ds, final_batch, shuffle=True)
         final_model = self._create_model(num_features=len(feature_cols))
-        final_optimizer = torch.optim.AdamW(
-            final_model.parameters(),
-            lr=self.learning_rate,
-            weight_decay=1e-4,
-        )
+        if self.optimizer_config:
+            from nexus_scalp.training.optimizers import build_optimizer_and_scheduler
+
+            _fb = build_optimizer_and_scheduler(
+                final_model,
+                {**self.optimizer_config, "learning_rate": self.learning_rate},
+                epochs=self.epochs,
+                steps_per_epoch=len(full_loader),
+            )
+            final_optimizer = _fb["optimizer"]
+            final_scheduler = _fb["scheduler"] or torch.optim.lr_scheduler.CosineAnnealingLR(
+                final_optimizer, T_max=self.epochs
+            )
+            _final_step_every_batch = bool(_fb["scheduler_step_every_batch"])
+        else:
+            final_optimizer = torch.optim.AdamW(
+                final_model.parameters(),
+                lr=self.learning_rate,
+                weight_decay=1e-4,
+            )
+            final_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                final_optimizer,
+                T_max=self.epochs,
+            )
+            _final_step_every_batch = False
         final_criterion = nn.CrossEntropyLoss(weight=full_weights_tensor)
-        final_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            final_optimizer,
-            T_max=self.epochs,
-        )
         _final_t0 = time.monotonic()
         self._emit_stage_progress("train", "running", phase="final_fit", device=str(self.device))
         for _epoch in range(self.epochs):
             self._check_cancelled()
             final_loss = self._train_one_epoch(
-                final_model, full_loader, final_optimizer, final_criterion
+                final_model,
+                full_loader,
+                final_optimizer,
+                final_criterion,
+                scheduler=final_scheduler if _final_step_every_batch else None,
             )
-            final_scheduler.step()
+            if not _final_step_every_batch:
+                final_scheduler.step()
             self._emit_stage_progress(
                 "train",
                 "running",
@@ -895,6 +958,9 @@ class WalkForwardTrainer:
                 else None
             ),
             "seed": int(self.seed),
+            # ML-TRAIN-003: the resolved optimizer/scheduler recipe, so the
+            # bundle carries exactly what trained it (auditable + reproducible).
+            "optimizer_recipe": dict(self._last_optimizer_recipe or {}),
             "walk_forward_mode": self.walk_forward_mode,
             "fold_geometry": fold_geometry_meta,
             # Economic fold evidence: per-fold net/gross expectancy in R,
@@ -2072,6 +2138,7 @@ class WalkForwardTrainer:
         loader: DataLoader,
         optimizer: torch.optim.Optimizer,
         criterion: nn.Module,
+        scheduler: Any | None = None,
     ) -> float:
         model.train()
         total_loss = 0.0
@@ -2099,6 +2166,12 @@ class WalkForwardTrainer:
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+            # ML-TRAIN-003: per-batch scheduler step ONLY when the schedule was
+            # built with batch granularity (one_cycle / linear_decay /
+            # cosine_restarts + steps_per_epoch). Stepping an epoch-cadence
+            # schedule here would advance it 50x too fast and then warn.
+            if scheduler is not None:
+                scheduler.step()
             batch_rows = len(batch_y)
             total_loss += float(loss.item()) * batch_rows
             total_rows += batch_rows

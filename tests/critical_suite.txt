@@ -481,3 +481,5 @@ tests/unit/test_live_shadow_outcome_resolution.py
 tests/integration/test_mt5_adapter_parity.py
 # ML-TRAIN-001 (Deterministic Training Engine, Seed Harness & AMP Precision)
 tests/unit/test_training_determinism.py
+# ML-TRAIN-003 (Optimizer & LR-Schedule factory)
+tests/unit/test_optimizers_schedulers.py
