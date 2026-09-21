@@ -843,15 +843,150 @@ def verify_70d_artifact(
         dup_sid = int(frame.select(pl.col("sample_id").is_duplicated()).sum().item())
         checks["duplicate_sample_ids"] = dup_sid
     checks["rows"] = frame.height
+    # ML-PHASE1 STEP-3 news coverage gate: a 70D artifact must not pass merely
+    # for having 70 columns. The news family (feat_50..feat_59) is 10 REAL
+    # dimensions only when the news source had genuine temporal overlap with
+    # the bar window; otherwise the block is contract-neutral zeros
+    # (FEATURE_DISABLED) and the artifact is a base-50 dataset wearing a 70D
+    # label. This gate rejects that class of build by construction.
+    checks["news_coverage"] = _news_coverage_gate(frame, man)
     checks["ok"] = bool(
         checks["dimension_ok"]
         and checks["schema_id_ok"]
         and checks["schema_hash_ok"]
         and checks["all_finite"]
         and checks["all_in_range"]
+        and checks["news_coverage"]["ok"]
         and not checks.get("duplicate_timestamps", 0)
         and not checks.get("duplicate_sample_ids", 0)
         and checks.get("timestamp_sane", True)
     )
     checks["dataset_hash"] = man.get("dataset_hash", "")
     return checks
+
+
+# ---------------------------------------------------------------------------
+# ML-PHASE1 STEP-3: NEWS COVERAGE GATE
+# ---------------------------------------------------------------------------
+#: Indices of the news family inside the canonical 70D vector
+#: (features/schema_contract.py news_context_v1 fields 0..8 + news_state).
+_NEWS_FAMILY_INDICES: tuple[int, ...] = tuple(range(50, 60))
+
+#: Minimum fraction of evaluated rows whose news family must carry at least
+#: one non-neutral value for the block to count as REAL coverage. Neutral
+#: zeros are the documented contract default for bars before/after news
+#: coverage, so the threshold is intentionally well below 1.0 — it rejects
+#: only the zero-everywhere build (no temporal overlap at all).
+_NEWS_COVERAGE_MIN_NONZERO_RATIO: float = 0.02
+
+#: Minimum number of DISTINCT values the news family must show across the
+#: dataset. A single constant value (even non-zero) means every bar saw the
+#: identical frozen snapshot — not real per-bar news context.
+_NEWS_COVERAGE_MIN_DISTINCT: int = 3
+
+
+def _news_coverage_gate(
+    frame: pl.DataFrame, manifest: dict[str, Any] | None
+) -> dict[str, Any]:
+    """News-family validity check for a 70D (scalp_v3) artifact.
+
+    Rejects a 70D dataset whose NEWS dims 50..59 are constant/empty because
+    the news source had ZERO temporal overlap with the bar window. The
+    failure report carries the requested window, the actual news coverage
+    window, the overlap duration and the observed NEWS statistics so the
+    blocker is self-diagnosing (reusing the existing NONFINITE /
+    OUT_OF_RANGE gate vocabulary in the same ``rejected_rows`` shape).
+
+    A 70D artifact must not pass merely for having 70 columns.
+    """
+    news_cols = [f"feat_{i}" for i in _NEWS_FAMILY_INDICES]
+    missing = [c for c in news_cols if c not in frame.columns]
+    verdict: dict[str, Any] = {
+        "expected_dims": len(news_cols),
+        "present_dims": len(news_cols) - len(missing),
+        "ok": False,
+        "reason": "",
+    }
+    if missing:
+        verdict["reason"] = f"MISSING_NEWS_COLUMNS_{len(missing)}"
+        verdict["missing"] = missing
+        return verdict
+
+    sub = frame.select(news_cols).to_numpy().astype(np.float64)
+    finite = bool(np.isfinite(sub).all())
+    verdict["all_finite"] = finite
+    if not finite:
+        verdict["reason"] = "NONFINITE_NEWS_FEATURE"
+        verdict["rejected_rows"] = {
+            "NONFINITE_NEWS": int((~np.isfinite(sub).all(axis=1)).sum())
+        }
+        return verdict
+
+    # Real per-bar variation: non-neutral rows + distinct values across the
+    # family. A zero-everywhere block (no news overlap) fails BOTH.
+    per_row_nonzero = np.any(np.abs(sub) > 0.0, axis=1)
+    n_nonzero_rows = int(per_row_nonzero.sum())
+    verdict["rows"] = int(frame.height)
+    verdict["nonzero_rows"] = n_nonzero_rows
+    verdict["nonzero_ratio"] = round(n_nonzero_rows / max(1, frame.height), 6)
+    distinct = {float(v) for v in {*sub.ravel()}}
+    verdict["distinct_values"] = len(distinct)
+    per_dim: list[dict[str, Any]] = []
+    for idx, col in enumerate(news_cols):
+        colvals = sub[:, idx]
+        per_dim.append(
+            {
+                "column": col,
+                "index": _NEWS_FAMILY_INDICES[idx],
+                "min": float(colvals.min()),
+                "max": float(colvals.max()),
+                "mean": float(colvals.mean()),
+                "std": float(colvals.std()),
+                "nonzero": int((np.abs(colvals) > 0.0).sum()),
+                "unique": int(len({float(v) for v in colvals})),
+                "nan": int(np.isnan(colvals).sum()),
+            }
+        )
+    verdict["per_dim"] = per_dim
+
+    # Declared news provenance from the manifest (news_data_range is stamped
+    # by DatasetFactory when a real news frame was supplied; an empty range
+    # means no news frame was passed at all).
+    news_range = (manifest or {}).get("news_data_range") or {}
+    verdict["news_data_range"] = news_range
+    news_status = (manifest or {}).get("news_status") or ""
+    if not news_status:
+        # compute_70d_frame* stamp news_status per row; the manifest does not
+        # carry it, so infer the family state from the observed statistics.
+        news_status = (
+            "FEATURE_AVAILABLE" if n_nonzero_rows > 0 else "FEATURE_DISABLED"
+        )
+    verdict["news_status"] = news_status
+    temporal = (manifest or {}).get("temporal_range") or {}
+    verdict["requested_window"] = temporal
+
+    if n_nonzero_rows == 0:
+        verdict["reason"] = "NEWS_FAMILY_ALL_ZERO_NO_TEMPORAL_OVERLAP"
+        verdict["overlap_duration_sec"] = 0
+        verdict["detail"] = (
+            "news dims 50..59 are EXACTLY ZERO across every row: the news "
+            "source has no temporal overlap with the bar window, so the "
+            "10D news block is contract-neutral zeros (FEATURE_DISABLED) "
+            "and this artifact is a base-50 dataset wearing a 70D label"
+        )
+        return verdict
+    ratio = n_nonzero_rows / max(1, frame.height)
+    if ratio < _NEWS_COVERAGE_MIN_NONZERO_RATIO or len(distinct) < _NEWS_COVERAGE_MIN_DISTINCT:
+        verdict["reason"] = "NEWS_FAMILY_CONSTANT_NO_REAL_CONTEXT"
+        verdict["overlap_duration_sec"] = None
+        verdict["detail"] = (
+            f"news dims 50..59 are effectively constant (nonzero_ratio={ratio:.6f} "
+            f"< {_NEWS_COVERAGE_MIN_NONZERO_RATIO}, distinct={len(distinct)} "
+            f"< {_NEWS_COVERAGE_MIN_DISTINCT}): the news block carries no "
+            "per-bar variation and cannot be a real 10D feature family"
+        )
+        return verdict
+
+    verdict["reason"] = "FEATURE_AVAILABLE"
+    verdict["ok"] = True
+    return verdict
