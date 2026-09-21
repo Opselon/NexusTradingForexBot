@@ -1,7 +1,8 @@
 """Phase 0: aggregate the A/B/C ablation table + verdicts into one report."""
+
 from __future__ import annotations
+
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +23,12 @@ def main() -> None:
     import polars as pl
 
     df = pl.read_parquet(
-        REPO / "artifacts" / "model_generation" / "datasets" / "ds_70d_clean_m1_20260904" / "dataset.parquet"
+        REPO
+        / "artifacts"
+        / "model_generation"
+        / "datasets"
+        / "ds_70d_clean_m1_20260904"
+        / "dataset.parquet"
     )
     cols = [f"feat_{i}" for i in range(70)]
     ev = df.filter(pl.col("is_eval_sample") & ~pl.col("is_purged"))
@@ -57,26 +63,40 @@ def main() -> None:
             "holdout_accuracy": [r["holdout"]["accuracy"] for r in ok],
             "holdout_balanced_accuracy": [r["holdout"]["balanced_accuracy"] for r in ok],
             "holdout_macro_f1": [r["holdout"]["macro_f1"] for r in ok],
-            "majority_baseline_acc": ok[0]["holdout"]["majority_class_baseline_accuracy"] if ok else None,
+            "majority_baseline_acc": ok[0]["holdout"]["majority_class_baseline_accuracy"]
+            if ok
+            else None,
             "holdout_mean_max_prob": [r["holdout"]["mean_max_probability"] for r in ok],
             "holdout_max_confidence": [r["holdout"]["max_max_probability"] for r in ok],
             "pct_rows_over_gate": [r["holdout"]["pct_rows_over_effective_gate"] for r in ok],
             "pct_directional_over_gate": [r["holdout"]["pct_directional_over_gate"] for r in ok],
             "reachable_ceiling": [r["reachable_ceiling"]["max_directional_confidence"] for r in ok],
-            "holdout_mean_entropy_normalized": [r["holdout"]["mean_entropy_normalized"] for r in ok],
-            "mean_prob_per_class_seed42": ok[0]["holdout"]["mean_probability_per_class"] if ok else None,
-            "news_sensitivity": [(r.get("block_sensitivity") or {}).get("news_50_59_shift_1") for r in ok],
-            "liq_sensitivity": [(r.get("block_sensitivity") or {}).get("liquidity_60_69_shift_1") for r in ok],
+            "holdout_mean_entropy_normalized": [
+                r["holdout"]["mean_entropy_normalized"] for r in ok
+            ],
+            "mean_prob_per_class_seed42": ok[0]["holdout"]["mean_probability_per_class"]
+            if ok
+            else None,
+            "news_sensitivity": [
+                (r.get("block_sensitivity") or {}).get("news_50_59_shift_1") for r in ok
+            ],
+            "liq_sensitivity": [
+                (r.get("block_sensitivity") or {}).get("liquidity_60_69_shift_1") for r in ok
+            ],
             "oos_accuracy_pooled_folds": [r["pooled_oos"]["oos_accuracy"] for r in ok],
             "in_sample_accuracy": [r["in_sample"]["accuracy"] for r in ok],
             "holdout_pctiles_p50_p90_p99_max": [
-                {k: r["holdout"]["max_probability_percentiles"][k]
-                 for k in ("p50", "p90", "p99", "p100")}
+                {
+                    k: r["holdout"]["max_probability_percentiles"][k]
+                    for k in ("p50", "p90", "p99", "p100")
+                }
                 for r in ok
             ],
             "dir_conf_p50_p90_p99": [
-                {k: r["holdout"]["directional_confidence_stats"][k]
-                 for k in ("p50", "p90", "p99", "p100")}
+                {
+                    k: r["holdout"]["directional_confidence_stats"][k]
+                    for k in ("p50", "p90", "p99", "p100")
+                }
                 for r in ok
             ],
         }
@@ -86,7 +106,9 @@ def main() -> None:
 
     summary = {
         "effective_gate": 0.50,
-        "champion_reachable_ceiling": champ["reachable_ceiling_scaled_path"]["max_directional_confidence"],
+        "champion_reachable_ceiling": champ["reachable_ceiling_scaled_path"][
+            "max_directional_confidence"
+        ],
         "champion_ceiling_space": champ["reachable_ceiling_scaled_path"]["space"],
         "champion_classifier": {
             "shape": champ["classifier_weight_shape"],
@@ -105,8 +127,9 @@ def main() -> None:
         },
         "signal_ceiling": signal_ceiling,
         "news_coverage": news.get("coverage_vs_dataset_window"),
-        "news_quality": {k: v for k, v in (news.get("quality_diagnostics") or {}).items()
-                         if k != "per_field"},
+        "news_quality": {
+            k: v for k, v in (news.get("quality_diagnostics") or {}).items() if k != "per_field"
+        },
         "ablation_means": {
             n: {
                 "acc": mean(v["holdout_accuracy"]),

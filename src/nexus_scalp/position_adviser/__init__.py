@@ -10,7 +10,7 @@ Public surface:
     PositionAdviserNet       — the decision head itself.
 """
 
-from nexus_scalp.position_adviser.models import (
+from nexus_scalp.position_adviser.models import (  # noqa: F401 (public re-export)
     ADVISER_ACTIONS,
     AdviserActivation,
     PositionAdvisory,

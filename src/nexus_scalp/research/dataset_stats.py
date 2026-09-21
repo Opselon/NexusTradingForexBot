@@ -37,7 +37,7 @@ def per_dim_stats(arr: np.ndarray, cols: list[str], tag: str) -> list[dict]:
                 "std": round(float(np.std(finite)), 6) if finite.size else None,
                 "nonzero": int(np.count_nonzero(col)),
                 "nan": int(np.count_nonzero(~np.isfinite(col))),
-                "unique": int(len(np.unique(finite))) if finite.size else 0,
+                "unique": len(np.unique(finite)) if finite.size else 0,
                 "n": int(n),
                 "stage": tag,
             }
@@ -66,14 +66,14 @@ def main() -> None:
         trainable = trainable.filter(pl.col("label_evaluated"))
     if "is_purged" in trainable.columns:
         trainable = trainable.filter(~pl.col("is_purged"))
-    X_trainable = trainable.select(feat_cols).to_numpy().astype(np.float64)
+    trainable.select(feat_cols).to_numpy().astype(np.float64)
 
     # eval samples only (the label distribution the manifest reports)
     eval_mask = df["is_eval_sample"].to_list()
     if "is_purged" in df.columns:
         eval_mask = [e and not p for e, p in zip(eval_mask, df["is_purged"].to_list(), strict=True)]
     ev = df.filter(pl.Series(eval_mask))
-    X_eval = ev.select(feat_cols).to_numpy().astype(np.float64)
+    ev.select(feat_cols).to_numpy().astype(np.float64)
 
     # chronological split mirrors the trainer: 70% train / 30% OOS holdout
     dts = df["timestamp"].to_list()
@@ -87,7 +87,7 @@ def main() -> None:
     scaler_mean = tr_rows.mean(axis=0)
     scaler_std = np.maximum(tr_rows.std(axis=0), 1e-3)
     X_hold_scaled = np.clip((X_hold - scaler_mean) / scaler_std, -5.0, 5.0)
-    X_tr_scaled = np.clip((tr_rows - scaler_mean) / scaler_std, -5.0, 5.0)
+    np.clip((tr_rows - scaler_mean) / scaler_std, -5.0, 5.0)
 
     stats_all = per_dim_stats(X_all, feat_cols, "raw_full")
     stats_tr = per_dim_stats(tr_rows, feat_cols, "raw_train70")
@@ -98,7 +98,9 @@ def main() -> None:
 
     # production scaler stage: apply the SHIPPED 70d_liquidity scaler to the
     # holdout raw features (read-only load)
-    prod_npz = REPO / "artifacts" / "models" / "scalp" / "XAUUSD" / "70d_liquidity" / "model.scaler.npz"
+    prod_npz = (
+        REPO / "artifacts" / "models" / "scalp" / "XAUUSD" / "70d_liquidity" / "model.scaler.npz"
+    )
     if prod_npz.exists():
         z = np.load(prod_npz)
         pm, ps = z["mean"].reshape(1, -1), z["std"].reshape(1, -1)
@@ -131,7 +133,8 @@ def main() -> None:
             str(k): int(v) for k, v in df["label"].value_counts().sort("label").iter_rows()
         },
         "label_distribution_holdout30": {
-            str(int(k)): int(v) for k, v in zip(*np.unique(y_hold_all, return_counts=True), strict=True)
+            str(int(k)): int(v)
+            for k, v in zip(*np.unique(y_hold_all, return_counts=True), strict=True)
         },
         "purge_parameters": man.get("purge_parameters"),
         "contract": man.get("contract"),
@@ -143,10 +146,16 @@ def main() -> None:
         "verification_gates": ver.get("gates"),
         "split_used_here": {
             "scheme": "chronological 70/30 by timestamp (train head / holdout tail)",
-            "train_rows": int(len(tr_idx)),
-            "holdout_rows": int(len(ho_idx)),
-            "train_ts_range": [str(df["timestamp"][int(tr_idx[0])]), str(df["timestamp"][int(tr_idx[-1])])],
-            "holdout_ts_range": [str(df["timestamp"][int(ho_idx[0])]), str(df["timestamp"][int(ho_idx[-1])])],
+            "train_rows": len(tr_idx),
+            "holdout_rows": len(ho_idx),
+            "train_ts_range": [
+                str(df["timestamp"][int(tr_idx[0])]),
+                str(df["timestamp"][int(tr_idx[-1])]),
+            ],
+            "holdout_ts_range": [
+                str(df["timestamp"][int(ho_idx[0])]),
+                str(df["timestamp"][int(ho_idx[-1])]),
+            ],
         },
         "prod_scaler_info": prod_scaler_info,
         "per_dim": {
@@ -203,15 +212,24 @@ def main() -> None:
             "mean": round(float(np.mean(arr)), 6),
             "std": round(float(np.std(arr)), 6),
             "nonzero": int(np.count_nonzero(arr)),
-            "unique": int(len(np.unique(arr))),
+            "unique": len(np.unique(arr)),
         }
     report["news_sidecar_columns_stats"] = news_side
 
-    (OUT / "dataset_stats.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+    (OUT / "dataset_stats.json").write_text(
+        json.dumps(report, indent=2, default=str), encoding="utf-8"
+    )
 
     # console digest
     print("dataset_id", report["dataset_id"], "sha", report["dataset_sha256"])
-    print("rows", report["rows_total"], "trainable", report["trainable_rows"], "eval", report["eval_rows_computed"])
+    print(
+        "rows",
+        report["rows_total"],
+        "trainable",
+        report["trainable_rows"],
+        "eval",
+        report["eval_rows_computed"],
+    )
     print("seq windows", report["sequence_windows"])
     print("labels(manifest)", report["label_distribution"])
     print("labels(all rows)", report["label_distribution_all_rows"])

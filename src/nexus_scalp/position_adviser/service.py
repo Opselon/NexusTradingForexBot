@@ -225,10 +225,10 @@ class PositionAdviserService:
         # an already-absolute path canonical (removes any '..' segments). The
         # previous `elif` skipped absolute-but-unresolved inputs.
         if not wp.is_absolute():
-            wp = (Path.cwd() / wp)
+            wp = Path.cwd() / wp
         wp = wp.resolve()
         if not sp.is_absolute():
-            sp = (Path.cwd() / sp)
+            sp = Path.cwd() / sp
         sp = sp.resolve()
         if not wp.is_file():
             return {"status": "REJECTED", "reason": f"weights file not found: {wp}"}

@@ -139,7 +139,7 @@ def apply_advisory_to_hold_score(
 
     max_pen = float(getattr(getattr(service, "config", None), "max_hold_score_penalty", 25.0))
     clamped = max(-max_pen, min(0.0, adj))
-    new_score = max(0, min(100, int(round(hold_score + clamped))))
+    new_score = max(0, min(100, round(hold_score + clamped)))
 
     if new_score == hold_score:
         return hold_score, advisory.to_dict()

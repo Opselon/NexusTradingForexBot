@@ -4,7 +4,9 @@ Random-search probe over the post-scaled space to find the MAX directional
 confidence the CURRENT champion artifact can emit, plus the exact scaled-input
 contract it applies. Read-only on the production artifact (load only).
 """
+
 from __future__ import annotations
+
 import json
 import sys
 from pathlib import Path
@@ -32,9 +34,14 @@ def read_live_gate() -> dict:
     try:
         con = sqlite3.connect(f"file:{LIVE_DB}?mode=ro", uri=True)
         con.execute("PRAGMA query_only=1")
-        for k in ("model.confidence_threshold", "algo.ai_zone_confidence_threshold",
-                  "algo.min_risk_reward_ratio", "model.liquidity_features_enabled",
-                  "model.model_artifact_path", "execution.mode"):
+        for k in (
+            "model.confidence_threshold",
+            "algo.ai_zone_confidence_threshold",
+            "algo.min_risk_reward_ratio",
+            "model.liquidity_features_enabled",
+            "model.model_artifact_path",
+            "execution.mode",
+        ):
             row = con.execute("select value from application_settings where key=?", (k,)).fetchone()
             out[k] = row[0] if row else None
         con.close()
@@ -100,8 +107,12 @@ def main() -> None:
             mp, am = probs.max(dim=-1)
             i = int(torch.argmax(mp))
             if float(mp[i]) > best["max_prob"]:
-                best = {"max_prob": float(mp[i]), "probs": probs[i].tolist(),
-                        "x": X[i].tolist(), "pred_class": int(am[i])}
+                best = {
+                    "max_prob": float(mp[i]),
+                    "probs": probs[i].tolist(),
+                    "x": X[i].tolist(),
+                    "pred_class": int(am[i]),
+                }
             j = int(torch.argmin(mp))
             if float(mp[j]) < worst["max_prob"]:
                 worst = {"max_prob": float(mp[j]), "probs": probs[j].tolist()}
@@ -129,8 +140,11 @@ def main() -> None:
         mp, am = probs.max(dim=-1)
         i = int(torch.argmax(mp))
         if float(mp[i]) > best_scaled["max_prob"]:
-            best_scaled = {"max_prob": float(mp[i]), "probs": probs[i].tolist(),
-                           "pred_class": int(am[i])}
+            best_scaled = {
+                "max_prob": float(mp[i]),
+                "probs": probs[i].tolist(),
+                "pred_class": int(am[i]),
+            }
     report["reachable_ceiling_scaled_path"] = {
         "space": "raw [-3,+3] -> shipped scaler -> clip [-5,+5]",
         "samples_drawn": 400 * 4000,
@@ -151,12 +165,24 @@ def main() -> None:
     (OUT / "champion_ceiling_report.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8"
     )
-    print(json.dumps({k: report[k] for k in
-                      ("classifier_weight_shape", "classifier_weight_absmean_per_class",
-                       "classifier_bias", "reachable_ceiling",
-                       "reachable_ceiling_scaled_path",
-                       "scaler_dims_std_le_1e-3", "live_runtime_gate",
-                       "effective_gate_components")}, indent=2))
+    print(
+        json.dumps(
+            {
+                k: report[k]
+                for k in (
+                    "classifier_weight_shape",
+                    "classifier_weight_absmean_per_class",
+                    "classifier_bias",
+                    "reachable_ceiling",
+                    "reachable_ceiling_scaled_path",
+                    "scaler_dims_std_le_1e-3",
+                    "live_runtime_gate",
+                    "effective_gate_components",
+                )
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -283,7 +283,7 @@ def train_position_adviser(
     y_all_str = eligible["optimal_action"].to_list()
     y_all = np.array([INDEX_BY_ACTION.get(s, -1) for s in y_all_str], dtype=np.int64)
     if (y_all < 0).any():
-        unknown = sorted({s for s, i in zip(y_all_str, y_all) if i < 0})
+        unknown = sorted({s for s, i in zip(y_all_str, y_all, strict=True) if i < 0})
         raise AdviserFeatureError(f"dataset contains labels outside {ADVISER_ACTIONS}: {unknown}")
 
     n_train = train_part.height
@@ -296,7 +296,7 @@ def train_position_adviser(
     y_oos_str = oos["optimal_action"].to_list()
     y_oos = np.array([INDEX_BY_ACTION.get(s, -1) for s in y_oos_str], dtype=np.int64)
     if (y_oos < 0).any():
-        unknown = sorted({s for s, i in zip(y_oos_str, y_oos) if i < 0})
+        unknown = sorted({s for s, i in zip(y_oos_str, y_oos, strict=True) if i < 0})
         raise AdviserFeatureError(f"OOS split has labels outside {ADVISER_ACTIONS}: {unknown}")
 
     # ---- 4. scaler fitted on TRAIN ONLY (no val/oos leakage) --------------

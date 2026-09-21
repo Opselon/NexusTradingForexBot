@@ -2,6 +2,7 @@
 training dataset, shipped scaler, shipped model tensors, model metadata,
 the live registry and the live inference assembly path. Read-only everywhere.
 """
+
 from __future__ import annotations
 
 import json
@@ -106,24 +107,29 @@ def main() -> None:
     try:
         con = sqlite3.connect(f"file:{REG_DB}?mode=ro", uri=True)
         con.execute("PRAGMA query_only=1")
-        cols = [d[0] for d in con.execute("select * from experience_model_registry limit 0").description]
+        cols = [
+            d[0] for d in con.execute("select * from experience_model_registry limit 0").description
+        ]
         report["experience_model_registry"] = [
-            dict(zip(cols, r))
+            dict(zip(cols, r, strict=False))
             for r in con.execute("select * from experience_model_registry")
         ]
-        cols2 = [d[0] for d in con.execute("select * from model_runtime_health limit 0").description]
+        cols2 = [
+            d[0] for d in con.execute("select * from model_runtime_health limit 0").description
+        ]
         report["model_runtime_health"] = [
-            dict(zip(cols2, r)) for r in con.execute("select * from model_runtime_health")
+            dict(zip(cols2, r, strict=False))
+            for r in con.execute("select * from model_runtime_health")
         ]
         report["audit_experiences_feature_dimension_counts"] = [
-            dict(zip(["feature_dimension", "n"], r))
+            dict(zip(["feature_dimension", "n"], r, strict=False))
             for r in con.execute(
                 "select feature_dimension, count(*) as n from audit_experiences "
                 "group by feature_dimension order by feature_dimension"
             )
         ]
         report["audit_experiences_schema_counts"] = [
-            dict(zip(["schema_id", "n"], r))
+            dict(zip(["schema_id", "n"], r, strict=False))
             for r in con.execute(
                 "select feature_schema_id as schema_id, count(*) as n from audit_experiences "
                 "group by feature_schema_id order by n desc"
@@ -162,7 +168,9 @@ def main() -> None:
 
     mismatches: list[str] = []
     if df_cols != [f"feat_{i}" for i in range(70)]:
-        mismatches.append(f"dataset feat columns not canonical 70 in index order (got {len(df_cols)})")
+        mismatches.append(
+            f"dataset feat columns not canonical 70 in index order (got {len(df_cols)})"
+        )
     if man.get("feature_schema_hash") != feature_schema_hash():
         mismatches.append("dataset manifest schema hash != canonical hash")
     if int(mean.shape[0]) != 70 or int(std.shape[0]) != 70:
