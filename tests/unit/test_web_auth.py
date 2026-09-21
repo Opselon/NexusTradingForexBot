@@ -152,9 +152,7 @@ def test_every_index_html_script_asset_has_a_serve_route():
     srcs = _index_html_script_srcs()
     if not srcs:
         pytest.skip("Web/index.html not shipped in this install")
-    routes = {
-        r.path for r in web_server.create_app().routes if getattr(r, "path", None)
-    }
+    routes = {r.path for r in web_server.create_app().routes if getattr(r, "path", None)}
     unrouted = sorted(s for s in srcs if s not in routes)
     assert not unrouted, (
         "These <script> assets have no serve route in web/server.py — the "
