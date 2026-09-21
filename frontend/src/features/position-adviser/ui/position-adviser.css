@@ -1,0 +1,1210 @@
+/**
+ * features/position-adviser/ui/position-adviser.css
+ *
+ * Layer-2 Position Decision Adviser (TASK-POSA-001) — operator console theme.
+ *
+ * Builds exclusively on the shared tokens in @/styles/theme.css (--bg,
+ * --bg-panel, --bg-inset, --border, --border-strong, --accent, --green,
+ * --red, --amber, --violet, --elevate-hi, the --elev-* scale …) so this panel
+ * is a first-class part of the console's existing visual language. No CSS
+ * framework and no extra runtime dependency (BUG-047 lineage); semantics stay
+ * backend-authoritative — colour encodes state, never a fabricated value.
+ *
+ * Namespace: .pa-* (position adviser) to prevent selector collisions.
+ *
+ * Responsive: layout reflows at 1180 / 900 / 720 / 480 px and every control
+ * keeps a 40px+ hit target on touch screens.
+ */
+
+/* ==========================================================================
+   Page container
+   ========================================================================== */
+.pa-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--panel-gap);
+  width: 100%;
+  max-width: 1420px;
+  margin: 0 auto;
+  padding: 4px 2px 48px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  animation: pageIn 0.18s ease-out;
+}
+
+/* ==========================================================================
+   Header hero
+   ========================================================================== */
+.pa-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(13, 19, 27, 0.96), rgba(19, 28, 39, 0.86));
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--elev-2), inset 0 1px 0 var(--elevate-hi);
+}
+
+.pa-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--violet), var(--green));
+  opacity: 0.85;
+}
+
+/* faint scales glyph in the corner — the panel is a balance/verdict surface */
+.pa-hero::after {
+  content: "⚖";
+  position: absolute;
+  right: -6px;
+  bottom: -22px;
+  font-size: 132px;
+  line-height: 1;
+  opacity: 0.045;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pa-hero-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.pa-scales-icon {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+  background: linear-gradient(135deg, rgba(65, 166, 242, 0.2), rgba(157, 123, 240, 0.25));
+  border: 1px solid rgba(65, 166, 242, 0.4);
+  box-shadow: 0 0 20px rgba(65, 166, 242, 0.22);
+}
+
+.pa-title-wrap {
+  min-width: 0;
+}
+
+.pa-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.pa-title-subtitle {
+  margin-top: 4px;
+  max-width: 74ch;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.pa-hero-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
+}
+
+/* the big activation word */
+.pa-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 16px;
+  border-radius: 9px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  border: 1px solid transparent;
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  box-shadow: inset 0 1px 0 var(--elevate-hi);
+  white-space: nowrap;
+}
+
+.pa-state .pa-state-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.pa-state.live {
+  background: var(--live-red-bg);
+  color: #ff938c;
+  border-color: rgba(242, 86, 77, 0.55);
+  box-shadow: 0 0 18px rgba(242, 86, 77, 0.28);
+  animation: livePulse 2.4s ease-in-out infinite;
+}
+
+.pa-state.live .pa-state-dot {
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+}
+
+.pa-state.paper {
+  background: var(--paper-blue-bg);
+  color: #86c8fa;
+  border-color: rgba(65, 166, 242, 0.45);
+}
+
+.pa-state.paper .pa-state-dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.pa-state.disabled .pa-state-dot {
+  background: var(--text-faint);
+}
+
+/* one-line meaning of the current rung */
+.pa-rung-help {
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   Panels (match the shell's .panel but keep the feature namespace so the
+   header layout can carry the activation-specific accent rail)
+   ========================================================================== */
+.pa-panel {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 40%), var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--elev-1);
+}
+
+.pa-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pa-panel-head .pa-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(65, 166, 242, 0.8);
+  flex-shrink: 0;
+}
+
+.pa-panel-head .pa-dot.violet {
+  background: var(--violet);
+  box-shadow: 0 0 6px rgba(157, 123, 240, 0.8);
+}
+
+.pa-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.pa-panel-sub {
+  width: 100%;
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.pa-panel-body {
+  padding: 14px 16px;
+}
+
+/* ==========================================================================
+   Activation ladder — a connected three-step rail
+   ========================================================================== */
+.pa-ladder {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pa-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 12px 40px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--sans);
+  text-align: left;
+  transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease, transform 0.1s ease;
+  min-height: 56px;
+}
+
+/* numbered rail node */
+.pa-step::before {
+  content: attr(data-step);
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-faint);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-strong);
+}
+
+/* connector to the next step */
+.pa-step::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -11px;
+  width: 12px;
+  height: 2px;
+  transform: translateY(-50%);
+  background: var(--border-strong);
+  z-index: 2;
+}
+
+.pa-step:last-child::after {
+  display: none;
+}
+
+.pa-step-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.pa-step-hint {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-faint);
+}
+
+.pa-step:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.pa-step:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* reached-but-not-current rungs */
+.pa-step.done {
+  border-color: rgba(65, 166, 242, 0.35);
+}
+
+.pa-step.done::before {
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.16);
+  border-color: rgba(65, 166, 242, 0.5);
+}
+
+/* the rung the adviser currently sits on */
+.pa-step.current {
+  border-color: var(--accent);
+  color: #fff;
+  background: linear-gradient(135deg, rgba(65, 166, 242, 0.14), rgba(65, 166, 242, 0.03));
+  box-shadow: inset 0 1px 0 var(--elevate-hi), 0 0 16px rgba(65, 166, 242, 0.14);
+}
+
+.pa-step.current::before {
+  color: #070a0f;
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 10px rgba(65, 166, 242, 0.6);
+}
+
+/* the LIVE rung only turns green once the prerequisite checks have passed */
+.pa-step.live-ready {
+  border-color: rgba(62, 207, 142, 0.45);
+}
+
+.pa-step.live-ready::before {
+  color: var(--green);
+  background: var(--green-dim);
+  border-color: rgba(62, 207, 142, 0.6);
+}
+
+.pa-step.live-ready:hover:not(:disabled) {
+  border-color: var(--green);
+}
+
+.pa-step-note {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+}
+
+/* check results */
+.pa-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pa-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+}
+
+.pa-check.ok {
+  border-color: rgba(62, 207, 142, 0.32);
+  background: linear-gradient(90deg, var(--green-dim), transparent 65%);
+}
+
+.pa-check.fail {
+  border-color: rgba(242, 86, 77, 0.35);
+  background: linear-gradient(90deg, var(--red-dim), transparent 65%);
+}
+
+.pa-check-mark {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pa-check.ok .pa-check-mark {
+  color: var(--green);
+  background: var(--green-dim);
+  border: 1px solid rgba(62, 207, 142, 0.45);
+}
+
+.pa-check.fail .pa-check-mark {
+  color: #ff938c;
+  background: var(--red-dim);
+  border: 1px solid rgba(242, 86, 77, 0.45);
+}
+
+.pa-check-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.pa-check-detail {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ==========================================================================
+   Metric deck
+   ========================================================================== */
+.pa-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pa-metric {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  transition: border-color 0.14s ease, transform 0.1s ease;
+  min-width: 0;
+}
+
+.pa-metric:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.pa-metric::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.3), transparent);
+}
+
+.pa-metric .k {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.pa-metric .v {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.pa-metric .v.dim {
+  color: var(--text-dim);
+}
+
+.pa-metric .v.good {
+  color: var(--green);
+}
+
+.pa-metric .s {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* ==========================================================================
+   Two-column workspace split
+   ========================================================================== */
+.pa-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: var(--panel-gap);
+  align-items: start;
+}
+
+/* ==========================================================================
+   Forms
+   ========================================================================== */
+.pa-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pa-field > label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.pa-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.pa-field-row .pa-field {
+  flex: 1 1 150px;
+}
+
+.pa-field-row .pa-field.narrow {
+  flex: 0 0 92px;
+}
+
+.pa-input,
+.pa-select {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  min-height: 38px; /* keeps a comfortable touch target */
+}
+
+.pa-input:focus,
+.pa-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.18);
+}
+
+.pa-input::placeholder {
+  color: var(--text-faint);
+}
+
+.pa-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* empty-dataset hint box (matches the shell's amber banner tone) */
+.pa-empty-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(235, 161, 63, 0.38);
+  background: var(--amber-dim);
+  color: var(--amber);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+.pa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.pa-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.pa-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.pa-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pa-btn-primary {
+  background: linear-gradient(135deg, var(--accent), #2b7ddb);
+  color: #04070b;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(65, 166, 242, 0.32);
+}
+
+.pa-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(65, 166, 242, 0.48);
+}
+
+.pa-btn-violet {
+  background: linear-gradient(135deg, var(--violet), #7c50e8);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(157, 123, 240, 0.32);
+}
+
+.pa-btn-violet:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(157, 123, 240, 0.48);
+}
+
+.pa-btn-ghost {
+  background: var(--bg-inset);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.pa-btn-ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* ==========================================================================
+   Inline notices
+   ========================================================================== */
+.pa-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+  animation: pageIn 0.16s ease-out;
+}
+
+.pa-notice .pa-notice-glyph {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-weight: 800;
+}
+
+.pa-notice.err {
+  background: var(--red-dim);
+  border-color: rgba(242, 86, 77, 0.42);
+  color: #ff938c;
+}
+
+.pa-notice.ok {
+  background: var(--green-dim);
+  border-color: rgba(62, 207, 142, 0.42);
+  color: var(--green);
+}
+
+.pa-notice.warn {
+  background: var(--amber-dim);
+  border-color: rgba(235, 161, 63, 0.42);
+  color: var(--amber);
+}
+
+/* ==========================================================================
+   Auto-tune results
+   ========================================================================== */
+.pa-winner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(157, 123, 240, 0.32);
+  background: linear-gradient(135deg, rgba(157, 123, 240, 0.08), rgba(10, 15, 22, 0.7));
+}
+
+.pa-winner-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.pa-winner-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+
+.pa-winner-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  word-break: break-all;
+}
+
+.pa-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.pa-facts .pa-fact b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* trial table */
+.pa-table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.pa-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.pa-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--bg-panel), #0b1119);
+}
+
+.pa-table td {
+  padding: var(--row-pad) 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pa-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.pa-table tbody tr:hover td {
+  background: var(--bg-panel-2);
+}
+
+.pa-table tbody tr.is-winner td {
+  background: rgba(157, 123, 240, 0.1);
+}
+
+.pa-table tbody tr.is-failed td {
+  color: #ff938c;
+}
+
+.pa-table td.mono-id {
+  color: var(--text);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   Model cards
+   ========================================================================== */
+.pa-models {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 10px;
+}
+
+.pa-model {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  transition: border-color 0.14s ease, transform 0.1s ease;
+}
+
+.pa-model:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.pa-model.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 0 var(--elevate-hi), 0 0 18px rgba(65, 166, 242, 0.14);
+}
+
+.pa-model-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pa-model-id {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  word-break: break-all;
+  min-width: 0;
+}
+
+.pa-model-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.pa-model-facts b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* OOS prediction distribution meter */
+.pa-dist {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pa-dist .pa-dist-lab {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.pa-dist-track {
+  display: flex;
+  height: 8px;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+}
+
+.pa-dist-seg {
+  height: 100%;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pa-dist-seg.keep {
+  background: linear-gradient(90deg, rgba(62, 207, 142, 0.55), var(--green));
+}
+
+.pa-dist-seg.close {
+  background: linear-gradient(90deg, rgba(242, 86, 77, 0.55), var(--red));
+}
+
+.pa-dist-seg.reduce {
+  background: linear-gradient(90deg, rgba(235, 161, 63, 0.55), var(--amber));
+}
+
+.pa-dist-seg.other {
+  background: linear-gradient(90deg, rgba(131, 152, 173, 0.4), var(--text-dim));
+}
+
+.pa-dist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.pa-dist-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+/* ==========================================================================
+   Advisory feed
+   ========================================================================== */
+.pa-feed {
+  display: flex;
+  flex-direction: column;
+}
+
+.pa-feed-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  animation: rowFlash 1.1s ease-out 1;
+}
+
+.pa-feed-item:last-child {
+  border-bottom: none;
+}
+
+.pa-feed-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pa-feed-ticket {
+  color: var(--text-dim);
+}
+
+.pa-feed-time {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.pa-feed-reason {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding-left: 2px;
+}
+
+/* confidence meter */
+.pa-conf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 118px;
+}
+
+.pa-conf-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+}
+
+.pa-conf-track i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.5), var(--accent));
+  transition: width 0.4s ease;
+}
+
+.pa-conf-val {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* actions row under the ladder (Run checks / Unload) */
+.pa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pa-btn-danger {
+  background: var(--bg-inset);
+  color: #ff938c;
+  border-color: rgba(242, 86, 77, 0.5);
+}
+
+.pa-btn-danger:hover:not(:disabled) {
+  border-color: var(--red);
+  background: var(--red-dim);
+}
+
+.pa-mono {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* hold-score adjustment tone in the advisory feed */
+.pa-hold-neg {
+  color: #ff938c;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.pa-hold-zero {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+@media (max-width: 1180px) {
+  .pa-split {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pa-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .pa-hero {
+    align-items: stretch;
+  }
+
+  .pa-hero-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .pa-title {
+    font-size: 15.5px;
+  }
+
+  /* ladder becomes vertical: connectors run down the left rail */
+  .pa-ladder {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-step::after {
+    top: auto;
+    bottom: -11px;
+    right: auto;
+    left: 21px;
+    width: 2px;
+    height: 12px;
+  }
+
+  .pa-step::before {
+    top: 12px;
+    transform: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .pa-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-grid-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-models {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-hero-left {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .pa-hero {
+    padding: 14px;
+  }
+
+  .pa-panel-body {
+    padding: 12px;
+  }
+
+  .pa-field-row .pa-field {
+    flex: 1 1 100%;
+  }
+
+  .pa-field-row .pa-field.narrow {
+    flex: 1 1 100%;
+  }
+
+  .pa-state {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* the newest feed rows stay readable on a narrow phone */
+  .pa-feed-top {
+    font-size: 10.5px;
+  }
+
+  .pa-feed-time {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .pa-title {
+    font-size: 14.5px;
+  }
+
+  .pa-step {
+    padding: 10px 12px 10px 38px;
+  }
+
+  .pa-table {
+    min-width: 440px;
+  }
+}
+
+/* honour the OS preference: the ladder/meter transitions are cosmetic */
+@media (prefers-reduced-motion: reduce) {
+  .pa-page,
+  .pa-step,
+  .pa-metric,
+  .pa-model,
+  .pa-btn,
+  .pa-notice,
+  .pa-feed-item {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

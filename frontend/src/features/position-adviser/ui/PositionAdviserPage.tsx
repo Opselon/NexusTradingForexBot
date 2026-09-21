@@ -12,6 +12,10 @@
  * activation as safe when a prerequisite check has not passed. LIVE is gated
  * behind real broker/position probes; a check that could not run is reported as
  * NOT PASSED, never silently green.
+ *
+ * Presentation only: every value on screen is backend-authoritative (status
+ * words, error `detail` strings, OOS metrics). Styled via ./position-adviser.css
+ * on the shared theme tokens — no CSS framework (BUG-047 lineage).
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -30,23 +34,64 @@ import type {
   AdviserAdvisoryDto,
 } from "../model";
 import { ACTIVATION_HELP, ACTIVATION_LADDER } from "../model";
+import "./position-adviser.css";
 
 const REFRESH_MS = 3000;
+
+/** Majority-class baseline is what any constant classifier scores; a model that
+ *  cannot beat it is shown BELOW BASELINE, never hidden. The server reports it
+ *  per-sweep; this is the fallback constant when the sweep value is absent. */
+const MAJORITY_BASELINE_FALLBACK = 0.682;
 
 function classNames(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
-function activationTone(a: string): string {
-  if (a === "LIVE") return "text-emerald-400";
-  if (a === "PAPER") return "text-amber-400";
-  return "text-slate-400";
+/** Per-rung state class for the big activation word + ladder highlight. */
+function stateClass(a: string): string {
+  if (a === "LIVE") return "live";
+  if (a === "PAPER") return "paper";
+  return "disabled";
 }
 
-function activationDot(a: string): string {
-  if (a === "LIVE") return "bg-emerald-400";
-  if (a === "PAPER") return "bg-amber-400";
-  return "bg-slate-600";
+/** Relative position on the ladder — rungs below the current one are "done". */
+function ladderIndex(a: string): number {
+  const i = ACTIVATION_LADDER.indexOf(a as AdviserActivation);
+  return i < 0 ? 0 : i;
+}
+
+/** OOS accuracy vs the majority-class baseline: never silently green. */
+function belowBaseline(m: AdviserModelDto, baseline: number | null): boolean {
+  const ref = baseline ?? MAJORITY_BASELINE_FALLBACK;
+  return m.oos_accuracy != null && m.oos_accuracy < ref;
+}
+
+type DistSeg = { key: string; pct: number };
+
+/** OOS prediction distribution -> stacked meter segments (percent of total). */
+function distSegments(dist: Record<string, number>): DistSeg[] {
+  const total = Object.values(dist).reduce((s, v) => s + (v || 0), 0);
+  if (total <= 0) return [];
+  return Object.entries(dist)
+    .filter(([, v]) => (v || 0) > 0)
+    .map(([k, v]) => ({ key: k.toUpperCase(), pct: ((v || 0) / total) * 100 }));
+}
+
+function distClass(key: string): string {
+  if (key === "KEEP") return "keep";
+  if (key === "CLOSE") return "close";
+  if (key === "REDUCE") return "reduce";
+  return "other";
+}
+
+function fmt(n: number | null | undefined, digits = 4): string {
+  return typeof n === "number" && Number.isFinite(n) ? n.toFixed(digits) : "--";
+}
+
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString();
 }
 
 export default function PositionAdviserPage(_props: ShellPageProps) {
@@ -60,6 +105,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [notice, setNotice] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
 
   // The generator writes pos_ds_*.parquet to artifacts/datasets; the operator
   // picks one here instead of a hardcoded path, so a newly generated M1
@@ -97,6 +143,8 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       // The backend stays the source of truth; show its message verbatim.
       const detail = (err as { detail?: string })?.detail ?? String(err);
       setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -156,6 +204,22 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
     },
     [checks, refresh],
   );
+
+  const onUnload = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const out = await positionAdviserApi.unload();
+      setNotice(out.message || "adviser unloaded; activation reset to DISABLED");
+      await refresh();
+    } catch (err) {
+      const detail = (err as { detail?: string })?.detail ?? String(err);
+      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+    } finally {
+      setBusy(false);
+    }
+  }, [refresh]);
 
   const onTrain = useCallback(async () => {
     if (!effectiveDataset) {
@@ -270,450 +334,583 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
 
   const activation = (status?.activation as string) || "DISABLED";
   const liveAvailable = checksAllPassed && Boolean(status?.ready);
-  const cur = ACTIVATION_LADDER.find((a) => a === activation) ?? "DISABLED";
+  const curIdx = ladderIndex(activation);
+  const tuneBaseline = tuneResult?.majority_baseline_accuracy ?? null;
+  const baselineRef = tuneBaseline ?? MAJORITY_BASELINE_FALLBACK;
 
   return (
-    <div className="space-y-5">
+    <div className="pa-page">
       {/* ---------------------------------------------------------- header */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <div className="flex items-center gap-2">
-          <span
-            className={classNames("h-2.5 w-2.5 rounded-full", activationDot(activation))}
-            aria-hidden
-          />
-          <h2 className="text-base font-bold text-white">Layer-2 Position Decision Adviser</h2>
-          <span className={classNames("text-xs font-extrabold uppercase", activationTone(activation))}>
-            {cur}
+      <header className="pa-hero">
+        <div className="pa-hero-left">
+          <span className="pa-scales-icon" aria-hidden="true">
+            ⚖
           </span>
-        </div>
-        <p className="mt-1 text-xs text-slate-400">
-          Optional, opt-in. When enabled it can only make a keep/close verdict MORE conservative —
-          it never opens, sizes, extends, or weakens a position. Default is DISABLED, so the decide
-          system runs exactly as before.
-        </p>
-        <div className="mt-3 text-xs text-slate-400">
-          {ACTIVATION_HELP[cur as AdviserActivation]}
-        </div>
-        {status?.last_error ? (
-          <div className="mt-2 rounded border border-rose-800 bg-rose-950/40 p-2 text-xs text-rose-300">
-            last adviser error: {String(status.last_error)}
+          <div className="pa-title-wrap">
+            <h2 className="pa-title">
+              Layer-2 Position Decision Adviser
+              <span className={classNames("pa-state", stateClass(activation))} title="current activation rung">
+                <span className="pa-state-dot" aria-hidden="true" />
+                {activation}
+              </span>
+            </h2>
+            <p className="pa-title-subtitle">
+              Optional, opt-in. When enabled it can only make a keep/close verdict MORE conservative —
+              it never opens, sizes, extends, or weakens a position. Default is DISABLED, so the decide
+              system runs exactly as before.
+            </p>
           </div>
-        ) : null}
-      </div>
+        </div>
+        <div className="pa-hero-right">
+          <div className="pa-rung-help">{ACTIVATION_HELP[activation as AdviserActivation]}</div>
+          {status?.last_error ? (
+            <div className="pa-notice err" role="alert">
+              <span className="pa-notice-glyph">!</span>
+              <span>last adviser error: {String(status.last_error)}</span>
+            </div>
+          ) : null}
+        </div>
+      </header>
 
       {error ? (
-        <div className="rounded border border-rose-800 bg-rose-950/40 p-3 text-xs text-rose-300">
-          {error}
+        <div className="pa-notice err" role="alert">
+          <span className="pa-notice-glyph">✕</span>
+          <span>{error}</span>
         </div>
       ) : null}
       {notice ? (
-        <div className="rounded border border-emerald-800 bg-emerald-950/30 p-3 text-xs text-emerald-300">
-          {notice}
+        <div className="pa-notice ok" role="status">
+          <span className="pa-notice-glyph">✓</span>
+          <span>{notice}</span>
         </div>
       ) : null}
 
       {/* ------------------------------------------------- activation ladder */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <div className="text-sm font-bold text-cyan-400">Activation Ladder</div>
-        <p className="mt-1 text-xs text-slate-400">
-          Each step must be verified with real broker/position checks before the next becomes
-          selectable. A LIVE activation that skips the checks is refused by the server.
-        </p>
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {ACTIVATION_LADDER.map((a) => {
-            const isCurrent = a === activation;
-            const disabled =
-              busy ||
-              isCurrent ||
-              (a === "LIVE" && !liveAvailable) ||
-              (a === "PAPER" && !status?.ready);
-            return (
-              <button
-                key={a}
-                type="button"
-                disabled={disabled}
-                onClick={() => void onActivate(a)}
-                className={classNames(
-                  "rounded border px-3 py-2 text-xs font-semibold transition",
-                  isCurrent
-                    ? "border-cyan-500 bg-cyan-950/40 text-cyan-300"
-                    : disabled
-                      ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
-                      : "border-slate-700 bg-slate-950 text-slate-200 hover:border-cyan-600 hover:text-white",
-                )}
-              >
-                {isCurrent ? "● " : ""}
-                {a}
-                {a === "LIVE" && !liveAvailable ? " (checks required)" : ""}
-              </button>
-            );
-          })}
+      <section className="pa-panel">
+        <div className="pa-panel-head">
+          <span className="pa-dot" aria-hidden="true" />
+          <span className="pa-panel-title">Activation Ladder</span>
+          <span className="pa-panel-sub">
+            Each step must be verified with real broker/position checks before the next becomes
+            selectable. A LIVE activation that skips the checks is refused by the server.
+          </span>
         </div>
-        <div className="mt-3">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void runChecks()}
-            className="rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-cyan-600 hover:text-white disabled:opacity-50"
-          >
-            {busy ? "Running…" : "Run Broker & Position Checks"}
-          </button>
-        </div>
-        {checks.length > 0 ? (
-          <ul className="mt-3 space-y-1 text-xs">
-            {checks.map((c) => (
-              <li key={c.name} className="flex items-start gap-2">
-                <span className={c.passed ? "text-emerald-400" : "text-rose-400"}>
-                  {c.passed ? "✓" : "✗"}
-                </span>
-                <span className="font-mono text-slate-300">{c.name}</span>
-                <span className="text-slate-500">— {c.detail}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-
-      {/* ----------------------------------------------------- live counters */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          { label: "Model", value: status?.model_id || "NONE" },
-          { label: "Feature dim", value: status?.feature_dim != null ? String(status.feature_dim) : "--" },
-          { label: "Applied", value: String(status?.applied_count ?? 0) },
-          { label: "Evaluated", value: String(status?.evaluated_count ?? 0) },
-        ].map((cell) => (
-          <div key={cell.label} className="rounded border border-slate-800 bg-slate-900/60 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">{cell.label}</div>
-            <div className="truncate text-sm font-bold text-white">{cell.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* ------------------------------------------------------ training row */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <div className="text-sm font-bold text-cyan-400">Build / Fine-Tune an Adviser</div>
-        <p className="mt-1 text-xs text-slate-400">
-          Trains on a generated Position dataset (KEEP / CLOSE / REDUCE labels). OOS accuracy is
-          measured on a held-out split that the trainer never fits — a model below the majority-class
-          baseline is reported as such, never hidden.
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-3 text-xs">
-          <div className="min-w-[240px] flex-1">
-            <label className="mb-1 block font-semibold text-slate-400">Position dataset</label>
-            {datasets.length > 0 ? (
-              <select
-                value={trainDataset}
-                onChange={(e) => setTrainDataset(e.target.value)}
-                className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-2 font-mono text-slate-300"
-              >
-                {datasets.map((d) => (
-                  <option key={d.path} value={d.path}>
-                    {d.name} {d.timeframe ? `(${d.timeframe})` : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="rounded border border-amber-800 bg-amber-950/30 px-2.5 py-2 font-mono text-amber-300">
-                No position datasets yet — generate one in the Neural Studio (M1/M5 source).
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="mb-1 block font-semibold text-slate-400">Epochs</label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={trainEpochs}
-              onChange={(e) => setTrainEpochs(parseInt(e.target.value, 10) || 12)}
-              className="w-24 rounded border border-slate-800 bg-slate-950 px-2 py-2 text-white"
-            />
-          </div>
-          <button
-            type="button"
-            disabled={busy || !effectiveDataset}
-            onClick={() => void onTrain()}
-            className="rounded border border-cyan-600 bg-cyan-950/40 px-4 py-2 font-semibold text-cyan-300 hover:bg-cyan-900/50 disabled:opacity-50"
-          >
-            {busy ? "Training…" : "Train Adviser"}
-          </button>
-        </div>
-      </div>
-
-      {/* ------------------------------------------------------ auto mode */}
-      <div className="rounded-lg border border-purple-800 bg-purple-950/20 p-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-purple-300">✦ Auto Mode — Find the Best Adviser</span>
-        </div>
-        <p className="mt-1 text-xs text-slate-400">
-          Runs a bounded grid sweep over learning rate, batch size and seed, then keeps the model
-          with the lowest <strong>out-of-sample loss</strong> — the only split the trainer never fits
-          or early-stops on — and loads it. Losing checkpoints are pruned; the winner and its real
-          OOS metrics are reported below. A sweep that cannot beat the majority-class baseline is
-          shown as such, never hidden.
-        </p>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 text-xs">
-          <div>
-            <label className="mb-1 block font-semibold text-slate-400">Epochs / trial</label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={tuneEpochs}
-              onChange={(e) => setTuneEpochs(parseInt(e.target.value, 10) || 12)}
-              className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-2 text-white"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block font-semibold text-slate-400">Max trials</label>
-            <input
-              type="number"
-              min={1}
-              max={60}
-              value={tuneMaxTrials}
-              onChange={(e) => setTuneMaxTrials(parseInt(e.target.value, 10) || 6)}
-              className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-2 text-white"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block font-semibold text-slate-400">Learning rates</label>
-            <input
-              type="text"
-              value={tuneLrs}
-              onChange={(e) => setTuneLrs(e.target.value)}
-              className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-2 font-mono text-white"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block font-semibold text-slate-400">Batch sizes</label>
-            <input
-              type="text"
-              value={tuneBatchSizes}
-              onChange={(e) => setTuneBatchSizes(e.target.value)}
-              className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-2 font-mono text-white"
-            />
-          </div>
-        </div>
-        <div className="mt-3 flex flex-wrap items-end gap-3 text-xs">
-          <div className="min-w-[200px] flex-1">
-            <label className="mb-1 block font-semibold text-slate-400">Seeds</label>
-            <input
-              type="text"
-              value={tuneSeeds}
-              onChange={(e) => setTuneSeeds(e.target.value)}
-              className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-2 font-mono text-white"
-            />
-          </div>
-          <button
-            type="button"
-            disabled={busy || !effectiveDataset}
-            onClick={() => void onAutoTune()}
-            className="rounded border border-purple-500 bg-purple-900/50 px-4 py-2 font-extrabold text-purple-200 hover:bg-purple-800/60 disabled:opacity-50"
-          >
-            {busy ? "Sweeping…" : "▶ Auto-Tune & Load Best"}
-          </button>
-        </div>
-
-        {tuneResult ? (
-          <div className="mt-4 space-y-3 rounded border border-slate-800 bg-slate-950/60 p-3 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold text-purple-300">Winner</span>
-              <span className="font-mono text-white">
-                {String(tuneResult.best.model_id ?? "--")}
-              </span>
-              {tuneResult.loaded ? (
-                <span className="rounded bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
-                  LOADED
-                </span>
-              ) : (
-                <span className="rounded bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
-                  NOT LOADED
-                </span>
-              )}
-              {tuneResult.beats_majority_baseline ? (
-                <span className="rounded bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
-                  BEATS BASELINE
-                </span>
-              ) : (
-                <span className="rounded bg-rose-950/60 px-1.5 py-0.5 text-[10px] font-bold text-rose-300">
-                  BELOW MAJORITY BASELINE
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-400">
-              <span>
-                OOS loss:{" "}
-                {typeof tuneResult.best.oos_loss === "number"
-                  ? tuneResult.best.oos_loss.toFixed(4)
-                  : "--"}
-              </span>
-              <span>
-                OOS acc:{" "}
-                {typeof tuneResult.best.oos_accuracy === "number"
-                  ? tuneResult.best.oos_accuracy.toFixed(4)
-                  : "--"}
-              </span>
-              <span>
-                majority baseline:{" "}
-                {tuneResult.majority_baseline_accuracy != null
-                  ? tuneResult.majority_baseline_accuracy.toFixed(4)
-                  : "--"}
-              </span>
-              <span>
-                lr: {String(tuneResult.best.learning_rate ?? "--")} · bs:{" "}
-                {String(tuneResult.best.batch_size ?? "--")} · seed:{" "}
-                {String(tuneResult.best.seed ?? "--")}
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-500">
-                    <th className="py-1 pr-3 font-bold">Trial</th>
-                    <th className="py-1 pr-3 font-bold">lr</th>
-                    <th className="py-1 pr-3 font-bold">bs</th>
-                    <th className="py-1 pr-3 font-bold">seed</th>
-                    <th className="py-1 pr-3 font-bold">OOS loss</th>
-                    <th className="py-1 font-bold">OOS acc</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tuneResult.trials.map((t) => (
-                    <tr key={t.model_id} className="border-b border-slate-900">
-                      <td className="py-1 pr-3 font-mono text-slate-300">
-                        {t.failed ? "✗ " : "· "}
-                        {t.model_id}
-                      </td>
-                      <td className="py-1 pr-3 font-mono text-slate-400">{t.learning_rate}</td>
-                      <td className="py-1 pr-3 font-mono text-slate-400">{t.batch_size}</td>
-                      <td className="py-1 pr-3 font-mono text-slate-400">{t.seed}</td>
-                      <td className="py-1 pr-3 font-mono text-slate-300">
-                        {t.failed ? "failed" : t.oos_loss != null ? t.oos_loss.toFixed(4) : "--"}
-                      </td>
-                      <td className="py-1 font-mono text-slate-300">
-                        {t.failed ? "—" : t.oos_accuracy != null ? t.oos_accuracy.toFixed(4) : "--"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {tuneResult.best.load_error ? (
-              <div className="rounded border border-amber-800 bg-amber-950/30 p-2 text-amber-300">
-                The sweep succeeded but loading the winner failed: {String(tuneResult.best.load_error)}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
-      {/* --------------------------------------------------------- models list */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <div className="text-sm font-bold text-cyan-400">Trained Advisers</div>
-        {models.length === 0 ? (
-          <div className="mt-2 text-xs text-slate-500">
-            No adviser checkpoints yet. Train one above — it lands in{" "}
-            <span className="font-mono">{status?.config?.artifact_dir ?? "artifacts/position_adviser"}</span>.
-          </div>
-        ) : (
-          <ul className="mt-2 divide-y divide-slate-800">
-            {models.map((m) => {
-              const isActive = m.model_id === activeModelId;
-              const belowBaseline = m.oos_accuracy != null && m.oos_accuracy < 0.682;
+        <div className="pa-panel-body">
+          <div className="pa-ladder">
+            {ACTIVATION_LADDER.map((a, i) => {
+              const isCurrent = a === activation;
+              const isDone = !isCurrent && i < curIdx;
+              const disabled =
+                busy ||
+                isCurrent ||
+                (a === "LIVE" && !liveAvailable) ||
+                (a === "PAPER" && !status?.ready);
+              const needsChecks = a === "LIVE" && !liveAvailable;
               return (
-                <li key={m.model_id} className="py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm text-white">{m.model_id}</span>
-                    {isActive ? (
-                      <span className="rounded bg-cyan-950/60 px-1.5 py-0.5 text-[10px] font-bold text-cyan-300">
-                        LOADED
-                      </span>
-                    ) : null}
-                    {belowBaseline ? (
-                      <span className="rounded bg-rose-950/50 px-1.5 py-0.5 text-[10px] font-bold text-rose-300">
-                        BELOW MAJORITY BASELINE
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-                    <span>OOS acc: {m.oos_accuracy != null ? m.oos_accuracy.toFixed(4) : "--"}</span>
-                    <span>OOS loss: {m.oos_loss != null ? m.oos_loss.toFixed(4) : "--"}</span>
-                    <span>val loss: {m.best_val_loss != null ? m.best_val_loss.toFixed(4) : "--"}</span>
-                    <span>train/oos: {m.train_rows ?? "--"}/{m.oos_rows ?? "--"}</span>
-                  </div>
-                  {m.oos_action_distribution &&
-                  Object.keys(m.oos_action_distribution).length > 0 ? (
-                    <div className="mt-1 text-xs text-slate-500">
-                      OOS predictions:{" "}
-                      {Object.entries(m.oos_action_distribution)
-                        .map(([k, v]) => `${k}=${v}`)
-                        .join(" · ")}
-                    </div>
+                <button
+                  key={a}
+                  type="button"
+                  data-step={i + 1}
+                  disabled={disabled}
+                  onClick={() => void onActivate(a)}
+                  className={classNames(
+                    "pa-step",
+                    isCurrent && "current",
+                    isDone && "done",
+                    a === "LIVE" && liveAvailable && "live-ready",
+                  )}
+                  aria-pressed={isCurrent}
+                >
+                  <span className="pa-step-name">{a}</span>
+                  <span className="pa-step-hint">{ACTIVATION_HELP[a].split(".")[0]}.</span>
+                  {needsChecks ? (
+                    <span className="pa-step-note">checks required</span>
+                  ) : isCurrent ? (
+                    <span className="pa-step-note">current</span>
                   ) : null}
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      disabled={busy || !m.has_scaler}
-                      onClick={() => void onLoad(m)}
-                      className="rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-cyan-600 hover:text-white disabled:opacity-50"
-                    >
-                      {m.has_scaler ? "Load into live memory" : "No scaler sidecar — load refused"}
-                    </button>
-                  </div>
-                </li>
+                </button>
               );
             })}
-          </ul>
-        )}
+          </div>
+          <div className="pa-actions">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runChecks()}
+              className="pa-btn pa-btn-ghost"
+            >
+              {busy ? "Running…" : "Run Broker & Position Checks"}
+            </button>
+            {status && Boolean(status.model_id) && activation !== "DISABLED" ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onUnload()}
+                className="pa-btn pa-btn-danger"
+                title="unload the in-memory adviser and reset activation to DISABLED"
+              >
+                Unload & Disable
+              </button>
+            ) : null}
+          </div>
+          {checks.length > 0 ? (
+            <ul className="pa-checks">
+              {checks.map((c) => (
+                <li key={c.name} className={classNames("pa-check", c.passed ? "ok" : "fail")}>
+                  <span className="pa-check-mark" aria-hidden="true">
+                    {c.passed ? "✓" : "✕"}
+                  </span>
+                  <span>
+                    <span className="pa-check-name">{c.name}</span>
+                    <span className="pa-check-detail"> — {c.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </section>
+
+      {/* ----------------------------------------------------- live counters */}
+      <div className="pa-metrics">
+        <div className="pa-metric">
+          <div className="k">Loaded model</div>
+          <div className={classNames("v", status?.model_id ? "" : "dim")}>
+            {status?.model_id || "NONE"}
+          </div>
+          <div className="s">weights sha {status?.weights_sha256 ? status.weights_sha256.slice(0, 12) : "—"}</div>
+        </div>
+        <div className="pa-metric">
+          <div className="k">Feature dim</div>
+          <div className="v">{status?.feature_dim != null ? String(status.feature_dim) : "--"}</div>
+          <div className="s">input width</div>
+        </div>
+        <div className="pa-metric">
+          <div className="k">Applied</div>
+          <div className={classNames("v", (status?.applied_count ?? 0) > 0 ? "good" : "dim")}>
+            {String(status?.applied_count ?? 0)}
+          </div>
+          <div className="s">hold-score penalties</div>
+        </div>
+        <div className="pa-metric">
+          <div className="k">Evaluated</div>
+          <div className="v">{String(status?.evaluated_count ?? 0)}</div>
+          <div className="s">refused: {String(status?.refused_count ?? 0)}</div>
+        </div>
       </div>
 
-      {/* ------------------------------------------------------ activity feed */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <div className="text-sm font-bold text-cyan-400">Live Advisories</div>
-        {advisories.length === 0 ? (
-          <div className="mt-2 text-xs text-slate-500">
-            No advisories yet. Enable PAPER to start computing them without touching the decide
-            system, then LIVE once the checks pass.
-          </div>
-        ) : (
-          <ul className="mt-2 divide-y divide-slate-800">
-            {advisories.map((a) => (
-              <li key={a.advisory_id} className="py-2.5">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-mono text-slate-400">#{a.ticket}</span>
-                  <span
-                    className={classNames(
-                      "rounded px-1.5 py-0.5 text-[10px] font-bold",
-                      a.action === "CLOSE"
-                        ? "bg-rose-950/60 text-rose-300"
-                        : a.action === "REDUCE"
-                          ? "bg-amber-950/60 text-amber-300"
-                          : "bg-emerald-950/60 text-emerald-300",
-                    )}
-                  >
-                    {a.action}
-                  </span>
-                  <span className="text-slate-400">conf {a.confidence.toFixed(4)}</span>
-                  <span
-                    className={a.hold_score_adjustment < 0 ? "text-rose-400" : "text-slate-500"}
-                  >
-                    hold adj {a.hold_score_adjustment.toFixed(2)}
-                  </span>
-                  <span
-                    className={a.applied ? "text-emerald-400" : "text-slate-600"}
-                  >
-                    {a.applied ? "APPLIED" : "logged only"}
-                  </span>
-                  <span className="ml-auto text-slate-600">{a.latency_ms.toFixed(2)} ms</span>
+      {loading ? (
+        <div className="skeleton-line" aria-hidden="true">
+          <div className="skeleton" style={{ height: 120 }} />
+          <div className="skeleton" style={{ height: 92, width: "72%" }} />
+          <div className="skeleton" style={{ height: 92, width: "58%" }} />
+        </div>
+      ) : (
+        <div className="pa-split">
+          {/* ------------------------------------------------------ training */}
+          <section className="pa-panel">
+            <div className="pa-panel-head">
+              <span className="pa-dot" aria-hidden="true" />
+              <span className="pa-panel-title">Build / Fine-Tune an Adviser</span>
+              <span className="pa-panel-sub">
+                Trains on a generated Position dataset (KEEP / CLOSE / REDUCE labels). OOS accuracy is
+                measured on a held-out split that the trainer never fits — a model below the
+                majority-class baseline is reported as such, never hidden.
+              </span>
+            </div>
+            <div className="pa-panel-body">
+              <div className="pa-form">
+                <div className="pa-field">
+                  <label htmlFor="pa-train-dataset">Position dataset</label>
+                  {datasets.length > 0 ? (
+                    <select
+                      id="pa-train-dataset"
+                      value={trainDataset}
+                      onChange={(e) => setTrainDataset(e.target.value)}
+                      className="pa-select"
+                    >
+                      {datasets.map((d) => (
+                        <option key={d.path} value={d.path}>
+                          {d.name} {d.timeframe ? `(${d.timeframe})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="pa-empty-input">
+                      <span>∅</span>
+                      <span>No position datasets yet — generate one in the Neural Studio (M1/M5 source).</span>
+                    </div>
+                  )}
                 </div>
-                {a.not_applied_reason ? (
-                  <div className="mt-0.5 text-[11px] text-slate-600">{a.not_applied_reason}</div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                <div className="pa-field-row">
+                  <div className="pa-field narrow">
+                    <label htmlFor="pa-train-epochs">Epochs</label>
+                    <input
+                      id="pa-train-epochs"
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={trainEpochs}
+                      onChange={(e) => setTrainEpochs(parseInt(e.target.value, 10) || 12)}
+                      className="pa-input"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy || !effectiveDataset}
+                    onClick={() => void onTrain()}
+                    className="pa-btn pa-btn-primary"
+                  >
+                    {busy ? "Training…" : "Train Adviser"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ------------------------------------------------------ auto mode */}
+          <section className="pa-panel">
+            <div className="pa-panel-head">
+              <span className="pa-dot violet" aria-hidden="true" />
+              <span className="pa-panel-title">✦ Auto Mode — Find the Best Adviser</span>
+              <span className="pa-panel-sub">
+                Runs a bounded grid sweep over learning rate, batch size and seed, then keeps the model
+                with the lowest <strong>out-of-sample loss</strong> — the only split the trainer never
+                fits or early-stops on — and loads it. Losing checkpoints are pruned; the winner and its
+                real OOS metrics are reported below. A sweep that cannot beat the majority-class
+                baseline is shown as such, never hidden.
+              </span>
+            </div>
+            <div className="pa-panel-body">
+              <div className="pa-grid-4">
+                <div className="pa-field">
+                  <label htmlFor="pa-tune-epochs">Epochs / trial</label>
+                  <input
+                    id="pa-tune-epochs"
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={tuneEpochs}
+                    onChange={(e) => setTuneEpochs(parseInt(e.target.value, 10) || 12)}
+                    className="pa-input"
+                  />
+                </div>
+                <div className="pa-field">
+                  <label htmlFor="pa-tune-trials">Max trials</label>
+                  <input
+                    id="pa-tune-trials"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={tuneMaxTrials}
+                    onChange={(e) => setTuneMaxTrials(parseInt(e.target.value, 10) || 6)}
+                    className="pa-input"
+                  />
+                </div>
+                <div className="pa-field">
+                  <label htmlFor="pa-tune-lrs">Learning rates</label>
+                  <input
+                    id="pa-tune-lrs"
+                    type="text"
+                    value={tuneLrs}
+                    onChange={(e) => setTuneLrs(e.target.value)}
+                    className="pa-input"
+                  />
+                </div>
+                <div className="pa-field">
+                  <label htmlFor="pa-tune-bs">Batch sizes</label>
+                  <input
+                    id="pa-tune-bs"
+                    type="text"
+                    value={tuneBatchSizes}
+                    onChange={(e) => setTuneBatchSizes(e.target.value)}
+                    className="pa-input"
+                  />
+                </div>
+              </div>
+              <div className="pa-field-row" style={{ marginTop: 14 }}>
+                <div className="pa-field">
+                  <label htmlFor="pa-tune-seeds">Seeds</label>
+                  <input
+                    id="pa-tune-seeds"
+                    type="text"
+                    value={tuneSeeds}
+                    onChange={(e) => setTuneSeeds(e.target.value)}
+                    className="pa-input"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={busy || !effectiveDataset}
+                  onClick={() => void onAutoTune()}
+                  className="pa-btn pa-btn-violet"
+                >
+                  {busy ? "Sweeping…" : "▶ Auto-Tune & Load Best"}
+                </button>
+              </div>
+
+              {tuneResult ? (
+                <div className="pa-winner">
+                  <div className="pa-winner-top">
+                    <span className="pa-winner-label">Winner</span>
+                    <span className="pa-winner-name">{String(tuneResult.best.model_id ?? "--")}</span>
+                    {tuneResult.loaded ? (
+                      <span className="badge good">LOADED</span>
+                    ) : (
+                      <span className="badge warn">NOT LOADED</span>
+                    )}
+                    {tuneResult.beats_majority_baseline ? (
+                      <span className="badge good">BEATS BASELINE</span>
+                    ) : (
+                      <span className="badge bad">BELOW MAJORITY BASELINE</span>
+                    )}
+                  </div>
+                  <div className="pa-facts">
+                    <span className="pa-fact">
+                      OOS loss <b>{fmt(tuneResult.best.oos_loss)}</b>
+                    </span>
+                    <span className="pa-fact">
+                      OOS acc <b>{fmt(tuneResult.best.oos_accuracy)}</b>
+                    </span>
+                    <span className="pa-fact">
+                      majority baseline <b>{fmt(tuneResult.majority_baseline_accuracy)}</b>
+                    </span>
+                    <span className="pa-fact">
+                      lr <b>{String(tuneResult.best.learning_rate ?? "--")}</b> · bs{" "}
+                      <b>{String(tuneResult.best.batch_size ?? "--")}</b> · seed{" "}
+                      <b>{String(tuneResult.best.seed ?? "--")}</b>
+                    </span>
+                  </div>
+                  <div className="pa-table-wrap">
+                    <table className="pa-table">
+                      <thead>
+                        <tr>
+                          <th>Trial</th>
+                          <th>lr</th>
+                          <th>bs</th>
+                          <th>seed</th>
+                          <th>OOS loss</th>
+                          <th>OOS acc</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tuneResult.trials.map((t) => {
+                          const isWinner = t.model_id === tuneResult.best.model_id;
+                          return (
+                            <tr
+                              key={t.model_id}
+                              className={classNames(
+                                isWinner && "is-winner",
+                                t.failed && "is-failed",
+                              )}
+                            >
+                              <td className="mono-id">
+                                {t.failed ? "✗ " : isWinner ? "★ " : "· "}
+                                {t.model_id}
+                              </td>
+                              <td>{t.learning_rate}</td>
+                              <td>{t.batch_size}</td>
+                              <td>{t.seed}</td>
+                              <td>{t.failed ? "failed" : fmt(t.oos_loss)}</td>
+                              <td>{t.failed ? "—" : fmt(t.oos_accuracy)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {tuneResult.best.load_error ? (
+                    <div className="pa-notice warn">
+                      <span className="pa-notice-glyph">!</span>
+                      <span>The sweep succeeded but loading the winner failed: {String(tuneResult.best.load_error)}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* --------------------------------------------------------- models list */}
+      <section className="pa-panel">
+        <div className="pa-panel-head">
+          <span className="pa-dot" aria-hidden="true" />
+          <span className="pa-panel-title">Trained Advisers</span>
+          <span className="pa-panel-sub">
+            Checkpoints in{" "}
+            <span className="pa-mono">{status?.config?.artifact_dir ?? "artifacts/position_adviser"}</span>{" "}
+            — the majority-class baseline is{" "}
+            <span className="pa-mono">{baselineRef.toFixed(4)}</span>; anything below it is flagged,
+            never hidden.
+          </span>
+        </div>
+        <div className="pa-panel-body">
+          {models.length === 0 ? (
+            <div className="pa-empty-input">
+              <span>∅</span>
+              <span>
+                No adviser checkpoints yet. Train one above — it lands in{" "}
+                {status?.config?.artifact_dir ?? "artifacts/position_adviser"}.
+              </span>
+            </div>
+          ) : (
+            <div className="pa-models">
+              {models.map((m) => {
+                const isActive = m.model_id === activeModelId;
+                const isBelow = belowBaseline(m, tuneBaseline);
+                const segs = distSegments(m.oos_action_distribution || {});
+                return (
+                  <div key={m.model_id} className={classNames("pa-model", isActive && "is-active")}>
+                    <div className="pa-model-top">
+                      <span className="pa-model-id">{m.model_id}</span>
+                      {isActive ? <span className="badge good">LOADED</span> : null}
+                      {isBelow ? <span className="badge bad">BELOW BASELINE</span> : null}
+                      {!m.has_scaler ? <span className="badge warn">NO SCALER</span> : null}
+                    </div>
+                    <div className="pa-model-facts">
+                      <span>
+                        OOS acc <b>{fmt(m.oos_accuracy)}</b>
+                      </span>
+                      <span>
+                        OOS loss <b>{fmt(m.oos_loss)}</b>
+                      </span>
+                      <span>
+                        val loss <b>{fmt(m.best_val_loss)}</b>
+                      </span>
+                      <span>
+                        train/oos <b>{m.train_rows ?? "--"}/{m.oos_rows ?? "--"}</b>
+                      </span>
+                      <span>
+                        epochs <b>{m.epochs ?? "--"}</b>
+                      </span>
+                      {m.created_at ? <span title={m.created_at}>{fmtTime(m.created_at)}</span> : null}
+                    </div>
+                    {segs.length > 0 ? (
+                      <div className="pa-dist">
+                        <span className="pa-dist-lab">OOS predictions</span>
+                        <span className="pa-dist-track">
+                          {segs.map((s) => (
+                            <span
+                              key={s.key}
+                              className={classNames("pa-dist-seg", distClass(s.key))}
+                              style={{ width: `${s.pct}%` }}
+                              title={`${s.key}: ${s.pct.toFixed(1)}%`}
+                            />
+                          ))}
+                        </span>
+                        <span className="pa-dist-legend">
+                          {segs.map((s) => (
+                            <span key={s.key}>
+                              <i className={distClass(s.key)} />
+                              {s.key} {s.pct.toFixed(0)}%
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    ) : null}
+                    <div>
+                      <button
+                        type="button"
+                        disabled={busy || !m.has_scaler}
+                        onClick={() => void onLoad(m)}
+                        className="pa-btn pa-btn-ghost"
+                      >
+                        {m.has_scaler ? "Load into live memory" : "No scaler sidecar — load refused"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------ activity feed */}
+      <section className="pa-panel">
+        <div className="pa-panel-head">
+          <span className="pa-dot" aria-hidden="true" />
+          <span className="pa-panel-title">Live Advisories</span>
+          <span className="pa-panel-sub">
+            Enable PAPER to start computing them without touching the decide system, then LIVE once the
+            checks pass. {advisories.length > 0 ? `most recent ${advisories.length} shown` : ""}
+          </span>
+        </div>
+        <div className="pa-panel-body">
+          {advisories.length === 0 ? (
+            <div className="pa-empty-input">
+              <span>∅</span>
+              <span>
+                No advisories yet. Enable PAPER to start computing them without touching the decide
+                system, then LIVE once the checks pass.
+              </span>
+            </div>
+          ) : (
+            <div className="pa-feed">
+              {advisories.map((a) => {
+                const dist = distSegments(a.probabilities || {});
+                return (
+                  <div key={a.advisory_id} className="pa-feed-item">
+                    <div className="pa-feed-top">
+                      <span className="pa-feed-ticket">#{a.ticket}</span>
+                      <span
+                        className={classNames(
+                          "badge",
+                          a.action === "CLOSE"
+                            ? "bad"
+                            : a.action === "REDUCE"
+                              ? "warn"
+                              : "good",
+                        )}
+                      >
+                        {a.action}
+                      </span>
+                      <span className="pa-conf" title="adviser confidence">
+                        <span className="pa-conf-track">
+                          <i style={{ width: `${Math.max(0, Math.min(1, a.confidence)) * 100}%` }} />
+                        </span>
+                        <span className="pa-conf-val">{a.confidence.toFixed(3)}</span>
+                      </span>
+                      <span
+                        className={a.hold_score_adjustment < 0 ? "pa-hold-neg" : "pa-hold-zero"}
+                      >
+                        hold adj {a.hold_score_adjustment.toFixed(2)}
+                      </span>
+                      <span
+                        className={classNames(
+                          "badge",
+                          a.applied ? "good" : "neutral",
+                        )}
+                      >
+                        {a.applied ? "APPLIED" : "LOGGED ONLY"}
+                      </span>
+                      <span className="pa-feed-time">
+                        {a.latency_ms.toFixed(2)} ms · {fmtTime(a.evaluated_at)}
+                      </span>
+                    </div>
+                    {dist.length > 0 ? (
+                      <span className="pa-dist-track" style={{ height: 4 }}>
+                        {dist.map((s) => (
+                          <span
+                            key={s.key}
+                            className={classNames("pa-dist-seg", distClass(s.key))}
+                            style={{ width: `${s.pct}%` }}
+                            title={`${s.key}: ${s.pct.toFixed(1)}%`}
+                          />
+                        ))}
+                      </span>
+                    ) : null}
+                    {a.not_applied_reason ? (
+                      <div className="pa-feed-reason">{a.not_applied_reason}</div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
