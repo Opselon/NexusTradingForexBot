@@ -191,20 +191,51 @@ def model_identity(request: Request) -> Any:
     bundle = getattr(engine, "_bundle", None)
     if bundle is None:
         return ok(request, {"available": False, "reason": "no model bundle loaded"})
-    manifest = getattr(bundle, "manifest", None)
-    identity: dict[str, Any] = {"available": True}
-    for attr in ("artifact_id", "model_id", "schema_id", "scaler", "version", "created_at"):
-        value = getattr(manifest, attr, None) if manifest is not None else None
-        if value is None:
-            value = getattr(bundle, attr, None)
+    # Identity source: the model_registry's CURRENT provenance, not the bundle
+    # object. ModelBundle carries only (model, scaler, artifact_path) and
+    # ScalpNet has no model_id attribute, so reading identity off the bundle
+    # yields nothing (the panel rendered every field as "—"). This is the same
+    # owner LiveEngine._serving_model_identity reads, so the API, the EXEC_TRACE
+    # line and the experience ledger agree by construction.
+    prov = getattr(getattr(engine, "model_registry", None), "current", None)
+    identity: dict[str, Any] = {
+        "available": True,
+        "registered": prov is not None,
+        "model_id": str(getattr(prov, "model_id", "") or ""),
+        "model_version": str(getattr(prov, "model_version", "") or ""),
+        "schema_id": str(getattr(prov, "feature_schema_id", "") or ""),
+        "version": str(getattr(prov, "model_version", "") or ""),
+        "feature_dimension": getattr(prov, "feature_dimension", None),
+        "artifact_id": str(getattr(prov, "artifact_fingerprint", "") or ""),
+        "artifact_fingerprint": str(getattr(prov, "artifact_fingerprint", "") or ""),
+        "artifact_path": str(getattr(bundle, "artifact_path", "") or ""),
+        "model_role": str(getattr(prov, "model_role", "") or ""),
+        "config_version": str(getattr(prov, "config_version", "") or ""),
+    }
+    for attr in ("created_at", "registered_at"):
+        value = getattr(prov, attr, None)
         if value is not None:
             identity[attr] = value if not hasattr(value, "model_dump") else value.model_dump()
+    # OBS-JSON (2026-09-21): a live in-process object is NOT an identity value.
+    # The bundle exposes the serving scaler as a ScalerBundle instance (mean/std
+    # numpy arrays); echoing it into a JSON response raises TypeError in
+    # json.dumps and 500s the whole panel. Report the contract FACT, by value.
+    scaler = getattr(bundle, "scaler", None)
+    if scaler is not None:
+        identity["scaler_ready"] = bool(getattr(scaler, "is_ready", lambda: False)())
+        identity["scaler_dimension"] = getattr(scaler, "dimension", lambda: None)()
+        identity["scaler_corrupt"] = bool(getattr(scaler, "corrupt", False))
     try:
         from nexus_scalp.features.schema_contract import feature_schema_hash
 
         identity["feature_schema_hash"] = feature_schema_hash()
     except Exception:
         identity["feature_schema_hash"] = None
+    # Drop fields that carry no information: an unregistered model must report
+    # absence rather than a row of empty placeholders that look like an identity.
+    identity = {
+        k: v for k, v in identity.items() if k in ("available", "registered") or v not in ("", None)
+    }
     return ok(request, identity)
 
 

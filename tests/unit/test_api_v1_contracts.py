@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
@@ -224,3 +225,101 @@ def test_no_stack_traces_in_any_error(v1_client: TestClient) -> None:
     text = r.text
     assert "Traceback" not in text
     assert ".py" not in text
+
+
+# ---------------------------------------------------------------------------
+# OBS-JSON regression (2026-09-21): GET /api/v1/model/identity must never
+# return a live in-process object. The serving bundle exposes the scaler as a
+# ScalerBundle of numpy arrays; the old attribute loop echoed it straight into
+# json.dumps and 500'd the ML panel on every poll. It also read identity off
+# the bundle, which carries only (model, scaler, artifact_path), so every
+# rendered field was empty. Identity now comes from the model registry.
+# ---------------------------------------------------------------------------
+
+
+class _FakeScalerBundle:
+    corrupt = False
+
+    def is_ready(self) -> bool:
+        return True
+
+    def dimension(self) -> int:
+        return 70
+
+
+class _FakeBundle:
+    model: Any = None
+    scaler = _FakeScalerBundle()
+    artifact_path = "C:/artifacts/model.pt"
+
+
+class _FakeProvenance:
+    model_id = "primary_scalp_scalp_v3_70d"
+    model_version = "v1.0"
+    feature_schema_id = "scalp_v3"
+    feature_dimension = 70
+    artifact_fingerprint = "abc123def4567890"
+    model_role = "PRIMARY_SCALP"
+    config_version = "9.1.0"
+
+
+class _FakeRegistry:
+    current = _FakeProvenance()
+
+
+def _client_with_bundle(bundle: Any, registry: Any = None) -> TestClient:
+    app = create_v1_app()
+    app.state.engine = SimpleNamespace(_bundle=bundle, model_registry=registry)
+    return TestClient(app)
+
+
+def test_model_identity_never_returns_non_json_objects() -> None:
+    client = _client_with_bundle(_FakeBundle(), _FakeRegistry())
+    r = client.get("/api/v1/model/identity")
+    assert r.status_code == 200, r.text
+    # jsonable() would have raised TypeError before reaching json(); this
+    # assertion fails loudly if the route ever re-introduces a raw object.
+    assert r.json()["data"]
+
+
+def test_model_identity_reports_registry_fields() -> None:
+    data = (
+        _client_with_bundle(_FakeBundle(), _FakeRegistry())
+        .get("/api/v1/model/identity")
+        .json()["data"]
+    )
+    assert data["available"] is True
+    assert data["registered"] is True
+    assert data["model_id"] == "primary_scalp_scalp_v3_70d"
+    assert data["model_version"] == "v1.0"
+    assert data["schema_id"] == "scalp_v3"
+    assert data["artifact_id"] == "abc123def4567890"
+    assert data["feature_dimension"] == 70
+    # contract FACTS from the scaler, never the object itself
+    assert data["scaler_ready"] is True
+    assert data["scaler_dimension"] == 70
+    assert data["scaler_corrupt"] is False
+    assert "scaler" not in data
+
+
+def test_model_identity_absent_without_bundle() -> None:
+    app = create_v1_app()
+    app.state.engine = SimpleNamespace(_bundle=None, model_registry=None)
+    r = TestClient(app).get("/api/v1/model/identity")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["available"] is False
+    assert data["reason"]
+
+
+def test_model_identity_reports_unregistered_state_without_placeholders() -> None:
+    client = _client_with_bundle(_FakeBundle(), registry=None)
+    r = client.get("/api/v1/model/identity")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["available"] is True
+    assert data["registered"] is False
+    assert data.get("model_id") in (None, "", "unregistered")
+    # an unregistered model must not emit a row of empty-string fields
+    for key in ("artifact_id", "model_role", "config_version"):
+        assert key not in data or data[key]
