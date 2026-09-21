@@ -213,18 +213,20 @@ class TestTemporalContractSingleSourceOfTruth:
     def test_meta_writer_emits_canonical(self) -> None:
         """The walk-forward meta writer is the provenance of model.meta.json;
         its emitted temporal_contract must equal the SSoT."""
-        from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
         from nexus_scalp.model_generation.temporal_contract import (
             CANONICAL_EMBARGO_BARS,
             CANONICAL_MAX_GAP_US,
             CANONICAL_PURGE_BARS,
             CANONICAL_SEQ_LEN,
         )
+        from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
         tr = WalkForwardTrainer.__new__(WalkForwardTrainer)
-        meta = WalkForwardTrainer._build_metadata(tr) if hasattr(
-            WalkForwardTrainer, "_build_metadata"
-        ) else None
+        meta = (
+            WalkForwardTrainer._build_metadata(tr)
+            if hasattr(WalkForwardTrainer, "_build_metadata")
+            else None
+        )
         if not isinstance(meta, dict):
             # locate the metadata builder by name (private, varies by build)
             pytest.skip("no direct metadata builder hook on this revision")
@@ -252,7 +254,7 @@ class TestTemporalContractSingleSourceOfTruth:
         man_gap = man.get("contract", {}).get("temporal_max_gap_us")
         # The regression: either they agree, or the manifest is KNOWN-stale
         # (pre-unification artifact) and the canonical writer emits the SSoT.
-        assert man_gap == CANONICAL_MAX_GAP_US or man_gap == 900_000_000
+        assert man_gap in (CANONICAL_MAX_GAP_US, 900_000_000)
 
 
 # ---------------------------------------------------------------------------
@@ -374,9 +376,7 @@ class TestExperienceServingIdentity:
         assert snap.feature_dimension == len(snap.values) == 50
         # an impossible pair is rejected at construction
         with pytest.raises(ValueError):
-            FeatureSnapshot(
-                feature_schema_id="scalp_v3", feature_dimension=70, values=[0.1] * 50
-            )
+            FeatureSnapshot(feature_schema_id="scalp_v3", feature_dimension=70, values=[0.1] * 50)
 
     def test_audit_experiences_schema_and_dimension_agree(self) -> None:
         db = REPO / "artifacts" / "audit.db"

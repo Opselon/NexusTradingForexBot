@@ -286,7 +286,9 @@ class TestFailClosedWiring:
         from nexus_scalp.application.live import model_bundle_store
         from nexus_scalp.model_lifecycle.serving_contract import require_serving_contract
 
-        src = inspect.getsource(model_bundle_store.ModelBundleStore._load_or_initialize_model_weights)
+        src = inspect.getsource(
+            model_bundle_store.ModelBundleStore._load_or_initialize_model_weights
+        )
         assert "require_serving_contract" in src
 
     def test_hot_swap_calls_validator(self) -> None:

@@ -61,8 +61,10 @@ class IncompatibleArtifactError(RuntimeError):
 
 def _read_meta(model_path: Path) -> dict[str, Any] | None:
     for name in ("model.meta.json", "meta.json"):
-        p = model_path.with_name(name) if name != "model.meta.json" else model_path.with_suffix(
-            ".meta.json"
+        p = (
+            model_path.with_name(name)
+            if name != "model.meta.json"
+            else model_path.with_suffix(".meta.json")
         )
         if p.exists():
             try:

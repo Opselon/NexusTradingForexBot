@@ -462,9 +462,7 @@ class ResearchDatasetBuilder:
                 records.append(rec)
         return records
 
-    def _classify_sample(
-        self, rec: ExperienceRecord
-    ) -> tuple[bool, str, str]:
+    def _classify_sample(self, rec: ExperienceRecord) -> tuple[bool, str, str]:
         """ML-PHASE1 STEP-9: ONE classification path for audit() and build().
 
         Terminal-lifecycle pre-classification FIRST (a known non-trade state

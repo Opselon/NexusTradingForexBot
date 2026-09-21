@@ -885,9 +885,7 @@ _NEWS_COVERAGE_MIN_NONZERO_RATIO: float = 0.02
 _NEWS_COVERAGE_MIN_DISTINCT: int = 3
 
 
-def _news_coverage_gate(
-    frame: pl.DataFrame, manifest: dict[str, Any] | None
-) -> dict[str, Any]:
+def _news_coverage_gate(frame: pl.DataFrame, manifest: dict[str, Any] | None) -> dict[str, Any]:
     """News-family validity check for a 70D (scalp_v3) artifact.
 
     Rejects a 70D dataset whose NEWS dims 50..59 are constant/empty because
@@ -917,9 +915,7 @@ def _news_coverage_gate(
     verdict["all_finite"] = finite
     if not finite:
         verdict["reason"] = "NONFINITE_NEWS_FEATURE"
-        verdict["rejected_rows"] = {
-            "NONFINITE_NEWS": int((~np.isfinite(sub).all(axis=1)).sum())
-        }
+        verdict["rejected_rows"] = {"NONFINITE_NEWS": int((~np.isfinite(sub).all(axis=1)).sum())}
         return verdict
 
     # Real per-bar variation: non-neutral rows + distinct values across the
@@ -943,7 +939,7 @@ def _news_coverage_gate(
                 "mean": float(colvals.mean()),
                 "std": float(colvals.std()),
                 "nonzero": int((np.abs(colvals) > 0.0).sum()),
-                "unique": int(len({float(v) for v in colvals})),
+                "unique": len({float(v) for v in colvals}),
                 "nan": int(np.isnan(colvals).sum()),
             }
         )
@@ -958,9 +954,7 @@ def _news_coverage_gate(
     if not news_status:
         # compute_70d_frame* stamp news_status per row; the manifest does not
         # carry it, so infer the family state from the observed statistics.
-        news_status = (
-            "FEATURE_AVAILABLE" if n_nonzero_rows > 0 else "FEATURE_DISABLED"
-        )
+        news_status = "FEATURE_AVAILABLE" if n_nonzero_rows > 0 else "FEATURE_DISABLED"
     verdict["news_status"] = news_status
     temporal = (manifest or {}).get("temporal_range") or {}
     verdict["requested_window"] = temporal
