@@ -248,7 +248,10 @@ export class NseRealtimeClient {
     es.addEventListener("tick", (ev) => this.acceptFrame((ev as MessageEvent).data, true));
     es.addEventListener("heartbeat", () => {
       // Keepalive only — refresh liveness without touching data version.
+      // Same as acceptFrame: the state is unchanged so setState() would
+      // swallow the update; push the status so freshness meters see it.
       this.lastMessageAt = Date.now();
+      this.publishStatus();
     });
     es.addEventListener("error", () => {
       // EventSource auto-reconnects; we surface the state machine honestly.
@@ -310,7 +313,19 @@ export class NseRealtimeClient {
       for (const l of this.listeners) l(snap);
       coreEvents.publish("realtime:snapshot", snap);
     }
-    this.setState("connected");
+    // setStatus, NOT setState: once connected, the state does not change on
+    // subsequent frames, so setState() would early-return and never deliver
+    // the new lastMessageAt/lastVersion. The connection chip derives its word
+    // from those fields (connWord), so without this push it stays stuck on
+    // CONNECTING ("no live updates recently") even while frames arrive.
+    this.publishStatus();
+  }
+
+  /** Notify status subscribers without a state transition. */
+  private publishStatus(): void {
+    const status = this.currentStatus();
+    for (const l of this.statusListeners) l(status);
+    coreEvents.publish("realtime:status", status);
   }
 
   private scheduleReconnect(): void {
