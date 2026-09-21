@@ -65,12 +65,11 @@ def _contained_artifact_path(p: Path) -> Path | None:
     sits immediately before every sink (``is_file()``, ``torch.load``,
     ``np.load``) so user-controlled values can never reach them uncontained.
     """
+    resolved = p.resolve()
     root = _ADVISER_ROOT.resolve()
-    try:
-        p.resolve().relative_to(root)
-    except ValueError:
+    if root not in resolved.parents and resolved != root:
         return None
-    return p.resolve()
+    return resolved
 
 
 def _utcnow_iso() -> str:
