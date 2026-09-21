@@ -767,7 +767,7 @@ class WalkForwardTrainer:
                     train_loader,
                     optimizer,
                     criterion,
-                    scheduler=scheduler if _opt_step_every_batch else None,
+                    scheduler if _opt_step_every_batch else None,
                 )
                 if not _opt_step_every_batch:
                     scheduler.step()
@@ -917,7 +917,7 @@ class WalkForwardTrainer:
                 full_loader,
                 final_optimizer,
                 final_criterion,
-                scheduler=final_scheduler if _final_step_every_batch else None,
+                final_scheduler if _final_step_every_batch else None,
             )
             if not _final_step_every_batch:
                 final_scheduler.step()
