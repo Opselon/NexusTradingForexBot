@@ -487,7 +487,10 @@ tests/unit/test_optimizers_schedulers.py
 tests/unit/test_loss_functions.py
 # ML-EXP-001 (Immutable Experiment Registry & Artifact Manifest Schema)
 tests/unit/test_experiment_registry.py
+# ML-EXP-003 (Bounded Hyperparameter Grid Search Runner)
 tests/unit/test_hyperparam_search.py
+# ML-VAL-002 (Probability Calibration & Expected Calibration Error Evaluation)
+tests/unit/test_calibration_research.py
 
 # ML-PHASE1-DATA-CONTRACT (2026-09-21): the 70D canonical data contract,
 # labeling identity, fail-closed serving validator, provenance census, and

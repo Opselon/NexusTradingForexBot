@@ -2,7 +2,7 @@
 
 STREAM: STREAM G — VALIDATION/OOS
 PRIORITY: P2
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-EXP-001
 AGENT_ROLE: AGENT-ML-VALIDATION
 OWNERSHIP_SCOPE: src/nexus_scalp/research/calibration.py
@@ -74,8 +74,15 @@ Measure ECE reduction from raw softmax to temperature-scaled probabilities on 20
 - Pytest output
 
 ## ACCEPTANCE_CRITERIA
-1. compute_ece() and TemperatureScaler pass all unit tests.
-2. Temperature scaling successfully reduces ECE on OOS validation set.
+1. [x] compute_ece() and TemperatureScaler pass all unit tests. — 63/63 in `tests/unit/test_calibration_research.py`, ruff/format/mypy clean.
+2. [x] Temperature scaling successfully reduces ECE on OOS validation set. — 20,000-sample benchmark: ECE 0.20399 -> 0.00640 (96.9% reduction), T=3.5482; OOS fit-train/eval-val protocol test also green.
+
+## VERIFICATION_EVIDENCE
+- `pytest tests/unit/test_calibration_research.py` -> `63 passed, 1 warning in 1.51s`
+- `ruff check` / `ruff format --check` -> clean; `mypy src/nexus_scalp/research/calibration.py --explicit-package-bases` -> `Success: no issues found in 1 source file`
+- `scripts/ci/verify_critical_suite_manifest.py` -> `CRITICAL_SUITE_MANIFEST_OK: 220 paths` (489 -> 491 lines, test registered)
+- Benchmark (BENCHMARK_PLAN): N=20000, confidence 0.8972 vs accuracy 0.6934, ECE 0.20399 -> 0.00640, Brier 0.16659 -> 0.13940, NLL 1.23380 -> 0.71445
+- Report: docs/research/CALIBRATION_AUDIT.md (includes the pre-existing binary Platt subsystem inventory so the multiclass work is not mistaken for duplication)
 
 ## ABORT_CONDITIONS
 If optimal temperature T converges to 0 or infinity, check for exploding validation logits.
