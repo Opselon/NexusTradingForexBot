@@ -485,3 +485,5 @@ tests/unit/test_training_determinism.py
 tests/unit/test_optimizers_schedulers.py
 # ML-TRAIN-002 (Loss Function Exploration: Focal / Label Smoothing / Class-Balanced / Dice)
 tests/unit/test_loss_functions.py
+# ML-EXP-001 (Immutable Experiment Registry & Artifact Manifest Schema)
+tests/unit/test_experiment_registry.py
