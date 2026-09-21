@@ -1,0 +1,119 @@
+/* StrategyMetricsTable — compact scannable table, sticky header, sorting.
+   Theme tokens only; logical properties (RTL-safe). */
+
+.st-root { display: flex; flex-direction: column; gap: 8px; min-inline-size: 0; }
+
+.st-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.st-search { display: flex; align-items: center; gap: 7px; flex: 1 1 200px; min-inline-size: 0; }
+.st-search-ico { color: var(--text-faint); font-size: 13px; }
+.st-search-input {
+  flex: 1;
+  min-inline-size: 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 5px 26px 5px 9px;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.st-search-input::placeholder { color: var(--text-faint); }
+.st-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.12);
+}
+.st-search-clear {
+  margin-inline-start: -24px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.st-search-clear:hover { color: var(--text); }
+
+.st-count { display: flex; align-items: baseline; gap: 4px; margin-inline-start: auto; }
+.st-count-n { font-family: var(--mono); font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+.st-count-l { font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
+
+.st-scroll {
+  overflow: auto;
+  max-block-size: 460px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-inset);
+}
+
+.st-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11.5px; }
+
+.st-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-panel-2);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-block-end: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.st-table thead th.st-num { text-align: end; cursor: pointer; user-select: none; }
+.st-table thead th.st-num:hover { color: var(--text); }
+.st-table thead th.st-active { color: var(--accent); }
+.st-th-label { margin-inline-end: 4px; }
+.st-sort-ico { font-size: 8px; opacity: 0.55; }
+.st-table thead th.st-active .st-sort-ico { opacity: 1; color: var(--accent); }
+
+.st-table tbody tr { transition: background-color 0.1s ease; }
+.st-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.012); }
+.st-table tbody tr:hover td { background: var(--bg-panel-2); }
+
+.st-td {
+  padding: 7px 10px;
+  border-block-end: 1px solid rgba(255, 255, 255, 0.035);
+  font-variant-numeric: tabular-nums;
+}
+.st-td.st-num { text-align: end; font-family: var(--mono); }
+.st-pos { color: var(--green); }
+.st-neg { color: var(--red); }
+
+.st-id-cell { padding: 4px 6px; }
+.st-id-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.st-id-btn:hover { border-color: var(--border-strong); background: var(--bg-inset); }
+.st-id { font-size: 11px; color: var(--text-dim); letter-spacing: 0.02em; }
+.st-copy-ico { font-size: 10px; color: var(--text-faint); transition: color 0.12s ease; }
+.st-id-btn:hover .st-copy-ico { color: var(--accent); }
+
+.st-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 72px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 0 12px;
+  text-align: center;
+}
