@@ -21,6 +21,7 @@ DO-NOT-PUT-HERE: model commands, update commands, setup wizard.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -44,9 +45,12 @@ from nexus_scalp.cli.styling import (
 from nexus_scalp.cli.wizard import _get_network_endpoints
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ExecutionMode
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release.metadata import get_version_info
+
+logger = get_logger("nexus_scalp.cli.engine_boot")
 
 
 def _pidfile() -> Path:
@@ -627,6 +631,71 @@ def _run_engine_locked(
     _start_web_and_engine(engine, cfg, port)
 
 
+def _install_supervisor_handlers(supervisor: Any) -> None:
+    """Register warm-shutdown signal/console handlers (fail-isolated)."""
+    try:
+        supervisor.install_signal_handlers()
+    except Exception as handler_err:  # pragma: no cover - never block a boot
+        logger.warning(
+            "[SHUTDOWN] signal handlers not installed (isolated): %s", handler_err
+        )
+
+
+def _finalize_interrupted_shutdown(supervisor: Any, engine: Any) -> None:
+    """KeyboardInterrupt cancelled the gather; still run the warm teardown.
+
+    A fresh loop is required: asyncio.run already closed the one the engine
+    ran on. The engine's _shutdown_async is composed unchanged.
+    """
+    import asyncio
+
+    try:
+        supervisor.request_shutdown("keyboard_interrupt")
+    except Exception:
+        pass
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(supervisor.wait_for_shutdown())
+        finally:
+            with contextlib.suppress(Exception):
+                loop.close()
+    except Exception as drain_err:  # pragma: no cover - best effort
+        logger.error("[SHUTDOWN] interrupted-drain failed: %s", drain_err)
+
+
+def _print_shutdown_summary(supervisor: Any) -> None:
+    """Honest post-teardown report. Never claim success without evidence."""
+    try:
+        status = supervisor.status()
+    except Exception:
+        return
+    outcome = str(status.get("outcome") or "")
+    phase = str(status.get("phase") or "")
+    if phase != "CLOSED" or outcome in ("", "TIMEOUT"):
+        # A teardown that never ran or blew its budget is reported as such.
+        console.print(
+            _error_panel(
+                "Shutdown incomplete",
+                f"phase={phase} outcome={outcome or 'NOT_RUN'} "
+                f"reason={status.get('reason') or '-'}",
+                hint="Audit DB / broker session may be open — check tasklist and nexus doctor",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        return
+    style = "green" if outcome == "OK" else "yellow"
+    console.print(
+        Panel(
+            f"[bold {style}]Warm shutdown complete[/bold {style}]  "
+            f"[dim]outcome={outcome} duration={status.get('duration_sec')}s "
+            f"reason={status.get('reason') or '-'}[/dim]",
+            border_style=style,
+        )
+    )
+
+
 def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     import asyncio
 
@@ -747,18 +816,47 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     )
     server = uvicorn.Server(uvicorn_config)
 
+    # BUG-304: warm, bounded, signal-safe shutdown. The old
+    # ``asyncio.run(gather(server.serve(), engine.run_loop()))`` let
+    # asyncio's Runner swallow Ctrl+C as a task cancellation and exit
+    # WITHOUT ever calling engine._shutdown_async — the process died with
+    # the broker session, the SQLite WAL and pending audit rows still open
+    # ("not completely closed"). ShutdownSupervisor installs the signal +
+    # Windows console-close handlers, flips the engine flag (the loop then
+    # falls through to its own _shutdown_async) and drains once, bounded.
+    from nexus_scalp.application.shutdown import ShutdownSupervisor
+
+    supervisor = ShutdownSupervisor(engine=engine, server=server)
+
     async def run_concurrently() -> None:
-        await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
+        # The supervisor's request side is signal-safe; the drain runs here,
+        # on the loop, when the engine's own loop has exited.
+        try:
+            await asyncio.gather(
+                server.serve(), engine.run_loop(), return_exceptions=False
+            )
+        finally:
+            # RuntimeLoop calls _shutdown_async on its way out; the
+            # supervisor is the bounded fallback if it did not.
+            await supervisor.wait_for_shutdown()
 
     try:
+        # Install handlers while the loop exists but BEFORE it runs, so the
+        # first Ctrl+C / window-close lands in our handler, not the Runner's
+        # task-cancelling default. (Runner only installs its own SIGINT
+        # handler when the current one is the default.)
+        _install_supervisor_handlers(supervisor)
         asyncio.run(run_concurrently())
     except KeyboardInterrupt:
         console.print(
             Panel(
-                "\n[yellow]Shutdown requested (Ctrl+C) — stopping cleanly…[/yellow]",
+                "\n[yellow]Shutdown requested (Ctrl+C) — draining…[/yellow]",
                 border_style="yellow",
             )
         )
+        # The gather was cancelled mid-flight: the teardown the operator
+        # expects still has to run. Run it bounded instead of exiting.
+        _finalize_interrupted_shutdown(supervisor, engine)
     except Exception as e:
         console.print(
             _error_panel(
@@ -769,6 +867,8 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
             )
         )
         raise typer.Exit(xc.EXIT_RUNTIME) from None
+    finally:
+        _print_shutdown_summary(supervisor)
 
 
 @app.command("stop")

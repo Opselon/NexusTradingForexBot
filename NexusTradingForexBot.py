@@ -26,6 +26,7 @@ Key Architectural Responsibilities:
 
 import argparse
 import asyncio
+import contextlib
 import os
 import shutil
 import socket
@@ -766,10 +767,64 @@ def main() -> None:
         )
         server = uvicorn.Server(uvicorn_config)
 
-        async def run_concurrently() -> None:
-            await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
+        # BUG-304: warm, bounded, signal-safe shutdown. The old
+        # asyncio.run(gather(...)) let asyncio's Runner turn Ctrl+C into a
+        # task cancellation and exit WITHOUT running the engine's
+        # _shutdown_async — the broker session, the SQLite WAL file and
+        # pending audit rows were left open ("not completely closed").
+        # Closing the console window is worse on Windows: no Python-visible
+        # signal arrives at all. The supervisor owns the request side
+        # (signals + Windows console CTRL-handler), the engine's existing
+        # teardown stays the single owner of the drain steps.
+        from nexus_scalp.application.shutdown import ShutdownSupervisor
 
-        asyncio.run(run_concurrently())
+        supervisor = ShutdownSupervisor(engine=engine, server=server)
+
+        async def run_concurrently() -> None:
+            try:
+                await asyncio.gather(
+                    server.serve(), engine.run_loop(), return_exceptions=False
+                )
+            finally:
+                # RuntimeLoop falls through to _shutdown_async when the loop
+                # exits normally; the supervisor is the bounded fallback.
+                await supervisor.wait_for_shutdown()
+
+        try:
+            # Register BEFORE the loop runs: asyncio's Runner installs its
+            # own SIGINT handler only when the current one is the default,
+            # so ours wins and the first Ctrl+C starts a WARM drain instead
+            # of a hard task cancellation.
+            try:
+                supervisor.install_signal_handlers()
+            except Exception as handler_err:
+                logger.warning(
+                    "[SHUTDOWN] signal handlers not installed (isolated): %s",
+                    handler_err,
+                )
+            asyncio.run(run_concurrently())
+        except KeyboardInterrupt:
+            console.print(
+                Panel(
+                    "[yellow]Shutdown requested (Ctrl+C) — draining, "
+                    "please wait…[/yellow]",
+                    border_style="yellow",
+                )
+            )
+            # The gather task was cancelled before teardown ran. Run the
+            # engine's teardown on a fresh loop, bounded, so the operator's
+            # "stopped cleanly" promise is actually kept.
+            try:
+                supervisor.request_shutdown("keyboard_interrupt")
+                _drain = asyncio.new_event_loop()
+                try:
+                    asyncio.set_event_loop(_drain)
+                    _drain.run_until_complete(supervisor.wait_for_shutdown())
+                finally:
+                    with contextlib.suppress(Exception):
+                        _drain.close()
+            except Exception as drain_err:
+                logger.error("[SHUTDOWN] interrupted-drain failed: %s", drain_err)
     except KeyboardInterrupt:
         console.print(
             Panel(
@@ -791,11 +846,36 @@ def main() -> None:
         )
         sys.exit(1)
     finally:
-        console.print(
-            Panel(
-                "[bold cyan]Nexus Scalp Engine terminated cleanly.[/bold cyan]", border_style="cyan"
-            )
-        )
+        # Honest final report: never claim a clean exit without evidence
+        # that the drain actually completed.
+        try:
+            _status = supervisor.status()
+        except UnboundLocalError:
+            _status = None
+        if _status is not None:
+            _outcome = str(_status.get("outcome") or "")
+            _phase = str(_status.get("phase") or "")
+            if _phase == "CLOSED" and _outcome == "OK":
+                console.print(
+                    Panel(
+                        "[bold green]Warm shutdown complete[/bold green]  "
+                        f"[dim]duration={_status.get('duration_sec')}s "
+                        f"reason={_status.get('reason') or '-'}[/dim]",
+                        border_style="green",
+                    )
+                )
+            else:
+                console.print(
+                    Panel(
+                        f"[bold yellow]Shutdown incomplete:[/bold yellow] "
+                        f"[dim]phase={_phase} outcome={_outcome or 'NOT_RUN'} "
+                        f"reason={_status.get('reason') or '-'} — broker "
+                        "session / audit DB may still be open[/dim]",
+                        border_style="yellow",
+                    )
+                )
+                # Non-zero so scripts/tasklist-driven automation can detect it.
+                raise SystemExit(3)
 
 
 if __name__ == "__main__":
