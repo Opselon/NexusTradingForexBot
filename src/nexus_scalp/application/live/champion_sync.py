@@ -18,6 +18,7 @@ the engine as the state surface.
 from __future__ import annotations
 
 import contextlib
+import os
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -79,7 +80,29 @@ class ChampionSync:
         what the caller must do to make the registry truthful.
         """
         norm = lambda p: str(p or "").replace("\\\\", "/")  # noqa: E731
-        serving_path = norm(serving_artifact_path)
+
+        def canon(p: str) -> str:
+            # BUG-xxx: rows written by older boots may store a RELATIVE
+            # artifact path (e.g. 'artifacts/models/...'), while the live
+            # sync passes the absolute resolved path. Compare canonical
+            # absolute form so a truthful row is never declared
+            # path-mismatched over a slash/case/relative spelling
+            # difference. Relative paths anchor to the repo-root workspace
+            # when resolvable (the engine's convention), NOT the raw CWD.
+            q = norm(p)
+            if not q:
+                return ""
+            from pathlib import Path
+
+            path = Path(q)
+            if not path.is_absolute():
+                _repo_root = Path(__file__).resolve().parents[4]
+                cand = _repo_root / path
+                if cand.exists():
+                    path = cand
+            return os.path.normcase(str(path.resolve()))
+
+        serving_path = canon(serving_artifact_path)
         model_id = f"primary_scalp_{serving_schema_id}_{serving_dimension}d"
         base: dict[str, Any] = {
             "serving_path": serving_path,
@@ -90,13 +113,12 @@ class ChampionSync:
         if current_row is None:
             return {**base, "action": "BOOTSTRAP", "reason": "no champion row"}
 
-        row_path = norm(current_row.get("artifact_path", ""))
+        row_path = canon(current_row.get("artifact_path", ""))
         row_schema = str(current_row.get("feature_schema_id", "") or "")
         row_dim = int(current_row.get("feature_dimension", 0) or 0)
+        path_match = row_path == serving_path
         contract_match = (
-            row_path == serving_path
-            and row_schema == serving_schema_id
-            and row_dim == int(serving_dimension)
+            path_match and row_schema == serving_schema_id and row_dim == int(serving_dimension)
         )
         if contract_match:
             return {**base, "action": "NOOP", "reason": "already_truthful"}
@@ -116,13 +138,23 @@ class ChampionSync:
         }
 
     def sync_champion_registry_state(self: Any) -> None:
-        """Makes the registry truthful about the CURRENT Champion (spec 3)."""
+        """Makes the registry truthful about the CURRENT Champion (spec 3).
+
+        BUG-xxx: the serving contract is the LOADED BUNDLE's effective
+        schema/dimension (same authoritative accessors _register_active_model
+        uses), NOT the class-level bootstrap defaults. When a 70D scalp_v3
+        bundle serves, reading the class defaults (scalp_v1/50D) made every
+        boot REPAIR (demote) the truthful champion row and re-register a
+        FALSE scalp_v1@50D row — the registry churned 70d↔50d every start.
+        """
         try:
             if self.governance_store is None:
                 return
             champ = self.champion_manager.champion_or_none()
             if champ is None or not champ.artifact_hash:
                 return
+            serving_schema_id = str(self.effective_feature_schema_id)
+            serving_dimension = int(self.effective_feature_dim)
             from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
 
             lifecycle = ModelLifecycleRegistry(
@@ -134,8 +166,8 @@ class ChampionSync:
                 None,
                 current_row=current,
                 serving_artifact_path=self.config.model.model_artifact_path,
-                serving_schema_id=self.FEATURE_SCHEMA_ID,
-                serving_dimension=self.FEATURE_DIM,
+                serving_schema_id=serving_schema_id,
+                serving_dimension=serving_dimension,
                 serving_fingerprint=champ.artifact_hash,
             )
             action = decision.get("action")
@@ -157,19 +189,19 @@ class ChampionSync:
                                 "contract mismatch (declared "
                                 f"{decision.get('stale_row_schema')}"
                                 f"@{decision.get('stale_row_dimension')}D vs "
-                                f"serving {self.FEATURE_SCHEMA_ID}"
-                                f"@{self.FEATURE_DIM}D)"
+                                f"serving {serving_schema_id}"
+                                f"@{serving_dimension}D)"
                             ),
                         )
             self.model_registry.register_model(
                 artifact_path=self.config.model.model_artifact_path,
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-                feature_schema_id=self.FEATURE_SCHEMA_ID,
-                feature_dimension=self.FEATURE_DIM,
+                feature_schema_id=serving_schema_id,
+                feature_dimension=serving_dimension,
                 config_version=str(getattr(self.runtime_config, "get_version", lambda: 0)()),
                 replaced=False,
             )
-            iid = f"{self.model_registry.current.model_role.lower()}_{self.FEATURE_SCHEMA_ID}_{self.FEATURE_DIM}d"
+            iid = f"{self.model_registry.current.model_role.lower()}_{serving_schema_id}_{serving_dimension}d"
             try:
                 lifecycle.set_status(
                     model_id=iid,
@@ -186,7 +218,7 @@ class ChampionSync:
                     stage=GovernanceStage.REGISTRY,
                     model_id=self.champion_manager.model_id,
                     model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-                    schema_id=self.FEATURE_SCHEMA_ID,
+                    schema_id=serving_schema_id,
                     reason="live Champion registry truthfulness correction",
                     payload={"artifact_path": self.config.model.model_artifact_path},
                 )
