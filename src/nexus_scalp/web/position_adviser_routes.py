@@ -73,17 +73,23 @@ def _repo_root() -> Path:
 
 
 def _safe_under_repo(p: Path) -> Path:
-    """Constrain adviser artifact paths to the repo root (no traversal)."""
-    root = _repo_root()
-    q = p if p.is_absolute() else (root / p)
-    try:
-        q.resolve().relative_to(root.resolve())
-    except ValueError as exc:
+    """Constrain adviser artifact paths to the repo root (no traversal).
+
+    Mirrors ``service._contained_artifact_path``: resolve ONCE into a local,
+    check THAT local, return THAT local. Returning the unresolved input would
+    be a TOCTOU — the object handed to ``is_file``/``torch.load`` would not be
+    the object that was validated (CodeQL: uncontrolled data in path
+    expression). Resolving also rejects a symlink payload that points outside
+    the root, because ``Path.resolve()`` follows the link.
+    """
+    root = _repo_root().resolve()
+    resolved = (p if p.is_absolute() else (_repo_root() / p)).resolve()
+    if root not in resolved.parents and resolved != root:
         raise HTTPException(
             status_code=400,
             detail="adviser artifact path must stay inside the repository root",
-        ) from exc
-    return q
+        )
+    return resolved
 
 
 # ---------------------------------------------------------------- request DTOs
@@ -257,7 +263,10 @@ def route_load(req: AdviserLoadRequest) -> dict[str, Any]:
     sp = _safe_under_repo(Path(req.scaler_path))
     out = svc.load(wp, sp, model_id=req.model_id)
     if out["status"] != "OK":
-        raise HTTPException(status_code=400, detail=out.get("reason", "load rejected"))
+        # Generic reason only: a rejection detail derived from the request or
+        # from an exception must not reach the client (CodeQL: information
+        # exposure through an exception). The real cause is in the server log.
+        raise HTTPException(status_code=400, detail="adviser load rejected (see server logs)")
     return out
 
 

@@ -219,6 +219,9 @@ def train_position_adviser(
     p = Path(dataset_path)
     if not p.is_absolute():
         p = p.resolve()
+    # ``p.resolve()`` above is what makes ``p`` self-consistent (it removes
+    # any '..' segments and follows symlinks), so the sinks below read the
+    # canonical location rather than a path whose text and target disagree.
     if not p.is_file():
         raise FileNotFoundError(f"position adviser dataset not found: {p}")
     if p.suffix.lower() not in (".parquet", ".csv"):

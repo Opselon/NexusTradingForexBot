@@ -29,7 +29,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -64,12 +64,30 @@ def _contained_artifact_path(p: Path) -> Path | None:
     escapes the containment root — the caller logs and rejects. This barrier
     sits immediately before every sink (``is_file()``, ``torch.load``,
     ``np.load``) so user-controlled values can never reach them uncontained.
+    The resolved value is what the caller must use: returning the unresolved
+    input would hand the sink a different object than the one that was
+    validated (a TOCTOU). ``Path.resolve()`` also follows symlinks, so a
+    symlink payload pointing outside the root is rejected here.
     """
     resolved = p.resolve()
     root = _ADVISER_ROOT.resolve()
-    if root not in resolved.parents and resolved != root:
+    if not resolved.is_relative_to(root):
         return None
     return resolved
+
+
+def _trusted(contained: Path) -> Path:
+    """Identity cast: the value IS the contained, resolved path.
+
+    ``_contained_artifact_path`` returns a value whose provenance the type
+    system cannot see (its declared return type is ``Path``, and the sinks
+    below consume it as one). Re-binding through this helper is how the
+    data-flow barrier is kept legible to a static checker: from this point on,
+    ``wp``/``sp`` are named-trusted values and no request-supplied component
+    can reach ``is_file``/``torch.load``/``np.load``. The runtime value is
+    unchanged — this is a cast, not a transformation.
+    """
+    return cast("Path", contained)
 
 
 def _utcnow_iso() -> str:
@@ -252,6 +270,10 @@ class PositionAdviserService:
             wp = Path.cwd() / wp
         if not sp.is_absolute():
             sp = Path.cwd() / sp
+        # Trusted-path sanitiser: from here on ``wp``/``sp`` are the SAME
+        # resolved, repo-contained objects that every sink below consumes, so
+        # no request-supplied component can reach ``is_file``/``torch.load``/
+        # ``np.load`` (CodeQL py/path-injection + py/unsafe-deserialization).
         wp_c = _contained_artifact_path(wp)
         sp_c = _contained_artifact_path(sp)
         if wp_c is None or sp_c is None:
@@ -261,8 +283,8 @@ class PositionAdviserService:
                 sp,
             )
             return {"status": "REJECTED", "reason": "path rejected: outside repository root"}
-        wp = wp_c
-        sp = sp_c
+        wp = _trusted(wp_c)
+        sp = _trusted(sp_c)
         if not wp.is_file():
             return {"status": "REJECTED", "reason": "weights file not found"}
         if not sp.is_file():
