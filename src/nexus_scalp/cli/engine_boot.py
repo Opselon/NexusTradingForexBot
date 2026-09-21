@@ -636,9 +636,7 @@ def _install_supervisor_handlers(supervisor: Any) -> None:
     try:
         supervisor.install_signal_handlers()
     except Exception as handler_err:  # pragma: no cover - never block a boot
-        logger.warning(
-            "[SHUTDOWN] signal handlers not installed (isolated): %s", handler_err
-        )
+        logger.warning("[SHUTDOWN] signal handlers not installed (isolated): %s", handler_err)
 
 
 def _finalize_interrupted_shutdown(supervisor: Any, engine: Any) -> None:
@@ -832,9 +830,7 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         # The supervisor's request side is signal-safe; the drain runs here,
         # on the loop, when the engine's own loop has exited.
         try:
-            await asyncio.gather(
-                server.serve(), engine.run_loop(), return_exceptions=False
-            )
+            await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
         finally:
             # RuntimeLoop calls _shutdown_async on its way out; the
             # supervisor is the bounded fallback if it did not.

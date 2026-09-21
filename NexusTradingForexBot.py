@@ -782,9 +782,7 @@ def main() -> None:
 
         async def run_concurrently() -> None:
             try:
-                await asyncio.gather(
-                    server.serve(), engine.run_loop(), return_exceptions=False
-                )
+                await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
             finally:
                 # RuntimeLoop falls through to _shutdown_async when the loop
                 # exits normally; the supervisor is the bounded fallback.
@@ -806,8 +804,7 @@ def main() -> None:
         except KeyboardInterrupt:
             console.print(
                 Panel(
-                    "[yellow]Shutdown requested (Ctrl+C) — draining, "
-                    "please wait…[/yellow]",
+                    "[yellow]Shutdown requested (Ctrl+C) — draining, please wait…[/yellow]",
                     border_style="yellow",
                 )
             )
