@@ -491,3 +491,5 @@ tests/unit/test_experiment_registry.py
 tests/unit/test_hyperparam_search.py
 # ML-VAL-002 (Probability Calibration & Expected Calibration Error Evaluation)
 tests/unit/test_calibration_research.py
+# ML-CI-002 (ML Contract & Canonical Documentation Drift Prevention CI Gate)
+tests/unit/test_ml_contract_drift.py

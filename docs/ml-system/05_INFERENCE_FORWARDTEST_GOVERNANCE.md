@@ -60,6 +60,15 @@ Implemented in `src/nexus_scalp/signals/policy.py:710-721`:
 - **Behavior:** Bypasses standard HTF trend and SR margin filters (`override_reason = "HTF_BYPASSED"`).
 - **Penalty:** Imposes an automatic $15\%$ confidence haircut (`signals/policy.py:1136-1141`) to account for counter-trend risk.
 
+### 2.2 Execution Ceiling (Position Safety Contract)
+- `HARD_MAX_LOTS = 10.0` is the absolute position-size ceiling enforced by
+  `DispatchEngine` (`src/nexus_scalp/execution/lifecycle/dispatch.py:170`), and
+  `MAX_TOTAL_EXPOSURE = 1` bounds aggregate exposure.
+- The ceiling is applied UNCONDITIONALLY on every dispatch path — it is the
+  last defense after the RiskEngine tier caps and the margin clamp, not a
+  configurable suggestion. `src/nexus_scalp/risk/concurrency_policy.py:55`
+  documents the layering.
+
 ---
 
 ## 3. Forward-Testing & Shadow Mode
