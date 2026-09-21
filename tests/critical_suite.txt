@@ -483,3 +483,5 @@ tests/integration/test_mt5_adapter_parity.py
 tests/unit/test_training_determinism.py
 # ML-TRAIN-003 (Optimizer & LR-Schedule factory)
 tests/unit/test_optimizers_schedulers.py
+# ML-TRAIN-002 (Loss Function Exploration: Focal / Label Smoothing / Class-Balanced / Dice)
+tests/unit/test_loss_functions.py
