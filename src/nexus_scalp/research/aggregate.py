@@ -36,7 +36,7 @@ def main() -> None:
     y = np.asarray(ev["label"].to_list(), dtype=np.int64)
     std_all = X.std(axis=0)
     const_dims = [int(i) for i in np.where(std_all <= 1e-9)[0]]
-    sep = []
+    sep: list[dict] = []
     for i in range(70):
         if std_all[i] <= 1e-9:
             continue

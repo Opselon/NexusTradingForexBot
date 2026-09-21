@@ -474,7 +474,8 @@ def compute_metrics(probs: np.ndarray, y: np.ndarray, *, gate: float = EFFECTIVE
     dir_max = active.max(axis=1)
     active_pred = np.where(active[:, 1] > active[:, 0], 1, 2)
     acc = float((pred == y).mean()) if n else None
-    recs, f1s = [], []
+    recs: list[float | None] = []
+    f1s: list[float | None] = []
     for c in range(3):
         m = y == c
         if int(m.sum()) == 0:

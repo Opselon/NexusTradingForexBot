@@ -89,7 +89,7 @@ def main() -> None:
     X_hold_scaled = np.clip((X_hold - scaler_mean) / scaler_std, -5.0, 5.0)
     np.clip((tr_rows - scaler_mean) / scaler_std, -5.0, 5.0)
 
-    stats_all = per_dim_stats(X_all, feat_cols, "raw_full")
+    stats_all: list[dict] = per_dim_stats(X_all, feat_cols, "raw_full")
     stats_tr = per_dim_stats(tr_rows, feat_cols, "raw_train70")
     stats_hold = per_dim_stats(X_hold, feat_cols, "raw_holdout30")
     stats_prescaler = per_dim_stats(X_hold, feat_cols, "prescaler_holdout")
@@ -195,17 +195,17 @@ def main() -> None:
     }
 
     # news_* sidecar columns present in the artifact (item 3 trace evidence)
-    news_side = {}
+    news_side: dict[str, dict] = {}
     for c in [c for c in df.columns if c.startswith("news_")]:
-        s = df[c]
-        if str(s.dtype) not in ("f64", "Float64", "f32", "Float32"):
+        scol = df[c]
+        if str(scol.dtype) not in ("f64", "Float64", "f32", "Float32"):
             news_side[c] = {
-                "dtype": str(s.dtype),
-                "unique": int(s.n_unique()),
+                "dtype": str(scol.dtype),
+                "unique": int(scol.n_unique()),
                 "note": "non-numeric column (schema id stamp) — not part of the feature vector",
             }
             continue
-        arr = s.to_numpy().astype(np.float64)
+        arr = scol.to_numpy().astype(np.float64)
         news_side[c] = {
             "min": round(float(np.min(arr)), 6),
             "max": round(float(np.max(arr)), 6),
