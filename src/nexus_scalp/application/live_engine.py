@@ -2187,6 +2187,24 @@ class LiveEngine:
     async def stop(self) -> None:
         self._running = False
 
+    def shutdown_status(self) -> dict[str, Any]:
+        """Operator-visible teardown state (BUG-304).
+
+        Honest at every instant: a phase that never ran reports NOT_RUN
+        rather than a fabricated 'done'. Consumed by the API surface and
+        the launcher's final report.
+        """
+        if getattr(self, "_shutdown_completed", False):
+            return {"phase": "CLOSED", "completed": True}
+        if self._running:
+            return {"phase": "RUNNING", "completed": False}
+        return {"phase": "DRAIN_PENDING", "completed": False}
+
+    @property
+    def shutdown_completed(self) -> bool:
+        """True only after ``_shutdown_async`` actually finished."""
+        return bool(getattr(self, "_shutdown_completed", False))
+
     async def run_loop(self) -> None:
         """Delegate: async run loop (owned by RuntimeLoop, P1 seam L8)."""
         eng = self._runtime_loop
@@ -2250,6 +2268,16 @@ class LiveEngine:
         )
 
     async def _shutdown_async(self) -> None:
+        # BUG-304: idempotent teardown. RuntimeLoop calls this when its
+        # while-loop exits, and the process-level ShutdownSupervisor calls
+        # it as the bounded fallback when the loop was cancelled (Ctrl+C /
+        # console close). Both must converge on ONE teardown; a second call
+        # returns immediately instead of re-flushing a closed queue or
+        # re-disconnecting a dead adapter (which logged spurious errors and
+        # could double-close the shared SQLite connection).
+        if getattr(self, "_shutdown_completed", False):
+            return
+        self._shutdown_completed = True
         # Stop the accounting worker first (derived refresh, not financial truth).
         with contextlib.suppress(Exception):
             await self._stop_accounting_worker()

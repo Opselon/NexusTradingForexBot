@@ -45,6 +45,31 @@ def runtime_mode(request: Request) -> Any:
     )
 
 
+@router.get("/shutdown", summary="Warm-shutdown teardown state (BUG-304)")
+def runtime_shutdown(request: Request) -> Any:
+    """Honest teardown state: was the engine fully closed, or is a drain pending?
+
+    A process whose console was closed / Ctrl+C'd while the audit DB and
+    broker session were still open is observable here instead of silently
+    reporting a clean exit.
+    """
+    engine = get_engine(request)
+    if engine is None:
+        return ok(request, {"engine_attached": False, "phase": "UNKNOWN"})
+    status_fn = getattr(engine, "shutdown_status", None)
+    if callable(status_fn):
+        return ok(request, dict(status_fn(), engine_attached=True))
+    completed = bool(getattr(engine, "shutdown_completed", False))
+    return ok(
+        request,
+        {
+            "engine_attached": True,
+            "phase": "CLOSED" if completed else "UNKNOWN",
+            "completed": completed,
+        },
+    )
+
+
 @router.get("/freshness", summary="Live data freshness contract (engine model)")
 def runtime_freshness(request: Request) -> Any:
     engine, resp = engine_or_503(request)

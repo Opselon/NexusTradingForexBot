@@ -211,6 +211,15 @@ class DirectMT5Adapter(IMT5Port):
         # structured telemetry so the console/UI can render progress.
         import time as _time
 
+        # BUG-310: a previous initialize() in THIS process (ours, or a leftover
+        # from an aborted adapter) can leave the terminal believing an API
+        # client is already attached; the second attach is then rejected with
+        # (-6, 'Terminal: Authorization failed') on every retry. Release first.
+        # shutdown() on an idle/unconnected handle is a no-op, not an error.
+        if HAS_NATIVE_MT5 and mt5 is not None:
+            with contextlib.suppress(Exception):
+                mt5.shutdown()
+
         max_attempts = self._retries
         last_err_code: Any = None
         connected = False
@@ -321,9 +330,23 @@ class DirectMT5Adapter(IMT5Port):
         return True
 
     def disconnect(self) -> None:
-        if HAS_NATIVE_MT5 and mt5 is not None and self._connected:
-            mt5.shutdown()
-            logger.info("MetaTrader 5 IPC connection closed.")
+        # BUG-310 (2026-09-22, live tick-starvation loop): the MetaTrader5
+        # Python API is a single process-global IPC connection. shutdown() is
+        # the ONLY release. The guard ``if self._connected`` meant that after a
+        # connect() failure (initialize() -> False) the handle stayed locked
+        # while ``_connected`` was already False, so every later disconnect()
+        # skipped shutdown() and the terminal kept rejecting new attaches with
+        # (-6, 'Terminal: Authorization failed') — a PERMANENT stall: the
+        # watchdog retried connect() every ~3s and never recovered.
+        # Always attempt the release; a bare shutdown() on an unconnected
+        # handle is a no-op in the MT5 C-extension, not an error.
+        if HAS_NATIVE_MT5 and mt5 is not None:
+            try:
+                mt5.shutdown()
+            except Exception:
+                logger.warning("[MT5_DISCONNECT] shutdown() raised; handle already released")
+            else:
+                logger.info("MetaTrader 5 IPC connection closed.")
         self._connected = False
         self._conn_state.set_state(MT5ConnectionState.DISCONNECTED, "disconnected")
 
