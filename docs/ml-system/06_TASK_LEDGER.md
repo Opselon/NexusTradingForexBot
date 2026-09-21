@@ -64,7 +64,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
 | `ML-EXP-001` | F: Experimentation | P1 | Immutable Experiment Registry Schema | **DONE** | `AGENT-ML-EXP` | NO | `ML-DATA-002` | `PARALLEL_SAFE` |
 | `ML-EXP-002` | F: Experimentation | P2 | Architectural Ablation: 2D vs 3D vs Attention | **BLOCKED** | `AGENT-ML-EXP` | **YES** | `ML-EXP-001`, `ML-ARCH-003`, `ML-TRAIN-003` | `SERIAL_ONLY` |
-| `ML-EXP-003` | F: Experimentation | P3 | Bounded Hyperparameter Grid Search Runner | **BLOCKED** | `AGENT-ML-EXP` | NO | `ML-EXP-001`, `ML-TRAIN-003` | `PARALLEL_SAFE` |
+| `ML-EXP-003` | F: Experimentation | P3 | Bounded Hyperparameter Grid Search Runner | **DONE** | `AGENT-ML-EXP` | NO | `ML-EXP-001`, `ML-TRAIN-003` | `PARALLEL_SAFE` |
 | `ML-VAL-001` | G: Validation | P1 | Purged Walk-Forward Monotonicity & Embargo | **DONE** | `AGENT-ML-VALIDATION` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-VAL-002` | G: Validation | P2 | Probability Calibration & ECE Evaluation | **BLOCKED** | `AGENT-ML-VALIDATION` | NO | `ML-EXP-002` | `PARALLEL_SAFE` |
 | `ML-VAL-003` | G: Validation | P2 | Robustness Stress: Slippage & Spread Perturb | **DONE** | `AGENT-ML-VALIDATION` | NO | `ML-VAL-001` | `PARALLEL_SAFE` |
