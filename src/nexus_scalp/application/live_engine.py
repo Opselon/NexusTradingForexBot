@@ -1749,6 +1749,18 @@ class LiveEngine:
         fingerprint_artifact) — or honest empty strings when no bundle is
         loaded / the artifact is absent (EXEC_TRACE stamps
         MODEL_IDENTITY_UNAVAILABLE, never a placeholder identity).
+
+        Identity source: the model_registry's CURRENT provenance, not the
+        bundle object. ModelBundle carries only (model, scaler,
+        artifact_path) and ScalpNet has no model_id attribute, so the
+        original getattr(self._bundle.model, 'model_id') chain read an
+        attribute that never existed and returned "" for BOTH fields on
+        every live decision — even while an artifact fingerprint was
+        present and the experience ledger stamped a real provenance. The
+        registry is the same source of truth _register_active_model writes
+        to, so the EXEC_TRACE line and the experience row agree by
+        construction. It is read under the bundle lock so a hot-swap
+        cannot split the triple.
         """
         b = None
         with contextlib.suppress(Exception):
@@ -1759,10 +1771,15 @@ class LiveEngine:
         fp = ""
         with contextlib.suppress(Exception):
             fp = fingerprint_artifact(b.artifact_path)
-        mid = getattr(getattr(b, "model", None), "model_id", "") or ""
+        mid = ""
+        mver = ""
+        with contextlib.suppress(Exception):
+            prov = self.model_registry.current
+            mid = str(getattr(prov, "model_id", "") or "")
+            mver = str(getattr(prov, "model_version", "") or "")
         return (
-            str(mid or ""),
-            str(getattr(b, "model_version", "") or ""),
+            mid,
+            mver,
             str(fp or ""),
         )
 
