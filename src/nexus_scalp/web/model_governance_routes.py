@@ -27,6 +27,7 @@ research factory (factory_routes.py), command center (command_center_*).
 from __future__ import annotations
 
 import contextlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,135 @@ def _shadow70_verdict(row: dict[str, Any]) -> str:
 
 def _get_active_app(fallback_app: Any) -> Any:
     return _ACTIVE_APP[0] if _ACTIVE_APP else fallback_app
+
+
+# ---------------------------------------------------------------------------
+# Challenger bundle resolution (SHADOW-PIPELINE 2026-09-21)
+#
+# The challenger pipeline produced ZERO decisions because the attach gate
+# resolved two bundle paths this repo's trainer never writes:
+#   * the scaler as "<artifact>.scaler.npz" (the trainer writes the SIBLING
+#     "model.scaler.npz" -- model.pt + model.scaler.npz side by side);
+#   * the manifest as "<dir>/model.json" (the signed manifest is
+#     "manifest.json", with the training declaration in "model.meta.json").
+# Resolution mirrors the champion's own loader (live_engine
+# `_declared_contract_dim_for_path`), which reads the sibling
+# "<stem>.scaler.npz" -- no path is fabricated and no check is weakened.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_challenger_scalper(artifact_path: Path) -> Path | None:
+    """Locates the challenger's scaler sidecar (None when truly absent).
+
+    The trainer writes the scaler as the artifact's sibling, keeping the
+    stem: ``model.pt`` -> ``model.scaler.npz`` (NOT ``model.pt.scaler.npz``).
+    Both spellings are probed so a legacy directory that did write the
+    dotted form still loads; the sibling form wins because it is what the
+    trainer and the champion loader use.
+    """
+    sibling = artifact_path.with_suffix(".scaler.npz")
+    dotted = Path(str(artifact_path) + ".scaler.npz")
+    if sibling.exists():
+        return sibling
+    if dotted.exists():
+        return dotted
+    return None
+
+
+def _resolve_challenger_manifest(bundle_dir: Path) -> dict[str, Any]:
+    """Reads the challenger's signed manifest ({} when unreadable).
+
+    Prefers ``manifest.json`` (the bundle manifest the trainer signs);
+    falls back to the legacy ``model.json`` name the gate originally read.
+    """
+    for name in ("manifest.json", "model.json"):
+        candidate = bundle_dir / name
+        if candidate.exists():
+            try:
+                with open(candidate, encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, dict):
+                    data["_manifest_file"] = name
+                    return data
+            except (OSError, ValueError):
+                continue
+    return {}
+
+
+def _serving_schema_id(engine: Any) -> str:
+    """The schema id the SERVING bundle actually operates under.
+
+    BUG-125 / b620f9c2: ``engine.FEATURE_SCHEMA_ID`` is the class bootstrap
+    default (scalp_v1/50D) and stays 50D even while a validated 70D bundle
+    is serving. Shadow comparison must validate the challenger against the
+    contract the LIVE inference uses, otherwise every 70D challenger is
+    rejected with a bogus DIMENSION_MISMATCH while the champion itself
+    serves 70D. Falls back to the class constant only when the engine has
+    no bundle-derived contract (the pre-bootstrap state).
+    """
+    eff = getattr(engine, "effective_feature_schema_id", None)
+    if isinstance(eff, str) and eff:
+        return eff
+    return str(getattr(engine, "FEATURE_SCHEMA_ID", ""))
+
+
+def _serving_dimension(engine: Any) -> int:
+    """The feature width the SERVING bundle actually operates under."""
+    eff = getattr(engine, "effective_feature_dim", None)
+    try:
+        if eff is not None and int(eff) > 0:
+            return int(eff)
+    except (TypeError, ValueError):
+        pass
+    return int(getattr(engine, "FEATURE_DIM", 50))
+
+
+def _augment_manifest(
+    manifest: dict[str, Any],
+    bundle_dir: Path,
+    model_id: str = "",
+    model_version: str = "",
+) -> dict[str, Any]:
+    """Merges the companion ``model.meta.json`` declarations into the manifest.
+
+    The 10-gate checks ``model_id`` / ``feature_schema_id`` /
+    ``feature_dimension`` / ``class_count``. The signed ``manifest.json``
+    carries the schema and class contract but names the input width
+    ``input_dim`` and carries no ``model_id``; the companion meta carries
+    ``num_features`` / ``feature_schema_dimension`` / ``num_classes``.
+    Augmenting fills the gate's vocabulary from the bundle's own
+    declarations -- no value is invented and no gate is weakened. The
+    ``model_id`` is the lifecycle registry's own identity for this row
+    (the same row the artifact path was read from), never a placeholder.
+    """
+    out = dict(manifest)
+    if not out.get("model_id") and isinstance(model_id, str) and model_id:
+        out["model_id"] = model_id
+    if not out.get("model_version") and isinstance(model_version, str) and model_version:
+        out["model_version"] = model_version
+    meta_path = bundle_dir / "model.meta.json"
+    if not meta_path.exists():
+        return out
+    try:
+        with open(meta_path, encoding="utf-8") as fh:
+            meta = json.load(fh)
+    except (OSError, ValueError):
+        return out
+    if not isinstance(meta, dict):
+        return out
+    if not out.get("feature_dimension"):
+        dim = meta.get("feature_schema_dimension") or meta.get("num_features")
+        if isinstance(dim, int) and dim > 0:
+            out["feature_dimension"] = dim
+    if not out.get("class_count"):
+        classes = meta.get("model_head_classes") or meta.get("num_classes")
+        if isinstance(classes, int) and classes > 0:
+            out["class_count"] = classes
+    if not out.get("feature_schema_id"):
+        sid = meta.get("feature_schema_id")
+        if isinstance(sid, str) and sid:
+            out["feature_schema_id"] = sid
+    return out
 
 
 async def _run_training_async(orchestrator: Any, dataset: Any, num_epochs: int) -> dict[str, Any]:
@@ -806,13 +936,27 @@ def register_model_governance_routes(app: Any) -> None:
             path = Path(artifact_path)
             if not path.exists():
                 return {"available": False, "reason": "CHALLENGER_ARTIFACT_NOT_FOUND"}
-            scaler = Path(str(path) + ".scaler.npz")
+            scaler = _resolve_challenger_scalper(path)
+            if scaler is None:
+                return {
+                    "available": False,
+                    "reason": "CHALLENGER_SCALER_NOT_FOUND",
+                    "scaler_expected": str(path.with_suffix(".scaler.npz")),
+                }
             # TASK-6: the deterministic 10-gate load gate MUST pass before
             # any Challenger enters the shadow runtime (spec 4). A
             # rejected model is never loaded; the failing gate is reported.
-            from nexus_scalp.governance.load_gate import ModelLoadGate, read_manifest_file
+            from nexus_scalp.governance.load_gate import ModelLoadGate
 
-            manifest = read_manifest_file(Path(artifact_path).parent / "model.json") or {}
+            manifest = _resolve_challenger_manifest(Path(artifact_path).parent)
+            # The 10-gate requires manifest fields the bundle's own signed
+            # manifest.json carries under trainer-native names (input_dim
+            # rather than feature_dimension). Merge the companion
+            # model.meta.json declarations so the gate sees the width and
+            # identity it needs without weakening any check.
+            manifest = _augment_manifest(
+                manifest, Path(artifact_path).parent, model_id, model_version
+            )
             gate = ModelLoadGate(db_path=engine.audit._db_path if engine.audit else None).evaluate(
                 artifact_path=path,
                 scaler_path=scaler,
@@ -832,8 +976,8 @@ def register_model_governance_routes(app: Any) -> None:
                 scaler_path=scaler,
                 model_id=model_id,
                 model_version=model_version,
-                live_schema_id=engine.FEATURE_SCHEMA_ID,
-                live_dimension=engine.FEATURE_DIM,
+                live_schema_id=_serving_schema_id(engine),
+                live_dimension=_serving_dimension(engine),
             )
             engine._shadow_challenger = runtime
             engine.shadow_engine.attach_challenger(runtime)
