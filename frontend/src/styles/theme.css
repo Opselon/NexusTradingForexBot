@@ -549,6 +549,10 @@ kbd {
 .faint { color: var(--text-faint); }
 .small { font-size: 11px; }
 .tiny { font-size: 10px; }
+/* shared text utilities (used by model-studio / provisioning / news panels) */
+.uppercase { text-transform: uppercase; }
+.font-bold { font-weight: 700; }
+.mt-1 { margin-top: 4px; }
 .section-title {
   font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--text-dim); margin: 4px 0 8px;
