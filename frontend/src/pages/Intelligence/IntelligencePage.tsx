@@ -28,6 +28,7 @@ import { InfoChip } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import { useI18n } from "@/stores/i18nStore";
 import "@/pages/_shared/pages.css";
 
 interface Props {
@@ -44,6 +45,7 @@ function scalarRows(rec: Record<string, unknown> | null | undefined, max = 12): 
 }
 
 export default function IntelligencePage({ snapshot }: Props) {
+  const t = useI18n((s) => s.t);
   const stateQuery = useQuery({
     queryKey: ["news-state"],
     queryFn: ({ signal }) => intelligenceApi.newsState(signal),
@@ -105,44 +107,44 @@ export default function IntelligencePage({ snapshot }: Props) {
     <div>
       <div className="grid cols-4">
         <MetricCard
-          label="News state (backend)"
-          value={stateQuery.isPending ? "…" : ns?.available ? (ns.state ?? "—") : "UNAVAILABLE"}
+          label={t("intelligence.kpi.news_state", "News state (backend)")}
+          value={stateQuery.isPending ? "…" : ns?.available ? (ns.state ?? "—") : t("intelligence.status.unavailable", "UNAVAILABLE")}
           tone={ns?.stale ? undefined : ns?.state === "BREAKING" || ns?.state === "HIGH_IMPACT" ? "neg" : "dim"}
-          sub={ns?.available ? (ns.stale ? "⚠ backend marks context STALE" : `freshness ${ns.freshness ?? "—"}`) : "news subsystem disabled or offline"}
+          sub={ns?.available ? (ns.stale ? t("intelligence.kpi.news_stale", "⚠ backend marks context STALE") : t("intelligence.kpi.freshness", "freshness {v}", { v: ns.freshness ?? "—" })) : t("intelligence.kpi.news_offline", "news subsystem disabled or offline")}
         />
         <MetricCard
-          label="Bullish / Bearish"
+          label={t("intelligence.kpi.bullish_bearish", "Bullish / Bearish")}
           value={ns?.available ? `${formatPct((ns.bullish_score ?? 0) * 100, 0)} / ${formatPct((ns.bearish_score ?? 0) * 100, 0)}` : "—"}
           tone="dim"
-          sub="backend-scored sentiment (display only)"
+          sub={t("intelligence.kpi.sentiment_sub", "backend-scored sentiment (display only)")}
         />
         <MetricCard
-          label="Context confidence"
+          label={t("intelligence.kpi.context_confidence", "Context confidence")}
           value={ns?.confidence === null || ns?.confidence === undefined ? "—" : formatPct(ns.confidence * 100, 0)}
           tone="dim"
-          sub={`XAUUSD relevance ${ns?.xauusd_relevance === null || ns?.xauusd_relevance === undefined ? "—" : formatPct(ns.xauusd_relevance * 100, 0)}`}
+          sub={t("intelligence.kpi.relevance", "XAUUSD relevance {v}", { v: ns?.xauusd_relevance === null || ns?.xauusd_relevance === undefined ? "—" : formatPct(ns.xauusd_relevance * 100, 0) })}
         />
         <MetricCard
-          label="Active events"
+          label={t("intelligence.kpi.active_events", "Active events")}
           value={ns?.active_event_count ?? "—"}
           tone="dim"
-          sub={`context time ${ns?.timestamp ? formatDateTime(ns.timestamp) : "—"}`}
+          sub={t("intelligence.kpi.context_time", "context time {v}", { v: ns?.timestamp ? formatDateTime(ns.timestamp) : "—" })}
         />
       </div>
 
       {ns?.stale && (
         <div className="banner stale" style={{ border: "1px solid rgba(235,161,63,0.4)", borderRadius: 6, marginTop: 10 }}>
-          <span>⚠ News context is STALE per the backend — no recent fetch. Values above are not current market context.</span>
+          <span>{"⚠ "}{t("intelligence.banner.stale", "News context is STALE per the backend — no recent fetch. Values above are not current market context.")}</span>
         </div>
       )}
 
       {/* Structure context: liquidity governor + mSLIE (read-only here) */}
       <div className="grid cols-2" style={{ marginTop: 14 }}>
         <Panel
-          title="Liquidity governor (read-only)"
+          title={t("intelligence.panel.liquidity", "Liquidity governor (read-only)")}
           right={
             <>
-              <InfoChip k="availability" v={liq?.feature_availability ?? "—"} tone={liq?.feature_availability === "AVAILABLE" ? "good" : liq?.feature_availability === "STALE_CACHE" ? "warn" : ""} />
+              <InfoChip k={t("intelligence.chip.availability", "availability")} v={liq?.feature_availability ?? "—"} tone={liq?.feature_availability === "AVAILABLE" ? "good" : liq?.feature_availability === "STALE_CACHE" ? "warn" : ""} />
               <button className="btn small ghost" onClick={() => void liqQuery.refetch()} disabled={liqQuery.isFetching}>⟳</button>
             </>
           }
@@ -150,29 +152,29 @@ export default function IntelligencePage({ snapshot }: Props) {
           {liqQuery.isPending && !liqQuery.data ? (
             <Skeleton count={4} />
           ) : liqQuery.isError ? (
-            <ErrorState message={errorText(liqQuery.error, "Liquidity state endpoint failed.")} requestId={liqQuery.error instanceof ApiError ? liqQuery.error.requestId : null} onRetry={() => void liqQuery.refetch()} />
+            <ErrorState message={errorText(liqQuery.error, t("intelligence.error.liquidity", "Liquidity state endpoint failed."))} requestId={liqQuery.error instanceof ApiError ? liqQuery.error.requestId : null} onRetry={() => void liqQuery.refetch()} />
           ) : liq ? (
             <>
               <dl className="kv">
-                <dt>enabled</dt>
-                <dd><TriBadge value={liq.enabled} on="YES" off="NO" /></dd>
-                <dt>status / causal</dt>
+                <dt>{t("intelligence.kv.enabled", "enabled")}</dt>
+                <dd><TriBadge value={liq.enabled} on={t("intelligence.yes", "YES")} off={t("intelligence.no", "NO")} /></dd>
+                <dt>{t("intelligence.kv.status_causal", "status / causal")}</dt>
                 <dd><StatusBadge status={liq.status ?? null} /> <StatusBadge status={liq.causal_state ?? null} /></dd>
-                <dt>calculation</dt>
+                <dt>{t("intelligence.kv.calculation", "calculation")}</dt>
                 <dd><StatusBadge status={liq.calculation_status ?? null} /></dd>
-                <dt>source</dt>
+                <dt>{t("intelligence.kv.source", "source")}</dt>
                 <dd className="small">{liq.source ?? "—"} (source_status {liq.source_status ?? "—"})</dd>
-                <dt>age / latency</dt>
+                <dt>{t("intelligence.kv.age_latency", "age / latency")}</dt>
                 <dd>{fmtAge(liq.age_sec)} · {liq.latency_ms === null || liq.latency_ms === undefined ? "—" : `${liq.latency_ms.toFixed(1)} ms`}</dd>
-                <dt>snapshot (decision)</dt>
+                <dt>{t("intelligence.kv.snapshot", "snapshot (decision)")}</dt>
                 <dd className="small">{liq.snapshot_timestamp ? formatDateTime(liq.snapshot_timestamp) : "—"}</dd>
-                <dt>algorithm</dt>
+                <dt>{t("intelligence.kv.algorithm", "algorithm")}</dt>
                 <dd className="small">{liq.algorithm_version ?? "—"}</dd>
               </dl>
-              {liq.error && <div className="l4-note warn">backend error{liq.error_at ? ` @ ${liq.error_at}` : ""}: {liq.error}</div>}
+              {liq.error && <div className="l4-note warn">{t("intelligence.kv.backend_error", "backend error")}{liq.error_at ? ` @ ${liq.error_at}` : ""}: {liq.error}</div>}
               {liqFeatureRows.length > 0 && (
                 <>
-                  <div className="section-title" style={{ marginTop: 10 }}>Feature values ({liq.feature_count ?? liqFeatureRows.length})</div>
+                  <div className="section-title" style={{ marginTop: 10 }}>{t("intelligence.section.feature_values", "Feature values ({n})", { n: liq.feature_count ?? liqFeatureRows.length })}</div>
                   <div className="l4-features" style={{ maxBlockSize: 160 }}>
                     {liqFeatureRows.map(([k, v]) => (
                       <div key={k} className="l4-feature" title={k}>
@@ -185,8 +187,8 @@ export default function IntelligencePage({ snapshot }: Props) {
               )}
               {(liq.pools?.length ?? 0) > 0 && (
                 <>
-                  <div className="section-title" style={{ marginTop: 10 }}>Liquidity pools</div>
-                  <DataTable headers={[{ label: "Side" }, { label: "Price", num: true }, { label: "State" }, { label: "Source" }, { label: "Confirmed" }]}>
+                  <div className="section-title" style={{ marginTop: 10 }}>{t("intelligence.section.liquidity_pools", "Liquidity pools")}</div>
+                  <DataTable headers={[{ label: t("intelligence.th.side", "Side") }, { label: t("intelligence.th.price", "Price"), num: true }, { label: t("intelligence.th.state", "State") }, { label: t("intelligence.th.source", "Source") }, { label: t("intelligence.th.confirmed", "Confirmed") }]}>
                     {liq.pools!.slice(0, 8).map((p, i) => (
                       <tr key={i}>
                         <td><span className={`l4-chip ${String(p.side ?? "").toUpperCase() === "BUY" ? "good" : "bad"}`}>{p.side ?? "—"}</span></td>
@@ -200,40 +202,39 @@ export default function IntelligencePage({ snapshot }: Props) {
                 </>
               )}
               <div className="l4-note" style={{ marginTop: 8 }}>
-                Read-only view (governor report). The toggle and the full contract live on the Liquidity tab; enabling/disabling here would bypass that
-                feature's own gate.
+                {t("intelligence.section.liquidity_readonly", "Read-only view (governor report). The toggle and the full contract live on the Liquidity tab; enabling/disabling here would bypass that same feature gate.")}
               </div>
             </>
           ) : null}
         </Panel>
 
         <Panel
-          title="mSLIE market structure"
-          right={<InfoChip k="engine" v={ms?.status ?? (mslieQuery.isPending ? "…" : "—")} tone={ms?.status === "ONLINE" ? "good" : ms?.status === "DEGRADED" ? "bad" : "warn"} />}
+          title={t("intelligence.panel.mslie", "mSLIE market structure")}
+          right={<InfoChip k={t("intelligence.chip.engine", "engine")} v={ms?.status ?? (mslieQuery.isPending ? "…" : "—")} tone={ms?.status === "ONLINE" ? "good" : ms?.status === "DEGRADED" ? "bad" : "warn"} />}
         >
           {mslieQuery.isPending && !mslieQuery.data ? (
             <Skeleton count={4} />
           ) : mslieQuery.isError ? (
-            <ErrorState message={errorText(mslieQuery.error, "mSLIE status endpoint failed.")} onRetry={() => void mslieQuery.refetch()} />
+            <ErrorState message={errorText(mslieQuery.error, t("intelligence.error.mslie", "mSLIE status endpoint failed."))} onRetry={() => void mslieQuery.refetch()} />
           ) : ms?.available === false ? (
-            <EmptyState message="mSLIE has not produced a feature vector yet." hint={ms.reason ?? "status STANDBY — structure intelligence is computed from bars once the stream warms."} />
+            <EmptyState message={t("intelligence.mslie.empty", "mSLIE has not produced a feature vector yet.")} hint={ms.reason ?? t("intelligence.mslie.empty_hint", "status STANDBY — structure intelligence is computed from bars once the stream warms.")} />
           ) : ms ? (
             <>
               <dl className="kv">
-                {ctxRows.length > 0 && <dt className="section-title" style={{ gridColumn: "1 / -1" }}>market context</dt>}
+                {ctxRows.length > 0 && <dt className="section-title" style={{ gridColumn: "1 / -1" }}>{t("intelligence.kv.market_context", "market context")}</dt>}
                 {ctxRows.map(([k, v]) => (
                   <div key={k} style={{ display: "contents" }}>
                     <dt>{k}</dt>
                     <dd className="small">{v}</dd>
                   </div>
                 ))}
-                <dt>algorithm version</dt>
+                <dt>{t("intelligence.kv.algorithm_version", "algorithm version")}</dt>
                 <dd className="small">{ms.algorithm_version ?? "—"}</dd>
               </dl>
               {(ms.liquidity_map?.length ?? 0) > 0 && (
                 <>
-                  <div className="section-title" style={{ marginTop: 10 }}>Liquidity map ({ms.liquidity_map!.length} bands)</div>
-                  <DataTable headers={[{ label: "Price range" }, { label: "Type" }, { label: "Touches", num: true }, { label: "Strength", num: true }]}>
+                  <div className="section-title" style={{ marginTop: 10 }}>{t("intelligence.section.liquidity_map", "Liquidity map ({n} bands)", { n: ms.liquidity_map!.length })}</div>
+                  <DataTable headers={[{ label: t("intelligence.th.price_range", "Price range") }, { label: t("intelligence.th.type", "Type") }, { label: t("intelligence.th.touches", "Touches"), num: true }, { label: t("intelligence.th.strength", "Strength"), num: true }]}>
                     {ms.liquidity_map!.slice(0, 8).map((z, i) => (
                       <tr key={i}>
                         <td className="num">{String(z.low ?? "—")} – {String(z.high ?? "—")}</td>
@@ -247,7 +248,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               )}
               {ms.last_sweep && (
                 <div className="l4-note" style={{ marginTop: 8 }}>
-                  last sweep: {String(ms.last_sweep.type ?? ms.last_sweep.side ?? "—")} @ {String(ms.last_sweep.price ?? "—")}
+                  {t("intelligence.mslie.last_sweep", "last sweep:")} {String(ms.last_sweep.type ?? ms.last_sweep.side ?? "—")} @ {String(ms.last_sweep.price ?? "—")}
                   {ms.last_sweep.time ? ` · ${formatDateTime(String(ms.last_sweep.time))}` : ""}
                 </div>
               )}
@@ -258,33 +259,33 @@ export default function IntelligencePage({ snapshot }: Props) {
 
       {/* Regime readout */}
       <Panel
-        title="Regime (engine classifier)"
+        title={t("intelligence.panel.regime", "Regime (engine classifier)")}
         right={
           <>
-            <AgeNote label="inference age" ageSec={snapshot?.diagnostics.inference_age_sec} />
+            <AgeNote label={t("intelligence.age.inference", "inference age")} ageSec={snapshot?.diagnostics.inference_age_sec} />
             <button className="btn small ghost" onClick={() => void regimeQuery.refetch()} disabled={regimeQuery.isFetching}>⟳</button>
           </>
         }
       >
         <div className="grid cols-2">
           <div>
-            <div className="section-title">canonical snapshot</div>
+            <div className="section-title">{t("intelligence.section.canonical_snapshot", "canonical snapshot")}</div>
             <dl className="kv">
-              <dt>regime</dt>
+              <dt>{t("intelligence.kv.regime", "regime")}</dt>
               <dd>{snapshot?.regime ?? "—"}</dd>
-              <dt>news adjustment</dt>
+              <dt>{t("intelligence.kv.news_adjustment", "news adjustment")}</dt>
               <dd>{ns?.news_adjustment === null || ns?.news_adjustment === undefined ? "—" : formatNumber(ns.news_adjustment, 3)}</dd>
-              <dt>decision</dt>
+              <dt>{t("intelligence.kv.decision", "decision")}</dt>
               <dd>{snapshot?.ai_decision ?? "—"} {snapshot?.ai_confidence !== null && snapshot?.ai_confidence !== undefined ? `(${formatPct(snapshot.ai_confidence * 100, 1)})` : ""}</dd>
             </dl>
           </div>
           <div>
-            <div className="section-title">/api/v1/market/regime evidence</div>
+            <div className="section-title">{t("intelligence.section.regime_evidence", "/api/v1/market/regime evidence")}</div>
             <SectionState
               query={regimeQuery}
-              emptyMessage={regime?.note ?? "No regime evidence."}
-              emptyHint="The classifier emits no state before the first inference — that is reported, not guessed."
-              errorFallback="Regime endpoint failed."
+              emptyMessage={regime?.note ?? t("intelligence.regime.empty", "No regime evidence.")}
+              emptyHint={t("intelligence.regime.empty_hint", "The classifier emits no state before the first inference — that is reported, not guessed.")}
+              errorFallback={t("intelligence.error.regime", "Regime endpoint failed.")}
               emptyWhen={(d) => d.regime === null || d.regime === undefined}
             >
               {(d) => (
@@ -303,59 +304,59 @@ export default function IntelligencePage({ snapshot }: Props) {
       </Panel>
 
       <div className="grid cols-2">
-        <Panel title="News subsystem health">
+        <Panel title={t("intelligence.panel.news_health", "News subsystem health")}>
           {healthQuery.isPending ? (
             <Skeleton count={4} />
           ) : healthQuery.isError ? (
-            <ErrorState message={errorText(healthQuery.error, "News health endpoint failed.")} onRetry={() => void healthQuery.refetch()} />
+            <ErrorState message={errorText(healthQuery.error, t("intelligence.error.news_health", "News health endpoint failed."))} onRetry={() => void healthQuery.refetch()} />
           ) : healthQuery.data?.available ? (
             <dl className="kv">
-              <dt>enabled</dt>
-              <dd><TriBadge value={healthQuery.data.enabled} on="YES" off="NO" /></dd>
-              <dt>worker</dt>
+              <dt>{t("intelligence.kv.enabled", "enabled")}</dt>
+              <dd><TriBadge value={healthQuery.data.enabled} on={t("intelligence.yes", "YES")} off={t("intelligence.no", "NO")} /></dd>
+              <dt>{t("intelligence.kv.worker", "worker")}</dt>
               <dd><StatusBadge status={String((healthQuery.data.worker as { state?: string } | undefined)?.state ?? null)} /></dd>
-              <dt>calendar worker</dt>
-              <dd>{healthQuery.data.calendar ? String((healthQuery.data.calendar as { state?: string }).state ?? "present") : "—"}</dd>
-              <dt>event gate</dt>
-              <dd>{healthQuery.data.event_gate ? String((healthQuery.data.event_gate as { verdict?: string }).verdict ?? "present") : "—"}</dd>
-              <dt>llm budget</dt>
-              <dd className="small">{healthQuery.data.llm_budget ? "reported (see payload)" : "—"}</dd>
+              <dt>{t("intelligence.kv.calendar_worker", "calendar worker")}</dt>
+              <dd>{healthQuery.data.calendar ? String((healthQuery.data.calendar as { state?: string }).state ?? t("intelligence.kv.present", "present")) : "—"}</dd>
+              <dt>{t("intelligence.kv.event_gate", "event gate")}</dt>
+              <dd>{healthQuery.data.event_gate ? String((healthQuery.data.event_gate as { verdict?: string }).verdict ?? t("intelligence.kv.present", "present")) : "—"}</dd>
+              <dt>{t("intelligence.kv.llm_budget", "llm budget")}</dt>
+              <dd className="small">{healthQuery.data.llm_budget ? t("intelligence.kv.llm_reported", "reported (see payload)") : "—"}</dd>
             </dl>
           ) : (
-            <EmptyState message="News subsystem unavailable." hint="Engine offline or news_engine not attached — shown as UNAVAILABLE." />
+            <EmptyState message={t("intelligence.news.empty", "News subsystem unavailable.")} hint={t("intelligence.news.empty_hint", "Engine offline or news_engine not attached — shown as UNAVAILABLE.")} />
           )}
         </Panel>
 
-        <Panel title="Trade intelligence summary">
+        <Panel title={t("intelligence.panel.summary", "Trade intelligence summary")}>
           {summaryQuery.isPending ? (
             <Skeleton count={4} />
           ) : summaryQuery.data?.available ? (
             <dl className="kv">
-              <dt>lifecycle events</dt>
+              <dt>{t("intelligence.kv.lifecycle_events", "lifecycle events")}</dt>
               <dd>{summaryQuery.data.lifecycle_events ?? 0}</dd>
-              <dt>autopsies</dt>
+              <dt>{t("intelligence.kv.autopsies", "autopsies")}</dt>
               <dd>{summaryQuery.data.autopsies ?? 0}</dd>
-              <dt>worker</dt>
+              <dt>{t("intelligence.kv.worker", "worker")}</dt>
               <dd><StatusBadge status={String((summaryQuery.data.worker as { state?: string } | undefined)?.state ?? null)} /></dd>
-              <dt>fetch time</dt>
+              <dt>{t("intelligence.kv.fetch_time", "fetch time")}</dt>
               <dd>{summaryQuery.data.fetch_time ? formatDateTime(summaryQuery.data.fetch_time) : "—"}</dd>
               {summaryQuery.data.reasons && (
                 <>
-                  <dt>reasons</dt>
+                  <dt>{t("intelligence.kv.reasons", "reasons")}</dt>
                   <dd className="small">{summaryQuery.data.reasons}</dd>
                 </>
               )}
             </dl>
           ) : summaryQuery.isError ? (
-            <ErrorState message="Intelligence summary endpoint failed." onRetry={() => void summaryQuery.refetch()} />
+            <ErrorState message={t("intelligence.error.summary", "Intelligence summary endpoint failed.")} onRetry={() => void summaryQuery.refetch()} />
           ) : (
-            <EmptyState message="Trade intelligence unavailable (engine offline)." hint="available:false — counts are not zero-filled." />
+            <EmptyState message={t("intelligence.summary.empty", "Trade intelligence unavailable (engine offline).")} hint={t("intelligence.summary.empty_hint", "available:false — counts are not zero-filled.")} />
           )}
         </Panel>
       </div>
 
       <Panel
-        title="Latest canonical articles"
+        title={t("intelligence.panel.articles", "Latest canonical articles")}
         tight
         right={
           articlesQuery.data?.articles && articlesQuery.data.articles.length > 0 ? (
@@ -368,7 +369,7 @@ export default function IntelligencePage({ snapshot }: Props) {
                   rows: (articlesQuery.data.articles ?? []).map((a) => [a.article_id, a.published_at ?? "", a.source_name ?? "", String(a.importance ?? ""), a.article_status ?? "", a.title]),
                 })
               }
-              title="exports exactly the rows returned by /api/news/latest"
+              title={t("intelligence.csv.articles_title", "exports exactly the rows returned by /api/news/latest")}
             >
               ⇩ CSV
             </button>
@@ -378,7 +379,7 @@ export default function IntelligencePage({ snapshot }: Props) {
         {articlesQuery.isPending ? (
           <div style={{ padding: 12 }}><Skeleton count={3} /></div>
         ) : articlesQuery.data?.available && articlesQuery.data.articles && articlesQuery.data.articles.length > 0 ? (
-          <DataTable headers={[{ label: "Published" }, { label: "Source" }, { label: "Title" }, { label: "Importance" }]}>
+          <DataTable headers={[{ label: t("intelligence.th.published", "Published") }, { label: t("intelligence.th.source", "Source") }, { label: t("intelligence.th.title", "Title") }, { label: t("intelligence.th.importance", "Importance") }]}>
             {articlesQuery.data.articles.map((a) => (
               <tr key={a.article_id}>
                 <td>{a.published_at ? formatDateTime(a.published_at) : "—"}</td>
@@ -389,18 +390,18 @@ export default function IntelligencePage({ snapshot }: Props) {
             ))}
           </DataTable>
         ) : articlesQuery.isError ? (
-          <ErrorState message="News feed endpoint failed." onRetry={() => void articlesQuery.refetch()} />
+          <ErrorState message={t("intelligence.error.news_feed", "News feed endpoint failed.")} onRetry={() => void articlesQuery.refetch()} />
         ) : (
-          <EmptyState message="No articles available." hint="The feed endpoint answered with an empty list — the parser or the source may be warming up." />
+          <EmptyState message={t("intelligence.articles.empty", "No articles available.")} hint={t("intelligence.articles.empty_hint", "The feed endpoint answered with an empty list — the parser or the source may be warming up.")} />
         )}
       </Panel>
 
-      <Panel title="Recent trade autopsies (why trades won/lost)" tight>
+      <Panel title={t("intelligence.panel.autopsies", "Recent trade autopsies (why trades won/lost)")} tight>
         {autopsyQuery.isPending ? (
           <div style={{ padding: 12 }}><Skeleton count={3} /></div>
         ) : autopsyQuery.data?.available && autopsyQuery.data.autopsies && autopsyQuery.data.autopsies.length > 0 ? (
           <DataTable
-            headers={[{ label: "Ticket" }, { label: "Strategy" }, { label: "Outcome" }, { label: "Realized R", num: true }, { label: "Exit reason" }]}
+            headers={[{ label: t("intelligence.th.ticket", "Ticket") }, { label: t("intelligence.th.strategy", "Strategy") }, { label: t("intelligence.th.outcome", "Outcome") }, { label: t("intelligence.th.realized_r", "Realized R"), num: true }, { label: t("intelligence.th.exit_reason", "Exit reason") }]}
           >
             {autopsyQuery.data.autopsies.map((a, i) => (
               <tr key={String(a.ticket ?? i)}>
@@ -415,9 +416,9 @@ export default function IntelligencePage({ snapshot }: Props) {
             ))}
           </DataTable>
         ) : autopsyQuery.isError ? (
-          <ErrorState message="Autopsy endpoint failed." onRetry={() => void autopsyQuery.refetch()} />
+          <ErrorState message={t("intelligence.error.autopsy", "Autopsy endpoint failed.")} onRetry={() => void autopsyQuery.refetch()} />
         ) : (
-          <EmptyState message="No autopsies recorded." />
+          <EmptyState message={t("intelligence.autopsy.empty", "No autopsies recorded.")} />
         )}
       </Panel>
     </div>
