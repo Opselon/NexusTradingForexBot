@@ -105,15 +105,25 @@ export function repairOutcomeOf(r: MktRepair): Record<string, unknown> | null {
   return null;
 }
 
-/** Detail sections that exist on the payload drive the drawer — never placeholders. */
-export function detailSections(detail: MktSeedDetail): string[] {
-  const out: string[] = [];
-  if (detail.dsl) out.push("DSL");
-  if (detail.parameter_schema) out.push("parameter schema");
-  if (detail.default_parameters) out.push("default parameters");
-  if ((detail.lifecycle_events ?? []).length) out.push("lifecycle events");
+/** Detail sections that exist on the payload drive the drawer — never placeholders.
+ *  Returns stable ids; SeedDetailDrawer maps them through t() for display. */
+export type DetailSectionKey =
+  | "dsl"
+  | "parameter_schema"
+  | "default_parameters"
+  | "lifecycle_events"
+  | "enablement"
+  | "recent_scores"
+  | "recent_repairs";
+
+export function detailSections(detail: MktSeedDetail): DetailSectionKey[] {
+  const out: DetailSectionKey[] = [];
+  if (detail.dsl) out.push("dsl");
+  if (detail.parameter_schema) out.push("parameter_schema");
+  if (detail.default_parameters) out.push("default_parameters");
+  if ((detail.lifecycle_events ?? []).length) out.push("lifecycle_events");
   if ((detail.enablement ?? []).length) out.push("enablement");
-  if ((detail.recent_scores ?? []).length) out.push("recent scores");
-  if ((detail.recent_repairs ?? []).length) out.push("recent repairs");
+  if ((detail.recent_scores ?? []).length) out.push("recent_scores");
+  if ((detail.recent_repairs ?? []).length) out.push("recent_repairs");
   return out;
 }
