@@ -266,15 +266,27 @@ Before pushing:
 
 ## 9. Merge safety
 
-Never merge directly into `main` if:
-- the repository is dirty (uncommitted/unstaged intent);
-- unrelated WIP exists on the branch;
-- another agent owns changed files (active exclusive lock);
-- `beforePush` failed.
+**Canonical rule (see `agents/git_governance.md` §6): `main` is protected. The
+PR is the only integration boundary. An agent NEVER merges into `main` — not
+even when the tree is clean, the gate is green, and no foreign WIP is present.
+A clean tree is a precondition, not an authorisation.** The older wording below
+("never merge directly into main *if*...") is superseded: it read as a
+permission to merge when those four conditions were simply absent. Green CI is
+a necessary precondition; the coordinator approval gate (DEC-0008) is separate
+and mandatory.
 
-Merges are behavior, not text: classify another agent's work as
-REQUIRED / OPTIONAL / CONFLICTING / OBSOLETE before integrating, and inspect
-`git show <commit>` + tests + architecture impact (per `multi-agent-git-contract.md`).
+What an agent may still do:
+
+- merge `origin/main` INTO its own task branch (never the reverse),
+- integrate a parallel agent's work into that task branch after classifying it
+  REQUIRED / OPTIONAL / CONFLICTING / OBSOLETE (`git show <commit>` + tests +
+  architecture impact per `multi-agent-git-contract.md`),
+
+and then the change reaches `main` only through a squash-merged PR.
+
+Integrating another agent's work is behaviour, not text: inspect `git show
+<commit>`, run the affected tests, and disclose any absorbed work as an
+`ABSORPTION-DISCLOSURE-<sha>` taskboard row — never a silent overwrite.
 
 ---
 
