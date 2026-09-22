@@ -15,8 +15,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { FreshnessCaption } from "@/features/config/ui/kit";
 import { observabilityApi } from "../simulationApi";
-import { FreshnessCaption } from "../../../features/research/ui/lane5Kit";
 
 function workerTone(status: string | undefined): "good" | "warn" | "bad" | "unknown" {
   const s = (status ?? "STOPPED").toUpperCase();
@@ -40,7 +40,7 @@ export function TelegramWorkerPanel() {
   return (
     <Panel
       title="Telegram notifier (live worker)"
-      right={<FreshnessCaption isFetching={q.isFetching} error={q.isError} />}
+      right={<FreshnessCaption fetchedAtMs={q.dataUpdatedAt || null} intervalMs={15_000} stale={q.isError} />}
       tight
     >
       {q.isPending ? (
