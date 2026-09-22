@@ -216,6 +216,15 @@ def route_train(req: AdviserTrainRequest) -> dict[str, Any]:
     svc = get_position_adviser_service()
     root = _repo_root()
     ds = _safe_under_repo(Path(req.dataset_path))
+    # Assert containment at the sink, not only inside the validator: this is
+    # the read of the request-supplied path, and the trainer gets a value that
+    # is provably inside the root.
+    if not ds.is_relative_to(root.resolve()):
+        logger.warning("[ADVISER] event=TRAIN_PATH_OUTSIDE_REPO path=%s", ds)
+        raise HTTPException(
+            status_code=400,
+            detail="adviser artifact path must stay inside the repository root",
+        )
     if not ds.is_file():
         logger.warning("[ADVISER] event=TRAIN_DATASET_MISSING path=%s", ds)
         raise HTTPException(
@@ -471,6 +480,13 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
     svc = get_position_adviser_service()
     root = _repo_root()
     ds = _safe_under_repo(Path(req.dataset_path))
+    # Sink-level containment assertion, as in route_train.
+    if not ds.is_relative_to(root.resolve()):
+        logger.warning("[ADVISER] event=AUTOTUNE_PATH_OUTSIDE_REPO path=%s", ds)
+        raise HTTPException(
+            status_code=400,
+            detail="adviser artifact path must stay inside the repository root",
+        )
     if not ds.is_file():
         logger.warning("[ADVISER] event=AUTOTUNE_DATASET_MISSING path=%s", ds)
         raise HTTPException(

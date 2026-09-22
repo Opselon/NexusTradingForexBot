@@ -365,7 +365,8 @@ class PositionAdviserService:
         try:
             model.load_state_dict(weights, strict=True)
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"state dict load failed: {exc}"}
+            logger.warning("[ADVISER] event=STATE_DICT_LOAD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "state dict load failed (see server logs)"}
         model.eval()
 
         # Warm-up forward (fail closed before we advertise readiness).
@@ -376,8 +377,15 @@ class PositionAdviserService:
             if out.shape[0] != 1 or out.shape[1] < len(ADVISER_ACTIONS):
                 raise RuntimeError(f"unexpected warm-up output shape {tuple(out.shape)}")
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"warm-up forward failed: {exc}"}
+            logger.warning("[ADVISER] event=WARMUP_FORWARD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "warm-up forward failed (see server logs)"}
 
+        # Re-check containment immediately before the raw read: the sha256
+        # below opens the checkpoint bytes, so the barrier is asserted at the
+        # sink itself, not only at the top of load().
+        if not _contained_artifact_path(wp):
+            logger.warning("[ADVISER] event=HASH_REJECTED reason=path_outside_repo")
+            return {"status": "REJECTED", "reason": "path rejected: outside repository root"}
         h = hashlib.sha256()
         with open(wp, "rb") as f:
             while chunk := f.read(65536):
