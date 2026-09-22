@@ -72,7 +72,7 @@ export function ModelStressBenchPanel({
                 <tbody>
                   {stressResults.map((r, i) => (
                     <tr key={i}>
-                      <td style={{ fontWeight: 600, color: "#fff" }}>{r.test}</td>
+                      <td style={{ fontWeight: 600, color: "var(--text)" }}>{r.test}</td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`badge ${r.passed ? "good" : "bad"}`}>
                           {r.passed ? "PASS" : "FAIL"}

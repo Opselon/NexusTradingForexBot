@@ -500,7 +500,7 @@ function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; 
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <span className="inline-badge-badge">
+            <span className="inline-badge">
               {" "}· <span className="badge good">+{counts.added}</span> <span className="badge bad">−{counts.removed}</span> <span className="badge warn">~{counts.changed}</span>
             </span>
           </div>

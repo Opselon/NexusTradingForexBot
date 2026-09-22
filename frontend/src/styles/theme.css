@@ -260,6 +260,14 @@ body {
 .panel-header .dot-accent { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px rgba(65, 166, 242, 0.8); flex-shrink: 0; }
 .panel-body { padding: 12px 14px; }
 .panel-body.tight { padding: 0; }
+/* sentence-case subtitle under the uppercase panel header */
+.panel-subtitle {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
 
 .grid { display: grid; gap: 12px; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -294,6 +302,8 @@ body {
 .metric .v.dim { color: var(--text-dim); }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 16px; font-size: 12px; }
+/* row wrapper inside .kv — dissolves so dt/dd become the grid's own items */
+.kv-row { display: contents; }
 .kv dt { color: var(--text-dim); }
 .kv dd { margin: 0; font-family: var(--mono); text-align: right; }
 
@@ -362,6 +372,10 @@ body {
   gap: 8px; padding: 36px 16px; color: var(--text-dim); text-align: center;
 }
 .state-block .glyph { font-size: 20px; opacity: 0.7; font-family: var(--mono); }
+/* ErrorBoundary fallback: left-aligned card layout over the centered block */
+.eb-card { display: grid; gap: 8px; justify-items: start; padding: 16px; text-align: start; }
+.eb-card .hint { white-space: pre-wrap; max-width: 720px; text-align: start; }
+.eb-actions { display: flex; gap: 8px; }
 .state-block.error .glyph, .state-block.error { color: var(--red); }
 .state-block .hint { font-size: 11px; color: var(--text-faint); max-width: 460px; }
 
@@ -395,6 +409,8 @@ body {
 .banner.down { background: var(--red-dim); color: #ff9a94; border-color: rgba(242, 86, 77, 0.4); }
 .banner.auth { background: var(--red-dim); color: #ff9a94; border-color: rgba(242, 86, 77, 0.4); }
 .banner.calm { background: rgba(62, 207, 142, 0.06); color: var(--green); border-color: rgba(62, 207, 142, 0.2); }
+.banner.info { background: rgba(65, 166, 242, 0.10); color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.35); }
+.banner.good { background: rgba(62, 207, 142, 0.10); color: var(--green); border-color: rgba(62, 207, 142, 0.35); }
 .banner .retry-btn {
   margin-left: auto; background: transparent; color: inherit;
   border: 1px solid currentColor; border-radius: 6px;
@@ -545,6 +561,19 @@ kbd {
 .faint { color: var(--text-faint); }
 .small { font-size: 11px; }
 .tiny { font-size: 10px; }
+/* shared text utilities (used by model-studio / provisioning / news panels) */
+.uppercase { text-transform: uppercase; }
+.font-bold { font-weight: 700; }
+.mt-1 { margin-top: 4px; }
+/* dim mono meta group wrapping count badges */
+.inline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
 .section-title {
   font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--text-dim); margin: 4px 0 8px;

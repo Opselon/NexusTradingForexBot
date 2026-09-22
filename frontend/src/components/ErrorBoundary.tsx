@@ -51,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const { error, detail } = this.state;
     if (!error) return this.props.children;
     return (
-      <div className="state-block error eb-card" role="alert" style={{ display: "grid", gap: 8, justifyItems: "start", padding: 16 }}>
+      <div className="state-block error eb-card" role="alert">
         <div className="glyph">⛔</div>
         <div>
           <strong>
@@ -59,11 +59,11 @@ export class ErrorBoundary extends Component<Props, State> {
           </strong>{" "}
           The rest of the console is intact — no values were hidden or invented.
         </div>
-        <div className="hint inline-mono" style={{ whiteSpace: "pre-wrap", maxWidth: 720 }}>
+        <div className="hint inline-mono">
           {error.message || String(error)}
           {detail ? `\n${detail}` : ""}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="eb-actions">
           <button className="btn small" onClick={this.reset}>
             Retry render
           </button>

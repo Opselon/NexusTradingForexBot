@@ -53,6 +53,7 @@
 /* ------------------------------ forms ------------------------------ */
 .l3-form { display: grid; gap: 10px; }
 .l3-field { display: grid; gap: 4px; }
+.l3-field-control { display: grid; gap: 6px; }
 .l3-field-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .l3-field-head .lab { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--text-dim); text-transform: uppercase; }
 .l3-input { inline-size: 100%; max-inline-size: 320px; }

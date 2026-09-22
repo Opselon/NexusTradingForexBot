@@ -234,7 +234,7 @@ export function ModelInferencePanel({
                     <tbody>
                       {predictData.layer_inspection.map((l) => (
                         <tr key={l.layer}>
-                          <td className="inline-mono" style={{ color: "#fff", fontWeight: 600 }}>{l.layer}</td>
+                          <td className="inline-mono" style={{ color: "var(--text)", fontWeight: 600 }}>{l.layer}</td>
                           <td className="tiny" style={{ color: "var(--text-dim)" }}>{l.type}</td>
                           <td className="inline-mono tiny" style={{ color: "var(--text-faint)" }}>
                             [{l.shape.join("×")}]
@@ -332,7 +332,7 @@ function ProbRow({
   return (
     <div className="ms-prob-row">
       <div className="ms-prob-meta">
-        <span style={{ color: dominant ? "#fff" : "var(--text-dim)" }}>
+        <span style={{ color: dominant ? "var(--text)" : "var(--text-dim)" }}>
           {dominant ? "◆ " : ""}
           {label}
         </span>
@@ -363,7 +363,7 @@ function SaliencyRow({
   const maxAbs = Math.max(...drivers.map((d) => Math.abs(d.gradient)), 1e-9);
   return (
     <div className="ms-saliency-block" style={{ borderTop: "none", paddingTop: 0 }}>
-      <div className="tiny" style={{ color: sign === "pos" ? "var(--green)" : "#ff938c", fontWeight: 700 }}>
+      <div className="tiny" style={{ color: sign === "pos" ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
         {title}
       </div>
       <div className="ms-driver-row">

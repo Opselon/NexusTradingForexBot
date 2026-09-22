@@ -643,3 +643,10 @@ body.dense .ic-table td,
 body.dense .ic-table th {
   padding: 3px 6px;
 }
+
+/* CountChip label beside the big value */
+.ic-count-k { font-size: 9.5px; letter-spacing: 0.14em; opacity: 0.75; }
+
+/* reading tables + pivot matrix: data tables take the full row of .ic-tables */
+.ic-table-panel { grid-column: 1 / -1; }
+.ic-pivots { grid-column: 1 / -1; }
