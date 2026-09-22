@@ -216,12 +216,12 @@ def train_position_adviser(
     """
     from nexus_scalp.model_generation.dataset_manifest import compute_dataset_hash
 
-    p = Path(dataset_path)
-    if not p.is_absolute():
-        p = p.resolve()
-    # ``p.resolve()`` above is what makes ``p`` self-consistent (it removes
-    # any '..' segments and follows symlinks), so the sinks below read the
-    # canonical location rather than a path whose text and target disagree.
+    # ``p.resolve()`` is what makes ``p`` self-consistent (it removes any '..'
+    # segments and follows symlinks), so the reads below hit the canonical
+    # location rather than a path whose text and target disagree. It also makes
+    # the trainer's input a resolved, absolute value — the caller's containment
+    # check is validated against exactly this object.
+    p = Path(dataset_path).resolve()
     if not p.is_file():
         raise FileNotFoundError(f"position adviser dataset not found: {p}")
     if p.suffix.lower() not in (".parquet", ".csv"):
