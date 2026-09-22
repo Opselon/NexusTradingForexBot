@@ -16,6 +16,7 @@ import {
 } from "@tanstack/react-query";
 import { rulesApi, type RuleToggleResult } from "./api";
 import { backendMessage, isBackendSuccess } from "@/features/config/validation";
+import { useI18n } from "@/stores/i18nStore";
 import { mapRuleDto, type RuleVO } from "./model";
 
 export const RULES_QUERY_KEY: QueryKey = ["rules", "list"];
@@ -36,7 +37,7 @@ export function useRulesQuery(paused = false) {
       if (!Array.isArray(rows)) {
         // A legacy error envelope can arrive with HTTP 200 — surface it as an error.
         const body = rows as unknown as RuleToggleResult;
-        throw new Error(backendMessage(body, "Backend returned no rule rows."));
+        throw new Error(backendMessage(body, useI18n.getState().t("rules.query.no_rows", "Backend returned no rule rows.")));
       }
       return rows.map(mapRuleDto);
     },
@@ -57,17 +58,21 @@ export function useToggleRule() {
       try {
         const body = await rulesApi.toggle({ rule_name, is_enabled, parameters });
         const ok = isBackendSuccess(body);
+        // Lazy store read: outcome copy resolves in the active language at call time.
+        const t = useI18n.getState().t;
         return {
           ok,
           message: ok
-            ? `Rule "${rule_name}" ${is_enabled ? "ENABLED" : "DISABLED"} — confirmed by backend.`
-            : backendMessage(body, "Backend refused the rule change."),
+            ? is_enabled
+              ? t("rules.outcome.enabled", "Rule \"{name}\" ENABLED — confirmed by backend.", { name: rule_name })
+              : t("rules.outcome.disabled", "Rule \"{name}\" DISABLED — confirmed by backend.", { name: rule_name })
+            : backendMessage(body, t("rules.outcome.refused", "Backend refused the rule change.")),
           requestId: (body.error && body.error.request_id) || null,
         };
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : "Rule command failed.",
+          message: e instanceof Error ? e.message : useI18n.getState().t("rules.outcome.failed", "Rule command failed."),
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }

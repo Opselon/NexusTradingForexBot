@@ -11,6 +11,7 @@
  */
 
 import { toFiniteNumber, type FieldErrors, type FieldSpec, validateFields } from "@/features/config/validation";
+import { useI18n } from "@/stores/i18nStore";
 import type { RuleDto } from "./api";
 
 export type RuleParamKind = "number" | "boolean" | "string";
@@ -60,10 +61,10 @@ export function mapRuleDto(dto: RuleDto): RuleVO {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         params = Object.entries(parsed as Record<string, unknown>).map(([k, v]) => paramFromEntry(k, v));
       } else {
-        paramsError = "stored parameters are not a JSON object";
+        paramsError = useI18n.getState().t("rules.model.not_object", "stored parameters are not a JSON object");
       }
     } catch (e) {
-      paramsError = e instanceof Error ? e.message : "unparseable JSON";
+      paramsError = e instanceof Error ? e.message : useI18n.getState().t("rules.model.unparseable", "unparseable JSON");
     }
   } else if (raw && typeof raw === "object") {
     params = Object.entries(raw).map(([k, v]) => paramFromEntry(k, v));
@@ -72,7 +73,7 @@ export function mapRuleDto(dto: RuleDto): RuleVO {
     name: String(dto.rule_name ?? ""),
     enabled: dto.is_enabled === true || dto.is_enabled === 1,
     rawEnabled: dto.is_enabled,
-    category: String(dto.category ?? "UNCATEGORIZED"),
+    category: String(dto.category ?? useI18n.getState().t("rules.model.uncategorized", "UNCATEGORIZED")),
     params,
     paramsError,
   };
