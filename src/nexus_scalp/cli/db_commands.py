@@ -10,10 +10,8 @@ All commands support --json for machine-readable output (no ANSI, §54).
 
 from __future__ import annotations
 
-import contextlib
 import json
 import sys
-from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -66,33 +64,27 @@ def _engine(
     }
 
 
-@contextlib.contextmanager
-def _silence_loggers_for_json() -> Generator[None, None, None]:
-    """Silence structlog/stderr noise for the duration of one JSON emission only.
-
-    ``logging.disable(CRITICAL)`` is process-global: the previous call site left
-    it set forever, which de-armed every WARNING-level assertion in the process
-    (the MT5 storm-throttle log-capture probes read zero records under xdist
-    when a co-scheduled CLI test ran ``db ... --json``). Save and restore.
-    """
-    import logging as _logging
-
-    previous = _logging.root.manager.disable
-    try:
-        _logging.disable(_logging.CRITICAL)
-        yield
-    finally:
-        _logging.disable(previous)
-
-
 def _emit(payload: dict[str, Any], json_mode: bool, *, plain_title: str = "") -> None:
     if json_mode:
         # Pure machine-readable stdout: silence structlog (stderr) noise so
         # `--json` output is parseable with zero post-processing (§54).
-        # Scoped: the disable must not outlive this call (see
-        # _silence_loggers_for_json).
-        with _silence_loggers_for_json():
+        # BUG-307C: ``logging.disable()`` is PROCESS-GLOBAL and was never
+        # restored, so one ``--json`` invocation permanently silenced every
+        # logger in the process. Under ``pytest -n auto --dist loadgroup``
+        # that leak crossed test boundaries: a co-scheduled CLI test left the
+        # worker's logging disabled and later logging-capture tests in the
+        # same worker saw ``len([])`` where they expected records (this made
+        # main itself red: test_mt5_diag_throttle + test_update_cli_contract
+        # failed 2/2964 on an otherwise-healthy commit). Scope the silence to
+        # this call only via a restore in a finally block.
+        import logging as _logging
+
+        prior = _logging.root.manager.disable
+        try:
+            _logging.disable(_logging.CRITICAL)
             print(json.dumps(payload, ensure_ascii=False, indent=2))
+        finally:
+            _logging.disable(prior)
         return
     print(plain_title or "")
     for db, data in payload.items():
