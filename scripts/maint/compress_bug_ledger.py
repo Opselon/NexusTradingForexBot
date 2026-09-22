@@ -95,8 +95,8 @@ META_LABELS = {"status", "severity", "confidence", "discovered", "fixed", "verif
 
 def parse(text: str):
     """Split the ledger into ordered sections (bug entries + other H2 blocks)."""
-    lines = [l.rstrip("\r") for l in text.split("\n")]
-    h2 = [(i, l.strip()) for i, l in enumerate(lines) if H2.match(l)]
+    lines = [line.rstrip("\r") for line in text.split("\n")]
+    h2 = [(i, line.strip()) for i, line in enumerate(lines) if H2.match(line)]
     if not h2:
         return [], lines
     counts: dict[str, int] = {}
@@ -164,8 +164,8 @@ def blocks(entry_lines):
     label = None
     buf = []
     out = []
-    for l in entry_lines:
-        s = l.strip()
+    for line in entry_lines:
+        s = line.strip()
         if not s:
             continue
         if s.startswith("```"):
@@ -261,23 +261,23 @@ def condense(entry: dict) -> str:
         if len(piece) < 25:
             continue
         # a parenthesised qualifier left open by label-chopping must not leak
-        out_label = label
-        if out_label.count("(") > out_label.count(")"):
-            out_label = out_label.rsplit("(", 1)[0].strip()
-        out_label = clip(out_label, 60)
+        clean = label
+        if clean.count("(") > clean.count(")"):
+            clean = clean.rsplit("(", 1)[0].strip()
+        clean = clip(clean, 60)
         if piece.count("**") % 2:
             piece = piece.replace("**", "")
         # a qualifier that the label left behind must not start the sentence
         piece = re.sub(r"^[\s,;:]+", "", piece).strip()
         if not piece:
             continue
-        out.append(f"- **{out_label.title()}**: {piece}")
+        out.append(f"- **{clean.title()}**: {piece}")
         total += len(piece)
         if total >= MAX_BODY:
             break
 
     # entries with no labelled block at all still keep their substance
-    if not any(l.startswith("- **") and not l.startswith("- **Orig") for l in out):
+    if not any(line.startswith("- **") and not line.startswith("- **Orig") for line in out):
         flat = re.sub(r"\s*\n\s*", " ", " ".join(body_lines))
         flat = re.sub(r"```[a-z]*|```", "`", flat)
         flat = re.sub(r"\s+", " ", flat).strip()
@@ -345,10 +345,10 @@ def main():
     print(f"wrote {ARCHIVE}")
 
     head = []
-    for l in lines:
-        if l.startswith("## Forensic Bug Ledger"):
+    for line in lines:
+        if line.startswith("## Forensic Bug Ledger"):
             break
-        head.append(l)
+        head.append(line)
     if not any(h.startswith("## ") for h in head):
         head = lines[:34]
 
