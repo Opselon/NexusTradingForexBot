@@ -2,7 +2,7 @@
 
 STREAM: STREAM D — MODEL ARCHITECTURE
 PRIORITY: P2
-STATUS: BLOCKED
+STATUS: DONE (2026-09-22, AGENT-ML-ARCH)
 DEPENDENCIES: ML-ARCH-001, ML-DATA-001
 AGENT_ROLE: AGENT-ML-ARCH
 OWNERSHIP_SCOPE: src/nexus_scalp/model_generation/architectures.py
@@ -71,11 +71,30 @@ Measure gradient Jacobian causality test on 1,000 random inputs; must have zero 
 - Report: docs/research/TCN_RECEPTIVE_FIELD.md
 
 ## ACCEPTANCE_CRITERIA
-1. Causal invariance mathematically proven via Jacobian test (zero future gradient leakage).
-2. Receptive field formula validated across all block configurations.
+1. [x] Causal invariance mathematically proven via Jacobian test (zero future gradient leakage).
+   - Evidence: `tests/unit/test_causal_conv_invariants.py::TestCausalInvarianceJacobian`
+     (27 stack configs x 3 schedules x 3 kernel sizes, 9 model conv-stage configs,
+     21 seq_len x schedule combos) — all zero future-gradient entries, float64.
+2. [x] Receptive field formula validated across all block configurations.
+   - Evidence: closed form vs realized `model.receptive_field` for all 27 combinations
+     (3 schedules x 3 block counts x 3 kernel sizes), plus an independent empirical
+     perturbation probe matching the closed form exactly.
 
 ## ABORT_CONDITIONS
 If any future gradient is non-zero, STOP immediately and report causal padding defect.
+-> Never fired: zero non-causal Jacobian entries across every configuration tested.
+
+## VERIFICATION_EVIDENCE (2026-09-22)
+- `pytest tests/unit/test_causal_conv_invariants.py` -> 131 passed, 0 failed.
+- Regression: `tests/unit/test_model_benchmark_phase13b.py` -> 27 passed (no TCN factory breakage).
+- `ruff check` (CI pin 0.16.8): All checks passed!; `ruff format --check`: already formatted.
+- `mypy src/nexus_scalp/model_generation/architectures.py` -> clean.
+- `scripts/ci/verify_critical_suite_manifest.py` -> CRITICAL_SUITE_MANIFEST_OK: 232 paths.
+- `py_compile` architectures.py -> OK.
+- Key finding documented in `docs/research/TCN_RECEPTIVE_FIELD.md`: the conv-branch RF
+  matches the closed form exactly, but `CausalConv1dBlock`'s UNPADDED residual skip makes
+  the block/stack receptive field the full sequence. Formula scope corrected accordingly;
+  backwards compatibility (geometric default) is bit-identical to pre-ML-ARCH-002 wiring.
 
 ## HUMAN_DECISION_REQUIRED
 NO

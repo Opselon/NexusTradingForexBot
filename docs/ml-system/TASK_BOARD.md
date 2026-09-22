@@ -32,7 +32,7 @@
 
 ### STREAM D: MODEL ARCHITECTURE
 - [ML-ARCH-001](tasks/ML-ARCH-001.md) — ScalpNet Dual-Path Tensor Contract & 3-Class Head Sunset `[P0 | EVIDENCE-COMPLETE | AGENT-ML-ARCH | HUMAN DECISION]`
-- [ML-ARCH-002](tasks/ML-ARCH-002.md) — Causal TCN Dilation & Receptive Field Optimization `[P2 | BLOCKED | AGENT-ML-ARCH]`
+- [ML-ARCH-002](tasks/ML-ARCH-002.md) — Causal TCN Dilation & Receptive Field Optimization `[P2 | DONE 2026-09-22 | AGENT-ML-ARCH]`
 - [ML-ARCH-003](tasks/ML-ARCH-003.md) — Temporal Multihead Attention vs Positional Encoding Ablation `[P2 | BLOCKED | AGENT-ML-ARCH]`
 
 ### STREAM E: TRAINING ENGINE & REGULARIZATION
