@@ -145,7 +145,7 @@ export default function DependencyPage(props: ShellPageProps) {
                 ) : (
                   <DataTable headers={[{ label: "node" }, { label: "score", num: true }, { label: "reason" }]}>
                     {hotspots.slice(0, 10).map((h, i) => (
-                      <tr key={i}>
+                      <tr key={String(h.id ?? h.qualified_name ?? h.name ?? i)}>
                         <td className="inline-mono tiny">{String(h.id ?? h.qualified_name ?? h.name ?? "—")}</td>
                         <td className="num tiny">{String(h.score ?? h.centrality ?? "—")}</td>
                         <td className="tiny muted">{String(h.reason ?? h.rationale ?? "—")}</td>
@@ -468,8 +468,8 @@ function PathExplorer({
             length {q.data.length ?? q.data.path?.length ?? "—"}
           </div>
           <ol className="tiny inline-mono" style={{ margin: 0, paddingInlineStart: 18 }}>
-            {(q.data.path ?? []).map((p, i) => (
-              <li key={i}>{p}</li>
+            {(q.data.path ?? []).map((p) => (
+              <li key={p}>{p}</li>
             ))}
           </ol>
         </div>

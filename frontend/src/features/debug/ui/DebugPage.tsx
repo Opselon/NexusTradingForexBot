@@ -337,7 +337,7 @@ function IpcTab() {
             <table className="data-table">
               <thead>
                 <tr>
-                  {["timestamp", "event", "state", "reason / retcode", "latency"].map((h) => <th key={h}>{h}</th>)}
+                  {["timestamp", "event", "state", "reason / retcode", "latency"].map((h) => <th scope="col" key={h}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>

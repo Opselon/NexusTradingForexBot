@@ -107,7 +107,7 @@ function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () =>
   return (
     <div className="acct-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside className="acct-drawer" role="dialog" aria-modal="true" aria-label={`Trade ${ticket} forensics`}>
-        <header>
+        <header aria-label="Trades">
           <span>Trade forensics</span>
           <span className="inline-mono tiny faint">#{ticket}</span>
           <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={() => trace.refetch()}>

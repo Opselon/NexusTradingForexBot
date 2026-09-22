@@ -178,15 +178,15 @@ export default function CommandCenterPage(props: ShellPageProps) {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>strategy</th>
-                    <th>lifecycle</th>
-                    <th className="num">conf</th>
-                    <th className="num">samples</th>
-                    <th className="num">health</th>
-                    <th>eligibility</th>
-                    <th>reason</th>
-                    <th>updated</th>
-                    <th />
+                    <th scope="col">strategy</th>
+                    <th scope="col">lifecycle</th>
+                    <th scope="col" className="num">conf</th>
+                    <th scope="col" className="num">samples</th>
+                    <th scope="col" className="num">health</th>
+                    <th scope="col">eligibility</th>
+                    <th scope="col">reason</th>
+                    <th scope="col">updated</th>
+                    <th scope="col" />
                   </tr>
                 </thead>
                 <tbody>

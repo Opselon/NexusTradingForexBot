@@ -375,15 +375,15 @@ export function DatasetPipelinePanel({
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Feature</th>
-                      <th>Family</th>
-                      <th className="num">Raw Min</th>
-                      <th className="num">Raw Max</th>
-                      <th className="num">μ</th>
-                      <th className="num">σ</th>
-                      <th className="num">Z-Sample</th>
-                      <th style={{ textAlign: "center" }}>Status</th>
+                      <th scope="col">#</th>
+                      <th scope="col">Feature</th>
+                      <th scope="col">Family</th>
+                      <th scope="col" className="num">Raw Min</th>
+                      <th scope="col" className="num">Raw Max</th>
+                      <th scope="col" className="num">μ</th>
+                      <th scope="col" className="num">σ</th>
+                      <th scope="col" className="num">Z-Sample</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>

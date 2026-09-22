@@ -145,7 +145,7 @@ export function DataTable({ headers, children }: { headers: Array<{ label: strin
         <thead>
           <tr>
             {headers.map((h) => (
-              <th key={h.label} className={h.num ? "num" : undefined}>
+              <th scope="col" key={h.label} className={h.num ? "num" : undefined}>
                 {h.label}
               </th>
             ))}
