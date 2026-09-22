@@ -9,9 +9,18 @@
  * disguises an error as a data state. Reset paths: the Retry button re-arms
  * the subtree; navigating between routes remounts it through the key on the
  * boundary in AppShell, so a failed page can't wedge the shell.
+ *
+ * i18n (wave 2026-09): a class component can't select the store, so the
+ * exported wrapper selects `t` and passes it down — the wrapper re-render on
+ * a language switch gives the class new props, which re-renders the fallback
+ * in the active language without resetting its error state (same inner type,
+ * same instance).
  */
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { useI18n } from "@/stores/i18nStore";
+
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
 
 interface Props {
   children: ReactNode;
@@ -21,12 +30,16 @@ interface Props {
   resetKey?: unknown;
 }
 
+interface InnerProps extends Props {
+  t: Translate;
+}
+
 interface State {
   error: Error | null;
   detail: string | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundaryInner extends Component<InnerProps, State> {
   state: State = { error: null, detail: null };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -39,7 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ detail: (info.componentStack ?? "").trim().split("\n").slice(0, 3).join(" / ") || null });
   }
 
-  componentDidUpdate(prev: Props): void {
+  componentDidUpdate(prev: InnerProps): void {
     if (prev.resetKey !== this.props.resetKey && this.state.error) {
       this.setState({ error: null, detail: null });
     }
@@ -49,15 +62,15 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     const { error, detail } = this.state;
+    const t = this.props.t;
     if (!error) return this.props.children;
+    const who = this.props.label ?? t("ui.eb.this_view", "This view");
     return (
       <div className="state-block error eb-card" role="alert">
         <div className="glyph">⛔</div>
         <div>
-          <strong>
-            {this.props.label ?? "This view"} crashed while rendering.
-          </strong>{" "}
-          The rest of the console is intact — no values were hidden or invented.
+          <strong>{t("ui.eb.crashed", "{l} crashed while rendering.", { l: who })}</strong>{" "}
+          {t("ui.eb.intact", "The rest of the console is intact — no values were hidden or invented.")}
         </div>
         <div className="hint inline-mono">
           {error.message || String(error)}
@@ -65,15 +78,21 @@ export class ErrorBoundary extends Component<Props, State> {
         </div>
         <div className="eb-actions">
           <button className="btn small" onClick={this.reset}>
-            Retry render
+            {t("ui.eb.retry_render", "Retry render")}
           </button>
           <button className="btn small primary" onClick={() => window.location.reload()}>
-            Reload
+            {t("ui.eb.reload", "Reload")}
           </button>
         </div>
       </div>
     );
   }
+}
+
+/** Language-aware shell around the class boundary (see the file header). */
+export function ErrorBoundary(props: Props) {
+  const t = useI18n((s) => s.t);
+  return <ErrorBoundaryInner {...props} t={t} />;
 }
 
 export default ErrorBoundary;

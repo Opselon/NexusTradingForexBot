@@ -14,6 +14,7 @@
 
 import type { RealtimeStatus } from "@/types/realtime";
 import { formatAgeMs } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import "./shell.css";
 
 export type ConnWord = "CONNECTING" | "OK" | "STALE" | "ERROR";
@@ -51,7 +52,16 @@ export function ConnectionIndicator({
   onRetry?: () => void;
 }) {
   const word = connWord(status, nowMs);
+  const t = useI18n((s) => s.t);
   const ageMs = status.lastMessageAt !== null ? Math.max(0, nowMs - status.lastMessageAt) : null;
+  const wordText =
+    word === "OK"
+      ? t("ui.conn.live_feed", "LIVE FEED")
+      : word === "CONNECTING"
+        ? t("ui.conn.connecting", "CONNECTING")
+        : word === "STALE"
+          ? t("ux.data.stale", "STALE")
+          : t("ui.conn.error_word", "ERROR");
   return (
     <span
       className={`conn-chip ${WORD_CLASS[word]}`}
@@ -60,11 +70,13 @@ export function ConnectionIndicator({
       aria-live="polite"
     >
       <span className={`conn-dot ${dotClass(status, word)}`} aria-hidden="true" />
-      <span>{word === "OK" ? "LIVE FEED" : word}</span>
-      {ageMs !== null && <span className="faint">· data age {formatAgeMs(ageMs)}</span>}
+      <span>{wordText}</span>
+      {ageMs !== null && (
+        <span className="faint">· {t("ui.conn.data_age", "data age {a}", { a: formatAgeMs(ageMs) })}</span>
+      )}
       {word !== "OK" && onRetry && (
-        <button className="btn small" style={{ marginLeft: 6 }} onClick={onRetry}>
-          Retry
+        <button className="btn small" style={{ marginInlineStart: 6 }} onClick={onRetry}>
+          {t("ux.conn.retry", "Retry")}
         </button>
       )}
     </span>
@@ -84,13 +96,17 @@ export function FreshnessMeter({
   ageMs: number | null | undefined;
 }) {
   const s = (state ?? "UNKNOWN").toUpperCase();
+  const t = useI18n((s2) => s2.t);
   const level = s === "FRESH" ? "" : s === "STALE" ? "bad" : "warn";
   const pct =
     ageMs === null || ageMs === undefined || !Number.isFinite(ageMs)
       ? 0
       : Math.max(4, Math.min(100, 100 - (Math.max(0, ageMs) / 15_000) * 100));
   return (
-    <span className={`freshness ${level}`} title={`${label}: ${s}${ageMs !== null && ageMs !== undefined ? ` · age ${formatAgeMs(ageMs)}` : ""}`}>
+    <span
+      className={`freshness ${level}`}
+      title={`${label}: ${s}${ageMs !== null && ageMs !== undefined ? ` · ${t("ui.conn.age", "age {a}", { a: formatAgeMs(ageMs) })}` : ""}`}
+    >
       <span className="lab">
         {label} {s === "UNKNOWN" ? "—" : s}
       </span>
