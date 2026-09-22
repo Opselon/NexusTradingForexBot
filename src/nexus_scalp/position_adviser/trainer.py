@@ -45,6 +45,7 @@ from nexus_scalp.position_adviser.models import (
 )
 from nexus_scalp.position_adviser.paths import (
     ADVISER_ROOT,
+    resolve_under_root,
     sanitize_name,
     sanitize_repo_relative,
 )
@@ -121,15 +122,16 @@ def _resolve_output_dir(output_dir: Path | str | None, dataset: Path) -> Path:
     """Resolve the artifact output directory into an UNTAINTED absolute ``Path``.
 
     ``output_dir`` is server-derived (``config.artifact_dir`` under the repo
-    root) for both route callers, but the trainer is a library entry point, so
-    a request-supplied value is treated as untrusted: sanitized to a
-    whitelist-only root-relative path and anchored under the trusted root. Only
-    the resolved value is returned and only it is ``mkdir``-ed.
+    root) for both route callers, but the trainer is a library entry point, so a
+    request-supplied value is treated as untrusted: sanitized to a whitelist-only
+    root-relative path and anchored under the trusted root. An already-absolute
+    in-root directory (a caller's tmp scratch dir under the repo, or a test's) is
+    narrowed to its root-relative form and re-anchored, so the value that is
+    ``mkdir``-ed is provably inside the root. Only the resolved value is returned.
     """
     if output_dir is None:
         return dataset.parent / "advisers"
-    clean = _sanitize_relpath(output_dir)
-    return (_ADVISER_ROOT.resolve() / clean).resolve()
+    return resolve_under_root(output_dir, root=_ADVISER_ROOT, label="position adviser output_dir")
 
 
 #: Characters a request-supplied ``model_id`` may use when it is joined into

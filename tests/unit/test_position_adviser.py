@@ -45,6 +45,22 @@ from nexus_scalp.position_adviser.trainer import (
 # --------------------------------------------------------------------- fixtures
 
 
+@pytest.fixture()
+def adviser_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A scratch dir that IS the adviser containment root.
+
+    The adviser resolves every request-supplied path under its own root and
+    refuses anything outside it, so a test that writes checkpoints into a bare
+    pytest ``adviser_tmp`` (outside the repo) must redirect the root there first.
+    Same convention as the model-studio lane
+    (``monkeypatch.setattr("nexus_scalp.web.model_studio_routes.REPO_ROOT", ...)``).
+    """
+    monkeypatch.setattr("nexus_scalp.position_adviser.paths.ADVISER_ROOT", tmp_path)
+    monkeypatch.setattr("nexus_scalp.position_adviser.service._ADVISER_ROOT", tmp_path)
+    monkeypatch.setattr("nexus_scalp.position_adviser.trainer._ADVISER_ROOT", tmp_path)
+    return tmp_path
+
+
 def _live_state(**over: object) -> dict[str, float]:
     base = {
         "unrealized_pnl_r": -0.35,
@@ -140,31 +156,31 @@ def test_disabled_service_is_a_noop_on_hold_score():
     assert advisory is None
 
 
-def test_load_rejects_foreign_checkpoint(tmp_path):
+def test_load_rejects_foreign_checkpoint(adviser_tmp):
     svc = PositionAdviserService()
-    bogus = tmp_path / "bogus.pt"
+    bogus = adviser_tmp / "bogus.pt"
     torch.save({"not_a_net": torch.zeros(3)}, bogus)
-    scaler = tmp_path / "bogus.scaler.npz"
+    scaler = adviser_tmp / "bogus.scaler.npz"
     np.savez(scaler, mean=np.zeros(ADVISER_FEATURE_DIM), std=np.ones(ADVISER_FEATURE_DIM))
     out = svc.load(bogus, scaler)
     assert out["status"] == "REJECTED"
     assert "not a PositionAdviserNet state dict" in out["reason"]
 
 
-def _make_checkpoint(tmp_path, model_id="adviser_probe"):
+def _make_checkpoint(adviser_tmp: Path, model_id="adviser_probe") -> tuple[Path, Path]:
     torch.manual_seed(42)
     net = PositionAdviserNet()
-    wpath = tmp_path / f"{model_id}.pt"
-    spath = tmp_path / f"{model_id}.scaler.npz"
+    wpath = adviser_tmp / f"{model_id}.pt"
+    spath = adviser_tmp / f"{model_id}.scaler.npz"
     torch.save(net.state_dict(), wpath)
     x = np.random.default_rng(0).normal(size=(64, ADVISER_FEATURE_DIM))
     np.savez(spath, mean=x.mean(axis=0), std=x.std(axis=0), dimension=ADVISER_FEATURE_DIM)
     return wpath, spath
 
 
-def test_load_then_activation_ladder_refuses_skipping_paper(tmp_path):
+def test_load_then_activation_ladder_refuses_skipping_paper(adviser_tmp):
     svc = PositionAdviserService()
-    w, s = _make_checkpoint(tmp_path)
+    w, s = _make_checkpoint(adviser_tmp)
     assert svc.load(w, s)["status"] == "OK"
 
     # LIVE while still DISABLED must be refused (must pass through PAPER).
@@ -183,9 +199,9 @@ def test_load_then_activation_ladder_refuses_skipping_paper(tmp_path):
     assert advisory["applied"] is False
 
 
-def test_live_refuses_when_a_prerequisite_check_fails(tmp_path):
+def test_live_refuses_when_a_prerequisite_check_fails(adviser_tmp):
     svc = PositionAdviserService()
-    w, s = _make_checkpoint(tmp_path)
+    w, s = _make_checkpoint(adviser_tmp)
     svc.load(w, s)
     svc.set_activation(AdviserActivation.PAPER)
 
@@ -196,9 +212,9 @@ def test_live_refuses_when_a_prerequisite_check_fails(tmp_path):
     assert svc.activation is AdviserActivation.PAPER
 
 
-def test_live_allowed_when_all_checks_pass(tmp_path):
+def test_live_allowed_when_all_checks_pass(adviser_tmp):
     svc = PositionAdviserService()
-    w, s = _make_checkpoint(tmp_path)
+    w, s = _make_checkpoint(adviser_tmp)
     svc.load(w, s)
     svc.set_activation(AdviserActivation.PAPER)
     ok = ActivationCheckResult(name="broker", passed=True, detail="connected")
@@ -206,9 +222,9 @@ def test_live_allowed_when_all_checks_pass(tmp_path):
     assert svc.activation is AdviserActivation.LIVE
 
 
-def test_evaluation_failures_never_raise_and_never_score(tmp_path):
+def test_evaluation_failures_never_raise_and_never_score(adviser_tmp):
     svc = PositionAdviserService()
-    w, s = _make_checkpoint(tmp_path)
+    w, s = _make_checkpoint(adviser_tmp)
     svc.load(w, s)
     svc.set_activation(AdviserActivation.LIVE)
 
@@ -305,28 +321,28 @@ def test_integration_builds_causal_state_only():
 # ------------------------------------------------------------------- trainer
 
 
-def test_trainer_rejects_a_dataset_without_split(tmp_path):
+def test_trainer_rejects_a_dataset_without_split(adviser_tmp):
     df = pl.DataFrame({c: [0.1] * 60 for c in ADVISER_FEATURE_ORDER})
     df = df.with_columns(pl.lit("KEEP").alias("optimal_action"))
-    p = tmp_path / "no_split.parquet"
+    p = adviser_tmp / "no_split.parquet"
     df.write_parquet(p)
     with pytest.raises(AdviserFeatureError, match="no 'split' column"):
         train_position_adviser(p, epochs=1)
 
 
-def test_trainer_rejects_too_few_trainable_rows(tmp_path):
+def test_trainer_rejects_too_few_trainable_rows(adviser_tmp):
     rows = {c: [0.1] * 10 for c in ADVISER_FEATURE_ORDER}
     df = pl.DataFrame(rows)
     df = df.with_columns(
         pl.Series("optimal_action", ["KEEP"] * 10), pl.Series("split", ["train"] * 10)
     )
-    p = tmp_path / "tiny.parquet"
+    p = adviser_tmp / "tiny.parquet"
     df.write_parquet(p)
     with pytest.raises(AdviserFeatureError, match="too few trainable rows"):
         train_position_adviser(p, epochs=1)
 
 
-def test_trainer_runs_and_reports_honest_oos(tmp_path):
+def test_trainer_runs_and_reports_honest_oos(adviser_tmp):
     rng = np.random.default_rng(0)
     n = 400
     base = {c: rng.normal(size=n) for c in ADVISER_FEATURE_ORDER}
@@ -338,10 +354,10 @@ def test_trainer_runs_and_reports_honest_oos(tmp_path):
     )
     splits = ["train"] * 250 + ["val"] * 75 + ["oos"] * 75
     df = pl.DataFrame({**base, "optimal_action": labels, "split": splits})
-    p = tmp_path / "synthetic_pos.parquet"
+    p = adviser_tmp / "synthetic_pos.parquet"
     df.write_parquet(p)
 
-    res = train_position_adviser(p, epochs=4, output_dir=tmp_path / "out")
+    res = train_position_adviser(p, epochs=4, output_dir=adviser_tmp / "out")
     d = res.to_dict()
     assert d["train_rows"] == 250
     assert d["val_rows"] == 75
@@ -358,14 +374,14 @@ def test_trainer_runs_and_reports_honest_oos(tmp_path):
         assert resolved.is_file(), f"adviser artifact missing: {rel}"
 
 
-def test_trainer_oos_is_never_trained_on(tmp_path):
+def test_trainer_oos_is_never_trained_on(adviser_tmp):
     """The OOS split must influence no weight — verified by data-dependence."""
     rng = np.random.default_rng(1)
     n = 300
     base = {c: rng.normal(size=n) for c in ADVISER_FEATURE_ORDER}
     labels = np.where(base["unrealized_pnl_r"] > 0, "KEEP", "CLOSE")
     splits = ["train"] * 200 + ["val"] * 50 + ["oos"] * 50
-    p = tmp_path / "s1.parquet"
+    p = adviser_tmp / "s1.parquet"
     pl.DataFrame({**base, "optimal_action": labels, "split": splits}).write_parquet(p)
 
     # Now corrupt ONLY the oos rows' labels and confirm training still succeeds
@@ -373,11 +389,11 @@ def test_trainer_oos_is_never_trained_on(tmp_path):
     # OOS rows were held out and merely scored, not fitted).
     labels2 = labels.copy()
     labels2[-50:] = "KEEP"  # flip every oos label
-    p2 = tmp_path / "s2.parquet"
+    p2 = adviser_tmp / "s2.parquet"
     pl.DataFrame({**base, "optimal_action": labels2, "split": splits}).write_parquet(p2)
 
-    r1 = train_position_adviser(p, epochs=3, output_dir=tmp_path / "o1")
-    r2 = train_position_adviser(p2, epochs=3, output_dir=tmp_path / "o2")
+    r1 = train_position_adviser(p, epochs=3, output_dir=adviser_tmp / "o1")
+    r2 = train_position_adviser(p2, epochs=3, output_dir=adviser_tmp / "o2")
     # Same features/train/val, so the fitted model is effectively identical;
     # only the scored OOS labels differ — accuracy must move accordingly.
     assert r1.oos_accuracy != r2.oos_accuracy or True  # guard: they CAN tie by chance
