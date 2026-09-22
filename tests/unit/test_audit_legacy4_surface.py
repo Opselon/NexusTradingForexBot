@@ -129,6 +129,46 @@ def test_probe_reports_function_context(tmp_path: Path) -> None:
     assert detail[0]["subsystem"] == "SMOKE"
 
 
+def test_probe_classifies_subsystem_independently_of_os_sep(tmp_path: Path) -> None:
+    """The subsystem table matches on any OS separator (BUG-307D).
+
+    ``Path.relative_to`` joins with ``os.sep``; the probe's classification table
+    and this test file use ``/``. On the Windows leg of the OS Matrix every site
+    read as OTHER, so ``test_head_legacy4_sites_are_non_serving`` failed with a
+    backslash-joined path in the message. Force the failure shape here by
+    feeding the probe a tree whose classification depends only on the separator
+    round-trip, not on any file content difference.
+    """
+    repo = _write_tree(
+        tmp_path,
+        {
+            "src/nexus_scalp/smoke/runner.py": (
+                "def _chain():\n    return ScalpNet(num_features=50, num_classes=4)\n"
+            ),
+            "src/nexus_scalp/shadow/recorder.py": (
+                "def _rec():\n    return ScalpNet(num_features=50, num_classes=4)\n"
+            ),
+            "src/nexus_scalp/application/live/inference.py": (
+                "def _fwd():\n    return ScalpNet(num_features=50, num_classes=4)\n"
+            ),
+        },
+    )
+    report = _probe_json(repo)
+    by_sub = report["src_legacy4_by_subsystem"]
+    # The separator round-trip must not erase any classification. On Windows the
+    # pre-fix probe reported OTHER=3 for exactly these three files.
+    assert by_sub["SMOKE"] == 1, by_sub
+    assert by_sub["SHADOW"] == 1, by_sub
+    assert by_sub["PRODUCTION-SERVING"] == 1, by_sub
+    assert by_sub["OTHER"] == 0, by_sub
+    # The emitted paths stay forward-slash regardless of the host OS, so the
+    # report is byte-identical between matrix legs (stable pinned evidence).
+    for site in report["src_legacy4_detail"]:
+        assert "\\" not in site["path"], site["path"]
+        assert site["subsystem"] != "OTHER", site
+    assert report["verdict"] == "LEGACY-4-LOAD-BEARING"
+
+
 # ---------------------------------------------------------------------------
 # 2. The measured HEAD surface — the ML-ARCH-001 evidence, pinned
 # ---------------------------------------------------------------------------
