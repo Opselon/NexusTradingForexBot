@@ -1,0 +1,119 @@
+/**
+ * features/provisioning/ui/provisioning.css
+ *
+ * First-Run Model Preparation — layout & callout styles for ProvisioningPage.
+ * Namespace: .pv-* (styling law: feature-scoped, consumes theme.css tokens
+ * only — no hardcoded colors, logical properties for RTL correctness).
+ */
+
+.pv-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Two-column card grid (environment / official model). */
+.pv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .pv-grid { grid-template-columns: 1fr; }
+}
+
+/* In-panel banners (the .banner strip sits edge-to-edge in the shell; inside
+   a panel body it needs its own rounded border). */
+.pv-banner {
+  margin-top: 10px;
+  border: 1px solid rgba(65, 166, 242, 0.35);
+  border-radius: 8px;
+}
+.pv-banner.good {
+  border-color: rgba(62, 207, 142, 0.3);
+}
+
+/* Stacked rows inside a panel body. */
+.pv-list { margin-top: 10px; }
+.pv-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.pv-toolbar.end { align-items: flex-end; }
+/* number inputs sit under their <label> text inside toolbar labels */
+.pv-toolbar .input { display: block; margin-top: 4px; }
+.pv-field {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+}
+.pv-file { width: 100%; }
+.pv-num { width: 96px; }
+.pv-consent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Callouts: blocking checks (bad) and run result (ok). */
+.pv-callout {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+}
+.pv-callout .head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pv-callout.bad {
+  background: var(--red-dim);
+  border-color: rgba(242, 86, 77, 0.4);
+}
+.pv-callout.bad .head { color: #ff8f89; }
+.pv-callout.bad ul {
+  margin: 6px 0 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text);
+}
+.pv-callout.ok { border-color: rgba(62, 207, 142, 0.35); }
+.pv-callout.ok .head { color: var(--green); }
+
+/* Training event tail + result JSON. */
+.pv-log {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.pv-json {
+  margin: 6px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

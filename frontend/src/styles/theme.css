@@ -294,6 +294,8 @@ body {
 .metric .v.dim { color: var(--text-dim); }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 16px; font-size: 12px; }
+/* row wrapper inside .kv — dissolves so dt/dd become the grid's own items */
+.kv-row { display: contents; }
 .kv dt { color: var(--text-dim); }
 .kv dd { margin: 0; font-family: var(--mono); text-align: right; }
 
@@ -395,6 +397,8 @@ body {
 .banner.down { background: var(--red-dim); color: #ff9a94; border-color: rgba(242, 86, 77, 0.4); }
 .banner.auth { background: var(--red-dim); color: #ff9a94; border-color: rgba(242, 86, 77, 0.4); }
 .banner.calm { background: rgba(62, 207, 142, 0.06); color: var(--green); border-color: rgba(62, 207, 142, 0.2); }
+.banner.info { background: rgba(65, 166, 242, 0.10); color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.35); }
+.banner.good { background: rgba(62, 207, 142, 0.10); color: var(--green); border-color: rgba(62, 207, 142, 0.35); }
 .banner .retry-btn {
   margin-left: auto; background: transparent; color: inherit;
   border: 1px solid currentColor; border-radius: 6px;

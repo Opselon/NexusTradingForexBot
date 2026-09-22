@@ -16,12 +16,15 @@
  *    fabricates a message or shows a stack trace.
  *  - One local training run at a time; cancel is observed at the next epoch
  *    boundary, not instantly.
+ *
+ * Presentation: shared Panel/Segmented primitives + ./provisioning.css
+ * (.pv-* namespace, theme tokens only).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ShellPageProps } from "@/app/featureModule";
-import { EmptyState, ErrorState, LoadingState, Segmented } from "@/components/primitives";
+import { EmptyState, ErrorState, LoadingState, Panel, Segmented } from "@/components/primitives";
 import { provisioningApi } from "../api";
 import type {
   EnvCheck,
@@ -33,6 +36,7 @@ import type {
   TrainSource,
 } from "../model";
 import { TRAIN_BACKENDS, TRAIN_SOURCES } from "../model";
+import "./provisioning.css";
 
 const POLL_MS = 2000;
 
@@ -65,7 +69,7 @@ function CheckRow({
   note: string | null | undefined;
 }) {
   return (
-    <div className="kv-row" style={{ gridTemplateColumns: "max-content 1fr", alignItems: "baseline" }}>
+    <div className="kv-row">
       <dt className="inline-mono small">{label}</dt>
       <dd style={{ textAlign: "left", display: "flex", gap: 8, alignItems: "baseline" }}>
         <span
@@ -245,55 +249,53 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   const allowedRoots = status?.allowed_import_roots ?? [];
 
   return (
-    <div className="space-y-5">
+    <div className="pv-page">
       {/* ------------------------------------------------------------- header */}
-      <div className="panel">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-bold text-white">First-Run Model Preparation</h2>
-          <span
-            className={classNames(
-              "badge",
-              trainingReady ? "good" : report ? "warn" : "unknown",
-            )}
-          >
+      <Panel
+        title="First-Run Model Preparation"
+        accent
+        right={
+          <span className={classNames("badge", trainingReady ? "good" : report ? "warn" : "unknown")}>
             {report ? (trainingReady ? "ENV READY" : "ENV NOT READY") : "ENV —"}
           </span>
-        </div>
-        <p className="mt-1 small muted">
+        }
+      >
+        <p className="small muted">
           Prepare a servable model before the engine runs. Environment check is discovery only —
           installing is an explicit, consented action. One local training run at a time.
         </p>
         {recommended ? (
-          <div className="banner info mt-2" role="status">
+          <div className="banner info pv-banner" role="status">
             Recommended next action: <span className="inline-mono">{String(recommended)}</span>
           </div>
         ) : null}
-      </div>
+      </Panel>
 
       {error ? <ErrorState message={error} onRetry={() => setError("")} /> : null}
       {notice ? (
-        <div className="banner good" role="status">
+        <div className="banner good pv-banner" role="status">
           {notice}
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="pv-grid">
         {/* ------------------------------------------------ environment card */}
-        <section className="panel">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-cyan-400">Training Environment</h3>
+        <Panel
+          title="Training Environment"
+          right={
             <Segmented
               options={TRAIN_BACKENDS.map((b) => ({ id: b, label: b.toUpperCase() }))}
               value={backend}
               onChange={setBackend}
             />
-          </div>
-          <p className="small muted mt-1">
+          }
+        >
+          <p className="small muted">
             Backend <span className="inline-mono">{backend}</span> — discovery only, nothing is installed by this check.
           </p>
 
           {env ? (
-            <dl className="kv mt-3">
+            <dl className="kv pv-list">
               <CheckRow
                 label="python"
                 ok={Boolean(env.environment?.python)}
@@ -316,9 +318,9 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           )}
 
           {failures.length > 0 ? (
-            <div className="mt-3 rounded border border-red-500/30 bg-red-500/5 p-3">
-              <div className="small font-bold text-red-400">Blocking checks</div>
-              <ul className="mt-1 list-disc pl-4 text-[11px] text-slate-300">
+            <div className="pv-callout bad">
+              <div className="head">Blocking checks</div>
+              <ul>
                 {failures.map((f, i) => (
                   <li key={`${f.stage}-${i}`}>
                     <span className="inline-mono">{f.stage}</span>:{" "}
@@ -330,7 +332,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             </div>
           ) : null}
 
-          <div className="mt-3 flex items-center gap-2">
+          <div className="pv-toolbar">
             <button
               type="button"
               className="btn"
@@ -344,17 +346,16 @@ export default function ProvisioningPage(_props: ShellPageProps) {
               Explicit opt-in (pinned variants). Training never auto-starts from here.
             </span>
           </div>
-        </section>
+        </Panel>
 
         {/* ------------------------------------------------ official model card */}
-        <section className="panel">
-          <h3 className="text-sm font-bold text-cyan-400">Official Model</h3>
-          <p className="small muted mt-1">
+        <Panel title="Official Model">
+          <p className="small muted">
             Download and verify the published model bundle. Nothing is installed unless every
             verification check passes.
           </p>
           {status?.slot ? (
-            <dl className="kv mt-3">
+            <dl className="kv pv-list">
               {Object.entries(status.slot).slice(0, 6).map(([k, v]) => (
                 <CheckRow key={k} label={k} ok={isOkValue(v)} note={fmtValue(v)} />
               ))}
@@ -362,23 +363,22 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           ) : (
             <EmptyState message="No slot state yet." hint="The recommended action appears in the header once known." />
           )}
-          <div className="mt-3">
+          <div className="pv-toolbar">
             <button type="button" className="btn" disabled={busy} onClick={() => void onOfficial()}>
               {officialBusy ? "Downloading…" : "Download & verify official model"}
             </button>
           </div>
-        </section>
+        </Panel>
       </div>
 
       {/* ---------------------------------------------------------- train card */}
-      <section className="panel">
-        <h3 className="text-sm font-bold text-cyan-400">Local Training Run</h3>
-        <p className="small muted mt-1">
+      <Panel title="Local Training Run">
+        <p className="small muted">
           Train a model from an imported file or from broker-borrowed history. Validation is
           server side; broker source requires an explicit candle count.
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="pv-toolbar">
           <Segmented
             options={TRAIN_SOURCES.map((s) => ({ id: s, label: s === "file" ? "Import file" : "Broker history" }))}
             value={source}
@@ -392,21 +392,21 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         </div>
 
         {source === "file" ? (
-          <div className="mt-3">
+          <div className="pv-field">
             <label className="small muted" htmlFor="prov-file">
               Dataset file (CSV/Parquet) — must be inside an allowed import root
             </label>
             <input
               id="prov-file"
               type="text"
-              className="input mt-1 w-full"
+              className="input pv-file"
               placeholder="e.g. data/XAUUSD_M1.csv"
               value={filePath}
               onChange={(e) => setFilePath(e.target.value)}
               disabled={busy}
             />
             {allowedRoots.length > 0 ? (
-              <div className="small muted mt-1">
+              <div className="small muted">
                 Allowed roots:{" "}
                 {allowedRoots.map((r, i) => (
                   <span key={r} className="inline-mono">
@@ -418,20 +418,20 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             ) : null}
           </div>
         ) : (
-          <div className="mt-3">
+          <div className="pv-field">
             <label className="small muted">Candles (most recent N bars — chronological tail)</label>
-            <div className="mt-1">
+            <div>
               <Segmented options={CANDLE_OPTIONS} value={candles} onChange={setCandles} />
             </div>
           </div>
         )}
 
-        <div className="mt-3 flex flex-wrap items-end gap-4">
+        <div className="pv-toolbar end">
           <label className="small muted">
             Folds
             <input
               type="number"
-              className="input mt-1 w-24"
+              className="input pv-num"
               min={1}
               max={1000}
               value={folds}
@@ -443,7 +443,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             Epochs
             <input
               type="number"
-              className="input mt-1 w-24"
+              className="input pv-num"
               min={1}
               max={1000}
               value={epochs}
@@ -451,7 +451,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
               disabled={busy}
             />
           </label>
-          <label className="small muted flex items-center gap-2">
+          <label className="pv-consent">
             <input
               type="checkbox"
               checked={prepareEnvironment}
@@ -462,7 +462,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           </label>
         </div>
 
-        <div className="mt-4 flex items-center gap-2">
+        <div className="pv-toolbar">
           <button
             type="button"
             className="btn primary"
@@ -477,12 +477,9 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         </div>
 
         {events.length > 0 ? (
-          <div className="mt-4">
-            <div className="small font-bold text-slate-300">Progress</div>
-            <pre
-              className="mt-1 max-h-[260px] overflow-auto rounded border border-borderClr/40 bg-darkBg/60 p-3 text-[10px] font-mono text-slate-300"
-              aria-live="polite"
-            >
+          <div className="pv-field">
+            <div className="small faint uppercase font-bold">Progress</div>
+            <pre className="pv-log" aria-live="polite">
               {events
                 .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
                 .join("\n")}
@@ -491,14 +488,12 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         ) : null}
 
         {result ? (
-          <div className="mt-3 rounded border border-cyan-500/30 bg-cyan-500/5 p-3">
-            <div className="small font-bold text-cyan-400">Run result</div>
-            <pre className="mt-1 overflow-auto text-[10px] font-mono text-slate-300">
-              {JSON.stringify(result, null, 2)}
-            </pre>
+          <div className="pv-callout ok">
+            <div className="head">Run result</div>
+            <pre className="pv-json">{JSON.stringify(result, null, 2)}</pre>
           </div>
         ) : null}
-      </section>
+      </Panel>
     </div>
   );
 }
