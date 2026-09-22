@@ -77,6 +77,14 @@ jobs:
         run: |
           python scripts/ci/check_decision_ids.py
 
+      - name: ML contract drift guard (docs/ml-system vs source)
+        run: |
+          # ML-CI-002: canonical ML constants are parsed from source and must
+          # match the docs/ml-system contract suite. Direction of truth is
+          # source; a doc quoting a superseded value (or a constant changed
+          # without a docs update) fails CI.
+          python scripts/ci/check_ml_contract_drift.py
+
       - name: Local-gate parity (same contracts as check_local.py)
         run: |
           # GATE PARITY CONTRACT (CHG-0049): CI must FAIL when the local

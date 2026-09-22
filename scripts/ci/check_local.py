@@ -618,6 +618,36 @@ def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_
     # [5] Fast targeted unit tests
     results.append(stage_fast_tests(scope))
 
+    # [5b] ML contract drift (ML-CI-002): canonical ML constants parsed from
+    # source must match the docs/ml-system suite. Same gate that fails CI on
+    # push, so a docs/source divergence fails locally too (and the gate
+    # parity contract CHG-0049 stays honest — no CI-only gate class).
+    t0_ml = time.perf_counter()
+    script_ml = REPO_ROOT / "scripts" / "ci" / "check_ml_contract_drift.py"
+    if script_ml.exists():
+        r_ml = subprocess.run(
+            [sys.executable, str(script_ml)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=30,
+        )
+        results.append(
+            StageResult(
+                name="ml_contract_drift",
+                command=[sys.executable, "scripts/ci/check_ml_contract_drift.py"],
+                exit_code=r_ml.returncode,
+                status="passed" if r_ml.returncode == 0 else "failed",
+                duration_sec=time.perf_counter() - t0_ml,
+                detail=(r_ml.stdout or r_ml.stderr).strip().splitlines()[0][:200]
+                if (r_ml.stdout or r_ml.stderr)
+                else "",
+            )
+        )
+
     overall = "passed" if all(r.status in ("passed", "skipped") for r in results) else "failed"
 
     envelope: dict[str, Any] = {
