@@ -14,6 +14,13 @@ published release. It unifies rules that were previously scattered across
 records. Where this page and a decision record disagree, the decision record
 (`agents/decisions/`) wins — say so and fix this page.
 
+**Git mechanics** (branch creation from `origin/main`, local-main mirror
+synchronization via `--ff-only`, worktree ownership, destructive-git
+prohibitions, squash-merge equivalence classification) are governed by
+[`agents/git_governance.md`](https://github.com/Opselon/NexusTradingForexBot/blob/main/agents/git_governance.md),
+which is the canonical authority on those subjects and is machine-checked by
+`scripts/git/preflight.py` + `tests/unit/test_git_governance.py`.
+
 Core principles:
 
 1. **`origin/main` is integration truth.** Nobody pushes to `main` directly —
@@ -176,7 +183,7 @@ gh run list --branch main --limit 6        # CI + OS matrix + docs all success
 2. **Tag after the bump PR is squash-merged** — the tag must point at the
    `main` commit whose release run is expected to pass:
    ```bash
-   git checkout main && git pull
+   git fetch origin && git switch main && git merge --ff-only origin/main   # mirror sync; STOP on failure (MAIN_DIVERGED)
    git tag -a vX.Y.Z -m "release vX.Y.Z" origin/main   # annotated, on main tip
    git push origin vX.Y.Z
    ```

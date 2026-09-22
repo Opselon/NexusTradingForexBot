@@ -162,7 +162,7 @@ Additional: `scripts/ci/scan_secrets.py` (never dummy keys in source), OSV scan,
 2. **Design before code.** For feature-dim/model/risk/execution/accounting/persistence/API changes, cite the canonical contract (§5–§6) and the verification command (§9) in the plan.
 3. **Implement + test + commit per coherent step** (`<AGENT>:<task>` commits). Re-`git add` before commit (parallel agents may `restore --staged`). Verify `git log --all -- <path>` — parallels may absorb your tree; do not re-do absorbed work.
 4. Before completion: update registries (`contracts.md` / `runtime_invariants.md` additive), `taskboard.md`, `repository_state.md`; add regression tests; create handoff; report exact verification state and unresolved risks. No auto-push; no trading logic/model/runtime/test change to make docs pass.
-5. Branch `main`-based workflow; fork-based PRs via contract; keep branch names short (Windows length cap); patches via `python write_bytes + py_compile` not `patch` tool (CRLF).
+5. Task-branch workflow (see `agents/git_governance.md` §3): `git fetch origin` then `git switch -c agent/<kind>/<topic> origin/main`; never develop on or branch from local `main` (it is a tracking mirror). Fork-based PRs via contract; keep branch names short (Windows length cap); patches via `python write_bytes + py_compile` not `patch` tool (CRLF).
 
 ## 11. What Not to Do (negative scope)
 
