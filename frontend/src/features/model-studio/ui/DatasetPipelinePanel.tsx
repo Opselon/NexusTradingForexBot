@@ -390,7 +390,7 @@ export function DatasetPipelinePanel({
                     {inspectResult.features.map((f) => (
                       <tr key={f.index}>
                         <td className="inline-mono" style={{ color: "var(--text-faint)" }}>{f.index}</td>
-                        <td className="inline-mono" style={{ color: "#fff", fontWeight: 600 }}>{f.name}</td>
+                        <td className="inline-mono" style={{ color: "var(--text)", fontWeight: 600 }}>{f.name}</td>
                         <td>
                           <span className={`ms-slot-family ${(f.family || "").toLowerCase()}`}>
                             {f.family}
