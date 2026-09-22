@@ -9,6 +9,7 @@ Reads agents/bugs.md, writes:
 Deterministic and idempotent: re-running on an already-compressed ledger is a no-op
 (the guard comment near the top is detected and the script exits 0).
 """
+
 import json
 import re
 import sys
@@ -55,12 +56,38 @@ FIELD_PATTERNS = {
 
 # block labels we keep as condensed prose (lowercased, matched as line prefixes)
 BLOCK_LABELS = [
-    "surface", "surfaces", "symptom", "symptoms", "root cause", "root causes",
-    "problem", "impact", "evidence", "fix", "resolution", "verification",
-    "runtime verification", "regression", "regression tests", "regression test",
-    "regression guards", "lesson", "lessons", "found", "found by", "mechanism",
-    "failure scenario", "execution path", "category", "reproduction",
-    "trigger", "residual", "invariants", "tests", "note", "operator note",
+    "surface",
+    "surfaces",
+    "symptom",
+    "symptoms",
+    "root cause",
+    "root causes",
+    "problem",
+    "impact",
+    "evidence",
+    "fix",
+    "resolution",
+    "verification",
+    "runtime verification",
+    "regression",
+    "regression tests",
+    "regression test",
+    "regression guards",
+    "lesson",
+    "lessons",
+    "found",
+    "found by",
+    "mechanism",
+    "failure scenario",
+    "execution path",
+    "category",
+    "reproduction",
+    "trigger",
+    "residual",
+    "invariants",
+    "tests",
+    "note",
+    "operator note",
 ]
 # labels already surfaced in the structured metadata line — not repeated as prose
 META_LABELS = {"status", "severity", "confidence", "discovered", "fixed", "verified"}
@@ -177,13 +204,37 @@ def condense(entry: dict) -> str:
     bl = blocks(body_lines)
     # prefer canonical names in a stable order, then any other labelled block
     order = [
-        "surface", "surfaces", "symptom", "symptoms", "problem", "impact",
-        "root cause", "root causes", "found", "mechanism", "evidence",
-        "failure scenario", "execution path", "fix", "resolution",
-        "verification", "runtime verification", "regression", "regression tests",
-        "regression test", "regression guards", "residual", "note",
-        "operator note", "invariants", "tests", "category", "trigger",
-        "reproduction", "lesson", "lessons",
+        "surface",
+        "surfaces",
+        "symptom",
+        "symptoms",
+        "problem",
+        "impact",
+        "root cause",
+        "root causes",
+        "found",
+        "mechanism",
+        "evidence",
+        "failure scenario",
+        "execution path",
+        "fix",
+        "resolution",
+        "verification",
+        "runtime verification",
+        "regression",
+        "regression tests",
+        "regression test",
+        "regression guards",
+        "residual",
+        "note",
+        "operator note",
+        "invariants",
+        "tests",
+        "category",
+        "trigger",
+        "reproduction",
+        "lesson",
+        "lessons",
     ]
     seen = set()
     chosen = []
@@ -210,16 +261,17 @@ def condense(entry: dict) -> str:
         if len(piece) < 25:
             continue
         # a parenthesised qualifier left open by label-chopping must not leak
-        if label.count("(") > label.count(")"):
-            label = label.rsplit("(", 1)[0].strip()
-        label = clip(label, 60)
+        out_label = label
+        if out_label.count("(") > out_label.count(")"):
+            out_label = out_label.rsplit("(", 1)[0].strip()
+        out_label = clip(out_label, 60)
         if piece.count("**") % 2:
             piece = piece.replace("**", "")
         # a qualifier that the label left behind must not start the sentence
         piece = re.sub(r"^[\s,;:]+", "", piece).strip()
         if not piece:
             continue
-        out.append(f"- **{label.title()}**: {piece}")
+        out.append(f"- **{out_label.title()}**: {piece}")
         total += len(piece)
         if total >= MAX_BODY:
             break
