@@ -95,8 +95,8 @@ def main() -> None:
         ("contract_raw_space_scaled", -3.0, 3.0, "raw vector in [-3,+3] then scaler-transformed"),
         ("clip_space_direct", -5.0, 5.0, "directly in post-clip [-5,+5] (trainer's clip band)"),
     ]:
-        best = {"max_prob": -1.0, "probs": None, "x": None}
-        worst = {"max_prob": 2.0}
+        best: dict = {"max_prob": -1.0, "probs": None, "x": None, "pred_class": None}
+        worst: dict = {"max_prob": 2.0, "probs": None}
         gen = torch.Generator().manual_seed(1234)
         BATCH = 4000
         for _ in range(400):
@@ -131,7 +131,7 @@ def main() -> None:
 
     # real-path: raw vectors in [-3,+3] passed through the shipped scaler
     gen = torch.Generator().manual_seed(7)
-    best_scaled = {"max_prob": -1.0, "probs": None}
+    best_scaled: dict = {"max_prob": -1.0, "probs": None, "pred_class": None}
     for _ in range(400):
         Xr = torch.empty(4000, 70).uniform_(-3.0, 3.0, generator=gen).numpy().astype(np.float32)
         Xs = np.clip((Xr - mean) / std, -5.0, 5.0)

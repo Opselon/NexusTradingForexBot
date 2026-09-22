@@ -2,7 +2,7 @@
 
 STREAM: STREAM F — EXPERIMENTATION
 PRIORITY: P1
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-DATA-002, ML-TRAIN-001
 AGENT_ROLE: AGENT-ML-EXP
 OWNERSHIP_SCOPE: src/nexus_scalp/model_lab/experiment_registry.py
@@ -71,8 +71,32 @@ Register 1,000 experiment records; query top-10 in < 50ms.
 - Passing pytest execution output
 
 ## ACCEPTANCE_CRITERIA
-1. Every experiment produces an immutable JSON manifest and SQLite record.
-2. Exact experiment reproduction possible using recorded git SHA, dataset hash, and seed.
+1. Every experiment produces an immutable JSON manifest and SQLite record. [x]
+2. Exact experiment reproduction possible using recorded git SHA, dataset hash, and seed. [x]
+
+## VERIFICATION_EVIDENCE (2026-09-21, AGENT-ML-EXP, PR #335)
+- `src/nexus_scalp/model_lab/experiment_registry.py`: `ExperimentRegistry`
+  (SQLite, WAL, write-once) + `ExperimentRecord` (frozen pydantic, the seven
+  mandatory fields) + `write_manifest` / `verify_manifest` (atomic JSON
+  manifest embedding a self-excluding `manifest_sha256`).
+- `tests/unit/test_experiment_registry.py`: 39/39 pass. Covers dual write,
+  write-once immutability (register/record_result/manifest), tamper
+  detection, reproduction bundles, metric-direction-inferred queries,
+  the 1,000-record / top-10-in-<50ms BENCHMARK_PLAN (measured ~0.3ms),
+  the DIRTY-tree abort condition, and 4x40-thread concurrent workers with
+  zero lost or clobbered rows.
+- BENCHMARK_PLAN result: 1000 registers + 333 finalizes, top-10 query
+  0.28ms (budget 50ms).
+- Gates: ruff check clean, ruff format clean, mypy clean on both files;
+  critical-suite manifest 215 -> 216 (CRITICAL_SUITE_MANIFEST_OK).
+- TWO real bugs found by the tests and fixed in-source:
+  (1) SQLite `json_extract` path — the `$['key']` bracket form resolves
+  array indices, not object keys, on SQLite 3.53; `json_path()` now emits
+  `$.key` (regression-pinned by test_json_path_resolves_on_real_sqlite).
+  (2) transaction rollback double-fire — `ROLLBACK` inside `except` re-raised
+  through a closed transaction on the validation-error path
+  (`cannot rollback - no transaction is active`); now handled by a
+  `_transaction()` context manager that commits on clean exit only.
 
 ## ABORT_CONDITIONS
 If git status is dirty and commit SHA cannot be resolved, record 'DIRTY' with working tree diff hash.

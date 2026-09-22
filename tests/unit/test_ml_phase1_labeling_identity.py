@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -78,7 +80,14 @@ class TestLabelingDiagnostics:
         import numpy as np
         import polars as pl
 
-        bars = pl.read_csv("data/raw/XAUUSD_M1.csv").sort("time")
+        # The real M1 series is an operator-owned local artifact (gitignored
+        # under data/raw/**): the assertions are only meaningful against it.
+        # A clean CI checkout has no such file, so the measurement skips
+        # instead of reporting a synthetic number.
+        csv_path = "data/raw/XAUUSD_M1.csv"
+        if not Path(csv_path).is_file():
+            pytest.skip("real M1 series not present (data/raw is gitignored)")
+        bars = pl.read_csv(csv_path).sort("time")
         hl = bars["high"].to_numpy().astype(np.float64)
         lo = bars["low"].to_numpy().astype(np.float64)
         cl = bars["close"].to_numpy().astype(np.float64)
@@ -105,7 +114,10 @@ class TestLabelingDiagnostics:
 
         from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 
-        bars = pl.read_csv("data/raw/XAUUSD_M1.csv").sort("time")
+        csv_path = "data/raw/XAUUSD_M1.csv"
+        if not Path(csv_path).is_file():
+            pytest.skip("real M1 series not present (data/raw is gitignored)")
+        bars = pl.read_csv(csv_path).sort("time")
         hl = bars["high"].to_numpy().astype(np.float64)
         lo = bars["low"].to_numpy().astype(np.float64)
         cl = bars["close"].to_numpy().astype(np.float64)

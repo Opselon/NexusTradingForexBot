@@ -2,7 +2,7 @@
 
 STREAM: STREAM E — TRAINING
 PRIORITY: P2
-STATUS: BLOCKED
+STATUS: DONE
 DEPENDENCIES: ML-TRAIN-001, ML-LABEL-001
 AGENT_ROLE: AGENT-ML-TRAIN
 OWNERSHIP_SCOPE: src/nexus_scalp/training/losses.py
@@ -75,6 +75,28 @@ Measure minority class recall and Brier score across CrossEntropy vs Focal Loss 
 ## ACCEPTANCE_CRITERIA
 1. FocalLoss and LabelSmoothing pass all mathematical gradient checks.
 2. Benchmark report provides verifiable metric comparison across all 3 loss functions.
+
+## VERIFICATION_EVIDENCE (2026-09-21, AGENT-ML-TRAIN)
+- [x] AC1 — gradient checks: `torch.autograd.gradcheck` at float64 over the full
+  gamma x smoothing matrix (gamma in {0,1,2,3.5} x smoothing in {0,0.05,0.1}) for
+  FocalLoss / FocalLossWithSmoothing / LabelSmoothingCrossEntropy, plus
+  finite-difference central-difference probes (float64) and analytic-formula
+  parity against `torch.nn` references. 108/108 tests in
+  `tests/unit/test_loss_functions.py` pass.
+- [x] AC2 — benchmark: `docs/research/LOSS_FUNCTION_BENCHMARK.md` records
+  balanced accuracy, minority F1 and Brier for all four losses across 5
+  identical-split folds, with per-fold detail tables.
+- [x] Regression: 124/124 across test_walk_forward_trainer,
+  test_training_stage_progress, test_model_lab, test_model_generation_phase13.
+- [x] ruff check + ruff format --check clean; mypy clean on losses.py.
+- [x] Critical-suite manifest 215 -> 216 paths, CRITICAL_SUITE_MANIFEST_OK.
+
+## NOTES_FOR_OPERATOR
+- NON_GOALS honored: no production loss was changed. The five hard-coded
+  `nn.CrossEntropyLoss` sites listed in the handoff report are the follow-up
+  work; `build_loss` is the API they would call.
+- The task's CURRENT_EVIDENCE was stale (candidate trainer already used focal +
+  smoothing). See `docs/agent_handoffs/2026-09-21_AGENT-ML-TRAIN_ML-TRAIN-002.md`.
 
 ## ABORT_CONDITIONS
 If Focal Loss produces NaN gradients with extreme logits, add numerical epsilon clamping.

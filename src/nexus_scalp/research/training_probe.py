@@ -42,8 +42,8 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 REPO = Path(__file__).resolve().parents[3]
@@ -98,9 +98,9 @@ def repopulate_news(frame: pl.DataFrame, seed: int) -> pl.DataFrame:
         "feat_59": np.clip(np.round(intensity * 2.0), 0.0, 3.0),
     }
     out = frame.clone()
-    for k, v in cols.items():
-        v = np.clip(v + rng.normal(0, 0.02, n), 0.0, 3.0)
-        out = out.with_columns(pl.Series(k, v.astype(np.float64)))
+    for k, col in cols.items():
+        jittered = np.clip(col + rng.normal(0, 0.02, n), 0.0, 3.0)
+        out = out.with_columns(pl.Series(k, jittered.astype(np.float64)))
     return out
 
 
@@ -110,8 +110,9 @@ def repopulate_news(frame: pl.DataFrame, seed: int) -> pl.DataFrame:
 class FocalLossWithSmoothing(nn.Module):
     """Copy of WalkForwardTrainer.FocalLossWithSmoothing (identical math)."""
 
-    def __init__(self, alpha=None, gamma: float = 2.0, label_smoothing: float = 0.08,
-                 reduction: str = "mean") -> None:
+    def __init__(
+        self, alpha=None, gamma: float = 2.0, label_smoothing: float = 0.08, reduction: str = "mean"
+    ) -> None:
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -125,7 +126,8 @@ class FocalLossWithSmoothing(nn.Module):
         with torch.no_grad():
             target_probs = torch.full_like(log_probs, self.label_smoothing / num_classes)
             target_probs.scatter_(
-                1, targets.unsqueeze(1),
+                1,
+                targets.unsqueeze(1),
                 1.0 - self.label_smoothing + (self.label_smoothing / num_classes),
             )
         p_t = probs.gather(1, targets.unsqueeze(1)).squeeze(1)
@@ -180,8 +182,7 @@ def transform(X_raw, mean, std, lo=-5.0, hi=5.0):
     return np.clip((X_raw - mean) / std, lo, hi).astype(np.float32)
 
 
-def split_fold_with_embargo(n: int, train_ratio: float, purge_gap_bars: int,
-                            embargo_bars: int):
+def split_fold_with_embargo(n: int, train_ratio: float, purge_gap_bars: int, embargo_bars: int):
     """Copy of WalkForwardTrainer._split_fold_with_embargo."""
     train_end = int(n * train_ratio)
     test_start = train_end + purge_gap_bars
@@ -233,8 +234,19 @@ def make_loader(X, y, batch, shuffle, seed):
 # ---------------------------------------------------------------------------
 # the probe run
 # ---------------------------------------------------------------------------
-def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
-            train_ratio=0.70, purge_gap_bars=15, embargo_bars=15):
+def run_one(
+    name,
+    seed,
+    frame,
+    feat_cols,
+    folds,
+    epochs,
+    batch,
+    holdout_frac,
+    train_ratio=0.70,
+    purge_gap_bars=15,
+    embargo_bars=15,
+):
     from nexus_scalp.models.scalp_net import ScalpNet
 
     run_dir = RUNS / f"{name}_seed{seed}"
@@ -247,9 +259,9 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
     ts = np.array([t.timestamp() for t in frame["timestamp"].to_list()], dtype=np.float64)
     order = np.argsort(ts, kind="stable")
     n = len(order)
-    ho_n = int(round(n * holdout_frac))
+    ho_n = round(n * holdout_frac)
     tr_idx = order[: n - ho_n]
-    ho_idx = order[n - ho_n:]
+    ho_idx = order[n - ho_n :]
     train_pool = frame[list(tr_idx)]
     hold_frame = frame[list(ho_idx)]
 
@@ -268,7 +280,8 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
         if len(fX) < 10:
             continue
         tr_end, te_start, te_end = split_fold_with_embargo(
-            len(fX), train_ratio, purge_gap_bars, embargo_bars)
+            len(fX), train_ratio, purge_gap_bars, embargo_bars
+        )
         Xtr, ytr = fX[:tr_end], fy[:tr_end]
         Xte, yte = fX[te_start:te_end], fy[te_start:te_end]
         if len(Xtr) < 50 or len(Xte) < 20:
@@ -285,15 +298,24 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
         tr_losses, va_losses = [], []
         for ep in range(epochs):
             tl = train_one_epoch(
-                model, make_loader(Xtr_s, ytr, batch, True, seed + fold * 100 + ep),
-                optimizer, criterion)
+                model,
+                make_loader(Xtr_s, ytr, batch, True, seed + fold * 100 + ep),
+                optimizer,
+                criterion,
+            )
             scheduler.step()
             vl = eval_loss(
-                model, make_loader(Xte_s, yte, batch, False, seed + fold * 100 + ep), criterion)
+                model, make_loader(Xte_s, yte, batch, False, seed + fold * 100 + ep), criterion
+            )
             tr_losses.append(round(tl, 6))
             va_losses.append(round(vl, 6))
             if vl < best_val:
-                best_val, best_state, best_epoch, patience = vl, {k: v.clone() for k, v in model.state_dict().items()}, ep + 1, 0
+                best_val, best_state, best_epoch, patience = (
+                    vl,
+                    {k: v.clone() for k, v in model.state_dict().items()},
+                    ep + 1,
+                    0,
+                )
             else:
                 patience += 1
                 if patience >= 3:
@@ -303,12 +325,19 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
         preds = predict_classes(model, make_loader(Xte_s, yte, batch, False, seed))
         oos_preds.extend(preds)
         oos_targets.extend(yte[: len(preds)].tolist())
-        fold_meta.append({
-            "fold": fold + 1, "train_rows": len(Xtr), "test_rows": len(Xte),
-            "purge_rows": int(te_start - tr_end), "embargo_rows": int(len(fX) - te_end),
-            "best_epoch": best_epoch, "best_val_loss": round(float(best_val), 6),
-            "train_losses": tr_losses, "val_losses": va_losses,
-        })
+        fold_meta.append(
+            {
+                "fold": fold + 1,
+                "train_rows": len(Xtr),
+                "test_rows": len(Xte),
+                "purge_rows": int(te_start - tr_end),
+                "embargo_rows": int(len(fX) - te_end),
+                "best_epoch": best_epoch,
+                "best_val_loss": round(float(best_val), 6),
+                "train_losses": tr_losses,
+                "val_losses": va_losses,
+            }
+        )
 
     # final FULL_TRAIN refit (production semantics: all trainable rows)
     full_mean, full_std = fit_scaler(X_pool)
@@ -316,21 +345,25 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
     final_model = ScalpNet(num_features=len(feat_cols), num_classes=3)
     opt = torch.optim.AdamW(final_model.parameters(), lr=5e-4, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
-    crit = FocalLossWithSmoothing(alpha=build_class_weights(y_pool), gamma=2.0,
-                                  label_smoothing=0.08)
+    crit = FocalLossWithSmoothing(
+        alpha=build_class_weights(y_pool), gamma=2.0, label_smoothing=0.08
+    )
     final_losses = []
     for ep in range(epochs):
         fl = train_one_epoch(
-            final_model, make_loader(X_full, y_pool, batch, True, seed + 9000 + ep),
-            opt, crit)
+            final_model, make_loader(X_full, y_pool, batch, True, seed + 9000 + ep), opt, crit
+        )
         sch.step()
         final_losses.append(round(fl, 6))
 
     # persist the probe bundle in the ISOLATED research dir (never production)
     state = {k: v.detach().cpu() for k, v in final_model.state_dict().items()}
     torch.save(state, run_dir / "model.pt")
-    np.savez(run_dir / "model.scaler.npz", mean=full_mean.astype(np.float32),
-             std=full_std.astype(np.float32))
+    np.savez(
+        run_dir / "model.scaler.npz",
+        mean=full_mean.astype(np.float32),
+        std=full_std.astype(np.float32),
+    )
 
     # ---- held-out evaluation ----
     Xh = hold_frame.select(feat_cols).to_numpy().astype(np.float32)
@@ -340,7 +373,7 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
     parts = []
     with torch.inference_mode():
         for i in range(0, len(Xhs), 8192):
-            parts.append(final_model(torch.tensor(Xhs[i:i + 8192]), return_logits=True).numpy())
+            parts.append(final_model(torch.tensor(Xhs[i : i + 8192]), return_logits=True).numpy())
     logits_ho = np.concatenate(parts, axis=0)
     probs_ho = softmax_np(logits_ho)
 
@@ -366,14 +399,18 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
     parts = []
     with torch.inference_mode():
         for i in range(0, len(X_full), 8192):
-            parts.append(final_model(torch.tensor(X_full[i:i + 8192]), return_logits=True).numpy())
-    in_sample = compute_metrics(softmax_np(np.concatenate(parts, axis=0)), y_pool, gate=EFFECTIVE_GATE)
+            parts.append(
+                final_model(torch.tensor(X_full[i : i + 8192]), return_logits=True).numpy()
+            )
+    in_sample = compute_metrics(
+        softmax_np(np.concatenate(parts, axis=0)), y_pool, gate=EFFECTIVE_GATE
+    )
 
     # pooled OOS fold metrics (the production trainer's own OOS evidence)
     oos_p = np.asarray(oos_preds, dtype=np.int64)
     oos_t = np.asarray(oos_targets, dtype=np.int64)
     oos_metrics = {
-        "n": int(len(oos_p)),
+        "n": len(oos_p),
         "oos_accuracy": round(float((oos_p == oos_t).mean()), 6) if len(oos_p) else None,
         "pred_class_counts": {str(c): int((oos_p == c).sum()) for c in range(3)},
         "true_class_counts": {str(c): int((oos_t == c).sum()) for c in range(3)},
@@ -416,7 +453,9 @@ def run_one(name, seed, frame, feat_cols, folds, epochs, batch, holdout_frac,
         "effective_gate": EFFECTIVE_GATE,
         "output_dir": str(run_dir),
     }
-    (run_dir / "report.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+    (run_dir / "report.json").write_text(
+        json.dumps(report, indent=2, default=str), encoding="utf-8"
+    )
     return report
 
 
@@ -435,7 +474,8 @@ def compute_metrics(probs: np.ndarray, y: np.ndarray, *, gate: float = EFFECTIVE
     dir_max = active.max(axis=1)
     active_pred = np.where(active[:, 1] > active[:, 0], 1, 2)
     acc = float((pred == y).mean()) if n else None
-    recs, f1s = [], []
+    recs: list[float | None] = []
+    f1s: list[float | None] = []
     for c in range(3):
         m = y == c
         if int(m.sum()) == 0:
@@ -488,8 +528,9 @@ def compute_metrics(probs: np.ndarray, y: np.ndarray, *, gate: float = EFFECTIVE
     }
 
 
-def reachable_ceiling(net, seed: int = 1234, draws: int = 200, batch: int = 4000,
-                      lo: float = -3.0, hi: float = 3.0) -> dict:
+def reachable_ceiling(
+    net, seed: int = 1234, draws: int = 200, batch: int = 4000, lo: float = -3.0, hi: float = 3.0
+) -> dict:
     g = torch.Generator().manual_seed(seed)
     best, best_probs = -1.0, None
     for _ in range(draws):
@@ -530,8 +571,16 @@ def main() -> None:
             print(f"[PHASE0] === ablation {name} seed {seed} ===", flush=True)
             t0 = time.perf_counter()
             try:
-                r = run_one(name, seed, frames[name], cols[name], args.folds,
-                            args.epochs, args.batch, args.holdout_frac)
+                r = run_one(
+                    name,
+                    seed,
+                    frames[name],
+                    cols[name],
+                    args.folds,
+                    args.epochs,
+                    args.batch,
+                    args.holdout_frac,
+                )
             except Exception as exc:
                 import traceback
 
@@ -540,16 +589,20 @@ def main() -> None:
             r["total_seconds"] = round(time.perf_counter() - t0, 1)
             results.setdefault(name, []).append(r)
             (RUNS / f"{tag}_summary.json").write_text(
-                json.dumps(r, indent=2, default=str), encoding="utf-8")
+                json.dumps(r, indent=2, default=str), encoding="utf-8"
+            )
             h = r.get("holdout", {})
-            print(f"[PHASE0] {tag} done in {r['total_seconds']}s: "
-                  f"acc={h.get('accuracy')} bal={h.get('balanced_accuracy')} "
-                  f"f1={h.get('macro_f1')} pct_over_gate={h.get('pct_rows_over_effective_gate')} "
-                  f"ceil={r.get('reachable_ceiling', {}).get('max_directional_confidence')}",
-                  flush=True)
+            print(
+                f"[PHASE0] {tag} done in {r['total_seconds']}s: "
+                f"acc={h.get('accuracy')} bal={h.get('balanced_accuracy')} "
+                f"f1={h.get('macro_f1')} pct_over_gate={h.get('pct_rows_over_effective_gate')} "
+                f"ceil={r.get('reachable_ceiling', {}).get('max_directional_confidence')}",
+                flush=True,
+            )
 
     (OUT / "training_probe_results.json").write_text(
-        json.dumps(results, indent=2, default=str), encoding="utf-8")
+        json.dumps(results, indent=2, default=str), encoding="utf-8"
+    )
     print("[PHASE0] ALL DONE ->", OUT / "training_probe_results.json")
 
 

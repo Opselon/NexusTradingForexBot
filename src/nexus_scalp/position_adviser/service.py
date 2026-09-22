@@ -29,7 +29,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -50,6 +50,44 @@ from nexus_scalp.position_adviser.models import (
 from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserNet
 
 logger = get_logger("nexus_scalp.position_adviser.service")
+
+#: Trusted containment root for adviser artifacts. Request-supplied paths are
+#: resolved and MUST land inside this root or the sink refuses them (BUG-270
+#: convention: containment at the sink, before any file-system/deserialize op).
+_ADVISER_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _contained_artifact_path(p: Path) -> Path | None:
+    """Resolve ``p`` and return it ONLY if it stays inside ``_ADVISER_ROOT``.
+
+    Returns ``None`` (never raises with the path in it) when the resolved path
+    escapes the containment root — the caller logs and rejects. This barrier
+    sits immediately before every sink (``is_file()``, ``torch.load``,
+    ``np.load``) so user-controlled values can never reach them uncontained.
+    The resolved value is what the caller must use: returning the unresolved
+    input would hand the sink a different object than the one that was
+    validated (a TOCTOU). ``Path.resolve()`` also follows symlinks, so a
+    symlink payload pointing outside the root is rejected here.
+    """
+    resolved = p.resolve()
+    root = _ADVISER_ROOT.resolve()
+    if not resolved.is_relative_to(root):
+        return None
+    return resolved
+
+
+def _trusted(contained: Path) -> Path:
+    """Identity cast: the value IS the contained, resolved path.
+
+    ``_contained_artifact_path`` returns a value whose provenance the type
+    system cannot see (its declared return type is ``Path``, and the sinks
+    below consume it as one). Re-binding through this helper is how the
+    data-flow barrier is kept legible to a static checker: from this point on,
+    ``wp``/``sp`` are named-trusted values and no request-supplied component
+    can reach ``is_file``/``torch.load``/``np.load``. The runtime value is
+    unchanged — this is a cast, not a transformation.
+    """
+    return cast("Path", contained)
 
 
 def _utcnow_iso() -> str:
@@ -219,6 +257,10 @@ class PositionAdviserService:
         model_id: str | None = None,
     ) -> dict[str, Any]:
         """Load an adviser checkpoint + scaler sidecar into memory, atomically."""
+        # CONTAINMENT BARRIER (BUG-270 convention): the request-supplied path is
+        # resolved and must land inside the repo root BEFORE any sink
+        # (is_file / torch.load / np.load) sees it. A rejected path is logged
+        # server-side and returned as a generic status — never echoed back.
         wp = Path(weights_path)
         sp = Path(scaler_path)
         # Normalise both: resolve handles the "relative to CWD" case AND makes
@@ -226,19 +268,41 @@ class PositionAdviserService:
         # previous `elif` skipped absolute-but-unresolved inputs.
         if not wp.is_absolute():
             wp = Path.cwd() / wp
-        wp = wp.resolve()
         if not sp.is_absolute():
             sp = Path.cwd() / sp
-        sp = sp.resolve()
+        # Trusted-path sanitiser: from here on ``wp``/``sp`` are the SAME
+        # resolved, repo-contained objects that every sink below consumes, so
+        # no request-supplied component can reach ``is_file``/``torch.load``/
+        # ``np.load`` (CodeQL py/path-injection + py/unsafe-deserialization).
+        wp_c = _contained_artifact_path(wp)
+        sp_c = _contained_artifact_path(sp)
+        if wp_c is None or sp_c is None:
+            logger.warning(
+                "[ADVISER] event=LOAD_REJECTED reason=path_outside_repo weights=%s scaler=%s",
+                wp,
+                sp,
+            )
+            return {"status": "REJECTED", "reason": "path rejected: outside repository root"}
+        wp = _trusted(wp_c)
+        sp = _trusted(sp_c)
         if not wp.is_file():
-            return {"status": "REJECTED", "reason": f"weights file not found: {wp}"}
+            return {"status": "REJECTED", "reason": "weights file not found"}
         if not sp.is_file():
-            return {"status": "REJECTED", "reason": f"scaler file not found: {sp}"}
+            return {"status": "REJECTED", "reason": "scaler file not found"}
 
         try:
+            # Sink-level containment assertion, immediately before the
+            # deserialisation: the barrier is checked where the bytes are read,
+            # not only at the top of load().
+            if not _contained_artifact_path(wp):
+                return {
+                    "status": "REJECTED",
+                    "reason": "path rejected: outside repository root",
+                }
             weights = torch.load(wp, map_location="cpu", weights_only=True)
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"failed to load weights: {exc}"}
+            logger.warning("[ADVISER] event=WEIGHTS_LOAD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "failed to load weights (see server logs)"}
 
         if not isinstance(weights, dict) or "net.0.weight" not in weights:
             return {
@@ -297,7 +361,8 @@ class PositionAdviserService:
                 feature_dim=ADVISER_FEATURE_DIM,
             )
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"failed to load scaler: {exc}"}
+            logger.warning("[ADVISER] event=SCALER_LOAD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "failed to load scaler (see server logs)"}
         if not scaler.is_ready():
             return {"status": "REJECTED", "reason": "scaler not ready (non-finite stats)"}
 
@@ -308,7 +373,8 @@ class PositionAdviserService:
         try:
             model.load_state_dict(weights, strict=True)
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"state dict load failed: {exc}"}
+            logger.warning("[ADVISER] event=STATE_DICT_LOAD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "state dict load failed (see server logs)"}
         model.eval()
 
         # Warm-up forward (fail closed before we advertise readiness).
@@ -319,8 +385,15 @@ class PositionAdviserService:
             if out.shape[0] != 1 or out.shape[1] < len(ADVISER_ACTIONS):
                 raise RuntimeError(f"unexpected warm-up output shape {tuple(out.shape)}")
         except Exception as exc:
-            return {"status": "REJECTED", "reason": f"warm-up forward failed: {exc}"}
+            logger.warning("[ADVISER] event=WARMUP_FORWARD_FAILED err=%s", exc)
+            return {"status": "REJECTED", "reason": "warm-up forward failed (see server logs)"}
 
+        # Re-check containment immediately before the raw read: the sha256
+        # below opens the checkpoint bytes, so the barrier is asserted at the
+        # sink itself, not only at the top of load().
+        if not _contained_artifact_path(wp):
+            logger.warning("[ADVISER] event=HASH_REJECTED reason=path_outside_repo")
+            return {"status": "REJECTED", "reason": "path rejected: outside repository root"}
         h = hashlib.sha256()
         with open(wp, "rb") as f:
             while chunk := f.read(65536):

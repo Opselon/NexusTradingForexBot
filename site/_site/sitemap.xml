@@ -13,6 +13,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/observability-map/</loc></url>
@@ -55,10 +56,15 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/datasets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/methodology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/reproducibility/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/getting-started/</loc></url>
@@ -81,6 +87,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/observability-map/</loc></url>
@@ -124,10 +131,15 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/datasets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/methodology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/reproducibility/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/getting-started/</loc></url>
@@ -150,6 +162,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/observability-map/</loc></url>
@@ -193,10 +206,15 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/datasets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/methodology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/reproducibility/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/getting-started/</loc></url>
@@ -219,6 +237,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-map/</loc></url>
@@ -262,10 +281,15 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/datasets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/methodology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/reproducibility/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/getting-started/</loc></url>
@@ -288,6 +312,7 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/failure-recovery-matrix/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/observability-map/</loc></url>
@@ -331,10 +356,15 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/datasets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/methodology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/reproducibility/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/getting-started/</loc></url>

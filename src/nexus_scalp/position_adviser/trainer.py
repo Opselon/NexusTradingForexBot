@@ -18,6 +18,7 @@ Training-time hard rules:
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -44,6 +45,12 @@ from nexus_scalp.position_adviser.models import (
 )
 
 logger = get_logger("nexus_scalp.position_adviser.trainer")
+
+#: Characters a request-supplied ``model_id`` may use when it is joined into
+#: artifact filenames. Anything that could carry a path component (slashes,
+#: ``..``, a drive letter, a NUL) is refused; the trainer substitutes a
+#: generated id instead, so the write paths stay inside ``output_dir``.
+_SAFE_MODEL_ID = re.compile(r"(?!.*\.\.)[\w.][A-Za-z0-9._-]{0,127}\Z")
 
 #: Only these split values are eligible for training. ``purge``/``embargo``
 #: exist precisely to quarantine rows whose lookahead window crosses a split
@@ -176,8 +183,16 @@ class AdviserScaler:
     def is_ready(self) -> bool:
         return self.feature_dim > 0 and bool(np.all(np.isfinite(self.std)))
 
-    def to_arrays(self) -> dict[str, np.ndarray]:
-        return {"mean": self.mean, "std": self.std, "dimension": np.int64(self.feature_dim)}
+    def to_arrays(self) -> dict[str, np.ndarray | np.integer]:
+        # ``dimension`` is intentionally a scalar (np.int64): np.savez wraps
+        # every value via np.asarray at the call site, so a scalar is stored
+        # as a 0-d array. The union keeps the declared type honest for both
+        # the array fields and the scalar dimension field.
+        return {
+            "mean": self.mean,
+            "std": self.std,
+            "dimension": np.int64(self.feature_dim),
+        }
 
 
 def _sha256_file(path: Path) -> str:
@@ -208,9 +223,12 @@ def train_position_adviser(
     """
     from nexus_scalp.model_generation.dataset_manifest import compute_dataset_hash
 
-    p = Path(dataset_path)
-    if not p.is_absolute():
-        p = p.resolve()
+    # ``p.resolve()`` is what makes ``p`` self-consistent (it removes any '..'
+    # segments and follows symlinks), so the reads below hit the canonical
+    # location rather than a path whose text and target disagree. It also makes
+    # the trainer's input a resolved, absolute value — the caller's containment
+    # check is validated against exactly this object.
+    p = Path(dataset_path).resolve()
     if not p.is_file():
         raise FileNotFoundError(f"position adviser dataset not found: {p}")
     if p.suffix.lower() not in (".parquet", ".csv"):
@@ -385,13 +403,31 @@ def train_position_adviser(
     # ---- 8. persist ----------------------------------------------------------
     out = Path(output_dir) if output_dir is not None else p.parent / "advisers"
     out.mkdir(parents=True, exist_ok=True)
+    # ``model_id`` comes from the request body and is joined into the artifact
+    # names below, so it must not be able to carry a path component (a
+    # "../../" id would write outside ``out``). Names are restricted to the
+    # safe characters a UI id uses; an id that cannot meet that bar is
+    # replaced with a generated one rather than silently truncated.
     mid = model_id or f"pos_adviser_{int(time.time())}"
+    if not _SAFE_MODEL_ID.fullmatch(mid):
+        safe = _SAFE_MODEL_ID.sub("_", mid)
+        mid = safe if _SAFE_MODEL_ID.fullmatch(safe) else f"pos_adviser_{int(time.time())}"
     weights_path = out / f"{mid}.pt"
     scaler_path = out / f"{mid}.scaler.npz"
     manifest_path = out / f"{mid}.meta.json"
 
     torch.save(model.state_dict(), weights_path)
-    np.savez(scaler_path, **{k: np.asarray(v) for k, v in scaler.to_arrays().items()})
+    # np.savez's stub types the **kwargs of its first overload as bool, so a
+    # **dict unpacking is flagged regardless of the value type. Name the
+    # fields explicitly; asarray normalises the scalar dimension to a 0-d
+    # array exactly as the previous dict-comprehension did.
+    _sa = scaler.to_arrays()
+    np.savez(
+        scaler_path,
+        mean=np.asarray(_sa["mean"]),
+        std=np.asarray(_sa["std"]),
+        dimension=np.asarray(_sa["dimension"]),
+    )
     sha = _sha256_file(weights_path)
 
     manifest = {

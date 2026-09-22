@@ -54,7 +54,7 @@ _MAX_HISTORY = 200
 
 def get_position_adviser_service() -> PositionAdviserService:
     """The canonical adviser instance shared by the API and the decide system."""
-    global _SERVICE
+    global _SERVICE  # noqa: PLW0603  # module-level singleton; refreshed in place, never rebound at call time
     if _SERVICE is None:
         _SERVICE = PositionAdviserService()
     return _SERVICE
@@ -73,17 +73,23 @@ def _repo_root() -> Path:
 
 
 def _safe_under_repo(p: Path) -> Path:
-    """Constrain adviser artifact paths to the repo root (no traversal)."""
-    root = _repo_root()
-    q = p if p.is_absolute() else (root / p)
-    try:
-        q.resolve().relative_to(root.resolve())
-    except ValueError as exc:
+    """Constrain adviser artifact paths to the repo root (no traversal).
+
+    Mirrors ``service._contained_artifact_path``: resolve ONCE into a local,
+    check THAT local, return THAT local. Returning the unresolved input would
+    be a TOCTOU — the object handed to ``is_file``/``torch.load`` would not be
+    the object that was validated (CodeQL: uncontrolled data in path
+    expression). Resolving also rejects a symlink payload that points outside
+    the root, because ``Path.resolve()`` follows the link.
+    """
+    root = _repo_root().resolve()
+    resolved = (p if p.is_absolute() else (_repo_root() / p)).resolve()
+    if root not in resolved.parents and resolved != root:
         raise HTTPException(
             status_code=400,
             detail="adviser artifact path must stay inside the repository root",
-        ) from exc
-    return q
+        )
+    return resolved
 
 
 # ---------------------------------------------------------------- request DTOs
@@ -210,10 +216,20 @@ def route_train(req: AdviserTrainRequest) -> dict[str, Any]:
     svc = get_position_adviser_service()
     root = _repo_root()
     ds = _safe_under_repo(Path(req.dataset_path))
-    if not ds.is_file():
+    # Assert containment at the sink, not only inside the validator: this is
+    # the read of the request-supplied path, and the trainer gets a value that
+    # is provably inside the root.
+    if not ds.is_relative_to(root.resolve()):
+        logger.warning("[ADVISER] event=TRAIN_PATH_OUTSIDE_REPO path=%s", ds)
         raise HTTPException(
             status_code=400,
-            detail=f"position dataset not found: {req.dataset_path}",
+            detail="adviser artifact path must stay inside the repository root",
+        )
+    if not ds.is_file():
+        logger.warning("[ADVISER] event=TRAIN_DATASET_MISSING path=%s", ds)
+        raise HTTPException(
+            status_code=400,
+            detail="position dataset not found (see server logs)",
         )
     out_dir = root / svc.config.artifact_dir
     try:
@@ -227,11 +243,15 @@ def route_train(req: AdviserTrainRequest) -> dict[str, Any]:
             model_id=req.model_id,
         )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("[ADVISER] event=TRAIN_FILE_NOT_FOUND err=%s", exc)
+        raise HTTPException(
+            status_code=400, detail="training input not found (see server logs)"
+        ) from exc
     except Exception as exc:
-        # Fail loud with the cause; never fabricate a success.
+        # Fail loud in the SERVER LOGS; the HTTP body must not leak paths or
+        # stack traces (CodeQL: information exposure through an exception).
         logger.warning("[ADVISER] event=TRAIN_FAILED err=%s", exc)
-        raise HTTPException(status_code=400, detail=f"training failed: {exc}") from exc
+        raise HTTPException(status_code=400, detail="training failed (see server logs)") from exc
 
     return {
         "status": "OK",
@@ -252,7 +272,10 @@ def route_load(req: AdviserLoadRequest) -> dict[str, Any]:
     sp = _safe_under_repo(Path(req.scaler_path))
     out = svc.load(wp, sp, model_id=req.model_id)
     if out["status"] != "OK":
-        raise HTTPException(status_code=400, detail=out.get("reason", "load rejected"))
+        # Generic reason only: a rejection detail derived from the request or
+        # from an exception must not reach the client (CodeQL: information
+        # exposure through an exception). The real cause is in the server log.
+        raise HTTPException(status_code=400, detail="adviser load rejected (see server logs)")
     return out
 
 
@@ -346,11 +369,13 @@ def route_run_checks() -> dict[str, Any]:
         )
     except Exception as exc:
         # UNVERIFIED is a failure for the LIVE ladder — never a silent pass.
+        # Generic detail only; the raw exception goes to the server log.
+        logger.warning("[ADVISER] event=CHECKS_PROBE_FAILED err=%s", exc)
         results.append(
             ActivationCheckResult(
                 name="engine_model_source_online",
                 passed=False,
-                detail=f"check could not run: {type(exc).__name__}: {exc}",
+                detail="check could not run (see server logs)",
                 evidence={},
             )
         )
@@ -455,10 +480,18 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
     svc = get_position_adviser_service()
     root = _repo_root()
     ds = _safe_under_repo(Path(req.dataset_path))
-    if not ds.is_file():
+    # Sink-level containment assertion, as in route_train.
+    if not ds.is_relative_to(root.resolve()):
+        logger.warning("[ADVISER] event=AUTOTUNE_PATH_OUTSIDE_REPO path=%s", ds)
         raise HTTPException(
             status_code=400,
-            detail=f"position dataset not found: {req.dataset_path}",
+            detail="adviser artifact path must stay inside the repository root",
+        )
+    if not ds.is_file():
+        logger.warning("[ADVISER] event=AUTOTUNE_DATASET_MISSING path=%s", ds)
+        raise HTTPException(
+            status_code=400,
+            detail="position dataset not found (see server logs)",
         )
     out_dir = root / svc.config.artifact_dir
 
@@ -492,6 +525,8 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
             )
         except Exception as exc:
             # A failed trial must not abort the sweep; record and continue.
+            # The HTTP response carries a generic reason; the real exception
+            # stays in the server log (no information exposure to clients).
             logger.warning("[ADVISER] event=AUTOTUNE_TRIAL_FAIL err=%s", exc)
             trials.append(
                 {
@@ -500,7 +535,7 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
                     "learning_rate": lr,
                     "batch_size": bs,
                     "failed": True,
-                    "error": str(exc),
+                    "error": "training trial failed (see server logs)",
                 }
             )
             continue
@@ -560,7 +595,7 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
             )
         except Exception as exc:  # the sweep still succeeded; report the load
             logger.warning("[ADVISER] event=AUTOTUNE_LOAD_FAIL err=%s", exc)
-            best["load_error"] = str(exc)
+            best["load_error"] = "auto-load failed (see server logs)"
 
     beats_baseline = majority_baseline is None or best["oos_accuracy"] >= float(majority_baseline)
     return {

@@ -49,6 +49,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -320,6 +321,14 @@ class ShutdownSupervisor:
         try:
             import ctypes
         except ImportError:  # pragma: no cover
+            return
+
+        # WINFUNCTYPE / windll exist only on Windows; on Linux/macOS the
+        # console-close hook has no equivalent, so the whole registration is
+        # a no-op there. The sys.platform test is also the narrowing mypy
+        # honours for the Windows-only ctypes attributes (a hasattr probe
+        # does not narrow a module attribute).
+        if sys.platform != "win32":
             return
 
         handler_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)

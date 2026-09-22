@@ -609,7 +609,17 @@ def test_is_numeric_validation_invalid_entry_price():
     invalid_entry_prices = [math.nan, math.inf, -math.inf, True, False]
 
     for invalid_val in invalid_entry_prices:
+        # _make_tick() stamps every fixture with the same datetime.now(), so
+        # after the first evaluate_probabilities() call the policy's tick
+        # dedup state still holds that timestamp plus this loop's fixed
+        # bid=2000.0 — and the ask is rewritten to invalid_val, which is not
+        # equal to the stored _dedup_last_ask, but the timestamp is. Dedup
+        # then short-circuits to NO_TRADE before the entry-price validator
+        # can ever run, so every value after the first is never validated.
+        # Clear all three dedup fields, not just _dedup_last_bid.
+        policy._dedup_last_time = None
         policy._dedup_last_bid = 0.0
+        policy._dedup_last_ask = 0.0
         tick = _make_tick().model_copy(update={"ask": invalid_val, "bid": 2000.0})
         with pytest.raises(ValueError, match=r"Invalid entry price:"):
             policy.evaluate_probabilities(
@@ -633,7 +643,13 @@ def test_is_numeric_validation_invalid_swing_low_and_high():
     invalid_swing_values = [math.nan, math.inf, -math.inf, None, True, False, "invalid"]
 
     for invalid_val in invalid_swing_values:
+        # Same dedup-shared-state issue as the entry-price test: every
+        # _make_tick() shares one timestamp, so all but the first call is
+        # short-circuited by TICK_DEDUP before validation runs. Clear all
+        # three fields before each call.
+        policy._dedup_last_time = None
         policy._dedup_last_bid = 0.0
+        policy._dedup_last_ask = 0.0
         tick = _make_tick()
         fv_low = _make_feature_vector().model_copy(update={"dist_to_swing_low_20": invalid_val})
         with pytest.raises(ValueError, match=r"Invalid dist_to_swing_low_20:"):
@@ -643,7 +659,13 @@ def test_is_numeric_validation_invalid_swing_low_and_high():
                 feature_vector=fv_low,
             )
 
+        # Same dedup-shared-state issue as the entry-price test: every
+        # _make_tick() shares one timestamp, so all but the first call is
+        # short-circuited by TICK_DEDUP before validation runs. Clear all
+        # three fields before each call.
+        policy._dedup_last_time = None
         policy._dedup_last_bid = 0.0
+        policy._dedup_last_ask = 0.0
         tick = _make_tick()
         fv_high = _make_feature_vector().model_copy(update={"dist_to_swing_high_20": invalid_val})
         with pytest.raises(ValueError, match=r"Invalid dist_to_swing_high_20:"):

@@ -1101,7 +1101,15 @@ def execute_benchmark(req: ModelStudioBenchmarkRequest, engine: Any = None) -> d
             _ = model(x)
 
     t_total_start = time.perf_counter()
+    # Warm up before timing: the first forward pass pays one-time lazy torch
+    # init (kernel autotuning, allocator ramp), which dominates a 20-iteration
+    # sample. Timing cold inflates the *median*, not just the tail, so under
+    # pytest-xdist CPU contention a cold start can push p50 past the SLA even
+    # though steady-state inference is sub-millisecond. Discard warmup
+    # iterations so the sample measures the operation the SLA names.
     with torch.inference_mode():
+        for _ in range(min(n, 5)):
+            _ = model(x)
         for _ in range(n):
             t0 = time.perf_counter()
             _ = model(x)

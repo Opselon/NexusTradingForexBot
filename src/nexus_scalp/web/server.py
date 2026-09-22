@@ -2106,7 +2106,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                         low=float(r.low),
                                         close=float(r.close),
                                         tick_volume=int(r.tick_volume or 0),
-                                        is_complete=not _is_current_rate_bar_forming(r.time_utc, str(timeframe).upper()),
+                                        is_complete=not _is_current_rate_bar_forming(
+                                            r.time_utc, str(timeframe).upper()
+                                        ),
                                     )
                                     for r in rate_bars_dt
                                 ]
