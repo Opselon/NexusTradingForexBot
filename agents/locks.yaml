@@ -40,6 +40,8 @@ exclusive_locks:
     since: 2026-09-21
     task: ML-TRAIN-003
     expiry: 2026-09-21
+# - src/nexus_scalp/models/attention.py + src/nexus_scalp/models/attention_ablation.py
+#   (ML-ARCH-003, AGENT-ML-ARCH) — released, PR opened
 # - src/nexus_scalp/model_generation/architectures.py + tests/unit/test_causal_conv_invariants.py
 #   (ML-ARCH-002, AGENT-ML-ARCH) — released, PR #351 opened
 
