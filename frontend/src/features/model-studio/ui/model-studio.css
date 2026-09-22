@@ -1,0 +1,834 @@
+/**
+ * features/model-studio/ui/model-studio.css
+ *
+ * Professional Quant / Trading Bot Neural Studio Workstation Theme.
+ * Builds directly on theme.css tokens: --bg, --bg-panel, --border, --accent,
+ * --green, --red, --amber, --violet, etc.
+ *
+ * Namespace: .ms-* to prevent selector collisions.
+ */
+
+/* ==========================================================================
+   Root & Container
+   ========================================================================== */
+.ms-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 12px 16px 48px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  animation: pageIn 0.2s ease-out;
+}
+
+/* ==========================================================================
+   Header Bar & Dimension Controls
+   ========================================================================== */
+.ms-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(13, 19, 27, 0.95), rgba(19, 28, 39, 0.85));
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.7), inset 0 1px 0 var(--elevate-hi);
+  position: relative;
+  overflow: hidden;
+}
+
+.ms-header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--violet), var(--green));
+  opacity: 0.85;
+}
+
+.ms-header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ms-brain-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(65, 166, 242, 0.2), rgba(157, 123, 240, 0.25));
+  border: 1px solid rgba(65, 166, 242, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 0 20px rgba(65, 166, 242, 0.25);
+  flex-shrink: 0;
+}
+
+.ms-title-wrap h1 {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.ms-title-subtitle {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  letter-spacing: 0.02em;
+}
+
+.ms-dim-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(65, 166, 242, 0.15);
+  color: var(--accent-strong);
+  border: 1px solid rgba(65, 166, 242, 0.35);
+  box-shadow: 0 0 10px rgba(65, 166, 242, 0.2);
+}
+
+.ms-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ms-dim-segmented {
+  display: inline-flex;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.ms-dim-btn {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ms-dim-btn:hover {
+  color: #fff;
+}
+
+.ms-dim-btn.active {
+  background: var(--accent);
+  color: #070a0f;
+  box-shadow: 0 2px 8px rgba(65, 166, 242, 0.4);
+}
+
+/* ==========================================================================
+   Navigation Tabs
+   ========================================================================== */
+.ms-tabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ms-tabs-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.ms-tab-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ms-tab-item:hover {
+  background: var(--bg-panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.ms-tab-item.active {
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  color: #fff;
+  border-color: rgba(65, 166, 242, 0.4);
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.ms-tab-item .tab-icon {
+  font-size: 14px;
+}
+
+/* ==========================================================================
+   Champion Live Telemetry Banner
+   ========================================================================== */
+.ms-champion-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(62, 207, 142, 0.08), rgba(13, 19, 27, 0.95));
+  border: 1px solid rgba(62, 207, 142, 0.3);
+  box-shadow: 0 4px 16px -6px rgba(0, 0, 0, 0.5);
+}
+
+.ms-champ-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ms-live-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 12px var(--green);
+  animation: livePulse 2s infinite ease-in-out;
+}
+
+.ms-champ-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  font-family: var(--mono);
+}
+
+.ms-champ-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ms-pill.champ {
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid rgba(62, 207, 142, 0.4);
+}
+
+.ms-pill.ft-on {
+  background: rgba(157, 123, 240, 0.18);
+  color: #c4b5fd;
+  border: 1px solid rgba(157, 123, 240, 0.4);
+}
+
+.ms-pill.ft-off {
+  background: var(--bg-inset);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+}
+
+.ms-pill.scaler-ok {
+  background: rgba(65, 166, 242, 0.15);
+  color: var(--accent-strong);
+  border: 1px solid rgba(65, 166, 242, 0.35);
+}
+
+.ms-pill.scaler-warn {
+  background: var(--amber-dim);
+  color: var(--amber);
+  border: 1px solid rgba(235, 161, 63, 0.4);
+}
+
+/* ==========================================================================
+   Metrics Overview Deck
+   ========================================================================== */
+.ms-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 1200px) {
+  .ms-metrics-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .ms-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ms-metric-card {
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.ms-metric-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.ms-metric-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.3), transparent);
+}
+
+.ms-metric-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.ms-metric-value {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-metric-sub {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+/* ==========================================================================
+   Layout Grids
+   ========================================================================== */
+.ms-grid-dual {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr);
+  gap: 16px;
+}
+
+@media (max-width: 1080px) {
+  .ms-grid-dual {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ms-grid-half {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .ms-grid-half {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Interactive Controls & Forms
+   ========================================================================== */
+.ms-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ms-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-form-row label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.ms-input-styled {
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.ms-input-styled:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.2);
+}
+
+.ms-select-styled {
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+  transition: all 0.15s ease;
+  width: 100%;
+  cursor: pointer;
+}
+
+.ms-select-styled:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.2);
+}
+
+.ms-checkbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ms-checkbox-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-range-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ms-range-slider {
+  flex: 1;
+  accent-color: var(--accent);
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-strong);
+  cursor: pointer;
+}
+
+.ms-range-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  min-width: 48px;
+  text-align: right;
+}
+
+/* ==========================================================================
+   Buttons & Actions
+   ========================================================================== */
+.ms-btn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  font-family: var(--sans);
+}
+
+.ms-btn-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ms-btn-action:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ms-btn-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ms-btn-primary {
+  background: linear-gradient(135deg, var(--accent), #2b7ddb);
+  color: #04070b;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(65, 166, 242, 0.35);
+}
+
+.ms-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(65, 166, 242, 0.5);
+}
+
+.ms-btn-success {
+  background: linear-gradient(135deg, var(--green), #2db578);
+  color: #04070b;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(62, 207, 142, 0.35);
+}
+
+.ms-btn-success:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(62, 207, 142, 0.5);
+}
+
+.ms-btn-purple {
+  background: linear-gradient(135deg, var(--violet), #7c50e8);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(157, 123, 240, 0.35);
+}
+
+.ms-btn-ghost {
+  background: var(--bg-inset);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.ms-btn-ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* ==========================================================================
+   Prediction & Decision Displays
+   ========================================================================== */
+.ms-decision-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+}
+
+.ms-decision-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ms-decision-badge {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.ms-decision-badge.buy {
+  color: var(--green);
+  background: var(--green-dim);
+  border-color: rgba(62, 207, 142, 0.4);
+  box-shadow: 0 0 16px rgba(62, 207, 142, 0.25);
+}
+
+.ms-decision-badge.sell {
+  color: #ff938c;
+  background: var(--red-dim);
+  border-color: rgba(242, 86, 77, 0.45);
+  box-shadow: 0 0 16px rgba(242, 86, 77, 0.25);
+}
+
+.ms-decision-badge.hold {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-color: rgba(235, 161, 63, 0.4);
+  box-shadow: 0 0 16px rgba(235, 161, 63, 0.2);
+}
+
+.ms-decision-badge.idle {
+  color: var(--text-faint);
+  background: var(--bg-panel-2);
+  border-color: var(--border);
+}
+
+/* Custom Probability Bars */
+.ms-prob-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+}
+
+.ms-prob-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-prob-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.ms-prob-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+}
+
+.ms-prob-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ms-prob-fill.buy {
+  background: linear-gradient(90deg, rgba(62, 207, 142, 0.5), var(--green));
+  box-shadow: 0 0 10px rgba(62, 207, 142, 0.4);
+}
+
+.ms-prob-fill.sell {
+  background: linear-gradient(90deg, rgba(242, 86, 77, 0.5), var(--red));
+  box-shadow: 0 0 10px rgba(242, 86, 77, 0.4);
+}
+
+.ms-prob-fill.hold {
+  background: linear-gradient(90deg, rgba(235, 161, 63, 0.5), var(--amber));
+  box-shadow: 0 0 10px rgba(235, 161, 63, 0.4);
+}
+
+/* Saliency Driver Chips */
+.ms-saliency-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.ms-driver-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ms-driver-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.ms-driver-chip.pos {
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid rgba(62, 207, 142, 0.35);
+}
+
+.ms-driver-chip.neg {
+  background: var(--red-dim);
+  color: #ff938c;
+  border: 1px solid rgba(242, 86, 77, 0.35);
+}
+
+/* ==========================================================================
+   Feature Slots & 70D Component Matrix
+   ========================================================================== */
+.ms-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.ms-slot-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.ms-slot-idx {
+  color: var(--text-faint);
+  width: 24px;
+}
+
+.ms-slot-family {
+  font-weight: 800;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.ms-slot-family.base {
+  background: rgba(65, 166, 242, 0.15);
+  color: var(--accent-strong);
+}
+
+.ms-slot-family.news {
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+
+.ms-slot-family.liq {
+  background: rgba(157, 123, 240, 0.15);
+  color: #c4b5fd;
+}
+
+.ms-slot-name {
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-slot-val {
+  color: #fff;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Progress Bar
+   ========================================================================== */
+.ms-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.ms-progress-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.ms-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  transition: width 0.3s ease;
+}
+
+/* ==========================================================================
+   Notice Banners & Alerts
+   ========================================================================== */
+.ms-banner-ok {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--green-dim);
+  border: 1px solid rgba(62, 207, 142, 0.4);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ms-banner-err {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--red-dim);
+  border: 1px solid rgba(242, 86, 77, 0.4);
+  color: #ff938c;
+  font-size: 12px;
+  font-weight: 600;
+}

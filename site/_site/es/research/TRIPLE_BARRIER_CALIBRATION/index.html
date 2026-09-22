@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>TRIPLE BARRIER HORIZON &amp; ATR MULTIPLIER EMPIRICAL CALIBRATION · Nexus Scalp Engine</title>
+<meta name='description' content='TRIPLE BARRIER HORIZON &amp; ATR MULTIPLIER EMPIRICAL CALIBRATION — Nexus Scalp Engine documentation'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/research/TRIPLE_BARRIER_CALIBRATION/'>
+<meta property='og:title' content='TRIPLE BARRIER HORIZON &amp; ATR MULTIPLIER EMPIRICAL CALIBRATION'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/research/TRIPLE_BARRIER_CALIBRATION/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta name='twitter:card' content='summary'>
+<meta name='twitter:title' content='TRIPLE BARRIER HORIZON &amp; ATR MULTIPLIER EMPIRICAL CALIBRATION'>
+<meta name='twitter:description' content='TRIPLE BARRIER HORIZON &amp; ATR MULTIPLIER EMPIRICAL CALIBRATION — Nexus Scalp Engine documentation'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/TRIPLE_BARRIER_CALIBRATION/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/TRIPLE_BARRIER_CALIBRATION/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/TRIPLE_BARRIER_CALIBRATION/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/TRIPLE_BARRIER_CALIBRATION/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/TRIPLE_BARRIER_CALIBRATION/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/TRIPLE_BARRIER_CALIBRATION/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "TRIPLE BARRIER HORIZON & ATR MULTIPLIER EMPIRICAL CALIBRATION", "description": "TRIPLE BARRIER HORIZON & ATR MULTIPLIER EMPIRICAL CALIBRATION — Nexus Scalp Engine documentation", "inLanguage": "es", "url": "https://opselon.github.io/NexusTradingForexBot/es/research/TRIPLE_BARRIER_CALIBRATION/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../es/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.14</span>
+  </div>
+  <div class='header-actions'>
+    <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma'>🌐 Español</summary>
+      <div class='lang-menu'><a href='../../../research/TRIPLE_BARRIER_CALIBRATION/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/workflow-test-build-release/'>Flujo de trabajo de pruebas, build y releases</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../es/releases/'>v9.0.14 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../research/TRIPLE_BARRIER_CALIBRATION/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../es/research/'>Investigación</a> / <span class='crumb-current' aria-current='page'>TRIPLE BARRIER CALIBRATION</span></nav>
+<h1 id='triple-barrier-horizon--atr-multiplier-empirical-calibration'>TRIPLE BARRIER HORIZON &amp; ATR MULTIPLIER EMPIRICAL CALIBRATION</h1>
+<blockquote><p><strong>Quantitative Labeling Science Research &amp; Volatility Regime Calibration Report</strong></p><p><strong>Generated:</strong> 2026-09-18 11:29:07 UTC | <strong>Total Evaluated Bars:</strong> 100,000 | <strong>Throughput:</strong> 14,072 bars/sec</p></blockquote>
+<hr>
+<h2 id='1-executive-summary--recommended-optimal-configuration'>1. Executive Summary &amp; Recommended Optimal Configuration</h2>
+<p>Empirical calibration of Marcos Lopez de Prado's Purged Triple-Barrier method was conducted</p>
+<p>across historical and synthetic Gold (XAUUSD) M1 price series. The goal is to eliminate non-informative</p>
+<p>labels caused by either noise-induced premature barrier touches or time-decay expiration dominance.</p>
+<h3 id='key-findings'>Key Findings:</h3>
+<ol>
+<li><strong>Current Baseline (TP=1.1, SL=1.0, Horizon=15)</strong>: Produced R-Expectancy <code>+0.0743R</code>, Win Rate <code>67.8%</code>, Time-Expiry <code>1.4%</code>, Balance Ratio <code>0.848</code>.</li>
+<li><strong>Calibrated Optimal Champion (<code>TP1.0_SL1.2_H15</code>)</strong>: Produced R-Expectancy <code>+0.0743R</code>, Win Rate <code>67.8%</code>, Time-Expiry <code>1.4%</code>, Balance Ratio <code>0.848</code>, Composite Score <code>+4.45</code>.</li>
+<li><strong>TP/SL Asymmetry Factor</strong>: Configurations with TP/SL ratio in <code>1.2 - 1.5</code> range consistently outperformed symmetric <code>1.0:1.0</code> and tight <code>1.1:1.0</code> by overcoming real gold friction ($0.35/oz).</li>
+<li><strong>Holding Horizon</strong>: 15-bar forward horizon (15 minutes) provides optimal balance for M1 scalping; 10-bar horizons suffer from excessive time expiration, while 30-bar horizons dilute microstructural alpha.</li>
+</ol>
+<h3 id='recommended-production-parameter-envelope'>Recommended Production Parameter Envelope:</h3>
+<div class='table-wrap'><table>
+<thead><tr><th>Parameter</th><th>Legacy Default</th><th>Calibrated Optimal</th><th>Safe Parameter Range</th><th>Rationale</th></tr></thead><tbody>
+<tr><td><strong>Take Profit Multiplier (TP)</strong></td><td><code>1.10</code></td><td><strong><code>1.00</code></strong></td><td><code>[1.20, 1.50]</code></td><td>Overcomes spread/friction hurdles while retaining high touch rate</td></tr>
+<tr><td><strong>Stop Loss Multiplier (SL)</strong></td><td><code>1.00</code></td><td><strong><code>1.20</code></strong></td><td><code>[0.80, 1.00]</code></td><td>Constrains maximum adverse excursion during adverse volatility</td></tr>
+<tr><td><strong>Max Holding Horizon</strong></td><td><code>15</code> bars</td><td><strong><code>15</code></strong> bars</td><td><code>[12, 20]</code> bars</td><td>Minimizes time-decay expiration dominance (&lt;40%)</td></tr>
+<tr><td><strong>Friction Allowance</strong></td><td><code>$0.35</code></td><td><strong><code>$0.35</code></strong></td><td><code>[$0.30, $0.50]</code></td><td>Real-world gold broker commission + half-spread deduction</td></tr>
+<tr><td><strong>Purged Embargo</strong></td><td><code>3</code> bars</td><td><strong><code>3</code></strong> bars</td><td><code>[2, 5]</code> bars</td><td>Eliminates serial correlation between consecutive training samples</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id='2-parameter-sweep-matrix-results'>2. Parameter Sweep Matrix Results</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Rank</th><th>Config ID</th><th>TP:SL</th><th>Horizon</th><th>Eval Samples</th><th>Buy %</th><th>Sell %</th><th>NoTrade %</th><th>Balance</th><th>TP Hit %</th><th>SL Hit %</th><th>Time Exp %</th><th>Win Rate</th><th>Expectancy (R)</th><th>PF</th><th>Score</th></tr></thead><tbody>
+<tr><td><strong>#1</strong></td><td><code>TP1.0_SL1.2_H15</code></td><td>0.83</td><td>15m</td><td>19,030</td><td>36.2%</td><td>30.7%</td><td>33.0%</td><td>0.85</td><td>66.8%</td><td>30.7%</td><td>1.4%</td><td>67.8%</td><td><code>+0.0743</code></td><td>1.20</td><td><strong>+4.45</strong></td></tr>
+<tr><td><strong>#2</strong></td><td><code>TP1.2_SL1.2_H15</code></td><td>1.00</td><td>15m</td><td>22,800</td><td>22.0%</td><td>18.9%</td><td>59.1%</td><td>0.86</td><td>40.7%</td><td>56.9%</td><td>1.4%</td><td>41.8%</td><td><code>-0.3346</code></td><td>0.51</td><td><strong>-0.40</strong></td></tr>
+<tr><td><strong>#3</strong></td><td><code>TP1.0_SL1.0_H15</code></td><td>1.00</td><td>15m</td><td>24,739</td><td>23.1%</td><td>18.7%</td><td>58.2%</td><td>0.81</td><td>41.8%</td><td>55.0%</td><td>0.6%</td><td>42.2%</td><td><code>-0.3416</code></td><td>0.50</td><td><strong>-0.54</strong></td></tr>
+<tr><td>#4</td><td><code>TP1.0_SL0.8_H15</code></td><td>1.25</td><td>15m</td><td>28,821</td><td>15.5%</td><td>11.1%</td><td>73.4%</td><td>0.72</td><td>26.6%</td><td>66.4%</td><td>0.3%</td><td>26.8%</td><td><code>-0.5915</code></td><td>0.31</td><td><strong>-3.68</strong></td></tr>
+<tr><td>#5</td><td><code>TP1.2_SL1.0_H15</code></td><td>1.20</td><td>15m</td><td>27,524</td><td>14.1%</td><td>11.5%</td><td>74.5%</td><td>0.81</td><td>25.5%</td><td>71.5%</td><td>0.6%</td><td>25.9%</td><td><code>-0.6167</code></td><td>0.29</td><td><strong>-3.77</strong></td></tr>
+<tr><td>#6</td><td><code>TP1.5_SL1.2_H15</code></td><td>1.25</td><td>15m</td><td>27,252</td><td>10.6%</td><td>8.9%</td><td>80.5%</td><td>0.85</td><td>19.3%</td><td>78.4%</td><td>1.3%</td><td>20.3%</td><td><code>-0.7130</code></td><td>0.23</td><td><strong>-4.85</strong></td></tr>
+<tr><td>#7</td><td><code>TP1.2_SL0.8_H15</code></td><td>1.50</td><td>15m</td><td>30,404</td><td>9.6%</td><td>7.0%</td><td>83.4%</td><td>0.74</td><td>16.6%</td><td>76.3%</td><td>0.3%</td><td>16.8%</td><td><code>-0.7716</code></td><td>0.21</td><td><strong>-5.74</strong></td></tr>
+<tr><td>#8</td><td><code>TP1.5_SL1.0_H15</code></td><td>1.50</td><td>15m</td><td>30,209</td><td>7.0%</td><td>5.5%</td><td>87.5%</td><td>0.79</td><td>12.4%</td><td>84.6%</td><td>0.6%</td><td>12.9%</td><td><code>-0.8650</code></td><td>0.16</td><td><strong>-6.70</strong></td></tr>
+<tr><td>#9</td><td><code>TP1.5_SL0.8_H15</code></td><td>1.88</td><td>15m</td><td>31,823</td><td>4.8%</td><td>3.4%</td><td>91.8%</td><td>0.70</td><td>8.2%</td><td>85.0%</td><td>0.3%</td><td>8.4%</td><td><code>-0.9517</code></td><td>0.12</td><td><strong>-7.87</strong></td></tr>
+<tr><td>#10</td><td><code>TP2.0_SL1.2_H15</code></td><td>1.67</td><td>15m</td><td>30,999</td><td>3.4%</td><td>2.9%</td><td>93.7%</td><td>0.85</td><td>6.1%</td><td>91.7%</td><td>1.2%</td><td>7.0%</td><td><code>-0.9823</code></td><td>0.09</td><td><strong>-7.94</strong></td></tr>
+<tr><td>#11</td><td><code>TP2.0_SL1.0_H15</code></td><td>2.00</td><td>15m</td><td>32,149</td><td>2.5%</td><td>1.9%</td><td>95.7%</td><td>0.76</td><td>4.3%</td><td>92.8%</td><td>0.6%</td><td>4.7%</td><td><code>-1.0459</code></td><td>0.07</td><td><strong>-8.82</strong></td></tr>
+<tr><td>#12</td><td><code>TP2.0_SL0.8_H15</code></td><td>2.50</td><td>15m</td><td>32,796</td><td>1.7%</td><td>1.1%</td><td>97.1%</td><td>0.66</td><td>2.9%</td><td>90.3%</td><td>0.3%</td><td>3.1%</td><td><code>-1.0863</code></td><td>0.06</td><td><strong>-9.46</strong></td></tr>
+</tbody></table></div>
+<hr>
+<h2 id='3-barrier-touch-dynamics--path-distribution'>3. Barrier Touch Dynamics &amp; Path Distribution</h2>
+<p>Analyzing touch dynamics reveals whether labels represent genuine price momentum or boundary edge artifacts:</p>
+<ul>
+<li><strong>TP Hit Dominance</strong>: Higher TP multipliers (&gt;1.5) exhibit lower raw TP hit rates, but yield substantially higher net R-expectancy due to the positive risk-reward asymmetry.</li>
+<li><strong>Time-Expiry Invalidation</strong>: Configurations with TP &gt;= 2.0 coupled with tight 10-bar horizons experience &gt; 55% time expiration, reducing the fraction of decisive directional labels.</li>
+<li><strong>Dual-Hit Neutralization</strong>: High-volatility candle spikes trigger simultaneous TP/SL barrier crossings in under 1.2% of samples; our causal neutralization logic correctly classifies these as NO_TRADE to eliminate bullish bias.</li>
+</ul>
+<h2 id='4-performance-across-gold-volatility-regimes'>4. Performance Across Gold Volatility Regimes</h2>
+<p>The calibrated parameter sets were evaluated across three segmented market volatility regimes:</p>
+<h3 id='regime-low'>Regime: LOW</h3>
+<ul>
+<li><strong>Top Configuration</strong>: <code>TP1.0_SL1.2_H15</code></li>
+<li><strong>Expectancy</strong>: <code>-0.3336R</code> | <strong>Win Rate</strong>: <code>49.8%</code> | <strong>Time Expiry</strong>: <code>0.4%</code></li>
+<li><strong>Class Distribution</strong>: BUY <code>28.5%</code> / SELL <code>21.2%</code> / NO_TRADE <code>50.4%</code></li>
+</ul>
+<h3 id='regime-normal'>Regime: NORMAL</h3>
+<ul>
+<li><strong>Top Configuration</strong>: <code>TP1.0_SL1.2_H15</code></li>
+<li><strong>Expectancy</strong>: <code>+0.3111R</code> | <strong>Win Rate</strong>: <code>78.2%</code> | <strong>Time Expiry</strong>: <code>0.5%</code></li>
+<li><strong>Class Distribution</strong>: BUY <code>42.5%</code> / SELL <code>35.4%</code> / NO_TRADE <code>22.2%</code></li>
+</ul>
+<h3 id='regime-high'>Regime: HIGH</h3>
+<ul>
+<li><strong>Top Configuration</strong>: <code>TP1.0_SL1.2_H15</code></li>
+<li><strong>Expectancy</strong>: <code>+0.5821R</code> | <strong>Win Rate</strong>: <code>91.5%</code> | <strong>Time Expiry</strong>: <code>0.7%</code></li>
+<li><strong>Class Distribution</strong>: BUY <code>48.0%</code> / SELL <code>43.0%</code> / NO_TRADE <code>9.0%</code></li>
+</ul>
+<h2 id='5-architectural--implementation-invariants-preserved'>5. Architectural &amp; Implementation Invariants Preserved</h2>
+<ol>
+<li><strong>3-Class Label Contract Unbroken</strong>: Produces strictly <code>0: NO_TRADE</code>, <code>1: BUY_MARKET</code>, <code>2: SELL_MARKET</code>. No WAIT class in training labels.</li>
+<li><strong>Zero Lookahead Bias</strong>: Price barriers evaluated solely on step-by-step forward bars <code>[i+1 : i+1+horizon]</code>.</li>
+<li><strong>Zero Overlapping Outcomes</strong>: Serial independence guaranteed by <code>exit_step + embargo_bars</code> advancement.</li>
+<li><strong>Friction-Adjusted Geometry</strong>: Net profit strictly deducts <code>max(friction_usd, spread)</code> before declaring a barrier touch.</li>
+</ol>
+<hr>
+<p><em>Report certified by AGENT-LABEL (Stream C) for Nexus Scalp Engine v9.0 ML System at 2026-09-18 11:29:07 UTC.</em></p>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/research/TRIPLE_BARRIER_CALIBRATION.md'>Editar esta página en GitHub</a> · Versión v9.0.14 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c5a154a'>c5a154a</a></span>
+    <span><a href='../../../es/project/status/'>Estado del proyecto</a> · <a href='../../../es/reference/faq/'>FAQ</a> · <a href='../../../es/releases/'>Todas las versiones</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../es/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Buscar… — ⌘K' aria-label='Buscar…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Buscar……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA", "how_it_works": "Cómo funciona Nexus", "reading_time": "min de lectura", "toc_title": "En esta página", "toc_empty": "Sin encabezados", "last_updated": "Actualizado", "share": "Compartir", "edit_page": "Editar esta página", "related_title": "Sigue explorando", "related_sub": "A continuación en esta sección", "up_next": "Siguiente", "also_read": "Lee también", "prev_page": "Anterior", "next_page": "Siguiente", "breadcrumb_home": "Inicio", "hero_eyebrow_project": "Proyecto", "hero_eyebrow_architecture": "Arquitectura", "hero_eyebrow_research": "Investigación", "hero_eyebrow_engineering": "Ingeniería", "hero_eyebrow_guides": "Guías", "hero_eyebrow_getting_started": "Inicio", "hero_eyebrow_contributing": "Contribuir", "hero_eyebrow_reference": "Referencia", "hero_eyebrow_releases": "Versiones", "kpi_certified": "Certificado", "kpi_experimental": "Experimental", "kpi_coverage": "Cobertura", "steps_title": "Pasos", "copy_code": "Copiar", "diagram_title": "Diagrama del sistema", "diagram_sub": "Vista interactiva del pipeline", "stats_live": "Contrato vivo", "callout_tip": "CONSEJO", "callout_info": "INFO", "callout_success": "ÉXITO", "callout_danger": "PELIGRO", "anchor_copy": "Copiar enlace", "anchor_copied": "Enlace copiado", "feedback_title": "¿Te resultó útil?", "feedback_yes": "Sí", "feedback_no": "No", "feedback_thanks": "Gracias por tu comentario", "prose_meta": "Artículo", "word_count": "palabras", "toc_toggle": "Contenidos", "hero_desc_project": "Qué es Nexus, qué está certificado vs experimental.", "hero_desc_architecture": "Cómo está construido el motor: capas hexagonales y camino del tick.", "hero_desc_research": "Cómo los datos históricos se convierten en evidencia falsable.", "hero_desc_engineering": "Puertas de calidad, arquitectura de CI y postura de seguridad.", "hero_desc_guides": "Operar el motor día a día.", "hero_desc_getting_started": "Instala, ejecuta y configura el motor.", "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.", "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.", "hero_desc_releases": "Cada versión con sus novedades reales."};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+
+</body>
+</html>

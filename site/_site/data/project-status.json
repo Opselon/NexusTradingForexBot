@@ -1,0 +1,45 @@
+{
+ "generated_at": "2026-09-21T16:04:38+00:00",
+ "version": "9.0.14",
+ "revision": "c5a154a",
+ "repo": "https://github.com/Opselon/NexusTradingForexBot",
+ "pages": "https://opselon.github.io/NexusTradingForexBot",
+ "release": {
+  "tag": "v9.0.6",
+  "date": "2026-09-01",
+  "url": "https://github.com/Opselon/NexusTradingForexBot/releases/tag/v9.0.6",
+  "highlights": [
+   "f71cf01 Hermes-Main: BUG-183 taskboard row re-applied (lost in TASK-STASH-MERGE-03 branch cycle) — purge/embargo defaults wired into production research path",
+   "966c152 Agent GitHub Manager: TASK-STASH-MERGE-03 - both stashes reconciled (chg32-seam ABSORBED by 6213d23/2388780, policy prob-hunk superseded by CHG-0032-A1 policy deferral); byte-preserved to archive then dropped",
+   "967a468 Hermes-DevOps: wire BUG-183 purge/embargo leakage-guard regression into the CI critical manifest",
+   "0eb026c Nexus-Main: taskboard row — BUG-182B deferred-file touch disclosure + launch-gate evidence + CHG-0032 Step-3 binding rules R1/R2/R3",
+   "3fa3909 Nexus-Main: BUG-182B launch-gate evidence attached + BUG-184 filed (CHECK-FCS-04 non-numeric-element PASS hole, repro-grounded)"
+  ]
+ },
+ "repo_stats": {
+  "stars": 13,
+  "forks": 5,
+  "open_issues": 3,
+  "pushed_at": "2026-09-15T18:07:05Z",
+  "license": "MIT",
+  "contributors": 3,
+  "latest_commit": {
+   "sha": "fa34fcc",
+   "date": "2026-09-15T17:10:53Z",
+   "message": "NSE-Swarm role2: BUG-292 perf-wave R6 — C3 spread-percentile SQLite I/O moved off the event loop (#213)"
+  },
+  "ci": {
+   "name": "Graph Update: uv in /. #1577677332",
+   "status": "completed",
+   "conclusion": "success",
+   "html_url": "https://github.com/Opselon/NexusTradingForexBot/actions/runs/34999642253"
+  }
+ },
+ "translation_coverage": {
+  "en": 100,
+  "fa": 100,
+  "ar": 100,
+  "es": 100,
+  "de": 100
+ }
+}
