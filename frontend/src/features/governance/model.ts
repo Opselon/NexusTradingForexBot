@@ -8,6 +8,8 @@
  * Everything unknown stays null/UNKNOWN — badges never guess.
  */
 
+import { useI18n } from "@/stores/i18nStore";
+
 export type Row = Record<string, unknown>;
 
 export const str = (v: unknown): string | null => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : null);
@@ -159,17 +161,20 @@ export function toLedgerRow(row: Row): LedgerRowVo {
 
 /** Normalize a command/error envelope into an ok/verdict pair. */
 export function commandVerdict(res: unknown): { ok: boolean; message: string } {
+  // read the store lazily at call time so the verdict renders in the ACTIVE
+  // language (no module-load side effects, no frozen language capture)
+  const t = useI18n.getState().t;
   const o = obj(res);
   const err = obj(o.error);
   if (err.code || err.message) {
-    return { ok: false, message: str(err.message) ?? `Backend error: ${str(err.code) ?? "UNKNOWN"}` };
+    return { ok: false, message: str(err.message) ?? t("governance.verdict.backend_error", "Backend error: {code}", { code: str(err.code) ?? "UNKNOWN" }) };
   }
   if (bool(o.available) === false) {
-    return { ok: false, message: str(o.reason) ?? "Backend subsystem unavailable." };
+    return { ok: false, message: str(o.reason) ?? t("governance.verdict.unavailable", "Backend subsystem unavailable.") };
   }
   const reason = str(o.reason);
   if (reason && !o.transition && !o.state && !o.registry) {
     return { ok: false, message: reason };
   }
-  return { ok: true, message: "Backend accepted the command." };
+  return { ok: true, message: t("governance.verdict.ok", "Backend accepted the command.") };
 }
