@@ -275,8 +275,11 @@ class PositionAdviserService:
                 scaler_path, root=_ADVISER_ROOT, label="adviser scaler"
             )
         except AdviserPathError as exc:
-            logger.warning("[ADVISER] event=LOAD_REJECTED reason=unsafe_path")
-            return {"status": "REJECTED", "reason": f"path rejected: {exc}"}
+            # The real cause stays in the server log; the reason returned to the
+            # caller is a constant so no request-derived text can be echoed
+            # back (CodeQL: stack trace / information exposure).
+            logger.warning("[ADVISER] event=LOAD_REJECTED reason=unsafe_path err=%s", exc)
+            return {"status": "REJECTED", "reason": "path rejected: unsafe characters"}
         wp = _ADVISER_ROOT.resolve() / clean_w
         sp = _ADVISER_ROOT.resolve() / clean_s
         # Containment barrier (BUG-270 convention), defense-in-depth on top of

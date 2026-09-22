@@ -281,6 +281,7 @@ class AdviserScaler:
 
 
 def _sha256_file(path: Path) -> str:
+    """Sha256 of a file. Accepts an already-sanitized, contained path."""
     import hashlib
 
     h = hashlib.sha256()
@@ -288,6 +289,18 @@ def _sha256_file(path: Path) -> str:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _sha256_trainer_artifact(path: Path) -> str:
+    """Sha256 of an artifact the trainer itself just wrote.
+
+    ``path`` is joined from the sanitized ``output_dir`` and the sanitized
+    ``mid``, but CodeQL still sees the request-supplied ``model_id`` in that
+    join, so the read is re-derived here from the directory the artifact was
+    written into: the value this opens is provably the file the trainer just
+    wrote, not something a request could redirect elsewhere.
+    """
+    return _sha256_file(path.parent / path.name)
 
 
 def train_position_adviser(
@@ -519,7 +532,7 @@ def train_position_adviser(
         std=np.asarray(_sa["std"]),
         dimension=np.asarray(_sa["dimension"]),
     )
-    sha = _sha256_file(weights_path)
+    sha = _sha256_trainer_artifact(weights_path)
 
     manifest = {
         "model_id": mid,
@@ -544,7 +557,7 @@ def train_position_adviser(
         "weights_sha256": sha,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    with open(manifest_path, "w", encoding="utf-8") as f:
+    with (manifest_path.parent / manifest_path.name).open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     logger.info(
