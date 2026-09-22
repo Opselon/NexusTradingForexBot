@@ -258,10 +258,6 @@ def test_bug313_flat_model_recovery_not_pinned_to_exit_pressure():
     blend the realized pnl slope so a genuinely bouncing position is not
     classified as exit pressure purely because the classifier is
     uninformative, and a deteriorating one still is."""
-    from nexus_scalp.domain.enums import OrderType
-    from nexus_scalp.domain.models import Position
-    from nexus_scalp.execution.order_manager import PositionState
-
     adapter = MockMT5Adapter()
     audit_repo = AuditRepository(db_url="sqlite:///:memory:")
     om = OrderLifecycleManager(adapter=adapter, audit_repo=audit_repo)
