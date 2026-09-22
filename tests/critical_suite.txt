@@ -341,6 +341,7 @@ tests/unit/test_bug306_windows_ci_compat.py
 tests/unit/test_byte_identical_news_dedup.py
 tests/unit/test_calibration_research.py
 tests/unit/test_capital_protection_a15.py
+tests/unit/test_causal_conv_invariants.py
 tests/unit/test_champion_writer_governance.py
 tests/unit/test_ci_final_gate_fail_closed.py
 tests/unit/test_confidence_calibration.py
