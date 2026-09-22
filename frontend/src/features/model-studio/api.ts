@@ -35,7 +35,9 @@ import type {
   StressTestResponse,
   VerifyModelRequest,
   VerifyModelResponse,
+  ArtifactLocationsResponse,
 } from "./model";
+import { compareDatasetsByGranularity } from "./model";
 
 const BASE = "/api/model-studio";
 
@@ -45,7 +47,15 @@ export const modelStudioApi = {
     getLegacy<ModelStudioOverviewDto>(`${BASE}/overview`, signal),
 
   datasets: (signal?: AbortSignal): Promise<ModelStudioDatasetsDto> =>
-    getLegacy<ModelStudioDatasetsDto>(`${BASE}/datasets`, signal),
+    getLegacy<ModelStudioDatasetsDto>(`${BASE}/datasets`, signal).then((dto) => {
+      // TASK-POSA-002: the backend inventory is a lexicographic sort, so
+      // XAUUSD_D1 sorts above XAUUSD_M1 and the selector's "first entry"
+      // fallback silently binds the DAILY file ("select M1, jumps back to D1").
+      // Re-rank client-side: finest granularity first. Server payload is the
+      // source of truth — this only changes presentation/selection order.
+      const datasets = [...(dto.datasets ?? [])].sort(compareDatasetsByGranularity);
+      return { ...dto, datasets };
+    }),
 
   fetch70d: (signal?: AbortSignal): Promise<Fetch70dResponse> =>
     getLegacy<Fetch70dResponse>(`${BASE}/fetch-70d`, signal),
@@ -117,4 +127,8 @@ export const modelStudioApi = {
   /** POST /api/model-studio/models/fine-tune — fine-tune model on dataset with frozen backbone. */
   fineTune: (req: FineTuneModelRequest): Promise<FineTuneModelResponse> =>
     send<FineTuneModelResponse>(`${BASE}/models/fine-tune`, req),
+
+  /** GET /api/model-studio/artifact-locations — server-derived on-disk roots. */
+  artifactLocations: (signal?: AbortSignal): Promise<ArtifactLocationsResponse> =>
+    getLegacy<ArtifactLocationsResponse>(`${BASE}/artifact-locations`, signal),
 };

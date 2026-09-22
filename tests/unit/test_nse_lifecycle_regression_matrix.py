@@ -418,6 +418,22 @@ def _provision_model_artifact(cfg) -> None:
         opt.step()
     model.eval()
     torch.save(model.state_dict(), path)
+    # Write the serving-contract meta so the STEP-7 validator sees a bundle
+    # that declares its own width/head (dimension and head are read from the
+    # checkpoint tensors here, so the fixture can never declare a value the
+    # artifact contradicts). Without this the validator fail-closes with
+    # DIMENSION_MISMATCH, which is correct behaviour for an undeclared bundle.
+    _state = torch.load(path, map_location="cpu", weights_only=True)
+    (path.parent / "model.meta.json").write_text(
+        json.dumps(
+            {
+                "feature_schema_id": "scalp_v3",
+                "feature_schema_dimension": int(_state["input_projection.weight"].shape[1]),
+                "model_head_classes": int(_state["classifier.weight"].shape[0]),
+            },
+        ),
+        encoding="utf-8",
+    )
     # Write the integrity manifest so the P1 verify-on-load gate sees a
     # FULLY TRUSTED artifact (digest match), not a legacy-unverified one.
     digest = hashlib.sha256(path.read_bytes()).hexdigest()

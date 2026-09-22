@@ -184,10 +184,16 @@ def test_case_i_range_threshold_still_adds_0_10():
         current_tick=_make_tick(),
         feature_vector=fv,
     )
-    # measure = 0.33 / (0.34+0.33+0.33) = 0.33 < 0.50 -> CONFIDENCE_FAIL
+    # measure = 0.33 / (0.34+0.33+0.33) = 0.33 < 0.44 -> CONFIDENCE_FAIL
+    # BUG-312 (2026-09-22): the range penalty is SCALED against the base
+    # (0.40 + 0.10*0.40 = 0.44) rather than added raw (0.40 + 0.10 = 0.50),
+    # because the serving head's whole-week MAX directional probability was
+    # 0.51 while the effective threshold sat at 0.50 — the raw addend made
+    # the range-regime gate unreachable (3691/6767 live decisions rejected
+    # at CONFIDENCE_FAIL). 0.33 is still far below 0.44 so the veto holds.
     assert proposal.action == ActionType.NO_TRADE
     assert proposal.blocked_by == "CONFIDENCE_FAIL"
-    assert "Effective Threshold (0.50)" in proposal.reason_code
+    assert "Effective Threshold (0.44)" in proposal.reason_code
 
 
 def test_case_j_base_threshold_still_0_40():

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import torch
 
 from nexus_scalp.domain.enums import ActionType
@@ -525,6 +526,11 @@ def test_confidence_rejection_telemetry_breakdown():
     # class measure = 0.45 / (0.05 + 0.45 + 0.50) = 0.45 (the SELL slice
     # does not dilute the BUY side), which still fails survival
     # 0.40 + 0.10 = 0.50 -> CONFIDENCE_FAIL (thresholds unchanged).
+    # BUG-312 (2026-09-22): the range penalty is now SCALED against the
+    # base (0.40 + 0.15*0.40 = 0.46), not added raw, because a raw addend
+    # pushed the effective threshold outside the serving head's achievable
+    # directional range. This case is outside kumo (trending) so no range
+    # penalty applies; only survival +0.10 -> 0.50.
     probs = torch.tensor([[0.05, 0.45, 0.50, 0.0]])
 
     proposal = policy.evaluate_probabilities(
@@ -576,7 +582,7 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
         probabilities=probs,
         current_tick=tick,
         feature_vector=fv,
-        survival_mode=True,  # effective = 0.40 + 0.15 + 0.10 = 0.65
+        survival_mode=True,  # effective = 0.40 + 0.15*0.40 (range, scaled) + 0.10 = 0.56
     )
 
     assert proposal.action == ActionType.NO_TRADE
@@ -586,7 +592,10 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
     assert rc["base_threshold"] == 0.40
     assert rc["range_penalty"] == 0.15
     assert rc["survival_mode_adjustment"] == 0.10
-    assert rc["effective_threshold"] == 0.65
+    # BUG-312 (2026-09-22): the range penalty is scaled against the base
+    # (0.40 * 0.15 = 0.06) instead of added raw (+0.15), so the effective
+    # threshold stays inside the model's achievable probability range.
+    assert rc["effective_threshold"] == pytest.approx(0.56, abs=1e-9)
     # Reason code carries the human-readable breakdown when rejected at confidence gate.
     if proposal.blocked_by == "CONFIDENCE_FAIL":
         assert "INSUFFICIENT_CONFIDENCE" in proposal.reason_code
@@ -609,7 +618,17 @@ def test_is_numeric_validation_invalid_entry_price():
     invalid_entry_prices = [math.nan, math.inf, -math.inf, True, False]
 
     for invalid_val in invalid_entry_prices:
+        # _make_tick() stamps every fixture with the same datetime.now(), so
+        # after the first evaluate_probabilities() call the policy's tick
+        # dedup state still holds that timestamp plus this loop's fixed
+        # bid=2000.0 — and the ask is rewritten to invalid_val, which is not
+        # equal to the stored _dedup_last_ask, but the timestamp is. Dedup
+        # then short-circuits to NO_TRADE before the entry-price validator
+        # can ever run, so every value after the first is never validated.
+        # Clear all three dedup fields, not just _dedup_last_bid.
+        policy._dedup_last_time = None
         policy._dedup_last_bid = 0.0
+        policy._dedup_last_ask = 0.0
         tick = _make_tick().model_copy(update={"ask": invalid_val, "bid": 2000.0})
         with pytest.raises(ValueError, match=r"Invalid entry price:"):
             policy.evaluate_probabilities(
@@ -633,7 +652,13 @@ def test_is_numeric_validation_invalid_swing_low_and_high():
     invalid_swing_values = [math.nan, math.inf, -math.inf, None, True, False, "invalid"]
 
     for invalid_val in invalid_swing_values:
+        # Same dedup-shared-state issue as the entry-price test: every
+        # _make_tick() shares one timestamp, so all but the first call is
+        # short-circuited by TICK_DEDUP before validation runs. Clear all
+        # three fields before each call.
+        policy._dedup_last_time = None
         policy._dedup_last_bid = 0.0
+        policy._dedup_last_ask = 0.0
         tick = _make_tick()
         fv_low = _make_feature_vector().model_copy(update={"dist_to_swing_low_20": invalid_val})
         with pytest.raises(ValueError, match=r"Invalid dist_to_swing_low_20:"):
@@ -643,7 +668,13 @@ def test_is_numeric_validation_invalid_swing_low_and_high():
                 feature_vector=fv_low,
             )
 
+        # Same dedup-shared-state issue as the entry-price test: every
+        # _make_tick() shares one timestamp, so all but the first call is
+        # short-circuited by TICK_DEDUP before validation runs. Clear all
+        # three fields before each call.
+        policy._dedup_last_time = None
         policy._dedup_last_bid = 0.0
+        policy._dedup_last_ask = 0.0
         tick = _make_tick()
         fv_high = _make_feature_vector().model_copy(update={"dist_to_swing_high_20": invalid_val})
         with pytest.raises(ValueError, match=r"Invalid dist_to_swing_high_20:"):
@@ -789,14 +820,16 @@ def test_evaluate_tick_sweep_range_market_penalty():
     now = datetime.now(UTC)
     tick = TickData(symbol="XAUUSD", timestamp=now, bid=2000.00, ask=2000.10, volume=1.0)
 
-    # Effective threshold in range = 0.40 + 0.10 = 0.50
-    # Case A: buy prob 0.45 < 0.50 -> rejected (returns None)
+    # Effective threshold in range = 0.40 + 0.10*0.40 = 0.44 (BUG-312: the
+    # range penalty is scaled against the base, not added raw, so the
+    # requirement stays inside the model's achievable probability range).
+    # Case A: buy prob 0.40 < 0.44 -> rejected (returns None)
     proposal_rejected = policy._evaluate_tick_sweep(
         sweep_sig=1,
         current_tick=tick,
         ofi=0.25,
         tick_velocity=8.0,
-        raw_prob_buy=0.45,
+        raw_prob_buy=0.40,
         raw_prob_sell=0.05,
         is_range_market=True,
         execution_id="EXEC-TEST-RANGE-REJ",
@@ -808,7 +841,7 @@ def test_evaluate_tick_sweep_range_market_penalty():
     )
     assert proposal_rejected is None
 
-    # Case B: buy prob 0.55 >= 0.50 -> accepted
+    # Case B: buy prob 0.55 >= 0.44 -> accepted
     proposal_accepted = policy._evaluate_tick_sweep(
         sweep_sig=1,
         current_tick=tick,

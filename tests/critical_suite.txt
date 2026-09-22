@@ -138,6 +138,7 @@
 # ML-GOV-001 (Model Promotion Pipeline Pre-Flight & OOS Economic Gate Verification)
 # ML-LABEL-002 (Sample Uniqueness Weighting & Label Overlap Anti-Leakage)
 # ML-OBS-001 (Live Shadow Outcome Real-Time Resolution and Holding Metrics Wiring)
+# ML-PHASE1-DATA-CONTRACT (2026-09-21): the 70D canonical data contract,
 # ML-PLAT-001 (MT5 Runtime Boundaries & Remote Gateway Linux Parity Verification)
 # ML-PLAT-002 (Signed Official Model Bundle Verification & Staging Slot Isolation)
 # ML-RISK-001 (Position Replay & Economic Dataset Generation Engine)
@@ -167,6 +168,7 @@
 # SMOKE-E2E (NexusMain, 2026-09-05): whole-application chain in ONE hermetic file
 # TASK-STORAGE-HYGIENE (2026-09-09): 10GB client-disk mission — storage policy
 # TIER 1 — PR/PUSH CRITICAL GATE (NSE radical test reconstruction 2026-09-14)
+# These suites existed but ran in NO CI gate, so the contract they pin was
 # Tick->50D->70D->ScalpNet->Policy->Risk->Paper dispatch->Audit DB->API v1
 # USER ACTION / NEXT guidance surface was permanently dead. Filter fix +
 # WAVE-2 ECOSYSTEM GATING (2026-09-05 forensic GAP-closure, QA verdict P0)
@@ -205,6 +207,7 @@
 # gateway order payloads silently defaulting volume/price before broker dispatch.
 # heartbeat, lane report, and telegram notify entry point robustness.
 # idempotency / safe-mode batteries can never re-flake at a wall-clock minute.
+# labeling identity, fail-closed serving validator, provenance census, and
 # log<->DB join key and must survive the high-entropy redactor; secrets stay
 # maps (_processed_orders, _ai_flip_warn_times, AccountingCore._report_cache) -> BoundedLRUMap.
 # max_slippage_ticks at the 5.0 model default while calibrated friction is ~20 ticks —
@@ -228,6 +231,7 @@
 # requires write access); test_model_studio.py charmap UnicodeDecodeError on UTF-8 Web/index.html.
 # scenarios were exact no-ops (PASS with max_degradation=0.0). Cap now derived from
 # scripts/ci/critical_manifest.py REQUIRES every execution-critical
+# shadow70/news-coverage gates landed by agent/feature/ML-PHASE1-DATA-CONTRACT.
 # sqlite3.connect per call on the loop thread and bypassed the repository's URI contract.
 # squeeze limits, dispatch idempotency, clamp insanity guards, config-contract pin
 # stdout log_signal pin, report-cache LRU under real browsing (pins the BUG-287/290/291
@@ -242,6 +246,7 @@
 # unreachable. RED-BEFORE 10/10 proven at fd95a7b0.
 # until the next refusal. Alert-only champion-drift sentinel wired into
 # untrained weights that pass the digest gate then die on the P0 serving
+# unverified on every push.
 # vocabulary contract + class-wide verdict=="WARN" comparison guard.
 # wiring on the dispatch layer — the HALTED/KILL_SWITCH gate must stay live
 # workspace+configs anchoring, the labeled DEV STARTER fallback, and the
@@ -266,6 +271,7 @@ tests/unit/test_70d_bug106_incremental_phase19.py
 tests/unit/test_70d_contract_parity_task3.py
 tests/unit/test_70d_dataset_parity_task3.py
 tests/unit/test_70d_inference_validator_task3.py
+tests/unit/test_70d_parity_task3.py
 tests/unit/test_70d_replay_parity_task3.py
 tests/unit/test_a2_data_lineage_bounded.py
 tests/unit/test_accounting_advanced_metrics.py
@@ -305,6 +311,7 @@ tests/unit/test_bug271_champion_retrain_fingerprint.py
 tests/unit/test_bug274_wrapper_state_leak.py
 tests/unit/test_bug275_hygiene_cadence_clock.py
 tests/unit/test_bug277_doctor_warning_vocabulary.py
+tests/unit/test_bug278_shadow70_not_compared.py
 tests/unit/test_bug278_test_harness_artifact_isolation.py
 tests/unit/test_bug279_feed_stall_fail_loud.py
 tests/unit/test_bug280_frequency_throttle_unification.py
@@ -373,8 +380,13 @@ tests/unit/test_maintenance_dispatch_guard.py
 tests/unit/test_market_data_integrity_ag13.py
 tests/unit/test_marketplace_backend.py
 tests/unit/test_ml_contract_drift.py
+tests/unit/test_ml_phase1_census_consistency.py
+tests/unit/test_ml_phase1_data_contract.py
+tests/unit/test_ml_phase1_labeling_identity.py
+tests/unit/test_ml_phase1_serving_contract.py
 tests/unit/test_model_registry_hot_load.py
 tests/unit/test_model_studio.py
+tests/unit/test_model_studio_dataset_order.py
 tests/unit/test_model_studio_pipeline.py
 tests/unit/test_mslie_sweep_window_pins_bug227.py
 tests/unit/test_mt5_diag_throttle.py

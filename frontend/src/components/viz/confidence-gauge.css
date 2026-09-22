@@ -1,0 +1,139 @@
+/* ConfidenceGauge — the scaling fix lives here.
+   .cg-svg has a fixed viewBox coordinate space; CSS controls the rendered
+   box (inline-size 100% + aspect-ratio 1). The gauge can NEVER exceed its
+   parent card, whatever the container width. */
+
+.cg-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+/* THE SCALING FIX: render box is 100% of the card width and exactly square.
+   The old Gauge emitted no intrinsic height, so width:100% + height:auto on
+   an SVG without a ratio collapsed/blew out depending on the parent. */
+.cg-svg {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 1 / 1;
+  overflow: visible;
+}
+
+/* Cap the gauge so a wide card never turns it into a giant dial. */
+.cg-cap-sm { max-inline-size: 132px; }
+.cg-cap-md { max-inline-size: 168px; }
+.cg-cap-lg { max-inline-size: 220px; }
+
+.cg-track { stroke: var(--bg-panel-2); stroke-width: 10; }
+.cg-value { stroke-width: 10; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.cg-value.pos { stroke: var(--green); }
+.cg-value.warn { stroke: var(--amber); }
+.cg-value.bad  { stroke: var(--red); }
+.cg-value.neu  { stroke: var(--accent); }
+
+.cg-hub { fill: var(--text-faint); }
+.cg-hub.pos { fill: var(--green); }
+.cg-hub.warn { fill: var(--amber); }
+.cg-hub.bad  { fill: var(--red); }
+.cg-hub.neu  { fill: var(--accent); }
+
+/* Ems scale with the viewBox coordinate space, so text stays proportional
+   at any rendered size instead of clipping. */
+.cg-value-text {
+  font-family: var(--mono);
+  font-weight: 700;
+  fill: var(--text);
+  font-size: 0.19em;
+  font-variant-numeric: tabular-nums;
+}
+.cg-compact-text { font-size: 0.16em; }
+.cg-tier-text {
+  font-family: var(--mono);
+  fill: var(--text-faint);
+  font-size: 0.085em;
+  letter-spacing: 0.14em;
+}
+
+.cg-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-align: center;
+  overflow-wrap: anywhere;
+  max-inline-size: 100%;
+}
+
+/* ---- horizontal meter (list view) ------------------------------------- */
+.cm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 118px) minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background-color 0.12s ease;
+}
+.cm-row:hover { background: var(--bg-panel-2); }
+.cm-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cm-track-wrap { min-inline-size: 0; }
+.cm-track {
+  position: relative;
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+/* UNKNOWN track: dashed outline, no fill (never a fake zero bar). */
+.cm-track:has(.cm-fill:not(.loaded)) {
+  border: 1px dashed var(--border-strong);
+}
+.cm-fill {
+  block-size: 100%;
+  border-radius: 999px;
+  transition: inline-size 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.cm-fill.pos { background: var(--green); }
+.cm-fill.warn { background: var(--amber); }
+.cm-fill.bad  { background: var(--red); }
+.cm-fill.neu  { background: var(--accent); }
+.cm-read { display: flex; align-items: baseline; gap: 6px; }
+.cm-score {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.cm-score.pos { color: var(--green); }
+.cm-score.warn { color: var(--amber); }
+.cm-score.bad  { color: var(--red); }
+.cm-score.neu  { color: var(--text-faint); }
+.cm-tier {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+/* ---- multi-strategy card grid ---------------------------------------- */
+.cg-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+.cg-grid .cg-wrap { padding: 10px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-inset); }
+.cg-grid .cg-wrap:hover { border-color: var(--border-strong); background: var(--bg-panel-2); }
+.cg-grid .cg-svg { max-inline-size: 116px; margin-inline: auto; }

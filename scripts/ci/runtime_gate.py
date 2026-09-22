@@ -793,11 +793,25 @@ def build_gate_engine(gate: Gate) -> tuple[Any, Any, Any]:
         )
         from nexus_scalp.features.schema_contract import SCHEMA_ID as _SCHEMA_ID
 
+        # The class-head count is read from the checkpoint just written: the
+        # mint and the manifest must never drift on the head dimension, so we
+        # take it from the artifact's classifier tensor rather than restating
+        # the num_classes literal from the mint above.
+        _cls = torch.load(artifact, map_location="cpu", weights_only=True).get("classifier.weight")
+        if not hasattr(_cls, "shape"):
+            raise RuntimeError(
+                "runtime_gate PROVISIONING_ERROR: minted checkpoint has no "
+                "classifier weight tensor, so the manifest's head count is "
+                "not derivable — fix the provisioner recipe; never relax the "
+                "serving gate."
+            )
+
         (artifact.parent / "model.meta.json").write_text(
             json.dumps(
                 {
                     "feature_schema_id": _SCHEMA_ID,
                     "feature_schema_dimension": 70,
+                    "model_head_classes": int(_cls.shape[0]),
                     "note": "runtime_gate provisioned (no champion on this host)",
                 },
                 indent=2,

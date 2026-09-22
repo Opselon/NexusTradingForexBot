@@ -8,7 +8,7 @@ Single responsibility: time-bucketing only. No indicator logic here.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 _TF_MINUTES: dict[str, int | None] = {
@@ -23,6 +23,22 @@ _TF_MINUTES: dict[str, int | None] = {
     "W1": None,  # ISO week bucketing
     "MN1": None,  # calendar month bucketing
 }
+
+
+def is_current_bar_forming(bar_ts: datetime, timeframe: str, now: datetime | None = None) -> bool:
+    """True when ``bar_ts`` is the still-forming bar at ``now``.
+
+    A bar is forming while the market clock has not crossed its close
+    boundary (bar_open + timeframe). Comparison is on the bar's own timebase
+    (UTC); ``now`` defaults to the real UTC clock.
+    """
+    tf = timeframe.upper()
+    minutes = _TF_MINUTES.get(tf)
+    if minutes is None:
+        return False
+    open_boundary = bucket_start(bar_ts, tf)
+    ref = now if now is not None else datetime.now(UTC)
+    return ref < open_boundary + timedelta(minutes=int(minutes))
 
 
 def bucket_start(ts: datetime, tf: str) -> datetime:

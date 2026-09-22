@@ -3582,7 +3582,7 @@
             <!-- ========================================================================= -->
             <!-- TAB: DEEP LEARNING & NEURAL MODEL STUDIO (ML-UI-001)                      -->
             <!-- ========================================================================= -->
-            <section id="tab-model-studio" class="tab-content hidden space-y-6">
+            <section id="tab-model-studio" class="tab-content hidden space-y-6 studio-root" data-studio-root>
                 <!-- Header / Mode Switcher -->
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
                     <div>
@@ -3591,7 +3591,7 @@
                             <h2 class="text-lg font-black tracking-wide text-white">NEURAL MODEL STUDIO & DEEP LEARNING</h2>
                             <span id="studio-dim-badge" class="px-2 py-0.5 rounded text-xs font-black bg-accentCyan/20 text-accentCyan border border-accentCyan/30">50D</span>
                         </div>
-                        <p class="text-xs text-textMuted mt-1">Full-transparency neural network inspection, interactive prediction, 70D live assembly, and dataset training.</p>
+                        <p class="text-xs text-textMuted mt-1">Full-transparency neural network inspection, interactive prediction, 70D live assembly, and dataset training. Every artifact written below reports its real on-disk location.</p>
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-gray-400 font-semibold mr-1">Dimension:</span>
@@ -3602,6 +3602,54 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- Artifact Locator: resolved on-disk roots for every artifact the studio writes -->
+                <div class="bg-gradient-to-br from-panelBg to-darkBg/40 border border-borderClr rounded-xl p-3.5 shadow-lg">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <i class="fa-solid fa-folder-open text-amber-300"></i>
+                            <h3 class="text-xs font-black text-white tracking-wide">ARTIFACT LOCATOR</h3>
+                            <span id="studio-artifact-status" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-500/15 text-gray-400 border border-gray-500/25">RESOLVING</span>
+                        </div>
+                        <button onclick="studioCopyText(document.getElementById('studio-repo-root').textContent, this)"
+                                class="shrink-0 px-3 py-1 rounded bg-surfaceLight hover:bg-borderClr text-gray-200 border border-borderClr text-[11px] font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-copy"></i> Copy repo root
+                        </button>
+                    </div>
+                    <div class="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                        <span class="text-textMuted">repo root:</span>
+                        <span id="studio-repo-root" class="text-emerald-300 break-all">--</span>
+                    </div>
+                    <div id="studio-artifact-locations" class="mt-2.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
+                </div>
+
+                <!-- Studio section sub-nav: jump straight to any panel, highlights the active one -->
+                <nav id="studio-subnav" aria-label="Model Studio sections" class="bg-panelBg/60 border border-borderClr/70 rounded-xl p-1.5 flex flex-wrap gap-1 sticky top-0 z-20 backdrop-blur-sm">
+                    <button data-studio-target="studio-70d-assembly-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition hidden">
+                        <i class="fa-solid fa-bolt mr-1.5"></i>70D Assembly
+                    </button>
+                    <button data-studio-target="studio-inference-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition">
+                        <i class="fa-solid fa-sliders mr-1.5"></i>Inference
+                    </button>
+                    <button data-studio-target="studio-layers-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition">
+                        <i class="fa-solid fa-microchip mr-1.5"></i>Activations
+                    </button>
+                    <button data-studio-target="studio-aihub-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition">
+                        <i class="fa-solid fa-server mr-1.5"></i>Model Registry
+                    </button>
+                    <button data-studio-target="studio-download-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition">
+                        <i class="fa-solid fa-cloud-arrow-down mr-1.5"></i>Datasets
+                    </button>
+                    <button data-studio-target="studio-train-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition">
+                        <i class="fa-solid fa-graduation-cap mr-1.5"></i>Training
+                    </button>
+                    <button data-studio-target="studio-position-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition">
+                        <i class="fa-solid fa-arrows-split-up-and-left mr-1.5"></i>Position ML
+                    </button>
+                    <button data-studio-target="studio-qa-panel" class="studio-subnav-btn px-3 py-1.5 rounded-lg text-[11px] font-bold text-gray-300 hover:text-white hover:bg-surfaceLight/60 transition">
+                        <i class="fa-solid fa-shield-halved mr-1.5"></i>Stress &amp; Latency
+                    </button>
+                </nav>
 
                 <!-- Overview Stat Cards -->
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -3651,7 +3699,7 @@
                 </div>
 
                 <!-- Interactive Neural Inference Panel -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div id="studio-inference-panel" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <!-- Controls Column -->
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
                         <h3 class="text-sm font-bold text-white flex items-center">
@@ -3773,7 +3821,7 @@
                 </div>
 
                 <!-- Deep Layer Activations & Internal Neurons -->
-                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                <div id="studio-layers-panel" class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
                     <div class="flex items-center justify-between">
                         <h3 class="text-sm font-bold text-white flex items-center">
                             <i class="fa-solid fa-microchip mr-2 text-sky-400"></i>
@@ -3804,7 +3852,7 @@
                 </div>
 
                 <!-- AI Hub: Model Registry, Hot-Loader & Lifecycle Management (API-First) -->
-                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
+                <div id="studio-aihub-panel" class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-borderClr pb-3">
                         <div class="flex items-center gap-2">
                             <span class="text-lg text-emerald-400">⚡</span>
@@ -3888,12 +3936,25 @@
                     </div>
 
                     <!-- Hot-Load Feedback Alert -->
-                    <div id="studio-hotload-feedback" class="hidden p-3 rounded-lg bg-darkBg border border-emerald-500/40 text-xs space-y-1">
+                    <div id="studio-hotload-feedback" class="hidden p-3.5 rounded-lg bg-darkBg border border-emerald-500/40 text-xs space-y-2">
                         <div class="flex items-center justify-between font-bold text-emerald-400">
                             <span id="hotload-feedback-title"><i class="fa-solid fa-check mr-1.5"></i> Model Hot-Loaded into Active Engine</span>
                             <span id="hotload-feedback-latency" class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300">-- µs</span>
                         </div>
                         <div id="hotload-feedback-detail" class="text-[11px] text-gray-400 font-mono">--</div>
+                        <!-- Resolved on-disk locations for the loaded weights + scaler sidecar -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="shrink-0 text-[10px] font-black uppercase text-textMuted">Weights</span>
+                                <code id="hotload-weights-path" class="flex-1 min-w-0 truncate px-2 py-1 rounded bg-emerald-500/5 border border-emerald-500/25 text-emerald-200 font-mono text-[10px] select-all" title="Loaded weights file">--</code>
+                                <button onclick="studioCopyText(document.getElementById('hotload-weights-path').textContent, this)" class="shrink-0 px-2 py-1 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/35 text-[10px] transition"><i class="fa-solid fa-copy"></i></button>
+                            </div>
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="shrink-0 text-[10px] font-black uppercase text-textMuted">Scaler</span>
+                                <code id="hotload-scaler-path" class="flex-1 min-w-0 truncate px-2 py-1 rounded bg-cyan-500/5 border border-cyan-500/25 text-cyan-200 font-mono text-[10px] select-all" title="Scaler sidecar file">--</code>
+                                <button onclick="studioCopyText(document.getElementById('hotload-scaler-path').textContent, this)" class="shrink-0 px-2 py-1 rounded bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 border border-cyan-500/35 text-[10px] transition"><i class="fa-solid fa-copy"></i></button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Pre-Load Verification Battery Results -->
@@ -3940,7 +4001,7 @@
                 </div>
 
                 <!-- Dataset Download & Ingestion (API-First) -->
-                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                <div id="studio-download-panel" class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
                     <div class="flex items-center justify-between border-b border-borderClr pb-2">
                         <h3 class="text-sm font-bold text-white flex items-center">
                             <i class="fa-solid fa-cloud-arrow-down mr-2 text-cyan-400"></i>
@@ -3985,17 +4046,33 @@
                     </div>
 
                     <!-- Download Result Feedback Box -->
-                    <div id="studio-download-feedback" class="hidden p-3 rounded-lg bg-darkBg border border-borderClr text-xs space-y-1">
+                    <div id="studio-download-feedback" class="hidden p-3.5 rounded-lg bg-darkBg border border-emerald-500/30 text-xs space-y-2.5">
                         <div class="flex items-center justify-between font-bold">
-                            <span id="download-status-msg" class="text-emerald-400">Dataset Download Complete</span>
+                            <span id="download-status-msg" class="text-emerald-400 flex items-center"><i class="fa-solid fa-circle-check mr-1.5"></i>Dataset Download Complete</span>
                             <span id="download-size-badge" class="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">--</span>
+                        </div>
+
+                        <!-- Ingestion validation checklist (server-reported truth) -->
+                        <div id="download-validation-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-1.5"></div>
+
+                        <!-- Resolved output path (click to select, button to copy) -->
+                        <div class="mt-1 flex flex-col sm:flex-row sm:items-center gap-2">
+                            <div class="flex items-center gap-1.5 shrink-0 text-[10px] font-black uppercase tracking-wider text-textMuted">Saved to</div>
+                            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                <code id="download-path-text" class="flex-1 min-w-0 truncate px-2.5 py-1.5 rounded bg-emerald-500/5 border border-emerald-500/25 text-emerald-200 font-mono text-[11px] cursor-pointer select-all"
+                                      title="Click to select, then Ctrl+C">--</code>
+                                <button onclick="studioCopyText(document.getElementById('download-path-text').textContent, this)"
+                                        class="shrink-0 px-2.5 py-1.5 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/35 text-[10px] font-bold transition flex items-center gap-1">
+                                    <i class="fa-solid fa-copy"></i> Copy
+                                </button>
+                            </div>
                         </div>
                         <div id="download-detail-text" class="text-[11px] text-gray-400 font-mono">--</div>
                     </div>
                 </div>
 
                 <!-- Model Training Dispatch with Dataset Selection & Feature Inspection -->
-                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
+                <div id="studio-train-panel" class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-4">
                     <div class="flex items-center justify-between border-b border-borderClr pb-2">
                         <h3 class="text-sm font-bold text-white flex items-center">
                             <i class="fa-solid fa-graduation-cap mr-2 text-emerald-400"></i>
@@ -4022,6 +4099,11 @@
                         </div>
                     </div>
 
+                    <div id="studio-train-selected-path" class="flex items-center gap-2 text-[11px] font-mono text-gray-400">
+                        <i class="fa-solid fa-file-lines text-emerald-400"></i>
+                        <span>Training source: <b id="studio-train-selected-name" class="text-white">--</b></span>
+                        <span id="studio-train-selected-full" class="text-textMuted truncate">no dataset selected</span>
+                    </div>
                     <div class="flex flex-wrap items-center gap-3 pt-1">
                         <button id="btn-start-train" onclick="startStudioTraining()" class="px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition shadow-lg flex items-center">
                             <i class="fa-solid fa-play mr-2"></i> Start Model Training
@@ -4095,7 +4177,7 @@
                 </div>
 
                 <!-- Layer-2 ML: Position Management Dataset Generator -->
-                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                <div id="studio-position-panel" class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
                     <div class="flex items-center justify-between border-b border-borderClr pb-2">
                         <h3 class="text-sm font-bold text-white flex items-center">
                             <i class="fa-solid fa-arrows-split-up-and-left mr-2 text-purple-400"></i>
@@ -4160,13 +4242,125 @@
 
                         <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-borderClr/40 text-[11px] font-mono">
                             <div id="pos-labels-badge" class="flex gap-2"></div>
-                            <div id="pos-path-display" class="text-gray-400 truncate max-w-xs sm:max-w-md"></div>
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <div id="pos-path-display" class="text-gray-300 truncate max-w-[16rem] sm:max-w-md select-all" title="Position dataset output path"></div>
+                                <button onclick="studioCopyText(document.getElementById('pos-path-display').textContent, this)" class="shrink-0 px-2 py-1 rounded bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 border border-purple-500/35 text-[10px] font-bold transition flex items-center gap-1"><i class="fa-solid fa-copy"></i> Copy</button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- LAYER-2 ML: Position Decision Adviser (keep / close / reduce) -->
+                <div id="studio-adviser-panel" class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
+                    <div class="flex items-center justify-between border-b border-borderClr pb-2">
+                        <h3 class="text-sm font-bold text-white flex items-center">
+                            <i class="fa-solid fa-scale-balanced mr-2 text-cyan-400"></i>
+                            LAYER-2 ML: POSITION DECISION ADVISER
+                        </h3>
+                        <span class="text-xs font-bold uppercase" id="adviser-activation-badge">DISABLED</span>
+                    </div>
+                    <p class="text-xs text-textMuted">
+                        Deep-learning adviser for the <strong>decide system</strong>: on every live position it scores
+                        <span class="text-emerald-400 font-bold">KEEP</span> /
+                        <span class="text-rose-400 font-bold">CLOSE</span> /
+                        <span class="text-amber-300 font-bold">REDUCE</span> from real position state (unrealized R,
+                        age, ATR, spread). It can only ever make a close verdict <strong>more conservative</strong> —
+                        it never opens, sizes, or extends a position. Default is <strong>DISABLED</strong>, so the
+                        decide system runs exactly as before.
+                    </p>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Model</div>
+                            <div id="adviser-stat-model" class="font-bold text-white text-sm mt-0.5 truncate">NONE</div>
+                        </div>
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Applied</div>
+                            <div id="adviser-stat-applied" class="font-bold text-emerald-400 text-sm mt-0.5">0</div>
+                        </div>
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Evaluated</div>
+                            <div id="adviser-stat-evaluated" class="font-bold text-cyan-400 text-sm mt-0.5">0</div>
+                        </div>
+                        <div class="p-2 rounded bg-surfaceLight/20 border border-borderClr/40">
+                            <div class="text-[10px] text-textMuted uppercase font-bold">Refused</div>
+                            <div id="adviser-stat-refused" class="font-bold text-amber-300 text-sm mt-0.5">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Training + Auto Mode -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="rounded-lg border border-borderClr p-3 space-y-2">
+                            <div class="text-xs font-bold text-cyan-400">Train (fine-tune by hand)</div>
+                            <div class="text-xs">
+                                <label class="block text-gray-400 mb-1 font-semibold">Position dataset</label>
+                                <select id="adviser-dataset-select" class="w-full bg-darkBg border border-borderClr rounded px-2.5 py-2 text-white font-mono">
+                                    <option value="">Loading datasets...</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end gap-2 text-xs">
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Epochs</label>
+                                    <input id="adviser-train-epochs" type="number" min="1" max="100" value="12" class="w-20 bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <button id="btn-adviser-train" onclick="trainPositionAdviser()" class="px-3 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs">Train Adviser</button>
+                            </div>
+                            <div id="adviser-train-msg" class="text-[11px] text-textMuted"></div>
+                        </div>
+
+                        <div class="rounded-lg border border-purple-500/40 bg-purple-500/5 p-3 space-y-2">
+                            <div class="text-xs font-bold text-purple-300">✦ Auto Mode — find the best</div>
+                            <div class="text-[11px] text-textMuted">Sweeps learning rate × batch size × seed, keeps the lowest <strong>out-of-sample loss</strong> model and loads it. Losing weights are pruned.</div>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Epochs / trial</label>
+                                    <input id="adviser-tune-epochs" type="number" min="1" max="100" value="12" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Max trials</label>
+                                    <input id="adviser-tune-max" type="number" min="1" max="60" value="6" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Learning rates</label>
+                                    <input id="adviser-tune-lrs" type="text" value="5e-4, 1e-3, 2e-3" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1 font-semibold">Batch sizes</label>
+                                    <input id="adviser-tune-bs" type="text" value="64, 128, 256" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                                </div>
+                            </div>
+                            <div class="text-xs">
+                                <label class="block text-gray-400 mb-1 font-semibold">Seeds</label>
+                                <input id="adviser-tune-seeds" type="text" value="42, 1337, 2024" class="w-full bg-darkBg border border-borderClr rounded px-2 py-2 text-white font-mono">
+                            </div>
+                            <button id="btn-adviser-autotune" onclick="autoTunePositionAdviser()" class="w-full px-3 py-2 rounded bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs">▶ Auto-Tune &amp; Load Best</button>
+                            <div id="adviser-tune-msg" class="text-[11px] text-textMuted"></div>
+                        </div>
+                    </div>
+
+                    <!-- Trained models -->
+                    <div class="space-y-2">
+                        <div class="text-xs font-bold text-cyan-400">Trained Advisers</div>
+                        <div id="adviser-models-list" class="space-y-1.5 text-[11px]"></div>
+                    </div>
+
+                    <!-- Activation ladder -->
+                    <div class="space-y-2">
+                        <div class="text-xs font-bold text-cyan-400">Activation Ladder</div>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <button id="btn-adviser-disable" onclick="setAdviserActivation('DISABLED')" class="px-3 py-1.5 rounded border border-borderClr text-gray-300 hover:border-gray-500 font-bold">Disable</button>
+                            <button id="btn-adviser-paper" onclick="setAdviserActivation('PAPER')" class="px-3 py-1.5 rounded border border-amber-600/60 text-amber-300 font-bold">Paper (log only)</button>
+                            <button id="btn-adviser-live" onclick="setAdviserActivation('LIVE')" class="px-3 py-1.5 rounded border border-emerald-600/60 text-emerald-300 font-bold">Live (requires checks)</button>
+                        </div>
+                        <button id="btn-adviser-checks" onclick="runAdviserChecks()" class="px-3 py-1.5 rounded border border-borderClr text-gray-300 hover:border-cyan-600 text-xs font-bold">Run Broker &amp; Position Checks</button>
+                        <div id="adviser-checks-list" class="space-y-1 text-[11px]"></div>
+                    </div>
+
+                    <div id="adviser-error" class="hidden p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs"></div>
+                </div>
+
                 <!-- Adversarial Stress Test & Latency Profiling -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div id="studio-qa-panel" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Stress Testing -->
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl space-y-3">
                         <div class="flex items-center justify-between">
@@ -4179,6 +4373,7 @@
                             </button>
                         </div>
                         <p class="text-xs text-textMuted">Injects constant zero-variance features, flash-crash shocks (+-10^6), NaNs, and boundary dimensions.</p>
+                        <div id="studio-stress-summary" class="hidden flex flex-wrap items-center gap-1.5 text-[11px] font-mono"></div>
                         
                         <div id="studio-stress-results-card" class="hidden overflow-x-auto border border-borderClr rounded-lg">
                             <table class="w-full text-left">
@@ -4207,7 +4402,7 @@
                         </div>
                         <p class="text-xs text-textMuted">Measures forward pass latency percentiles and throughput on current hardware.</p>
 
-                        <div id="studio-bench-results-card" class="hidden grid grid-cols-4 gap-2 pt-2 text-center text-xs">
+                        <div id="studio-bench-results-card" class="hidden grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 text-center text-xs">
                             <div class="p-2 rounded bg-darkBg border border-borderClr">
                                 <div class="text-[10px] text-textMuted uppercase font-bold">P50</div>
                                 <div id="bench-p50" class="font-mono text-white font-bold mt-1">--</div>
@@ -4474,7 +4669,8 @@
         });
     })();
     </script>
-    <script src="model_studio_ui.js"></script>
+    <script src="model_studio_ui.js?v=20260922a"></script>
+<script src="position_adviser_ui.js?v=20260922a"></script>
     <script src="tv_widget.js"></script>
 </body>
 </html>

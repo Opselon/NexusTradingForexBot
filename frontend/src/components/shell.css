@@ -178,3 +178,18 @@
   vertical-align: 2px;
 }
 .mode-badge.mismatch { border-style: dashed; }
+
+/* ------------------------------ Mobile sidebar ------------------------------ */
+/* The sidebar collapse is driven by the UI store (.collapsed on <aside>).
+   Below 760px a full 216px rail leaves almost no content width, so collapse
+   it automatically. The .nav-label/.brand-text rules from theme.css already
+   handle the icon-only treatment. This is additive: desktop layout untouched. */
+@media (max-width: 760px) {
+  .sidebar:not(.collapsed) { width: 56px; }
+  .sidebar:not(.collapsed) .nav-label,
+  .sidebar:not(.collapsed) .brand-text,
+  .sidebar:not(.collapsed) .nav-section,
+  .sidebar:not(.collapsed) .side-row { display: none; }
+  .sidebar:not(.collapsed) .nav-item { justify-content: center; }
+  .sidebar:not(.collapsed) .brand { justify-content: center; }
+}

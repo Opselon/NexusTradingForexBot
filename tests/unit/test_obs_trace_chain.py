@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
@@ -328,6 +330,60 @@ def test_model_identity_provider_reads_bundle_metadata():
     src = open("src/nexus_scalp/application/live_engine.py", encoding="utf-8").read()
     assert "_serving_model_identity" in src
     assert "signal_policy.model_identity_fn = self._serving_model_identity" in src
+
+
+def test_model_identity_provider_reads_registry_provenance():
+    """Regression: _serving_model_identity must return the REAL model identity.
+
+    The bundle-based lookup read ``getattr(bundle.model, 'model_id')`` — an
+    attribute that exists on neither ModelBundle nor ScalpNet — so every live
+    EXEC_TRACE stamped MODEL_IDENTITY_UNAVAILABLE while the artifact
+    fingerprint and the experience ledger carried a real provenance. The
+    provider must source model_id/model_version from the model_registry's
+    current provenance (the same record _register_active_model writes), so
+    the trace line and the experience row agree by construction.
+    """
+    from nexus_scalp.application.live_engine import LiveEngine
+    from nexus_scalp.experience.models import ModelProvenance
+    from nexus_scalp.experience.provenance import ModelRegistry
+
+    registry = ModelRegistry.__new__(ModelRegistry)
+    registry._current = ModelProvenance(
+        model_id="primary_scalp_scalp_v3_70d",
+        model_version="v1.0",
+        model_role="PRIMARY_SCALP",
+        artifact_fingerprint="deadbeefdeadbeef",
+    )
+
+    class _FakeNet:
+        pass
+
+    class _FakeBundle:
+        model = _FakeNet()
+        model_version = None
+        artifact_path = None
+
+    holder = SimpleNamespace(
+        _bundle=None,
+        _bundle_lock=threading.RLock(),
+        model_registry=registry,
+    )
+
+    # No bundle loaded -> honest absence (contract preserved).
+    assert LiveEngine._serving_model_identity(holder) == ("", "", "")
+
+    holder._bundle = _FakeBundle()
+    # Bundle present but artifact_path None -> fingerprint is honest absence,
+    # identity still comes from the registry, NOT from the bundle object.
+    mid, mver, _fp = LiveEngine._serving_model_identity(holder)
+    assert mid == "primary_scalp_scalp_v3_70d", (
+        "model_id must come from the registry, not the bundle object"
+    )
+    assert mver == "v1.0"
+
+    # The old code read bundle.model.model_id, which never exists — pin that
+    # the provider no longer depends on such an attribute.
+    assert not hasattr(_FakeBundle().model, "model_id")
 
 
 def test_registry_fingerprint_is_sha256_prefix(tmp_path):

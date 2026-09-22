@@ -29,6 +29,7 @@ from nexus_scalp.model_lifecycle.integrity import (
     inspect_artifact,
     scaler_compatibility,
 )
+from nexus_scalp.model_lifecycle.model_class_contract import TRAINED_CLASS_COUNT
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.shadow.models import ShadowModelRef
@@ -64,7 +65,7 @@ class ChallengerRuntime:
         model_version: str,
         live_schema_id: str,
         live_dimension: int,
-        num_classes: int = 4,
+        num_classes: int = TRAINED_CLASS_COUNT,
     ) -> None:
         self.artifact_path = Path(artifact_path)
         self.scaler_path = Path(scaler_path)
@@ -90,6 +91,18 @@ class ChallengerRuntime:
             self.scaler_path,
             model_id=self.model_id,
             model_version=self.model_version,
+            # SHADOW-PIPELINE (2026-09-21): inspect under the contract THIS
+            # runtime was constructed with, not the process-wide ACTIVE
+            # schema. The ACTIVE schema is the bootstrap default
+            # (scalp_v1/50D) and stays 50D even while a validated 70D
+            # bundle serves as champion, so a 70D challenger was rejected
+            # with a bogus DIMENSION_MISMATCH against a 50D expectation
+            # while the champion itself serves 70D. The caller already
+            # validated live_schema_id/live_dimension against the serving
+            # contract; inspecting under that same contract is what makes
+            # the same-input comparison honest.
+            feature_schema_id=self.live_schema_id,
+            feature_dimension=self.live_dimension,
         )
         if not info.integrity_ok or not info.artifact_hash:
             logger.error(
@@ -209,7 +222,13 @@ class ChallengerRuntime:
 
 
 def _action_from_probs(probs: list[float]) -> str:
-    """Maps the 4-class ScalpNet output to an action (0=NO_TRADE,1=BUY,2=SELL,3=WAIT)."""
+    """Maps the ScalpNet output to an action.
+
+    The contract is the trainer's triple-barrier 3-class head
+    (0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET); a legacy 4-logit artifact
+    keeps a WAIT slot at index 3. Both are mapped by index, so no class
+    count is assumed and a legacy head still decodes.
+    """
     idx = max(range(len(probs)), key=lambda i: probs[i])
     mapping = {0: "NO_TRADE", 1: "BUY_MARKET", 2: "SELL_MARKET", 3: "WAIT"}
     return mapping.get(idx, "NO_TRADE")

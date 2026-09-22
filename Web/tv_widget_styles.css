@@ -86,15 +86,25 @@
 }
 .tv-live.is-warn { color: #fcd34d; background: rgba(251, 191, 36, 0.10); border-color: rgba(251, 191, 36, 0.35); }
 
-/* error / stale banner (hidden until a real state demands it) */
-.tv-error {
+/* error / stale banner (hidden until a real state demands it).
+   SCOPE NOTE: the banner's class is literally `tv-error`, and the WIDGET root
+   also carries `tv-error` as a state class (setBanner() toggles it to colour
+   the card border). A bare `.tv-error` selector therefore matches the CARD,
+   turning the whole card into a horizontal flex row and stacking its sections
+   side by side, collapsed and overlapping. Always scope to the banner id. */
+#tv-error {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 14px; font-size: 12px; font-weight: 600;
   color: #fda4af; background: rgba(240, 97, 109, 0.08);
   border-bottom: 1px solid rgba(240, 97, 109, 0.30);
+  white-space: nowrap; min-width: 0;
 }
-.tv-error.is-stale { color: #fcd34d; background: rgba(251, 191, 36, 0.07); border-bottom-color: rgba(251, 191, 36, 0.30); }
-.tv-error-ico { font-size: 12px; }
+/* the banner must not shrink below its own content: the flex card around it
+   crushed icon + message + Retry into ~100px and clipped the message. */
+#tv-error > * { flex: 0 0 auto; }
+#tv-error-text { min-width: 0; }
+#tv-error.is-stale { color: #fcd34d; background: rgba(251, 191, 36, 0.07); border-bottom-color: rgba(251, 191, 36, 0.30); }
+#tv-error-ico { font-size: 12px; }
 .tv-retry {
   margin-left: auto; cursor: pointer;
   font: inherit; font-size: 11px; font-weight: 700;
@@ -102,9 +112,14 @@
   border: 1px solid rgba(240, 97, 109, 0.4); border-radius: 6px; padding: 2px 10px;
   transition: background-color 0.15s ease;
 }
-.tv-error.is-stale .tv-retry { color: #fde9b8; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.4); }
+#tv-error.is-stale .tv-retry { color: #fde9b8; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.4); }
 .tv-retry:hover { background: rgba(240, 97, 109, 0.28); }
-.tv-error.is-stale .tv-retry:hover { background: rgba(251, 191, 36, 0.22); }
+#tv-error.is-stale .tv-retry:hover { background: rgba(251, 191, 36, 0.22); }
+/* narrow screens: let the banner wrap so the Retry button stays reachable */
+@media (max-width: 640px) {
+  #tv-error { flex-wrap: wrap; white-space: normal; row-gap: 4px; }
+  #tv-error #tv-retry { margin-left: auto; }
+}
 
 /* --------------------------------------------------------------------------
    2. TIMEFRAME TOOLBAR (segmented pill row)

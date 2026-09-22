@@ -9,8 +9,8 @@
  * resolution, so the `@/` alias never has to resolve here).
  *
  * These tests pin the client-side safety contract for the ALT console risk
- * visuals: no heuristic may ever manufacture a verdict word, a gate without
- * backend booleans is UNKNOWN and never FAIL, and a null limit never renders as
+ * visuals: no heuristic may ever manufacture a verdict word, a gate whose
+ * limit is absent is UNKNOWN and never FAIL, and a null limit never renders as
  * a satisfied one.
  */
 import test from "node:test";
@@ -24,80 +24,177 @@ import {
   counterTone,
   exposureTotals,
   floorPairTone,
-  gateFunnel,
-  gateVerdict,
   isFiniteNumber,
   limitTone,
   limitUtilization,
 } from "../../frontend/src/lib/riskVizMath.ts";
+import {
+  comparePair,
+  directionWord,
+  gateEvidence,
+  verdictWord,
+} from "../../frontend/src/lib/riskGateTrace.ts";
 
 // ---------------------------------------------------------------------------
-// gateVerdict / gateFunnel — backend booleans ONLY
+// comparePair / gateEvidence — value vs its OWN backend limit
+//
+// `proposal.risk_checks` (signals/policy.py) is a flat EVIDENCE record: a
+// metric value and its limit live in SIBLING keys (`rr` / `min_rr`,
+// `spread_atr_ratio` / `max_spread_atr_ratio`, ...). It is NOT a map of gate
+// booleans, so a verdict is the arithmetic restatement of those two numbers
+// in the producer's own direction — never an invented word.
 // ---------------------------------------------------------------------------
 
-test("gateVerdict: backend booleans map 1:1", () => {
-  assert.equal(gateVerdict({ passed: true }), "pass");
-  assert.equal(gateVerdict({ passed: false }), "fail");
-  assert.equal(gateVerdict({ allowed: true }), "pass");
-  assert.equal(gateVerdict({ allowed: false }), "fail");
-  assert.equal(gateVerdict(true), "pass");
-  assert.equal(gateVerdict(false), "fail");
+test("comparePair: floor gates pass at the limit and above, fail below it", () => {
+  assert.equal(comparePair(0.7, 0.7, "ge"), "pass");
+  assert.equal(comparePair(0.9, 0.7, "ge"), "pass");
+  assert.equal(comparePair(0.69, 0.7, "ge"), "fail");
 });
 
-test("SAFETY: a gate with neither passed nor allowed is UNKNOWN, never FAIL", () => {
-  const shapes = [
-    {},
-    null,
-    undefined,
-    { value: 12, limit: 5 }, // has a number, says nothing about the verdict
-    { reason: "probed but undetermined" },
-    { passed: null, allowed: null },
-    { passed: "true" }, // a string is not a backend boolean
-    { allowed: 1 },
-    0,
-    "passed",
-    [],
+test("comparePair: ceiling gates pass at the limit and below, fail above it", () => {
+  assert.equal(comparePair(0.18, 0.18, "le"), "pass");
+  assert.equal(comparePair(0.1, 0.18, "le"), "pass");
+  assert.equal(comparePair(0.19, 0.18, "le"), "fail");
+});
+
+test("SAFETY: a pair with a missing, non-finite, or unusable limit is UNKNOWN, never FAIL", () => {
+  const unusable = [
+    [0.5, null],
+    [0.5, undefined],
+    [null, 0.7],
+    [undefined, 0.7],
+    [NaN, 0.7],
+    [0.5, NaN],
+    [0.5, Infinity],
+    [Infinity, 0.7],
+    ["0.5", 0.7],
+    [0.5, "0.7"],
   ];
-  for (const shape of shapes) {
-    assert.equal(gateVerdict(shape), "unknown", `misread shape: ${JSON.stringify(shape) ?? String(shape)}`);
-    assert.notEqual(gateVerdict(shape), "fail");
+  for (const [value, limit] of unusable) {
+    assert.equal(comparePair(value, limit, "ge"), "unknown", `floor pair misread: ${String(value)} vs ${String(limit)}`);
+    assert.equal(comparePair(value, limit, "le"), "unknown", `ceiling pair misread: ${String(value)} vs ${String(limit)}`);
   }
 });
 
-test("gateVerdict: passed wins over allowed=false, mirroring RiskPage ordering", () => {
-  assert.equal(gateVerdict({ passed: true, allowed: false }), "pass");
-  assert.equal(gateVerdict({ passed: false, allowed: true }), "pass");
+test("SAFETY: a ceiling with a non-positive limit stays UNKNOWN (no fake headroom, no divide-by-zero reading)", () => {
+  assert.equal(comparePair(0.1, 0, "le"), "unknown");
+  assert.equal(comparePair(0.1, -1, "le"), "unknown");
+  // A floor of zero is a real, satisfiable threshold — it must not be collapsed
+  // to the same unknown (this is the one direction where 0 is a legitimate limit).
+  assert.equal(comparePair(0.1, 0, "ge"), "pass");
+  assert.equal(comparePair(-0.1, 0, "ge"), "fail");
 });
 
-test("gateFunnel: counts split pass / fail / unknown and keep reason text verbatim", () => {
-  const funnel = gateFunnel({
-    spread_guard: { passed: true },
-    news_window: { allowed: false, reason: "HIGH_IMPACT_NEWS within 120s" },
-    liquidity_gate: { value: 0.4, limit: 0.2 },
-    atr_sl_buffer: {},
-  });
-  assert.equal(funnel.pass, 1);
-  assert.equal(funnel.fail, 1);
-  assert.equal(funnel.unknown, 2);
-  assert.equal(funnel.total, 4);
-  const failRow = funnel.rows.find((r) => r.name === "news_window");
-  assert.equal(failRow.reason, "HIGH_IMPACT_NEWS within 120s");
-  assert.equal(funnel.rows.find((r) => r.name === "atr_sl_buffer").reason, null);
+test("gateEvidence: REAL backend payload pairs into pass/fail/unknown (no invented verdicts)", () => {
+  // Verbatim shape returned by /api/v1/risk/status for a live NO_TRADE proposal.
+  const checks = {
+    zone_quality: 0,
+    min_zone_quality: 0.7,
+    rr: 1,
+    min_rr: 2.2,
+    model_confidence: 0,
+    confidence_source: "DIRECTIONAL_NORMALIZED",
+    base_threshold: 0.4,
+    range_penalty: 0.1,
+    survival_mode_adjustment: 0,
+    effective_threshold: 0.5,
+    spread_usd: 0.24,
+    spread_atr_ratio: 0.2444,
+    max_spread_atr_ratio: 0.18,
+    spread_tp_ratio: 0,
+    tp_distance_usd: null,
+    max_spread_pct_of_tp: 0.15,
+    spread_session_percentile_value: null,
+    spread_session_percentile: 70,
+    expected_symbol: "XAUUSD",
+    expected_magic: 888101,
+  };
+  const ev = gateEvidence(checks);
+  // 20 payload keys -> 14 rows: 7 declared value→limit pairs (one row each)
+  // plus the 7 keys that are only LIMITS or threshold components; the 6 limit
+  // keys (min_zone_quality, min_rr, effective_threshold as a limit,
+  // max_spread_atr_ratio, max_spread_pct_of_tp, spread_session_percentile,
+  // max_spread_points) are consumed BY their pair and never double-counted.
+  assert.equal(ev.total, 14, "every payload key becomes at most one row");
+  const byName = Object.fromEntries(ev.rows.map((r) => [r.name, r]));
+  // Floors the decision failed:
+  assert.equal(byName.zone_quality.verdict, "fail");
+  assert.equal(byName.rr.verdict, "fail");
+  assert.equal(byName.model_confidence.verdict, "fail");
+  // Ceiling the decision breached:
+  assert.equal(byName.spread_atr_ratio.verdict, "fail");
+  // Ceiling that passed:
+  assert.equal(byName.spread_tp_ratio.verdict, "pass");
+  // A pair whose VALUE is null must not be read as a failure:
+  assert.equal(byName.spread_session_percentile_value.verdict, "unknown");
+  assert.equal(byName.spread_session_percentile_value.value, null);
+  // The percentile key itself is consumed AS that pair's limit (value 70) and
+  // must not also appear as its own row — one metric, one row.
+  assert.ok(!("spread_session_percentile" in byName), "a limit key is consumed by its pair, never double-counted");
+  // Cross-unit pairing is forbidden: spread_usd (dollars) is NOT compared
+  // against max_spread_points (broker points) — the units differ by 100.
+  assert.equal(byName.spread_usd.verdict, "unknown", "cross-unit pair must stay unknown");
+  assert.equal(byName.spread_usd.limit, null, "no limit may be fabricated for an unpaired value");
+  // Threshold arithmetic is evidence, not gates:
+  assert.equal(byName.base_threshold.verdict, "unknown");
+  assert.equal(byName.range_penalty.verdict, "unknown");
+  assert.equal(byName.survival_mode_adjustment.verdict, "unknown");
+  // effective_threshold is consumed AS the model_confidence pair's limit, so
+  // it must not also appear as a row — one metric, one row.
+  assert.ok(!("effective_threshold" in byName), "effective_threshold is the confidence pair's limit, not its own row");
+  assert.equal(byName.model_confidence.limit, 0.5, "the confidence gate's limit is the effective threshold");
+  assert.ok(!("min_rr" in byName), "min_rr is consumed as the rr pair's limit, never a row of its own");
+  // Non-numeric identity evidence is reported, never silently dropped:
+  assert.equal(byName.confidence_source.value, null);
+  assert.ok(byName.model_confidence.detail.includes("DIRECTIONAL_NORMALIZED"), "backend string context is echoed verbatim");
+  // The funnel counts must agree with the rows themselves.
+  assert.equal(ev.pass + ev.fail + ev.unknown, ev.total);
+  assert.ok(ev.fail > 0, "the payload carried real breaches — the matrix must not report zero of everything");
 });
 
-test("gateFunnel: null / empty payload is an EMPTY funnel, not a wall of unknowns", () => {
+test("gateEvidence: null / empty payload is an EMPTY trace, not a wall of unknowns", () => {
   for (const payload of [null, undefined, {}]) {
-    const f = gateFunnel(payload);
-    assert.deepEqual({ pass: f.pass, fail: f.fail, unknown: f.unknown, total: f.total }, { pass: 0, fail: 0, unknown: 0, total: 0 });
+    const ev = gateEvidence(payload);
+    assert.deepEqual({ pass: ev.pass, fail: ev.fail, unknown: ev.unknown, total: ev.total }, { pass: 0, fail: 0, unknown: 0, total: 0 });
   }
 });
 
-test("gateFunnel: a 10-gate trace with no booleans reports 10 UNKNOWN and 0 FAIL", () => {
-  const checks = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`gate_${i}`, { value: i }]));
-  const f = gateFunnel(checks);
-  assert.equal(f.unknown, 10);
-  assert.equal(f.fail, 0);
-  assert.equal(f.pass, 0);
+test("SAFETY: gateEvidence never manufactures a verdict for an unpaired metric", () => {
+  // A payload of bare numbers with no sibling limits — the old bug shape. The
+  // layer must report each one UNKNOWN with its value still visible, and must
+  // never upgrade a bare number to a FAIL.
+  const checks = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`metric_${i}`, i]));
+  const ev = gateEvidence(checks);
+  assert.equal(ev.total, 10);
+  assert.equal(ev.unknown, 10);
+  assert.equal(ev.fail, 0);
+  assert.equal(ev.pass, 0);
+  for (const row of ev.rows) assert.ok(row.value !== null, `value for ${row.name} is still displayed`);
+});
+
+test("gateEvidence: the other decision paths' shapes stay safe", () => {
+  // TICK_SWEEP / PREDICTIVE_LIMIT paths stamp a NESTED structural gate object
+  // instead of scalar pairs. It is not the scalar-pair model, so every entry
+  // must stay UNKNOWN rather than being misread as a pass/fail.
+  const ev = gateEvidence({
+    decision_path: "TICK_SWEEP",
+    confidence_gate_applied: true,
+    sweep_conf_threshold: 0.45,
+    model_confidence_verdict: "SWEEP_PATH_THRESHOLD",
+    structural_gate: { price_pierced_liquidity: true, reversal_detected: true },
+  });
+  assert.equal(ev.fail, 0, "nested shapes carry no scalar limit to compare against");
+  assert.equal(ev.pass, 0);
+  assert.equal(ev.total, 5);
+  for (const row of ev.rows) assert.equal(row.verdict, "unknown");
+});
+
+test("verdictWord / directionWord: only restatements, never new vocabulary", () => {
+  assert.equal(verdictWord("pass"), "PASS");
+  assert.equal(verdictWord("fail"), "FAIL");
+  assert.equal(verdictWord("unknown"), UNKNOWN_WORD);
+  assert.equal(directionWord("ge"), "min");
+  assert.equal(directionWord("le"), "max");
 });
 
 // ---------------------------------------------------------------------------
@@ -217,14 +314,17 @@ test("backendWord echoes the payload string; blank/missing collapses to UNKNOWN"
   assert.equal(backendWord(undefined), UNKNOWN_WORD);
 });
 
-test("SAFETY: the whole module never invents SAFE / BLOCKED / HALTED wording", async () => {
-  const src = await readSelf();
-  // The only literal status words allowed are the ones that also appear as
-  // backend payload values inside a comment/docstring; the vocabulary check is
-  // on the UNKNOWN fallback plus the two boolean restatements.
+test("SAFETY: the derivation modules never invent SAFE / BLOCKED / HALTED wording", async () => {
+  // Both derivation layers are checked: riskVizMath owns UNKNOWN_WORD, and
+  // riskGateTrace owns the value-vs-limit pairing that replaced the boolean
+  // funnel. Neither may emit a human-facing verdict word the backend did not.
+  const src = (await readRepoFile("frontend", "src", "lib", "riskVizMath.ts")) + "\n" + (await readSelf());
   assert.match(src, /export const UNKNOWN_WORD = "UNKNOWN"/);
-  // gateVerdict may only return these three machine keys.
-  const returned = [...src.matchAll(/return "(pass|fail|unknown|ok|bad|warn)";/g)].map((m) => m[1]);
+  // A verdict may only be one of these machine keys.
+  const returned = [
+    ...src.matchAll(/return\s+"(pass|fail|unknown|ok|bad|warn)";/g),
+    ...src.matchAll(/return\s+(?:value\s+)?(?:>=|<=)\s+\S+\s*\?\s*"(pass|fail|unknown|ok|bad|warn)"/g),
+  ].map((m) => m[1]);
   const allowed = new Set(["pass", "fail", "unknown", "ok", "bad", "warn"]);
   assert.ok(returned.length > 0);
   for (const word of returned) assert.ok(allowed.has(word), `unexpected literal verdict "${word}"`);
@@ -263,5 +363,5 @@ async function readRepoFile(...parts) {
 }
 
 async function readSelf() {
-  return readRepoFile("frontend", "src", "lib", "riskVizMath.ts");
+  return readRepoFile("frontend", "src", "lib", "riskGateTrace.ts");
 }

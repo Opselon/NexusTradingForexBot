@@ -11,7 +11,15 @@ pre, code, .font-mono {
 
 
 /* ==========================================================================
-   Sleek modern scrollbar (global) — slim, rounded, theme-consistent.
+   Model Studio panel scroll spacing (ML-UI-002) - keeps a panel jumped to
+   from the studio sub-nav clear of the sticky sub-nav bar itself.
+   ========================================================================== */
+#tab-model-studio [id$="-panel"],
+#tab-model-studio .studio-root [id$="-panel"] {
+    scroll-margin-top: 3.25rem;
+}
+
+ — slim, rounded, theme-consistent.
    - 8px slim bar, fully rounded thumb, dark track (blends into bg)
    - thumb brightens on hover, subtle glow when dragging (active)
    - Firefox: scrollbar-color keeps the same look

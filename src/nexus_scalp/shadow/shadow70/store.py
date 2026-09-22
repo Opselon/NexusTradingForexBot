@@ -389,12 +389,18 @@ class Shadow70Store(Shadow70Persistence):
     def list_observations(
         self, limit: int = 200, disagreement_only: bool = False
     ) -> list[dict[str, Any]]:
+        """Bounded recent observations.
+
+        ``disagreement_only`` excludes rows that never compared anything
+        (BUG-278): a NOT_COMPARED row carries the neutral placeholder
+        shadow_action, not a model output, so it is not a disagreement.
+        """
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return []
         bounded = max(1, min(int(limit), SHADOW70_MAX_READ))
         sql = "SELECT * FROM shadow70_observations"
         if disagreement_only:
-            sql += " WHERE agreement = 0"
+            sql += " WHERE agreement = 0 AND valid = 1 AND error_code = ''"
         sql += " ORDER BY timestamp DESC LIMIT ?;"
         return self._query(sql, (bounded,))
 
@@ -426,6 +432,10 @@ class Shadow70Store(Shadow70Persistence):
         unfiltered histogram mixed SHADOW_BLOCKED/error rows (no shadow
         model, no comparison) into the disagreement taxonomy, poisoning
         the UI agreement% with rows that never compared anything.
+        BUG-278: the default now counts only rows that actually compared
+        (valid AND no error_code) — the two are NOT the same, because a
+        valid row can still carry SHADOW_INFERENCE_TIMEOUT. Non-compared
+        rows are reported under their own key, not as disagreements.
         Historical invalid rows remain queryable via list_observations —
         no evidence is deleted.
         """
@@ -435,10 +445,13 @@ class Shadow70Store(Shadow70Persistence):
         with contextlib.suppress(Exception):
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
             try:
-                sql = "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations "
                 if valid_only:
-                    sql += "WHERE valid = 1 "
-                sql += "GROUP BY disagreement;"
+                    sql = (
+                        "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations "
+                        "WHERE valid = 1 AND error_code = '' GROUP BY disagreement;"
+                    )
+                else:
+                    sql = "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations GROUP BY disagreement;"
                 for r in conn.execute(sql).fetchall():
                     out[str(r[0])] = int(r[1])
             finally:

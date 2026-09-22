@@ -65,6 +65,7 @@ from nexus_scalp.research.dataset import (
     REASON_MISSING_OUTCOME,
     REASON_NOT_DISPATCHED,
     REASON_REJECTED_UNFILLED,
+    REASON_UNKNOWN_PROVENANCE,
     ResearchDatasetBuilder,
 )
 
@@ -536,8 +537,13 @@ class TestDatasetLifecycleEligibility:
         seed_with_terminal(ledger, repo, "c_hang", None)
         builder = ResearchDatasetBuilder(ledger)
         report = builder.audit()
-        assert report["rejection_reasons"].get(REASON_MISSING_OUTCOME) == 1
-        assert report["rejections"][0]["recoverable"] is True
+        # ML-PHASE1 STEP-9: audit() and build() now share ONE classification
+        # path. An outcome-less record with no terminal lifecycle and no
+        # deterministic evidence is UNKNOWN_PROVENANCE in BOTH views (it was
+        # MISSING_OUTCOME in audit() only, which made the stored census
+        # disagree with the eligibility decision it described).
+        assert report["rejection_reasons"].get(REASON_UNKNOWN_PROVENANCE) == 1
+        assert report["rejections"][0]["recoverable"] is False
 
     def test_audit_counts_terminal_non_trades_quietly(self, repo, ledger):
         # 2 valid trades + 1 canceled + 1 expired + 1 unresolved hang.
@@ -550,9 +556,10 @@ class TestDatasetLifecycleEligibility:
         assert report["total_records"] == 5
         assert report["eligible"] == 2
         assert report["terminal_non_trades"] == 2
-        # Only the genuinely unresolved record is a per-row recoverable finding.
+        # Only the genuinely unresolved record is a per-row finding. STEP-9:
+        # the honest-unknown orphan is UNKNOWN_PROVENANCE in audit() too.
         assert report["rejected"] == 1
-        assert report["rejection_reasons"] == {REASON_MISSING_OUTCOME: 1}
+        assert report["rejection_reasons"] == {REASON_UNKNOWN_PROVENANCE: 1}
 
     def test_build_census_travels_with_dataset(self, repo, ledger):
         seed_experiences(ledger, repo, 2, prefix="ok141", r_values=[0.4, -0.2])
@@ -566,7 +573,11 @@ class TestDatasetLifecycleEligibility:
         assert census["valid_research_samples"] == 2
         assert census["terminal_non_trades"] == 1
         assert census["filled_outcome_missing"] == 1
-        assert census["unresolved_missing_outcome"] == 1
+        # STEP-9 census consistency: the same record cannot be
+        # MISSING_OUTCOME in the census while build() excluded it as
+        # UNKNOWN_PROVENANCE. The two numbers must agree.
+        assert census["unresolved_missing_outcome"] == 0
+        assert census["unknown_provenance"] == 1
         rules = census["eligibility_rules"]
         # BUG-185: the eligibility contract moved to v2 (adds the honest
         # UNKNOWN_PROVENANCE exclusion). The new census key is asserted in
