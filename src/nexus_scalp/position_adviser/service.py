@@ -291,6 +291,14 @@ class PositionAdviserService:
             return {"status": "REJECTED", "reason": "scaler file not found"}
 
         try:
+            # Sink-level containment assertion, immediately before the
+            # deserialisation: the barrier is checked where the bytes are read,
+            # not only at the top of load().
+            if not _contained_artifact_path(wp):
+                return {
+                    "status": "REJECTED",
+                    "reason": "path rejected: outside repository root",
+                }
             weights = torch.load(wp, map_location="cpu", weights_only=True)
         except Exception as exc:
             logger.warning("[ADVISER] event=WEIGHTS_LOAD_FAILED err=%s", exc)
