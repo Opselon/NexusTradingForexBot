@@ -20,15 +20,27 @@ returned value is now asserted to be resolved and contained.
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _web_auth_disabled() -> None:
+def _web_auth_disabled() -> Generator[None, None, None]:
     # WEB-AUTH gates every route; the test client must reach the handlers.
+    # Save/restore around the whole module: a bare os.environ write left
+    # DISABLE=1 set forever, leaking into the worker's later tests and
+    # silently de-arming the 401 auth-contract probes.
+    prev = os.environ.get("NSE_WEB_AUTH_DISABLE")
     os.environ["NSE_WEB_AUTH_DISABLE"] = "1"
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("NSE_WEB_AUTH_DISABLE", None)
+        else:
+            os.environ["NSE_WEB_AUTH_DISABLE"] = prev
 
 
 @pytest.fixture()
