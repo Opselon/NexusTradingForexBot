@@ -431,7 +431,7 @@ function SettingsProvenance() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>KEY</th><th>VALUE</th><th>SOURCE</th><th>VER</th><th>MUTABILITY</th>
+                    <th scope="col">KEY</th><th scope="col">VALUE</th><th scope="col">SOURCE</th><th scope="col">VER</th><th scope="col">MUTABILITY</th>
                   </tr>
                 </thead>
                 <tbody>

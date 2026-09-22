@@ -459,7 +459,7 @@ function ExplorerPanel() {
                         <div className="l3-scroll">
                           <table className="data-table">
                             <thead>
-                              <tr>{(rows.data?.columns ?? []).map((c) => <th key={c}>{c}</th>)}</tr>
+                              <tr>{(rows.data?.columns ?? []).map((c) => <th scope="col" key={c}>{c}</th>)}</tr>
                             </thead>
                             <tbody>
                               {(rows.data?.rows ?? []).map((r, i) => (
@@ -490,7 +490,7 @@ function ExplorerPanel() {
                       <div className={`l3-note ${result.ok ? "good" : "bad"}`}>{result.note}{result.truncated ? " · truncated at 500" : ""}</div>
                       <div className="l3-scroll sm">
                         <table className="data-table">
-                          <thead><tr>{result.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+                          <thead><tr>{result.columns.map((c) => <th scope="col" key={c}>{c}</th>)}</tr></thead>
                           <tbody>
                             {result.rows.map((r, i) => (
                               <tr key={i}>{result.columns.map((c) => <td key={c} className="l3-cell" title={String(r[c] ?? "")}>{r[c] === null || r[c] === undefined ? "—" : String(r[c])}</td>)}</tr>

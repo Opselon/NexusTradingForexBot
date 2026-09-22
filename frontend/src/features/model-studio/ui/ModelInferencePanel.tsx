@@ -222,13 +222,13 @@ export function ModelInferencePanel({
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Layer</th>
-                        <th>Type</th>
-                        <th>Shape</th>
-                        <th className="num">L2 Norm</th>
-                        <th className="num">Mean</th>
-                        <th className="num">Std</th>
-                        <th style={{ textAlign: "center" }}>Zero %</th>
+                        <th scope="col">Layer</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Shape</th>
+                        <th scope="col" className="num">L2 Norm</th>
+                        <th scope="col" className="num">Mean</th>
+                        <th scope="col" className="num">Std</th>
+                        <th scope="col" style={{ textAlign: "center" }}>Zero %</th>
                       </tr>
                     </thead>
                     <tbody>

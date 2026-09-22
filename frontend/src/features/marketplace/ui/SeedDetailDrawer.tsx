@@ -27,7 +27,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
   return (
     <div className="mkt-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside className="mkt-drawer" role="dialog" aria-modal="true" aria-label={`Seed detail ${seedId}`}>
-        <header>
+        <header aria-label="Seed detail">
           <span>Seed detail</span>
           <span className="inline-mono tiny faint">{seedId}</span>
           <button className="btn small" style={{ marginInlineStart: "auto" }} onClick={() => setShowRaw((v) => !v)}>
