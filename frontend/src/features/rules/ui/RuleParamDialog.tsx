@@ -110,6 +110,7 @@ export function RuleParamDialog({
                     />
                   ) : (
                     <TextField
+                      spec={p.key}
                       value={draft[p.key] ?? ""}
                       error={err}
                       onChange={(v) => onChange(p.key, v)}

@@ -256,6 +256,8 @@ export default function RulesPage(props: ShellPageProps) {
                 </svg>
                 <input
                   ref={searchRef}
+                  id="rl-rules-search"
+                  name="rl-rules-search"
                   className="input"
                   placeholder="search rule / category / parameter…"
                   value={search}
