@@ -143,7 +143,7 @@ export default function IntelligencePage({ snapshot }: Props) {
           right={
             <>
               <InfoChip k="availability" v={liq?.feature_availability ?? "—"} tone={liq?.feature_availability === "AVAILABLE" ? "good" : liq?.feature_availability === "STALE_CACHE" ? "warn" : ""} />
-              <button className="btn small ghost" onClick={() => void liqQuery.refetch()} disabled={liqQuery.isFetching}>⟳</button>
+              <button aria-label="Refresh liquidity" className="btn small ghost" onClick={() => void liqQuery.refetch()} disabled={liqQuery.isFetching}>⟳</button>
             </>
           }
         >
@@ -262,7 +262,7 @@ export default function IntelligencePage({ snapshot }: Props) {
         right={
           <>
             <AgeNote label="inference age" ageSec={snapshot?.diagnostics.inference_age_sec} />
-            <button className="btn small ghost" onClick={() => void regimeQuery.refetch()} disabled={regimeQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh regime" className="btn small ghost" onClick={() => void regimeQuery.refetch()} disabled={regimeQuery.isFetching}>⟳</button>
           </>
         }
       >

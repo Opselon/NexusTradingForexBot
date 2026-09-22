@@ -148,7 +148,7 @@ export function SpatialFleetCanvas({
 
   return (
     <div className="spatial-wrap" ref={wrapRef}>
-      <canvas ref={canvasRef} className="spatial-canvas" aria-label="Spatial fleet map (2.5D)" />
+      <canvas ref={canvasRef} className="spatial-canvas" role="img" aria-label="Spatial fleet map (2.5D)" />
 
       {/* camera toolbar (legacy scc-fit-all / reset / focus set) */}
       <div className="spatial-tools">
