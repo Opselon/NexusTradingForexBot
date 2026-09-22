@@ -333,6 +333,7 @@ export function NumberField({
       type="number"
       value={value}
       step={step}
+      aria-label={placeholder}
       aria-invalid={error ? true : undefined}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}

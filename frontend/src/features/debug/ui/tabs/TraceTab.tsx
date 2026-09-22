@@ -24,7 +24,7 @@ export function TraceTab() {
     <Panel title="Execution trace (/api/debug/trace/{execution_id})" accent right={<span className="timestamp-note">read-only join: audit_signals + audit_orders</span>}>
       <div className="dbg-sec">
         <div className="l3-toolbar">
-          <input className="input" style={{ minWidth: 280 }} placeholder="EXEC-…" value={id} aria-invalid={!shapeOk} onChange={(e) => setId(e.target.value)} />
+          <input className="input" style={{ minWidth: 280 }} aria-label="Execution id" placeholder="EXEC-…" value={id} aria-invalid={!shapeOk} onChange={(e) => setId(e.target.value)} />
           <button className="btn primary" disabled={!shapeOk || id.trim() === ""} onClick={() => setSubmitted(id.trim())}>
             Trace
           </button>

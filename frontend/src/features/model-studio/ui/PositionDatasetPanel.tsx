@@ -183,7 +183,7 @@ export function PositionDatasetPanel({
                   <div key={act} className="ms-prob-row">
                     <div className="ms-prob-meta">
                       <span style={{ color: ACTION_COLORS[act] }}>{act}</span>
-                      <span style={{ color: "var(--text-dim)" }}>
+                      <span className="tx-dim" >
                         {count.toLocaleString()} · {pctv.toFixed(1)}%
                       </span>
                     </div>
@@ -254,7 +254,7 @@ export function PositionDatasetPanel({
                       border: "1px solid var(--border)",
                     }}
                   >
-                    <span className="inline-mono tiny" style={{ color: "var(--text-dim)" }}>{name}</span>
+                    <span className="inline-mono tiny tx-dim" >{name}</span>
                     <span className="inline-mono small" style={{ color: "var(--green)", fontWeight: 700 }}>
                       {count.toLocaleString()} samples
                     </span>

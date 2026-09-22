@@ -8,7 +8,7 @@
  * core/transport directly (commands go through ../model -> ../api -> @/api/client).
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import "./lane5.css";
@@ -26,9 +26,9 @@ export function FreshnessCaption({
   error?: boolean;
 }) {
   return (
-    <span className="timestamp-note tiny muted" style={{ marginInlineStart: "auto" }}>
+    <span className="timestamp-note tiny muted" role="status" style={{ marginInlineStart: "auto" }}>
       {error ? (
-        <span style={{ color: "var(--red)" }}>stale — backend error</span>
+        <span className="tx-bad">stale — backend error</span>
       ) : (
         <>
           {timestamp ? `updated ${formatDateTime(timestamp)}` : "no timestamp returned"}
@@ -116,9 +116,40 @@ export function Drawer({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
+  // Focus enters the drawer on open and returns to the trigger on close.
+  useEffect(() => {
+    prevFocusRef.current = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus({ preventScroll: true });
+    return () => prevFocusRef.current?.focus?.();
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      const root = panelRef.current;
+      // A stacked dialog (confirm modal) owns the keyboard while it holds
+      // focus — only react when focus is inside this drawer.
+      if (!root || !root.contains(document.activeElement)) return;
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        const focusables = Array.from(
+          root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+        ).filter((el) => !el.hasAttribute("disabled"));
+        if (focusables.length === 0) return;
+        const first = focusables[0] as HTMLElement;
+        const last = focusables[focusables.length - 1] as HTMLElement;
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !root.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -129,6 +160,8 @@ export function Drawer({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -145,7 +178,7 @@ export function Drawer({
         }}
       >
         <div className="panel-header" style={{ flex: "0 0 auto" }}>
-          <span>{title}</span>
+          <h2>{title}</h2>
           <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={onClose}>
             close <kbd>esc</kbd>
           </button>

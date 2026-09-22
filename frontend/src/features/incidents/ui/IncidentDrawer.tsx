@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { DataTable, EmptyState, MetricCard, Panel, Skeleton, SeverityBadge, StatusBadge } from "@/components/primitives";
+import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, SeverityBadge, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { incidentZipHref } from "../api";
 import { arr, bool, num, obj, str, type Row } from "../model";
@@ -50,6 +50,11 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
 
       {detailQ.isPending ? (
         <Skeleton count={4} />
+      ) : detailQ.isError ? (
+              <ErrorState
+                message={detailQ.error instanceof Error ? detailQ.error.message : "incident detail unavailable"}
+                onRetry={() => void detailQ.refetch()}
+              />
       ) : detailQ.data?.available === false || !inc ? (
         <EmptyState message="incident not found" hint={str(detailQ.data?.error) ?? "the store answered available:false"} />
       ) : tab === "detail" ? (
