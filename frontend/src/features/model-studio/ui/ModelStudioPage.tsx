@@ -20,16 +20,12 @@ import "./model-studio.css";
 
 import { modelStudioApi } from "../api";
 import type {
-  ActiveModelResponse,
   BenchmarkResponse,
   DatasetDownloadResponse,
   Fetch70dResponse,
   HotLoadResponse,
   InspectFeaturesResponse,
   InspectScalerResponse,
-  ModelRecordDto,
-  ModelStudioDatasetItem,
-  ModelStudioOverviewDto,
   ModelStudioTrainProgress,
   PositionDatasetResponse,
   PredictResponse,
@@ -42,14 +38,32 @@ import { ModelRegistryPanel } from "./ModelRegistryPanel";
 import { DatasetPipelinePanel } from "./DatasetPipelinePanel";
 import { PositionDatasetPanel } from "./PositionDatasetPanel";
 import { ModelStressBenchPanel } from "./ModelStressBenchPanel";
+import { useModelStudioData } from "./useModelStudioData";
 
 /** Poll cadence for the live training-progress endpoint (visual only). */
 const TRAIN_POLL_MS = 1200;
 
 export default function ModelStudioPage() {
+  const {
+    overview,
+    datasets,
+    models,
+    activeModel,
+    selectedModelId,
+    setSelectedModelId,
+    selectedDataset,
+    setSelectedDataset,
+    posSource,
+    setPosSource,
+    enableFineTune,
+    setEnableFineTune,
+    fetchOverview,
+    fetchDatasets,
+    fetchModels,
+    fetchActiveModel,
+    refreshAll,
+  } = useModelStudioData();
   const [dimension, setDimension] = useState<number>(50);
-  const [overview, setOverview] = useState<ModelStudioOverviewDto | null>(null);
-  const [datasets, setDatasets] = useState<ModelStudioDatasetItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [useLive, setUseLive] = useState<boolean>(true);
   const [noise, setNoise] = useState<number>(0);
@@ -57,10 +71,6 @@ export default function ModelStudioPage() {
   const [predictData, setPredictData] = useState<PredictResponse | null>(null);
 
   // AI Hub / Model Registry & Hot-Loader state
-  const [models, setModels] = useState<ModelRecordDto[]>([]);
-  const [activeModel, setActiveModel] = useState<ActiveModelResponse["active_model"]>(null);
-  const [selectedModelId, setSelectedModelId] = useState<string>("");
-  const [enableFineTune, setEnableFineTune] = useState<boolean>(false);
   const [attachScaler, setAttachScaler] = useState<boolean>(true);
   const [hotLoadBusy, setHotLoadBusy] = useState<boolean>(false);
   const [hotLoadResult, setHotLoadResult] = useState<HotLoadResponse | null>(null);
@@ -76,7 +86,6 @@ export default function ModelStudioPage() {
   const [schemaHash, setSchemaHash] = useState<string>("");
 
   // Training state
-  const [selectedDataset, setSelectedDataset] = useState<string>("");
   const [epochs, setEpochs] = useState<number>(3);
   const [learningRate, setLearningRate] = useState<number>(0.0005);
   const [trainBusy, setTrainBusy] = useState<boolean>(false);
@@ -99,7 +108,6 @@ export default function ModelStudioPage() {
   const [inspectError, setInspectError] = useState<string>("");
 
   // Layer-2 position-manager dataset state
-  const [posSource, setPosSource] = useState<string>("");
   const [posMaxHolding, setPosMaxHolding] = useState<number>(30);
   const [posTargetAtr, setPosTargetAtr] = useState<number>(2.0);
   const [posFriction, setPosFriction] = useState<number>(0.25);
@@ -123,70 +131,6 @@ export default function ModelStudioPage() {
   };
   useEffect(() => stopTrainPolling, []);
 
-  useEffect(() => {
-    fetchOverview();
-    fetchDatasets();
-    fetchModels();
-    fetchActiveModel();
-  }, []);
-
-  const fetchModels = async () => {
-    try {
-      const res = await modelStudioApi.listModels();
-      const list = res.models || [];
-      setModels(list);
-      if (list.length > 0 && list[0]) {
-        const champ = list.find((m) => m.is_active || m.id === res.active_champion_id);
-        const fallbackId = list[0].id;
-        setSelectedModelId((prev) => prev || (champ ? champ.id : fallbackId));
-      }
-    } catch (err) {
-      console.error("Failed to load models catalog:", err);
-    }
-  };
-
-  const fetchActiveModel = async () => {
-    try {
-      const res = await modelStudioApi.activeModel();
-      setActiveModel(res.active_model);
-      if (res.active_model) {
-        setEnableFineTune(Boolean(res.active_model.fine_tune_enabled));
-      }
-    } catch (err) {
-      console.error("Failed to load active model state:", err);
-    }
-  };
-
-  const fetchOverview = async () => {
-    try {
-      setOverview(await modelStudioApi.overview());
-    } catch (err) {
-      console.error("Failed to load overview:", err);
-    }
-  };
-
-  const fetchDatasets = async () => {
-    try {
-      const d = await modelStudioApi.datasets();
-      const list = d.datasets || [];
-      setDatasets(list);
-      const first = list[0];
-      if (first) {
-        setSelectedDataset((prev) => prev || first.path);
-        setPosSource((prev) => prev || first.path);
-      }
-    } catch (err) {
-      console.error("Failed to load datasets:", err);
-    }
-  };
-
-  /** Header refresh action — same four reads as the initial load. */
-  const refreshAll = () => {
-    fetchOverview();
-    fetchDatasets();
-    fetchModels();
-    fetchActiveModel();
-  };
 
   const handleHotLoad = async () => {
     if (!selectedModelId) return;
