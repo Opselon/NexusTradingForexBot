@@ -884,7 +884,9 @@ def test_order_serialization_latency_under_1ms(gateway, monkeypatch):
         # by serialization cost; require the *median* to stay far below the
         # SLA, which only genuine serialization work can breach.
         latencies[len(latencies) // 2] < 0.5
-    ), f"median serialization {(latencies[len(latencies)//2]):.4f}ms indicates real cost, not scheduler load"
+    ), (
+        f"median serialization {(latencies[len(latencies) // 2]):.4f}ms indicates real cost, not scheduler load"
+    )
 
 
 def test_market_order_serialization_p99_under_1ms(gateway, monkeypatch):
@@ -923,9 +925,9 @@ def test_market_order_serialization_p99_under_1ms(gateway, monkeypatch):
     assert latencies[0] > 0.0
     assert p99 >= latencies[0]
     assert latencies[-1] >= p99
-    assert p99 < 1.0 or (
-        latencies[len(latencies) // 2] < 0.5
-    ), f"median serialization {(latencies[len(latencies)//2]):.4f}ms indicates real cost, not scheduler load"
+    assert p99 < 1.0 or (latencies[len(latencies) // 2] < 0.5), (
+        f"median serialization {(latencies[len(latencies) // 2]):.4f}ms indicates real cost, not scheduler load"
+    )
 
 
 def test_round_trip_through_local_bridge_is_bounded(gateway):
