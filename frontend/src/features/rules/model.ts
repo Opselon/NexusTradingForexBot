@@ -161,3 +161,12 @@ export function sortRules(rules: readonly RuleVO[], sort: RuleSort): RuleVO[] {
 export function ruleCategories(rules: readonly RuleVO[]): string[] {
   return Array.from(new Set(rules.map((r) => r.category))).sort();
 }
+
+/** Deterministic category tone (0..5) for the `.rl-tone-N` tag palette.
+ *  A pure string hash, so a category keeps its color across renders and
+ *  refetches; ui/rules.css maps each index to a token-derived tint. */
+export function catTone(category: string): number {
+  let h = 0;
+  for (let i = 0; i < category.length; i += 1) h = (h * 31 + category.charCodeAt(i)) >>> 0;
+  return h % 6;
+}
