@@ -378,3 +378,31 @@ evolved further, landing on `main` via PR #355 (`db781306`). The intermediate
 | TASK-ID | Owner | Priority | Title | Deps | Files | Contracts | Blocker | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | TASK-UI-INTEL-001 | Hermes (intelligence UI lane, 2026-09-23) | P2 | Intelligence page pro UI/UX (/alt/intelligence) — presentation-only rework: hero header (kicker, gradient title, 8 endpoint provenance chips, live news-state pill restating backend state+freshness verbatim, Refresh all refetching the same 8 queries), section labels (Market structure / Engine readout / Subsystem state / Feed & forensics), source-endpoint subtitle on every panel, NEW scoped frontend/src/pages/Intelligence/intelligence.css (`.ix-*` namespace, theme tokens only, logical properties for RTL, reduced-motion honored, scoped KPI/panel hover lift), SeverityBadge for article importance (text preserved), WIN/LOSS tone badges for autopsy outcomes (backend word verbatim, missing renders em dash), stale banner restyled as role=alert (copy unchanged), read-only governor notes in inset cards, inline layout styles moved to classes. Queries, derivations, endpoints and every honest-state (empty/error/stale/unavailable) branch UNCHANGED. VERIFIED: npm run build (tsc -b + vite build) EXIT=0 on baseline, post-edit and post-final-patch; ix-class audit used==defined (0 orphans); PR #364 CI all required contexts green (Code Quality & Tests, Py Tests windows+macos, Frontend JS Unit Tests, Validate documentation, CodeQL, Trivy, OSV); squash merge 9b84d171, both files present at origin/main. Isolated worktree lane agent/hermes/intelligence-ui off origin/main; junction node_modules deleted without touching the main checkout; foreign debug/rules WIP excluded from commits. | none | frontend/src/pages/Intelligence/IntelligencePage.tsx, frontend/src/pages/Intelligence/intelligence.css, agents/taskboard.md (this row) | presentation layer only; backend-authoritative queries/refresh semantics untouched; primitives + theme.css unmodified | none | MERGED (PR #364, merge 9b84d171) |
+
+
+## TASK-RESEARCH-PLAYBOOK-UI-20260923 — Research playbook + animation layer (Hermes, research UI lane)
+
+Research page (/alt/research) upgraded on isolated branch `agent/feature/research-playbook-ui`
+(worktree `repos/nse-research-ui`, cut from origin/main; zero foreign WIP touched). NEW
+`frontend/src/features/research/handbook/` — 19 static documentation modules (~4.4k lines):
+gate chain + per-gate entries (STATIC_VALIDATION/BACKTEST/WALK_FORWARD/OOS/ROBUSTNESS/SCORING),
+16-state lifecycle machine, discovery floors (8/20/+0.10R), 10-dim score weights + verdict
+precedence, economics (E1 zero-friction guard, 0.25R degradation line, purge 300s/embargo 60s,
+six stress scenarios), evidence vault (content_hash/NOT_RECORDED/lineage), operations
+(commands/availability/worker-health/queue/retention), registry cache discipline, CHG-0035
+experiments (FORWARD_TEST freeze, streaming replay), A-Z glossary, tab-by-tab UI guide, master
+FAQ. NEW `ui/StrategyPlaybook.tsx` (searchable accordion + TOC + constants tables + FAQ +
+see-also deep links) and `ui/research.css` (`.rs-*` animation layer: hero sweep, stagger,
+count-up KPIs, lifecycle-rail share fills, pipeline flow pulses, accordion expand — all frozen
+under prefers-reduced-motion). ResearchPage: hero pipeline map + animated KPIs + census rail
+(% fills, filter preserved) + Playbook tab; StrategyDrawer: chain-position rail colored only
+from that strategy's own gate rows + Playbook tab. NEW `tests/js/research_handbook.test.js`
+(10 tests) pins the handbook to backend source (GATE_CHAIN/required-gates/statuses/failure
+classes, CandidateLifecycle, floors, weights, DSR floor, degradation/OOS floors, purge/embargo,
+fold rules, stress names, doc ref files, id uniqueness, search semantics) via Node 24 type
+stripping + a resolve hook — docs drift now fails CI instead of silently lying. VERIFIED:
+`npm run build` (tsc+vite) PASS, handbook suite 10/10 PASS, full tests/js sweep PASS,
+preflight SAFE_TO_MUTATE. Docs: research/README.md playbook section + docs/agent_handoffs/
+TASK-RESEARCH-PLAYBOOK-UI.md. Protection: frontend feature code + owned test/docs only — no
+backend, route, contract, CI-yml or branch-protection changes. Status: pushed for PR merge
+behind full-green required checks (this row written pre-merge; merge state = PR state).
