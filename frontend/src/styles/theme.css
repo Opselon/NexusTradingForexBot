@@ -260,6 +260,14 @@ body {
 .panel-header .dot-accent { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px rgba(65, 166, 242, 0.8); flex-shrink: 0; }
 .panel-body { padding: 12px 14px; }
 .panel-body.tight { padding: 0; }
+/* sentence-case subtitle under the uppercase panel header */
+.panel-subtitle {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
 
 .grid { display: grid; gap: 12px; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -364,6 +372,10 @@ body {
   gap: 8px; padding: 36px 16px; color: var(--text-dim); text-align: center;
 }
 .state-block .glyph { font-size: 20px; opacity: 0.7; font-family: var(--mono); }
+/* ErrorBoundary fallback: left-aligned card layout over the centered block */
+.eb-card { display: grid; gap: 8px; justify-items: start; padding: 16px; text-align: start; }
+.eb-card .hint { white-space: pre-wrap; max-width: 720px; text-align: start; }
+.eb-actions { display: flex; gap: 8px; }
 .state-block.error .glyph, .state-block.error { color: var(--red); }
 .state-block .hint { font-size: 11px; color: var(--text-faint); max-width: 460px; }
 
@@ -553,6 +565,15 @@ kbd {
 .uppercase { text-transform: uppercase; }
 .font-bold { font-weight: 700; }
 .mt-1 { margin-top: 4px; }
+/* dim mono meta group wrapping count badges */
+.inline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
 .section-title {
   font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--text-dim); margin: 4px 0 8px;

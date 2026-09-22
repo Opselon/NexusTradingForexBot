@@ -79,7 +79,7 @@ export function Panel({
         <span>
           {title}
           {subtitle !== undefined && subtitle !== null && subtitle !== "" && (
-            <span className="panel-subtitle muted" style={{ display: "block", fontSize: 11, fontWeight: 400 }}>
+            <span className="panel-subtitle muted">
               {subtitle}
             </span>
           )}

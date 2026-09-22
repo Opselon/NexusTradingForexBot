@@ -31,7 +31,7 @@ function StatCell({ label, value, color, mono }: StatCellProps) {
         className={`small mt-1 font-bold ${mono ? "inline-mono" : ""}`}
         title={value}
         style={{
-          color: color ?? "#fff",
+          color: color ?? "var(--text)",
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -271,7 +271,7 @@ export function ModelRegistryPanel({
                 <tbody>
                   {verifyResult.checks.map((c, i) => (
                     <tr key={i}>
-                      <td style={{ fontWeight: 600, color: "#fff" }}>{c.name}</td>
+                      <td style={{ fontWeight: 600, color: "var(--text)" }}>{c.name}</td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`badge ${c.passed ? "good" : "bad"}`}>
                           {c.passed ? "PASS" : "FAIL"}

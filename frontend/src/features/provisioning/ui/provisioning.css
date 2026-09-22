@@ -12,6 +12,9 @@
   gap: 14px;
 }
 
+/* Grid rows own their rhythm — drop the stack's .panel margin inside. */
+.pv-grid .panel { margin-bottom: 0; }
+
 /* Two-column card grid (environment / official model). */
 .pv-grid {
   display: grid;
