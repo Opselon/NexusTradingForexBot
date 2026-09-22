@@ -10,6 +10,8 @@
  * Legacy list route answers {available, counts, incidents[]}.
  */
 
+import { useI18n } from "@/stores/i18nStore";
+
 export type Row = Record<string, unknown>;
 
 export const str = (v: unknown): string | null => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : null);
@@ -178,13 +180,19 @@ export function toIncidentVo(d: IncidentDto): IncidentVo {
  *  (Duplicated from the research model on purpose: features never import
  *  each other's model layer — the dependency rule forbids lateral coupling.) */
 export function commandVerdict(res: unknown): { ok: boolean; message: string } {
+  // Lazy store read (not a hook): keeps this pure module free of React while
+  // still resolving verdict copy in the active language at call time.
+  const t = useI18n.getState().t;
   const o = obj(res);
   const err = obj(o.error);
   if (err.code || err.message) {
-    return { ok: false, message: str(err.message) ?? `Backend error: ${str(err.code) ?? "UNKNOWN"}` };
+    return {
+      ok: false,
+      message: str(err.message) ?? t("incidents.verdict.backend_error", "Backend error: {code}", { code: str(err.code) ?? "UNKNOWN" }),
+    };
   }
   if (bool(o.available) === false) {
-    return { ok: false, message: str(o.reason) ?? "Backend subsystem unavailable." };
+    return { ok: false, message: str(o.reason) ?? t("incidents.verdict.unavailable", "Backend subsystem unavailable.") };
   }
-  return { ok: true, message: "Backend accepted the command." };
+  return { ok: true, message: t("incidents.verdict.ok", "Backend accepted the command.") };
 }
