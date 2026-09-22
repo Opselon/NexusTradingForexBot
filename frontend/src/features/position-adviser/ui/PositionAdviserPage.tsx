@@ -341,7 +341,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   return (
     <div className="pa-page">
       {/* ---------------------------------------------------------- header */}
-      <header className="pa-hero">
+      <header className="pa-hero" aria-label="Position adviser">
         <div className="pa-hero-left">
           <span className="pa-scales-icon" aria-hidden="true">
             ⚖
@@ -685,12 +685,12 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                     <table className="pa-table">
                       <thead>
                         <tr>
-                          <th>Trial</th>
-                          <th>lr</th>
-                          <th>bs</th>
-                          <th>seed</th>
-                          <th>OOS loss</th>
-                          <th>OOS acc</th>
+                          <th scope="col">Trial</th>
+                          <th scope="col">lr</th>
+                          <th scope="col">bs</th>
+                          <th scope="col">seed</th>
+                          <th scope="col">OOS loss</th>
+                          <th scope="col">OOS acc</th>
                         </tr>
                       </thead>
                       <tbody>

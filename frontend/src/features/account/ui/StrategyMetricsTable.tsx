@@ -168,9 +168,9 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
         <table className="st-table">
           <thead>
             <tr>
-              <th className="st-th" style={{ textAlign: "left" }}>strategy</th>
+              <th scope="col" className="st-th" style={{ textAlign: "left" }}>strategy</th>
               {NUMERIC.map((k) => (
-                <th
+                <th scope="col"
                   key={k}
                   className={`st-th st-num ${sort.key === k ? "st-active" : ""}`}
                   onClick={() => toggleSort(k)}
@@ -181,7 +181,7 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
                   <span className="st-sort-ico">{sort.key === k ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>
                 </th>
               ))}
-              <th className="st-th" style={{ textAlign: "left" }}>lifecycle</th>
+              <th scope="col" className="st-th" style={{ textAlign: "left" }}>lifecycle</th>
             </tr>
           </thead>
           <tbody>

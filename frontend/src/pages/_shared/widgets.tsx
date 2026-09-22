@@ -105,7 +105,7 @@ export function SortableTable<T>({
               {columns.map((c) => {
                 const active = sort?.key === c.key;
                 return (
-                  <th
+                  <th scope="col"
                     key={c.key}
                     className={c.num ? "num" : undefined}
                     style={c.width ? { inlineSize: c.width } : undefined}

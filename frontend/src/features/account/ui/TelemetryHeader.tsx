@@ -64,7 +64,7 @@ export function TelemetryHeader() {
   const latencyMs = tickAge === null ? null : Math.round(tickAge * 1000);
 
   return (
-    <header className="th-root" role="banner">
+    <header className="th-root" role="banner" aria-label="Telemetry status">
       <div className="th-left">
         <span className={`th-pill ${online ? "th-live" : "th-down"}`} title={source ?? "adapter unavailable"}>
           <span className="th-dot" aria-hidden="true" />

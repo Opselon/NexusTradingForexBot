@@ -91,7 +91,7 @@ export function SortTh<K extends string>({
   const active = api.isActive(col);
   const dir = active ? api.sort.dir : null;
   return (
-    <th className={`${num ? "num " : ""}${active ? "sorted" : ""}`} aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"} title={title}>
+    <th scope="col" className={`${num ? "num " : ""}${active ? "sorted" : ""}`} aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"} title={title}>
       <button type="button" className="dbg-sortbtn" onClick={() => api.toggle(col)}>
         <span>{label}</span>
         <span className={`dbg-sortarrow ${active ? `on ${dir}` : ""}`} aria-hidden="true">

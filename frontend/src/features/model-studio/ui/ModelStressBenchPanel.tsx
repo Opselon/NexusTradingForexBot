@@ -64,9 +64,9 @@ export function ModelStressBenchPanel({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Adversarial Test</th>
-                    <th style={{ textAlign: "center" }}>Verdict</th>
-                    <th>Diagnostic Detail</th>
+                    <th scope="col">Adversarial Test</th>
+                    <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
+                    <th scope="col">Diagnostic Detail</th>
                   </tr>
                 </thead>
                 <tbody>
