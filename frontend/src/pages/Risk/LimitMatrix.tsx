@@ -29,16 +29,18 @@ export function LimitMatrix({ rows }: { rows: RiskLimitRow[] }) {
   }
   return (
     <div className="rsk-matrix" role="table" aria-label="Stress and limits matrix">
-      {COLUMNS.map((c) => (
-        <div key={c} className="rsk-mx__h" role="columnheader">
-          {c}
-        </div>
-      ))}
+      <div className="rsk-mx__row" role="row">
+        {COLUMNS.map((c) => (
+          <div key={c} className="rsk-mx__h" role="columnheader">
+            {c}
+          </div>
+        ))}
+      </div>
 
       {rows.map((row) => {
         const pressure = pressureOf(row.value, row.limit, row.direction);
         const utilPct = pressure === null ? null : Math.round(Math.min(pressure, 9.99) * 100);
-        const tone = utilTone(row.direction === "le" ? pressure : pressure);
+        const tone = utilTone(pressure);
         const valueText = row.value === null ? "—" : `${formatNumber(row.value, row.digits)}${row.unit}`;
         const limitText = row.limit === null ? "—" : `${formatNumber(row.limit, row.digits)}${row.unit}`;
         const tip =
