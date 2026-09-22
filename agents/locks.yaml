@@ -5,6 +5,13 @@
 # Release locks when done (remove entry or mark released).
 
 exclusive_locks:
+  - path: scripts/ci/check_ml_contract_drift.py
+    owner: AGENT-GIT
+    exclusive: true
+    scope: ML-CI-002 ML contract drift gate (released — task DONE, PR opened)
+    since: 2026-09-21
+    task: ML-CI-002
+    expiry: 2026-09-21
   - path: src/nexus_scalp/research/calibration.py
     owner: AGENT-ML-VALIDATION
     exclusive: true

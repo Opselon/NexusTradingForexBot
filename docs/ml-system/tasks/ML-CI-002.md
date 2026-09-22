@@ -2,8 +2,8 @@
 
 STREAM: STREAM L — OBSERVABILITY
 PRIORITY: P3
-STATUS: BLOCKED
-DEPENDENCIES: ML-ARCH-001, ML-PLAT-002
+STATUS: DONE (2026-09-21; 20/20 tests in tests/unit/test_ml_contract_drift.py, gate clean on committed tree, CI + local gate wired)
+DEPENDENCIES: ML-ARCH-001, ML-PLAT-002 (both DONE — the contract values pinned here are the ones those tasks settled: 50D active / 70D candidate, 3 trained classes, signed-bundle distribution)
 AGENT_ROLE: AGENT-GIT
 OWNERSHIP_SCOPE: scripts/ci/check_ml_contract_drift.py
 HUMAN_DECISION_REQUIRED: NO
@@ -78,8 +78,52 @@ Execute drift check; must complete in < 0.5 seconds.
 - Terminal execution output
 
 ## ACCEPTANCE_CRITERIA
-1. scripts/ci/check_ml_contract_drift.py passes with exit code 0.
-2. Any code change altering FEATURE_DIMENSION or TRAINED_CLASS_COUNT without updating docs/ml-system fails CI.
+1. [x] scripts/ci/check_ml_contract_drift.py passes with exit code 0.
+   - Evidence: `ML contract drift check clean: 8 canonical constants verified
+     against 4 contract docs (4.2 ms)` on the committed tree at HEAD
+     9fab7ff7; rc=0.
+2. [x] Any code change altering FEATURE_DIMENSION or TRAINED_CLASS_COUNT
+   without updating docs/ml-system fails CI.
+   - Evidence: tests/unit/test_ml_contract_drift.py
+     ::test_stale_doc_detected_when_class_count_changes and
+     ::test_stale_doc_detected_when_live_dimension_changes force the change in
+     a sandboxed source copy and assert the gate returns a STALE_DOC finding
+     naming the new value with a docs file:line citation. Wired into both
+     `.github/workflows/ci.yml` (ci-integrity lane) and the local pre-push
+     gate (`scripts/ci/check_local.py` stage [5b] `ml_contract_drift`) so no
+     CI-only gate class exists (gate_parity.py: 6/6 PASS, 0 drifts).
+
+## VERIFICATION_EVIDENCE
+- 20/20 tests pass (Python 3.11.16, pytest 9.1.1, slim venv, 0.23 s).
+- ruff check + ruff format --check + mypy clean on all touched files.
+- scripts/ci/verify_critical_suite_manifest.py: CRITICAL_SUITE_MANIFEST_OK,
+  222 paths.
+- scripts/ci/check_workflows.py --strict: 0 ERROR, 0 WARNING.
+- scripts/ci/check_dependency_drift.py: OK, 99 pins (unchanged).
+- BENCHMARK_PLAN: drift check measured 4.2 ms (< 0.5 s budget), and 5-run
+  average < 0.5 s asserted by test_benchmark_completes_under_half_second.
+- Determinism: two consecutive runs produce byte-identical findings
+  (test_check_is_deterministic).
+
+## DESIGN_NOTES (why the gate is shaped this way)
+- Direction of truth is SOURCE (matches 01_SYSTEM_CONTRACT.md §2 evidence
+  hierarchy). The gate never fails because a doc added a sentence; it fails
+  only when a doc asserts a value the source no longer holds, or when the
+  canonical declaration itself moved without a docs update.
+- Extraction is regex-on-source, NOT import: importing features/model
+  packages pulls torch+polars into a static CI lane that must stay
+  dependency-free (same design as check_torch_load_safety.py and
+  check_migration_safety.py). Pinned by test_gate_module_imports_no_project_dependencies.
+- Prose-immunity: `_assertes_contract_value` accepts only assignment/copula
+  shapes (`KEY = v`, `KEY: int = v`, `KEY is v`); past-tense mentions and
+  file references never fire (test_historical_prose_is_not_a_value_claim).
+- One real coverage gap found and FIXED (not synthetic): the contract suite
+  never cited the position-size ceiling anywhere in docs/ml-system. Added
+  §2.2 "Execution Ceiling (Position Safety Contract)" to
+  05_INFERENCE_FORWARDTEST_GOVERNANCE.md citing `HARD_MAX_LOTS = 10.0` and
+  `MAX_TOTAL_EXPOSURE = 1`, so the gate passes on real coverage rather than
+  by exception.
+
 
 ## ABORT_CONDITIONS
 None.
