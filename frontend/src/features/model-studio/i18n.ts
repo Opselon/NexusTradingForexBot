@@ -218,5 +218,22 @@ export const MESSAGES: FeatureMessages = {
   "model-studio.stress.stat_throughput": { fa: "توان عملیاتی", de: "Durchsatz", es: "Rendimiento", ar: "معدل الإنتاج" },
   "model-studio.stress.ladder_title": { fa: "نردبان صدک‌ها", de: "Perzentilleiter", es: "Escalera de percentiles", ar: "سلم المئينات" },
   "model-studio.stress.footer": { fa: "{n} تکرار در {d}D — تأخیر دُم در P99 باید در پنجرهٔ اعتبار سیگنال موتور بماند، وگرنه دروازهٔ SLA رد می‌شود.", de: "{n} Iterationen bei {d}D — die Tail-Latenz bei P99 muss im Signalgültigkeitsfenster der Engine bleiben, sonst fällt das SLA-Gate durch.", es: "{n} iteraciones en {d}D — la latencia de cola en P99 debe mantenerse dentro de la ventana de validez de señales del motor; de lo contrario, la puerta SLA falla.", ar: "{n} تكراراً في {d}D — يجب أن يبقى زمن الاستجابة الذيلي عند P99 ضمن نافذة صحة إشارة المحرك وإلا سقطت بوابة SLA." },
+  // ---- ArtifactLocationsPanel ----------------------------------------------
+  "model-studio.artifacts.title": { fa: "مکان‌یاب خروجی‌ها (ریشه‌های روی دیسک)", de: "Artefakt-Lokalisierung (Wurzeln auf der Festplatte)", es: "Localizador de artefactos (raíces en disco)", ar: "محدد المخرجات (جذور على القرص)" },
+  "model-studio.artifacts.roots_present": { fa: "{p}/{n} ریشه موجود", de: "{p}/{n} Wurzeln vorhanden", es: "{p}/{n} raíces presentes", ar: "{p}/{n} جذور موجودة" },
+  "model-studio.artifacts.endpoint_failed": { fa: "نقطهٔ پایانی artifact-locations پاسخ نداد", de: "artifact-locations-Endpunkt fehlgeschlagen", es: "falló el punto final artifact-locations", ar: "فشل الطرف artifact-locations" },
+  "model-studio.artifacts.empty_msg": { fa: "نقشهٔ خروجی‌ها در دسترس نیست.", de: "Artefakt-Karte nicht verfügbar.", es: "El mapa de artefactos no está disponible.", ar: "خريطة المخرجات غير متاحة." },
+  "model-studio.artifacts.empty_hint": { fa: "بک‌اند هیچ ریشهٔ خروجی‌ای گزارش نکرد.", de: "Das Backend hat keine Artefakt-Wurzeln gemeldet.", es: "El backend no reportó ninguna raíz de artefactos.", ar: "لم يُبلّغ الخادم بأي جذر للمخرجات." },
+  "model-studio.artifacts.repo_root": { fa: "ریشهٔ مخزن:", de: "Repository-Wurzel:", es: "Raíz del repositorio:", ar: "جذر المستودع:" },
+  "model-studio.artifacts.datasets": { fa: "مجموعه‌داده‌های بازار", de: "Marktdatenbestände", es: "Datasets de mercado", ar: "مجموعات بيانات السوق" },
+  "model-studio.artifacts.position_datasets": { fa: "مجموعه‌داده‌های پوزیشن", de: "Positionsdatenbestände", es: "Datasets de posiciones", ar: "مجموعات بيانات المراكز" },
+  "model-studio.artifacts.position_datasets_alt": { fa: "مجموعه‌داده‌های پوزیشن (data/positions)", de: "Positionsdatenbestände (data/positions)", es: "Datasets de posiciones (data/positions)", ar: "مجموعات بيانات المراكز (data/positions)" },
+  "model-studio.artifacts.model_checkpoints": { fa: "نقطه‌بازبینی‌های مدل", de: "Modell-Prüfpunkte", es: "Puntos de control del modelo", ar: "نقاط تحقق النموذج" },
+  "model-studio.artifacts.training_datasets": { fa: "مجموعه‌داده‌های آموزش", de: "Trainingsdatenbestände", es: "Datasets de entrenamiento", ar: "مجموعات بيانات التدريب" },
+  "model-studio.artifacts.registry_database": { fa: "مخزن SQLite", de: "SQLite-Registry", es: "Registro SQLite", ar: "سجل SQLite" },
+  "model-studio.artifacts.present": { fa: "موجود", de: "vorhanden", es: "presente", ar: "موجود" },
+  "model-studio.artifacts.absent": { fa: "غایب", de: "fehlt", es: "ausente", ar: "غائب" },
+  "model-studio.artifacts.files": { fa: "{n} پرونده", de: "{n} Dateien", es: "{n} archivos", ar: "{n} ملف" },
+  "model-studio.artifacts.footer": { fa: "مسیرها در سمت سرور از ریشهٔ مخزن استخراج و فقط‌خواندنی گزارش می‌شوند — رابط کاربری هرگز مسیری را به بک‌اند نمی‌فرستد.", de: "Pfade werden serverseitig aus der Repository-Wurzel aufgelöst und schreibgeschutzt gemeldet — die UI sendet niemals einen Pfad an das Backend.", es: "Las rutas se resuelven en el servidor desde la raíz del repositorio y se reportan solo de lectura: la interfaz nunca envía una ruta al backend.", ar: "تُحل المسارات على الخادم من جذر المستودع وتُبلَّغ للقراءة فقط — لا ترسل الواجهة أي مسارة إلى الخادم." },
   // __APPEND_BELOW__
 };
