@@ -1101,12 +1101,46 @@ def register_diagnostics_state_routes(
 
     @app.get("/api/db/manage/status")
     def db_manage_status() -> dict[str, Any]:
-        """Active provider + per-domain health (DATABASE MANAGEMENT panel)."""
+        """Active provider + per-domain health (DATABASE MANAGEMENT panel).
+
+        Carries `postgresql_driver_available` and a `hints` list so the UI can
+        explain a broken state instead of showing a bare "Warning": the active
+        provider can be postgresql while psycopg is absent or the connection
+        configuration was never stored (both observed 2026-09-23), and those
+        two faults have different fixes.
+        """
         try:
+            from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
             from nexus_scalp.database.health import health_snapshot, load_ui_config
 
             health = health_snapshot()
             ui = load_ui_config()
+            pg_available = PostgreSQLDriver.available()
+            hints: list[str] = []
+            if ui["provider"] == "postgresql":
+                if not pg_available:
+                    hints.append(
+                        "Active provider is postgresql but psycopg is not installed: "
+                        "run `pip install 'nexus[postgres]'` or switch back to sqlite."
+                    )
+                if not ui["postgres"]:
+                    hints.append(
+                        "No PostgreSQL connection configuration is stored — fill in "
+                        "the form below and Save config before migrating."
+                    )
+                if (
+                    pg_available
+                    and ui["postgres"]
+                    and health.get("overall")
+                    not in (
+                        "Healthy",
+                        "OK",
+                    )
+                ):
+                    hints.append(
+                        "PostgreSQL is configured but the server did not answer "
+                        "its health probe — check that it is running."
+                    )
             return serialize_enums(
                 {
                     "success": True,
@@ -1116,6 +1150,8 @@ def register_diagnostics_state_routes(
                     "domains": health["domains"],
                     "postgres": ui["postgres"],
                     "password_set": ui["password_set"],
+                    "postgresql_driver_available": pg_available,
+                    "hints": hints,
                 }
             )
         except Exception as e:
