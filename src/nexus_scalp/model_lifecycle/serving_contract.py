@@ -60,15 +60,15 @@ class IncompatibleArtifactError(RuntimeError):
 
 
 def _read_meta(model_path: Path) -> dict[str, Any] | None:
-    # The shipped bundles persist their descriptor under ``manifest.json``
-    # (see model_lifecycle promotion: ``model_sha256`` / ``manifest_version`` /
-    # trained-tensor keys). Any of the supported names satisfies the contract.
-    for name in ("model.meta.json", "meta.json", "manifest.json"):
-        p = (
-            model_path.with_name(name)
-            if name != "model.meta.json"
-            else model_path.with_suffix(".meta.json")
-        )
+    # The shipped bundles persist their descriptor under several names.
+    # ``model.meta.json`` is the provisioning sidecar stamped beside the
+    # weights; ``manifest.json`` is the digest manifest; ``meta.json`` is the
+    # legacy name. Probe the LITERAL sibling names first, then the
+    # stem-suffixed form (``scalpnet_active.meta.json``), since a real file
+    # named ``model.meta.json`` must never be shadowed by a stem rewrite.
+    literal = ("model.meta.json", "meta.json", "manifest.json")
+    for name in literal:
+        p = model_path.with_name(name)
         if p.exists():
             try:
                 record = json.loads(p.read_text(encoding="utf-8"))
@@ -76,6 +76,14 @@ def _read_meta(model_path: Path) -> dict[str, Any] | None:
                     return record
             except (OSError, ValueError):
                 return {"_unreadable": True}
+    p = model_path.with_suffix(".meta.json")
+    if p.exists():
+        try:
+            record = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(record, dict):
+                return record
+        except (OSError, ValueError):
+            return {"_unreadable": True}
     return None
 
 
@@ -155,7 +163,22 @@ def validate_serving_contract(
     checks["meta_parseable"] = True
 
     # --- feature dimension --------------------------------------------------
-    meta_dim = meta.get("feature_schema_dimension", meta.get("num_features"))
+    # Callers persist the dimension under several names: the serving metadata
+    # uses ``feature_schema_dimension`` / ``num_features``, while the
+    # provisioning manifest (and the e2e fixtures that mirror it) uses
+    # ``feature_dimension``. Accept all of them — the contract is about the
+    # value agreeing with the checkpoint tensor, not about the key spelling.
+    meta_dim = meta.get(
+        "feature_schema_dimension",
+        meta.get("feature_dimension", meta.get("num_features")),
+    )
+    if meta_dim is None and registry_row is not None:
+        # The governed registry row carries the same declared dimension under
+        # its own naming; it is authoritative for the artifact's identity.
+        meta_dim = registry_row.get(
+            "feature_dimension",
+            registry_row.get("feature_schema_dimension"),
+        )
     diag["meta_dim"] = meta_dim
     checks["dimension_ok"] = meta_dim is not None and int(meta_dim) == artifact_dim
     if not checks["dimension_ok"]:
