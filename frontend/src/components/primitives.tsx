@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { positionSide } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { useUiStore, type ToastItem } from "@/stores/uiStore";
 
 /** Health/status -> semantic badge level. Backend status strings are trusted;
@@ -86,23 +87,25 @@ export function Panel({
             </span>
           )}
         </span>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{right}</span>
+        <span style={{ marginInlineStart: "auto", display: "flex", gap: 8, alignItems: "center" }}>{right}</span>
       </div>
       <div className={`panel-body ${tight ? "tight" : ""}`}>{children}</div>
     </section>
   );
 }
 
-export function LoadingState({ label = "Loading backend state…" }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="state-block">
       <div className="spinner" />
-      <div>{label}</div>
+      <div>{label ?? t("ui.state.loading", "Loading backend state…")}</div>
     </div>
   );
 }
 
 export function ErrorState({ message, requestId, onRetry }: { message: string; requestId?: string | null; onRetry?: () => void }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="state-block error">
       <div className="glyph">⚠</div>
@@ -110,7 +113,7 @@ export function ErrorState({ message, requestId, onRetry }: { message: string; r
       {requestId && <div className="hint inline-mono">request_id: {requestId}</div>}
       {onRetry && (
         <button className="btn small" onClick={onRetry}>
-          Retry
+          {t("common.retry", "Retry")}
         </button>
       )}
     </div>
@@ -159,12 +162,13 @@ export function DataTable({ headers, children }: { headers: Array<{ label: strin
 
 /** Horizontal 0..1 probability meter rows (display of backend values only). */
 export function ProbBar({ rows }: { rows: Array<{ label: string; value: number | null; tone: "buy" | "sell" | "flat" }> }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="probbar">
       {rows.map((r) => (
         <div className="row" key={r.label}>
           <span className="lab">{r.label}</span>
-          <span className="track" role="img" aria-label={`${r.label} ${r.value ?? "unknown"}`}>
+          <span className="track" role="img" aria-label={`${r.label} ${r.value ?? t("ui.word.unknown", "UNKNOWN")}`}>
             <i className={r.tone} style={{ width: r.value === null ? 0 : `${Math.max(0, Math.min(1, r.value)) * 100}%` }} />
           </span>
           <span className="val">{r.value === null ? "—" : `${(r.value * 100).toFixed(1)}%`}</span>
@@ -221,6 +225,7 @@ export function ConfirmModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useI18n((s) => s.t);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
@@ -236,10 +241,10 @@ export function ConfirmModal({
         <div className="modal-body">{children}</div>
         <div className="modal-actions">
           <button className="btn" disabled={busy} onClick={onCancel}>
-            Cancel <kbd>esc</kbd>
+            {t("ux.confirm.cancel", "Cancel")} <kbd>esc</kbd>
           </button>
           <button className={`btn ${danger ? "danger" : "primary"}`} disabled={busy} onClick={onConfirm}>
-            {busy ? "sending…" : confirmLabel}
+            {busy ? t("ui.confirm.sending", "sending…") : confirmLabel}
           </button>
         </div>
       </div>

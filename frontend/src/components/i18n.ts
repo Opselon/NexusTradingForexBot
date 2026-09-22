@@ -9,7 +9,13 @@
  *   t("ui.x.y", "English source") — do NOT add `en` entries here.
  * - Registered centrally by src/lib/i18nMessages.ts (pre-wired; never edit
  *   that file). Components never import this file; they call t() instead.
+ * - ONE LINE per entry (no trailing comma after `ar:`): the parity gate's
+ *   ENTRY regex only accepts whitespace between the ar value and the brace.
  */
 import type { FeatureMessages } from "@/lib/i18n";
 
-export const MESSAGES: FeatureMessages = {};
+export const MESSAGES: FeatureMessages = {
+  "ui.word.unknown": { fa: "نامعلوم", de: "UNBEKANNT", es: "DESCONOCIDO", ar: "غير معروف" },
+  "ui.state.loading": { fa: "در حال بارگذاری وضعیت بک‌اند…", de: "Backend-Status wird geladen…", es: "Cargando el estado del backend…", ar: "جارٍ تحميل حالة الخادم…" },
+  "ui.confirm.sending": { fa: "در حال ارسال…", de: "wird gesendet…", es: "enviando…", ar: "جارٍ الإرسال…" },
+};
