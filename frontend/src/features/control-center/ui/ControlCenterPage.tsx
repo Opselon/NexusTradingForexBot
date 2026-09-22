@@ -31,12 +31,19 @@ import { formatDateTime, formatNumber, formatPrice, formatAgeMs } from "@/lib/fo
 import { CommandResultLine, DistBars, Drawer, FreshnessCaption, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { arr, bool, notRecorded, num, obj, str, type OperatorDecisionRow } from "../model";
 import { controlCenterQueries, controlCenterUseCases } from "../useCases";
+import { useI18n } from "@/stores/i18nStore";
 
 type Tab = "overview" | "decisions" | "funnel" | "no-trade" | "orders" | "calibration";
 const LIVE_CONFIRM_TEXT = "LIVE";
 
 export default function ControlCenterPage(props: ShellPageProps) {
   void props;
+  const t = useI18n((s) => s.t);
+  /** model.notRecorded sentinel — rendered translated (data itself untouched). */
+  const nr = (v: string | number | null | undefined): string => {
+    const s = notRecorded(v);
+    return s === "NOT RECORDED" ? t("control-center.truth.not_recorded", "NOT RECORDED") : s;
+  };
   const [tab, setTab] = useState<Tab>("overview");
   const [hours, setHours] = useState<number | undefined>(72);
   const [actionFilter, setActionFilter] = useState("");
@@ -105,26 +112,26 @@ export default function ControlCenterPage(props: ShellPageProps) {
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>Control Center</h2>
-        <span className="muted small">operator evidence console (read-only ledger views + guarded engine control)</span>
-        <span className={`badge ${isLive ? "bad" : "good"}`} title="mode banner">{mode}</span>
+        <h2>{t("nav.feature.control-center", "Control Center")}</h2>
+        <span className="muted small">{t("control-center.page.subtitle", "operator evidence console (read-only ledger views + guarded engine control)")}</span>
+        <span className={`badge ${isLive ? "bad" : "good"}`} title={t("control-center.a11y.mode_banner", "mode banner")}>{mode}</span>
         <FreshnessCaption timestamp={str(rt.snapshot_timestamp)} source="operator/summary" isFetching={summaryQ.isFetching} error={summaryQ.isError} />
       </div>
 
       {isLive && (
         <div className="banner down" role="alert">
-          LIVE mode dispatches real orders to the broker. Verify risk state before any operator action.
+          {t("control-center.banner.live", "LIVE mode dispatches real orders to the broker. Verify risk state before any operator action.")}
         </div>
       )}
 
       <Segmented
         options={[
-          { id: "overview" as const, label: "Overview" },
-          { id: "decisions" as const, label: "Decisions" },
-          { id: "funnel" as const, label: "Funnel" },
-          { id: "no-trade" as const, label: "NO_TRADE" },
-          { id: "orders" as const, label: "Orders" },
-          { id: "calibration" as const, label: "Calibration" },
+          { id: "overview" as const, label: t("control-center.tab.overview", "Overview") },
+          { id: "decisions" as const, label: t("control-center.tab.decisions", "Decisions") },
+          { id: "funnel" as const, label: t("control-center.tab.funnel", "Funnel") },
+          { id: "no-trade" as const, label: t("control-center.tab.no_trade", "NO_TRADE") },
+          { id: "orders" as const, label: t("control-center.tab.orders", "Orders") },
+          { id: "calibration" as const, label: t("control-center.tab.calibration", "Calibration") },
         ]}
         value={tab}
         onChange={setTab}
@@ -134,43 +141,43 @@ export default function ControlCenterPage(props: ShellPageProps) {
         {tab === "overview" && (
           <>
             <div className="grid cols-4">
-              <MetricCard label="Runtime" value={<StatusBadge status={running ? "RUNNING" : "STOPPED"} />} sub={str(obj(health.details).engine) ?? undefined} />
+              <MetricCard label={t("control-center.kpi.runtime", "Runtime")} value={<StatusBadge status={running ? "RUNNING" : "STOPPED"} />} sub={str(obj(health.details).engine) ?? undefined} />
               <MetricCard
-                label="Data (tick)"
+                label={t("control-center.kpi.data_tick", "Data (tick)")}
                 value={<StatusBadge status={bool(rt.tick_stale) ? "STALE" : rt.tick_freshness_ms !== undefined && rt.tick_freshness_ms !== null ? "READY" : "UNKNOWN"} />}
-                sub={num(rt.tick_freshness_ms) === null ? "freshness NOT RECORDED" : `tick age ${formatAgeMs(num(rt.tick_freshness_ms))}`}
+                sub={num(rt.tick_freshness_ms) === null ? t("control-center.kpi.freshness_not_recorded", "freshness NOT RECORDED") : t("control-center.kpi.tick_age", "tick age {age}", { age: formatAgeMs(num(rt.tick_freshness_ms)) })}
               />
-              <MetricCard label="Model" value={<StatusBadge status={str(subs.model)} />} sub={str(obj(health.details).model) ?? undefined} />
-              <MetricCard label="Database / MT5" value={<StatusBadge status={str(subs.database)} />} sub={`mt5: ${str(subs.mt5) ?? "—"}`} />
+              <MetricCard label={t("control-center.kpi.model", "Model")} value={<StatusBadge status={str(subs.model)} />} sub={str(obj(health.details).model) ?? undefined} />
+              <MetricCard label={t("control-center.kpi.db_mt5", "Database / MT5")} value={<StatusBadge status={str(subs.database)} />} sub={t("control-center.kpi.mt5", "mt5: {v}", { v: str(subs.mt5) ?? "—" })} />
             </div>
             <div className="grid cols-2">
-              <Panel title="Runtime identity (release snapshot)" tight>
+              <Panel title={t("control-center.panel.identity", "Runtime identity (release snapshot)")} tight>
                 <dl className="kv">
-                  <InfoRow label="version" value={notRecorded(str(idt.version))} />
-                  <InfoRow label="commit" value={notRecorded(`${str(idt.commit) ?? ""}${str(idt.commit_status) ? ` (${str(idt.commit_status)})` : ""}`)} />
-                  <InfoRow label="channel" value={notRecorded(str(idt.channel))} />
-                  <InfoRow label="symbol / regime" value={`${notRecorded(str(rt.symbol))} / ${notRecorded(str(rt.regime))}`} />
-                  <InfoRow label="bid / ask / spread" value={`${formatPrice(num(rt.bid), 2)} / ${formatPrice(num(rt.ask), 2)} / ${formatPrice(num(rt.spread), 2)}`} />
-                  <InfoRow label="provenance.price" value={str(obj(rt.provenance).price) ?? "NOT RECORDED"} />
+                  <InfoRow label={t("control-center.label.version", "version")} value={nr(str(idt.version))} />
+                  <InfoRow label={t("control-center.label.commit", "commit")} value={nr(`${str(idt.commit) ?? ""}${str(idt.commit_status) ? ` (${str(idt.commit_status)})` : ""}`)} />
+                  <InfoRow label={t("control-center.label.channel", "channel")} value={nr(str(idt.channel))} />
+                  <InfoRow label={t("control-center.label.symbol_regime", "symbol / regime")} value={`${nr(str(rt.symbol))} / ${nr(str(rt.regime))}`} />
+                  <InfoRow label={t("control-center.label.bid_ask_spread", "bid / ask / spread")} value={`${formatPrice(num(rt.bid), 2)} / ${formatPrice(num(rt.ask), 2)} / ${formatPrice(num(rt.spread), 2)}`} />
+                  <InfoRow label="provenance.price" value={str(obj(rt.provenance).price) ?? t("control-center.truth.not_recorded", "NOT RECORDED")} />
                 </dl>
               </Panel>
-              <Panel title="Ledger stats (bounded recent window)" tight>
+              <Panel title={t("control-center.panel.ledger_stats", "Ledger stats (bounded recent window)")} tight>
                 {s?.ledger?.available === false ? (
-                  <EmptyState message="ledger unavailable" hint={s.ledger.reason ?? "LEDGER_UNAVAILABLE"} />
+                  <EmptyState message={t("control-center.empty.ledger_unavailable", "ledger unavailable")} hint={s.ledger.reason ?? "LEDGER_UNAVAILABLE"} />
                 ) : (
                   <>
                     <dl className="kv" style={{ marginBottom: 8 }}>
-                      <InfoRow label="scanned rows" value={String(s?.ledger?.scanned_rows ?? "—")} />
-                      <InfoRow label="latest decision" value={formatDateTime(s?.ledger?.latest_decision_at)} />
+                      <InfoRow label={t("control-center.label.scanned_rows", "scanned rows")} value={String(s?.ledger?.scanned_rows ?? "—")} />
+                      <InfoRow label={t("control-center.label.latest_decision", "latest decision")} value={formatDateTime(s?.ledger?.latest_decision_at)} />
                     </dl>
                     <DistBars rows={Object.entries(obj(s?.ledger?.actions)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))} />
                   </>
                 )}
               </Panel>
             </div>
-            <Panel title="Warnings (ledger-visible, backend-derived)" tight>
+            <Panel title={t("control-center.panel.warnings", "Warnings (ledger-visible, backend-derived)")} tight>
               {arr(s?.warnings).length === 0 ? (
-                <EmptyState message="No warnings reported." />
+                <EmptyState message={t("control-center.empty.no_warnings", "No warnings reported.")} />
               ) : (
                 <div style={{ display: "grid", gap: 8 }}>
                   {arr(s?.warnings).map((w, i) => (
@@ -179,22 +186,22 @@ export default function ControlCenterPage(props: ShellPageProps) {
                         <SeverityBadge severity={str(w.severity)} />
                         <span className="small">{str(w.what)}</span>
                       </div>
-                      <div className="tiny muted">why: {str(w.why) ?? "—"} · impact: {str(w.impact) ?? "—"} · do: {str(w.what_to_do) ?? "—"}</div>
+                      <div className="tiny muted">{t("control-center.warn.why", "why")}: {str(w.why) ?? "—"} · {t("control-center.warn.impact", "impact")}: {str(w.impact) ?? "—"} · {t("control-center.warn.todo", "do")}: {str(w.what_to_do) ?? "—"}</div>
                     </div>
                   ))}
                 </div>
               )}
             </Panel>
-            <Panel title="Engine control (guarded)" accent tight>
+            <Panel title={t("control-center.panel.engine_control", "Engine control (guarded)")} accent tight>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <button className="btn primary" disabled={engineCmd.state.running || running} onClick={() => setStartConfirm(true)}>
-                  ▶ Start engine
+                  {t("control-center.action.start_engine", "▶ Start engine")}
                 </button>
                 <button className="btn danger" disabled={engineCmd.state.running || !running} onClick={() => setStopConfirm(true)}>
-                  ■ Stop engine (kill switch)
+                  {t("control-center.action.stop_engine", "■ Stop engine (kill switch)")}
                 </button>
                 <select className="select" style={{ width: 130 }} value={modeTarget} onChange={(e) => setModeTarget(e.target.value)}>
-                  <option value="">mode switch…</option>
+                  <option value="">{t("control-center.action.mode_switch", "mode switch…")}</option>
                   {["PAPER", "LIVE", "SHADOW"].map((m) => (
                     <option key={m} value={m}>
                       {m}
@@ -206,12 +213,11 @@ export default function ControlCenterPage(props: ShellPageProps) {
                   disabled={!modeTarget || modeCmd.state.running || modeTarget.toUpperCase() === mode}
                   onClick={() => void applyMode()}
                 >
-                  apply
+                  {t("control-center.action.apply", "apply")}
                 </button>
               </div>
               <div className="tiny muted" style={{ marginTop: 6 }}>
-                Commands go to /api/engine/toggle + /api/engine/mode (BUG-148 hot-swap path). The UI never shows a locally-changed state — the next
-                authoritative snapshot decides.
+                {t("control-center.panel.engine_commands_note", "Commands go to /api/engine/toggle + /api/engine/mode (BUG-148 hot-swap path). The UI never shows a locally-changed state — the next authoritative snapshot decides.")}
               </div>
               <CommandResultLine state={engineCmd.state} />
               <CommandResultLine state={modeCmd.state} />
@@ -221,12 +227,12 @@ export default function ControlCenterPage(props: ShellPageProps) {
 
         {tab === "decisions" && (
           <Panel
-            title="Decision observatory (audit_signals, read-only)"
+            title={t("control-center.panel.decisions", "Decision observatory (audit_signals, read-only)")}
             right={
               <div style={{ display: "flex", gap: 6 }}>
-                <input className="input" style={{ width: 150 }} placeholder="search" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input className="input" style={{ width: 150 }} placeholder={t("control-center.action.search", "search")} value={search} onChange={(e) => setSearch(e.target.value)} />
                 <select className="select" style={{ width: 120 }} value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
-                  <option value="">action: any</option>
+                  <option value="">{t("control-center.filter.action_any", "action: any")}</option>
                   {["BUY", "SELL", "NO_TRADE"].map((a) => (
                     <option key={a} value={a}>
                       {a}
@@ -247,22 +253,22 @@ export default function ControlCenterPage(props: ShellPageProps) {
             {decisionsQ.isPending ? (
               <Skeleton count={5} />
             ) : decisionsQ.isError ? (
-              <ErrorState message={decisionsQ.error instanceof Error ? decisionsQ.error.message : "decisions failed"} onRetry={() => void decisionsQ.refetch()} />
+              <ErrorState message={decisionsQ.error instanceof Error ? decisionsQ.error.message : t("control-center.err.decisions", "decisions failed")} onRetry={() => void decisionsQ.refetch()} />
             ) : decisionsQ.data?.available === false ? (
-              <EmptyState message="ledger unavailable" />
+              <EmptyState message={t("control-center.empty.ledger_unavailable", "ledger unavailable")} />
             ) : (decisionsQ.data?.rows ?? []).length === 0 ? (
-              <EmptyState message="No decisions match the filters." />
+              <EmptyState message={t("control-center.empty.no_decisions", "No decisions match the filters.")} />
             ) : (
               <DataTable
                 headers={[
-                  { label: "id", num: true },
-                  { label: "symbol" },
-                  { label: "action" },
-                  { label: "conf", num: true },
-                  { label: "stage" },
-                  { label: "gate" },
-                  { label: "reason" },
-                  { label: "at" },
+                  { label: t("control-center.th.id", "id"), num: true },
+                  { label: t("control-center.th.symbol", "symbol") },
+                  { label: t("control-center.th.action", "action") },
+                  { label: t("control-center.th.conf", "conf"), num: true },
+                  { label: t("control-center.th.stage", "stage") },
+                  { label: t("control-center.th.gate", "gate") },
+                  { label: t("control-center.th.reason", "reason") },
+                  { label: t("control-center.th.at", "at") },
                   { label: "" },
                 ]}
               >
@@ -273,7 +279,7 @@ export default function ControlCenterPage(props: ShellPageProps) {
                     <td>
                       <StatusBadge status={r.action} />
                     </td>
-                    <td className="num tiny">{r.confidence == null ? "NOT RECORDED" : formatNumber(r.confidence, 3)}</td>
+                    <td className="num tiny">{r.confidence == null ? t("control-center.truth.not_recorded", "NOT RECORDED") : formatNumber(r.confidence, 3)}</td>
                     <td className="tiny">{r.decision_stage ?? "—"}</td>
                     <td className="tiny">{r.blocked_by ?? ""}</td>
                     <td className="tiny muted" title={r.reason_code ?? ""}>
@@ -282,7 +288,7 @@ export default function ControlCenterPage(props: ShellPageProps) {
                     <td className="tiny">{formatDateTime(r.generated_at)}</td>
                     <td>
                       <button className="btn small ghost" disabled={r.payload_ok === false} onClick={() => setDetailId(num(r.id) ?? null)}>
-                        {r.payload_ok === false ? "payload ✗" : "inspect"}
+                        {r.payload_ok === false ? t("control-center.action.payload_bad", "payload ✗") : t("control-center.action.inspect", "inspect")}
                       </button>
                     </td>
                   </tr>
@@ -290,39 +296,38 @@ export default function ControlCenterPage(props: ShellPageProps) {
               </DataTable>
             )}
             <div className="tiny faint" style={{ marginTop: 6 }}>
-              rows with unparseable payload are kept and flagged (never silently dropped) — inspect disabled for them by the backend contract.
+              {t("control-center.decisions.footnote", "rows with unparseable payload are kept and flagged (never silently dropped) — inspect disabled for them by the backend contract.")}
             </div>
           </Panel>
         )}
 
         {tab === "funnel" && (
-          <Panel title="Terminal-stage funnel" tight>
+          <Panel title={t("control-center.panel.funnel", "Terminal-stage funnel")} tight>
             {funnelQ.isPending ? (
               <Skeleton count={4} />
             ) : funnelQ.isError ? (
-              <EmptyState message="funnel endpoint failed" />
+              <EmptyState message={t("control-center.err.funnel", "funnel endpoint failed")} />
             ) : (
               <>
                 <div className="tiny muted" style={{ marginBottom: 8 }}>
-                  {funnelQ.data?.note ?? "TERMINAL distributions — the ledger records the final blocking stage per decision."}
+                  funnelQ.data?.note ?? t("control-center.empty.terminal_note", "TERMINAL distributions — the ledger records the final blocking stage per decision.")
                 </div>
                 <div className="grid cols-3">
                   <div>
-                    <div className="section-title">actions</div>
+                    <div className="section-title">{t("control-center.section.actions", "actions")}</div>
                     <DistBars rows={(funnelQ.data?.actions ?? []).map((a) => ({ label: a.action ?? "—", count: a.count ?? 0 }))} tone="var(--green)" />
                   </div>
                   <div>
-                    <div className="section-title">stages</div>
+                    <div className="section-title">{t("control-center.section.stages", "stages")}</div>
                     <DistBars rows={(funnelQ.data?.stages ?? []).map((a) => ({ label: a.stage ?? "—", count: a.count ?? 0 }))} tone="var(--amber)" />
                   </div>
                   <div>
-                    <div className="section-title">gates</div>
+                    <div className="section-title">{t("control-center.section.gates", "gates")}</div>
                     <DistBars rows={(funnelQ.data?.gates ?? []).map((a) => ({ label: a.gate ?? "—", count: a.count ?? 0 }))} tone="var(--red)" />
                   </div>
                 </div>
                 <div className="tiny faint" style={{ marginTop: 6 }}>
-                  scanned {String(funnelQ.data?.scanned_rows ?? "—")} rows / total {String(funnelQ.data?.total ?? "—")} — summary numbers reconcile
-                  against the same window.
+                  {t("control-center.funnel.footnote", "scanned {scanned} rows / total {total} — summary numbers reconcile against the same window.", { scanned: String(funnelQ.data?.scanned_rows ?? "—"), total: String(funnelQ.data?.total ?? "—") })}
                 </div>
               </>
             )}
@@ -330,28 +335,28 @@ export default function ControlCenterPage(props: ShellPageProps) {
         )}
 
         {tab === "no-trade" && (
-          <Panel title="NO_TRADE forensics" tight>
+          <Panel title={t("control-center.panel.no_trade", "NO_TRADE forensics")} tight>
             {noTradeQ.isPending ? (
               <Skeleton count={4} />
             ) : noTradeQ.isError ? (
-              <EmptyState message="no-trade endpoint failed" />
+              <EmptyState message={t("control-center.err.no_trade", "no-trade endpoint failed")} />
             ) : (
               <div className="grid cols-2">
                 <div>
-                  <div className="section-title">blocking gates</div>
+                  <div className="section-title">{t("control-center.section.blocking_gates", "blocking gates")}</div>
                   <DistBars rows={(noTradeQ.data?.gates ?? []).map((g) => ({ label: g.gate ?? "—", count: g.count ?? 0 }))} tone="var(--red)" />
                   <div className="section-title" style={{ marginTop: 8 }}>
-                    regimes
+                    {t("control-center.section.regimes", "regimes")}
                   </div>
                   <DistBars rows={(noTradeQ.data?.regimes ?? []).map((g) => ({ label: g.regime ?? "—", count: g.count ?? 0 }))} />
                 </div>
                 <div>
-                  <div className="section-title">hourly trend</div>
+                  <div className="section-title">{t("control-center.section.hourly_trend", "hourly trend")}</div>
                   <DistBars rows={(noTradeQ.data?.hourly_trend ?? []).map((g) => ({ label: (g.hour ?? "—").slice(5, 13), count: g.count ?? 0 }))} tone="var(--violet)" />
                   <div className="section-title" style={{ marginTop: 8 }}>
-                    recent examples
+                    {t("control-center.section.recent_examples", "recent examples")}
                   </div>
-                  <DataTable headers={[{ label: "at" }, { label: "reason" }, { label: "gate" }]}>
+                  <DataTable headers={[{ label: t("control-center.th.at", "at") }, { label: t("control-center.th.reason", "reason") }, { label: t("control-center.th.gate", "gate") }]}>
                     {arr(noTradeQ.data?.recent).map((r, i) => (
                       <tr key={i}>
                         <td className="tiny">{formatDateTime(str(r.generated_at))}</td>
@@ -361,7 +366,7 @@ export default function ControlCenterPage(props: ShellPageProps) {
                     ))}
                   </DataTable>
                   <div className="tiny faint" style={{ marginTop: 4 }}>
-                    model direction unresolved: {String(noTradeQ.data?.model_direction_unresolved ?? "—")}
+                    {t("control-center.nt.unresolved", "model direction unresolved: {n}", { n: String(noTradeQ.data?.model_direction_unresolved ?? "—") })}
                   </div>
                 </div>
               </div>
@@ -370,27 +375,27 @@ export default function ControlCenterPage(props: ShellPageProps) {
         )}
 
         {tab === "orders" && (
-          <Panel title="Dispatch evidence (audit_orders) + latency" tight>
+          <Panel title={t("control-center.panel.orders", "Dispatch evidence (audit_orders) + latency")} tight>
             {ordersQ.isPending ? (
               <Skeleton count={5} />
             ) : ordersQ.isError ? (
-              <ErrorState message={ordersQ.error instanceof Error ? ordersQ.error.message : "orders failed"} onRetry={() => void ordersQ.refetch()} />
+              <ErrorState message={ordersQ.error instanceof Error ? ordersQ.error.message : t("control-center.err.orders", "orders failed")} onRetry={() => void ordersQ.refetch()} />
             ) : ordersQ.data?.available === false ? (
-              <EmptyState message="ledger unavailable" />
+              <EmptyState message={t("control-center.empty.ledger_unavailable", "ledger unavailable")} />
             ) : (
               <>
                 <div style={{ marginBottom: 8 }}>
                   <MetricCard
-                    label="latency p50 / p95 / p99 (ms)"
+                    label={t("control-center.kpi.latency", "latency p50 / p95 / p99 (ms)")}
                     value={
                       ordersQ.data?.latency
                         ? `${formatNumber(ordersQ.data.latency.p50_ms ?? NaN, 1)} / ${formatNumber(ordersQ.data.latency.p95_ms ?? NaN, 1)} / ${formatNumber(ordersQ.data.latency.p99_ms ?? NaN, 1)}`
-                        : "NOT RECORDED"
+                        : t("control-center.truth.not_recorded", "NOT RECORDED")
                     }
-                    sub={`n=${String(ordersQ.data?.latency?.n ?? 0)} · ${String(ordersQ.data?.count ?? 0)} rows`}
+                    sub={t("control-center.kpi.n_rows", "n={n} · {rows} rows", { n: String(ordersQ.data?.latency?.n ?? 0), rows: String(ordersQ.data?.count ?? 0) })}
                   />
                 </div>
-                <DataTable headers={[{ label: "ts" }, { label: "ticket", num: true }, { label: "action" }, { label: "price", num: true }, { label: "vol", num: true }, { label: "latency", num: true }, { label: "mode" }, { label: "reason" }]}>
+                <DataTable headers={[{ label: t("control-center.th.ts", "ts") }, { label: t("control-center.th.ticket", "ticket"), num: true }, { label: t("control-center.th.action", "action") }, { label: t("control-center.th.price", "price"), num: true }, { label: t("control-center.th.vol", "vol"), num: true }, { label: t("control-center.th.latency", "latency"), num: true }, { label: t("control-center.th.mode", "mode") }, { label: t("control-center.th.reason", "reason") }]}>
                   {arr(ordersQ.data?.rows).map((o, i) => (
                     <tr key={i}>
                       <td className="tiny">{formatDateTime(str(o.timestamp))}</td>
@@ -412,25 +417,28 @@ export default function ControlCenterPage(props: ShellPageProps) {
         )}
 
         {tab === "calibration" && (
-          <Panel title="Calibration monitor (identity-bound serving model)" right={<span className="tiny muted">/api/operator/calibration</span>} tight>
+          <Panel title={t("control-center.panel.calibration", "Calibration monitor (identity-bound serving model)")} right={<span className="tiny muted">/api/operator/calibration</span>} tight>
             {calibrationQ.isPending ? (
               <Skeleton count={4} />
             ) : calibrationQ.isError ? (
-              <EmptyState message={calibrationQ.error instanceof Error ? calibrationQ.error.message : "calibration monitor failed"} />
+              <EmptyState message={calibrationQ.error instanceof Error ? calibrationQ.error.message : t("control-center.err.calibration", "calibration monitor failed")} />
             ) : calibrationQ.data?.available !== true ? (
-              <EmptyState message="calibration monitor not available" hint="the endpoint answers available:false when the artifact is missing" />
+              <EmptyState
+              message={t("control-center.empty.calibration_unavailable", "calibration monitor not available")}
+              hint={t("control-center.empty.calibration_hint", "the endpoint answers available:false when the artifact is missing")}
+            />
             ) : (
               <>
                 <div className="grid cols-4">
-                  <MetricCard label="calibration" value={<StatusPill status={calibrationQ.data.calibration_status} />} sub={`serving fp ${calibrationQ.data.serving_fingerprint ?? "—"}`} />
-                  <MetricCard label="artifact" value={calibrationQ.data.artifact_status ?? "—"} tone={calibrationQ.data.artifact_status === "PRESENT" ? "pos" : "neg"} sub={`collector ${calibrationQ.data.collector_status ?? "—"}`} />
+                  <MetricCard label={t("control-center.kpi.calibration", "calibration")} value={<StatusPill status={calibrationQ.data.calibration_status} />} sub={t("control-center.kpi.serving_fp", "serving fp {fp}", { fp: calibrationQ.data.serving_fingerprint ?? "—" })} />
+                  <MetricCard label={t("control-center.kpi.artifact", "artifact")} value={calibrationQ.data.artifact_status ?? "—"} tone={calibrationQ.data.artifact_status === "PRESENT" ? "pos" : "neg"} sub={t("control-center.kpi.collector", "collector {v}", { v: calibrationQ.data.collector_status ?? "—" })} />
                   <MetricCard
-                    label="splits (cal/val)"
+                    label={t("control-center.kpi.splits", "splits (cal/val)")}
                     value={`${String(calibrationQ.data.calibration_split ?? 0)}/${String(calibrationQ.data.validation_split ?? 0)}`}
-                    sub={`required ${String(calibrationQ.data.required_per_split ?? "—")} · deficit ${String(calibrationQ.data.deficit ?? 0)}`}
+                    sub={t("control-center.kpi.required_deficit", "required {required} · deficit {deficit}", { required: String(calibrationQ.data.required_per_split ?? "—"), deficit: String(calibrationQ.data.deficit ?? 0) })}
                   />
                   <MetricCard
-                    label="risk multiplier (probe)"
+                    label={t("control-center.kpi.risk_multiplier", "risk multiplier (probe)")}
                     value={formatNumber(calibrationQ.data.risk_multiplier ?? NaN, 3)}
                     sub={`ece ${formatNumber(calibrationQ.data.ece ?? NaN, 3)} · brier ${formatNumber(calibrationQ.data.brier ?? NaN, 3)}`}
                   />
@@ -446,9 +454,9 @@ export default function ControlCenterPage(props: ShellPageProps) {
 
       {(startConfirm || stopConfirm) && (
         <ConfirmModal
-          title={stopConfirm ? "STOP the engine (kill switch)" : "Start the engine"}
+          title={stopConfirm ? t("control-center.confirm.stop_title", "STOP the engine (kill switch)") : t("control-center.confirm.start_title", "Start the engine")}
           danger={stopConfirm}
-          confirmLabel={stopConfirm ? "Stop engine" : "Start engine"}
+          confirmLabel={stopConfirm ? t("control-center.confirm.stop", "Stop engine") : t("control-center.confirm.start", "Start engine")}
           busy={engineCmd.state.running}
           onCancel={() => {
             setStopConfirm(false);
@@ -464,27 +472,27 @@ export default function ControlCenterPage(props: ShellPageProps) {
         >
           <div className="small">
             {stopConfirm
-              ? "Stops the engine loop: no new decisions or dispatches. Open positions remain under broker/exits — closing them is a separate explicit action on the Positions page."
-              : "Starts the engine loop via the canonical async start path (BUG-239). The backend response decides."}
+              ? t("control-center.confirm.stop_body", "Stops the engine loop: no new decisions or dispatches. Open positions remain under broker/exits — closing them is a separate explicit action on the Positions page.")
+              : t("control-center.confirm.start_body", "Starts the engine loop via the canonical async start path (BUG-239). The backend response decides.")}
           </div>
         </ConfirmModal>
       )}
 
       {modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT && (
         <ConfirmModal
-          title="Switch execution mode to LIVE"
+          title={t("control-center.live.title", "Switch execution mode to LIVE")}
           danger
-          confirmLabel="abort switch"
+          confirmLabel={t("control-center.live.abort", "abort switch")}
           busy={false}
           onCancel={() => setModeTarget("")}
           onConfirm={() => setModeTarget("")}
         >
           <div className="confirm-box">
-            <div className="small">LIVE dispatches real orders. Type “{LIVE_CONFIRM_TEXT}” below the button to arm the switch (legacy parity guard).</div>
+            <div className="small">{t("control-center.live.type_hint", "LIVE dispatches real orders. Type “{w}” below the button to arm the switch (legacy parity guard).", { w: LIVE_CONFIRM_TEXT })}</div>
             <div className="row">
               <input className="input" style={{ width: 160 }} value={liveConfirm} onChange={(e) => setLiveConfirm(e.target.value)} placeholder={LIVE_CONFIRM_TEXT} />
               <button className="btn small danger" disabled={liveConfirm !== LIVE_CONFIRM_TEXT} onClick={() => void applyMode()}>
-                switch to LIVE
+                {t("control-center.live.switch", "switch to LIVE")}
               </button>
             </div>
           </div>
@@ -510,6 +518,12 @@ export default function ControlCenterPage(props: ShellPageProps) {
 
 /** One-decision inspector: full payload + correlated orders (method disclosed). */
 function DecisionInspector({ id, onClose }: { id: number; onClose: () => void }) {
+  const t = useI18n((s) => s.t);
+  /** model.notRecorded sentinel — rendered translated (data itself untouched). */
+  const nr = (v: string | number | null | undefined): string => {
+    const s = notRecorded(v);
+    return s === "NOT RECORDED" ? t("control-center.truth.not_recorded", "NOT RECORDED") : s;
+  };
   const detailQ = useQuery({
     queryKey: ["control-center", "decision", id],
     queryFn: ({ signal }) => controlCenterQueries.decisionDetail(id, signal),
@@ -518,44 +532,44 @@ function DecisionInspector({ id, onClose }: { id: number; onClose: () => void })
   const d = obj(detailQ.data?.decision);
   const probs = obj(d.probabilities);
   return (
-    <Drawer title={`Decision #${id} — evidence`} onClose={onClose}>
+    <Drawer title={t("control-center.inspector.title", "Decision #{id} — evidence", { id: String(id) })} onClose={onClose}>
       {detailQ.isPending ? (
         <Skeleton count={4} />
       ) : detailQ.data?.available === false ? (
-        <EmptyState message={str(obj(detailQ.data?.error).reason) ?? "decision not found"} />
+        <EmptyState message={str(obj(detailQ.data?.error).reason) ?? t("control-center.empty.decision_not_found", "decision not found")} />
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
-          <Panel title="Ledger row" tight>
+          <Panel title={t("control-center.panel.ledger_row", "Ledger row")} tight>
             <dl className="kv">
-              <InfoRow label="action / mode" value={`${notRecorded(str(d.action))} / ${notRecorded(str(d.execution_mode))}`} />
-              <InfoRow label="confidence" value={notRecorded(str(d.confidence))} />
-              <InfoRow label="stage / blocked_by" value={`${notRecorded(str(d.decision_stage))} / ${notRecorded(str(d.blocked_by))}`} />
-              <InfoRow label="reason" value={notRecorded(str(d.reason_code))} />
-              <InfoRow label="request_id" value={<span className="inline-mono tiny">{notRecorded(str(d.request_id))}</span>} />
+              <InfoRow label={t("control-center.label.action_mode", "action / mode")} value={`${nr(str(d.action))} / ${nr(str(d.execution_mode))}`} />
+              <InfoRow label={t("control-center.label.confidence", "confidence")} value={nr(str(d.confidence))} />
+              <InfoRow label="stage / blocked_by" value={`${nr(str(d.decision_stage))} / ${nr(str(d.blocked_by))}`} />
+              <InfoRow label={t("control-center.label.reason", "reason")} value={nr(str(d.reason_code))} />
+              <InfoRow label="request_id" value={<span className="inline-mono tiny">{nr(str(d.request_id))}</span>} />
             </dl>
           </Panel>
-          <Panel title="Model probabilities (NOT RECORDED when absent)" tight>
+          <Panel title={t("control-center.panel.model_probs", "Model probabilities (NOT RECORDED when absent)")} tight>
             {bool(d.payload_ok) === false ? (
-              <EmptyState message="payload unparseable — kept with payload_ok:false (never fabricated)" />
+              <EmptyState message={t("control-center.empty.payload_unparseable", "payload unparseable — kept with payload_ok:false (never fabricated)")} />
             ) : (
               <dl className="kv">
-                <InfoRow label="P(buy)" value={notRecorded(str(probs.buy))} />
-                <InfoRow label="P(sell)" value={notRecorded(str(probs.sell))} />
-                <InfoRow label="P(no_trade)" value={notRecorded(str(probs.no_trade))} />
-                <InfoRow label="P(wait)" value={notRecorded(str(probs.wait))} />
-                <InfoRow label="model_action" value={notRecorded(str(probs.model_action))} />
-                <InfoRow label="confidence_source" value={notRecorded(str(obj(probs.raw).source))} />
+                <InfoRow label="P(buy)" value={nr(str(probs.buy))} />
+                <InfoRow label="P(sell)" value={nr(str(probs.sell))} />
+                <InfoRow label="P(no_trade)" value={nr(str(probs.no_trade))} />
+                <InfoRow label="P(wait)" value={nr(str(probs.wait))} />
+                <InfoRow label="model_action" value={nr(str(probs.model_action))} />
+                <InfoRow label="confidence_source" value={nr(str(obj(probs.raw).source))} />
               </dl>
             )}
           </Panel>
-          <Panel title={`Correlated orders (${arr(d.orders).length})`} tight>
+          <Panel title={t("control-center.inspector.correlated_orders", "Correlated orders ({n})", { n: String(arr(d.orders).length) })} tight>
             <div className="tiny muted" style={{ marginBottom: 6 }}>
-              correlation method: {notRecorded(str(d.correlation_method))}
+              {t("control-center.inspector.correlation_method", "correlation method: {v}", { v: nr(str(d.correlation_method)) })}
             </div>
             {arr(d.orders).length === 0 ? (
-              <EmptyState message="No correlated dispatch rows." />
+              <EmptyState message={t("control-center.empty.no_correlated", "No correlated dispatch rows.")} />
             ) : (
-              <DataTable headers={[{ label: "ts" }, { label: "ticket" }, { label: "action" }, { label: "latency" }]}>
+              <DataTable headers={[{ label: t("control-center.th.ts", "ts") }, { label: t("control-center.th.ticket", "ticket") }, { label: t("control-center.th.action", "action") }, { label: t("control-center.th.latency", "latency") }]}>
                 {arr(d.orders).map((o, i) => (
                   <tr key={i}>
                     <td className="tiny">{formatDateTime(str(o.timestamp))}</td>
@@ -567,7 +581,7 @@ function DecisionInspector({ id, onClose }: { id: number; onClose: () => void })
               </DataTable>
             )}
           </Panel>
-          <Panel title="Raw evidence payload" tight>
+          <Panel title={t("control-center.panel.raw_payload", "Raw evidence payload")} tight>
             <JsonBlock value={d.payload ?? d} maxChars={5000} />
           </Panel>
         </div>
