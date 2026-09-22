@@ -26,18 +26,21 @@ import {
   Skeleton,
   StatusBadge,
 } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { intelligenceTelemetryApi } from "../intelligenceApi";
 import { FreshnessCaption } from "../../research/ui/lane5Kit";
 
 const LIMIT = 8;
 
-/** Stable label for a detection row (legacy pattern||behavior_type||behavior). */
+/** Stable label for a detection row (legacy pattern||behavior_type||behavior);
+ *  null when the backend recorded none — the caller renders a localized
+ *  UNKNOWN through the t() seam. */
 function behaviorLabel(b: {
   pattern?: string;
   behavior_type?: string;
   behavior?: string;
-}): string {
-  return b.pattern || b.behavior_type || b.behavior || "UNKNOWN";
+}): string | null {
+  return b.pattern || b.behavior_type || b.behavior || null;
 }
 
 function scalarSummary(row: Record<string, unknown>): string {
@@ -46,6 +49,7 @@ function scalarSummary(row: Record<string, unknown>): string {
 }
 
 export function IntelligenceTelemetryPanel() {
+  const t = useI18n((s) => s.t);
   const queryClient = useQueryClient();
 
   const behaviorQ = useQuery({
@@ -85,10 +89,13 @@ export function IntelligenceTelemetryPanel() {
 
   if (unavailable) {
     return (
-      <Panel title="Intelligence telemetry (behavior · anomalies · evolution)" tight>
+      <Panel title={t("ai-analysis.intel.panel_title", "Intelligence telemetry (behavior · anomalies · evolution)")} tight>
         <EmptyState
-          message="Intelligence subsystem unavailable (not attached)."
-          hint="/api/intelligence/* answers available:false — counts are not zero-filled."
+          message={t("ai-analysis.intel.unavailable", "Intelligence subsystem unavailable (not attached).")}
+          hint={t(
+            "ai-analysis.intel.unavailable_hint",
+            "/api/intelligence/* answers available:false — counts are not zero-filled.",
+          )}
         />
       </Panel>
     );
@@ -98,19 +105,19 @@ export function IntelligenceTelemetryPanel() {
     <div style={{ display: "grid", gap: 12 }}>
       <div className="grid cols-2">
         <MetricCard
-          label="behavior detections"
+          label={t("ai-analysis.intel.behavior_detections", "behavior detections")}
           value={behaviorQ.data ? String(behavior.length) : "—"}
-          sub="latest 8 · /api/intelligence/behavior"
+          sub={t("ai-analysis.intel.latest_behavior", "latest 8 · /api/intelligence/behavior")}
         />
         <MetricCard
-          label="anomaly events"
+          label={t("ai-analysis.intel.anomaly_events", "anomaly events")}
           value={anomaliesQ.data ? String(anomalies.length) : "—"}
-          sub="latest 8 · /api/intelligence/anomalies"
+          sub={t("ai-analysis.intel.latest_anomalies", "latest 8 · /api/intelligence/anomalies")}
         />
       </div>
 
       <Panel
-        title="Behavior detections"
+        title={t("ai-analysis.intel.behavior_panel", "Behavior detections")}
         right={<FreshnessCaption isFetching={behaviorQ.isFetching} error={behaviorQ.isError} />}
         tight
       >
@@ -118,17 +125,24 @@ export function IntelligenceTelemetryPanel() {
           <Skeleton count={3} />
         ) : behaviorQ.isError ? (
           <ErrorState
-            message={behaviorQ.error instanceof Error ? behaviorQ.error.message : "behavior endpoint failed"}
+            message={behaviorQ.error instanceof Error ? behaviorQ.error.message : t("ai-analysis.intel.behavior_failed", "behavior endpoint failed")}
             onRetry={() => void behaviorQ.refetch()}
           />
         ) : behavior.length === 0 ? (
-          <EmptyState message="NO DATA — no behavior detections recorded." />
+          <EmptyState message={t("ai-analysis.intel.no_data_behavior", "NO DATA — no behavior detections recorded.")} />
         ) : (
-          <DataTable headers={[{ label: "pattern" }, { label: "symbol" }, { label: "detected" }, { label: "summary" }]}>
+          <DataTable
+            headers={[
+              { label: t("ai-analysis.th.pattern", "pattern") },
+              { label: t("ai-analysis.th.symbol", "symbol") },
+              { label: t("ai-analysis.th.detected", "detected") },
+              { label: t("ai-analysis.intel.th_summary", "summary") },
+            ]}
+          >
             {behavior.map((b, i) => (
               <tr key={i}>
                 <td className="small">
-                  <strong>{behaviorLabel(b)}</strong>
+                  <strong>{behaviorLabel(b) ?? t("ai-analysis.intel.unknown", "UNKNOWN")}</strong>
                 </td>
                 <td className="small">{(b.symbol as string) || "—"}</td>
                 <td className="tiny">{((b.detected_at as string) || "").slice(0, 16) || "—"}</td>
@@ -140,7 +154,7 @@ export function IntelligenceTelemetryPanel() {
       </Panel>
 
       <Panel
-        title="Anomaly events (evidence-based)"
+        title={t("ai-analysis.intel.anomaly_panel", "Anomaly events (evidence-based)")}
         right={<FreshnessCaption isFetching={anomaliesQ.isFetching} error={anomaliesQ.isError} />}
         tight
       >
@@ -148,13 +162,20 @@ export function IntelligenceTelemetryPanel() {
           <Skeleton count={3} />
         ) : anomaliesQ.isError ? (
           <ErrorState
-            message={anomaliesQ.error instanceof Error ? anomaliesQ.error.message : "anomalies endpoint failed"}
+            message={anomaliesQ.error instanceof Error ? anomaliesQ.error.message : t("ai-analysis.intel.anomalies_failed", "anomalies endpoint failed")}
             onRetry={() => void anomaliesQ.refetch()}
           />
         ) : anomalies.length === 0 ? (
-          <EmptyState message="NO DATA — no anomaly events recorded." />
+          <EmptyState message={t("ai-analysis.intel.no_data_anomaly", "NO DATA — no anomaly events recorded.")} />
         ) : (
-          <DataTable headers={[{ label: "type" }, { label: "severity" }, { label: "obs" }, { label: "explanation" }]}>
+          <DataTable
+            headers={[
+              { label: t("ai-analysis.th.type", "type") },
+              { label: t("ai-analysis.intel.th_severity", "severity") },
+              { label: t("ai-analysis.intel.th_obs", "obs") },
+              { label: t("ai-analysis.intel.th_explanation", "explanation") },
+            ]}
+          >
             {anomalies.map((a, i) => {
               const evidence = a.evidence;
               const explanation =
@@ -170,7 +191,7 @@ export function IntelligenceTelemetryPanel() {
               return (
                 <tr key={i}>
                   <td className="small">
-                    <strong>{a.anomaly_type || a.category || "UNKNOWN"}</strong>
+                    <strong>{a.anomaly_type || a.category || t("ai-analysis.intel.unknown", "UNKNOWN")}</strong>
                   </td>
                   <td>
                     <StatusBadge status={a.severity ?? null} />
@@ -187,7 +208,7 @@ export function IntelligenceTelemetryPanel() {
       </Panel>
 
       <Panel
-        title="Strategy evolution candidates"
+        title={t("ai-analysis.intel.evolution_panel", "Strategy evolution candidates")}
         right={
           <>
             <FreshnessCaption isFetching={evolutionQ.isFetching} error={evolutionQ.isError} />
@@ -195,9 +216,12 @@ export function IntelligenceTelemetryPanel() {
               className="btn small"
               disabled={scanMut.isPending}
               onClick={() => void scanMut.mutateAsync()}
-              title="POST /api/intelligence/evolution/scan — bounded discovery; candidates are never live"
+              title={t(
+                "ai-analysis.intel.scan_title",
+                "POST /api/intelligence/evolution/scan — bounded discovery; candidates are never live",
+              )}
             >
-              {scanMut.isPending ? "scanning…" : "Scan now"}
+              {scanMut.isPending ? t("ai-analysis.intel.scanning", "scanning…") : t("ai-analysis.intel.scan_now", "Scan now")}
             </button>
           </>
         }
@@ -207,27 +231,36 @@ export function IntelligenceTelemetryPanel() {
           <Skeleton count={3} />
         ) : evolutionQ.isError ? (
           <ErrorState
-            message={evolutionQ.error instanceof Error ? evolutionQ.error.message : "evolution endpoint failed"}
+            message={evolutionQ.error instanceof Error ? evolutionQ.error.message : t("ai-analysis.intel.evolution_failed", "evolution endpoint failed")}
             onRetry={() => void evolutionQ.refetch()}
           />
         ) : scanMut.isError ? (
           <ErrorState
-            message={scanMut.error instanceof Error ? scanMut.error.message : "scan failed"}
+            message={scanMut.error instanceof Error ? scanMut.error.message : t("ai-analysis.intel.scan_failed", "scan failed")}
             onRetry={() => void scanMut.mutateAsync()}
           />
         ) : candidates.length === 0 ? (
           <EmptyState
-            message="No evolution candidates."
-            hint='Click "Scan now" to discover strategy variations — the backend records them as unvalidated.'
+            message={t("ai-analysis.intel.no_candidates", "No evolution candidates.")}
+            hint={t(
+              "ai-analysis.intel.no_candidates_hint",
+              "Click Scan now to discover strategy variations — the backend records them as unvalidated.",
+            )}
           />
         ) : (
-          <DataTable headers={[{ label: "status" }, { label: "candidate" }, { label: "hypothesis" }]}>
+          <DataTable
+            headers={[
+              { label: t("ai-analysis.intel.th_status", "status") },
+              { label: t("ai-analysis.intel.th_candidate", "candidate") },
+              { label: t("ai-analysis.intel.th_hypothesis", "hypothesis") },
+            ]}
+          >
             {candidates.map((c, i) => (
               <tr key={String(c.candidate_id ?? i)}>
                 <td>
                   <StatusBadge status={c.status ?? null} />
                 </td>
-                <td className="inline-mono tiny">{String(c.candidate_id ?? "—").slice(0, 14)}</td>
+                <td className="inline-mono tiny" dir="ltr">{String(c.candidate_id ?? "—").slice(0, 14)}</td>
                 <td className="tiny muted">{c.hypothesis || "—"}</td>
               </tr>
             ))}
