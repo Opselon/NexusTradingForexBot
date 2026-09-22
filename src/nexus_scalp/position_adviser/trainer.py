@@ -18,6 +18,7 @@ Training-time hard rules:
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -44,6 +45,12 @@ from nexus_scalp.position_adviser.models import (
 )
 
 logger = get_logger("nexus_scalp.position_adviser.trainer")
+
+#: Characters a request-supplied ``model_id`` may use when it is joined into
+#: artifact filenames. Anything that could carry a path component (slashes,
+#: ``..``, a drive letter, a NUL) is refused; the trainer substitutes a
+#: generated id instead, so the write paths stay inside ``output_dir``.
+_SAFE_MODEL_ID = re.compile(r"(?!.*\.\.)[\w.][A-Za-z0-9._-]{0,127}\Z")
 
 #: Only these split values are eligible for training. ``purge``/``embargo``
 #: exist precisely to quarantine rows whose lookahead window crosses a split
@@ -396,7 +403,15 @@ def train_position_adviser(
     # ---- 8. persist ----------------------------------------------------------
     out = Path(output_dir) if output_dir is not None else p.parent / "advisers"
     out.mkdir(parents=True, exist_ok=True)
+    # ``model_id`` comes from the request body and is joined into the artifact
+    # names below, so it must not be able to carry a path component (a
+    # "../../" id would write outside ``out``). Names are restricted to the
+    # safe characters a UI id uses; an id that cannot meet that bar is
+    # replaced with a generated one rather than silently truncated.
     mid = model_id or f"pos_adviser_{int(time.time())}"
+    if not _SAFE_MODEL_ID.fullmatch(mid):
+        safe = _SAFE_MODEL_ID.sub("_", mid)
+        mid = safe if _SAFE_MODEL_ID.fullmatch(safe) else f"pos_adviser_{int(time.time())}"
     weights_path = out / f"{mid}.pt"
     scaler_path = out / f"{mid}.scaler.npz"
     manifest_path = out / f"{mid}.meta.json"

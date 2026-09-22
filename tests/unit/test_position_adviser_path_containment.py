@@ -204,3 +204,41 @@ class TestServiceLoadRejectsAdversarialPaths:
         svc = PositionAdviserService()
         out = svc.load(foreign, foreign)
         assert out["status"] == "REJECTED"
+
+
+class TestSafeModelId:
+    """A request-supplied ``model_id`` is joined into artifact filenames.
+
+    It must not be able to carry a path component, or a ``../../`` id would
+    make the trainer write outside ``output_dir``.
+    """
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "../../etc/passwd",
+            "..",
+            "a/b",
+            "C:evil",
+            "sub/dir/model",
+            "",
+            "x" * 200,
+        ],
+    )
+    def test_unsafe_ids_are_refused(self, bad: str) -> None:
+        from nexus_scalp.position_adviser.trainer import _SAFE_MODEL_ID
+
+        assert _SAFE_MODEL_ID.fullmatch(bad) is None
+
+    @pytest.mark.parametrize(
+        "good",
+        [
+            "pos_adviser_1789000000",
+            "pos_adviser_tune_123_42_9999",
+            "adviser_v2",
+        ],
+    )
+    def test_legitimate_ids_are_accepted(self, good: str) -> None:
+        from nexus_scalp.position_adviser.trainer import _SAFE_MODEL_ID
+
+        assert _SAFE_MODEL_ID.fullmatch(good) is not None
