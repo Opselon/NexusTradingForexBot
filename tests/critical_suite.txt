@@ -128,6 +128,7 @@
 # First Setup & Local Training Environment Provisioning
 # G3/BUG-259/BUG-260) - conservative zero + rate-limited HOLD_AGE_FALLBACK.
 # I/O). Now an off-loop-refreshed in-process sketch with SQL-parity guarantees.
+# ML-ARCH-001 (ScalpNet 3-Class Head Sunset — legacy-4 surface audit evidence)
 # ML-CI-002 (ML Contract & Canonical Documentation Drift Prevention CI Gate)
 # ML-DATA-001 (Historical M1 Market Data Ingest & Parquet Storage Harness)
 # ML-EXP-001 (Immutable Experiment Registry & Artifact Manifest Schema)
@@ -285,6 +286,7 @@ tests/unit/test_agent17_oos_hard_gate.py
 tests/unit/test_agent5_bug249_251_252.py
 tests/unit/test_agent6_execution_contract.py
 tests/unit/test_audit_flush_contract.py
+tests/unit/test_audit_legacy4_surface.py
 tests/unit/test_backtest_report.py
 tests/unit/test_backtest_report_asset.py
 tests/unit/test_backtest_report_integration.py

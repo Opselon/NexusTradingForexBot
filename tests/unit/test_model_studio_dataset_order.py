@@ -95,10 +95,11 @@ class TestAutoTuneBaseline:
     acceptable than it is. Now derived from the dataset's true OOS labels.
     """
 
-    def test_baseline_uses_true_oos_labels(self) -> None:
-        import os
-
-        os.environ["NSE_WEB_AUTH_DISABLE"] = "1"
+    def test_baseline_uses_true_oos_labels(self, monkeypatch) -> None:
+        # WEB-AUTH opt-out must be scoped (monkeypatch auto-restores). A bare
+        # os.environ write here leaked DISABLE=1 to every later test in the
+        # xdist worker, silently de-arming the 401 contract probes.
+        monkeypatch.setenv("NSE_WEB_AUTH_DISABLE", "1")
         from nexus_scalp.web.position_adviser_routes import (
             _majority_class_baseline,
         )
@@ -120,12 +121,13 @@ class TestAutoTuneBaseline:
 class TestIngestionFailsLoud:
     """An unsupported timeframe must be refused, never clamped to M1."""
 
-    def setup_method(self) -> None:
+    @pytest.fixture(autouse=True)
+    def _web_auth_disabled(self, monkeypatch) -> None:
         # WEB-AUTH gates every route; disable it for the test client so the
         # request reaches the handler (the auth-401 env is a known-foreign red).
-        import os
-
-        os.environ["NSE_WEB_AUTH_DISABLE"] = "1"
+        # A scoped pin restores automatically; the old bare os.environ write
+        # leaked DISABLE=1 into the worker and de-armed auth-contract probes.
+        monkeypatch.setenv("NSE_WEB_AUTH_DISABLE", "1")
         self.client = TestClient(create_app())
 
     def test_unsupported_timeframe_is_rejected(self) -> None:

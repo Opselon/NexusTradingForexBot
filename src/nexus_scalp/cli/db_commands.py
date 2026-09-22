@@ -10,8 +10,10 @@ All commands support --json for machine-readable output (no ANSI, §54).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -64,17 +66,33 @@ def _engine(
     }
 
 
+@contextlib.contextmanager
+def _silence_loggers_for_json() -> Generator[None, None, None]:
+    """Silence structlog/stderr noise for the duration of one JSON emission only.
+
+    ``logging.disable(CRITICAL)`` is process-global: the previous call site left
+    it set forever, which de-armed every WARNING-level assertion in the process
+    (the MT5 storm-throttle log-capture probes read zero records under xdist
+    when a co-scheduled CLI test ran ``db ... --json``). Save and restore.
+    """
+    import logging as _logging
+
+    previous = _logging.root.manager.disable
+    try:
+        _logging.disable(_logging.CRITICAL)
+        yield
+    finally:
+        _logging.disable(previous)
+
+
 def _emit(payload: dict[str, Any], json_mode: bool, *, plain_title: str = "") -> None:
     if json_mode:
         # Pure machine-readable stdout: silence structlog (stderr) noise so
         # `--json` output is parseable with zero post-processing (§54).
-        try:
-            import logging as _logging
-
-            _logging.disable(_logging.CRITICAL)
-        except Exception:
-            pass
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        # Scoped: the disable must not outlive this call (see
+        # _silence_loggers_for_json).
+        with _silence_loggers_for_json():
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
     print(plain_title or "")
     for db, data in payload.items():

@@ -56,17 +56,12 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-FEAT-003` | B: Features | P2 | 70D Feasibility, Feed Uptime & Gating | **BLOCKED** | `AGENT-FEATURE` | **YES** | `ML-FEAT-001`, `ML-DATA-001` | `SERIAL_ONLY` |
 | `ML-LABEL-001` | C: Labeling | P1 | Friction-Aware Triple Barrier Horizon & ATR | **DONE** | `AGENT-LABEL` | NO | `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-LABEL-002` | C: Labeling | P1 | Sample Uniqueness & Overlap Anti-Leakage | **DONE** | `AGENT-LABEL` | NO | `ML-LABEL-001` | `PARALLEL_SAFE` |
-| `ML-ARCH-001` | D: Architecture | P0 | ScalpNet Dual-Path & 3-Class Head Sunset | **READY** | `AGENT-ML-ARCH` | **YES** | None | `SERIAL_ONLY` |
+| `ML-ARCH-001` | D: Architecture | P0 | ScalpNet Dual-Path & 3-Class Head Sunset | **EVIDENCE-COMPLETE** (DEC-0010; awaiting operator A/B/C) | `AGENT-ML-ARCH` | **YES** | None | `SERIAL_ONLY` |
 | `ML-ARCH-002` | D: Architecture | P2 | Causal TCN Dilation & Receptive Field | **BLOCKED** | `AGENT-ML-ARCH` | NO | `ML-ARCH-001`, `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-ARCH-003` | D: Architecture | P2 | Temporal Attention vs Positional Encoding | **BLOCKED** | `AGENT-ML-ARCH` | NO | `ML-ARCH-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-001` | E: Training | P1 | Deterministic Training, Seeds & AMP Precision | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-ARCH-001`, `ML-DATA-002` | `PARALLEL_SAFE` |
-| `ML-TRAIN-002` | E: Training | P2 | Loss Functions: Focal Loss vs Label Smoothing | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001`, `ML-LABEL-002` | `PARALLEL_SAFE` |
-| `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
-| `ML-TRAIN-001` | E: Training | P1 | Deterministic Training, Seeds & AMP Precision | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-ARCH-001`, `ML-DATA-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-002` | E: Training | P2 | Loss Functions: Focal Loss vs Label Smoothing | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001`, `ML-LABEL-002` | `PARALLEL_SAFE` |
-| `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
-| `ML-EXP-001` | F: Experimentation | P1 | Immutable Experiment Registry Schema | **BLOCKED** | `AGENT-ML-EXP` | NO | `ML-DATA-002` | `PARALLEL_SAFE` |
-| `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **BLOCKED** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
+| `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
 | `ML-EXP-001` | F: Experimentation | P1 | Immutable Experiment Registry Schema | **DONE** | `AGENT-ML-EXP` | NO | `ML-DATA-002` | `PARALLEL_SAFE` |
 | `ML-EXP-002` | F: Experimentation | P2 | Architectural Ablation: 2D vs 3D vs Attention | **BLOCKED** | `AGENT-ML-EXP` | **YES** | `ML-EXP-001`, `ML-ARCH-003`, `ML-TRAIN-003` | `SERIAL_ONLY` |
 | `ML-EXP-003` | F: Experimentation | P3 | Bounded Hyperparameter Grid Search Runner | **DONE** | `AGENT-ML-EXP` | NO | `ML-EXP-001`, `ML-TRAIN-003` | `PARALLEL_SAFE` |
@@ -74,7 +69,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-VAL-002` | G: Validation | P2 | Probability Calibration & ECE Evaluation | **DONE** | `AGENT-ML-VALIDATION` | NO | `ML-EXP-002` | `PARALLEL_SAFE` |
 | `ML-VAL-003` | G: Validation | P2 | Robustness Stress: Slippage & Spread Perturb | **DONE** | `AGENT-ML-VALIDATION` | NO | `ML-VAL-001` | `PARALLEL_SAFE` |
 | `ML-INF-001` | H: Inference | P1 | Inference Preprocessing Latency SLA (<10ms) | **DONE** | `AGENT-INFERENCE` | NO | `ML-FEAT-001`, `ML-ARCH-001` | `PARALLEL_SAFE` |
-| `ML-BT-001` | I: Backtest | P1 | Trading Quality Metrics vs Classification | **BLOCKED** | `AGENT-BACKTEST` | NO | `ML-VAL-001`, `ML-VAL-003` | `PARALLEL_SAFE` |
+| `ML-BT-001` | I: Backtest | P1 | Trading Quality Metrics vs Classification | **DONE** (PR #316, `51a3dc86`) | `AGENT-BACKTEST` | NO | `ML-VAL-001`, `ML-VAL-003` | `PARALLEL_SAFE` |
 | `ML-RISK-001` | I: Risk & Position | P0 | Position Replay & Economic Dataset Generation Engine | **DONE** | `AGENT-RISK` | NO | `ML-DATA-001`, `ML-UI-003` | `PARALLEL_SAFE` |
 | `ML-GOV-001` | J: Governance | P0 | Promotion Pre-Flight & OOS Gate Audit | **DONE** (PR #262, `266d3ae6`) | `AGENT-GOVERNANCE` | NO | `ML-FEAT-001` | `PARALLEL_SAFE` |
 | `ML-GOV-002` | J: Governance | P1 | Unified Model State Machine Root | **READY** | `AGENT-GOVERNANCE` | **YES** | None | `SERIAL_ONLY` |
@@ -84,6 +79,9 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-OBS-001` | L: Observability | P2 | Live Shadow Outcome Real-Time Resolution | **DONE** (PR pending) | `AGENT-OBSERVABILITY` | NO | None | `PARALLEL_SAFE` |
 | `ML-OBS-002` | L: Observability | P3 | Online Fine-Tuning Safe Sandbox | **BLOCKED** | `AGENT-OBSERVABILITY` | **YES** | `ML-GOV-001`, `ML-GOV-003` | `SERIAL_ONLY` |
 | `ML-CI-001` | L: CI/CD | P2 | CI Model Training Validation Gap | **BLOCKED** | `AGENT-QA` | NO | `ML-DATA-001`, `ML-VAL-001` | `PARALLEL_SAFE` |
+| `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **DONE** (PR #346, `70682f4e`) | `AGENT-QA` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
+||||||| eb73440a
+| `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **BLOCKED** | `AGENT-QA` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
 | `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **DONE** | `AGENT-GIT` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
 | `ML-UI-001` | L: UX & Integration | P1 | End-to-End Model UX & CLI Verification (Train/Predict/Trust) | **DONE** | `AGENT-UI` | NO | None | `PARALLEL_SAFE` |
 | `ML-UI-002` | L: UX & Integration | P1 | Model Studio Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Dataset Pipeline | **DONE** | `AGENT-UI` | NO | `ML-UI-001`, `ML-DATA-001` | `PARALLEL_SAFE` |
