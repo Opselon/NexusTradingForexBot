@@ -39,11 +39,13 @@ import { DatasetPipelinePanel } from "./DatasetPipelinePanel";
 import { PositionDatasetPanel } from "./PositionDatasetPanel";
 import { ModelStressBenchPanel } from "./ModelStressBenchPanel";
 import { useModelStudioData } from "./useModelStudioData";
+import { useI18n } from "@/stores/i18nStore";
 
 /** Poll cadence for the live training-progress endpoint (visual only). */
 const TRAIN_POLL_MS = 1200;
 
 export default function ModelStudioPage() {
+  const t = useI18n((s) => s.t);
   const {
     overview,
     datasets,
@@ -170,7 +172,15 @@ export default function ModelStudioPage() {
   };
 
   const handleRollback = async () => {
-    if (!confirm("Roll back to previous active champion model from history?")) return;
+    if (
+      !confirm(
+        t(
+          "model-studio.page.rollback_confirm",
+          "Roll back to previous active champion model from history?",
+        ),
+      )
+    )
+      return;
     setRollbackBusy(true);
     try {
       await modelStudioApi.rollback();
@@ -179,7 +189,11 @@ export default function ModelStudioPage() {
       await fetchOverview();
     } catch (err) {
       console.error("Rollback failed:", err);
-      alert("Rollback failed: " + (err instanceof Error ? err.message : String(err)));
+      alert(
+        t("model-studio.page.rollback_failed", "Rollback failed: {e}", {
+          e: err instanceof Error ? err.message : String(err),
+        }),
+      );
     } finally {
       setRollbackBusy(false);
     }
@@ -275,7 +289,12 @@ export default function ModelStudioPage() {
       });
       setTrainProgress(d.state);
       setTrainStatus(
-        `Done: ${d.epochs_completed} epochs | loss ${d.final_loss} | val ${d.final_val_loss} → ${d.checkpoint_path}`,
+        t("model-studio.page.train_done", "Done: {e} epochs | loss {l} | val {v} → {p}", {
+          e: d.epochs_completed,
+          l: d.final_loss,
+          v: d.final_val_loss,
+          p: d.checkpoint_path,
+        }),
       );
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

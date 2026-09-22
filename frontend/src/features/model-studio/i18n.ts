@@ -235,5 +235,9 @@ export const MESSAGES: FeatureMessages = {
   "model-studio.artifacts.absent": { fa: "غایب", de: "fehlt", es: "ausente", ar: "غائب" },
   "model-studio.artifacts.files": { fa: "{n} پرونده", de: "{n} Dateien", es: "{n} archivos", ar: "{n} ملف" },
   "model-studio.artifacts.footer": { fa: "مسیرها در سمت سرور از ریشهٔ مخزن استخراج و فقط‌خواندنی گزارش می‌شوند — رابط کاربری هرگز مسیری را به بک‌اند نمی‌فرستد.", de: "Pfade werden serverseitig aus der Repository-Wurzel aufgelöst und schreibgeschutzt gemeldet — die UI sendet niemals einen Pfad an das Backend.", es: "Las rutas se resuelven en el servidor desde la raíz del repositorio y se reportan solo de lectura: la interfaz nunca envía una ruta al backend.", ar: "تُحل المسارات على الخادم من جذر المستودع وتُبلَّغ للقراءة فقط — لا ترسل الواجهة أي مسارة إلى الخادم." },
+  // ---- ModelStudioPage -----------------------------------------------------------
+  "model-studio.page.rollback_confirm": { fa: "به قهرمان قبلیِ فعال از تاریخچه بازگردیم؟", de: "Zum vorherigen aktiven Champion-Modell aus der Historie zurücksetzen?", es: "¿Retroceder al modelo campeón activo anterior del historial?", ar: "هل نتراجع إلى نموذج البطل النشط السابق من السجل؟" },
+  "model-studio.page.rollback_failed": { fa: "عملیات بازگشت ناموفق بود: {e}", de: "Zurücksetzen fehlgeschlagen: {e}", es: "La reversión falló: {e}", ar: "فشل التراجع: {e}" },
+  "model-studio.page.train_done": { fa: "تمام شد: {e} اپوک | اتلاف {l} | اعتبار {v} → {p}", de: "Fertig: {e} Epochen | Loss {l} | Val. {v} → {p}", es: "Hecho: {e} épocas | pérdida {l} | validación {v} → {p}", ar: "تم: {e} دورة | الخسارة {l} | التحقق {v} → {p}" },
   // __APPEND_BELOW__
 };
