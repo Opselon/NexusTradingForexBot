@@ -24,6 +24,7 @@ import {
   type CcSpatialDto,
   type CcSpatialNodeDto,
 } from "../model";
+import { useI18n } from "@/stores/i18nStore";
 
 const PIPELINE_ZONES = [
   "DISCOVERED", "INITIAL_TESTING", "EVIDENCE_BUILDING", "WALK_FORWARD_READY",
@@ -145,6 +146,7 @@ export class SpatialFleetEngine {
     this.raf = null;
     window.removeEventListener("mouseup", this.onWindowUp);
     window.removeEventListener("mousemove", this.onWindowMove);
+    document.removeEventListener("nexus:lang-changed", this.onLangChanged);
     this.canvas.removeEventListener("wheel", this.onWheel);
     this.canvas.removeEventListener("mousedown", this.onDown);
     this.canvas.removeEventListener("click", this.onClick);
@@ -388,6 +390,13 @@ export class SpatialFleetEngine {
 
   private onLeave = (): void => { this.pointer = null; this.hoverId = null; };
 
+  /** Language switched: labels are resolved AT DRAW TIME from useI18n, so a
+   *  redraw is all the canvas needs — never cache a translated label. */
+  private onLangChanged = (): void => {
+    if (this.disposed) return;
+    this.draw(performance.now());
+  };
+
   private pick(wx: number, wy: number): RenderNode | null {
     let best: RenderNode | null = null;
     let bestDist = 20 / this.camera.zoom;
@@ -418,6 +427,7 @@ export class SpatialFleetEngine {
     this.canvas.addEventListener("mouseleave", this.onLeave);
     window.addEventListener("mouseup", this.onWindowUp);
     window.addEventListener("mousemove", this.onWindowMove);
+    document.addEventListener("nexus:lang-changed", this.onLangChanged);
   }
 
   /* ------------------------------- drawing ------------------------------- */
@@ -445,6 +455,9 @@ export class SpatialFleetEngine {
 
   private draw(now: number): void {
     const ctx = this.ctx;
+    // Draw-time lookup: the store's `t` is read every frame, so the canvas
+    // follows the active language (and nexus:lang-changed forces a redraw).
+    const t = useI18n.getState().t;
     this.stepCameraAnim(now);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -517,7 +530,7 @@ export class SpatialFleetEngine {
         ctx.setLineDash([]);
         ctx.fillStyle = "rgba(16, 185, 129, 0.95)";
         ctx.font = "bold 10px ui-monospace, monospace";
-        ctx.fillText("── EXECUTION GATE (shadow → live boundary) ──", -4470, y - 6);
+        ctx.fillText(t("command-center.canvas.execution_gate", "── EXECUTION GATE (shadow → live boundary) ──"), -4470, y - 6);
       }
 
       if (i === firstTerminalRank && firstTerminalRank < this.zoneOrder.length) {
@@ -531,7 +544,7 @@ export class SpatialFleetEngine {
         ctx.setLineDash([]);
         ctx.fillStyle = "rgba(244, 63, 94, 0.85)";
         ctx.font = "bold 10px ui-monospace, monospace";
-        ctx.fillText("── INACTIVE / TERMINAL (never live) ──", -4470, y - 6);
+        ctx.fillText(t("command-center.canvas.terminal_divider", "── INACTIVE / TERMINAL (never live) ──"), -4470, y - 6);
       }
     });
 
