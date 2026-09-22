@@ -349,3 +349,62 @@ def test_risk_engine_without_calibration_uses_flat_sizing(monkeypatch) -> None:
     sl_distance = abs(2000.20 - 1998.60)
     expected_raw_lots = expected_risk_usd / (sl_distance * 100.0)
     assert abs(order.volume - expected_raw_lots) < 0.02
+
+
+# --------------------------------------------------------------------------
+# BUG-312: log-level discipline on the expected pre-evidence load failure
+# --------------------------------------------------------------------------
+# A MISSING artifact is the designed state of a live engine that has not yet
+# accumulated the 30/30 OOS evidence the collector requires (observed live:
+# total_eligible=39, deficit 7/14). WARNING once per trade proposal + once per
+# 60s UI poll flooded the operator log for a normal condition, which the
+# observability log contract forbids. A CORRUPT artifact is a genuine
+# surprise and stays WARNING (once, then DEBUG -- contract §3).
+
+
+def _capture_calibration_logger(monkeypatch) -> dict[str, list]:
+    """Module-logger capture (structlog host routing: caplog stays empty)."""
+    import nexus_scalp.model_lifecycle.confidence_calibration as mod
+
+    calls: dict[str, list] = {"warning": [], "debug": []}
+
+    def _make(level: str):
+        def _rec(msg: str, *a, **kw) -> None:
+            calls[level].append((msg, kw))
+
+        return _rec
+
+    monkeypatch.setattr(mod.logger, "warning", _make("warning"))
+    monkeypatch.setattr(mod.logger, "debug", _make("debug"))
+    # reset the one-shot unexpected-failure flag between tests
+    monkeypatch.setattr(mod.ConfidenceCalibrator, "_LOAD_WARNED_UNEXPECTED", False)
+    return calls
+
+
+def test_missing_artifact_logs_debug_not_warning(tmp_path, monkeypatch) -> None:
+    """BUG-312: the expected pre-evidence state must not WARN."""
+    calls = _capture_calibration_logger(monkeypatch)
+    cal = ConfidenceCalibrator.from_artifact(tmp_path / "absent_calibration.json")
+    assert cal.state == "NOT_CALIBRATED"
+    assert not calls["warning"], f"missing artifact must not warn: {calls['warning']}"
+    assert len(calls["debug"]) == 1
+    # the diagnostic must name the artifact (BUG-312: it was redacted to a
+    # fake 'calibration_20260921T0345Z.json'-shaped string).
+    rec = calls["debug"][0]
+    assert rec[1].get("missing_artifact") is True
+    assert "absent_calibration.json" in rec[1].get("artifact_path", "")
+
+
+def test_corrupt_artifact_warns_once_then_debug(tmp_path, monkeypatch) -> None:
+    """BUG-312: a real parse failure WARNs once (actionable) and no more."""
+    calls = _capture_calibration_logger(monkeypatch)
+    bad = tmp_path / "corrupt.json"
+    bad.write_text("{not valid json")
+    for _ in range(3):
+        cal = ConfidenceCalibrator.from_artifact(bad)
+        assert cal.state == "NOT_CALIBRATED"
+    assert len(calls["warning"]) == 1, "repeat floods cannot add operator signal"
+    assert len(calls["debug"]) == 2
+    rec = calls["warning"][0]
+    assert rec[1].get("missing_artifact") is False
+    assert "corrupt.json" in rec[1].get("artifact_path", "")

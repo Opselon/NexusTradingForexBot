@@ -730,7 +730,19 @@ class SignalPolicy:
         if survival_mode:
             active_threshold += 0.10
         if is_range_market:
-            active_threshold += self.range_confidence_penalty
+            # BUG-312 (2026-09-22, live forensics): the range penalty is a RAW
+            # ADDEND applied on top of a base calibrated in raw-probability
+            # space. The serving head's directional output is arithmetically
+            # bounded well below the resulting requirement: over 6767 live
+            # decisions the effective threshold reached 0.50 (0.40 base +
+            # 0.10 range) while the model's directional confidence p99 was
+            # 0.69 and its whole-week MAX raw directional probability 0.51.
+            # In range regimes the gate was effectively unreachable and
+            # emitted 3691/6767 (55%) of all decisions as CONFIDENCE_FAIL.
+            # The penalty is scaled against the base instead: it preserves the
+            # intent (range markets demand a stronger signal) without pushing
+            # the requirement outside the model's output range.
+            active_threshold += self.range_confidence_penalty * self.confidence_threshold
 
         # BUG-249 (Agent-5 decision forensics, 2026-09-05): `max_spread_atr_ratio`
         # was plumbed into the constructor but NEVER enforced - a dead guard.
@@ -1590,8 +1602,14 @@ class SignalPolicy:
             raw_prob_buy if direction == "BUY" else raw_prob_sell if direction == "SELL" else 0.0
         )
 
+        # BUG-312 (2026-09-22, live forensics): same range-penalty scaling fix
+        # as the main confidence gate — a raw +0.10 addend on a 0.40 base
+        # pushed the requirement to 0.50 while the serving head's whole-week
+        # MAX directional probability was 0.51, making the sweep channel
+        # unreachable in range regimes. See the main gate for the full
+        # ledger evidence.
         sweep_conf_thresh = self.confidence_threshold + (
-            self.range_confidence_penalty if is_range_market else 0.0
+            self.range_confidence_penalty * self.confidence_threshold if is_range_market else 0.0
         )
 
         sweep_has_confidence = sweep_direction_prob >= sweep_conf_thresh

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import torch
 
 from nexus_scalp.domain.enums import ActionType
@@ -525,6 +526,11 @@ def test_confidence_rejection_telemetry_breakdown():
     # class measure = 0.45 / (0.05 + 0.45 + 0.50) = 0.45 (the SELL slice
     # does not dilute the BUY side), which still fails survival
     # 0.40 + 0.10 = 0.50 -> CONFIDENCE_FAIL (thresholds unchanged).
+    # BUG-312 (2026-09-22): the range penalty is now SCALED against the
+    # base (0.40 + 0.15*0.40 = 0.46), not added raw, because a raw addend
+    # pushed the effective threshold outside the serving head's achievable
+    # directional range. This case is outside kumo (trending) so no range
+    # penalty applies; only survival +0.10 -> 0.50.
     probs = torch.tensor([[0.05, 0.45, 0.50, 0.0]])
 
     proposal = policy.evaluate_probabilities(
@@ -576,7 +582,7 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
         probabilities=probs,
         current_tick=tick,
         feature_vector=fv,
-        survival_mode=True,  # effective = 0.40 + 0.15 + 0.10 = 0.65
+        survival_mode=True,  # effective = 0.40 + 0.15*0.40 (range, scaled) + 0.10 = 0.56
     )
 
     assert proposal.action == ActionType.NO_TRADE
@@ -586,7 +592,10 @@ def test_confidence_telemetry_payload_always_carries_breakdown():
     assert rc["base_threshold"] == 0.40
     assert rc["range_penalty"] == 0.15
     assert rc["survival_mode_adjustment"] == 0.10
-    assert rc["effective_threshold"] == 0.65
+    # BUG-312 (2026-09-22): the range penalty is scaled against the base
+    # (0.40 * 0.15 = 0.06) instead of added raw (+0.15), so the effective
+    # threshold stays inside the model's achievable probability range.
+    assert rc["effective_threshold"] == pytest.approx(0.56, abs=1e-9)
     # Reason code carries the human-readable breakdown when rejected at confidence gate.
     if proposal.blocked_by == "CONFIDENCE_FAIL":
         assert "INSUFFICIENT_CONFIDENCE" in proposal.reason_code
@@ -811,14 +820,16 @@ def test_evaluate_tick_sweep_range_market_penalty():
     now = datetime.now(UTC)
     tick = TickData(symbol="XAUUSD", timestamp=now, bid=2000.00, ask=2000.10, volume=1.0)
 
-    # Effective threshold in range = 0.40 + 0.10 = 0.50
-    # Case A: buy prob 0.45 < 0.50 -> rejected (returns None)
+    # Effective threshold in range = 0.40 + 0.10*0.40 = 0.44 (BUG-312: the
+    # range penalty is scaled against the base, not added raw, so the
+    # requirement stays inside the model's achievable probability range).
+    # Case A: buy prob 0.40 < 0.44 -> rejected (returns None)
     proposal_rejected = policy._evaluate_tick_sweep(
         sweep_sig=1,
         current_tick=tick,
         ofi=0.25,
         tick_velocity=8.0,
-        raw_prob_buy=0.45,
+        raw_prob_buy=0.40,
         raw_prob_sell=0.05,
         is_range_market=True,
         execution_id="EXEC-TEST-RANGE-REJ",
@@ -830,7 +841,7 @@ def test_evaluate_tick_sweep_range_market_penalty():
     )
     assert proposal_rejected is None
 
-    # Case B: buy prob 0.55 >= 0.50 -> accepted
+    # Case B: buy prob 0.55 >= 0.44 -> accepted
     proposal_accepted = policy._evaluate_tick_sweep(
         sweep_sig=1,
         current_tick=tick,
