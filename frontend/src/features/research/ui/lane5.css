@@ -1,0 +1,10 @@
+/* lane5Kit shared styles — feature-scoped lane-5 namespace (theme tokens only).
+   The lane-5 kit previously carried no stylesheet; gate-stepper layout lived as
+   five inline style props (styling-law violation). */
+.gate-stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}

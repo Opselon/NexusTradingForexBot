@@ -17,8 +17,10 @@ function badgeLevel(status: string | null | undefined): "good" | "warn" | "bad" 
 export function StatusBadge({ status, label }: { status: string | null | undefined; label?: string }) {
   const level = badgeLevel(status);
   const text = status ? status.replace(/_/g, " ") : "UNKNOWN";
+  const glyph = level === "good" ? "\u2713" : level === "warn" ? "\u26a0" : level === "bad" ? "\u2715" : level === "neutral" ? "\u25cf" : "\u2013";
   return (
     <span className={`badge ${level}`} title={label ?? text}>
+      <span aria-hidden="true">{glyph}</span>
       {text}
     </span>
   );

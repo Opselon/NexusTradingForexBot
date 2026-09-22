@@ -11,6 +11,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
+import "./lane5.css";
 
 /** "updated HH:MM:SS · source" caption — freshness must always be visible. */
 export function FreshnessCaption({
@@ -206,7 +207,7 @@ export function GateStepper({
 }) {
   if (gates.length === 0) return <EmptyState message="No gates recorded by the backend for this item." />;
   return (
-    <ol className="gate-stepper" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+    <ol className="gate-stepper">
       {gates.map((g, i) => {
         const s = (g.status ?? "").toUpperCase();
         const passed = ["PASS", "PASSED", "OK", "COMPLETED", "YES"].includes(s);

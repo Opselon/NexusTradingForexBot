@@ -780,7 +780,8 @@
 
 /* trial table */
 .pa-table-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  max-block-size: min(64vh, 620px);
   border-radius: 8px;
   border: 1px solid var(--border);
 }
