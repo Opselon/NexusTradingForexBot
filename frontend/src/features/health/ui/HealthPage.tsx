@@ -166,7 +166,7 @@ export default function HealthPage(props: ShellPageProps) {
       <div className="l3-note">
         {t(
           "health.page.note",
-                    "Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only its cell. Verdict words come from the backend (HealthEngine contract); nothing here is inferred client-side.",
+          "Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only its cell. Verdict words come from the backend (HealthEngine contract); nothing here is inferred client-side.",
         )}
       </div>
 
