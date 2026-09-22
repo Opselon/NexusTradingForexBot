@@ -430,8 +430,17 @@ class _ChartEngine:
 
 
 @pytest.fixture
-def chart_client():
-    return TestClient(create_app(engine_ref=_ChartEngine()))
+def chart_client(monkeypatch: pytest.MonkeyPatch):
+    """Authenticated chart probe client (auth_client pattern, phase14): pin
+    NSE_WEB_AUTH_TOKEN before create_app so env-wins over the DPAPI secret
+    store — WEB-AUTH-P0 otherwise 401s these contract probes on any box where
+    the live engine persisted a real token (auth itself is pinned by
+    test_web_auth.py)."""
+    monkeypatch.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "chart-resync-test-token")
+    client = TestClient(create_app(engine_ref=_ChartEngine()))
+    client.headers.update({"Authorization": "Bearer chart-resync-test-token"})
+    return client
 
 
 def test_chart_history_default_window_is_900(chart_client):
