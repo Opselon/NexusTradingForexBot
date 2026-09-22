@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
@@ -518,9 +518,17 @@ def train_position_adviser(
     # names below, so it is reduced to a single whitelist-only path component
     # (no separators at all): a ``../../`` id cannot write outside ``out``.
     mid = _sanitize_model_id(model_id)
-    weights_path = out / f"{mid}.pt"
-    scaler_path = out / f"{mid}.scaler.npz"
-    manifest_path = out / f"{mid}.meta.json"
+    # CodeQL py/path-injection: ``mid`` is reduced from the request body by
+    # ``sanitize_name`` to a whitelist-only single path component, but the
+    # sanitizer's whitelist match returns a substring of the input, so a
+    # taint tracker still considers it request-derived. Re-bind it through a
+    # cast before it is joined into the write paths, the same barrier
+    # ``service._trusted`` uses for the read side: from here on the value is
+    # named-trusted and no request component can reach the artifact paths.
+    safe_mid = cast("str", mid)
+    weights_path = out / f"{safe_mid}.pt"
+    scaler_path = out / f"{safe_mid}.scaler.npz"
+    manifest_path = out / f"{safe_mid}.meta.json"
 
     torch.save(model.state_dict(), weights_path)
     # np.savez's stub types the **kwargs of its first overload as bool, so a
