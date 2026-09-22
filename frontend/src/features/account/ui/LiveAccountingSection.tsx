@@ -68,7 +68,7 @@ export function LiveAccountingSection() {
               <dt>equity</dt>
               <dd>{moneyOrDash(d.live?.equity)}</dd>
               <dt>floating PnL</dt>
-              <dd style={{ color: (d.live?.floating_pnl ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{moneyOrDash(d.live?.floating_pnl, true)}</dd>
+              <dd className={ (d.live?.floating_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad" } >{moneyOrDash(d.live?.floating_pnl, true)}</dd>
               <dt>free margin</dt>
               <dd>{moneyOrDash(d.live?.margin_free)}</dd>
               <dt>drawdown</dt>

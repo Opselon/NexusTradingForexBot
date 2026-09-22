@@ -240,7 +240,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <input
                   className="input"
                   style={{ width: 180 }}
-                  placeholder="filter by event type"
+                  aria-label="Event type filter" placeholder="filter by event type"
                   value={eventFilter}
                   onChange={(e) => setEventFilter(e.target.value)}
                 />

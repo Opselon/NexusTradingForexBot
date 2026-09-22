@@ -229,7 +229,7 @@ export function ArticleRow({
       <div className="metarow">
         <span>{a.source_name || a.source_id || "—"}</span>
         <span className={impClass(imp)}>{imp === null ? "imp —" : `imp ${imp}`}</span>
-        <span style={{ color: "var(--amber)" }}>XAU {rel === null ? "—" : `${rel}%`}</span>
+        <span className="tx-warn" >XAU {rel === null ? "—" : `${rel}%`}</span>
         {a.importance ? <span>{String(a.importance)}</span> : null}
         <span>{a.published_at ? formatDateTime(a.published_at) : "—"}</span>
         {status !== "ACTIVE" && <StatusBadge status={status} />}

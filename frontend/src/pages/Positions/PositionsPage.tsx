@@ -297,7 +297,7 @@ export default function PositionsPage({ snapshot }: Props) {
         right={
           <>
             <span className="timestamp-note">source: {adapterSource}{snapshot ? ` · snapshot v${snapshot.state_version}` : ""}</span>
-            <button className="btn small ghost" onClick={() => void positionsQuery.refetch()} disabled={positionsQuery.isFetching}>
+            <button aria-label="Refresh positions" className="btn small ghost" onClick={() => void positionsQuery.refetch()} disabled={positionsQuery.isFetching}>
               ⟳
             </button>
           </>

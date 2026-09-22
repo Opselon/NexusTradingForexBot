@@ -210,16 +210,16 @@ export function ModelRegistryPanel({
           <button
             onClick={onRollback}
             disabled={rollbackBusy}
-            className="ms-btn-action ms-btn-ghost"
-            style={{ color: "var(--amber)" }}
+            className="ms-btn-action ms-btn-ghost tx-warn"
+            
           >
             {rollbackBusy ? "⏳ Rolling back…" : "↺ Rollback to Previous Champion"}
           </button>
           <button
             onClick={onInspectScaler}
             disabled={!selectedModelId}
-            className="ms-btn-action ms-btn-ghost"
-            style={{ color: "var(--accent-strong)" }}
+            className="ms-btn-action ms-btn-ghost tx-accent"
+            
           >
             📊 Inspect Scaler Vectors
           </button>
@@ -252,7 +252,7 @@ export function ModelRegistryPanel({
         {verifyResult && (
           <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span className="small font-bold" style={{ color: "var(--accent-strong)" }}>
+              <span className="small font-bold tx-accent" >
                 Pre-Load Checkpoint Verification Results ({verifyResult.model_id})
               </span>
               <span className={`badge ${verifyResult.all_passed ? "good" : "warn"}`}>
@@ -277,7 +277,7 @@ export function ModelRegistryPanel({
                           {c.passed ? "PASS" : "FAIL"}
                         </span>
                       </td>
-                      <td style={{ color: "var(--text-dim)" }}>{c.detail}</td>
+                      <td className="tx-dim" >{c.detail}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -290,7 +290,7 @@ export function ModelRegistryPanel({
         {scalerResult && (
           <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span className="small font-bold" style={{ color: "var(--accent-strong)" }}>
+              <span className="small font-bold tx-accent" >
                 Attached Scaler Normalization Vectors ({scalerResult.dimension}D)
               </span>
               <span className="badge neutral">{scalerResult.features_count} Features Calibrated</span>
@@ -314,9 +314,9 @@ export function ModelRegistryPanel({
                   <tbody>
                     {scalerResult.features.map((f) => (
                       <tr key={f.index}>
-                        <td className="inline-mono" style={{ color: "var(--text-faint)" }}>feat_{f.index}</td>
-                        <td className="num" style={{ color: "var(--green)" }}>{f.mean.toFixed(4)}</td>
-                        <td className="num" style={{ color: "var(--accent-strong)" }}>{f.std.toFixed(4)}</td>
+                        <td className="inline-mono tx-faint" >feat_{f.index}</td>
+                        <td className="num tx-good" >{f.mean.toFixed(4)}</td>
+                        <td className="num tx-accent" >{f.std.toFixed(4)}</td>
                         <td style={{ textAlign: "center", color: "var(--text-dim)" }}>[{f.clamp_min}, {f.clamp_max}]</td>
                         <td style={{ textAlign: "center" }}>
                           <span className={`badge ${f.zero_variance ? "warn" : "good"}`}>

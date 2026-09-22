@@ -109,7 +109,7 @@ export function PeriodSeriesSection() {
               <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
                 <span>{p.key ?? `#${i}`}</span>
                 <span>{p.total_trades ?? 0} trades</span>
-                <span style={{ color: (p.net_pnl ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{moneyOrDash(p.net_pnl, true)}</span>
+                <span className={ (p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad" } >{moneyOrDash(p.net_pnl, true)}</span>
                 <span className="faint">wr {p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%`}</span>
               </div>
             ))}

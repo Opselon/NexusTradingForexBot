@@ -186,7 +186,7 @@ export default function AuditPage() {
               {eventRows.map((row: AuditEventRow) => {
                 const payload = parsePayload(row.payload);
                 return (
-                  <tr key={String(row.id)} className="l4-clickable" onClick={() => setDrawer({ title: `audit_event #${row.id} · ${row.event_type ?? ""}`, body: payload ?? row.payload })}>
+                  <tr key={String(row.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_event #${row.id} · ${row.event_type ?? ""}`, body: payload ?? row.payload })}>
                     <td>{String(row.id)}</td>
                     <td>{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
                     <td>{row.event_type ?? "—"}</td>
@@ -244,7 +244,7 @@ export default function AuditPage() {
           ) : (
             <DataTable headers={[{ label: "Ticket" }, { label: "Symbol" }, { label: "Dir" }, { label: "Volume", num: true }, { label: "Entry", num: true }, { label: "Status" }, { label: "PnL", num: true }, { label: "Time" }]}>
               {ledgerRows.map((row: AuditLedgerRow, i) => (
-                <tr key={`${row.ticket ?? "x"}-${i}`} className="l4-clickable" onClick={() => setDrawer({ title: `audit_ledger ticket ${row.ticket ?? "—"}`, body: row })}>
+                <tr key={`${row.ticket ?? "x"}-${i}`} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_ledger ticket ${row.ticket ?? "—"}`, body: row })}>
                   <td>{row.ticket ?? "—"}</td>
                   <td>{row.symbol ?? "—"}</td>
                   <td>{row.direction ?? "—"}</td>
@@ -300,7 +300,7 @@ export default function AuditPage() {
           ) : (
             <DataTable headers={[{ label: "ID" }, { label: "Severity" }, { label: "Status" }, { label: "Category" }, { label: "Component" }, { label: "Title" }, { label: "Created" }]}>
               {incidentRows.map((row: IncidentRow) => (
-                <tr key={String(row.incident_id ?? row.id)} className="l4-clickable" onClick={() => setDrawer({ title: `incident ${String(row.incident_id ?? row.id ?? "—")}`, body: row })}>
+                <tr key={String(row.incident_id ?? row.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `incident ${String(row.incident_id ?? row.id ?? "—")}`, body: row })}>
                   <td>{String(row.incident_id ?? row.id ?? "—")}</td>
                   <td><SeverityBadge severity={row.severity} /></td>
                   <td>{row.status ?? "—"}</td>

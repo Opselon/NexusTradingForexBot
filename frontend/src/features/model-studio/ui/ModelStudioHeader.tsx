@@ -95,7 +95,7 @@ export function ModelStudioHeader({
             <span className="tiny faint" style={{ display: "block" }}>
               Weights SHA256
             </span>
-            <span className="inline-mono small" style={{ color: "var(--accent-strong)" }}>
+            <span className="inline-mono small tx-accent" >
               {activeModel?.weights_sha256 ? activeModel.weights_sha256.substring(0, 12) : "—"}
             </span>
           </div>
@@ -120,7 +120,7 @@ export function ModelStudioHeader({
 
         <div className="ms-metric-card">
           <div className="ms-metric-label">Model Source</div>
-          <div className="ms-metric-value" style={{ color: "var(--accent-strong)" }} title={overview?.model_source || "ONLINE"}>
+          <div className="ms-metric-value tx-accent"  title={overview?.model_source || "ONLINE"}>
             {overview?.model_source || "ONLINE"}
           </div>
           <div className="ms-metric-sub">Memory State</div>
@@ -152,7 +152,7 @@ export function ModelStudioHeader({
 
         <div className="ms-metric-card">
           <div className="ms-metric-label">Scaler Status</div>
-          <div className="ms-metric-value" style={{ color: "var(--green)" }}>
+          <div className="ms-metric-value tx-good" >
             {overview?.scaler_stats?.status || "READY"}
           </div>
           <div className="ms-metric-sub">

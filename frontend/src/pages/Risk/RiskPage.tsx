@@ -335,7 +335,7 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
         right={
           <>
             <span className="timestamp-note">source /api/v1/risk/summary</span>
-            <button className="btn small ghost" onClick={() => void summaryQuery.refetch()} disabled={summaryQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh summary" className="btn small ghost" onClick={() => void summaryQuery.refetch()} disabled={summaryQuery.isFetching}>⟳</button>
           </>
         }
       >
