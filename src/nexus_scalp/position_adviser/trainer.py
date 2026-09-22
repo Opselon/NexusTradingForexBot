@@ -43,6 +43,11 @@ from nexus_scalp.position_adviser.models import (
     ADVISER_ACTIONS,
     INDEX_BY_ACTION,
 )
+from nexus_scalp.position_adviser.paths import (
+    ADVISER_ROOT,
+    sanitize_name,
+    sanitize_repo_relative,
+)
 
 logger = get_logger("nexus_scalp.position_adviser.trainer")
 
@@ -50,6 +55,86 @@ logger = get_logger("nexus_scalp.position_adviser.trainer")
 #: artifact filenames. Anything that could carry a path component (slashes,
 #: ``..``, a drive letter, a NUL) is refused; the trainer substitutes a
 #: generated id instead, so the write paths stay inside ``output_dir``.
+#: Trusted containment root for adviser artifacts. Same root as the service:
+#: both the read (dataset) and the write (checkpoint) side of a training run
+#: must stay inside it.
+_ADVISER_ROOT = ADVISER_ROOT
+
+logger = get_logger("nexus_scalp.position_adviser.trainer")
+
+
+def _contained_dataset(p: Path) -> bool:
+    """Defense-in-depth: ``p`` must stay inside the adviser root.
+
+    ``p`` is built only from sanitizer output below, so this is a second
+    barrier, not the primary one; it keeps the trainer safe even when a future
+    caller hands it an already-absolute path.
+    """
+    return p.is_relative_to(_ADVISER_ROOT.resolve())
+
+
+def _sanitize_relpath(raw: str | Path) -> Path:
+    """Return an UNTAINTED root-relative ``Path`` derived from a request-supplied value.
+
+    The input arrives in an HTTP body (a dataset path or an artifact directory),
+    or as an already-absolute path produced by an earlier barrier, so CodeQL
+    tracks it all the way into every ``Path`` built from it. The containment
+    checks elsewhere answer "is it inside the root?"; this answers the different
+    question CodeQL's ``py/path-injection`` asks: "can the string carry a path
+    *component* at all?" Every component is whitelisted, so the returned object
+    can only name something inside the root it is anchored to. Only the returned
+    value is used downstream.
+
+    ``\\`` is admitted (Windows separators); ``..`` and a leading separator are
+    excluded by the anchored character class.
+    """
+    return sanitize_repo_relative(raw, root=_ADVISER_ROOT, label="position adviser path")
+
+
+def _sanitize_model_id(model_id: str | None) -> str:
+    """Return an UNTAINTED model id, substituting a generated one when unsafe.
+
+    ``model_id`` is joined into artifact filenames, so it must not be able to
+    carry a path component (a ``../../`` id would write outside ``output_dir``).
+    The whitelist admits only plain filename characters; ``..`` is excluded by
+    the class. A caller id that cannot meet that bar gets a generated one
+    rather than being silently truncated.
+    """
+    return sanitize_name(model_id, fallback=f"pos_adviser_{int(time.time())}")
+
+
+def _resolve_dataset_path(dataset_path: Path | str) -> Path:
+    """Resolve a request-supplied dataset path into an UNTAINTED absolute ``Path``.
+
+    The tainted value is first reduced to a whitelist-only root-relative ``Path``
+    (``sanitize_repo_relative``: an absolute in-repo path is narrowed to its
+    root-relative form, a relative one is whitelisted as-is), then that untainted
+    value is anchored under the adviser's trusted root and resolved once. Only
+    the resolved value is returned, so no request-supplied component reaches the
+    parquet/csv reads.
+    """
+    clean = _sanitize_relpath(dataset_path)
+    return (_ADVISER_ROOT.resolve() / clean).resolve()
+
+
+def _resolve_output_dir(output_dir: Path | str | None, dataset: Path) -> Path:
+    """Resolve the artifact output directory into an UNTAINTED absolute ``Path``.
+
+    ``output_dir`` is server-derived (``config.artifact_dir`` under the repo
+    root) for both route callers, but the trainer is a library entry point, so
+    a request-supplied value is treated as untrusted: sanitized to a
+    whitelist-only root-relative path and anchored under the trusted root. Only
+    the resolved value is returned and only it is ``mkdir``-ed.
+    """
+    if output_dir is None:
+        return dataset.parent / "advisers"
+    clean = _sanitize_relpath(output_dir)
+    return (_ADVISER_ROOT.resolve() / clean).resolve()
+
+
+#: Characters a request-supplied ``model_id`` may use when it is joined into
+#: artifact filenames. Kept for the existing containment probes (test_position_
+#: adviser_path_containment.py) which assert its behavior directly.
 _SAFE_MODEL_ID = re.compile(r"(?!.*\.\.)[\w.][A-Za-z0-9._-]{0,127}\Z")
 
 #: Only these split values are eligible for training. ``purge``/``embargo``
@@ -223,12 +308,16 @@ def train_position_adviser(
     """
     from nexus_scalp.model_generation.dataset_manifest import compute_dataset_hash
 
-    # ``p.resolve()`` is what makes ``p`` self-consistent (it removes any '..'
-    # segments and follows symlinks), so the reads below hit the canonical
-    # location rather than a path whose text and target disagree. It also makes
-    # the trainer's input a resolved, absolute value — the caller's containment
-    # check is validated against exactly this object.
-    p = Path(dataset_path).resolve()
+    # SANITIZER BARRIER (CodeQL py/path-injection): the request-supplied path is
+    # reduced to a whitelist-only relative Path and re-anchored under the
+    # trusted root BEFORE any Path expression the reads consume. Only
+    # ``dataset`` — a value whose provenance is the sanitizer, not the request —
+    # is used below, so no request-supplied component reaches the parquet/csv
+    # reads. ``resolve()`` removes any residual '..' and follows symlinks.
+    dataset = _resolve_dataset_path(dataset_path)
+    p = dataset
+    if not _contained_dataset(p):
+        raise AdviserFeatureError("position adviser dataset must stay inside the repository root")
     if not p.is_file():
         raise FileNotFoundError(f"position adviser dataset not found: {p}")
     if p.suffix.lower() not in (".parquet", ".csv"):
@@ -401,17 +490,19 @@ def train_position_adviser(
     }
 
     # ---- 8. persist ----------------------------------------------------------
-    out = Path(output_dir) if output_dir is not None else p.parent / "advisers"
+    # SANITIZER BARRIER (CodeQL py/path-injection): ``output_dir`` is reduced to
+    # a whitelist-only relative Path and anchored under the trusted root; only
+    # that untainted value is mkdir-ed and joined into the artifact names.
+    out = _resolve_output_dir(output_dir, dataset)
+    if not out.is_relative_to(_ADVISER_ROOT.resolve()):
+        raise AdviserFeatureError(
+            "position adviser output_dir must stay inside the repository root"
+        )
     out.mkdir(parents=True, exist_ok=True)
     # ``model_id`` comes from the request body and is joined into the artifact
-    # names below, so it must not be able to carry a path component (a
-    # "../../" id would write outside ``out``). Names are restricted to the
-    # safe characters a UI id uses; an id that cannot meet that bar is
-    # replaced with a generated one rather than silently truncated.
-    mid = model_id or f"pos_adviser_{int(time.time())}"
-    if not _SAFE_MODEL_ID.fullmatch(mid):
-        safe = _SAFE_MODEL_ID.sub("_", mid)
-        mid = safe if _SAFE_MODEL_ID.fullmatch(safe) else f"pos_adviser_{int(time.time())}"
+    # names below, so it is reduced to a single whitelist-only path component
+    # (no separators at all): a ``../../`` id cannot write outside ``out``.
+    mid = _sanitize_model_id(model_id)
     weights_path = out / f"{mid}.pt"
     scaler_path = out / f"{mid}.scaler.npz"
     manifest_path = out / f"{mid}.meta.json"
