@@ -175,6 +175,7 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
                   className={`st-th st-num ${sort.key === k ? "st-active" : ""}`}
                   onClick={() => toggleSort(k)}
                   title={`sort by ${k}`}
+                  aria-sort={sort.key === k ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
                 >
                   <span className="st-th-label">{LABELS[k]}</span>
                   <span className="st-sort-ico">{sort.key === k ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>

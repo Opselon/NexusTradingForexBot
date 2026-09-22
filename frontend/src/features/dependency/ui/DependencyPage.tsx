@@ -312,7 +312,7 @@ function NodeInspector({ options, selected, setSelected, pathTarget, setPathTarg
             className="input"
             style={{ flex: 1 }}
             list="dependency-node-options"
-            placeholder="node id e.g. mod:src/nexus_scalp/engine"
+            aria-label="Source node id" placeholder="node id e.g. mod:src/nexus_scalp/engine"
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
           />
@@ -442,7 +442,7 @@ function PathExplorer({
           className="input"
           style={{ flex: 1 }}
           list="dependency-node-options"
-          placeholder="target node id"
+          aria-label="Target node id" placeholder="target node id"
           value={target}
           onChange={(e) => setTarget(e.target.value)}
         />

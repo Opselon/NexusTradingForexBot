@@ -37,7 +37,7 @@ export function PositionTimelineLookup() {
           style={{ flex: 1 }}
           value={ticket}
           inputMode="numeric"
-          placeholder="ticket e.g. 501"
+          aria-label="Ticket lookup" placeholder="ticket e.g. 501"
           onChange={(e) => setTicket(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") setSubmitted(ticket.trim());

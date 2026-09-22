@@ -386,7 +386,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
                 <input
                   className="input"
                   style={{ width: 200 }}
-                  placeholder="Type LIVE to arm confirmation"
+                  aria-label="LIVE confirmation phrase" placeholder="Type LIVE to arm confirmation"
                   value={liveConfirm}
                   onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
                 />

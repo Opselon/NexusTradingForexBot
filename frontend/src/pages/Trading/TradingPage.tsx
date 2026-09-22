@@ -222,7 +222,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
         <Panel title="Execution mode (PAPER ⇄ LIVE)" accent>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select className="select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
+            <select aria-label="Target execution mode" className="select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
               <option value="">select mode…</option>
               <option value="PAPER">PAPER (simulation adapter)</option>
               <option value="SHADOW">SHADOW (no execution)</option>
@@ -251,7 +251,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
                 <input
                   className="input"
                   style={{ width: 200 }}
-                  placeholder={t("ux.confirm.type", "Type {w} to enable confirmation", { w: LIVE_CONFIRM_TEXT })}
+                  aria-label="LIVE confirmation phrase" placeholder={t("ux.confirm.type", "Type {w} to enable confirmation", { w: LIVE_CONFIRM_TEXT })}
                   value={liveConfirm}
                   onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
                 />
@@ -520,9 +520,9 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           <>
             <span className="small faint">manual order placement / cancel: NO backend route — no fake buttons here (BUG-242 INV-004)</span>
             <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-              <button className="btn small" disabled={execPage <= 1} onClick={() => setExecPage((p) => Math.max(1, p - 1))}>‹</button>
+              <button aria-label="Previous page" className="btn small" disabled={execPage <= 1} onClick={() => setExecPage((p) => Math.max(1, p - 1))}>‹</button>
               <span className="small faint inline-mono">p{execPage}</span>
-              <button className="btn small" disabled={!execQuery.data?.has_more} onClick={() => setExecPage((p) => p + 1)}>›</button>
+              <button aria-label="Next page" className="btn small" disabled={!execQuery.data?.has_more} onClick={() => setExecPage((p) => p + 1)}>›</button>
             </span>
           </>
         }

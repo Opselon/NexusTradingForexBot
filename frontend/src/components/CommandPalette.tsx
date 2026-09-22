@@ -224,6 +224,11 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
           <input
             ref={inputRef}
             className="palette-input cp-input"
+            role="combobox"
+                        aria-expanded="true"
+                        aria-controls="cp-listbox"
+                        aria-activedescendant={`cp-opt-${selected}`}
+                        aria-label="Search commands"
             placeholder={t("ux.palette.placeholder", "Search commands… (e.g. “signal”, “position”, “diagnostics”)")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -236,7 +241,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
           />
           <span className="cp-count tiny faint inline-mono">{filtered.length ? `${filtered.length}` : "0"}</span>
         </div>
-        <div className="palette-list cp-list" ref={listRef} role="listbox">
+        <div className="palette-list cp-list" id="cp-listbox" ref={listRef} role="listbox" aria-label="Commands">
           {filtered.length === 0 ? (
             <div className="palette-empty">{t("ux.palette.empty", "No results")}</div>
           ) : (
@@ -256,6 +261,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
                   <div
                     role="option"
                     aria-selected={i === selected}
+                    id={`cp-opt-${i}`}
                     data-idx={i}
                     className={`palette-item cp-item ${i === selected ? "selected" : ""}`}
                     onClick={() => runAt(i)}

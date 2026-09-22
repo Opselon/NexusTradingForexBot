@@ -269,7 +269,7 @@ export function DatasetPipelinePanel({
             {(trainBusy || trainProgress) && trainProgress && (
               <div className="ms-progress-wrap">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="tiny" style={{ color: "var(--text-dim)" }}>
+                  <span className="tiny tx-dim" >
                     Epoch {trainProgress.epoch} / {trainProgress.epochs}
                     {trainProgress.stage ? ` · ${trainProgress.stage}` : ""}
                   </span>
@@ -281,13 +281,13 @@ export function DatasetPipelinePanel({
                   <div className="ms-progress-fill" style={{ width: `${pct}%` }} />
                 </div>
                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  <span className="inline-mono tiny" style={{ color: "var(--green)" }}>
+                  <span className="inline-mono tiny tx-good" >
                     loss {trainProgress.loss.toFixed(4)}
                   </span>
-                  <span className="inline-mono tiny" style={{ color: "var(--amber)" }}>
+                  <span className="inline-mono tiny tx-warn" >
                     val {trainProgress.val_loss.toFixed(4)}
                   </span>
-                  <span className="inline-mono tiny" style={{ color: "var(--text-faint)" }}>
+                  <span className="inline-mono tiny tx-faint" >
                     run {trainProgress.run_id.substring(0, 8)}
                   </span>
                 </div>
@@ -320,8 +320,8 @@ export function DatasetPipelinePanel({
             <button
               onClick={onInspect}
               disabled={inspectBusy || !selectedDataset}
-              className="ms-btn-action ms-btn-ghost"
-              style={{ color: "var(--accent-strong)" }}
+              className="ms-btn-action ms-btn-ghost tx-accent"
+              
             >
               {inspectBusy ? "⏳ Computing Statistics…" : "🔍 Inspect Features"}
             </button>
@@ -389,18 +389,18 @@ export function DatasetPipelinePanel({
                   <tbody>
                     {inspectResult.features.map((f) => (
                       <tr key={f.index}>
-                        <td className="inline-mono" style={{ color: "var(--text-faint)" }}>{f.index}</td>
+                        <td className="inline-mono tx-faint" >{f.index}</td>
                         <td className="inline-mono" style={{ color: "var(--text)", fontWeight: 600 }}>{f.name}</td>
                         <td>
                           <span className={`ms-slot-family ${(f.family || "").toLowerCase()}`}>
                             {f.family}
                           </span>
                         </td>
-                        <td className="num" style={{ color: "var(--text-dim)" }}>{f.raw_min.toFixed(3)}</td>
-                        <td className="num" style={{ color: "var(--text-dim)" }}>{f.raw_max.toFixed(3)}</td>
-                        <td className="num" style={{ color: "var(--green)" }}>{f.raw_mean.toFixed(3)}</td>
-                        <td className="num" style={{ color: "var(--accent-strong)" }}>{f.raw_std.toFixed(3)}</td>
-                        <td className="num" style={{ color: f.zero_variance ? "var(--red)" : "var(--text)" }}>
+                        <td className="num tx-dim" >{f.raw_min.toFixed(3)}</td>
+                        <td className="num tx-dim" >{f.raw_max.toFixed(3)}</td>
+                        <td className="num tx-good" >{f.raw_mean.toFixed(3)}</td>
+                        <td className="num tx-accent" >{f.raw_std.toFixed(3)}</td>
+                        <td className="num" >
                           {f.normalized_sample.toFixed(3)}
                         </td>
                         <td style={{ textAlign: "center" }}>
