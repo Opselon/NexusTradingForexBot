@@ -9,6 +9,7 @@ Reads agents/bugs.md, writes:
 Deterministic and idempotent: re-running on an already-compressed ledger is a no-op
 (the guard comment near the top is detected and the script exits 0).
 """
+
 import json
 import re
 import sys
@@ -55,12 +56,38 @@ FIELD_PATTERNS = {
 
 # block labels we keep as condensed prose (lowercased, matched as line prefixes)
 BLOCK_LABELS = [
-    "surface", "surfaces", "symptom", "symptoms", "root cause", "root causes",
-    "problem", "impact", "evidence", "fix", "resolution", "verification",
-    "runtime verification", "regression", "regression tests", "regression test",
-    "regression guards", "lesson", "lessons", "found", "found by", "mechanism",
-    "failure scenario", "execution path", "category", "reproduction",
-    "trigger", "residual", "invariants", "tests", "note", "operator note",
+    "surface",
+    "surfaces",
+    "symptom",
+    "symptoms",
+    "root cause",
+    "root causes",
+    "problem",
+    "impact",
+    "evidence",
+    "fix",
+    "resolution",
+    "verification",
+    "runtime verification",
+    "regression",
+    "regression tests",
+    "regression test",
+    "regression guards",
+    "lesson",
+    "lessons",
+    "found",
+    "found by",
+    "mechanism",
+    "failure scenario",
+    "execution path",
+    "category",
+    "reproduction",
+    "trigger",
+    "residual",
+    "invariants",
+    "tests",
+    "note",
+    "operator note",
 ]
 # labels already surfaced in the structured metadata line — not repeated as prose
 META_LABELS = {"status", "severity", "confidence", "discovered", "fixed", "verified"}
@@ -68,8 +95,8 @@ META_LABELS = {"status", "severity", "confidence", "discovered", "fixed", "verif
 
 def parse(text: str):
     """Split the ledger into ordered sections (bug entries + other H2 blocks)."""
-    lines = [l.rstrip("\r") for l in text.split("\n")]
-    h2 = [(i, l.strip()) for i, l in enumerate(lines) if H2.match(l)]
+    lines = [line.rstrip("\r") for line in text.split("\n")]
+    h2 = [(i, line.strip()) for i, line in enumerate(lines) if H2.match(line)]
     if not h2:
         return [], lines
     counts: dict[str, int] = {}
@@ -137,8 +164,8 @@ def blocks(entry_lines):
     label = None
     buf = []
     out = []
-    for l in entry_lines:
-        s = l.strip()
+    for line in entry_lines:
+        s = line.strip()
         if not s:
             continue
         if s.startswith("```"):
@@ -177,13 +204,37 @@ def condense(entry: dict) -> str:
     bl = blocks(body_lines)
     # prefer canonical names in a stable order, then any other labelled block
     order = [
-        "surface", "surfaces", "symptom", "symptoms", "problem", "impact",
-        "root cause", "root causes", "found", "mechanism", "evidence",
-        "failure scenario", "execution path", "fix", "resolution",
-        "verification", "runtime verification", "regression", "regression tests",
-        "regression test", "regression guards", "residual", "note",
-        "operator note", "invariants", "tests", "category", "trigger",
-        "reproduction", "lesson", "lessons",
+        "surface",
+        "surfaces",
+        "symptom",
+        "symptoms",
+        "problem",
+        "impact",
+        "root cause",
+        "root causes",
+        "found",
+        "mechanism",
+        "evidence",
+        "failure scenario",
+        "execution path",
+        "fix",
+        "resolution",
+        "verification",
+        "runtime verification",
+        "regression",
+        "regression tests",
+        "regression test",
+        "regression guards",
+        "residual",
+        "note",
+        "operator note",
+        "invariants",
+        "tests",
+        "category",
+        "trigger",
+        "reproduction",
+        "lesson",
+        "lessons",
     ]
     seen = set()
     chosen = []
@@ -210,22 +261,23 @@ def condense(entry: dict) -> str:
         if len(piece) < 25:
             continue
         # a parenthesised qualifier left open by label-chopping must not leak
-        if label.count("(") > label.count(")"):
-            label = label.rsplit("(", 1)[0].strip()
-        label = clip(label, 60)
+        clean = label
+        if clean.count("(") > clean.count(")"):
+            clean = clean.rsplit("(", 1)[0].strip()
+        clean = clip(clean, 60)
         if piece.count("**") % 2:
             piece = piece.replace("**", "")
         # a qualifier that the label left behind must not start the sentence
         piece = re.sub(r"^[\s,;:]+", "", piece).strip()
         if not piece:
             continue
-        out.append(f"- **{label.title()}**: {piece}")
+        out.append(f"- **{clean.title()}**: {piece}")
         total += len(piece)
         if total >= MAX_BODY:
             break
 
     # entries with no labelled block at all still keep their substance
-    if not any(l.startswith("- **") and not l.startswith("- **Orig") for l in out):
+    if not any(line.startswith("- **") and not line.startswith("- **Orig") for line in out):
         flat = re.sub(r"\s*\n\s*", " ", " ".join(body_lines))
         flat = re.sub(r"```[a-z]*|```", "`", flat)
         flat = re.sub(r"\s+", " ", flat).strip()
@@ -293,10 +345,10 @@ def main():
     print(f"wrote {ARCHIVE}")
 
     head = []
-    for l in lines:
-        if l.startswith("## Forensic Bug Ledger"):
+    for line in lines:
+        if line.startswith("## Forensic Bug Ledger"):
             break
-        head.append(l)
+        head.append(line)
     if not any(h.startswith("## ") for h in head):
         head = lines[:34]
 
