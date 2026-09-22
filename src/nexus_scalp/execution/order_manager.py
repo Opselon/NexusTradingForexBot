@@ -2420,6 +2420,31 @@ class OrderLifecycleManager:
             recovery_score = evidence.get("recovery_score", 0.50)
             adverse_score = evidence.get("adverse_score", 0.50)
 
+            # BUG-313 (2026-09-22, live forensics): the recovery_score fed here
+            # is 0.70*continuation + 0.30*recovery_velocity. With the serving
+            # head near-uniform over the 3 trained classes (live evidence:
+            # p_buy mean 0.391, p_sell 0.358, p_no_trade 0.251 — buy-sell
+            # spread std only 0.042), continuation == the OWN-side raw
+            # probability ~= 0.36-0.39 and recovery_velocity ~ 0 while the
+            # position is underwater, so recovery_score is arithmetically
+            # pinned in the 0.25-0.28 band NO MATTER what the market does.
+            # The < 0.30 LOSS_EXIT_PRESSURE threshold is therefore unreachable
+            # in practice: 46/46 live losing trades left at exactly 60-65s
+            # (the minimum-loss grace gate) with 8/14 showing MFE $0.00 — the
+            # reward leg never had time to develop. Restoration of that
+            # pressure verdict requires a TRAJECTORY term that reflects the
+            # actual position behaviour, not only the model's flat prior.
+            # Add the realized pnl slope as an explicit recovery signal so a
+            # position that is genuinely bouncing back cannot be flagged
+            # purely because the classifier is uninformative.
+            pnl_slope = float(pnl_features.get("pnl_slope", 0.0)) if pnl_features else 0.0
+            # Scaled pnl slope (USD/sec): bounded like recovery_velocity.
+            pnl_slope_scaled = min(1.0, max(0.0, pnl_slope * 5.0))
+            effective_recovery = min(
+                1.0,
+                max(0.0, 0.55 * recovery_score + 0.45 * pnl_slope_scaled),
+            )
+
             # Recovery attempts are budget-capped per ticket: once the budget is
             # spent (or adverse excursion blows past 0.80) stop managing the loss
             # and hard-exit instead of giving the recovery path more rope.
@@ -2428,11 +2453,11 @@ class OrderLifecycleManager:
             if budget_remaining <= 0.0 or adverse_score > 0.80:
                 return PositionState.LOSS_HARD_EXIT
 
-            if recovery_score >= 0.70 and adverse_score < 0.20:
+            if effective_recovery >= 0.70 and adverse_score < 0.20:
                 return PositionState.LOSS_RECOVERY_CONFIRMED
-            elif recovery_score >= 0.45:
+            elif effective_recovery >= 0.45:
                 return PositionState.LOSS_RECOVERY_CANDIDATE
-            elif recovery_score < 0.30:
+            elif effective_recovery < 0.30:
                 return PositionState.LOSS_EXIT_PRESSURE
             else:
                 return PositionState.LOSS_RECOVERY_FAILING
