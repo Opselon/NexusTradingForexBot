@@ -7,6 +7,11 @@
 > `nexus-scalp-engine-dev/references/multi-agent-git-contract.md` (identical).
 > If this file and the skill reference ever diverge, this file is the
 > in-repo source of truth for agents; reconcile the skill copy after.
+>
+> **Git mechanics authority:** synchronization, branch naming, worktree
+> ownership, destructive-git prohibitions, and squash-merge equivalence are
+> governed by `agents/git_governance.md`. If this file and that file
+> disagree on those subjects, `agents/git_governance.md` wins.
 
 ## Purpose
 

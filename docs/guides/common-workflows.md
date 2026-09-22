@@ -9,7 +9,8 @@ lang: en
 ## 1. Daily development loop
 
 ```bash
-git pull && .venv/Scripts/Activate.ps1        # Windows dev
+git fetch origin && git merge --ff-only origin/main   # mirror sync; STOP on failure (MAIN_DIVERGED)
+.venv/Scripts/Activate.ps1                        # Windows dev
 nexus test --mode quick                        # fast sanity
 # ... edit ...
 pytest tests/unit -q -k "70 or schema"         # targeted suite
