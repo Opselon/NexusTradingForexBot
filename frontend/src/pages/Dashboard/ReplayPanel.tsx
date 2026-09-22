@@ -149,7 +149,7 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
       setRun({ running: false, message: t("dash.replay.time_required", "Start/end time required."), ok: false });
       return;
     }
-    const res = await runCmd("replay session", () =>
+    const res = await runCmd(t("dash.replay.cmd_session", "replay session"), () =>
       replayApi.createSession({
         dataset_id: `UI-M1-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`,
         dataset_fingerprint: `uipick-${start}-${end}`,
@@ -222,7 +222,7 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
   };
 
   const showReport = async (): Promise<void> => {
-    const res = await runCmd("replay report", () => replayApi.report(replayId));
+    const res = await runCmd(t("dash.replay.cmd_report", "replay report"), () => replayApi.report(replayId));
     if (res) setReport(res.report ?? null);
   };
 

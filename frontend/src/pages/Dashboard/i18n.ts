@@ -190,6 +190,8 @@ export const MESSAGES: FeatureMessages = {
   "dash.replay.backend_refused": { fa: "{l}: توسط بک‌اند رد شد.", de: "{l}: vom Backend abgelehnt.", es: "{l}: rechazado por el backend.", ar: "{l}: رفضه الخادم." },
   "dash.replay.bound_70d": { fa: "وابسته به 70D: {p}", de: "70D gebunden: {p}", es: "vinculado a 70D: {p}", ar: "مرتبط بـ 70D: {p}" },
   "dash.replay.checkpoint": { fa: "⚑ نقطه بازرسی", de: "⚑ Prüfpunkt", es: "⚑ punto de control", ar: "⚑ نقطة تفتيش" },
+  "dash.replay.cmd_report": { fa: "گزارش بازپخش", de: "Replay-Bericht", es: "informe de replay", ar: "تقرير إعادة التشغيل" },
+  "dash.replay.cmd_session": { fa: "نشست بازپخش", de: "Replay-Sitzung", es: "sesión de replay", ar: "جلسة إعادة التشغيل" },
   "dash.replay.cmd_failed": { fa: "{l} ناموفق: {m}", de: "{l} fehlgeschlagen: {m}", es: "{l} falló: {m}", ar: "{l} فشل: {m}" },
   "dash.replay.confirm_title": { fa: "تأیید — {w} بازپخش تاریخی", de: "Bestätigen — {w} HISTORISCHES REPLAY", es: "Confirmar — REPLAY HISTÓRICO {w}", ar: "تأكيد — {w} إعادة التشغيل التاريخية" },
   "dash.replay.create_session": { fa: "⚗ ایجاد نشست بازپخش", de: "⚗ Replay-Sitzung erstellen", es: "⚗ Crear sesión de replay", ar: "⚗ إنشاء جلسة إعادة تشغيل" },
