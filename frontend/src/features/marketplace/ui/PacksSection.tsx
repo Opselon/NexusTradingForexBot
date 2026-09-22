@@ -52,12 +52,19 @@ export function PacksSection() {
       ) : (
         <div className="mkt-packs">
           {list.map((p) => (
-            <div className="mkt-pack" key={p.id}>
+            <div className={`mkt-pack ${p.installed ? "is-installed" : ""}`} key={p.id}>
               <div className="name">{p.name}</div>
               <div className="desc">{p.description || "—"}</div>
               <div className="foot">
-                <span>{p.family}</span>
-                {p.installed ? <span className="badge good">INSTALLED · {p.seed_count}</span> : <span className="badge neutral">not installed</span>}
+                <span className="mkt-family-tag">
+                  <span className="swatch" aria-hidden="true" />
+                  {p.family}
+                </span>
+                {p.installed ? (
+                  <span className="badge good">INSTALLED · {p.seed_count}</span>
+                ) : (
+                  <span className="badge neutral">not installed</span>
+                )}
                 <button className="btn small primary" onClick={() => setTarget(p.id)} disabled={install.isPending}>
                   Install
                 </button>

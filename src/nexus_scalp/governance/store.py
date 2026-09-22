@@ -342,10 +342,6 @@ class GovernanceStore:
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return False
         self.ensure_schema()
-        prob_cols = [
-            "champion_probabilities",
-            "challenger_probabilities",
-        ]
         args = (
             row.get("comparison_id", f"cmp_{uuid.uuid4().hex[:16]}"),
             row.get("run_id", ""),
@@ -376,9 +372,6 @@ class GovernanceStore:
             1 if row.get("simulated", True) else 0,
             json.dumps(row.get("payload", {}), default=str),
         )
-        # probabilities columns are stored as JSON text; drop the raw lists
-        for c in prob_cols:
-            args = tuple(v for i, v in enumerate(args) if i != 0 or c not in row)
         try:
             self.audit_repo._queue.put_nowait((_INSERT_COMPARISON_SQL, args))
             return True

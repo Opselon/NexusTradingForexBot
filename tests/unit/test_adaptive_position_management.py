@@ -244,3 +244,65 @@ def test_immutable_recovery_budget():
     # Budget exhausted -> Position closed immediately!
     assert 999 in adapter.closed_tickets
     assert om._position_states[999] == PositionState.LOSS_HARD_EXIT
+
+
+def test_bug313_flat_model_recovery_not_pinned_to_exit_pressure():
+    """BUG-313 (2026-09-22, live forensics): with a near-uniform serving head
+    (p_buy mean 0.391, p_sell 0.358, p_no_trade 0.251 — buy/sell spread std
+    0.042) the recovery_score fed to _evaluate_candidate_state is
+    0.70*continuation + 0.30*recovery_velocity, arithmetically pinned near
+    0.25-0.28 regardless of market action while the position is underwater.
+    The < 0.30 LOSS_EXIT_PRESSURE threshold was therefore always true:
+    46/46 live losing trades exited at exactly 60-65s with 8/14 showing
+    MFE $0.00 (the reward leg never developed). The state verdict must now
+    blend the realized pnl slope so a genuinely bouncing position is not
+    classified as exit pressure purely because the classifier is
+    uninformative, and a deteriorating one still is."""
+    from nexus_scalp.domain.enums import OrderType
+    from nexus_scalp.domain.models import Position
+    from nexus_scalp.execution.order_manager import PositionState
+
+    adapter = MockMT5Adapter()
+    audit_repo = AuditRepository(db_url="sqlite:///:memory:")
+    om = OrderLifecycleManager(adapter=adapter, audit_repo=audit_repo)
+
+    pos = Position(
+        ticket=3130,
+        symbol="XAUUSD",
+        type=OrderType.SELL,
+        volume=0.07,
+        price_open=4346.28,
+        sl=4349.63,
+        tp=0.0,
+        profit=-9.0,
+        magic=888101,
+    )
+    adapter.positions = [pos]
+    om._entry_timestamps[3130] = datetime.now(UTC) - timedelta(seconds=90)
+
+    # Live evidence shape: continuation == OWN-side raw prob for a SELL,
+    # recovery_velocity ~ 0 while underwater. recovery_score ~ 0.251.
+    flat_evidence = {
+        "continuation_score": 0.358,
+        "adverse_score": 0.391,
+        "recovery_score": 0.70 * 0.358 + 0.30 * 0.0,
+    }
+    assert flat_evidence["recovery_score"] < 0.30, (
+        "precondition: flat-head recovery is below the pressure line"
+    )
+
+    # A position that is flat underwater must still read as exit pressure:
+    # no model signal, no realized bounce -> no reason to keep holding.
+    flat = om._evaluate_candidate_state(3130, pos, flat_evidence, {"pnl_slope": 0.0})
+    assert flat == PositionState.LOSS_EXIT_PRESSURE
+
+    # The SAME flat model read, but the position is bouncing back in price:
+    # the trajectory term must lift it out of exit pressure.
+    bouncing = om._evaluate_candidate_state(3130, pos, flat_evidence, {"pnl_slope": 0.25})
+    assert bouncing != PositionState.LOSS_EXIT_PRESSURE
+    assert bouncing in (PositionState.LOSS_RECOVERY_CANDIDATE, PositionState.LOSS_RECOVERY_FAILING)
+
+    # A deteriorating position (negative slope) stays under pressure and
+    # never gets promoted by the trajectory term.
+    deteriorating = om._evaluate_candidate_state(3130, pos, flat_evidence, {"pnl_slope": -0.5})
+    assert deteriorating == PositionState.LOSS_EXIT_PRESSURE

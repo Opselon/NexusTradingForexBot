@@ -1,50 +1,698 @@
-/* Marketplace feature — scoped styles (tokens only, logical props). */
+/**
+ * features/marketplace/ui/marketplace.css
+ *
+ * Strategy Marketplace — professional research-terminal aesthetic.
+ * Builds exclusively on theme.css tokens (--bg, --bg-panel, --border,
+ * --accent, --green, --red, --amber, --violet, --mono, ...).
+ *
+ * Namespace: .mkt-* — no collisions with the shell or other features.
+ * Semantics stay backend-authoritative: colour encodes state only, never a
+ * fabricated value (missing scores render NOT_AVAILABLE, never a fake 0).
+ */
 
+/* ==========================================================================
+   Page container
+   ========================================================================== */
+.mkt-container {
+  width: 100%;
+  max-width: 1440px;
+  color: var(--text);
+  font-family: var(--sans);
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 auto;
+  padding: 2px 0 40px;
+  font-size: 13px;
+  animation: 0.2s ease-out pageIn;
+  display: flex;
+}
+
+/* ==========================================================================
+   Hero header
+   ========================================================================== */
+.mkt-page-hero {
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 34px -12px rgba(0, 0, 0, 0.75), inset 0 1px 0 var(--elevate-hi);
+  background:
+    radial-gradient(900px 260px at 88% -40%, rgba(65, 166, 242, 0.12), transparent 65%),
+    linear-gradient(135deg, rgba(13, 19, 27, 0.97), rgba(19, 28, 39, 0.9));
+  border-radius: 14px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+.mkt-page-hero::before {
+  content: "";
+  top: 0;
+  background: linear-gradient(90deg, var(--accent), var(--violet), var(--green));
+  opacity: 0.85;
+  height: 2px;
+  position: absolute;
+  inset-inline: 0;
+}
+
+.mkt-page-hero::after {
+  content: "";
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(157, 123, 240, 0.09), transparent 70%);
+  width: 340px;
+  position: absolute;
+  inset-block: -30% -60%;
+  inset-inline-end: -10%;
+}
+
+.mkt-hero-left {
+  align-items: center;
+  gap: 15px;
+  min-width: 0;
+  display: flex;
+}
+
+.mkt-hero-icon {
+  width: 46px;
+  height: 46px;
+  font-size: 22px;
+  font-family: var(--mono);
+  color: var(--accent-strong);
+  background: linear-gradient(135deg, rgba(65, 166, 242, 0.22), rgba(157, 123, 240, 0.26));
+  border: 1px solid rgba(65, 166, 242, 0.42);
+  border-radius: 12px;
+  flex-shrink: 0;
+  justify-content: center;
+  align-items: center;
+  font-weight: 800;
+  display: flex;
+  box-shadow: 0 0 22px rgba(65, 166, 242, 0.28), inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.mkt-hero-title {
+  letter-spacing: 0.05em;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  display: flex;
+}
+
+.mkt-hero-badge {
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.15);
+  border: 1px solid rgba(65, 166, 242, 0.38);
+  border-radius: 6px;
+  align-items: center;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+  display: inline-flex;
+  box-shadow: 0 0 10px rgba(65, 166, 242, 0.2);
+}
+
+.mkt-hero-sub {
+  color: var(--text-dim);
+  letter-spacing: 0.015em;
+  max-width: 62ch;
+  margin-top: 4px;
+  font-size: 11.5px;
+}
+
+.mkt-hero-right {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  display: flex;
+}
+
+/* ==========================================================================
+   Telemetry ribbon
+   ========================================================================== */
+.mkt-ribbon {
+  border: 1px solid var(--border);
+  background: rgba(10, 15, 22, 0.72);
+  border-radius: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px;
+  display: flex;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.mkt-ribbon-item {
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  display: flex;
+}
+
+.mkt-ribbon-item .lab {
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.mkt-ribbon-item .val {
+  font-family: var(--mono);
+  color: #fff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  font-size: 12.5px;
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.mkt-ribbon-item .val.pos { color: var(--green); }
+.mkt-ribbon-item .val.neg { color: #ff938c; }
+.mkt-ribbon-item .val.dim { color: var(--text-dim); }
+
+.mkt-ribbon-sep {
+  background: linear-gradient(180deg, transparent, var(--border-strong), transparent);
+  align-self: stretch;
+  width: 1px;
+}
+
+.mkt-live-dot {
+  background: var(--green);
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 12px var(--green);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: 2s ease-in-out infinite livePulse;
+}
+
+.mkt-live-dot.off {
+  background: var(--text-faint);
+  box-shadow: none;
+  animation: none;
+}
+
+/* ==========================================================================
+   Section nav (anchor pills)
+   ========================================================================== */
+.mkt-nav {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  scrollbar-width: none;
+  z-index: 4;
+  border-radius: 10px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  display: flex;
+  position: sticky;
+  top: 0;
+  overflow-x: auto;
+}
+
+.mkt-nav::-webkit-scrollbar { display: none; }
+
+.mkt-nav-item {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  display: inline-flex;
+}
+
+.mkt-nav-item:hover {
+  color: var(--text);
+  background: var(--bg-panel-2);
+  border-color: var(--border);
+}
+
+.mkt-nav-item .ico {
+  font-family: var(--mono);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.mkt-nav-item:hover .ico { color: var(--accent-strong); }
+
+/* ==========================================================================
+   Panels
+   ========================================================================== */
+.mkt-container .panel {
+  border-radius: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.mkt-container .panel:hover { border-color: var(--border-strong); }
+
+.mkt-container .panel-header {
+  background: linear-gradient(rgba(255, 255, 255, 0.02), transparent 60%);
+  padding: 10px 16px;
+}
+
+.mkt-container .panel-body { padding: 14px 16px; }
+
+/* ==========================================================================
+   Seed packs
+   ========================================================================== */
 .mkt-packs {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+  gap: 11px;
+  display: grid;
 }
-.mkt-pack {
-  display: flex; flex-direction: column; gap: 6px;
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
-  background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-panel);
-}
-.mkt-pack .name { font-size: 12.5px; font-weight: 700; }
-.mkt-pack .desc { font-size: 11px; color: var(--text-dim); flex: 1; min-block-size: 30px; }
-.mkt-pack .foot { display: flex; align-items: center; gap: 8px; border-block-start: 1px solid var(--border); padding-block-start: 6px; font-size: 10px; color: var(--text-faint); font-family: var(--mono); }
-.mkt-pack .foot .btn { margin-inline-start: auto; }
 
+.mkt-pack {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-inset);
+  overflow-clip-margin: 6px;
+  border-radius: 11px;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 148px;
+  padding: 13px 14px 11px;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  display: flex;
+  position: relative;
+  /* clip (not hidden) so the top shine stays painted while focus rings and
+     hover shadows can extend past the border box without being cut */
+  overflow: clip;
+}
+
+.mkt-pack .desc {
+  color: var(--text-dim);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  flex: 1;
+  min-block-size: 30px;
+  font-size: 11px;
+  line-height: 1.45;
+  display: -webkit-box;
+  overflow: hidden;
+}
+
+.mkt-pack::before {
+  content: "";
+  top: 0;
+  opacity: 0.7;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.32), transparent);
+  height: 1px;
+  position: absolute;
+  inset-inline: 0;
+}
+
+.mkt-pack::after {
+  /* decorative corner glow painted INSIDE the box (no oversize pseudo, so
+     it can never contribute to layout overflow / scrollWidth) */
+  content: "";
+  pointer-events: none;
+  background: radial-gradient(150px 150px at 100% 100%, rgba(65, 166, 242, 0.05), transparent 70%);
+  position: absolute;
+  inset: 0;
+}
+
+.mkt-pack:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+  transform: translateY(-2px);
+}
+
+.mkt-pack.is-installed {
+  background: linear-gradient(180deg, rgba(62, 207, 142, 0.05), transparent 45%), var(--bg-inset);
+  border-color: rgba(62, 207, 142, 0.4);
+}
+
+.mkt-pack.is-installed::before {
+  background: linear-gradient(90deg, transparent, rgba(62, 207, 142, 0.4), transparent);
+}
+
+.mkt-pack .name {
+  letter-spacing: 0.01em;
+  color: #fff;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.mkt-pack .foot {
+  border-block-start: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-family: var(--mono);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-block-start: 8px;
+  display: flex;
+}
+
+.mkt-pack .foot .badge { flex-shrink: 0; }
+
+.mkt-pack .foot .btn {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.mkt-pack .foot .btn:only-child { margin-inline-start: auto; }
+
+.mkt-family-tag {
+  font-family: var(--mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  background: var(--bg-panel-2);
+  white-space: nowrap;
+  border-radius: 999px;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 9.5px;
+  font-weight: 700;
+  display: inline-flex;
+}
+
+.mkt-family-tag .swatch {
+  background: var(--accent);
+  border-radius: 50%;
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 6px rgba(65, 166, 242, 0.6);
+}
+
+/* ==========================================================================
+   Rankings
+   ========================================================================== */
 .mkt-score-cell { font-variant-numeric: tabular-nums; }
 .mkt-score-cell.na { color: var(--text-faint); }
 
-/* seed drawer — reuses .news-drawer geometry via mkt- classes */
+.mkt-rank {
+  block-size: 22px;
+  inline-size: 22px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  justify-content: center;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  display: inline-flex;
+}
+
+.mkt-rank.r1 {
+  color: #fff;
+  background: rgba(65, 166, 242, 0.16);
+  border-color: rgba(65, 166, 242, 0.45);
+  box-shadow: 0 0 10px rgba(65, 166, 242, 0.22);
+}
+
+.mkt-rank.r2 {
+  color: var(--accent-strong);
+  border-color: rgba(65, 166, 242, 0.3);
+}
+
+.mkt-rank.r3 {
+  color: var(--amber);
+  border-color: rgba(235, 161, 63, 0.35);
+}
+
+/* ==========================================================================
+   Row actions
+   ========================================================================== */
+.mkt-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+.mkt-actions .btn.small {
+  font-family: var(--mono);
+  letter-spacing: 0.05em;
+  border-radius: 7px;
+  font-size: 10.5px;
+  transition: all 0.14s;
+}
+
+.mkt-actions .btn.small.primary {
+  background: linear-gradient(135deg, var(--accent), #2b7ddb);
+  color: #04070b;
+  border-color: rgba(255, 255, 255, 0.18);
+  font-weight: 800;
+  box-shadow: 0 3px 12px rgba(65, 166, 242, 0.3);
+}
+
+.mkt-actions .btn.small.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 18px rgba(65, 166, 242, 0.48);
+}
+
+.mkt-actions .btn.small.ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.07);
+}
+
+.mkt-actions .select {
+  border-radius: 7px;
+  padding: 3px 7px;
+  font-size: 10.5px;
+}
+
+.mkt-row-actions { gap: 5px; }
+
+.mkt-row-sep {
+  background: linear-gradient(180deg, transparent, var(--border-strong), transparent);
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 1px;
+  margin: 1px 3px;
+}
+
+/* ==========================================================================
+   Seed detail drawer
+   ========================================================================== */
 .mkt-drawer-overlay {
-  position: fixed; inset: 0; z-index: 80; background: rgba(4, 7, 11, 0.6);
-  display: flex; justify-content: flex-end;
+  z-index: 80;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  background: rgba(4, 7, 11, 0.66);
+  justify-content: flex-end;
+  animation: 0.14s ease-out fadeIn;
+  display: flex;
+  position: fixed;
+  inset: 0;
 }
+
 .mkt-drawer {
-  inline-size: min(620px, 96vw); block-size: 100%;
-  background: var(--bg-panel); border-inline-start: 1px solid var(--border-strong);
-  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.5);
-  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  border-inline-start: 1px solid var(--border-strong);
+  flex-direction: column;
+  block-size: 100%;
+  inline-size: min(680px, 96vw);
+  animation: 0.18s cubic-bezier(0.16, 1, 0.3, 1) mktDrawerIn;
+  display: flex;
+  box-shadow: -22px 0 48px rgba(0, 0, 0, 0.55);
 }
+
+@keyframes mktDrawerIn {
+  0% { opacity: 0.4; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+
 .mkt-drawer header {
-  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-block-end: 1px solid var(--border); font-size: 11px; font-weight: 700;
-  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+  border-block-end: 1px solid var(--border-strong);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: rgba(10, 15, 22, 0.6);
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
 }
-.mkt-drawer .body { padding: 12px 14px; overflow-y: auto; flex: 1; display: grid; gap: 12px; align-content: start; }
+
+.mkt-drawer .body {
+  flex: 1;
+  align-content: start;
+  gap: 14px;
+  padding: 14px 16px;
+  display: grid;
+  overflow-y: auto;
+}
+
+.mkt-drawer .body section {
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
 .mkt-drawer pre {
-  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px; margin: 0; font-size: 10.5px; overflow-x: auto; font-family: var(--mono);
-  max-block-size: 260px; overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  max-block-size: 240px;
+  color: var(--text-dim);
+  border-radius: 8px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
 }
-.mkt-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
 .mkt-json {
-  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
-  padding: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--text-dim);
-  max-block-size: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  max-block-size: 260px;
+  padding: 10px;
+  font-size: 10.5px;
+  overflow: auto;
 }
 
-.mkt-field-error { color: var(--red); font-size: 10.5px; font-family: var(--mono); margin-block-start: 6px; }
-.input.invalid { border-color: var(--red); }
+.mkt-field-error {
+  color: var(--red);
+  font-size: 10.5px;
+  font-family: var(--mono);
+}
+
+.input.invalid {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(242, 86, 77, 0.15);
+}
+
+/* ==========================================================================
+   Runtime snapshot
+   ========================================================================== */
+.mkt-snapshot-grid {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 9px;
+  display: grid;
+}
+
+.mkt-snapshot-tile {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-inset);
+  border-radius: 10px;
+  padding: 10px 13px;
+  position: relative;
+  overflow: hidden;
+}
+
+.mkt-snapshot-tile::before {
+  content: "";
+  top: 0;
+  opacity: 0.7;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.32), transparent);
+  height: 1px;
+  position: absolute;
+  inset-inline: 0;
+}
+
+.mkt-snapshot-tile .k {
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.mkt-snapshot-tile .v {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  word-break: break-all;
+  margin-block-start: 3px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.mkt-enabled-chips {
+  flex-wrap: wrap;
+  gap: 6px;
+  display: flex;
+}
+
+.mkt-enabled-chip {
+  font-family: var(--mono);
+  color: var(--green);
+  background: var(--green-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(62, 207, 142, 0.35);
+  border-radius: 999px;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 100%;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.mkt-enabled-chip i {
+  background: var(--green);
+  border-radius: 50%;
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 6px rgba(62, 207, 142, 0.7);
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+@media (max-width: 1080px) {
+  .mkt-page-hero { flex-direction: column; align-items: flex-start; }
+  .mkt-hero-right, .mkt-ribbon { width: 100%; }
+}
+
+@media (max-width: 720px) {
+  .mkt-page-hero { padding: 14px 15px; }
+  .mkt-hero-icon { width: 38px; height: 38px; font-size: 18px; }
+  .mkt-hero-title { font-size: 15px; }
+  .mkt-hero-sub { font-size: 11px; }
+  .mkt-packs { grid-template-columns: 1fr; }
+  .mkt-ribbon { gap: 12px; padding: 9px 12px; }
+  .mkt-ribbon-sep { display: none; }
+  .mkt-ribbon-item .val { max-width: 140px; }
+}
+
+@media (max-width: 480px) {
+  .mkt-snapshot-grid { grid-template-columns: 1fr 1fr; }
+  .mkt-nav-item { padding: 6px 10px; font-size: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt-pack, .mkt-container .panel { transition: none !important; }
+  .mkt-pack:hover { transform: none !important; }
+}

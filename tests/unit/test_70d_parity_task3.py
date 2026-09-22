@@ -451,7 +451,13 @@ def test_03_19_golden_artifact_agreement() -> None:
 
 def test_03_33_ds_build_verify_roundtrip() -> None:
     """A built 70D dataset must pass verify_70d_artifact end-to-end
-    (regression: int(pl.DataFrame.sum()) TypeError; schema hash stamp)."""
+    (regression: int(pl.DataFrame.sum()) TypeError; schema hash stamp).
+
+    ML-PHASE1 STEP-3: a 70D build with NO news frame is now correctly
+    REJECTED by the news coverage gate (dims 50..59 all zero = zero
+    news-source temporal overlap). Every OTHER check still passes, and the
+    failure reason is the news family only — this is the mechanism that
+    would have caught the ds_70d_clean_m1_20260904 defect at build time."""
 
     from nexus_scalp.model_generation.artifact_store import ArtifactStore
     from nexus_scalp.model_generation.schema_v2 import (
@@ -466,9 +472,18 @@ def test_03_33_ds_build_verify_roundtrip() -> None:
     handle = build_70d_dataset(frame, timeframe="M1", store=store, seed=42)
     did = handle["dataset_id"]
     v = verify_70d_artifact(did, store=store)
-    assert v["ok"] is True, v
+    # STEP-3: no news frame -> the news family is contract zeros, so the
+    # artifact is rejected as a base-50 dataset wearing a 70D label.
+    assert v["ok"] is False, v
     assert v["feature_count"] == 70
     assert v["schema_hash_ok"] is True
+    assert v["dimension_ok"] is True
+    assert v["all_finite"] is True
+    assert v["all_in_range"] is True
+    nc = v["news_coverage"]
+    assert nc["ok"] is False
+    assert nc["reason"] == "NEWS_FAMILY_ALL_ZERO_NO_TEMPORAL_OVERLAP"
+    assert nc["nonzero_rows"] == 0
     # manifest carries the canonical hash
     man = store.read_dataset_manifest(did) or {}
     assert man.get("feature_schema_hash") == feature_schema_hash()

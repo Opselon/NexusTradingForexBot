@@ -69,6 +69,10 @@ from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
+from nexus_scalp.position_adviser.integration import (
+    apply_advisory_to_hold_score,
+    build_position_state_for_adviser,
+)
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 logger = get_logger("nexus_scalp.execution.order_manager")
@@ -588,6 +592,11 @@ class OrderLifecycleManager:
         # S6-escalation: hold-score state owner (dicts moved to
         # hold_score_ledger.HoldScoreLedger; compat properties below).
         self._hold_scores = HoldScoreLedger()
+        # TASK-POSA-001: optional Layer-2 Position Decision Adviser. Lazily
+        # resolved from the web-layer singleton; None while the API has never
+        # been touched. Activation defaults to DISABLED, so this never affects
+        # the hold/close decide path until an operator explicitly enables it.
+        self._position_adviser: Any = None
 
         # Throttling & spread tracking for dynamic hold score
         self._rolling_spreads: list[float] = []
@@ -678,6 +687,26 @@ class OrderLifecycleManager:
     def _ticket_state_store(self) -> TicketStateStore:
         """Composition seam for tests and extracted lifecycle modules."""
         return self._states
+
+    @property
+    def _adviser(self) -> Any:
+        """TASK-POSA-001: lazily resolve the shared Position Decision Adviser.
+
+        Resolved from the web-layer singleton so the UI and the decide system
+        always see the SAME instance (an activation in the UI is visible here
+        immediately). Returns None when the adviser was never installed, and
+        the caller treats None / disabled identically: no influence at all.
+        """
+        if self._position_adviser is None:
+            try:
+                from nexus_scalp.web.position_adviser_routes import (
+                    get_position_adviser_service,
+                )
+
+                self._position_adviser = get_position_adviser_service()
+            except Exception:
+                return None
+        return self._position_adviser
 
     # -----------------------------------------------------------------
     # P0 seam S7: pending-order lifecycle owner (composition root).
@@ -882,6 +911,11 @@ class OrderLifecycleManager:
     def _entry_confidences(self) -> _TicketStateDictView:
         """Live dict view over TicketState.entry_confidence (S5)."""
         return _TicketStateDictView(self._states, "entry_confidence")
+
+    @property
+    def _signal_ages(self) -> _TicketStateDictView:
+        """Live dict view over TicketState.entry_signal_age_sec (TASK-POSA-001)."""
+        return _TicketStateDictView(self._states, "entry_signal_age_sec")
 
     @property
     def _entry_regimes(self) -> _TicketStateDictView:
@@ -2386,6 +2420,31 @@ class OrderLifecycleManager:
             recovery_score = evidence.get("recovery_score", 0.50)
             adverse_score = evidence.get("adverse_score", 0.50)
 
+            # BUG-313 (2026-09-22, live forensics): the recovery_score fed here
+            # is 0.70*continuation + 0.30*recovery_velocity. With the serving
+            # head near-uniform over the 3 trained classes (live evidence:
+            # p_buy mean 0.391, p_sell 0.358, p_no_trade 0.251 — buy-sell
+            # spread std only 0.042), continuation == the OWN-side raw
+            # probability ~= 0.36-0.39 and recovery_velocity ~ 0 while the
+            # position is underwater, so recovery_score is arithmetically
+            # pinned in the 0.25-0.28 band NO MATTER what the market does.
+            # The < 0.30 LOSS_EXIT_PRESSURE threshold is therefore unreachable
+            # in practice: 46/46 live losing trades left at exactly 60-65s
+            # (the minimum-loss grace gate) with 8/14 showing MFE $0.00 — the
+            # reward leg never had time to develop. Restoration of that
+            # pressure verdict requires a TRAJECTORY term that reflects the
+            # actual position behaviour, not only the model's flat prior.
+            # Add the realized pnl slope as an explicit recovery signal so a
+            # position that is genuinely bouncing back cannot be flagged
+            # purely because the classifier is uninformative.
+            pnl_slope = float(pnl_features.get("pnl_slope", 0.0)) if pnl_features else 0.0
+            # Scaled pnl slope (USD/sec): bounded like recovery_velocity.
+            pnl_slope_scaled = min(1.0, max(0.0, pnl_slope * 5.0))
+            effective_recovery = min(
+                1.0,
+                max(0.0, 0.55 * recovery_score + 0.45 * pnl_slope_scaled),
+            )
+
             # Recovery attempts are budget-capped per ticket: once the budget is
             # spent (or adverse excursion blows past 0.80) stop managing the loss
             # and hard-exit instead of giving the recovery path more rope.
@@ -2394,11 +2453,11 @@ class OrderLifecycleManager:
             if budget_remaining <= 0.0 or adverse_score > 0.80:
                 return PositionState.LOSS_HARD_EXIT
 
-            if recovery_score >= 0.70 and adverse_score < 0.20:
+            if effective_recovery >= 0.70 and adverse_score < 0.20:
                 return PositionState.LOSS_RECOVERY_CONFIRMED
-            elif recovery_score >= 0.45:
+            elif effective_recovery >= 0.45:
                 return PositionState.LOSS_RECOVERY_CANDIDATE
-            elif recovery_score < 0.30:
+            elif effective_recovery < 0.30:
                 return PositionState.LOSS_EXIT_PRESSURE
             else:
                 return PositionState.LOSS_RECOVERY_FAILING
@@ -2919,6 +2978,7 @@ class OrderLifecycleManager:
                 impact_price_delta=impact_price_delta,
                 atr=atr,
                 smart_metrics=smart_metrics,
+                spread=spread,
                 now=now,
             )
 
@@ -3358,6 +3418,7 @@ class OrderLifecycleManager:
         impact_price_delta: float,
         atr: float,
         smart_metrics: dict[str, Any],
+        spread: float = 0.0,
         now: datetime | None = None,
     ) -> tuple[int, list[str], int]:
         """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
@@ -3389,6 +3450,41 @@ class OrderLifecycleManager:
             current_pnl_usd=pos.profit,
             base_hold_score=base_hold_score,
         )
+
+        # TASK-POSA-001: optional Layer-2 Position Decision Adviser. Applied
+        # AFTER the giveback safety override and BEFORE the tracker store, so
+        # the adviser can only ever LOWER an already-final score — never lift
+        # one, never extend a position, never weaken a protection verdict. When
+        # the adviser is DISABLED (the default) the score is stored unchanged
+        # and the decide path is byte-identical to its pre-adviser behaviour.
+        adviser = self._adviser
+        if adviser is not None and adviser.enabled:
+            try:
+                state = build_position_state_for_adviser(
+                    pos=pos,
+                    ticket=ticket,
+                    price_current=price_current,
+                    atr=atr,
+                    spread=spread,
+                    initial_risk_usd=float(self._initial_risks.get(ticket, 0.0) or 0.0),
+                    holding_duration_sec=0.0,
+                    signal_age=float(self._signal_ages.get(ticket, 0.0) or 0.0),
+                    model_probability=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
+                    model_confidence=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
+                )
+                hold_score, advisory = apply_advisory_to_hold_score(
+                    ticket=ticket, hold_score=hold_score, position_state=state, service=adviser
+                )
+                if advisory is not None:
+                    invalidate_reasons = [
+                        *invalidate_reasons,
+                        "POSITION_ADVISER("
+                        f"{advisory['action']},conf={advisory['confidence']:.4f},"
+                        f"adj={advisory['hold_score_adjustment']:.2f})",
+                    ]
+            except Exception as exc:  # fail closed; never break position management
+                logger.warning("[ADVISER] event=INTEGRATION_SKIP ticket=%s error=%s", ticket, exc)
+
         self._hold_score_tracker[ticket] = hold_score
 
         return hold_score, invalidate_reasons, base_hold_score

@@ -20,6 +20,7 @@ Key Enterprise Features & Hidden MT5 Mechanisms:
 import contextlib
 import logging
 import math
+import re
 import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -62,6 +63,11 @@ from nexus_scalp.domain.models import (
     TickData,
     TradeOrder,
 )
+
+# BUG-308: the broker returns the still-forming current bar in the same payload
+# as its sealed history; marking it complete would hand reseed() a future anchor
+# (last_bar + 1m) and the out-of-order guard would drop every real tick of it.
+from nexus_scalp.indicators.resample import is_current_bar_forming
 from nexus_scalp.market_data.bar_aggregator import BarData
 from nexus_scalp.ports.mt5_port import IMT5Port
 
@@ -205,6 +211,15 @@ class DirectMT5Adapter(IMT5Port):
         # structured telemetry so the console/UI can render progress.
         import time as _time
 
+        # BUG-310: a previous initialize() in THIS process (ours, or a leftover
+        # from an aborted adapter) can leave the terminal believing an API
+        # client is already attached; the second attach is then rejected with
+        # (-6, 'Terminal: Authorization failed') on every retry. Release first.
+        # shutdown() on an idle/unconnected handle is a no-op, not an error.
+        if HAS_NATIVE_MT5 and mt5 is not None:
+            with contextlib.suppress(Exception):
+                mt5.shutdown()
+
         max_attempts = self._retries
         last_err_code: Any = None
         connected = False
@@ -315,9 +330,23 @@ class DirectMT5Adapter(IMT5Port):
         return True
 
     def disconnect(self) -> None:
-        if HAS_NATIVE_MT5 and mt5 is not None and self._connected:
-            mt5.shutdown()
-            logger.info("MetaTrader 5 IPC connection closed.")
+        # BUG-310 (2026-09-22, live tick-starvation loop): the MetaTrader5
+        # Python API is a single process-global IPC connection. shutdown() is
+        # the ONLY release. The guard ``if self._connected`` meant that after a
+        # connect() failure (initialize() -> False) the handle stayed locked
+        # while ``_connected`` was already False, so every later disconnect()
+        # skipped shutdown() and the terminal kept rejecting new attaches with
+        # (-6, 'Terminal: Authorization failed') — a PERMANENT stall: the
+        # watchdog retried connect() every ~3s and never recovered.
+        # Always attempt the release; a bare shutdown() on an unconnected
+        # handle is a no-op in the MT5 C-extension, not an error.
+        if HAS_NATIVE_MT5 and mt5 is not None:
+            try:
+                mt5.shutdown()
+            except Exception:
+                logger.warning("[MT5_DISCONNECT] shutdown() raised; handle already released")
+            else:
+                logger.info("MetaTrader 5 IPC connection closed.")
         self._connected = False
         self._conn_state.set_state(MT5ConnectionState.DISCONNECTED, "disconnected")
 
@@ -417,12 +446,106 @@ class DirectMT5Adapter(IMT5Port):
         return self.get_last_tick(symbol)
 
     # =========================================================================
-    # BROKER-AWARE PROVIDERS (Phase 14 MT5 forensic architecture)
+    # BROKER SYMBOL RESOLUTION (broker-change auto-repair)
     # -------------------------------------------------------------------------
-    # Every call is wrapped by run_mt5_call() -> structured [MT5_CALL]
-    # diagnostics (operation/status/duration_ms/error_code/error_message).
-    # Failure is NEVER silent: snapshots carry error_state and the ring log.
+    # Different brokers spell the same instrument differently (XAUUSD vs
+    # XAUUSD_i vs GOLD vs XAUUSD.m). A broker switch leaves execution.symbol
+    # pointing at a name the new server does not know, and every
+    # symbol_info / symbol_info_tick read returns None ("Terminal: Not found",
+    # MT5 code -4) which get_symbol_info turns into a fatal boot error.
+    # Resolution probes the live server's own symbol list and returns the
+    # broker-truth name; callers persist it back into execution.symbol +
+    # execution.enabled_symbols so the repair survives restart. Resolution
+    # NEVER fabricates a name: if no candidate is tradeable on this server it
+    # returns None and the caller fails closed exactly as before.
     # =========================================================================
+
+    @staticmethod
+    def _symbol_name_of(raw: Any) -> str | None:
+        """Broker-truth name of a raw MT5 symbol row (None if unavailable)."""
+        if raw is None:
+            return None
+        name = getattr(raw, "name", None)
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+        return None
+
+    def _list_broker_symbols(self) -> list[Any]:
+        """Raw broker symbol rows (mt5.symbols_get), empty on any failure."""
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            return []
+        try:
+            raw = mt5.symbols_get()
+        except Exception as exc:  # driver-level fault, not a "not found"
+            logger.warning("[SYMBOL_RESOLVE] symbols_get raised (isolated) error=%s", str(exc))
+            return []
+        if raw is None:
+            return []
+        try:
+            return [s for s in raw if s is not None]
+        except TypeError:
+            return list(raw)
+
+    def resolve_symbol(self, symbol: str) -> str | None:
+        """Broker-truth symbol name for ``symbol`` on THIS server, else None.
+
+        Exact (case-insensitive) match wins. Otherwise candidates are scored:
+        a base/quote strip of the requested name (XAUUSD_i -> XAUUSD) must
+        appear as a whole word in the candidate, and only symbols the broker
+        actually allows trading / that are visible in Market Watch are
+        accepted. Ties prefer the shortest name (XAUUSD over XAUUSD_i.pro).
+        """
+        requested = (symbol or "").strip()
+        if not requested:
+            return None
+        rows = self._list_broker_symbols()
+        if not rows:
+            return None
+
+        def tradeable(row: Any) -> bool:
+            # trade_mode != SYMBOL_TRADE_MODE_DISABLED (0). Some brokers do not
+            # fill trade_mode reliably, so a visible name still qualifies.
+            mode = getattr(row, "trade_mode", None)
+            if mode is None:
+                return True
+            try:
+                return int(mode) != 0
+            except (TypeError, ValueError):
+                return True
+
+        rows = [r for r in rows if tradeable(r)]
+        by_name: dict[str, Any] = {}
+        for row in rows:
+            name = self._symbol_name_of(row)
+            if name:
+                by_name.setdefault(name.upper(), row)
+
+        if not by_name:
+            return None
+
+        # 1) exact (case-insensitive) match against the requested name
+        if requested.upper() in by_name:
+            return self._symbol_name_of(by_name[requested.upper()])
+
+        # 2) suffix-stripped base symbol (XAUUSD_i / XAUUSD.m -> XAUUSD)
+        base = re.split(r"[_\-.]", requested, maxsplit=1)[0].strip().upper()
+        if base and base in by_name:
+            return self._symbol_name_of(by_name[base])
+
+        # 3) fuzzy: base must appear as a whole word in the candidate name
+        if base:
+            word_re = re.compile(rf"(?:^|[_\-.]){re.escape(base)}(?:$|[_\-.])", re.IGNORECASE)
+            scored = [n for n in by_name if word_re.search(n)]
+            if scored:
+                scored.sort(key=lambda n: (len(n), n))
+                return self._symbol_name_of(by_name[scored[0]])
+
+        # 4) last resort: requested name is a substring of a broker name
+        substr = [n for n in by_name if requested.upper() in n]
+        if substr:
+            substr.sort(key=lambda n: (len(n), n))
+            return self._symbol_name_of(by_name[substr[0]])
+        return None
 
     def connection_state(self) -> MT5ConnectionState:
         """Real MT5 connection state (never derived from config)."""
@@ -911,6 +1034,15 @@ class DirectMT5Adapter(IMT5Port):
         Delegates to the official get_rate_history() provider and maps onto
         the internal BarData contract (UTC timestamps preserved).
 
+        BUG-308 (2026-09-21, live tick starvation): the provider's copy_rates_*
+        payload contains the still-forming CURRENT bar alongside its sealed
+        history. is_complete now reflects that (see is_current_bar_forming) —
+        the last bar of the window is forming while the market clock is inside
+        it. Returning it as sealed made BarAggregator.reseed() anchor the
+        monotonic tick clock a full minute into the future and drop every live
+        tick of the current minute. reseed() also clamps a future anchor as a
+        second line of defense.
+
         BUG-285 (L11-2, input-validation lane): get_rate_history already runs
         validate_ohlc_bars but only REPORTS malformed rows; the mapping loop
         then forwarded NaN/inf/inverted-OHLC bars into the canonical series
@@ -922,6 +1054,7 @@ class DirectMT5Adapter(IMT5Port):
         rate_bars = self.get_rate_history(symbol=symbol, timeframe=timeframe, count=count)
         bars: list[BarData] = []
         dropped = 0
+        forming_marked = 0
         for r in rate_bars:
             if (
                 r.time_utc is None
@@ -943,6 +1076,13 @@ class DirectMT5Adapter(IMT5Port):
             ):
                 dropped += 1
                 continue
+            # BUG-308: the broker returns the still-forming current minute in
+            # the same copy_rates_* payload as its sealed history. Marking it
+            # complete here lets it reach BarAggregator.reseed, whose anchor
+            # (last_bar + 1m) then sits a full minute in the future and the
+            # out-of-order guard drops every real tick of that minute.
+            is_complete = not is_current_bar_forming(r.time_utc, str(timeframe).upper())
+            forming_marked += 0 if is_complete else 1
             bars.append(
                 BarData(
                     symbol=symbol,
@@ -953,8 +1093,16 @@ class DirectMT5Adapter(IMT5Port):
                     low=low,
                     close=c,
                     tick_volume=int(r.tick_volume or 0),
-                    is_complete=True,
+                    is_complete=is_complete,
                 )
+            )
+        if forming_marked:
+            logger.info(
+                "[MT5_CHART] event=FORMING_BAR_MARKED symbol=%s timeframe=%s "
+                "count=%s (current bar returned by the broker is not yet sealed)",
+                symbol,
+                str(timeframe).upper(),
+                forming_marked,
             )
         if dropped:
             logger.error(

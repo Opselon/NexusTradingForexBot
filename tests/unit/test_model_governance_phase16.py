@@ -16,6 +16,7 @@ rather than object existence.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -1691,3 +1692,98 @@ class TestGovernance70:
         store2 = GovernanceStore(audit_repo=repo)
         state = store2.get_state("c1", "v1")
         assert state["lifecycle_state"] == "VALIDATED"
+
+
+# =========================================================================
+# TEST-GOV-BUGFIX (2026-09-22): model_shadow_comparisons binding count.
+# save_shadow_comparison built a 26-value tuple for a 26-placeholder INSERT
+# but then ran a dead "drop the raw probability lists" loop that always
+# removed 2 values (26 -> 24). Every comparison row landed in
+# audit_dead_letter with "uses 26, and there are 24 supplied". The dead loop
+# is gone; this test drives the REAL SQL against a REAL sqlite database so a
+# regression fails loudly instead of silently dead-lettering.
+# =========================================================================
+
+
+class TestShadowComparisonBindings:
+    """The INSERT must bind end-to-end, not just build a tuple."""
+
+    def test_shadow_comparison_row_binds_to_real_sqlite(self, tmp_path):
+        """save_shadow_comparison writes a row that survives a flush.
+
+        Before the fix the queued write dead-lettered with a binding-count
+        error, so model_shadow_comparisons stayed empty while the dead-letter
+        table grew.
+        """
+        from nexus_scalp.adapters.database.audit_repository import AuditRepository
+        from nexus_scalp.governance.store import GovernanceStore
+
+        repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'bind_test.db'}")
+        try:
+            store = GovernanceStore(audit_repo=repo)
+            ok = store.save_shadow_comparison(
+                {
+                    "comparison_id": "cmp_binding_regression_001",
+                    "run_id": "run_001",
+                    "timestamp": None,  # deliberately None: the store fills it
+                    "symbol": "XAUUSD",
+                    "champion_model_id": "primary_scalp",
+                    "champion_version": "v1.0",
+                    "challenger_model_id": "scalp_70d_liquidity_scalp_v3_70d",
+                    "challenger_version": "1.0.0",
+                    "champion_action": "NO_TRADE",
+                    "challenger_action": "BUY",
+                    "agreement": False,
+                    "champion_probabilities": [0.55, 0.30, 0.15],
+                    "challenger_probabilities": [0.20, 0.38, 0.42],
+                    "feature_context_id": "fc_001",
+                    "news_context_id": "news_001",
+                    "feature_schema_id": "scalp_v3",
+                    "feature_parity_max_abs": 0.0123,
+                    "feature_parity_mean_abs": 0.0044,
+                    "feature_parity_mismatch": 2,
+                    "alignment": "ALIGNED",
+                    "latency_champion_ms": 1.1,
+                    "latency_challenger_ms": 2.2,
+                    "regime": "UNKNOWN",
+                    "session": "sess_001",
+                    "simulated": True,
+                    "payload": {"extra": "context"},
+                }
+            )
+            assert ok is True, "save_shadow_comparison must enqueue, not drop"
+            repo._queue.join()
+
+            import sqlite3
+
+            con = sqlite3.connect(f"file:{tmp_path / 'bind_test.db'}?mode=ro", uri=True)
+            con.row_factory = sqlite3.Row
+            try:
+                rows = con.execute(
+                    "SELECT comparison_id, champion_action, challenger_action, "
+                    "feature_schema_id, feature_parity_max_abs FROM "
+                    "model_shadow_comparisons ORDER BY id"
+                ).fetchall()
+                assert len(rows) == 1, (
+                    f"expected 1 persisted comparison, got {len(rows)} "
+                    f"(the write dead-lettered: {rows})"
+                )
+                r = rows[0]
+                assert r["comparison_id"] == "cmp_binding_regression_001"
+                assert r["champion_action"] == "NO_TRADE"
+                assert r["challenger_action"] == "BUY"
+                assert r["feature_schema_id"] == "scalp_v3"
+                assert abs(r["feature_parity_max_abs"] - 0.0123) < 1e-9
+            finally:
+                con.close()
+
+            # the dead-letter table must stay empty for this write
+            con = sqlite3.connect(f"file:{tmp_path / 'bind_test.db'}?mode=ro", uri=True)
+            try:
+                n = con.execute("SELECT COUNT(*) FROM audit_dead_letter").fetchone()[0]
+                assert n == 0, f"{n} row(s) dead-lettered on a well-formed comparison"
+            finally:
+                con.close()
+        finally:
+            with contextlib.suppress(Exception):
+                repo.close()

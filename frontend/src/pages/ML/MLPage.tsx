@@ -44,6 +44,26 @@ interface Props {
   snapshot: EngineSnapshot | undefined;
 }
 
+/**
+ * Verdict cell for a 70D shadow observation (BUG-278).
+ *
+ * The backend now reports the disagreement class only for rows that actually
+ * compared a champion decision against a real shadow inference; rows that
+ * never compared anything carry their error code instead. Those render as a
+ * muted error chip so the table can never imply a shadow trade decision that
+ * never happened.
+ */
+function VerdictChip({ disagreement, valid }: { disagreement: string; valid?: boolean }) {
+  const compared = valid !== false && disagreement && !disagreement.startsWith("SHADOW_") && disagreement !== "NOT_COMPARED";
+  if (!disagreement) return <span className="tiny">—</span>;
+  if (compared) return <span className="tiny">{disagreement}</span>;
+  return (
+    <span className="tiny" style={{ color: "var(--rose)" }} title="No shadow inference ran for this tick — the shadow model was not attached or the 70D vector was rejected. This is not a trade decision.">
+      {disagreement}
+    </span>
+  );
+}
+
 /** Canonical 70D family blocks (backend schema_contract / liquidity_runtime). */
 const FAMILY_BLOCKS = [
   { id: "base", label: "BASE 0–49 (scalp_v1 protected)", from: 0, to: 49 },
@@ -588,7 +608,7 @@ export default function MLPage({ snapshot }: Props) {
               { key: "c", label: "Champion", sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
               { key: "s", label: "Shadow", sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
               { key: "conf", label: "Conf C/S", num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
-              { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => o.disagreement || "—" },
+              { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
               { key: "rg", label: "Regime", sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
               { key: "nw", label: "News", render: (o) => o.news_state || "—" },
               { key: "liq", label: "Liquidity", render: (o) => o.liquidity_state || "—" },

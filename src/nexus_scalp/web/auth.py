@@ -87,6 +87,18 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         "/news_intelligence.js",
         "/replay_panel.js",
         "/marketplace.js",
+        # ML-SYSTEM / Neural Model Studio (2026-09-21): model_studio_ui.js was
+        # the ONLY repo-root script in index.html absent from this allowlist, so
+        # the auth middleware answered its <script> request with the raw 401
+        # JSON envelope. The browser then parsed that JSON as JavaScript ->
+        # SyntaxError -> the whole module failed to evaluate -> all 18 studio
+        # functions (setStudioDimension/loadModelStudioOverview/runStudioInference
+        # …) were undefined and EVERY button on the Neural Studio tab threw
+        # "Uncaught ReferenceError"; the model/dataset selects also stayed at
+        # "Loading models catalog…" because their loader is in the same dead
+        # file. Static script asset, no state or credentials — same contract as
+        # the entries above (routes in web/model_studio_routes.py stay gated).
+        "/model_studio_ui.js",
         "/dependency_api.js",
         "/dependency_graph.js",
         "/dependency_ui.js",

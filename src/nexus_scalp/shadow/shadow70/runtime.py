@@ -412,7 +412,7 @@ class Shadow70Runtime:
                 shadow_action=shadow_action,
                 shadow_probabilities=shadow_probs,
                 shadow_confidence=shadow_conf,
-                disagreement=DisagreementClass.NO_TRADE_DISAGREEMENT,
+                disagreement=DisagreementClass.NOT_COMPARED,
                 agreement=False,
                 valid=False,
                 reason=reason,
@@ -460,7 +460,7 @@ class Shadow70Runtime:
                 shadow_action=shadow_action,
                 shadow_probabilities=shadow_probs,
                 shadow_confidence=shadow_conf,
-                disagreement=DisagreementClass.NO_TRADE_DISAGREEMENT,
+                disagreement=DisagreementClass.NOT_COMPARED,
                 agreement=False,
                 valid=False,
                 reason=reason,
@@ -507,11 +507,19 @@ class Shadow70Runtime:
                 )
 
         # 3. classify disagreement (spec 9 / 26)
-        disagreement = classify_disagreement(
-            champion_action,
-            shadow_action,
-            champion_confidence,
-            shadow_conf,
+        # BUG-278: an invalid observation never compared anything, so it must
+        # not join the disagreement taxonomy. shadow_action is the neutral
+        # default NO_TRADE, not a model output; classifying it would report
+        # "the shadow disagrees" for ticks where no shadow inference exists.
+        disagreement = (
+            classify_disagreement(
+                champion_action,
+                shadow_action,
+                champion_confidence,
+                shadow_conf,
+            )
+            if valid
+            else DisagreementClass.NOT_COMPARED
         )
         agreement = disagreement in (
             DisagreementClass.AGREEMENT,
@@ -744,7 +752,8 @@ class Shadow70Runtime:
             "scaler_mismatches": self.scaler_mismatches,
             "feature_invalid": self.feature_invalid,
             "agreements": sum(1 for o in self._recent if o.agreement),
-            "disagreements": sum(1 for o in self._recent if not o.agreement),
+            "disagreements": sum(1 for o in self._recent if not o.agreement and o.compared),
+            "not_compared": sum(1 for o in self._recent if not o.compared),
             "avg_latency_ms": round(self._total_ms / max(1, self.observations), 3),
             "max_latency_ms": round(self._max_ms, 3),
             "p95_latency_ms": round(

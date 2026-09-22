@@ -1,0 +1,62 @@
+/* StrategiesDashboard — CSS Grid dashboard layout (1080p / 1440p safe).
+   minmax(0,*) on every track: no grid item can force horizontal overflow.
+   Theme tokens only; logical properties (RTL-safe). */
+
+.sd-root {
+  display: grid;
+  /* Main table gets the lion's share; side pane is a fixed comfortable band.
+     minmax(0, 1fr) is the anti-overflow guarantee on both tracks. */
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 30%, 400px);
+  grid-template-areas: "main side";
+  gap: var(--panel-gap);
+  align-items: start;
+}
+.sd-main { grid-area: main; min-inline-size: 0; }
+.sd-side { grid-area: side; display: flex; flex-direction: column; gap: var(--panel-gap); min-inline-size: 0; }
+
+/* Below the widescreen breakpoint the side pane stacks under the table,
+   so nothing ever scrolls horizontally. */
+@media (max-width: 1100px) {
+  .sd-root {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "main" "side";
+  }
+}
+
+.sd-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 72px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+.sd-meter-list { display: flex; flex-direction: column; gap: 2px; max-block-size: 340px; overflow-y: auto; }
+
+.sd-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+.sd-view-toggle button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.sd-view-toggle button:hover { color: var(--text); background: var(--bg-panel-2); }
+.sd-view-toggle button.active { color: var(--accent); background: var(--paper-blue-bg); }
+
+.sd-note { margin-block-start: 8px; }
+.tiny { font-size: 9.5px; }
+.faint { color: var(--text-faint); font-family: var(--mono); }

@@ -16,7 +16,25 @@
    "3fa3909 Nexus-Main: BUG-182B launch-gate evidence attached + BUG-184 filed (CHECK-FCS-04 non-numeric-element PASS hole, repro-grounded)"
   ]
  },
- "repo_stats": null,
+ "repo_stats": {
+  "stars": 13,
+  "forks": 5,
+  "open_issues": 3,
+  "pushed_at": "2026-09-15T18:07:05Z",
+  "license": "MIT",
+  "contributors": 3,
+  "latest_commit": {
+   "sha": "fa34fcc",
+   "date": "2026-09-15T17:10:53Z",
+   "message": "NSE-Swarm role2: BUG-292 perf-wave R6 — C3 spread-percentile SQLite I/O moved off the event loop (#213)"
+  },
+  "ci": {
+   "name": "Graph Update: uv in /. #1577677332",
+   "status": "completed",
+   "conclusion": "success",
+   "html_url": "https://github.com/Opselon/NexusTradingForexBot/actions/runs/34999642253"
+  }
+ },
  "translation_coverage": {
   "en": 100,
   "fa": 100,

@@ -287,3 +287,45 @@ class TestPollingEfficiency:
         src = _read("app.js")
         assert "if (document.hidden) return;" in src
         assert "visibilitychange" in src
+
+
+# ---------------------------------------------------------------------------
+# 9. CSS scope collision — `.tv-error` matched the widget ROOT, not the banner
+# ---------------------------------------------------------------------------
+
+
+class TestTvWidgetCssScope:
+    """The technical-indicators card carries `tv-error` as a STATE class on its
+    root (#tv-indicator-widget), and the error banner inside it uses the SAME
+    name as its own class (``<div id="tv-error" class="tv-error hidden">``).
+
+    A bare ``.tv-error`` selector therefore restyled the whole card (display:
+    flex), which stacked the card's sections side by side, crushed to ~100px
+    wide and visibly overlapping. Banner rules must be scoped to the banner id.
+    """
+
+    @staticmethod
+    def _css() -> str:
+        return _read("tv_widget_styles.css")
+
+    def test_24_banner_rules_are_scoped_to_the_banner_id(self) -> None:
+        css = self._css()
+        # Every remaining bare `.tv-error` rule is a latent card-root collision.
+        bare = re.findall(r"(?m)^\.tv-error[^\s{]*\s*\{", css)
+        assert not bare, f"unscoped .tv-error rules still match the card root: {bare}"
+
+    def test_25_banner_display_rule_targets_the_id(self) -> None:
+        css = self._css()
+        # The display:flex layout must be on #tv-error, never on .tv-error.
+        assert re.search(r"#tv-error\s*\{[^}]*display:\s*flex", css), (
+            "banner layout must be scoped to #tv-error"
+        )
+        assert not re.search(r"\.tv-error\s*\{[^}]*display:\s*flex", css), (
+            ".tv-error { display:flex } restyles the card root — re-introduces the overlap"
+        )
+
+    def test_26_banner_children_cannot_shrink_below_content(self) -> None:
+        css = self._css()
+        assert re.search(r"#tv-error\s*>\s*\*\s*\{[^}]*flex:\s*0 0 auto", css), (
+            "banner children need flex:none so icon + message + Retry are not crushed"
+        )

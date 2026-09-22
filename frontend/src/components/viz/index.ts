@@ -10,6 +10,8 @@
 
 export { Sparkline, type SparklineProps } from "./Sparkline";
 export { Gauge, defaultToneFor, type GaugeProps, type GaugeTone } from "./Gauge";
+export { ConfidenceGauge, type ConfidenceGaugeProps, type ConfidenceTone } from "./ConfidenceGauge";
+export { ConfidenceMeter, type ConfidenceMeterProps } from "./ConfidenceMeter";
 export { EquityCurveChart, type EquityCurveChartProps, type EquityPoint } from "./EquityCurveChart";
 export { DrawdownChart, type DrawdownChartProps, type DrawdownPoint } from "./DrawdownChart";
 export { HeatBar, type HeatBarProps, type HeatBarItem } from "./HeatBar";

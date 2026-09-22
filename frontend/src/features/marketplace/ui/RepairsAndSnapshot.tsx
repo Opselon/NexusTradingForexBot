@@ -98,29 +98,41 @@ export function RuntimeSnapshotSection() {
       ) : showJson ? (
         <pre className="mkt-json">{JSON.stringify(d, null, 2)}</pre>
       ) : (
-        <div style={{ display: "grid", gap: 8 }}>
-          <dl className="kv">
-            <dt>version</dt>
-            <dd>{d.version}</dd>
-            <dt>created_at</dt>
-            <dd>{d.created_at ? formatDateTime(d.created_at) : "—"}</dd>
-            <dt>source</dt>
-            <dd>{d.source || "—"}</dd>
-            <dt>enabled seeds</dt>
-            <dd>{(d.enabled_set ?? []).length}</dd>
-          </dl>
-          {(d.enabled_set ?? []).length === 0 ? (
-            <EmptyState message="The runtime enabled set is empty — no seed is active in the engine right now." />
-          ) : (
-            <div className="mkt-json" style={{ whiteSpace: "pre-wrap" }}>
-              {(d.enabled_set ?? []).join("\n")}
-            </div>
-          )}
-          <div className="tiny faint">
-            immutable versioned set (RuntimeConfig pattern) — the console reads it; enablement flows through the gated seed commands, never a direct write.
+        <div className="mkt-snapshot-grid">
+          <div className="mkt-snapshot-tile">
+            <div className="k">Version</div>
+            <div className="v">{String(d.version)}</div>
+          </div>
+          <div className="mkt-snapshot-tile">
+            <div className="k">Enabled seeds</div>
+            <div className="v">{(d.enabled_set ?? []).length}</div>
+          </div>
+          <div className="mkt-snapshot-tile">
+            <div className="k">Source</div>
+            <div className="v">{d.source || "—"}</div>
+          </div>
+          <div className="mkt-snapshot-tile">
+            <div className="k">Created</div>
+            <div className="v">{d.created_at ? formatDateTime(d.created_at) : "—"}</div>
           </div>
         </div>
       )}
+      {(d?.enabled_set ?? []).length === 0 ? (
+        <EmptyState message="The runtime enabled set is empty — no seed is active in the engine right now." />
+      ) : (
+        <div className="mkt-enabled-chips" style={{ marginTop: 10 }}>
+          {(d?.enabled_set ?? []).map((id) => (
+            <span className="mkt-enabled-chip" key={id} title={`enabled in runtime set v${String(d?.version ?? "?")}`}>
+              <i aria-hidden="true" />
+              {id}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="tiny faint" style={{ marginTop: 10 }}>
+        immutable versioned set (RuntimeConfig pattern) — the console reads it; enablement flows
+        through the gated seed commands, never a direct write.
+      </div>
       <FreshnessNote updatedAtMs={snap.dataUpdatedAt ?? null} label="snapshot" />
     </Panel>
   );

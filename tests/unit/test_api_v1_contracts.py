@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
@@ -224,3 +225,184 @@ def test_no_stack_traces_in_any_error(v1_client: TestClient) -> None:
     text = r.text
     assert "Traceback" not in text
     assert ".py" not in text
+
+
+# ---------------------------------------------------------------------------
+# OBS-JSON regression (2026-09-21): GET /api/v1/model/identity must never
+# return a live in-process object. The serving bundle exposes the scaler as a
+# ScalerBundle of numpy arrays; the old attribute loop echoed it straight into
+# json.dumps and 500'd the ML panel on every poll. It also read identity off
+# the bundle, which carries only (model, scaler, artifact_path), so every
+# rendered field was empty. Identity now comes from the model registry.
+# ---------------------------------------------------------------------------
+
+
+class _FakeScalerBundle:
+    corrupt = False
+
+    def is_ready(self) -> bool:
+        return True
+
+    def dimension(self) -> int:
+        return 70
+
+
+class _FakeBundle:
+    model: Any = None
+    scaler = _FakeScalerBundle()
+    artifact_path = "C:/artifacts/model.pt"
+
+
+class _FakeProvenance:
+    model_id = "primary_scalp_scalp_v3_70d"
+    model_version = "v1.0"
+    feature_schema_id = "scalp_v3"
+    feature_dimension = 70
+    artifact_fingerprint = "abc123def4567890"
+    model_role = "PRIMARY_SCALP"
+    config_version = "9.1.0"
+
+
+class _FakeRegistry:
+    current = _FakeProvenance()
+
+
+def _client_with_bundle(bundle: Any, registry: Any = None) -> TestClient:
+    app = create_v1_app()
+    app.state.engine = SimpleNamespace(_bundle=bundle, model_registry=registry)
+    return TestClient(app)
+
+
+def _client_with_app(engine: Any) -> TestClient:
+    """Mount a full engine object (accessor methods, not just namespace attrs)."""
+    app = create_v1_app()
+    app.state.engine = engine
+    return TestClient(app)
+
+
+def test_model_identity_never_returns_non_json_objects() -> None:
+    client = _client_with_bundle(_FakeBundle(), _FakeRegistry())
+    r = client.get("/api/v1/model/identity")
+    assert r.status_code == 200, r.text
+    # jsonable() would have raised TypeError before reaching json(); this
+    # assertion fails loudly if the route ever re-introduces a raw object.
+    assert r.json()["data"]
+
+
+def test_model_identity_reports_registry_fields() -> None:
+    data = (
+        _client_with_bundle(_FakeBundle(), _FakeRegistry())
+        .get("/api/v1/model/identity")
+        .json()["data"]
+    )
+    assert data["available"] is True
+    assert data["registered"] is True
+    assert data["model_id"] == "primary_scalp_scalp_v3_70d"
+    assert data["model_version"] == "v1.0"
+    assert data["schema_id"] == "scalp_v3"
+    assert data["artifact_id"] == "abc123def4567890"
+    assert data["feature_dimension"] == 70
+    # contract FACTS from the scaler, never the object itself
+    assert data["scaler_ready"] is True
+    assert data["scaler_dimension"] == 70
+    assert data["scaler_corrupt"] is False
+    assert "scaler" not in data
+
+
+def test_model_identity_absent_without_bundle() -> None:
+    app = create_v1_app()
+    app.state.engine = SimpleNamespace(_bundle=None, model_registry=None)
+    r = TestClient(app).get("/api/v1/model/identity")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["available"] is False
+    assert data["reason"]
+
+
+def test_model_identity_reports_unregistered_state_without_placeholders() -> None:
+    client = _client_with_bundle(_FakeBundle(), registry=None)
+    r = client.get("/api/v1/model/identity")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["available"] is True
+    assert data["registered"] is False
+    assert data.get("model_id") in (None, "", "unregistered")
+    # an unregistered model must not emit a row of empty-string fields
+    for key in ("artifact_id", "model_role", "config_version"):
+        assert key not in data or data[key]
+
+
+# ---------------------------------------------------------------------------
+# OBS-METADATA regression (2026-09-21): GET /api/v1/model/contracts must
+# resolve the MODEL side of the contract from the serving runtime, not from
+# ModelBundle.manifest. ModelBundle is a frozen dataclass of exactly
+# (model, scaler, artifact_path) and has no manifest attribute, so the old
+# read was always None and every live deployment reported
+# result=UNKNOWN / reason=NO_MODEL_METADATA while serving a validated 70D
+# scalp_v3 champion -- a false UNKNOWN that hides a real PASS.
+# ---------------------------------------------------------------------------
+
+
+class _EffectiveEngine:
+    """Engine stub exposing the bundle-derived effective contract accessors."""
+
+    _bundle = _FakeBundle()
+
+    def effective_feature_dim(self) -> int:
+        return 70
+
+    def effective_feature_schema_id(self) -> str:
+        return "scalp_v3"
+
+
+class _UnregisteredEngine:
+    """Bundle loaded but no registered provenance (cold pre-registration boot)."""
+
+    _bundle = _FakeBundle()
+    model_registry = None
+
+    def effective_feature_dim(self) -> int:
+        return 50
+
+    def effective_feature_schema_id(self) -> str:
+        return "scalp_v1"
+
+
+def test_model_contracts_reports_real_model_metadata() -> None:
+    r = _client_with_app(_EffectiveEngine()).get("/api/v1/model/contracts")
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["feature_schema_ids"]
+    compat = data["compatible_model_schemas"]
+    assert compat["model_schema_id"] == "scalp_v3"
+    assert compat["model_dimension"] == 70
+    assert compat["runtime_schema_id"] == "scalp_v3"
+    assert compat["runtime_dimension"] == 70
+    assert compat["result"] == "PASS", compat
+    assert compat["reason"] == "SCHEMA_DIMENSION_MATCH"
+    assert data["serving_bundle_present"] is True
+
+
+def test_model_contracts_reports_mismatch_not_unknown() -> None:
+    """A 50D model under the canonical 70D runtime must BLOCK, not UNKNOWN."""
+    r = _client_with_app(_UnregisteredEngine()).get("/api/v1/model/contracts")
+    assert r.status_code == 200, r.text
+    compat = r.json()["data"]["compatible_model_schemas"]
+    assert compat["model_schema_id"] == "scalp_v1"
+    assert compat["model_dimension"] == 50
+    assert compat["result"] == "BLOCK", compat
+    assert compat["reason"] == "SCHEMA_MISMATCH"
+
+
+def test_model_contracts_absent_engine_is_honest_unknown() -> None:
+    """No engine attached -> UNKNOWN with a real reason, never a fabricated PASS."""
+    app = create_v1_app()
+    app.state.engine = None
+    r = TestClient(app).get("/api/v1/model/contracts")
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    compat = data["compatible_model_schemas"]
+    assert compat["model_schema_id"] is None
+    assert compat["model_dimension"] is None
+    assert compat["result"] == "UNKNOWN"
+    assert compat["reason"] == "NO_MODEL_METADATA"

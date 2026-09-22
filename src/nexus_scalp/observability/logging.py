@@ -184,6 +184,26 @@ _HIGH_ENTROPY_RE = re.compile(r"[A-Za-z0-9_\-+/=]{24,}")
 _ENTROPY_ALNUM_THRESHOLD = 0.75
 _ENTROPY_BITS_THRESHOLD = 3.2
 
+#: Path-shape anchors that mark a high-entropy run as a FILESYSTEM PATH, not
+#: a secret. A real secret is an opaque token with no directory structure;
+#: an exception message carries the artifact path the engine tried to open.
+#: Both halves matter:
+#:   * >=3 path separators with 2+ dots => a deep relative/absolute path
+#:     (the `.` before a json/pt/npz/db extension is the strongest signal —
+#:     no credential carries one, and without it the mask eats everything
+#:     up to the extension, printing a fake filename that reads like a
+#:     timestamp: confidence_calibration => calibration_20260921T0345Z).
+#:   * the extension allowlist keeps the carve-out narrow: only the
+#:     engine's own artifact/config/db/log suffixes, never a bare `.`.
+#: This is a carve-out of the *diagnostic* shape only — a secret that merely
+#: contains slashes still redacts (it must ALSO end in a listed extension).
+_PATH_SHAPE_RE = re.compile(
+    r"(?:^|[\\/])"  # absolute, or a path segment boundary
+    r"(?:[A-Za-z0-9_\-]+[\\/]){2,}"  # >=3 segments
+    r"[A-Za-z0-9_\-]+\."
+    r"(?:json|pt|pth|npz|db|sqlite3?|log|yaml|yml|toml|csv|txt|md|bak)\b"
+)
+
 #: OBS-002 (2026-09-09): correlation-id token shapes. These are the canonical
 #: id formats the engine itself stamps (policy.py EXEC-, web/errors.py req_,
 #: incidents/models.py INC-, update_engine orchestrator upd-). Tokens matching
@@ -377,6 +397,17 @@ def _redact_value(value: Any) -> Any:
             alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD
             and _shannon_entropy(token) >= _ENTROPY_BITS_THRESHOLD
         ):
+            # BUG-312: a filesystem PATH in an exception message is diagnostic,
+            # not a credential. The entropy catcher masks the whole interior
+            # of the path (dots/slashes split the run) and leaves only the
+            # extension, so the real artifact name prints as a fake string
+            # that looks like a timestamp — the operator reads
+            # 'calibration_20260921T0345Z.json' and hunts for a code path that
+            # does not exist. Only a path with real directory structure AND a
+            # known artifact extension is carved out; opaque secrets keep
+            # redacting.
+            if _PATH_SHAPE_RE.search(token):
+                return token
             return "[REDACTED_SECRET]"
         return token
 

@@ -462,6 +462,41 @@ class ResearchDatasetBuilder:
                 records.append(rec)
         return records
 
+    def _classify_sample(self, rec: ExperienceRecord) -> tuple[bool, str, str]:
+        """ML-PHASE1 STEP-9: ONE classification path for audit() and build().
+
+        Terminal-lifecycle pre-classification FIRST (a known non-trade state
+        never reaches the evidence resolver), then the canonical evidence
+        resolver for outcome-less records, then the full
+        :meth:`evaluate_sample` eligibility audit. audit() and build() MUST
+        report the same reason for the same record — the stored provenance
+        census describes the same eligibility decision build() acts on.
+        """
+        if not (rec.is_executed and rec.is_closed):
+            state = lifecycle_from_outcome(
+                is_executed=bool(rec.is_executed),
+                is_closed=bool(rec.is_closed),
+                exit_reason=getattr(rec, "exit_reason", "") or "",
+                decision_lifecycle="",
+            )
+            if state in NON_TRADE_TERMINAL_STATES or state in DEGRADED_TERMINAL_STATES:
+                reason = _LIFECYCLE_REASON.get(state, REASON_MISSING_OUTCOME)
+                detail = TERMINAL_DETAIL.get(state, state.value)
+                if state in DEGRADED_TERMINAL_STATES:
+                    detail = "broker fill known, outcome result lost -> recovery queue"
+                return False, reason, detail
+            ev = self._evidence_for(rec)
+            if ev is not None and ev.evidence == EVIDENCE_GATE_REJECTION:
+                return (
+                    False,
+                    REASON_NOT_DISPATCHED,
+                    f"pre-dispatch gate rejection ({ev.pre_dispatch_gate})",
+                )
+            if ev is not None and ev.evidence == "DISPATCH_TICKET":
+                return False, REASON_MISSING_OUTCOME, "dispatched; outcome not yet resolved"
+            return False, REASON_UNKNOWN_PROVENANCE, "no dispatch/gate evidence (honest unknown)"
+        return self.evaluate_sample(rec)
+
     def audit(self, records: list[ExperienceRecord] | None = None) -> dict[str, Any]:
         """Full eligibility audit with structured rejection reasons.
 
@@ -470,6 +505,15 @@ class ResearchDatasetBuilder:
         not data anomalies). Only genuinely unresolved records
         (MISSING_OUTCOME with no terminal state, FILLED_OUTCOME_MISSING,
         zero-substitution) remain per-row recoverable findings.
+
+        ML-PHASE1 STEP-9 (audit/build census consistency): the classification
+        path here is the SAME helper build() uses (``_classify_sample``),
+        so the stored provenance census uses identical semantics to
+        eligibility/build. The previous inline replica forgot the
+        evidence-resolver step for records without a terminal lifecycle, so
+        an unresolved orphan landed in MISSING_OUTCOME here while build()
+        classified the same record as UNKNOWN_PROVENANCE — the stored census
+        disagreed with the eligibility decision it claims to describe.
         """
         self._source_cache = {}
         records = records if records is not None else self._iter_records()
@@ -477,48 +521,24 @@ class ResearchDatasetBuilder:
         rejected: list[dict[str, Any]] = []
         non_trade_count = 0
         for rec in records:
-            if not (rec.is_executed and rec.is_closed):
-                # Classify by terminal lifecycle instead of a blanket
-                # MISSING_OUTCOME (P0-C). Known terminal non-trades are
-                # counted quietly; unknown hangs stay recoverable findings.
-                state = lifecycle_from_outcome(
-                    is_executed=bool(rec.is_executed),
-                    is_closed=bool(rec.is_closed),
-                    exit_reason=getattr(rec, "exit_reason", "") or "",
-                    decision_lifecycle="",
-                )
-                reason = _LIFECYCLE_REASON.get(state, REASON_MISSING_OUTCOME)
-                entry = {
-                    "trade_id": rec.experience_id,
-                    "idempotency_key": rec.idempotency_key,
-                    "strategy_id": rec.strategy_id,
-                    "rejection_reason": reason,
-                    "rejection_stage": "dataset",
-                    "detail": TERMINAL_DETAIL.get(state, "not executed/closed"),
-                    "recoverable": reason in _RECOVERABLE_REASONS,
-                    "source": "ledger",
-                }
-                if reason in _NON_TRADE_REASONS:
-                    non_trade_count += 1
-                else:
-                    rejected.append(entry)
-                continue
-            ok, reason, detail = self.evaluate_sample(rec)
+            ok, reason, detail = self._classify_sample(rec)
             if ok:
                 eligible.append(rec)
+                continue
+            entry = {
+                "trade_id": rec.experience_id,
+                "idempotency_key": rec.idempotency_key,
+                "strategy_id": rec.strategy_id,
+                "rejection_reason": reason,
+                "rejection_stage": "dataset",
+                "detail": detail,
+                "recoverable": reason in _RECOVERABLE_REASONS,
+                "source": "ledger",
+            }
+            if reason in _NON_TRADE_REASONS:
+                non_trade_count += 1
             else:
-                rejected.append(
-                    {
-                        "trade_id": rec.experience_id,
-                        "idempotency_key": rec.idempotency_key,
-                        "strategy_id": rec.strategy_id,
-                        "rejection_reason": reason,
-                        "rejection_stage": "dataset",
-                        "detail": detail,
-                        "recoverable": reason in _RECOVERABLE_REASONS,
-                        "source": "ledger",
-                    }
-                )
+                rejected.append(entry)
         top: dict[str, int] = {}
         for r in rejected:
             top[r["rejection_reason"]] = top.get(r["rejection_reason"], 0) + 1
@@ -568,8 +588,10 @@ class ResearchDatasetBuilder:
         agg = EventBatchAggregator()
         # One deterministic full classification pass (no per-row info spam for
         # known terminal non-trades; only unresolved evidence is logged).
+        # ML-PHASE1 STEP-9: _classify_sample is the SAME path audit() uses,
+        # so the census attached below cannot diverge from eligibility.
         for rec in audit_all:
-            ok, reason, detail = self.evaluate_sample(rec)
+            ok, reason, detail = self._classify_sample(rec)
             if not ok:
                 if reason == REASON_UNKNOWN_PROVENANCE:
                     # BUG-185 classify-once: honest unknown provenance is a

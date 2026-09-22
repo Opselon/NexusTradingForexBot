@@ -88,6 +88,11 @@ class Shadow70LoadStatus(StrEnum):
 class DisagreementClass(StrEnum):
     """Comparison outcome taxonomy (spec 9 / 26)."""
 
+    #: No comparison was possible at all (BUG-278): the runtime was not
+    #: READY, the 70D vector failed validation, or shadow inference
+    #: failed/timed out. Distinct from every real class so a non-compared
+    #: row can never be read as "the shadow chose NO_TRADE".
+    NOT_COMPARED = "NOT_COMPARED"
     AGREEMENT = "AGREEMENT"
     ACTION_DISAGREEMENT = "ACTION_DISAGREEMENT"
     DIRECTION_DISAGREEMENT = "DIRECTION_DISAGREEMENT"
@@ -227,9 +232,33 @@ class Shadow70Observation(BaseModel):
     liquidity_features_10: list[float] = Field(default_factory=list)
 
     feature_hash: str = Field(default="")  # snapshot id (feature provenance)
-    sample_source: str = Field(default="LIVE")  # LIVE / REPLAY
+    sample_source: str = Field(default="LIVE")  # LIVE / REPLAY / SMOKE
     latency_ms: float = Field(default=0.0, ge=0.0)
     error_code: str = Field(default="")
+
+    @property
+    def compared(self) -> bool:
+        """True only if a real shadow inference ran and both sides were scored.
+
+        An observation with ``compared=False`` never compared anything: the
+        runtime was not READY (no candidate), the 70D vector failed validation,
+        or shadow inference failed/timed out. Such rows MUST NOT be read as
+        Champion-vs-Shadow disagreements (CHG-0046 D9 / BUG-278): their
+        shadow_action is a neutral placeholder, not a model output.
+        """
+        return bool(self.valid) and self.error_code == ""
+
+    @property
+    def disagreement_or_reason(self) -> str:
+        """Human-readable verdict for UI tables.
+
+        Valid rows carry the real disagreement class. Non-compared rows carry
+        their error code instead, so an operator reading the table can never
+        mistake "no candidate attached" for "the shadow refused to trade".
+        """
+        if not self.compared:
+            return self.error_code or "NOT_COMPARED"
+        return self.disagreement.value
 
     outcome: str = Field(default="PENDING")  # PENDING / WIN / LOSS / FLAT (research only)
     outcome_resolved_at: datetime | None = Field(default=None)
