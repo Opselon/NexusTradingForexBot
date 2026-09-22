@@ -31,17 +31,14 @@
 - [ML-LABEL-002](tasks/ML-LABEL-002.md) — Sample Uniqueness Weighting & Label Overlap Anti-Leakage `[P1 | DONE | AGENT-LABEL]`
 
 ### STREAM D: MODEL ARCHITECTURE
-- [ML-ARCH-001](tasks/ML-ARCH-001.md) — ScalpNet Dual-Path Tensor Contract & 3-Class Head Sunset `[P0 | READY | AGENT-ML-ARCH | HUMAN DECISION]`
+- [ML-ARCH-001](tasks/ML-ARCH-001.md) — ScalpNet Dual-Path Tensor Contract & 3-Class Head Sunset `[P0 | EVIDENCE-COMPLETE | AGENT-ML-ARCH | HUMAN DECISION]`
 - [ML-ARCH-002](tasks/ML-ARCH-002.md) — Causal TCN Dilation & Receptive Field Optimization `[P2 | BLOCKED | AGENT-ML-ARCH]`
 - [ML-ARCH-003](tasks/ML-ARCH-003.md) — Temporal Multihead Attention vs Positional Encoding Ablation `[P2 | BLOCKED | AGENT-ML-ARCH]`
 
 ### STREAM E: TRAINING ENGINE & REGULARIZATION
 - [ML-TRAIN-001](tasks/ML-TRAIN-001.md) — Deterministic Training Engine, Seed Harness & AMP Precision `[P1 | DONE | AGENT-ML-TRAIN]`
-- [ML-TRAIN-002](tasks/ML-TRAIN-002.md) — Loss Function Exploration: Class-Weighted Focal Loss vs Label Smoothing `[P2 | BLOCKED | AGENT-ML-TRAIN]`
-- [ML-TRAIN-003](tasks/ML-TRAIN-003.md) — Optimizer & Learning Rate Schedule Exploration (AdamW + Cosine Restarts) `[P2 | DONE | AGENT-ML-TRAIN]`
-- [ML-TRAIN-001](tasks/ML-TRAIN-001.md) — Deterministic Training Engine, Seed Harness & AMP Precision `[P1 | BLOCKED | AGENT-ML-TRAIN]`
 - [ML-TRAIN-002](tasks/ML-TRAIN-002.md) — Loss Function Exploration: Class-Weighted Focal Loss vs Label Smoothing `[P2 | DONE | AGENT-ML-TRAIN]`
-- [ML-TRAIN-003](tasks/ML-TRAIN-003.md) — Optimizer & Learning Rate Schedule Exploration (AdamW + Cosine Restarts) `[P2 | BLOCKED | AGENT-ML-TRAIN]`
+- [ML-TRAIN-003](tasks/ML-TRAIN-003.md) — Optimizer & Learning Rate Schedule Exploration (AdamW + Cosine Restarts) `[P2 | DONE | AGENT-ML-TRAIN]`
 
 ### STREAM F: EXPERIMENTATION & ABLATION
 - [ML-EXP-001](tasks/ML-EXP-001.md) — Immutable Experiment Registry & Artifact Manifest Schema `[P1 | DONE | AGENT-ML-EXP]`
@@ -57,7 +54,7 @@
 - [ML-INF-001](tasks/ML-INF-001.md) — Inference Preprocessing & Scaler Latency SLA (< 10ms) Verification `[P1 | DONE | AGENT-INFERENCE]`
 
 ### STREAM I: TRADING INTEGRATION & BACKTESTING
-- [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | BLOCKED | AGENT-BACKTEST]`
+- [ML-BT-001](tasks/ML-BT-001.md) — Trading Quality Metric Suite: Expectancy R, Profit Factor & Slippage Decay Curves `[P1 | DONE (PR #316) | AGENT-BACKTEST]`
 - [ML-RISK-001](tasks/ML-RISK-001.md) — Position Replay & Economic Dataset Generation Engine `[P0 | DONE | AGENT-RISK]`
 
 ### STREAM J: MODEL GOVERNANCE & LIFECYCLE
@@ -73,6 +70,9 @@
 - [ML-OBS-001](tasks/ML-OBS-001.md) — Live Shadow Outcome Real-Time Resolution & Holding Metrics Wiring `[P2 | DONE (PR pending) | AGENT-OBSERVABILITY]`
 - [ML-OBS-002](tasks/ML-OBS-002.md) — Online Fine-Tuning Safe Sandbox, Quarantine Buffer & Circuit Breakers `[P3 | BLOCKED | AGENT-OBSERVABILITY | HUMAN DECISION]`
 - [ML-CI-001](tasks/ML-CI-001.md) — CI Model Training Smoke vs Real Validation Gap `[P2 | BLOCKED | AGENT-QA]`
+- [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | DONE (PR #346) | AGENT-QA]`
+||||||| eb73440a
+- [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | BLOCKED | AGENT-QA]`
 - [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | DONE | AGENT-GIT]`
 - [ML-UI-001](tasks/ML-UI-001.md) — End-to-End Model UX & CLI Verification (Training, Predict & Confidence Trust) `[P1 | DONE | AGENT-UI]`
 - [ML-UI-002](tasks/ML-UI-002.md) — Model Studio E2E Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Management Generator `[P1 | DONE | AGENT-UI]`
@@ -84,7 +84,7 @@
 
 The following tasks are strictly frozen from implementation until the human operator signs off on the corresponding architectural decision:
 
-1. **[ML-ARCH-001](tasks/ML-ARCH-001.md)**: Approve formal sunset and retirement of legacy 4-logit output (`WAIT` logit) across all future training runs and models.
+1. **[ML-ARCH-001](tasks/ML-ARCH-001.md)**: Approve formal sunset and retirement of legacy 4-logit output (`WAIT` logit) across all future training runs and models. **Evidence complete (2026-09-22):** the audit this task required is done and automated — `scripts/audit/audit_legacy4_surface.py` (torch-free, 12 tests) proves zero committed 4-wide artifacts and zero `num_classes=4` on the serving path, and `agents/decisions/DEC-0010-scalpnet-3class-head-sunset.md` recommends **Option B** (strict sunset + legacy adapter). Needs an operator A/B/C selection to close AC-3.
 2. **[ML-GOV-002](tasks/ML-GOV-002.md)**: Designate the single canonical root model state machine: `PromotionState` (`governance.db`) vs `ModelStatus` (`lifecycle.db`).
 3. **[ML-EXP-002](tasks/ML-EXP-002.md)**: Empirical comparison decision: Retain and wire 3D TCN+Attention sequence buffer in live execution or officially retire 3D sequence modeling to favor 2D MLP ResNet.
 4. **[ML-FEAT-003](tasks/ML-FEAT-003.md)**: Approve live production gating criteria and infrastructure requirements for 70D schema adoption.
