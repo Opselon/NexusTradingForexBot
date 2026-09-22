@@ -4,6 +4,14 @@
 **Date:** 2026-09-11
 **Decided by:** Hermes (operator-directed PR sweep)
 **Supersedes:** none
+**Superseded by (partially, 2026-09-22):** DEC-0008 Decision (d) supersedes
+this record's Decision 3 merge procedure wherever the two conflict. This
+record authorised an agent to execute `PUT /pulls/{n}/merge` once all required
+contexts reported green; DEC-0008 (d) closes that gap: green CI is a
+necessary precondition, never an authorisation — explicit coordinator
+approval is mandatory before any merge. DEC-0006's Decision 3 text is
+preserved below as historical context, not as authority. Where the records
+disagree, DEC-0008 governs.
 
 ## Context
 

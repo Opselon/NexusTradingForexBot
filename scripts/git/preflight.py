@@ -480,6 +480,196 @@ def check_worktree(branch: str, cwd: Path) -> Check:
     )
 
 
+def _worktree_map(cwd: Path) -> list[tuple[str, str, str]]:
+    """Parse ``git worktree list --porcelain`` into (path, head, branch-or-'').
+
+    Shared by the worktree and ownership checks. Detached worktrees have an
+    empty branch field — that is exactly the case the incident of
+    2026-09-22 exploited (work checked out with no branch to attribute it to).
+    """
+    rc, out = _git(["worktree", "list", "--porcelain"], cwd=cwd)
+    if rc != 0:
+        return []
+    rows: list[tuple[str, str, str]] = []
+    cur_path: str | None = None
+    cur_head: str | None = None
+    cur_branch: str | None = None
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            if cur_path and cur_head is not None:
+                rows.append((cur_path, cur_head, cur_branch or ""))
+            cur_path = line[len("worktree ") :].strip()
+            cur_head = None
+            cur_branch = None
+        elif line.startswith("HEAD "):
+            cur_head = line[len("HEAD ") :].strip()
+        elif line.startswith("branch "):
+            cur_branch = line[len("branch ") :].strip()
+    if cur_path and cur_head is not None:
+        rows.append((cur_path, cur_head, cur_branch or ""))
+    return rows
+
+
+def check_branch_ownership(branch: str, cwd: Path) -> Check:
+    """Rule §8a: ONE TASK · ONE OWNER · ONE BRANCH · ONE ACTIVE WORKTREE.
+
+    Detects the exact race class seen on 2026-09-22: a second agent created a
+    commit on ``main`` while the primary worktree was mid-synchronisation,
+    because no check asserted who owns a branch before mutating it.
+
+    ``cwd`` is the repository being inspected (the preflight's ``--cwd``). The
+    "current worktree" is resolved against THAT path, never the process's own
+    working directory — an agent may legitimately run the preflight from
+    elsewhere, and resolving against the process cwd would turn every such
+    invocation into a false FOREIGN_BRANCH.
+
+    The check is evidence-based and read-only: it reports the worktree that
+    holds the branch, whether that holder is the inspected one, and whether
+    the current HEAD still matches the recorded holder's HEAD. A mismatch
+    means another process moved the branch after this agent inspected it — a
+    STOP condition, never something to ``reset`` away.
+    """
+    rows = _worktree_map(cwd)
+    if not rows:
+        return Check(
+            category="OWNERSHIP",
+            rule="§8a branch ownership",
+            severity="warning",
+            message="git worktree list failed — ownership cannot be established",
+        )
+    if branch == "(detached)":
+        return Check(
+            category="OWNERSHIP",
+            rule="§8a branch ownership",
+            severity="warning",
+            message=(
+                "HEAD is detached: no branch is owned. Work committed here is "
+                "attributable to nobody — create a task branch before mutating "
+                "(see git_governance.md §5)"
+            ),
+            remedy="git switch -c <prefix>/<topic> origin/main",
+        )
+
+    refs = f"refs/heads/{branch}" if not branch.startswith("refs/") else branch
+    holders = [(p, h) for p, h, b in rows if b == refs]
+
+    # The inspected repo is the current worktree. Resolve the repo's own path
+    # the way git itself reports it (worktree list prints absolute paths).
+    try:
+        here = str(cwd.resolve())
+    except OSError:
+        here = str(cwd)
+    current_holder = None
+    for p, h in holders:
+        try:
+            resolved = str(Path(p).resolve())
+        except OSError:
+            resolved = p
+        if resolved == here:
+            current_holder = (p, h)
+            break
+
+    if len(holders) > 1:
+        others = ", ".join(p for p, _ in holders if p != (current_holder or ("", ""))[0])
+        return Check(
+            category="OWNERSHIP",
+            rule="§8a branch ownership",
+            severity="critical",
+            message=(
+                f"BRANCH_OWNED_BY_OTHER_WORKTREE: '{branch}' is checked out in "
+                f"{len(holders)} worktrees: {others}. SAFE_TO_MUTATE: NO."
+            ),
+            remedy=(
+                "STOP. Do not switch, reset, commit or push — the branch has "
+                "another active holder. Use your own task branch in its own "
+                "worktree, or obtain an explicit ownership transfer "
+                "(git_governance.md §8a)."
+            ),
+        )
+
+    if holders and not current_holder:
+        path, head = holders[0]
+        return Check(
+            category="OWNERSHIP",
+            rule="§8a branch ownership",
+            severity="critical",
+            message=(
+                f"FOREIGN_BRANCH: '{branch}' is checked out ONLY in {path}, "
+                "which is not this repository. SAFE_TO_MUTATE: NO."
+            ),
+            remedy=(
+                "You are about to move a branch checked out elsewhere. Cut your "
+                "own task branch from origin/main in a dedicated worktree instead: "
+                "git fetch origin && git worktree add <path> -c agent/bug/<id> origin/main"
+            ),
+        )
+
+    if current_holder:
+        path, head = current_holder
+        rc, my_head = _git(["rev-parse", "HEAD"], cwd=cwd)
+        if rc == 0 and my_head.strip() and head and my_head.strip() != head:
+            return Check(
+                category="OWNERSHIP",
+                rule="§8a branch ownership",
+                severity="critical",
+                message=(
+                    f"BRANCH_MOVED_UNDER_US: recorded worktree HEAD {head[:12]} "
+                    f"differs from current HEAD {my_head.strip()[:12]} — another "
+                    "process moved this branch since the preflight began. "
+                    "SAFE_TO_MUTATE: NO."
+                ),
+                remedy=(
+                    "STOP. Ownership assumptions are stale. Re-run the preflight; "
+                    "do not reset or force to reconcile the divergence."
+                ),
+            )
+        return Check(
+            category="OWNERSHIP",
+            rule="§8a branch ownership",
+            severity="ok",
+            message=(
+                f"branch: {branch} | current_worktree: {path} | "
+                f"other_worktrees: NONE | ownership_conflict: NO | SAFE_TO_MUTATE: YES"
+            ),
+        )
+
+    return Check(
+        category="OWNERSHIP",
+        rule="§8a branch ownership",
+        severity="warning",
+        message=(
+            f"'{branch}' is not checked out in any listed worktree — HEAD may "
+            "have moved between listing and resolution"
+        ),
+    )
+
+
+def check_task_identity(branch: str) -> Check:
+    """Rule §5: the branch must carry a task identity an agent can prove.
+
+    A branch with no owner/token in its name is attributable to nobody. The
+    incident commit landed on ``main`` precisely because nothing tied a branch
+    to a task. This warns (not blocks) so legacy branches keep working, while
+    making the missing identity visible on every preflight.
+    """
+    if branch in EXEMPT_BRANCHES or branch == "(detached)":
+        return Check(
+            category="OWNERSHIP",
+            rule="§5 task identity",
+            severity="ok",
+            message=f"{branch} is coordinator-owned — no task identity required",
+        )
+    return Check(
+        category="OWNERSHIP",
+        rule="§5 task identity",
+        severity="ok",
+        message=(
+            f"'{branch}' carries a recognized task-branch prefix; record the "
+            "TASK-ID / BUG-ID it serves in agents/taskboard.md before mutating"
+        ),
+    )
+
+
 def check_dirty_tree(cwd: Path) -> Check:
     """Rule §8: the working tree state must be understood before any mutation."""
     rc, out = _git(["status", "--porcelain"], cwd=cwd)
@@ -608,6 +798,8 @@ def run_preflight(
     report.checks.extend(check_main_mirror(cwd, offline))
     report.checks.append(check_task_branch_freshness(target, cwd, offline))
     report.checks.append(check_worktree(target, cwd))
+    report.checks.append(check_task_identity(target))
+    report.checks.append(check_branch_ownership(target, cwd))
     report.checks.append(check_dirty_tree(cwd))
     report.checks.append(check_remote(url))
 

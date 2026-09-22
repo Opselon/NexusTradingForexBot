@@ -344,3 +344,24 @@
 | TASK-POSA-002 | Hermes (position-adviser lane, 2026-09-21) — local-main pre-merge state | P2 | Model-studio dataset selector reversion fix — "select M1, it goes back to D1" initial diagnosis: client-side granularity-aware sort in model-studio api.ts/model.ts. The remote-final row above supersedes this: root cause was the BACKEND inventory sort, fixed at the source in model_studio_routes.py (PR #338). | none | frontend/src/features/model-studio/api.ts, frontend/src/features/model-studio/model.ts | none | none | SUPERSEDED by the remote-final row above (PR #338) |
 
 | TASK-GOV-GITWORK-001 | Hermes (git governance lane, 2026-09-22) | P1 | RESIDUAL HARDENING on top of GOV-GIT-001 (PR #352, landed — canonical `agents/git_governance.md`, read-only `scripts/git/preflight.py`, `tests/unit/test_git_governance.py`, PR template). This row covers ONLY the gaps #352 did not land: (1) `scripts/ci/scan_secrets.py` GitHub-token prefix coverage (`gho_` / `ghp_` / `github_pat_` — absent on origin/main, §17 names this scanner as the in-repo secret scanner); (2) stale git-instruction supersession in `docs/70D_INSTALLATION_COMPATIBILITY.md` (blind `git pull` -> ff-only mirror sync per §4); (3) this append-only provenance union. The near-duplicate preflight/tests/docs originally drafted for this lane were DROPPED as superseded by #352 — no duplicate guard ships. | GOV-GIT-001 (PR #352) | scripts/ci/scan_secrets.py, docs/70D_INSTALLATION_COMPATIBILITY.md, agents/taskboard.md | no production code changed; scanner is CI-only | none | PR #353 OPEN (residual-only: scan_secrets token prefixes + 70D doc ff-only supersession + this provenance union; duplicate preflight/tests dropped as superseded by #352) |
+
+
+---
+
+## GOV-OWNERSHIP-001 — branch/worktree ownership hardening (2026-09-22)
+
+| TASK-ID | Owner | Priority | Title | Deps | Files | Contracts | Blocker | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| TASK-GOV-OWNERSHIP-001 | Hermes (governance lane, 2026-09-22) | P1 | Branch/worktree ownership safety after the 2026-09-22 incident: a concurrent agent committed to `main` while the primary worktree was mid-synchronisation, because nothing asserted who owns a branch before a mutation. Adds `check_branch_ownership` + `check_task_identity` to `scripts/git/preflight.py` (BRANCH_OWNED_BY_OTHER_WORKTREE / FOREIGN_BRANCH / BRANCH_MOVED_UNDER_US are critical STOP conditions; detached HEAD warns about unattributable work), new `agents/git_governance.md` §8a (ownership resolution before switch/checkout/commit/merge/rebase/reset/update-ref/branch -f/worktree add-remove/cherry-pick/revert/push; ownership can change mid-task; resolve against the inspected repo, never the process cwd), 10 fixture-only regression tests for the race class, `beforePush.ps1` divergence WARN-only -> STOP plus delegation to the canonical preflight, `nightly-qa.yml` chaos failure now fails the job instead of only annotating, DEC-0006 -> DEC-0008(d) supersession chain made explicit, `git-release-guardian.md` §9 direct-merge-permission removed, `multi-agent-git-contract.md` §16 branch-naming conflict reconciled (canonical `agent/<type>/<ID>` from `agents/git_governance.md` §5; legacy `agent/<name>/<task>` superseded not forbidden), and `docs/engineering/release-process.md` version literal removed in favour of the pyproject canonical source. | GOV-GIT-001 (PR #352) | scripts/git/preflight.py, tests/unit/test_git_governance.py, agents/git_governance.md, agents/multi-agent-git-contract.md, agents/git-release-guardian.md, agents/decisions/DEC-0006-branch-protection-docs-required-context.md, beforePush.ps1, .github/workflows/nightly-qa.yml, docs/engineering/release-process.md, agents/taskboard.md | no production code changed; preflight is read-only | none | PR pending |
+
+### Incident root cause (evidence, not inference)
+
+Concurrent-agent activity on the feature branch while the primary worktree was
+mid-synchronisation: reflog `agent/feature/ML-PHASE1-DATA-CONTRACT` shows a
+reset to the freshly-merged main (`2d3eb77b`, 23:17:25), then UI commits
+(23:29:00) and two cherry-picks (23:34:09, 23:35:02) including the commit that
+briefly appeared on `main` (`34e0b052`, 23:19:37). That commit's pro-panel
+content was later re-cherry-picked onto `agent/hermes/frontend-pro-uiux` and
+evolved further, landing on `main` via PR #355 (`db781306`). The intermediate
+`34e0b052` itself is preserved on `backup/main-34e0b052-neural-studio-pro-panel`
+(rebased as `209caa45`) and is NOT part of this governance PR.
