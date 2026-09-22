@@ -1,19 +1,26 @@
 /* ==========================================================================
-   Intelligence page (lane uiux-wave5-intel) — signal-intelligence skin.
+   PURPOSE:  Scoped stylesheet for the Intelligence page (lane token `itl-`) —
+             filter chips, timeline rail, signal cards, score bars, autopsy
+             cards, plus a card entrance animation.
+   OWNER:    uiux-wave5-intel  (future edits to this file belong to this lane)
+   CONSUMES: theme.css tokens only (--bg/--border/--text/--accent, spacing and
+             type tokens) — no hex colors except documented rgba() of tokens;
+             class names consumed by ./IntelligencePage, ./SignalFeed,
+             ./AutopsyFeed, ./signalBits (all itl- prefixed).
+   PROVIDES: itl-chiprow, itl-chip, itl-count, itl-rail, itl-item(--newest),
+             itl-card*, itl-type, itl-time, itl-fig, itl-score*, itl-autopsy*.
+   INVARIANTS: additive-only — no other page's markup is affected; colors
+             restate backend values (badge tones come from the kit), an
+             absent value is "—" upstream, never a fabricated bar; logical
+             properties everywhere so RTL mirrors correctly.
+   EXTEND:   add a new itl- block below; never edit another lane's stylesheet,
+             never hardcode a color that theme.css already provides.
 
    Design language: feed of signal cards on a newest-first timeline rail,
    derived filter chips with an active state, mono key figures, backend
    0..1 score bars, and autopsy cards.
 
    Rules (same discipline as the rest of the console):
-     - colors come EXCLUSIVELY from theme.css tokens (plus rgba() of them);
-     - every selector is namespaced `itl-`, additive — no other page's markup
-       is affected;
-     - logical properties (margin-inline-*, inset-inline-*, border-inline-*)
-       everywhere so the RTL console (fa/ar) mirrors correctly;
-     - semantics stay backend-authoritative: badge tones are the kit's own
-       word->tone mapping, the score fill only restates a backend 0..1 number,
-       and an absent value renders "—", never a fabricated bar;
      - motion is decorative-only, wrapped in prefers-reduced-motion:
        no-preference (the theme also neutralizes it globally).
    ========================================================================== */

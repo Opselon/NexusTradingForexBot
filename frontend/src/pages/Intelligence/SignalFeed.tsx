@@ -139,7 +139,7 @@ function FeedBody({ articles }: { articles: NewsArticle[] }) {
             {w.toLowerCase()}
           </button>
         ))}
-        <span className="itl-count">
+        <span className="itl-count" aria-live="polite">
           {visible.length === sorted.length
             ? `${sorted.length} signals`
             : `${visible.length} of ${sorted.length} signals`}
