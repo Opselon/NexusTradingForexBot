@@ -80,8 +80,17 @@ export type FieldValues = Record<string, FieldValue>;
 /** Aggregated per-field messages. Empty array / absent key = valid. */
 export type FieldErrors = Record<string, string[]>;
 
-/** One message rule: value in, message (or null when it passes) out. */
-export type FieldRule = (value: FieldValue, spec: FieldSpec) => string | null;
+/** Translator contract injected from the render site — the identity
+ *  (English) implementation keeps pure/unit-testable callers unchanged. */
+export type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** English identity: used wherever no translator is threaded through. */
+export const identityT: Translate = (_key, fallback) => fallback;
+
+/** One message rule: value in, message (or null when it passes) out.
+ *  `tr` is the optional translator (see Translate) so rules stay callable
+ *  from non-UI code paths. */
+export type FieldRule = (value: FieldValue, spec: FieldSpec, tr?: Translate) => string | null;
 
 /* ------------------------------------------------------------------ */
 /* Masking helpers (secrets never round-trip through the form)         */
@@ -122,81 +131,93 @@ export function toFiniteNumber(value: FieldValue): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export const ruleRequired: FieldRule = (value, spec) => {
+export const ruleRequired: FieldRule = (value, spec, tr) => {
   if (!spec.required) return null;
   if (spec.secret && isMaskedValue(value)) return null; // unchanged secret
   if (value === false) return null; // a real boolean choice
-  return asText(value) === "" ? `${spec.label ?? spec.key} is required` : null;
+  const t = tr ?? identityT;
+  return asText(value) === "" ? t("config.validation.required", "{label} is required", { label: spec.label ?? spec.key }) : null;
 };
 
-export const ruleType: FieldRule = (value, spec) => {
+export const ruleType: FieldRule = (value, spec, tr) => {
   if (asText(value) === "" && !spec.required) return null;
   if (spec.secret && isMaskedValue(value)) return null;
+  const t = tr ?? identityT;
+  const label = spec.label ?? spec.key;
   switch (spec.kind) {
     case "number": {
       const n = toFiniteNumber(value);
-      return n === null ? `${spec.label ?? spec.key} must be a number` : null;
+      return n === null ? t("config.validation.must_be_number", "{label} must be a number", { label }) : null;
     }
     case "integer": {
       const n = toFiniteNumber(value);
-      if (n === null) return `${spec.label ?? spec.key} must be a whole number`;
-      return Number.isInteger(n) ? null : `${spec.label ?? spec.key} must be a whole number`;
+      if (n === null) return t("config.validation.must_be_whole", "{label} must be a whole number", { label });
+      return Number.isInteger(n) ? null : t("config.validation.must_be_whole", "{label} must be a whole number", { label });
     }
     case "boolean":
       return typeof value === "boolean" || value === "true" || value === "false"
         ? null
-        : `${spec.label ?? spec.key} must be true or false`;
+        : t("config.validation.must_be_bool", "{label} must be true or false", { label });
     default:
       return null;
   }
 };
 
-export const ruleRange: FieldRule = (value, spec) => {
+export const ruleRange: FieldRule = (value, spec, tr) => {
   if (spec.kind !== "number" && spec.kind !== "integer") return null;
   const n = toFiniteNumber(value);
   if (n === null) return null; // ruleType already reported a non-number
+  const t = tr ?? identityT;
+  const label = spec.label ?? spec.key;
   if (spec.min !== undefined && n < spec.min) {
-    return `${spec.label ?? spec.key} must be ≥ ${spec.min}`
+    return t("config.validation.must_be_ge", "{label} must be ≥ {min}", { label, min: spec.min })
   }
   if (spec.max !== undefined && n > spec.max) {
-    return `${spec.label ?? spec.key} must be ≤ ${spec.max}`
+    return t("config.validation.must_be_le", "{label} must be ≤ {max}", { label, max: spec.max })
   }
   return null;
 };
 
-export const ruleEnum: FieldRule = (value, spec) => {
+export const ruleEnum: FieldRule = (value, spec, tr) => {
   if (spec.kind !== "enum" || !spec.options) return null;
-  const t = asText(value);
-  if (t === "" && !spec.required) return null;
-  return spec.options.includes(t) ? null : `${spec.label ?? spec.key} must be one of: ${spec.options.join(", ")}`;
+  const text = asText(value);
+  if (text === "" && !spec.required) return null;
+  if (spec.options.includes(text)) return null;
+  return (tr ?? identityT)("config.validation.must_be_one_of", "{label} must be one of: {options}", {
+    label: spec.label ?? spec.key,
+    options: spec.options.join(", "),
+  });
 };
 
-export const rulePattern: FieldRule = (value, spec) => {
+export const rulePattern: FieldRule = (value, spec, tr) => {
   if (spec.kind !== "regex" || !spec.pattern) return null;
-  const t = asText(value);
-  if (t === "" && !spec.required) return null;
+  const text = asText(value);
+  if (text === "" && !spec.required) return null;
+  const t = tr ?? identityT;
   let re: RegExp;
   try {
     re = new RegExp(spec.pattern);
   } catch {
-    return `${spec.label ?? spec.key}: invalid pattern configured`;
+    return t("config.validation.invalid_pattern", "{label}: invalid pattern configured", { label: spec.label ?? spec.key });
   }
-  return re.test(t) ? null : spec.patternMessage ?? `${spec.label ?? spec.key} has an invalid format`;
+  return re.test(text) ? null : spec.patternMessage ?? t("config.validation.invalid_format", "{label} has an invalid format", { label: spec.label ?? spec.key });
 };
 
-export const ruleUrl: FieldRule = (value, spec) => {
+export const ruleUrl: FieldRule = (value, spec, tr) => {
   if (spec.kind !== "url") return null;
-  const t = asText(value);
-  if (t === "" && !spec.required) return null;
+  const text = asText(value);
+  if (text === "" && !spec.required) return null;
+  const t = tr ?? identityT;
+  const label = spec.label ?? spec.key;
   let url: URL;
   try {
-    url = new URL(t);
+    url = new URL(text);
   } catch {
-    return `${spec.label ?? spec.key} must be an absolute URL (https://…)`;
+    return t("config.validation.must_be_url", "{label} must be an absolute URL (https://…)", { label });
   }
   return url.protocol === "http:" || url.protocol === "https:"
     ? null
-    : `${spec.label ?? spec.key} must use http(s)`;
+    : t("config.validation.must_use_http", "{label} must use http(s)", { label });
 };
 
 const CRON_FIELD_RANGES: Array<[number, number]> = [
@@ -214,19 +235,26 @@ const CRON_FIELD_RANGES: Array<[number, number]> = [
  * `a-b`) and comma lists. Rejects anything else — a malformed schedule must
  * never be applied to a live worker.
  */
-export const ruleCron: FieldRule = (value, spec) => {
+export const ruleCron: FieldRule = (value, spec, tr) => {
   if (spec.kind !== "cron") return null;
-  const t = asText(value);
-  if (t === "" && !spec.required) return null;
-  const fields = t.split(/\s+/);
+  const text = asText(value);
+  if (text === "" && !spec.required) return null;
+  const t = tr ?? identityT;
+  const label = spec.label ?? spec.key;
+  const fields = text.split(/\s+/);
   if (fields.length !== 5 && fields.length !== 6) {
-    return `${spec.label ?? spec.key} must have 5 (or 6 with seconds) cron fields, got ${fields.length}`;
+    return t("config.validation.cron_field_count", "{label} must have 5 (or 6 with seconds) cron fields, got {n}", { label, n: fields.length });
   }
   const shifted = fields.length === 6 ? fields.slice(1) : fields;
   for (let i = 0; i < shifted.length; i += 1) {
     const range = CRON_FIELD_RANGES[i] ?? [0, 59];
     if (!cronFieldValid(shifted[i] ?? "", range[0], range[1])) {
-      return `${spec.label ?? spec.key}: invalid cron field "${shifted[i]}" (allowed ${range[0]}–${range[1]})`;
+      return t("config.validation.cron_invalid_field", "{label}: invalid cron field \"{field}\" (allowed {min}–{max})", {
+        label,
+        field: shifted[i] ?? "",
+        min: range[0],
+        max: range[1],
+      });
     }
   }
   return null;
@@ -261,14 +289,13 @@ function cronAtomValid(atom: string, min: number, max: number): boolean {
 export const BOT_TOKEN_PATTERN = "^\\d{6,}:[A-Za-z0-9_-]{20,}$";
 export const ADMIN_ID_PATTERN = "^-?\\d{4,}$";
 
-export const ruleToken: FieldRule = (value, spec) => {
+export const ruleToken: FieldRule = (value, spec, tr) => {
   if (spec.kind !== "token") return null;
-  const t = asText(value);
-  if (t === "" && !spec.required) return null;
-  if (spec.secret && isMaskedValue(t)) return null; // server-served mask = unchanged
-  return new RegExp(spec.pattern ?? BOT_TOKEN_PATTERN).test(t)
-    ? null
-    : spec.patternMessage ?? `${spec.label ?? spec.key} does not match the expected token shape`;
+  const text = asText(value);
+  if (text === "" && !spec.required) return null;
+  if (spec.secret && isMaskedValue(text)) return null; // server-served mask = unchanged
+  if (new RegExp(spec.pattern ?? BOT_TOKEN_PATTERN).test(text)) return null;
+  return spec.patternMessage ?? (tr ?? identityT)("config.validation.token_shape", "{label} does not match the expected token shape", { label: spec.label ?? spec.key });
 };
 
 /** All rules in canonical order; `validateField` runs this chain. */
@@ -298,10 +325,10 @@ export function addError(errors: FieldErrors, key: string, message: string): Fie
 }
 
 /** Validate one value against a spec; returns every rule that failed. */
-export function validateField(spec: FieldSpec, value: FieldValue, rules: FieldRule[] = DEFAULT_RULES): string[] {
+export function validateField(spec: FieldSpec, value: FieldValue, rules: FieldRule[] = DEFAULT_RULES, t: Translate = identityT): string[] {
   const out: string[] = [];
   for (const rule of rules) {
-    const msg = rule(value, spec);
+    const msg = rule(value, spec, t);
     if (msg) out.push(msg);
   }
   // Range/enum/type checks are meaningless on a missing optional value.
@@ -314,10 +341,11 @@ export function validateFields(
   specs: readonly FieldSpec[],
   values: FieldValues,
   rules: FieldRule[] = DEFAULT_RULES,
+  t: Translate = identityT,
 ): FieldErrors {
   const errors: FieldErrors = {};
   for (const spec of specs) {
-    const msgs = validateField(spec, values[spec.key], rules);
+    const msgs = validateField(spec, values[spec.key], rules, t);
     for (const m of msgs) addError(errors, spec.key, m);
     const crossMsg = spec.cross ? spec.cross(values) : null;
     if (crossMsg) addError(errors, spec.key, crossMsg);
@@ -365,8 +393,8 @@ function serverErrorKey(e: ServerFieldError): string | null {
   return e.key ?? e.field ?? e.name ?? e.path ?? null;
 }
 
-function serverErrorMessage(e: ServerFieldError): string {
-  return e.message ?? e.detail ?? e.reason ?? e.code ?? "rejected by backend";
+function serverErrorMessage(e: ServerFieldError, t: Translate = identityT): string {
+  return e.message ?? e.detail ?? e.reason ?? e.code ?? t("config.validation.rejected", "rejected by backend");
 }
 
 /**
@@ -375,7 +403,7 @@ function serverErrorMessage(e: ServerFieldError): string {
  * or `{detail:[{loc,msg}]}` (FastAPI). Anything unattributed lands under the
  * `__root` key so it is still shown to the operator.
  */
-export function serverErrorsToFieldErrors(payload: unknown): FieldErrors {
+export function serverErrorsToFieldErrors(payload: unknown, t: Translate = identityT): FieldErrors {
   const errors: FieldErrors = {};
   if (!payload || typeof payload !== "object") return errors;
   const body = payload as Record<string, unknown>;
@@ -385,7 +413,7 @@ export function serverErrorsToFieldErrors(payload: unknown): FieldErrors {
     for (const item of list) {
       if (item && typeof item === "object") {
         const e = item as ServerFieldError;
-        addError(errors, serverErrorKey(e) ?? "__root", serverErrorMessage(e));
+        addError(errors, serverErrorKey(e) ?? "__root", serverErrorMessage(e, t));
       } else if (typeof item === "string") {
         addError(errors, "__root", item);
       }
@@ -403,7 +431,7 @@ export function serverErrorsToFieldErrors(payload: unknown): FieldErrors {
       if (!item || typeof item !== "object") continue;
       const d = item as { loc?: unknown[]; msg?: string };
       const loc = Array.isArray(d.loc) ? d.loc.filter((p) => typeof p === "string" && p !== "body") : [];
-      addError(errors, loc.length > 0 ? loc.join(".") : "__root", d.msg ?? "rejected by backend");
+      addError(errors, loc.length > 0 ? loc.join(".") : "__root", d.msg ?? t("config.validation.rejected", "rejected by backend"));
     }
   } else if (typeof detail === "string") {
     addError(errors, "__root", detail);
@@ -495,7 +523,7 @@ export interface VectorCheck {
  * optional bounds. The backend sanitizes too, but a 422 costs a round-trip and
  * hides which cell the operator mistyped.
  */
-export function checkNumericVector(input: readonly (string | number | null | undefined)[], bounds: VectorBounds): VectorCheck {
+export function checkNumericVector(input: readonly (string | number | null | undefined)[], bounds: VectorBounds, t: Translate = identityT): VectorCheck {
   const errors: string[] = [];
   const badIndices: number[] = [];
   const values: number[] = [];
@@ -505,24 +533,24 @@ export function checkNumericVector(input: readonly (string | number | null | und
     const n = toFiniteNumber(typeof raw === "string" ? raw : raw === null || raw === undefined ? "" : raw);
     if (n === null) {
       badIndices.push(i);
-      errors.push(`${label}[${i}] is not a finite number`);
+      errors.push(t("config.validation.vector_not_finite", "{label}[{i}] is not a finite number", { label, i }));
       return;
     }
     if (bounds.min !== undefined && n < bounds.min) {
       badIndices.push(i);
-      errors.push(`${label}[${i}] must be ≥ ${bounds.min}`);
+      errors.push(t("config.validation.must_be_ge", "{label} must be ≥ {min}", { label: `${label}[${i}]`, min: bounds.min }));
       return;
     }
     if (bounds.max !== undefined && n > bounds.max) {
       badIndices.push(i);
-      errors.push(`${label}[${i}] must be ≤ ${bounds.max}`);
+      errors.push(t("config.validation.must_be_le", "{label} must be ≤ {max}", { label: `${label}[${i}]`, max: bounds.max }));
       return;
     }
     values.push(n);
   });
 
   if (bounds.length !== undefined && input.length !== bounds.length) {
-    errors.unshift(`${label} must contain exactly ${bounds.length} values, got ${input.length}`);
+    errors.unshift(t("config.validation.vector_length", "{label} must contain exactly {n} values, got {m}", { label, n: bounds.length, m: input.length }));
   }
 
   return { ok: errors.length === 0, values, errors, badIndices };

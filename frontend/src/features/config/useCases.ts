@@ -17,12 +17,15 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { configApi, type ConfigDto } from "./api";
 import {
+  DEFAULT_RULES,
   backendMessage,
   hasErrors,
+  identityT,
   serverErrorsToFieldErrors,
   validateFields,
   type FieldErrors,
   type FieldValues,
+  type Translate,
 } from "./validation";
 import { runtimeConfigSpecs } from "./model";
 
@@ -98,7 +101,7 @@ export interface CommandOutcome {
   raw?: unknown;
 }
 
-function outcomeFrom(body: unknown, okMessage: string, failFallback: string, fieldErrors?: FieldErrors): CommandOutcome {
+function outcomeFrom(body: unknown, okMessage: string, failFallback: string, t: Translate, fieldErrors?: FieldErrors): CommandOutcome {
   const ok = (() => {
     if (!body || typeof body !== "object") return false;
     const b = body as Record<string, unknown>;
@@ -107,7 +110,7 @@ function outcomeFrom(body: unknown, okMessage: string, failFallback: string, fie
     return !b.error;
   })();
   const detail = body as { detail?: unknown; error?: unknown } | null;
-  const serverErrors = ok ? undefined : serverErrorsToFieldErrors(detail ?? {});
+  const serverErrors = ok ? undefined : serverErrorsToFieldErrors(detail ?? {}, t);
   return {
     ok,
     message: ok ? okMessage : backendMessage(body, failFallback),
@@ -143,9 +146,10 @@ export interface ApplySteps {
  */
 export async function validateAndApplyChanges(
   changes: FieldValues,
+  t: Translate = identityT,
 ): Promise<ApplySteps> {
-  const specs = runtimeConfigSpecs();
-  const clientErrors = validateFields(specs, changes);
+  const specs = runtimeConfigSpecs(t);
+  const clientErrors = validateFields(specs, changes, DEFAULT_RULES, t);
   if (hasErrors(clientErrors)) {
     return { clientErrors, serverErrors: {}, restartRequired: [], outcome: null, sent: false };
   }
@@ -157,18 +161,18 @@ export async function validateAndApplyChanges(
     try {
       const v = await configApi.validateSetting(key);
       if (!v || v.valid === false) {
-        serverErrors[key] = [v?.error?.message ?? `backend marked "${key}" invalid`];
+        serverErrors[key] = [v?.error?.message ?? t("config.apply.marked_invalid", "backend marked \"{key}\" invalid", { key })];
         continue;
       }
       const mut = String(v.mutability ?? "").toUpperCase();
       if (mut === "READ_ONLY") {
-        serverErrors[key] = ["backend mutability READ_ONLY — cannot be changed at runtime"];
+        serverErrors[key] = [t("config.apply.read_only", "backend mutability READ_ONLY — cannot be changed at runtime")];
         continue;
       }
       if (mut === "RESTART_REQUIRED") restartRequired.push(key);
       sendable[key] = changes[key];
     } catch (e) {
-      serverErrors[key] = [e instanceof Error ? e.message : "server validate call failed"];
+      serverErrors[key] = [e instanceof Error ? e.message : t("config.apply.validate_failed", "server validate call failed")];
     }
   }
 
@@ -180,10 +184,16 @@ export async function validateAndApplyChanges(
       restartRequired,
       sent: false,
       outcome: blocked
-        ? { ok: false, message: "Server refused one or more keys — nothing was applied (atomic gate).", requestId: null }
+        ? { ok: false, message: t("config.apply.server_refused", "Server refused one or more keys — nothing was applied (atomic gate)."), requestId: null }
         : restartRequired.length > 0
-          ? { ok: false, message: `Keys ${restartRequired.join(", ")} need a restart — apply blocked for the whole batch.`, requestId: null }
-          : { ok: false, message: "No sendable changes after validation.", requestId: null },
+          ? {
+              ok: false,
+              message: t("config.apply.restart_required", "Keys {keys} need a restart — apply blocked for the whole batch.", {
+                keys: restartRequired.join(", "),
+              }),
+              requestId: null,
+            }
+          : { ok: false, message: t("config.apply.no_sendable", "No sendable changes after validation."), requestId: null },
     };
   }
 
@@ -197,9 +207,12 @@ export async function validateAndApplyChanges(
       outcome: outcomeFrom(
         report,
         report.runtime_applied
-          ? `Applied at runtime — configuration v${report.configuration_version}${report.persisted ? " (persisted)" : ""}.`
-          : `Saved but NOT applied: ${report.reason || "engine offline"}.`,
-        "Backend refused the apply.",
+          ? `${t("config.apply.applied_runtime", "Applied at runtime — configuration v{v}", { v: report.configuration_version })}${
+              report.persisted ? ` (${t("config.apply.persisted", "persisted")})` : ""
+            }.`
+          : t("config.apply.saved_not_applied", "Saved but NOT applied: {reason}.", { reason: report.reason || t("config.apply.engine_offline_reason", "engine offline") }),
+        t("config.apply.refused_backend", "Backend refused the apply."),
+        t,
       ),
     };
   } catch (e) {
@@ -211,7 +224,7 @@ export async function validateAndApplyChanges(
       sent: true,
       outcome: {
         ok: false,
-        message: body?.message ?? "Apply request failed.",
+        message: body?.message ?? t("config.apply.request_failed", "Apply request failed."),
         requestId: body?.requestId ?? null,
         fieldErrors: serverErrorsToFieldErrors({ detail: body?.message ?? "" }),
       },
@@ -219,10 +232,10 @@ export async function validateAndApplyChanges(
   }
 }
 
-export function useApplyRuntimeConfig() {
+export function useApplyRuntimeConfig(t: Translate = identityT) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (changes: FieldValues) => validateAndApplyChanges(changes),
+    mutationFn: (changes: FieldValues) => validateAndApplyChanges(changes, t),
     onSettled: (steps) => {
       // Refetch-on-result: the versioned store is the authority after any
       // settled attempt (accepted OR refused — a partial apply must re-read).
@@ -240,17 +253,25 @@ export function useApplyRuntimeConfig() {
 /* Engine mode + model swap + telegram                                 */
 /* ------------------------------------------------------------------ */
 
-export function useSetEngineMode() {
+export function useSetEngineMode(t: Translate = identityT) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (mode: string): Promise<CommandOutcome> => {
       try {
         const body = await configApi.setEngineMode(mode);
-        return outcomeFrom(body, `Mode switch accepted: ${body.mode ?? mode} (persisted=${String(body.persisted === true)}).`, "Backend refused the mode switch.");
+        return outcomeFrom(
+          body,
+          t("config.mode.accepted", "Mode switch accepted: {mode} (persisted={persisted}).", {
+            mode: body.mode ?? mode,
+            persisted: String(body.persisted === true),
+          }),
+          t("config.mode.refused", "Backend refused the mode switch."),
+          t,
+        );
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : "Mode switch failed.",
+          message: e instanceof Error ? e.message : t("config.mode.failed", "Mode switch failed."),
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
@@ -264,7 +285,7 @@ export function useSetEngineMode() {
   });
 }
 
-export function useModelSwap() {
+export function useModelSwap(t: Translate = identityT) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (artifact: string): Promise<CommandOutcome> => {
@@ -274,14 +295,14 @@ export function useModelSwap() {
         return {
           ok,
           message: ok
-            ? `Model hot-swap completed for ${artifact}${body.correlation_id ? ` (${body.correlation_id})` : ""}.`
-            : backendMessage(body, "Model swap refused."),
+            ? `${t("config.swap.completed", "Model hot-swap completed for {artifact}", { artifact })}${body.correlation_id ? ` (${body.correlation_id})` : ""}.`
+            : backendMessage(body, t("config.swap.refused", "Model swap refused.")),
           requestId: body.correlation_id ?? null,
         };
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : "Model swap failed.",
+          message: e instanceof Error ? e.message : t("config.swap.failed", "Model swap failed."),
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
@@ -292,17 +313,22 @@ export function useModelSwap() {
   });
 }
 
-export function useSaveTelegram() {
+export function useSaveTelegram(t: Translate = identityT) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { enabled: boolean; bot_token: string; admin_id: string }): Promise<CommandOutcome> => {
       try {
         const body = await configApi.saveTelegram(payload);
-        return outcomeFrom(body, `Telegram settings saved (${body.correlation_id ?? "no correlation id"}).`, "Backend refused the telegram save.");
+        return outcomeFrom(
+          body,
+          `${t("config.tg.saved", "Telegram settings saved")} (${body.correlation_id ?? t("config.tg.no_corr", "no correlation id")}).`,
+          t("config.tg.refused_save", "Backend refused the telegram save."),
+          t,
+        );
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : "Telegram save failed.",
+          message: e instanceof Error ? e.message : t("config.tg.save_failed", "Telegram save failed."),
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
@@ -316,20 +342,24 @@ export function useSaveTelegram() {
   });
 }
 
-export function useTestTelegram() {
+export function useTestTelegram(t: Translate = identityT) {
   return useMutation({
     mutationFn: async (): Promise<CommandOutcome> => {
       try {
         const body = await configApi.testTelegram();
         return outcomeFrom(
           body,
-          `Delivery confirmed — message_id ${String(body.message_id ?? "?")} (correlation ${body.correlation_id ?? "—"}).`,
-          "Telegram test delivery failed.",
+          t("config.tg.delivery_ok", "Delivery confirmed — message_id {id} (correlation {c}).", {
+            id: String(body.message_id ?? "?"),
+            c: body.correlation_id ?? "—",
+          }),
+          t("config.tg.delivery_failed", "Telegram test delivery failed."),
+          t,
         );
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : "Telegram test failed.",
+          message: e instanceof Error ? e.message : t("config.tg.test_failed", "Telegram test failed."),
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
