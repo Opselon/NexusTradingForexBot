@@ -109,6 +109,12 @@ _SEVERITY_DIRS: dict[str, str] = {
 #: stdlib loggers silenced to WARNING regardless of app level.
 _QUIET_LOGGERS = ("urllib3", "asyncio", "polars", "torch", "uvicorn")
 
+#: Sentinel marking handlers installed by this module's ``configure_logging``
+#: so a later re-configure can replace exactly its own handlers and leave
+#: every foreign handler (pytest caplog, test capture handlers) in place
+#: (BUG-307C).
+_OWN_HANDLER_MARKER: Any = object()
+
 #: Structural/trusted keys exempt from high-entropy value redaction. Event
 #: names, components and stable codes can be long alnum runs (e.g.
 #: GLOBAL_KILL_SWITCH_ACTIVATED) and must never be scrubbed.
@@ -724,6 +730,23 @@ def _configure_stdout() -> None:
         _console_stream()
 
 
+def _is_own_handler(handler: logging.Handler) -> bool:
+    """True if ``handler`` was installed by this module's ``configure_logging``.
+
+    Used to decide what ``configure_logging`` may replace on a re-configure.
+    Own handlers are the console ``StreamHandler`` and the
+    ``DatedRotatingFileHandler`` severity set; anything else (pytest
+    ``caplog`` handler, a test fixture's capture handler, a third-party
+    handler) is foreign and must survive (BUG-307C).
+    """
+    return getattr(handler, "_nse_logging_owner", None) is _OWN_HANDLER_MARKER
+
+
+def _mark_own_handler(handler: logging.Handler) -> logging.Handler:
+    handler._nse_logging_owner = _OWN_HANDLER_MARKER  # type: ignore[attr-defined]
+    return handler
+
+
 def configure_logging(
     log_level: str = "INFO",
     json_format: bool = False,
@@ -792,16 +815,19 @@ def configure_logging(
     root_logger = logging.getLogger()
     root_logger.setLevel(numeric_level)
     with _WRITE_LOCK:
-        # Preserve pytest's ``caplog`` live-capture handler: ``pytest --logXXX``
-        # installs a ``LogCaptureHandler`` on the root logger before any test
-        # fixture runs. Unconditionally clearing ``rootLogger.handlers`` would
-        # evict it, so any later ``caplog.set_level`` appears to have no
-        # effect and hygiene assertions that read ``caplog.records`` fail with
-        # zero records (the hypothesis of BUG-140). Keep those handlers alive.
+        # Preserve pre-existing handlers that do not belong to this pipeline.
+        # This module installs only three handler classes on root (console
+        # StreamHandler, DatedRotatingFileHandler, and the legacy stdout-only
+        # handler from the first BUG-140 fix), so those are replaced in place;
+        # every OTHER handler (pytest's ``caplog`` LogCaptureHandler, and any
+        # capture handler a test fixture attached to the root logger) is kept
+        # intact. BUG-307C: the previous ``root_logger.handlers.clear()``
+        # silently evicted the capture handlers of co-scheduled tests, so under
+        # ``pytest -n auto --dist loadgroup`` a test that ran ``configure_logging``
+        # blanked another test's records and produced flaky "assert 0 == 2"
+        # failures on otherwise-healthy commits.
         kept: list[logging.Handler] = [
-            h
-            for h in list(root_logger.handlers)
-            if type(h).__name__ in ("LogCaptureHandler", "_LiveLoggingNullHandler")
+            h for h in list(root_logger.handlers) if not _is_own_handler(h)
         ]
         root_logger.handlers.clear()
         for h in kept:
@@ -810,14 +836,14 @@ def configure_logging(
     console_handler = logging.StreamHandler(_console_stream())
     console_handler.setFormatter(console_formatter)
     console_handler.setLevel(numeric_level)
-    root_logger.addHandler(console_handler)
+    root_logger.addHandler(_mark_own_handler(console_handler))
 
     if log_to_file:
         base_dir.mkdir(parents=True, exist_ok=True)
         for levelno in (logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL):
             handler = DatedRotatingFileHandler(base_dir, levelno)
             handler.setFormatter(formatter)
-            root_logger.addHandler(handler)
+            root_logger.addHandler(_mark_own_handler(handler))
 
     for quiet in _QUIET_LOGGERS:
         logging.getLogger(quiet).setLevel(logging.WARNING)
