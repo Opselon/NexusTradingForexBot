@@ -30,7 +30,7 @@
 }
 .cp-glyph { color: var(--accent-strong); font-family: var(--mono); font-size: 14px; opacity: 0.8; }
 .cp-input { border-bottom: none !important; flex: 1; background: transparent !important; }
-.cp-count { min-width: 22px; text-align: right; }
+.cp-count { min-inline-size: 22px; text-align: end; }
 
 .cp-list { max-height: 380px; }
 .cp-group {
@@ -42,18 +42,23 @@
   content: ""; flex: 1; height: 1px;
   background: linear-gradient(90deg, var(--border-strong), transparent);
 }
+/* RTL: the line starts (strong end) at the right */
+:root[dir="rtl"] .cp-group::after { background: linear-gradient(270deg, var(--border-strong), transparent); }
 .cp-item { position: relative; gap: 10px; border-radius: 7px; margin-inline: 5px; padding-inline: 11px; }
 .cp-item.selected {
   background: linear-gradient(90deg, rgba(65, 166, 242, 0.16), rgba(65, 166, 242, 0.06));
   box-shadow: inset 0 0 0 1px rgba(65, 166, 242, 0.35);
 }
-.cp-item .cp-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* RTL: selected-row highlight starts at the right edge */
+:root[dir="rtl"] .cp-item.selected { background: linear-gradient(270deg, rgba(65, 166, 242, 0.16), rgba(65, 166, 242, 0.06)); }
+/* translated labels may run long (de/es) — wrap instead of clipping */
+.cp-item .cp-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cp-section {
   font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.12em;
   color: var(--text-faint); border: 1px solid var(--border);
   border-radius: 4px; padding: 1px 5px; white-space: nowrap;
 }
-.cp-run { margin-left: auto; }
+.cp-run { margin-inline-start: auto; }
 .cp-foot { font-family: var(--mono); letter-spacing: 0.04em; }
 
 /* ------------------------------ Connection chip ------------------------------ */
@@ -100,6 +105,19 @@
   background: linear-gradient(90deg, rgba(242, 86, 77, 0.18), transparent 55%), var(--red-dim);
   box-shadow: inset 0 1px 0 rgba(242, 86, 77, 0.25);
 }
+/* RTL: each banner's tint must sit at the START edge (right), not the left */
+:root[dir="rtl"] .banner.attention-calm {
+  background:
+    linear-gradient(270deg, rgba(62, 207, 142, 0.10), transparent 45%),
+    rgba(62, 207, 142, 0.05);
+}
+:root[dir="rtl"] .banner.attention-action {
+  background: linear-gradient(270deg, rgba(235, 161, 63, 0.14), transparent 55%), var(--amber-dim);
+}
+:root[dir="rtl"] .banner.attention-critical {
+  background: linear-gradient(270deg, rgba(242, 86, 77, 0.18), transparent 55%), var(--red-dim);
+  box-shadow: inset 0 1px 0 rgba(242, 86, 77, 0.25);
+}
 .attention-rows { display: grid; gap: 2px; min-width: 0; }
 .attention-rows .a-row {
   white-space: normal;
@@ -107,15 +125,19 @@
 }
 .attention-rows .a-glyph { font-family: var(--mono); flex-shrink: 0; }
 .attention-tag {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.16em;
   border: 1px solid currentColor;
   border-radius: 4px;
   padding: 1px 7px;
-  white-space: nowrap;
 }
+/* Arabic/Persian are cursive: letter-spacing tears the joins — drop it on the
+   translated chrome labels; LTR keeps its tracking. */
+:root[dir="rtl"] .attention-tag,
+:root[dir="rtl"] .cp-section,
+:root[dir="rtl"] .cp-foot { letter-spacing: normal; }
 
 /* ------------------------------ Typed-confirm (LIVE gate) ---------------- */
 /* Blocking money-path escalation: heavier frame + hazard rail so a typed
