@@ -491,3 +491,5 @@ tests/unit/test_experiment_registry.py
 tests/unit/test_hyperparam_search.py
 # ML-VAL-002 (Probability Calibration & Expected Calibration Error Evaluation)
 tests/unit/test_calibration_research.py
+# ML-ARCH-001 (ScalpNet 3-Class Head Sunset — legacy-4 surface audit evidence)
+tests/unit/test_audit_legacy4_surface.py
