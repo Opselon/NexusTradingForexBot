@@ -98,6 +98,13 @@ jobs:
         run: |
           python scripts/ci/classify_changes.py --files "src/nexus_scalp/risk/risk_engine.py Web/app.js Dockerfile .github/workflows/ci.yml"
 
+      - name: Git governance scan (agents/git_governance.md)
+        run: |
+          # GIT GOVERNANCE CONTRACT (agents/git_governance.md): automation and
+          # workflow files must not instruct destructive git, and the
+          # governance preflight must import + self-check cleanly. Read-only.
+          python scripts/ci/check_git_governance.py
+
       # NOTE (2026-09-14 reconstruction): lane gating is applied in
       # tests-os.yml (OS matrix) — where a skip is an explicit, auditable
       # SKIP-REPORT. It is deliberately NOT applied to the quality job's
