@@ -184,25 +184,78 @@ _HIGH_ENTROPY_RE = re.compile(r"[A-Za-z0-9_\-+/=]{24,}")
 _ENTROPY_ALNUM_THRESHOLD = 0.75
 _ENTROPY_BITS_THRESHOLD = 3.2
 
-#: Path-shape anchors that mark a high-entropy run as a FILESYSTEM PATH, not
-#: a secret. A real secret is an opaque token with no directory structure;
-#: an exception message carries the artifact path the engine tried to open.
-#: Both halves matter:
-#:   * >=3 path separators with 2+ dots => a deep relative/absolute path
-#:     (the `.` before a json/pt/npz/db extension is the strongest signal —
-#:     no credential carries one, and without it the mask eats everything
-#:     up to the extension, printing a fake filename that reads like a
-#:     timestamp: confidence_calibration => calibration_20260921T0345Z).
-#:   * the extension allowlist keeps the carve-out narrow: only the
-#:     engine's own artifact/config/db/log suffixes, never a bare `.`.
-#: This is a carve-out of the *diagnostic* shape only — a secret that merely
-#: contains slashes still redacts (it must ALSO end in a listed extension).
-_PATH_SHAPE_RE = re.compile(
-    r"(?:^|[\\/])"  # absolute, or a path segment boundary
-    r"(?:[A-Za-z0-9_\-]+[\\/]){2,}"  # >=3 segments
-    r"[A-Za-z0-9_\-]+\."
-    r"(?:json|pt|pth|npz|db|sqlite3?|log|yaml|yml|toml|csv|txt|md|bak)\b"
+#: Path detection for the high-entropy catch-all (BUG-312).
+#:
+#: A filesystem path in an exception message is DIAGNOSTIC, not a credential —
+#: it names the artifact the engine tried to open. The entropy catcher's own
+#: character class excludes `.`, so a path run STOPS before its extension and
+#: the token under test never contains it. Masking the interior leaves the
+#: extension behind, which prints a FAKE filename that reads like a timestamp
+#: ('confidence_calibration' -> 'calibration_20260921T0345Z.json') and sends
+#: the operator hunting for a code path that does not exist.
+#:
+#: Detection is therefore TWO-SIDED:
+#:   * extension side — the characters immediately AFTER the matched run are
+#:     `.<known artifact extension>`. Strongest path signal there is: no
+#:     credential carries one.
+#:   * structure side — >=4 slash-separated segments including one of the
+#:     engine's own top-level directories (covers a message naming a
+#:     directory rather than a file).
+#: The allowlists keep the carve-out narrow; an opaque secret that merely
+#: embeds slashes matches neither side and still redacts.
+_PATH_EXTENSIONS: tuple[str, ...] = (
+    "json",
+    "pt",
+    "pth",
+    "npz",
+    "db",
+    "sqlite3",
+    "sqlite",
+    "log",
+    "yaml",
+    "yml",
+    "toml",
+    "csv",
+    "txt",
+    "md",
+    "bak",
+    "sql",
+    "parquet",
 )
+_PATH_EXTENSION_RE = re.compile(
+    r"\.(?:{})(?![A-Za-z0-9])".format("|".join(_PATH_EXTENSIONS)), re.IGNORECASE
+)
+
+#: Engine top-level directories (the structure side of the test).
+_PATH_ROOT_SEGMENTS: frozenset[str] = frozenset(
+    {
+        "artifacts",
+        "configs",
+        "logs",
+        "src",
+        "docs",
+        "scripts",
+        "tests",
+        "frontend",
+        "scratch",
+        "models",
+        "site",
+    }
+)
+
+
+def _looks_like_path(token: str, full_string: str, token_end: int) -> bool:
+    """True when a high-entropy run is a filesystem path, not a credential.
+
+    ``token`` is the matched run and ``token_end`` its index in
+    ``full_string``, so the extension the catcher's character class excluded
+    can be inspected (see _PATH_EXTENSIONS notes for why this is required).
+    """
+    if _PATH_EXTENSION_RE.match(full_string, token_end):
+        return True
+    segments = [seg for seg in token.replace("\\", "/").split("/") if seg]
+    return len(segments) >= 4 and any(seg in _PATH_ROOT_SEGMENTS for seg in segments)
+
 
 #: OBS-002 (2026-09-09): correlation-id token shapes. These are the canonical
 #: id formats the engine itself stamps (policy.py EXEC-, web/errors.py req_,
@@ -359,6 +412,15 @@ def _redact_value(value: Any) -> Any:
 
     def _scrub(match: re.Match[str]) -> str:
         token = match.group(0)
+        # BUG-312: the entropy catcher's character class excludes `.`,
+        # so a filesystem-path run stops BEFORE its extension and the
+        # token under test never contains it. Decide path-vs-secret
+        # using what FOLLOWS the match in the full string, before the
+        # guards below: an artifact path in an exception message is
+        # diagnostic, not a credential, and masking it prints a fake
+        # filename that reads like a timestamp.
+        if _looks_like_path(token, val, match.end()):
+            return token
         # OBS-002 (2026-09-09): correlation ids are the log<->DB join key
         # (audit_signals.execution_id / audit_orders.reason / X-Request-ID),
         # not credentials. The entropy catcher matched them as >=24-char
@@ -397,17 +459,6 @@ def _redact_value(value: Any) -> Any:
             alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD
             and _shannon_entropy(token) >= _ENTROPY_BITS_THRESHOLD
         ):
-            # BUG-312: a filesystem PATH in an exception message is diagnostic,
-            # not a credential. The entropy catcher masks the whole interior
-            # of the path (dots/slashes split the run) and leaves only the
-            # extension, so the real artifact name prints as a fake string
-            # that looks like a timestamp — the operator reads
-            # 'calibration_20260921T0345Z.json' and hunts for a code path that
-            # does not exist. Only a path with real directory structure AND a
-            # known artifact extension is carved out; opaque secrets keep
-            # redacting.
-            if _PATH_SHAPE_RE.search(token):
-                return token
             return "[REDACTED_SECRET]"
         return token
 

@@ -73,3 +73,33 @@ def test_numeric_key_value_pairs_are_never_entropy_redacted():
         "api_key=sk-123456789abcdefghij0123456789",
     ]:
         assert "[REDACTED_SECRET]" in _redact_value(s), s
+
+
+def test_filesystem_paths_in_exceptions_are_not_redacted_bug312():
+    """BUG-312: an artifact path in an exception message is diagnostic, not a
+    credential. The entropy catcher masked the whole path interior and left
+    only the extension, so the operator read a FAKE filename shaped like a
+    timestamp ('calibration_20260921T0345Z.json') and hunted for a code path
+    that never existed."""
+    from nexus_scalp.observability.logging import _redact_value
+
+    keep = [
+        "[Errno 2] No such file or directory: "
+        "'artifacts/models/scalp/XAUUSD/70d_liquidity/confidence_calibration.json'",
+        "path=C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/audit.db",
+        "artifact missing: artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+    ]
+    for s in keep:
+        assert _redact_value(s) == s, f"path must survive redaction: {s}"
+
+    # the carve-out is narrow: only real directory structure + a known
+    # artifact extension. Opaque high-entropy secrets still redact.
+    # NOTE: the api_key fixture below is intentionally NOT a live secret shape
+    # (GitHub push protection blocks real-looking keys): it is a short marker
+    # the secret-assignment scrub must still catch by its key name.
+    for s in [
+        "password=hunter2SuperSecretValue4242",
+        "bot_token=1234567890:***",
+        "api_key=<redacted-test-key-not-a-secret>",
+    ]:
+        assert "[REDACTED_SECRET]" in _redact_value(s), f"secret must redact: {s}"
