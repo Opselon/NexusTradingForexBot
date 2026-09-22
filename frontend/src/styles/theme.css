@@ -25,7 +25,7 @@
   /* text */
   --text: #dbe4ee;
   --text-dim: #8398ad;
-  --text-faint: #56697d;
+  --text-faint: #708699;
 
   /* accents */
   --accent: #41a6f2;
@@ -308,7 +308,7 @@ body {
 .kv dd { margin: 0; font-family: var(--mono); text-align: right; }
 
 /* ------------------------------ Tables ------------------------------ */
-.table-wrap { overflow-x: auto; overflow-y: auto; max-height: none; }
+.table-wrap { overflow-x: auto; overflow-y: auto; max-height: min(64vh, 620px); }
 .data-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
 .data-table th {
   text-align: left; padding: 8px 12px;
@@ -616,3 +616,23 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+
+/* ==========================================================================
+   Wave 3 — shell polish + global table cap (additive; consumed by AppShell,
+   Trading raw tables, and every .table-wrap user).
+   ========================================================================== */
+.lang-select { padding: 2px 4px; font-size: 11px; }
+.freshness-chip { gap: 10px; }
+.start-8 { margin-inline-start: 8px; }
+/* help-modal key/value list: descriptions read left-aligned */
+.kv.left dd { text-align: left; }
+/* keyboard skip link — first tab stop, hidden until focused */
+.skip-link {
+  position: fixed; top: -48px; inset-inline-start: 8px; z-index: 200;
+  background: var(--bg-panel-2); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 6px;
+  padding: 8px 14px; font-size: 12px; text-decoration: none;
+  transition: top 0.12s ease;
+}
+.skip-link:focus { top: 8px; }

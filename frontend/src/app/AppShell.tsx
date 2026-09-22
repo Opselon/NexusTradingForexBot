@@ -31,7 +31,7 @@ import { ModeIndicator } from "@/components/ModeIndicator";
 import { AttentionStrip } from "@/components/AttentionStrip";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { ConfirmModal, ToastHost, ErrorState, LoadingState } from "@/components/primitives";
+import { ConfirmModal, ToastHost, ErrorState, LoadingState, StatusBadge } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
 import { useI18n } from "@/stores/i18nStore";
 import { LANGUAGES } from "@/lib/i18n";
@@ -105,8 +105,7 @@ function LangRow() {
     <div className="side-row">
       <span>{t("ux.lang.label", "LANGUAGE")}</span>
       <select
-        className="select"
-        style={{ padding: "2px 4px", fontSize: 11 }}
+        className="select lang-select"
         value={lang}
         onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
         aria-label="Language"
@@ -150,6 +149,14 @@ export function AppShell() {
   useEffect(() => {
     document.body.classList.toggle("dense", dense);
   }, [dense]);
+
+  // Browser-tab title follows the active route (presentation only).
+  useEffect(() => {
+    const navHit = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.to === routePathname);
+    const featHit = FEATURE_SECTIONS.flatMap((s) => s.items).find((f) => f.route === routePathname);
+    const label = navHit ? t(navHit.labelKey, navHit.label) : featHit ? t(featureLabelKey(featHit.route), featHit.label) : null;
+    document.title = label ? `${label} · NSE Console` : "NSE Console";
+  }, [routePathname, t]);
 
   // Alt+1..9 route jump, Alt+B sidebar, R = refresh (skipped while typing).
   useEffect(() => {
@@ -197,6 +204,7 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
           <div className="brand-logo">NSE</div>
@@ -254,10 +262,10 @@ export function AppShell() {
             <span>ENGINE {snapshot ? (snapshot.engine_running ? "RUNNING" : "STOPPED") : "—"}</span>
           </span>
           <span className="conn-chip" title="Backend health.overall from /api/status">
-            {snapshot ? <span className={`badge ${snapshot.health.overall === "READY" ? "good" : snapshot.health.overall === "STALE" || snapshot.health.overall === "WARMING_UP" ? "warn" : "bad"}`}>{snapshot.health.overall}</span> : <span className="badge unknown">HEALTH —</span>}
+            {snapshot ? <StatusBadge status={snapshot.health.overall} /> : <span className="badge unknown">HEALTH —</span>}
           </span>
           {snapshot && (
-            <span className="conn-chip" style={{ gap: 10 }} title="Pipeline freshness stages (backend live_freshness)">
+            <span className="conn-chip freshness-chip" title="Pipeline freshness stages (backend live_freshness)">
               <FreshnessMeter label="MKT" state={lf?.market?.state} ageMs={lf?.market?.age_ms ?? ageSecToMs(snapshot.diagnostics.tick_age_sec)} />
               <FreshnessMeter label="FEAT" state={lf?.features?.state} ageMs={lf?.features?.age_ms ?? ageSecToMs(snapshot.diagnostics.features_age_sec)} />
               <FreshnessMeter label="INFR" state={lf?.inference?.state} ageMs={lf?.inference?.age_ms ?? ageSecToMs(snapshot.diagnostics.inference_age_sec)} />
@@ -286,7 +294,7 @@ export function AppShell() {
               <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span>
               {t("ux.auth.banner.suffix", "(token kept in sessionStorage only).")}
               {!hasAccessToken() && (
-                <span className="muted" style={{ marginInlineStart: 8 }}>
+                <span className="muted start-8">
                   {t("ux.auth.mode.cookie", "Mode: cookie-only (no bearer token).")}
                 </span>
               )}
@@ -294,7 +302,7 @@ export function AppShell() {
           </div>
         )}
 
-        <main className="page">
+        <main className="page" id="main-content" tabIndex={-1}>
           {snapshotQuery.isPending ? (
             <LoadingState label="Connecting to NSE backend…" />
           ) : snapshotQuery.isError && !snapshot ? (
@@ -340,12 +348,12 @@ export function AppShell() {
           onCancel={() => setHelpOpen(false)}
           onConfirm={() => setHelpOpen(false)}
         >
-          <div className="kv" style={{ gridTemplateColumns: "max-content 1fr", fontSize: 12 }}>
-            <dt>Ctrl / Cmd + K</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.palette", "Command palette")}</dd>
-            <dt>Alt + 1–9</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.jump", "Jump to page")}</dd>
-            <dt>Alt + B</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.sidebar", "Toggle sidebar")}</dd>
-            <dt>R</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.refresh", "Refresh data (not while typing)")}</dd>
-            <dt>Esc</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.esc", "Close dialogs")}</dd>
+          <div className="kv left">
+            <dt>Ctrl / Cmd + K</dt><dd>{t("ux.shortcut.palette", "Command palette")}</dd>
+            <dt>Alt + 1–9</dt><dd>{t("ux.shortcut.jump", "Jump to page")}</dd>
+            <dt>Alt + B</dt><dd>{t("ux.shortcut.sidebar", "Toggle sidebar")}</dd>
+            <dt>R</dt><dd>{t("ux.shortcut.refresh", "Refresh data (not while typing)")}</dd>
+            <dt>Esc</dt><dd>{t("ux.shortcut.esc", "Close dialogs")}</dd>
           </div>
         </ConfirmModal>
       )}
