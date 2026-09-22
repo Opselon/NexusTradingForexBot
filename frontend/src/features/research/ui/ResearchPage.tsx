@@ -338,7 +338,7 @@ export default function ResearchPage(props: ShellPageProps) {
             {datasetsQ.isPending ? (
               <Skeleton count={3} />
             ) : datasetsQ.isError ? (
-              <div className="small" style={{ color: "var(--red)" }}>
+              <div className="small tx-bad" >
                 {datasetsQ.error instanceof Error ? datasetsQ.error.message : "request failed"}
               </div>
             ) : (datasetsQ.data?.datasets ?? []).length === 0 ? (

@@ -122,7 +122,7 @@ export function Shadow70DeepPanel() {
                 <td className="tiny">{formatDateTime((r.timestamp ?? "").slice(0, 19))}</td>
                 <td className="tiny">{r.champion_action || "—"}</td>
                 <td className="tiny">{r.shadow_action || "—"}</td>
-                <td className="tiny" style={{ color: "var(--amber)" }}>
+                <td className="tiny tx-warn" >
                   {r.disagreement || "—"}
                 </td>
                 <td className="tiny">{r.outcome || "PENDING"}</td>

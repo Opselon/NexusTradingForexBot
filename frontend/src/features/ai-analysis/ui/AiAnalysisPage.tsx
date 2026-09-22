@@ -143,7 +143,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
             <Panel
               title={`Decision stats (${hoursBack}h window)`}
               right={
-                <select className="select" style={{ width: 110 }} value={hoursBack} onChange={(e) => setHoursBack(Number(e.target.value))}>
+                <select aria-label="Stats window (hours)" className="select" style={{ width: 110 }} value={hoursBack} onChange={(e) => setHoursBack(Number(e.target.value))}>
                   {[24, 72, 168, 720].map((h) => (
                     <option key={h} value={h}>
                       {h}h

@@ -187,7 +187,7 @@ export default function FactoryPage(props: ShellPageProps) {
       </Panel>
 
       <div style={{ marginBlock: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <input className="input" style={{ width: 200 }} placeholder="generation id filter" value={genFilter} onChange={(e) => setGenFilter(e.target.value)} />
+        <input className="input" style={{ width: 200 }} aria-label="Generation id filter" placeholder="generation id filter" value={genFilter} onChange={(e) => setGenFilter(e.target.value)} />
         <span className="tiny faint">filters candidates / benchmarks / events</span>
       </div>
 
@@ -339,7 +339,7 @@ export default function FactoryPage(props: ShellPageProps) {
           <Panel
             title={`Registry survivors ranked by ${dim}`}
             right={
-              <select className="select" style={{ width: 130 }} value={dim} onChange={(e) => setDim(e.target.value)}>
+              <select aria-label="Rank dimension" className="select" style={{ width: 130 }} value={dim} onChange={(e) => setDim(e.target.value)}>
                 {RANK_DIMS.map((d) => (
                   <option key={d} value={d}>
                     {d}

@@ -4,7 +4,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { EmptyState, MetricCard, Panel, ProbBar, Skeleton } from "@/components/primitives";
+import { EmptyState, ErrorState, MetricCard, Panel, ProbBar, Skeleton } from "@/components/primitives";
 import { ApiError } from "@/types/api";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { Drawer, GateStepper, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
@@ -66,7 +66,10 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
       ) : notFound(detailQ.error) ? (
         <EmptyState message="Decision not found in the ledger window." />
       ) : (
-        <EmptyState message={detailQ.error instanceof Error ? detailQ.error.message : "detail unavailable"} />
+        <ErrorState
+          message={detailQ.error instanceof Error ? detailQ.error.message : "detail unavailable"}
+          onRetry={() => void detailQ.refetch()}
+        />
       )}
 
       <div style={{ height: 12 }} />
@@ -74,7 +77,10 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
         {gatesQ.isPending ? (
           <Skeleton count={2} />
         ) : gatesQ.isError ? (
-          <EmptyState message={gatesQ.error instanceof Error ? gatesQ.error.message : "gates unavailable"} />
+          <ErrorState
+            message={gatesQ.error instanceof Error ? gatesQ.error.message : "gates unavailable"}
+            onRetry={() => void gatesQ.refetch()}
+          />
         ) : (
           <GateStepper
             gates={(gatesQ.data?.gates ?? []).map((g) => ({
@@ -91,7 +97,10 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
         {explainQ.isPending ? (
           <Skeleton />
         ) : explainQ.isError ? (
-          <EmptyState message="explanation endpoint failed" />
+          <ErrorState
+            message={explainQ.error instanceof Error ? explainQ.error.message : "explanation endpoint failed"}
+            onRetry={() => void explainQ.refetch()}
+          />
         ) : (
           <div className="small">{explainQ.data?.explanation ?? "—"}</div>
         )}
@@ -102,7 +111,10 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
         {evidenceQ.isPending ? (
           <Skeleton count={3} />
         ) : evidenceQ.isError ? (
-          <EmptyState message="evidence endpoint failed" />
+          <ErrorState
+            message={evidenceQ.error instanceof Error ? evidenceQ.error.message : "evidence endpoint failed"}
+            onRetry={() => void evidenceQ.refetch()}
+          />
         ) : (
           <JsonBlock value={evidenceQ.data?.evidence} maxChars={6000} />
         )}

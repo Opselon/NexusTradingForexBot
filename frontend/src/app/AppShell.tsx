@@ -13,7 +13,7 @@
  * never by ad-hoc token probing.
  */
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardPage from "@/pages/Dashboard/DashboardPage";
@@ -133,6 +133,15 @@ export function AppShell() {
   // Route path drives the ErrorBoundary reset key: navigating away from (or
   // back to) a crashed page re-arms the boundary instead of wedging the tree.
   const routePathname = useLocation().pathname;
+  // Active-route label (render-time): drives the tab title AND the single
+    // visually-hidden <h1> per route, so every page announces exactly one h1.
+    const navHit = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.to === routePathname);
+    const featHit = FEATURE_SECTIONS.flatMap((s) => s.items).find((f) => f.route === routePathname);
+    const routeLabel = navHit
+      ? t(navHit.labelKey, navHit.label)
+      : featHit
+        ? t(featureLabelKey(featHit.route), featHit.label)
+        : null;
 
   // Auth state (core/auth is the source of truth; bus keeps the banner live).
   const [authExpiredAt, setAuthExpiredAt] = useState<number | null>(() => getAuthState().lastUnauthorizedAt);
@@ -152,11 +161,23 @@ export function AppShell() {
 
   // Browser-tab title follows the active route (presentation only).
   useEffect(() => {
-    const navHit = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.to === routePathname);
-    const featHit = FEATURE_SECTIONS.flatMap((s) => s.items).find((f) => f.route === routePathname);
-    const label = navHit ? t(navHit.labelKey, navHit.label) : featHit ? t(featureLabelKey(featHit.route), featHit.label) : null;
-    document.title = label ? `${label} · NSE Console` : "NSE Console";
-  }, [routePathname, t]);
+    document.title = routeLabel ? `${routeLabel} · NSE Console` : "NSE Console";
+  }, [routeLabel]);
+
+  // SPA navigation: return the scroll container to the top and move focus to
+  // <main> so keyboard/SR users land on the new page, not the old scroll
+  // position. Skipped on first mount — the landing page keeps its place.
+  const bootedRef = useRef(false);
+  useEffect(() => {
+    if (!bootedRef.current) {
+      bootedRef.current = true;
+      return;
+    }
+    const main = document.getElementById("main-content");
+    main?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+    main?.focus({ preventScroll: true });
+  }, [routePathname]);
 
   // Alt+1..9 route jump, Alt+B sidebar, R = refresh (skipped while typing).
   useEffect(() => {
@@ -303,6 +324,7 @@ export function AppShell() {
         )}
 
         <main className="page" id="main-content" tabIndex={-1}>
+          <h1 className="sr-only">{routeLabel ?? "NSE Console"}</h1>
           {snapshotQuery.isPending ? (
             <LoadingState label="Connecting to NSE backend…" />
           ) : snapshotQuery.isError && !snapshot ? (

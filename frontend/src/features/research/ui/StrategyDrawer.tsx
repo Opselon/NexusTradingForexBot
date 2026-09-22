@@ -7,7 +7,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConfirmModal, DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, Drawer, GateStepper, JsonBlock, StatusPill } from "./lane5Kit";
@@ -87,9 +87,10 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
         (detailQ.isPending ? (
           <Skeleton count={4} />
         ) : detailQ.isError ? (
-          <div className="small" style={{ color: "var(--red)" }}>
-            detail failed: {detailQ.error instanceof Error ? detailQ.error.message : "error"}
-          </div>
+          <ErrorState
+                      message={detailQ.error instanceof Error ? detailQ.error.message : "detail request failed"}
+                      onRetry={() => void detailQ.refetch()}
+                    />
         ) : detailQ.data?.available === false ? (
           <EmptyState message="Research subsystem unavailable" hint={detailQ.data.reason ?? "backend answered available:false"} />
         ) : (

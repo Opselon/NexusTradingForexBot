@@ -472,12 +472,12 @@ function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; 
     >
       <div className="l3-toolbar">
         <span className="lab timestamp-note">A</span>
-        <select className="select" value={a ?? ""} onChange={(e) => setA(e.target.value || null)}>
+        <select aria-label="Snapshot A" className="select" value={a ?? ""} onChange={(e) => setA(e.target.value || null)}>
           <option value="">— pick —</option>
           {ids.map((id) => <option key={id} value={id}>{id}</option>)}
         </select>
         <span className="lab timestamp-note">B</span>
-        <select className="select" value={b ?? ""} onChange={(e) => setB(e.target.value || null)}>
+        <select aria-label="Snapshot B" className="select" value={b ?? ""} onChange={(e) => setB(e.target.value || null)}>
           <option value="">— pick —</option>
           {ids.map((id) => <option key={id} value={id}>{id}</option>)}
         </select>
@@ -495,7 +495,7 @@ function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; 
           ) : null}
           <div className="section-title" style={{ marginTop: 10 }}>
             key-level diff · section{" "}
-            <select className="select" style={{ display: "inline-block", marginInlineStart: 6 }} value={section} onChange={(e) => setSection(e.target.value)}>
+            <select aria-label="Diff section" className="select" style={{ display: "inline-block", marginInlineStart: 6 }} value={section} onChange={(e) => setSection(e.target.value)}>
               {Array.from(new Set([...snapshotSections((snapA.data as DebugState | undefined) ?? null), ...snapshotSections((snapB.data as DebugState | undefined) ?? null)])).map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -728,7 +728,7 @@ function TraceTab() {
         <input
           className="input"
           style={{ minWidth: 280 }}
-          placeholder="EXEC-…"
+          aria-label="Execution id" placeholder="EXEC-…"
           value={id}
           aria-invalid={!shapeOk}
           onChange={(e) => setId(e.target.value)}
