@@ -9,7 +9,8 @@
  */
 
 import { clampRatio } from "./geometry";
-import { tierFor, toneForRatio, type ConfidenceTone } from "./ConfidenceGauge";
+import { useI18n } from "@/stores/i18nStore";
+import { tierText, tierFor, toneForRatio, type ConfidenceTone } from "./ConfidenceGauge";
 import "./confidence-gauge.css";
 
 export interface ConfidenceMeterProps {
@@ -20,6 +21,7 @@ export interface ConfidenceMeterProps {
 }
 
 export function ConfidenceMeter({ value, label, alias, tone }: ConfidenceMeterProps) {
+  const t = useI18n((s) => s.t);
   const ratio = clampRatio(value);
   const toneCls = tone ?? toneForRatio(ratio);
   const tier = tierFor(ratio);
@@ -27,7 +29,10 @@ export function ConfidenceMeter({ value, label, alias, tone }: ConfidenceMeterPr
   const name = alias ?? label ?? null;
 
   return (
-    <div className="cm-row" title={label ? `${label}: ${readout}` : `confidence ${readout}`}>
+    <div
+      className="cm-row"
+      title={label ? `${label}: ${readout}` : t("ui.viz.confidence_aria", "confidence {r}", { r: readout })}
+    >
       <div className="cm-name">{name}</div>
       <div className="cm-track-wrap">
         <div className="cm-track">
@@ -38,7 +43,7 @@ export function ConfidenceMeter({ value, label, alias, tone }: ConfidenceMeterPr
       </div>
       <div className="cm-read">
         <span className={`cm-score ${ratio === null ? "neu" : toneCls}`}>{readout}</span>
-        <span className="cm-tier">{tier}</span>
+        <span className="cm-tier">{tierText(t, tier)}</span>
       </div>
     </div>
   );

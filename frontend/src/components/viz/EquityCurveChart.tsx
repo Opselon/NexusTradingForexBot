@@ -8,6 +8,7 @@
 
 import { useId } from "react";
 import { areaPath, extent, fmtCompact, linePath, niceTicks, scaleLinear, type Pt } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface EquityPoint {
@@ -38,13 +39,14 @@ export function EquityCurveChart({
   height = 200,
   showPeak = false,
   formatValue,
-  emptyHint = "no equity samples from the backend",
+  emptyHint,
 }: EquityCurveChartProps) {
+  const t = useI18n((s) => s.t);
   const gid = useId().replace(/:/g, "");
   const values = points.map((p) => p[field] ?? null);
   const real = values.filter((v): v is number => v !== null && !Number.isNaN(v));
   if (real.length < 2) {
-    return <div className="viz-empty">{emptyHint}</div>;
+    return <div className="viz-empty">{emptyHint ?? t("ui.viz.eq_empty", "no equity samples from the backend")}</div>;
   }
   const padT = 12;
   const padB = 22;
@@ -69,18 +71,23 @@ export function EquityCurveChart({
   };
   return (
     <div className="viz-frame">
-      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`equity curve, ${real.length} samples, ${fmt(first)} to ${fmt(last)}`}>
+      <svg
+        className="viz"
+        viewBox={`0 0 ${W} ${height}`}
+        role="img"
+        aria-label={t("ui.viz.eq_aria", "equity curve, {n} samples, {a} to {b}", { n: real.length, a: fmt(first), b: fmt(last) })}
+      >
         <defs>
           <linearGradient id={`eq-${gid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={rising ? "var(--green)" : "var(--red)"} stopOpacity="0.22" />
             <stop offset="100%" stopColor={rising ? "var(--green)" : "var(--red)"} stopOpacity="0" />
           </linearGradient>
         </defs>
-        {ticks.map((t) => (
-          <g key={t}>
-            <line className="viz-grid" x1={0} x2={W} y1={toY(t)} y2={toY(t)} />
-            <text className="viz-axis" x={2} y={toY(t) - 3}>
-              {fmt(t)}
+        {ticks.map((tk) => (
+          <g key={tk}>
+            <line className="viz-grid" x1={0} x2={W} y1={toY(tk)} y2={toY(tk)} />
+            <text className="viz-axis" x={2} y={toY(tk) - 3}>
+              {fmt(tk)}
             </text>
           </g>
         ))}
@@ -103,7 +110,7 @@ export function EquityCurveChart({
           </span>
           <span>
             <i className="sw flat" />
-            peak_equity (backend)
+            {t("ui.viz.eq_peak", "peak_equity (backend)")}
           </span>
         </div>
       )}
