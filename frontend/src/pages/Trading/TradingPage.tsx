@@ -294,7 +294,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
         <Panel title="Pending orders (broker)" tight>
           {mt5Query.data?.orders && mt5Query.data.orders.length > 0 ? (
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr><th>Ticket</th><th>Type</th><th>Volume</th><th>Price</th><th>State</th><th>Setup</th></tr>
@@ -536,7 +536,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           emptyWhen={(d) => d.items.length === 0}
         >
           {(d) => (
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr><th>#</th><th>Order id</th><th>Symbol</th><th>Type</th><th>Volume</th><th>Price</th><th>Status</th><th>Executed</th></tr>
