@@ -14,9 +14,12 @@ for PyTorch ScalpNet models across 50D (`scalp_v1`) and 70D (`scalp_v3`):
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
+import os
+import re
 import threading
 import time
 import zipfile
@@ -40,12 +43,34 @@ logger = get_logger("nexus_scalp.web.model_studio_routes")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+
+def _repo_root() -> Path:
+    """Current repository root.
+
+    Read through this accessor rather than the ``REPO_ROOT`` global directly:
+    tests monkeypatch the module attribute to redirect the dataset/model
+    inventories at a tmp dir (writing probe files into the shared ``data/raw``
+    would let a parallel test worker's scan pick them up). A bare global read
+    binds the real repo at import time and silently ignores that redirect.
+    """
+    return REPO_ROOT
+
+
 # Operator-configurable allowlist of roots a Model Studio request may READ from.
 # Mirrors provisioning_routes._allowed_import_roots: model-studio dataset paths
 # come from the operator UI / REST body, so they are confined to declared roots
 # (containment via Path.is_relative_to, never string prefix) and only ever READ.
 _DATASET_ROOTS_ENV = "NEXUS_MODEL_STUDIO_ROOTS"
-_DEFAULT_DATASET_ROOTS = ("data/raw", "data/processed", "data/positions", "data")
+# artifacts/datasets is the generator's real output root (position_replay
+# writes pos_ds_*.parquet there); without it the inventory — and therefore the
+# safe-path dataset selectors — cannot see the datasets it just produced.
+_DEFAULT_DATASET_ROOTS = (
+    "data/raw",
+    "data/processed",
+    "data/positions",
+    "artifacts/datasets",
+    "data",
+)
 
 
 def _allowed_dataset_roots() -> list[Path]:
@@ -61,7 +86,7 @@ def _allowed_dataset_roots() -> list[Path]:
             continue
         candidate = Path(cleaned).expanduser()
         resolved = (
-            candidate.resolve() if candidate.is_absolute() else (REPO_ROOT / candidate).resolve()
+            candidate.resolve() if candidate.is_absolute() else (_repo_root() / candidate).resolve()
         )
         if resolved not in seen:
             seen.add(resolved)
@@ -69,11 +94,72 @@ def _allowed_dataset_roots() -> list[Path]:
     return roots
 
 
+_TIMEFRAME_GRANULARITY_ORDER = (
+    "M1",
+    "M3",
+    "M5",
+    "M15",
+    "M30",
+    "H1",
+    "H4",
+    "D1",
+    "W1",
+    "MN1",
+)
+_UNKNOWN_GRANULARITY_RANK = len(_TIMEFRAME_GRANULARITY_ORDER)
+_TIMEFRAME_SUFFIX_RE = re.compile(r"[_-](M1|M3|M5|M15|M30|H1|H4|D1|W1|MN1)$", re.IGNORECASE)
+_SOURCE_PRECEDENCE = (".mt5.", ".synthetic.", ".csv.")
+
+# Static: compiled once. No unbounded backtracking on a bounded alternation of
+# fixed literals, so this is linear in the filename length (CodeQL safe).
+_DATASET_NAME_SUFFIX_RE = re.compile(r"\.(parquet|csv)$", re.IGNORECASE)
+
+
+def _granularity_rank(filename: str) -> int:
+    """Finest timeframe first: M1=0 ... MN1=9, unknown suffix last.
+
+    The engine trades XAUUSD M1, so the operator's default selection must be
+    M1, not the lexicographic-first ``XAUUSD_D1``.
+    """
+    stem = _DATASET_NAME_SUFFIX_RE.sub("", filename)
+    m = _TIMEFRAME_SUFFIX_RE.search(stem)
+    if not m:
+        return _UNKNOWN_GRANULARITY_RANK
+    try:
+        return _TIMEFRAME_GRANULARITY_ORDER.index(m.group(1).upper())
+    except ValueError:
+        return _UNKNOWN_GRANULARITY_RANK
+
+
+def _source_rank(filename: str) -> int:
+    """Broker truth first: mt5 parquet beat synthetic beat derived CSV."""
+    lower = filename.lower()
+    for i, seg in enumerate(_SOURCE_PRECEDENCE):
+        if seg in lower:
+            return i
+    # A parquet with no source segment (legacy ``XAUUSD_M1.parquet``) still
+    # outranks the raw CSV sibling it was derived from.
+    return len(_SOURCE_PRECEDENCE) if lower.endswith(".parquet") else len(_SOURCE_PRECEDENCE) + 1
+
+
+def _dataset_sort_key(entry: tuple[str, str, Path]) -> tuple[int, int, str]:
+    """Granularity, then source, then filename — deterministic across OSes."""
+    name = entry[0]
+    return (_granularity_rank(name), _source_rank(name), name)
+
+
 def _dataset_candidates() -> list[tuple[str, str, Path]]:
     """Server-derived inventory of selectable dataset files: (name, relpath, path).
 
     The Path objects produced here are derived ONLY from REPO_ROOT and the root
     allowlist — never from request input — so downstream reads stay untainted.
+
+    The inventory is ranked GRANULARITY-FIRST (M1 first), not lexicographically:
+    ``sorted()`` puts ``XAUUSD_D1.parquet`` before ``XAUUSD_M1.parquet``, and
+    every UI's "first entry" default then binds the DAILY file. That is the
+    "select 1Min and it falls back to 1Day" defect; ranking at the source fixes
+    both consoles (legacy Web/ and React frontend/) with one change, instead of
+    duplicating the comparator per UI.
     """
     found: list[tuple[str, str, Path]] = []
     seen: set[Path] = set()
@@ -91,10 +177,11 @@ def _dataset_candidates() -> list[tuple[str, str, Path]]:
                 continue
             seen.add(real)
             try:
-                rel = str(real.relative_to(REPO_ROOT))
+                rel = str(real.relative_to(_repo_root()))
             except ValueError:
                 rel = str(real)
             found.append((real.name, rel, real))
+    found.sort(key=_dataset_sort_key)
     return found
 
 
@@ -122,8 +209,13 @@ def _safe_dataset_path(raw: str) -> Path | None:
         return None
 
     expanded = os.path.expanduser(s)
+    # Normalize separators before matching the inventory: the server-derived
+    # relpath carries this platform's os.sep (backslash on Windows), but an
+    # operator/UI string may legitimately use forward slashes instead. Without
+    # this the identical path misses and the request 404s for a cosmetic reason.
+    normalized = expanded.replace("\\", "/")
     for name, rel, path in _dataset_candidates():
-        if expanded in (name, rel, str(path)):
+        if expanded in (name, rel, str(path)) or normalized == rel.replace("\\", "/"):
             return path
     return None
 
@@ -183,7 +275,7 @@ def _allowed_model_roots() -> list[Path]:
             continue
         candidate = Path(cleaned).expanduser()
         resolved = (
-            candidate.resolve() if candidate.is_absolute() else (REPO_ROOT / candidate).resolve()
+            candidate.resolve() if candidate.is_absolute() else (_repo_root() / candidate).resolve()
         )
         if resolved not in seen:
             seen.add(resolved)
@@ -226,8 +318,11 @@ def _safe_model_path(raw: str) -> Path | None:
         return None
 
     expanded = os.path.expanduser(s)
+    # Separator normalization, same rationale as _safe_dataset_path: the
+    # inventory relpath uses os.sep while operator strings may not.
+    normalized = expanded.replace("\\", "/")
     for model_id, name, rel, path in _model_candidates():
-        if expanded in (model_id, name, rel, str(path)):
+        if expanded in (model_id, name, rel, str(path)) or normalized == rel.replace("\\", "/"):
             return path
     return None
 
@@ -465,8 +560,12 @@ def _get_active_model_and_scaler(engine: Any, dimension: int) -> tuple[torch.nn.
             if model_dim == dimension or (model_dim is None and dimension == 50):
                 return bundle.model, bundle.scaler, "LIVE_BUNDLE"
 
-    # Engine offline or dimension mismatch: instantiate fresh ScalpNet
-    fresh_model = ScalpNet(num_features=dimension, num_classes=3)
+    # Engine offline or dimension mismatch: instantiate fresh ScalpNet. This
+    # is a random-init fallback (no checkpoint), so the head is the trained
+    # class count; the studio UIs that consume it assume 3 decision classes.
+    from nexus_scalp.model_lifecycle.model_class_contract import TRAINED_CLASS_COUNT
+
+    fresh_model = ScalpNet(num_features=dimension, num_classes=TRAINED_CLASS_COUNT)
     fresh_model.eval()
 
     class _MockScaler:
@@ -580,9 +679,9 @@ def _scan_available_datasets() -> list[dict[str, Any]]:
     """Scans repository for available training parquet/csv datasets."""
     found: list[dict[str, Any]] = []
     candidates = [
-        REPO_ROOT / "data" / "raw",
-        REPO_ROOT / "data",
-        REPO_ROOT / "artifacts" / "model_generation" / "datasets",
+        _repo_root() / "data" / "raw",
+        _repo_root() / "data",
+        _repo_root() / "artifacts" / "model_generation" / "datasets",
     ]
     seen_paths = set()
 
@@ -602,7 +701,7 @@ def _scan_available_datasets() -> list[dict[str, Any]]:
                 found.append(
                     {
                         "name": p.name,
-                        "path": str(p.relative_to(REPO_ROOT)),
+                        "path": str(p.relative_to(_repo_root())),
                         "size_bytes": size,
                         "size_display": f"{size / (1024 * 1024):.2f} MB"
                         if size > 1024 * 1024
@@ -1002,7 +1101,15 @@ def execute_benchmark(req: ModelStudioBenchmarkRequest, engine: Any = None) -> d
             _ = model(x)
 
     t_total_start = time.perf_counter()
+    # Warm up before timing: the first forward pass pays one-time lazy torch
+    # init (kernel autotuning, allocator ramp), which dominates a 20-iteration
+    # sample. Timing cold inflates the *median*, not just the tail, so under
+    # pytest-xdist CPU contention a cold start can push p50 past the SLA even
+    # though steady-state inference is sub-millisecond. Discard warmup
+    # iterations so the sample measures the operation the SLA names.
     with torch.inference_mode():
+        for _ in range(min(n, 5)):
+            _ = model(x)
         for _ in range(n):
             t0 = time.perf_counter()
             _ = model(x)
@@ -1105,9 +1212,12 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
     X_val = torch.tensor(mat[train_size:], dtype=torch.float32)
     y_val = torch.tensor(y_labels[train_size:], dtype=torch.long)
 
-    # Initialize model
+    # Initialize model — trained from scratch on a 3-class triple-barrier
+    # label set, so the head is the trained class count by construction.
+    from nexus_scalp.model_lifecycle.model_class_contract import TRAINED_CLASS_COUNT
+
     torch.manual_seed(req.seed)
-    model = ScalpNet(num_features=req.dimension, num_classes=3)
+    model = ScalpNet(num_features=req.dimension, num_classes=TRAINED_CLASS_COUNT)
     optimizer = torch.optim.AdamW(model.parameters(), lr=req.learning_rate)
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -1245,7 +1355,17 @@ def execute_download(req: ModelStudioDownloadRequest) -> dict[str, Any]:
 
     tf = req.timeframe.upper().strip()
     if tf not in ("M1", "M3", "M5", "M15"):
-        tf = "M1"
+        # A requested timeframe silently clamped to M1 is a silent reversion:
+        # the operator asked for one thing and the system stored another, and
+        # the generated position dataset then carries a wrong timeframe label.
+        # Fail loud instead — the UI surfaces this ``detail`` verbatim.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"timeframe '{req.timeframe}' is not supported. "
+                "Model Studio ingestion accepts only M1, M3, M5, M15."
+            ),
+        )
 
     # Whitelist-sanitize symbol and source to prevent path injection
     safe_symbol = re.sub(r"[^A-Za-z0-9_]", "", req.symbol.strip()).upper() or "XAUUSD"
@@ -1298,6 +1418,55 @@ def execute_download(req: ModelStudioDownloadRequest) -> dict[str, Any]:
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def get_artifact_locations() -> dict[str, Any]:
+    """Read-only map of the studio on-disk artifact roots (absolute + repo-relative).
+
+    The UI shows "where did this dataset/model actually land" for every artifact the
+    studio writes. Paths here are SERVER-DERIVED (resolved from the repo root, never
+    from request input) and are read-only: existence flags only, no file contents.
+    """
+    root = _repo_root()
+
+    def _rel(path: Path) -> str:
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            return str(path)
+
+    def _entry(path: Path) -> dict[str, Any]:
+        return {
+            "absolute_path": str(path),
+            "relative_path": _rel(path),
+            "exists": bool(path.exists()),
+            "is_dir": bool(path.is_dir()),
+            "file_count": (
+                sum(1 for _ in path.iterdir()) if path.is_dir() and path.exists() else 0
+            ),
+        }
+
+    locations = {
+        "datasets": _entry(root / "data" / "raw"),
+        # The generator actually writes pos_ds_*.parquet to artifacts/datasets
+        # (position_replay._default_out_path), not data/positions. Report BOTH
+        # so the "Position Datasets EMPTY" indicator stops lying while 7 real
+        # datasets sit on disk, and keep data/positions for the allowlist that
+        # lets the operator place a dataset there deliberately.
+        "position_datasets": _entry(root / "artifacts" / "datasets"),
+        "position_datasets_alt": _entry(root / "data" / "positions"),
+        "model_checkpoints": _entry(root / "artifacts" / "model_generation" / "checkpoints"),
+        "training_datasets": _entry(root / "artifacts" / "model_generation" / "datasets"),
+        "registry_database": _entry(root / "artifacts" / "models.db"),
+    }
+
+    # Windows shells render backslash separators; the UI normalizes either way.
+    return {
+        "status": "OK",
+        "repo_root": str(root),
+        "separator": os.sep,
+        "locations": locations,
+    }
 
 
 def extract_dataset_features(
@@ -1565,6 +1734,48 @@ def execute_list_models() -> dict[str, Any]:
     }
 
 
+def _resolve_head_classes(weights_path: Path, weights: dict[str, Any]) -> int:
+    """Declared neural head width for a checkpoint (BUG-243 / hot-load 500, 2026-09-21).
+
+    The authoritative engine path (live_engine._declared_head_classes_for_path)
+    reads ``model_head_classes``/``num_classes`` from the bundle meta and only
+    accepts the trained or legacy class counts. The studio routes previously
+    hardcoded ``ScalpNet(num_classes=3)``, so every checkpoint with the legacy
+    4-logit head (NO_TRADE/BUY/SELL/WAIT — WAIT is a POLICY state, never a
+    label) failed at ``load_state_dict`` with a shape mismatch and the route
+    surfaced it as a bare 500. Source order (highest authority first):
+
+    1. the checkpoint's own ``classifier`` tensor (byte-truth — it is what will
+       actually be loaded, so it can never disagree with the constructed model)
+    2. the sibling ``<stem>.meta.json`` declared head, if a legal value
+    3. TRAINED_CLASS_COUNT fallback (engine-identical)
+    """
+    from nexus_scalp.model_lifecycle.model_class_contract import (
+        LEGACY_HEAD_CLASSES,
+        TRAINED_CLASS_COUNT,
+    )
+
+    legal = {TRAINED_CLASS_COUNT, LEGACY_HEAD_CLASSES}
+
+    # 1. Byte-truth from the weights themselves.
+    clf = weights.get("classifier.weight")
+    if isinstance(clf, torch.Tensor) and tuple(clf.shape)[0:1] and clf.shape[0] in legal:
+        return int(clf.shape[0])
+
+    # 2. Declared head in the sibling meta (matches the engine's contract).
+    with contextlib.suppress(Exception):
+        meta_path = weights_path.with_suffix(".meta.json")
+        if meta_path.exists():
+            with open(meta_path, encoding="utf-8") as fh:
+                meta = json.load(fh)
+            for key in ("model_head_classes", "num_classes"):
+                val = meta.get(key)
+                if isinstance(val, int) and val in legal:
+                    return int(val)
+
+    return TRAINED_CLASS_COUNT
+
+
 def execute_hot_load(req: ModelStudioHotLoadRequest, engine: Any = None) -> dict[str, Any]:
     """2. Hot-loads model weights and scaler sidecar atomically into memory."""
     registry = get_model_registry()
@@ -1601,8 +1812,11 @@ def execute_hot_load(req: ModelStudioHotLoadRequest, engine: Any = None) -> dict
     elif rec is not None and rec.dimension in (50, 70):
         dim = rec.dimension
 
-    # Instantiate model and load state
-    model = ScalpNet(num_features=dim, num_classes=3)
+    # Instantiate model and load state. Head width follows the CHECKPOINT
+    # (byte-truth), not a hardcoded 3: legacy 4-logit heads exist on disk
+    # (NO_TRADE/BUY/SELL/WAIT) and load_state_dict is a hard shape check.
+    num_classes = _resolve_head_classes(target_path, weights)
+    model = ScalpNet(num_features=dim, num_classes=num_classes)
     model.load_state_dict(weights)
     model.eval()
 
@@ -1639,12 +1853,14 @@ def execute_hot_load(req: ModelStudioHotLoadRequest, engine: Any = None) -> dict
             np.zeros(dim, dtype=np.float32), np.ones(dim, dtype=np.float32), dim
         )
 
-    # Warm-up forward pass & latency profiling
+    # Warm-up forward pass & latency profiling. Output width follows the
+    # resolved head (legacy 4-logit checkpoints emit 4), so check against the
+    # constructed model's own class count, not a hardcoded 3.
     t0 = time.perf_counter()
     with torch.no_grad():
         dummy_x = torch.zeros((1, dim), dtype=torch.float32)
         dummy_out = model(dummy_x)
-        assert dummy_out.shape == (1, 3)
+        assert dummy_out.shape == (1, num_classes)
     latency_us = float((time.perf_counter() - t0) * 1e6)
 
     # Calculate weights SHA256
@@ -1825,7 +2041,7 @@ def execute_fine_tune(req: ModelStudioFineTuneRequest) -> dict[str, Any]:
 
     weights = torch.load(target_weights, map_location="cpu", weights_only=True)
     dim = base_rec.dimension
-    model = ScalpNet(num_features=dim, num_classes=3)
+    model = ScalpNet(num_features=dim, num_classes=_resolve_head_classes(target_weights, weights))
     model.load_state_dict(weights)
     model.train()
 
@@ -2027,7 +2243,10 @@ def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
         dim = int(weights["input_projection.weight"].shape[1])
     model: ScalpNet | None = None
     try:
-        model = ScalpNet(num_features=dim, num_classes=3)
+        model = ScalpNet(
+            num_features=dim,
+            num_classes=_resolve_head_classes(target_path, weights),
+        )
         model.load_state_dict(weights)
         model.eval()
         checks.append(
@@ -2045,7 +2264,11 @@ def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
             with torch.no_grad():
                 x = torch.zeros((1, dim), dtype=torch.float32)
                 out = model(x)
-                passed_smoke = out.shape == (1, 3) and bool(torch.all(torch.isfinite(out)).item())
+                # Width follows the resolved head (legacy 4-logit checkpoints
+                # emit 4 — WAIT is a policy state, not a label); finiteness is
+                # the real correctness predicate.
+                expected = (1, _resolve_head_classes(target_path, weights))
+                passed_smoke = out.shape == expected and bool(torch.all(torch.isfinite(out)).item())
                 checks.append(
                     {
                         "name": "SMOKE_INFERENCE",
@@ -2216,7 +2439,7 @@ def execute_canary(req: ModelStudioCanaryRequest) -> dict[str, Any]:
     if "input_projection.weight" in weights:
         dim = int(weights["input_projection.weight"].shape[1])
 
-    model = ScalpNet(num_features=dim, num_classes=3)
+    model = ScalpNet(num_features=dim, num_classes=_resolve_head_classes(target_path, weights))
     model.load_state_dict(weights)
     model.eval()
 
@@ -2496,7 +2719,17 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.post("/api/model-studio/models/hot-load")
     def route_hot_load(req: ModelStudioHotLoadRequest) -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
-        return execute_hot_load(req, engine=engine)
+        try:
+            return execute_hot_load(req, engine=engine)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("model-studio hot-load failed")
+            _log_err(f"hot-load failed: {exc}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Hot-load failed: {exc}",
+            ) from exc
 
     @app.get("/api/model-studio/models/active")
     def route_active_model() -> dict[str, Any]:
@@ -2550,3 +2783,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.post("/api/model-studio/models/drift-check")
     def route_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
         return execute_drift_check(req)
+
+    @app.get("/api/model-studio/artifact-locations")
+    def route_artifact_locations() -> dict[str, Any]:
+        return get_artifact_locations()

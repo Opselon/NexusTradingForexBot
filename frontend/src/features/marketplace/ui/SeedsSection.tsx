@@ -149,11 +149,20 @@ export function SeedsSection() {
               <td>
                 <span className={`badge ${lifecycleLevel(s.lifecycle)}`}>{s.lifecycle}</span>
               </td>
-              <td>{s.seed.risk_profile ?? "—"}</td>
+              <td>
+                {typeof s.seed.risk_profile === "string" && s.seed.risk_profile ? (
+                  <span className="mkt-family-tag" title="risk profile">
+                    <span className="swatch" aria-hidden="true" />
+                    {s.seed.risk_profile}
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </td>
               <td className="inline-mono tiny">{String(s.seed.pack_id ?? "—")}</td>
               <td>{s.seed.updated_at ? formatDateTime(String(s.seed.updated_at)) : "—"}</td>
               <td>
-                <div className="mkt-actions" style={{ justifyContent: "flex-end" }}>
+                <div className="mkt-actions mkt-row-actions" style={{ justifyContent: "flex-end" }}>
                   <button className="btn small" onClick={() => setPending({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
                     Research
                   </button>
@@ -172,6 +181,7 @@ export function SeedsSection() {
                       <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>
                     ))}
                   </select>
+                  <span className="mkt-row-sep" aria-hidden="true" />
                   <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
                     Disable
                   </button>

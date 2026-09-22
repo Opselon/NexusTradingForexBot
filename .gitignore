@@ -668,3 +668,33 @@ file::memory:*
 /the
 /min_samples_to_reject
 /278)
+
+# === ML-PHASE1-DATA-CONTRACT commit, 2026-09-22 (agent cleanup pass) ===
+# Rule: every entry is ROOT-ANCHORED for the same reason as the BUG-293 block
+# above (unanchored single-segment patterns shadow real trees on case-insensitive
+# Windows filesystems). None of these are project content:
+#  - cj.txt: libcurl cookie jar holding a live nse_web_auth token (auth material)
+#  - CI, PYI, frontend/,, frontend/,+: zero-byte shell-token artifacts of the
+#    same leak class as /0, /REJECT, /the above; no content
+#  - *_out.txt / r.txt / *_base.txt: regenerable ruff/mypy/pytest tool captures
+#  - .ms-inference-after.png: local 490KB binary capture, referenced by nothing
+#  - .merge-backup-site/: emergency pre-merge backup copy of generated _site/
+#  - .phase1_guard/: guard anchor + protected sha256 state (local protection)
+#  - critical_suite_validation.md: CI evidence capture at stale head a33747db
+# All files REMAIN ON DISK; they are only kept out of the commit history.
+/cj.txt
+/CI
+/PYI
+/frontend/,
+/frontend/,+
+/merge_out.txt
+/mypy_out.txt
+/pytest_base.txt
+/pytest_full_out.txt
+/pytest_out.txt
+/r.txt
+/ruff_out.txt
+/.ms-inference-after.png
+/.merge-backup-site/
+/.phase1_guard/
+/critical_suite_validation.md

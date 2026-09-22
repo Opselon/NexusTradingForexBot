@@ -267,6 +267,20 @@ class ConfidenceCalibrator:
     # Factories
     # ------------------------------------------------------------------
 
+    # Load outcome categories (why the artifact is absent decides the level):
+    #   FILE_NOT_FOUND  the designed pre-evidence state — the collector only
+    #                   persists an artifact once the 30/30 OOS contract is
+    #                   met, so "missing" is the NORMAL condition of a live
+    #                   engine that has not yet accumulated evidence, not a
+    #                   fault. WARNING here floods the operator log once per
+    #                   trade proposal + once per UI poll (the log contract
+    #                   forbids WARNING for repeated normal state).
+    #   anything else   a real surprise (corrupt JSON, unreadable, schema
+    #                   drift) — stays WARNING; the artifact was expected to
+    #                   parse and did not.
+    _MISSING_ARTIFACT_LEVEL: str = "debug"
+    _LOAD_WARNED_UNEXPECTED: bool = False
+
     @classmethod
     def from_artifact(cls, path: str | Path) -> ConfidenceCalibrator:
         """Loads a persisted calibration artifact; corrupt/missing -> NOT_CALIBRATED."""
@@ -282,7 +296,21 @@ class ConfidenceCalibrator:
                 validation_metrics=metrics,
             )
         except Exception as exc:
-            logger.warning("[CALIBRATION] artifact load failed -> NOT_CALIBRATED", error=str(exc))
+            is_missing = isinstance(exc, FileNotFoundError)
+            level = cls._MISSING_ARTIFACT_LEVEL if is_missing else "warning"
+            # One WARNING per process for an UNEXPECTED failure, then DEBUG —
+            # the first occurrence is the actionable signal (contract §1/§3),
+            # a repeat flood cannot add operator information.
+            if level == "warning" and cls._LOAD_WARNED_UNEXPECTED:
+                level = "debug"
+            elif level == "warning":
+                cls._LOAD_WARNED_UNEXPECTED = True
+            getattr(logger, level)(
+                "[CALIBRATION] artifact load failed -> NOT_CALIBRATED",
+                error=str(exc),
+                artifact_path=str(path),
+                missing_artifact=is_missing,
+            )
             return cls()
 
     # ------------------------------------------------------------------

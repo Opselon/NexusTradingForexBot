@@ -23,7 +23,8 @@ import { BreakerTiles, DrawdownBar, GateFunnel, GuardianHero, MarginArc } from "
 import { EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState, errorText } from "@/pages/_shared/SectionState";
 import { MeterBar, SortableTable, type Column, type MeterTone } from "@/pages/_shared/widgets";
-import { gateVerdict, limitUtilization } from "@/lib/riskVizMath";
+import { gateEvidence, verdictWord, directionWord, type GateEvidenceRow } from "@/lib/riskGateTrace";
+import { limitUtilization } from "@/lib/riskVizMath";
 import { formatMoney, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import "@/pages/_shared/pages.css";
@@ -43,31 +44,31 @@ interface GateRowVM {
   reason: string;
 }
 
-function gateRow(name: string, raw: unknown): GateRowVM {
-  const verdict = gateVerdict(raw);
-  const o = (raw && typeof raw === "object" ? raw : {}) as {
-    value?: unknown;
-    limit?: unknown;
-    reason?: string;
-  };
-  const cell = (v: unknown): string => {
-    if (v === null || v === undefined) return "—";
-    if (typeof v === "number") return Number.isFinite(v) ? (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(3)) : "—";
-    if (typeof v === "boolean") return v ? "true" : "false";
-    if (typeof v === "string") return v;
-    return "—";
+/**
+ * gateRow — one derived evidence row as a matrix cell.
+ *
+ * The pairing/verdict already happened in lib/riskGateTrace; this only
+ * formats it for the table. A null value or limit renders as "—" (honest
+ * absence), never as 0 or as a satisfied limit.
+ */
+function gateRow(row: GateEvidenceRow): GateRowVM {
+  const cell = (v: number | null): string => {
+    if (v === null || v === undefined || !Number.isFinite(v)) return "—";
+    if (Math.abs(v) >= 100) return v.toFixed(0);
+    return v.toFixed(3);
   };
   return {
-    name,
-    verdict,
-    value: cell(o.value),
-    limit: cell(o.limit),
-    reason: typeof o.reason === "string" ? o.reason : "—",
+    name: row.name,
+    verdict: row.verdict,
+    value: cell(row.value),
+    limit: `${directionWord(row.direction)} ${cell(row.limit)}`,
+    reason: row.detail ?? "no backend reason in payload — not a passing gate",
   };
 }
 
 function RiskMatrix({ checks }: { checks: RiskChecks }) {
-  const rows = useMemo(() => Object.entries(checks).map(([name, raw]) => gateRow(name, raw)), [checks]);
+  const ev = useMemo(() => gateEvidence(checks), [checks]);
+  const rows = useMemo(() => ev.rows.map(gateRow), [ev]);
   const cols = useMemo<Array<Column<GateRowVM>>>(
     () => [
       {
@@ -82,7 +83,7 @@ function RiskMatrix({ checks }: { checks: RiskChecks }) {
         sortValue: (r) => r.verdict,
         render: (r) => (
           <span className={`l4-chip ${r.verdict === "pass" ? "good" : r.verdict === "fail" ? "bad" : ""}`}>
-            {r.verdict === "pass" ? "PASS" : r.verdict === "fail" ? "FAIL" : "UNKNOWN"}
+            {verdictWord(r.verdict)}
           </span>
         ),
       },
@@ -96,14 +97,12 @@ function RiskMatrix({ checks }: { checks: RiskChecks }) {
     ],
     [],
   );
-  const pass = rows.filter((r) => r.verdict === "pass").length;
-  const fail = rows.filter((r) => r.verdict === "fail").length;
   return (
     <>
       <SortableTable columns={cols} rows={rows} rowKey={(r) => r.name} emptyMessage="No gate rows." maxHeight={null} />
       <div className="l4-note" style={{ padding: "6px 12px" }}>
-        {pass} pass · {fail} fail · {rows.length - pass - fail} unknown — verdicts echo the backend's `passed`/`allowed` booleans 1:1; an entry carrying
-        neither is UNKNOWN, never FAIL.
+        {ev.pass} pass · {ev.fail} fail · {ev.unknown} unknown — each PASS/FAIL is the arithmetic restatement of two
+        backend-supplied numbers (value vs its own declared limit); an entry whose limit is absent is UNKNOWN, never FAIL.
       </div>
     </>
   );

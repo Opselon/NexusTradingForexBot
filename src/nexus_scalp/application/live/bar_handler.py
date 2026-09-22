@@ -133,11 +133,14 @@ class BarHandler:
                 spread=(tick.ask - tick.bid),
                 atr_m1=fv.atr_m1,
             )
-        if self.om._governance_reference_vector is None:
-            _ref = self.om._validate_50d_tensor(
-                fv.to_tensor_input(), context="governance_reference"
-            )
-            self.om._governance_reference_vector = [float(v) for v in _ref]
+        # Governance feature-parity reference (spec 6): the live vector at the
+        # moment of the FIRST completed bar seeds it, and each later bar-close
+        # refreshes it in place. A frozen reference can never stay within the
+        # 1e-6 parity tolerance of a live vector that moves with the market, so
+        # a stale seed made every live comparison fail as FEATURE_PARITY_FAILURE.
+        ref50 = self.om._validate_50d_tensor(fv.to_tensor_input(), context="governance_reference")
+        if ref50:
+            self.om._governance_reference_vector = [float(v) for v in ref50]
 
         # ---------------------------------------------------------------------
         # Market Radar (Hunter SetupDetector) - live, bar-close cadence (BUG-138).

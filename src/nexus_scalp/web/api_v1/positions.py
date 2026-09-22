@@ -191,20 +191,51 @@ def model_identity(request: Request) -> Any:
     bundle = getattr(engine, "_bundle", None)
     if bundle is None:
         return ok(request, {"available": False, "reason": "no model bundle loaded"})
-    manifest = getattr(bundle, "manifest", None)
-    identity: dict[str, Any] = {"available": True}
-    for attr in ("artifact_id", "model_id", "schema_id", "scaler", "version", "created_at"):
-        value = getattr(manifest, attr, None) if manifest is not None else None
-        if value is None:
-            value = getattr(bundle, attr, None)
+    # Identity source: the model_registry's CURRENT provenance, not the bundle
+    # object. ModelBundle carries only (model, scaler, artifact_path) and
+    # ScalpNet has no model_id attribute, so reading identity off the bundle
+    # yields nothing (the panel rendered every field as "—"). This is the same
+    # owner LiveEngine._serving_model_identity reads, so the API, the EXEC_TRACE
+    # line and the experience ledger agree by construction.
+    prov = getattr(getattr(engine, "model_registry", None), "current", None)
+    identity: dict[str, Any] = {
+        "available": True,
+        "registered": prov is not None,
+        "model_id": str(getattr(prov, "model_id", "") or ""),
+        "model_version": str(getattr(prov, "model_version", "") or ""),
+        "schema_id": str(getattr(prov, "feature_schema_id", "") or ""),
+        "version": str(getattr(prov, "model_version", "") or ""),
+        "feature_dimension": getattr(prov, "feature_dimension", None),
+        "artifact_id": str(getattr(prov, "artifact_fingerprint", "") or ""),
+        "artifact_fingerprint": str(getattr(prov, "artifact_fingerprint", "") or ""),
+        "artifact_path": str(getattr(bundle, "artifact_path", "") or ""),
+        "model_role": str(getattr(prov, "model_role", "") or ""),
+        "config_version": str(getattr(prov, "config_version", "") or ""),
+    }
+    for attr in ("created_at", "registered_at"):
+        value = getattr(prov, attr, None)
         if value is not None:
             identity[attr] = value if not hasattr(value, "model_dump") else value.model_dump()
+    # OBS-JSON (2026-09-21): a live in-process object is NOT an identity value.
+    # The bundle exposes the serving scaler as a ScalerBundle instance (mean/std
+    # numpy arrays); echoing it into a JSON response raises TypeError in
+    # json.dumps and 500s the whole panel. Report the contract FACT, by value.
+    scaler = getattr(bundle, "scaler", None)
+    if scaler is not None:
+        identity["scaler_ready"] = bool(getattr(scaler, "is_ready", lambda: False)())
+        identity["scaler_dimension"] = getattr(scaler, "dimension", lambda: None)()
+        identity["scaler_corrupt"] = bool(getattr(scaler, "corrupt", False))
     try:
         from nexus_scalp.features.schema_contract import feature_schema_hash
 
         identity["feature_schema_hash"] = feature_schema_hash()
     except Exception:
         identity["feature_schema_hash"] = None
+    # Drop fields that carry no information: an unregistered model must report
+    # absence rather than a row of empty placeholders that look like an identity.
+    identity = {
+        k: v for k, v in identity.items() if k in ("available", "registered") or v not in ("", None)
+    }
     return ok(request, identity)
 
 
@@ -226,12 +257,53 @@ def model_contracts(request: Request) -> Any:
         from nexus_scalp.features.inference_validator import compatible_model_schema
         from nexus_scalp.features.schema_contract import DIMENSION, SCHEMA_ID
 
-        _bundle = getattr(engine, "_bundle", None) if engine is not None else None
-        _manifest = getattr(_bundle, "manifest", None) if _bundle is not None else None
-        _model_schema_id = getattr(_manifest, "schema_id", None) if _manifest is not None else None
-        _model_dimension = getattr(_manifest, "dimension", None) if _manifest is not None else None
-        if _model_dimension is None and _manifest is not None:
-            _model_dimension = getattr(_manifest, "feature_count", None)
+        # The model side of the contract is NOT the bundle: ModelBundle carries
+        # only (model, scaler, artifact_path) and has no manifest attribute, so
+        # the previous bundle.manifest read was always None and every live
+        # deployment reported UNKNOWN/NO_MODEL_METADATA even while serving a
+        # validated 70D scalp_v3 champion. Resolve the model contract from the
+        # same authoritative places the runtime itself uses
+        # (LiquidityGovernor._model_contract): engine effective accessors first
+        # (the loaded bundle's own scaler/tensor width), then the model
+        # registry's current provenance, then the class bootstrap. Real values
+        # only; every field stays None when nothing is loaded.
+        _model_schema_id: str | None = None
+        _model_dimension: int | None = None
+        if engine is not None:
+            _bundle = getattr(engine, "_bundle", None)
+            if _bundle is not None:
+                _dim_fn = getattr(engine, "effective_feature_dim", None)
+                _schema_fn = getattr(engine, "effective_feature_schema_id", None)
+                try:
+                    _model_dimension = (
+                        int(_dim_fn())
+                        if callable(_dim_fn)
+                        else getattr(engine, "FEATURE_DIM", None)
+                    )
+                except Exception:
+                    _model_dimension = None
+                try:
+                    _model_schema_id = (
+                        str(_schema_fn())
+                        if callable(_schema_fn)
+                        else getattr(engine, "FEATURE_SCHEMA_ID", None)
+                    )
+                except Exception:
+                    _model_schema_id = None
+            if _model_schema_id is None or _model_dimension is None:
+                _registry = getattr(engine, "model_registry", None)
+                try:
+                    _prov = _registry.current if _registry is not None else None
+                except Exception:
+                    _prov = None
+                if _prov is not None:
+                    _model_schema_id = getattr(_prov, "feature_schema_id", None) or _model_schema_id
+                    _prov_dim = getattr(_prov, "feature_dimension", None)
+                    if _prov_dim is not None:
+                        try:
+                            _model_dimension = int(_prov_dim) or _model_dimension
+                        except Exception:
+                            pass
         try:
             _model_dimension = int(_model_dimension) if _model_dimension is not None else None
         except Exception:

@@ -6,7 +6,7 @@ Guarantees explicit separation between Completed Bars and Forming Bars.
 """
 
 import math
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -260,7 +260,29 @@ class BarAggregator:
         # last COMPLETED bar's open is provably stale. Anchor at the last
         # bar's open (not close) so the first tick of the forming minute —
         # stamped anywhere inside [last_open+1m, next_minute] — survives.
-        self._last_accepted_ts = last_bar.timestamp + timedelta(minutes=self.timeframe_minutes)
+        anchor = last_bar.timestamp + timedelta(minutes=self.timeframe_minutes)
+        # BUG-308 (2026-09-21): refuse to point the monotonic tick clock into
+        # the future. A boundary reader that hands the still-forming current
+        # minute in as a COMPLETED bar makes the anchor (last_bar + 1m) sit up
+        # to a full minute ahead of the real clock; the out-of-order guard
+        # then drops every live tick of that minute — the live feed starves
+        # silently and only NO_TRADE can ever be produced. Clamp the anchor to
+        # the last completed bar's own open (still strictly after every sealed
+        # bar, still inside the forming minute) so the first real tick always
+        # survives. The forming bar's own timestamp stays at next_minute so
+        # the series geometry is unchanged; only the acceptance floor moves.
+        _now = datetime.now(UTC)
+        if anchor > _now:
+            logger.warning(
+                "Reseed anchor is in the future; clamping to the last completed bar",
+                symbol=self.symbol,
+                timeframe=self.timeframe_str,
+                anchor=anchor.isoformat(),
+                now=_now.isoformat(),
+                clamped_to=last_bar.timestamp.isoformat(),
+            )
+            anchor = last_bar.timestamp
+        self._last_accepted_ts = anchor
 
         logger.info(
             "BarAggregator reseeded",

@@ -214,11 +214,14 @@ def read_bars_mt5(
     """Download historical bars through the EXISTING MT5 adapter."""
     if adapter is None:
         try:
-            from nexus_scalp.adapters.mt5.mt5_adapter import MT5Adapter
+            # The exported port implementation is DirectMT5Adapter
+            # (mt5_adapter.py defines no bare `MT5Adapter`; the name was
+            # renamed to make the Win32 direct-implementation explicit).
+            from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
 
-            adapter = MT5Adapter()
+            adapter = DirectMT5Adapter()
         except Exception as exc:
-            raise IngestError(f"Cannot import MT5Adapter: {exc}") from exc
+            raise IngestError(f"Cannot import DirectMT5Adapter: {exc}") from exc
 
     manage_conn = (
         (not getattr(adapter, "is_connected", False)) if own_connection is None else own_connection

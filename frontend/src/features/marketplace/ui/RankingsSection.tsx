@@ -58,21 +58,26 @@ export function RankingsSection() {
             { label: "scored at" },
           ]}
         >
-          {rows.map((r, i) => (
-            <tr key={r.seed_id}>
-              <td className="inline-mono">{i + 1}</td>
-              <td>{r.seed_id}</td>
-              <td>{r.family || "—"}</td>
-              <td>
-                <span className={`badge ${lifecycleLevel(r.lifecycle)}`}>{String(r.lifecycle || "UNKNOWN")}</span>
-              </td>
-              <td className="num" style={r.total === null || r.total === undefined ? { color: "var(--text-faint)" } : undefined}>
-                {r.total === null || r.total === undefined ? "NOT_AVAILABLE" : formatNumber(r.total, 3)}
-              </td>
-              <td>{r.verdict ?? "—"}</td>
-              <td>{r.scored_at ? formatDateTime(r.scored_at) : "—"}</td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const na = r.total === null || r.total === undefined;
+            return (
+              <tr key={r.seed_id}>
+                <td>
+                  <span className={`mkt-rank ${i < 3 ? `r${i + 1}` : ""}`}>{i + 1}</span>
+                </td>
+                <td>{r.seed_id}</td>
+                <td>{r.family || "—"}</td>
+                <td>
+                  <span className={`badge ${lifecycleLevel(r.lifecycle)}`}>{String(r.lifecycle || "UNKNOWN")}</span>
+                </td>
+                <td className="num mkt-score-cell" style={na ? { color: "var(--text-faint)" } : undefined}>
+                  {na ? "NOT_AVAILABLE" : formatNumber(r.total, 3)}
+                </td>
+                <td>{r.verdict ?? "—"}</td>
+                <td>{r.scored_at ? formatDateTime(r.scored_at) : "—"}</td>
+              </tr>
+            );
+          })}
         </DataTable>
       )}
     </Panel>

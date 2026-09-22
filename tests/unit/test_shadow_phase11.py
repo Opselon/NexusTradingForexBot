@@ -552,3 +552,103 @@ class TestRegression:
         worker.tick()
         assert time.perf_counter() - t0 < 5.0
         worker.stop()
+
+
+# =============================================================================
+# WORKER-RESTART (2026-09-22): the worker must start the NEXT run after it
+# finalizes one. finish_run() clears active_run_id and nothing else in the
+# live path ever restarts a run, so a successfully attached challenger went
+# permanently silent exactly 30 decisions after attach. The store kept those
+# rows, but the live challenger stopped being evaluated for the rest of the
+# session.
+# =============================================================================
+
+
+class TestWorkerRestartsNextRun:
+    def test_finalizing_a_run_starts_the_next_run(self, temp_audit_repo):
+        """After finalize, active_run_id must be a NEW non-empty run id."""
+        store = ShadowStore(audit_repo=temp_audit_repo)
+        engine = ShadowEngine(store=store)
+        engine.set_champion_ref(make_champion_ref())
+
+        class _ChallengerWithRef:
+            ref = make_challenger_ref()
+
+        engine.active_challenger = _ChallengerWithRef()
+        first = engine.start_run(
+            None, champion=make_champion_ref(), challenger_ref=make_challenger_ref()
+        )
+        for d in make_decisions(40, run_id=first):
+            engine._decisions.append(d)
+
+        worker = ShadowWorker(audit_repo=temp_audit_repo, engine=engine, interval_sec=0.0)
+        worker.start()
+        worker.tick()
+        worker.stop()
+
+        # the finished run is persisted...
+        flush(temp_audit_repo)
+        persisted = store.list_runs()
+        assert any(r["run_id"] == first for r in persisted)
+        # ...and a NEW run is active, not the cleared-out id
+        assert engine.active_run_id and engine.active_run_id != first
+        assert engine._decisions == [], "the next run must start with a clean ledger"
+
+    def test_detached_challenger_leaves_worker_idle(self, temp_audit_repo):
+        """No challenger => finalize persists the run and stays idle."""
+        store = ShadowStore(audit_repo=temp_audit_repo)
+        engine = ShadowEngine(store=store)
+        engine.set_champion_ref(make_champion_ref())
+        engine.active_challenger = None
+        first = engine.start_run(
+            None, champion=make_champion_ref(), challenger_ref=make_challenger_ref()
+        )
+        for d in make_decisions(40, run_id=first):
+            engine._decisions.append(d)
+
+        worker = ShadowWorker(audit_repo=temp_audit_repo, engine=engine, interval_sec=0.0)
+        worker.start()
+        worker.tick()  # must not raise
+        worker.stop()
+
+        assert engine.active_run_id == ""
+        assert worker.last_error == "" or "next-run" not in worker.last_error
+
+    def test_next_run_failure_is_isolated(self, temp_audit_repo, capsys):
+        """A start_run fault logs and never propagates to the worker cycle."""
+        store = ShadowStore(audit_repo=temp_audit_repo)
+        engine = ShadowEngine(store=store)
+        engine.set_champion_ref(make_champion_ref())
+
+        class _Boom:
+            ref = make_challenger_ref()
+
+        engine.active_challenger = _Boom()
+        first = engine.start_run(
+            None, champion=make_champion_ref(), challenger_ref=make_challenger_ref()
+        )
+        for d in make_decisions(40, run_id=first):
+            engine._decisions.append(d)
+
+        # Sabotage start_run so the restart path throws.
+        from nexus_scalp.shadow import engine as engine_mod
+
+        original = engine_mod.ShadowEngine.start_run
+
+        def boom(self, run_id, champion, challenger_ref):
+            raise RuntimeError("simulated start_run failure")
+
+        engine_mod.ShadowEngine.start_run = boom
+        try:
+            worker = ShadowWorker(audit_repo=temp_audit_repo, engine=engine, interval_sec=0.0)
+            worker.start()
+            worker.tick()  # must not raise
+            worker.stop()
+            out = capsys.readouterr().out
+            # structlog writes the rendered event to stdout (console
+            # formatter); caplog cannot see it because BoundLogger proxies
+            # through structlog, not the stdlib capture seam.
+            assert "NEXT_RUN_FAILED" in out, "the fault must be logged, not swallowed"
+            assert "simulated start_run failure" in out
+        finally:
+            engine_mod.ShadowEngine.start_run = original

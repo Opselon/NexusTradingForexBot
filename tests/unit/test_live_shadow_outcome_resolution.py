@@ -743,6 +743,79 @@ class TestLiveEngineDelegate:
         BarHandler(Om()).on_new_bar(tick=tick, fv=Fv(), last_bar=bar)
         assert calls == [bar], "the resolution hook must fire exactly once per bar close"
 
+    def test_governance_reference_vector_refreshes_on_every_bar(self):
+        """The parity reference must track the live vector, not the first bar.
+
+        Before the fix the reference was seeded once and never touched again.
+        A stale reference cannot stay within the 1e-6 feature-parity tolerance
+        of a live vector that moves with the market, so every live comparison
+        was rejected as FEATURE_PARITY_FAILURE and the challenger's evidence
+        chain stayed empty.
+        """
+        from nexus_scalp.application.live.bar_handler import BarHandler
+        from nexus_scalp.domain.models import TickData
+
+        class RefOm:
+            candle_intel = None
+            mslie_engine = None
+            _last_regime_state = None
+            _governance_reference_vector = None
+            _rolling_feature_records: ClassVar[list] = []
+            _bars_since_last_retrain = 0
+            _online_train_disabled = True
+            setup_detector = None
+            aggregator = None
+            news_engine = None
+            _last_proposal = None
+
+            class Trainer:
+                num_features = 50
+
+            trainer = Trainer()
+            _retrain_interval_bars = 1000
+            _online_train_width_warn_at = 0.0
+            _retrain_inflight = False
+            _online_finetune_enabled = False
+            _online_ft_disabled_log_at = 0.0
+
+            def _build_retrain_record(self, **kw):
+                return {"feat_0": 0.0}
+
+            def _validate_50d_tensor(self, v, context=""):
+                return list(v)
+
+            def _resolve_shadow_outcomes(self, last_bar):
+                pass
+
+        om = RefOm()
+        tick = TickData(
+            symbol=SYMBOL, bid=1950.0, ask=1950.2, timestamp=datetime(2026, 9, 20, 8, 1, tzinfo=UTC)
+        )
+        bar1 = FakeBar(datetime(2026, 9, 20, 8, 0, tzinfo=UTC), 1949.0, 1951.0, 1948.0, 1950.0)
+        bar2 = FakeBar(datetime(2026, 9, 20, 8, 1, tzinfo=UTC), 1950.0, 1952.0, 1949.0, 1951.0)
+
+        class Fv1:
+            def to_tensor_input(self):
+                return [0.1] * 50
+
+            atr_m1 = 5.0
+
+        class Fv2:
+            def to_tensor_input(self):
+                return [0.2] * 50
+
+            atr_m1 = 6.0
+
+        BarHandler(om).on_new_bar(tick=tick, fv=Fv1(), last_bar=bar1)
+        seed = om._governance_reference_vector
+        assert seed == [0.1] * 50, "the first bar must seed the reference"
+
+        BarHandler(om).on_new_bar(tick=tick, fv=Fv2(), last_bar=bar2)
+        assert om._governance_reference_vector == [0.2] * 50, (
+            "the reference must refresh on each bar close, otherwise a stale "
+            "seed fails the 1e-6 parity tolerance on every later comparison"
+        )
+
 
 # =============================================================================
 # Cross-check: live resolution agrees with the certified offline resolver

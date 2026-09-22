@@ -1749,6 +1749,18 @@ class LiveEngine:
         fingerprint_artifact) — or honest empty strings when no bundle is
         loaded / the artifact is absent (EXEC_TRACE stamps
         MODEL_IDENTITY_UNAVAILABLE, never a placeholder identity).
+
+        Identity source: the model_registry's CURRENT provenance, not the
+        bundle object. ModelBundle carries only (model, scaler,
+        artifact_path) and ScalpNet has no model_id attribute, so the
+        original getattr(self._bundle.model, 'model_id') chain read an
+        attribute that never existed and returned "" for BOTH fields on
+        every live decision — even while an artifact fingerprint was
+        present and the experience ledger stamped a real provenance. The
+        registry is the same source of truth _register_active_model writes
+        to, so the EXEC_TRACE line and the experience row agree by
+        construction. It is read under the bundle lock so a hot-swap
+        cannot split the triple.
         """
         b = None
         with contextlib.suppress(Exception):
@@ -1759,10 +1771,15 @@ class LiveEngine:
         fp = ""
         with contextlib.suppress(Exception):
             fp = fingerprint_artifact(b.artifact_path)
-        mid = getattr(getattr(b, "model", None), "model_id", "") or ""
+        mid = ""
+        mver = ""
+        with contextlib.suppress(Exception):
+            prov = self.model_registry.current
+            mid = str(getattr(prov, "model_id", "") or "")
+            mver = str(getattr(prov, "model_version", "") or "")
         return (
-            str(mid or ""),
-            str(getattr(b, "model_version", "") or ""),
+            mid,
+            mver,
             str(fp or ""),
         )
 
@@ -2170,6 +2187,24 @@ class LiveEngine:
     async def stop(self) -> None:
         self._running = False
 
+    def shutdown_status(self) -> dict[str, Any]:
+        """Operator-visible teardown state (BUG-304).
+
+        Honest at every instant: a phase that never ran reports NOT_RUN
+        rather than a fabricated 'done'. Consumed by the API surface and
+        the launcher's final report.
+        """
+        if getattr(self, "_shutdown_completed", False):
+            return {"phase": "CLOSED", "completed": True}
+        if self._running:
+            return {"phase": "RUNNING", "completed": False}
+        return {"phase": "DRAIN_PENDING", "completed": False}
+
+    @property
+    def shutdown_completed(self) -> bool:
+        """True only after ``_shutdown_async`` actually finished."""
+        return bool(getattr(self, "_shutdown_completed", False))
+
     async def run_loop(self) -> None:
         """Delegate: async run loop (owned by RuntimeLoop, P1 seam L8)."""
         eng = self._runtime_loop
@@ -2233,6 +2268,16 @@ class LiveEngine:
         )
 
     async def _shutdown_async(self) -> None:
+        # BUG-304: idempotent teardown. RuntimeLoop calls this when its
+        # while-loop exits, and the process-level ShutdownSupervisor calls
+        # it as the bounded fallback when the loop was cancelled (Ctrl+C /
+        # console close). Both must converge on ONE teardown; a second call
+        # returns immediately instead of re-flushing a closed queue or
+        # re-disconnecting a dead adapter (which logged spurious errors and
+        # could double-close the shared SQLite connection).
+        if getattr(self, "_shutdown_completed", False):
+            return
+        self._shutdown_completed = True
         # Stop the accounting worker first (derived refresh, not financial truth).
         with contextlib.suppress(Exception):
             await self._stop_accounting_worker()
@@ -3215,6 +3260,16 @@ class LiveEngine:
                 active_positions=active_positions,
                 current_pos_count=current_pos_count,
             )
+            # BUG-311 (2026-09-22): feed the clean pass into the circuit. The
+            # breaker's own reset rule is deliberately conservative (a full
+            # error_window_sec must pass since the LAST error — one success
+            # never zeroes a flapping fault), but without ANY success signal
+            # the counter could never recover, so a transient 10-minute fault
+            # (e.g. an unimportable module being rewritten concurrently) left
+            # the engine permanently DEGRADED until an operator ran the CLI
+            # release command. record_success is a no-op until that window
+            # has fully elapsed, so this cannot mask an active fault.
+            self._hot_path_circuit.record_success(time.time())
         except Exception as pipeline_err:
             # =================================================================
             # HOT-PATH CONSECUTIVE-ERROR CIRCUIT BREAKER (P1, runtime-safety
@@ -3750,10 +3805,30 @@ class LiveEngine:
         regime_state: MarketRegimeState,
         proposal: TradeProposal,
     ) -> None:
-        """Delegate: 50D shadow recording (owned by ShadowRecorder, L1)."""
-        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+        """Delegate: 50D shadow recording (owned by ShadowRecorder, L1).
 
-        ShadowRecorder(self).record_shadow_decision(tick, fv, regime_state, proposal)
+        SHADOW-ISOLATION (BUG-311, 2026-09-22): the module import + recorder
+        construction live OUTSIDE the recorder's own internal try/except, so
+        an unimportable/half-written shadow_recorder module propagated
+        ImportError up through TickPipeline.run_post_policy_stages into the
+        hot-path consecutive-error circuit — 83 errors in 600s tripped the
+        breaker and blocked all NEW ENTRIES. A purely observational subsystem
+        (spec 17: "a shadow fault must NEVER affect production execution")
+        had taken down live trading. The whole delegation is isolated here,
+        at the seam, so no recorder-side import/construction fault can ever
+        reach the hot path. The recorder's body was already isolated; this
+        closes the gap the import itself left open.
+        """
+        try:
+            from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+
+            ShadowRecorder(self).record_shadow_decision(tick, fv, regime_state, proposal)
+        except Exception as exc:
+            logger.error(
+                "[SHADOW] event=DELEGATE_FAILURE (isolated; trading unaffected) "
+                "hook=record_shadow_decision error=%s",
+                exc,
+            )
 
     def _record_shadow70_observation(
         self,
@@ -3761,10 +3836,21 @@ class LiveEngine:
         fv: Any,
         proposal: TradeProposal,
     ) -> None:
-        """Delegate: 70D shadow observation (owned by ShadowRecorder, L1)."""
-        from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+        """Delegate: 70D shadow observation (owned by ShadowRecorder, L1).
 
-        ShadowRecorder(self).record_shadow70_observation(tick, fv, proposal)
+        SHADOW-ISOLATION (BUG-311): see _record_shadow_decision — the import
+        is isolated here for the same reason (INV-018: observability only).
+        """
+        try:
+            from nexus_scalp.application.live.shadow_recorder import ShadowRecorder
+
+            ShadowRecorder(self).record_shadow70_observation(tick, fv, proposal)
+        except Exception as exc:
+            logger.error(
+                "[SHADOW] event=DELEGATE_FAILURE (isolated; trading unaffected) "
+                "hook=record_shadow70_observation error=%s",
+                exc,
+            )
 
     @staticmethod
     def _retrain_swap_decision(

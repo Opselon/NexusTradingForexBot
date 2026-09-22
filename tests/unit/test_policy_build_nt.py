@@ -291,7 +291,11 @@ def test_build_nt_risk_checks_payload_and_survival_mode_and_range_penalty():
     assert rc["base_threshold"] == 0.40
     assert rc["range_penalty"] == 0.15
     assert rc["survival_mode_adjustment"] == 0.10
-    assert rc["effective_threshold"] == 0.65  # 0.40 + 0.15 + 0.10
+    # BUG-312 (2026-09-22): the range penalty is scaled against the base
+    # (0.40 + 0.15*0.40 + 0.10 = 0.56) rather than added raw (0.40 + 0.15 +
+    # 0.10 = 0.65), so the effective threshold stays inside the serving head's
+    # achievable probability range.
+    assert rc["effective_threshold"] == 0.56
     assert rc["spread_usd"] == 0.20
     assert "spread_atr_ratio" in rc
     assert "max_spread_atr_ratio" in rc

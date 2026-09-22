@@ -3972,14 +3972,33 @@ class AuditRepository:
         )
         return results
 
+    #: BUG-304: cap on how long close() will wait for the background writer
+    #: to flush its queue. An unbounded ``_queue.join()`` means one stuck
+    #: insert parks process exit forever, and the operator is forced to
+    #: taskkill /F — which reproduces the "not completely closed" symptom
+    #: (WAL + broker session left open). Bounded beats hung.
+    _CLOSE_FLUSH_TIMEOUT_SEC: float = 8.0
+
     def close(self) -> None:
-        """Gracefully shuts down background worker and flushes pending records."""
+        """Gracefully shuts down background worker and flushes pending records.
+
+        BUG-304: the flush is BOUNDED. A stuck insert can no longer hold
+        process exit hostage; the pending rows stay in the WAL and the
+        caller is told the close was partial instead of hanging forever.
+        """
         logger.info("Initiating graceful shutdown of Audit Database. Flushing queues...")
         self._running = False
         if self._worker_thread and self._worker_thread.is_alive():
-            self._queue.join()  # Wait for all pending inserts to complete
-            self._worker_thread.join(timeout=5.0)
+            drained = self._join_queue_bounded(self._CLOSE_FLUSH_TIMEOUT_SEC)
+            self._worker_thread.join(timeout=self._CLOSE_FLUSH_TIMEOUT_SEC)
             self._worker_thread = None
+            if not drained:
+                # Honest accounting: rows may remain in the WAL. Never claim
+                # a clean flush that did not happen.
+                logger.warning(
+                    "AUDIT close timed out after %.1fs — pending rows remain in the WAL",
+                    self._CLOSE_FLUSH_TIMEOUT_SEC,
+                )
         else:
             self._worker_thread = None
         if self._shared_conn is not None:
@@ -3987,3 +4006,26 @@ class AuditRepository:
                 self._shared_conn.close()
             self._shared_conn = None
         logger.info("Audit Database safely closed.")
+
+    def _join_queue_bounded(self, timeout_sec: float) -> bool:
+        """Wait for the writer queue to drain with a deadline.
+
+        Returns True only when the queue actually emptied; False means rows
+        may remain (the caller must not claim a clean flush). The blocking
+        ``Queue.join`` runs on a daemon thread so a stuck insert cannot park
+        the calling thread past the deadline.
+        """
+        import threading as _threading
+
+        if self._queue.empty():
+            return True
+        done = _threading.Event()
+
+        def _wait() -> None:
+            with contextlib.suppress(Exception):
+                self._queue.join()
+            done.set()
+
+        waiter = _threading.Thread(target=_wait, daemon=True, name="AuditDB_CloseWait")
+        waiter.start()
+        return done.wait(timeout=timeout_sec) and self._queue.empty()

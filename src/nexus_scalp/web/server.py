@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FEATURE_NAMES
+from nexus_scalp.indicators.resample import is_current_bar_forming as _is_current_rate_bar_forming
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.debug_research_routes import (
     ModelTestRequest,  # noqa: F401
@@ -1915,6 +1916,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_marketplace() -> FileResponse:
         return FileResponse(WEB_DIR / "marketplace.js")
 
+    # ML-SYSTEM / Neural Model Studio (2026-09-21): same class of gap as
+    # marketplace.js above — index.html loads model_studio_ui.js via a <script>
+    # tag but NO route served it, so the whole tab was dead: every button
+    # failed with `Uncaught ReferenceError: <studio fn> is not defined` and the
+    # model/dataset selects stayed stuck at "Loading models catalog…" /
+    # "Loading datasets…" (their loaders live in this same file).
+    @app.get("/model_studio_ui.js")
+    def serve_model_studio_ui() -> FileResponse:
+        """Serves the Neural Model Studio panel JS (all 18 studio handlers)."""
+        return FileResponse(WEB_DIR / "model_studio_ui.js")
+
     @app.get("/tv_widget.html")
     def serve_tv_widget_html() -> FileResponse:
         return FileResponse(WEB_DIR / "tv_widget.html")
@@ -2094,7 +2106,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                         low=float(r.low),
                                         close=float(r.close),
                                         tick_volume=int(r.tick_volume or 0),
-                                        is_complete=True,
+                                        is_complete=not _is_current_rate_bar_forming(
+                                            r.time_utc, str(timeframe).upper()
+                                        ),
                                     )
                                     for r in rate_bars_dt
                                 ]
@@ -2756,6 +2770,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     from nexus_scalp.web.model_studio_routes import register_model_studio_routes
 
     register_model_studio_routes(app, _err, _log_err)
+
+    # POSITION DECISION ADVISER ROUTES (TASK-POSA-001): /api/position-adviser/*.
+    # Optional Layer-2 keep/close adviser. New router — deliberately separate
+    # from the model-studio routes. The service singleton it installs is the
+    # SAME instance the decide system reaches, so a UI activation is visible to
+    # the engine immediately. Default activation is DISABLED.
+    from nexus_scalp.web.position_adviser_routes import register_position_adviser_routes
+
+    register_position_adviser_routes(app)
 
     # REPLAY-ON-CHART session routes (CHG-0043, REPLAY_API v1): the chart's
     # operator surface for the REAL historical decision pipeline. Records
