@@ -390,6 +390,7 @@ tests/unit/test_model_studio_dataset_order.py
 tests/unit/test_model_studio_pipeline.py
 tests/unit/test_mslie_sweep_window_pins_bug227.py
 tests/unit/test_mt5_diag_throttle.py
+tests/unit/test_bug307c_cli_logging_disable_leak.py
 tests/unit/test_news_bridge_contract_phase13b.py
 tests/unit/test_news_bridge_finalize_phase13b.py
 tests/unit/test_nse_lifecycle_regression_matrix.py
