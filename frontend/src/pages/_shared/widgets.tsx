@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatNumber } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import "@/pages/_shared/pages.css";
 
 // ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ export function SortableTable<T>({
   rowKey,
   initialSort,
   filter,
-  emptyMessage = "No rows.",
+  emptyMessage,
   maxHeight = 460,
   onRowClick,
   dense = false,
@@ -54,6 +55,7 @@ export function SortableTable<T>({
 }) {
   const [sort, setSort] = useState(initialSort ?? null);
   const [query, setQuery] = useState("");
+  const t = useI18n((s) => s.t);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -83,17 +85,19 @@ export function SortableTable<T>({
           <input
             className="input"
             style={{ inlineSize: 240 }}
-            placeholder="filter rows (ticket / symbol / text)…"
+            placeholder={t("ux.table.filter_ph", "filter rows (ticket / symbol / text)…")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Filter table rows"
+            aria-label={t("ux.table.filter_aria", "Filter table rows")}
           />
           <span className="timestamp-note">
-            {visible.length === rows.length ? `${rows.length} rows` : `${visible.length} of ${rows.length} rows`}
+            {visible.length === rows.length
+              ? `${rows.length} ${t("ux.table.rows", "rows")}`
+              : `${visible.length} ${t("ux.table.of", "of")} ${rows.length} ${t("ux.table.rows", "rows")}`}
           </span>
           {query && (
             <button className="btn small ghost" onClick={() => setQuery("")}>
-              clear
+              {t("ux.table.clear", "clear")}
             </button>
           )}
         </div>
@@ -117,7 +121,7 @@ export function SortableTable<T>({
                         onClick={() =>
                           setSort((s) => (s?.key === c.key ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" } : { key: c.key, dir: "desc" }))
                         }
-                        title={`sort by ${c.label}`}
+                        title={t("ux.table.sort_by", "Sort by {name}", { name: c.label })}
                       >
                         {c.label}
                         <span className="dir">{active ? (sort!.dir === "asc" ? "▲" : "▼") : "⇅"}</span>
@@ -147,7 +151,7 @@ export function SortableTable<T>({
             {visible.length === 0 && (
               <tr>
                 <td colSpan={columns.length} style={{ textAlign: "center", color: "var(--text-faint)", paddingBlock: 18 }}>
-                  {rows.length === 0 ? emptyMessage : "No rows match the filter."}
+                  {rows.length === 0 ? (emptyMessage ?? t("ux.table.empty", "No rows.")) : t("ux.table.empty_filter", "No rows match the filter.")}
                 </td>
               </tr>
             )}
@@ -187,6 +191,7 @@ export function MeterBar({
   /** Explicit 0..1 fill; defaults to value/limit arithmetic. */
   fraction?: number | null;
 }) {
+  const t = useI18n((s) => s.t);
   const hasValue = typeof value === "number" && Number.isFinite(value);
   const hasLimit = typeof limit === "number" && Number.isFinite(limit) && (limit as number) > 0;
   const frac = fraction ?? (hasValue && hasLimit ? (value as number) / (limit as number) : null);
@@ -197,14 +202,14 @@ export function MeterBar({
         <span className="l4-meter__lab" title={label}>
           {label}
         </span>
-        <span className="l4-meter__track" role="img" aria-label={`${label}: ${hasValue ? `${value}${unit}` : "unknown"}`}>
+        <span className="l4-meter__track" role="img" aria-label={`${label}: ${hasValue ? `${value}${unit}` : t("ux.meter.unknown", "UNKNOWN")}`}>
           <i
             className={`l4-meter__fill ${widthPct === null ? "unknown" : tone}`}
             style={{ inlineSize: widthPct === null ? "100%" : `${widthPct}%` }}
           />
         </span>
         <span className="l4-meter__val">
-          {hasValue ? `${formatNumber(value, digits)}${unit}` : "UNKNOWN"}
+          {hasValue ? `${formatNumber(value, digits)}${unit}` : t("ux.meter.unknown", "UNKNOWN")}
           {hasLimit ? <span className="faint"> / {formatNumber(limit, digits)}{unit}</span> : null}
         </span>
       </div>
@@ -212,9 +217,9 @@ export function MeterBar({
         {caption ??
           (widthPct === null
             ? hasValue
-              ? "no backend limit in payload — bar is indeterminate, never shown as satisfied"
-              : "no backend value — nothing measured"
-            : `${Math.round(frac! * 100)}% of the backend limit (arithmetic on two backend values)`)}
+              ? t("ux.meter.no_limit", "no backend limit in payload — bar is indeterminate, never shown as satisfied")
+              : t("ux.meter.no_value", "no backend value — nothing measured")
+            : t("ux.meter.of_limit", "{pct}% of the backend limit (arithmetic on two backend values)", { pct: String(Math.round(frac! * 100)) }))}
       </span>
     </div>
   );
@@ -235,6 +240,7 @@ export function Drawer({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const t = useI18n((s) => s.t);
   // Esc closes (same rule as ConfirmModal).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -250,7 +256,7 @@ export function Drawer({
       <aside className="l4-drawer" role="dialog" aria-modal="true" aria-label={title}>
         <div className="l4-drawer__head">
           <span>{title}</span>
-          <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={onClose} aria-label="Close panel">
+          <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={onClose} aria-label={t("ux.drawer.close_aria", "Close panel")}>
             esc ✕
           </button>
         </div>

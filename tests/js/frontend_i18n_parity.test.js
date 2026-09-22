@@ -155,7 +155,8 @@ const missing = [];
 for (const [key] of used) {
   for (const lang of LANGS) {
     const inDict = Object.prototype.hasOwnProperty.call(dicts[lang], key);
-    const inMsg = messages.has(key) && typeof messages[key][lang] === "string";
+    const entryForLang = messages.get(key);
+    const inMsg = entryForLang && typeof entryForLang[lang] === "string";
     if (!inDict && !inMsg) missing.push(`${key} [${lang}]`);
   }
 }
