@@ -827,8 +827,26 @@ class DirectMT5Adapter(IMT5Port):
         # serves broker-native bars on any MT5 timeframe; unknown names fall
         # back to M1 only when the module lacks the constant entirely.
         tf_names = (
-            "M1", "M2", "M3", "M4", "M5", "M6", "M10", "M12", "M15", "M20",
-            "M30", "H1", "H2", "H3", "H4", "H6", "H8", "H12", "D1", "W1",
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M6",
+            "M10",
+            "M12",
+            "M15",
+            "M20",
+            "M30",
+            "H1",
+            "H2",
+            "H3",
+            "H4",
+            "H6",
+            "H8",
+            "H12",
+            "D1",
+            "W1",
             "MN1",
         )
         tf_map = {

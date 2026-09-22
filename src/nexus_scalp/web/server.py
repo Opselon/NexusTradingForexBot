@@ -15,7 +15,7 @@ import threading
 import time
 from collections import deque
 from datetime import UTC, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -1993,7 +1993,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # 422 at the boundary - never a silent M1 fallback (a mislabeled bar is
     # a lie to the operator). M3/M10/W1/MN1 extended 2026-09-23 for the
     # /alt chart timeframe switcher.
-    class ChartTimeframe(str, Enum):
+    class ChartTimeframe(StrEnum):
         M1 = "M1"
         M2 = "M2"
         M3 = "M3"

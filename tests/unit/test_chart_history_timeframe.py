@@ -142,7 +142,9 @@ def _client(monkeypatch, adapter: TfChartAdapter | None = None) -> TestClient:
 
 
 def test_default_timeframe_is_engine_timeframe(monkeypatch):
-    client = _client(monkeypatch, )
+    client = _client(
+        monkeypatch,
+    )
     body = client.get("/api/chart/history?count=10").json()
     assert body["timeframe"] == "M1"
     assert client.app.state.engine.adapter.calls[-1] == "M1"
@@ -150,7 +152,9 @@ def test_default_timeframe_is_engine_timeframe(monkeypatch):
 
 
 def test_foreign_timeframe_passed_through_and_echoed(monkeypatch):
-    client = _client(monkeypatch, )
+    client = _client(
+        monkeypatch,
+    )
     body = client.get("/api/chart/history?count=10&timeframe=H4").json()
     assert body["timeframe"] == "H4"
     assert client.app.state.engine.adapter.calls[-1] == "H4"
@@ -161,7 +165,9 @@ def test_foreign_timeframe_passed_through_and_echoed(monkeypatch):
 
 
 def test_common_switcher_timeframes_all_accepted(monkeypatch):
-    client = _client(monkeypatch, )
+    client = _client(
+        monkeypatch,
+    )
     for tf in ("M3", "M5", "M10", "M15", "M30", "H1", "H4", "D1", "W1"):
         r = client.get(f"/api/chart/history?count=5&timeframe={tf}")
         assert r.status_code == 200, tf
@@ -174,7 +180,9 @@ def test_common_switcher_timeframes_all_accepted(monkeypatch):
 
 
 def test_invalid_timeframe_is_rejected_not_silently_downgraded(monkeypatch):
-    client = _client(monkeypatch, )
+    client = _client(
+        monkeypatch,
+    )
     r = client.get("/api/chart/history?timeframe=BOGUS")
     assert r.status_code == 422
     # No silent M1 request was fired for the invalid value.
@@ -187,7 +195,9 @@ def test_invalid_timeframe_is_rejected_not_silently_downgraded(monkeypatch):
 
 
 def test_foreign_timeframe_never_reseeds_engine_aggregator(monkeypatch):
-    client = _client(monkeypatch, )
+    client = _client(
+        monkeypatch,
+    )
     engine = client.app.state.engine
     assert len(engine.aggregator.get_completed_bars()) == 50  # stale pre-downtime
 
@@ -218,7 +228,9 @@ def test_foreign_timeframe_broker_failure_never_falls_back_to_engine_state(monke
 
 
 def test_engine_timeframe_fetch_still_reseeds_aggregator(monkeypatch):
-    client = _client(monkeypatch, )
+    client = _client(
+        monkeypatch,
+    )
     engine = client.app.state.engine
     assert len(engine.aggregator.get_completed_bars()) == 50
 
