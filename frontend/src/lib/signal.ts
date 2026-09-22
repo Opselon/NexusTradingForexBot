@@ -52,10 +52,12 @@ export const REASONS: Record<string, { key?: string; simple: string; detail: str
     detail: "The candidate was filtered by the confidence gate before reaching execution.",
   },
   NO_CANDIDATE: {
+    key: "ux.reason.NO_CANDIDATE",
     simple: "No qualifying trade setup at this moment.",
     detail: "No setup passed the candidate filters.",
   },
   HIGH_IMPACT_NEWS: {
+    key: "ux.reason.HIGH_IMPACT_NEWS",
     simple: "High-impact news window — trading paused for safety.",
     detail: "News risk governor blocked the decision during a high-impact release.",
   },
@@ -89,7 +91,7 @@ export function explainSignal(payload: ExplainInput | undefined, t: Translator):
   const known = REASONS[reason] ?? null;
   if (known) {
     out.human = known.key ? t(known.key, known.simple) : known.simple;
-    out.detail = known.detail;
+    out.detail = known.key ? t(`${known.key}.detail`, known.detail) : known.detail;
   } else if (reason) {
     out.human = null; // unknown code: show it verbatim in the detail layer, invent nothing
     out.detail = reason;
