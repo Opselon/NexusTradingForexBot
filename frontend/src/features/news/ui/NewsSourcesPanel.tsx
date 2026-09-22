@@ -101,7 +101,7 @@ export function NewsSourcesPanel() {
             {h?.db && (
               <div>
                 <div className="section-title">news.db summary (backend)</div>
-                <pre className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, margin: 0, overflowX: "auto" }}>
+                <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, margin: 0, overflowX: "auto" }}>
                   {JSON.stringify(h.db, null, 2)}
                 </pre>
               </div>
@@ -137,7 +137,7 @@ export function NewsSourcesPanel() {
             {gate && (
               <div>
                 <div className="section-title">Calendar event gate</div>
-                <pre className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, margin: 0, overflowX: "auto" }}>
+                <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, margin: 0, overflowX: "auto" }}>
                   {JSON.stringify(gate, null, 2)}
                 </pre>
               </div>
