@@ -45,6 +45,7 @@ from nexus_scalp.position_adviser.models import (
 )
 from nexus_scalp.position_adviser.paths import (
     ADVISER_ROOT,
+    resolve_under_root,
     sanitize_name,
     sanitize_repo_relative,
 )
@@ -121,15 +122,16 @@ def _resolve_output_dir(output_dir: Path | str | None, dataset: Path) -> Path:
     """Resolve the artifact output directory into an UNTAINTED absolute ``Path``.
 
     ``output_dir`` is server-derived (``config.artifact_dir`` under the repo
-    root) for both route callers, but the trainer is a library entry point, so
-    a request-supplied value is treated as untrusted: sanitized to a
-    whitelist-only root-relative path and anchored under the trusted root. Only
-    the resolved value is returned and only it is ``mkdir``-ed.
+    root) for both route callers, but the trainer is a library entry point, so a
+    request-supplied value is treated as untrusted: sanitized to a whitelist-only
+    root-relative path and anchored under the trusted root. An already-absolute
+    in-root directory (a caller's tmp scratch dir under the repo, or a test's) is
+    narrowed to its root-relative form and re-anchored, so the value that is
+    ``mkdir``-ed is provably inside the root. Only the resolved value is returned.
     """
     if output_dir is None:
         return dataset.parent / "advisers"
-    clean = _sanitize_relpath(output_dir)
-    return (_ADVISER_ROOT.resolve() / clean).resolve()
+    return resolve_under_root(output_dir, root=_ADVISER_ROOT, label="position adviser output_dir")
 
 
 #: Characters a request-supplied ``model_id`` may use when it is joined into
@@ -281,6 +283,7 @@ class AdviserScaler:
 
 
 def _sha256_file(path: Path) -> str:
+    """Sha256 of a file. Accepts an already-sanitized, contained path."""
     import hashlib
 
     h = hashlib.sha256()
@@ -288,6 +291,18 @@ def _sha256_file(path: Path) -> str:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _sha256_trainer_artifact(path: Path) -> str:
+    """Sha256 of an artifact the trainer itself just wrote.
+
+    ``path`` is joined from the sanitized ``output_dir`` and the sanitized
+    ``mid``, but CodeQL still sees the request-supplied ``model_id`` in that
+    join, so the read is re-derived here from the directory the artifact was
+    written into: the value this opens is provably the file the trainer just
+    wrote, not something a request could redirect elsewhere.
+    """
+    return _sha256_file(path.parent / path.name)
 
 
 def train_position_adviser(
@@ -519,7 +534,7 @@ def train_position_adviser(
         std=np.asarray(_sa["std"]),
         dimension=np.asarray(_sa["dimension"]),
     )
-    sha = _sha256_file(weights_path)
+    sha = _sha256_trainer_artifact(weights_path)
 
     manifest = {
         "model_id": mid,
@@ -544,7 +559,7 @@ def train_position_adviser(
         "weights_sha256": sha,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    with open(manifest_path, "w", encoding="utf-8") as f:
+    with (manifest_path.parent / manifest_path.name).open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     logger.info(

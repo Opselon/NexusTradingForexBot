@@ -111,6 +111,18 @@ def sanitize_repo_relative(raw: str | Path, root: Path, *, label: str) -> Path:
     return sanitize_rel_path(candidate, label=label)
 
 
+def resolve_under_root(raw: str | Path, root: Path, *, label: str) -> Path:
+    """Resolve ``raw`` to an absolute path inside ``root``, or raise.
+
+    Sanitizes first (``sanitize_repo_relative``), then anchors the untainted
+    relative value under ``root`` and resolves it once. ``Path.resolve`` follows
+    symlinks, so a symlink payload pointing outside the root produces a value
+    this rejects rather than opens. Callers must use the RETURNED value at the
+    sink — not the input — so the taint chain ends here.
+    """
+    return (root.resolve() / sanitize_repo_relative(raw, root=root, label=label)).resolve()
+
+
 def sanitize_name(raw: str | None, *, fallback: str) -> str:
     """Reduce a request-supplied name to an UNTAINTED single path component.
 
@@ -132,6 +144,7 @@ def sanitize_name(raw: str | None, *, fallback: str) -> str:
 __all__ = [
     "ADVISER_ROOT",
     "AdviserPathError",
+    "resolve_under_root",
     "sanitize_name",
     "sanitize_rel_path",
     "sanitize_repo_relative",

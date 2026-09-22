@@ -49,7 +49,7 @@ from nexus_scalp.position_adviser.models import (
 )
 from nexus_scalp.position_adviser.paths import (
     AdviserPathError,
-    sanitize_repo_relative,
+    resolve_under_root,
 )
 from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserNet
 
@@ -268,17 +268,16 @@ class PositionAdviserService:
         # request, so only that untainted value reaches
         # ``is_file``/``torch.load``/``np.load``.
         try:
-            clean_w = sanitize_repo_relative(
-                weights_path, root=_ADVISER_ROOT, label="adviser weights"
-            )
-            clean_s = sanitize_repo_relative(
-                scaler_path, root=_ADVISER_ROOT, label="adviser scaler"
-            )
+            clean_w = resolve_under_root(weights_path, root=_ADVISER_ROOT, label="adviser weights")
+            clean_s = resolve_under_root(scaler_path, root=_ADVISER_ROOT, label="adviser scaler")
         except AdviserPathError as exc:
-            logger.warning("[ADVISER] event=LOAD_REJECTED reason=unsafe_path")
-            return {"status": "REJECTED", "reason": f"path rejected: {exc}"}
-        wp = _ADVISER_ROOT.resolve() / clean_w
-        sp = _ADVISER_ROOT.resolve() / clean_s
+            # The real cause stays in the server log; the reason returned to the
+            # caller is a constant so no request-derived text can be echoed
+            # back (CodeQL: stack trace / information exposure).
+            logger.warning("[ADVISER] event=LOAD_REJECTED reason=unsafe_path err=%s", exc)
+            return {"status": "REJECTED", "reason": "path rejected: unsafe characters"}
+        wp = clean_w
+        sp = clean_s
         # Containment barrier (BUG-270 convention), defense-in-depth on top of
         # the sanitizer: the resolved path must land inside the repo root, and
         # ``Path.resolve()`` follows symlinks, so a symlink payload pointing
