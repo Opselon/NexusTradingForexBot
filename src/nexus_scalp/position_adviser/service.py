@@ -47,6 +47,10 @@ from nexus_scalp.position_adviser.models import (
     AdviserActivation,
     PositionAdvisory,
 )
+from nexus_scalp.position_adviser.paths import (
+    AdviserPathError,
+    sanitize_repo_relative,
+)
 from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserNet
 
 logger = get_logger("nexus_scalp.position_adviser.service")
@@ -257,23 +261,31 @@ class PositionAdviserService:
         model_id: str | None = None,
     ) -> dict[str, Any]:
         """Load an adviser checkpoint + scaler sidecar into memory, atomically."""
-        # CONTAINMENT BARRIER (BUG-270 convention): the request-supplied path is
-        # resolved and must land inside the repo root BEFORE any sink
-        # (is_file / torch.load / np.load) sees it. A rejected path is logged
+        # SANITIZER BARRIER (CodeQL py/path-injection): the request-supplied path
+        # is reduced to a whitelist-only root-relative Path and anchored under
+        # the trusted root BEFORE any Path expression a sink consumes. The
+        # sanitizer returns a value whose provenance is the whitelist, not the
+        # request, so only that untainted value reaches
+        # ``is_file``/``torch.load``/``np.load``.
+        try:
+            clean_w = sanitize_repo_relative(
+                weights_path, root=_ADVISER_ROOT, label="adviser weights"
+            )
+            clean_s = sanitize_repo_relative(
+                scaler_path, root=_ADVISER_ROOT, label="adviser scaler"
+            )
+        except AdviserPathError as exc:
+            logger.warning("[ADVISER] event=LOAD_REJECTED reason=unsafe_path")
+            return {"status": "REJECTED", "reason": f"path rejected: {exc}"}
+        wp = _ADVISER_ROOT.resolve() / clean_w
+        sp = _ADVISER_ROOT.resolve() / clean_s
+        # Containment barrier (BUG-270 convention), defense-in-depth on top of
+        # the sanitizer: the resolved path must land inside the repo root, and
+        # ``Path.resolve()`` follows symlinks, so a symlink payload pointing
+        # outside the root is rejected here. A rejected path is logged
         # server-side and returned as a generic status — never echoed back.
-        wp = Path(weights_path)
-        sp = Path(scaler_path)
-        # Normalise both: resolve handles the "relative to CWD" case AND makes
-        # an already-absolute path canonical (removes any '..' segments). The
-        # previous `elif` skipped absolute-but-unresolved inputs.
-        if not wp.is_absolute():
-            wp = Path.cwd() / wp
-        if not sp.is_absolute():
-            sp = Path.cwd() / sp
-        # Trusted-path sanitiser: from here on ``wp``/``sp`` are the SAME
-        # resolved, repo-contained objects that every sink below consumes, so
-        # no request-supplied component can reach ``is_file``/``torch.load``/
-        # ``np.load`` (CodeQL py/path-injection + py/unsafe-deserialization).
+        # Trusted-path handoff: from here on ``wp``/``sp`` are the contained,
+        # resolved objects that every sink below consumes.
         wp_c = _contained_artifact_path(wp)
         sp_c = _contained_artifact_path(sp)
         if wp_c is None or sp_c is None:

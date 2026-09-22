@@ -242,3 +242,229 @@ class TestSafeModelId:
         from nexus_scalp.position_adviser.trainer import _SAFE_MODEL_ID
 
         assert _SAFE_MODEL_ID.fullmatch(good) is not None
+
+
+class TestSanitizers:
+    """The positive sanitizers that break the CodeQL taint chain.
+
+    A request-supplied string is reduced to a whitelist-only value into a NEW
+    object, and only that object is used to build paths downstream. These pin
+    both halves of that contract: the reduction itself, and the fact that the
+    sanitized value cannot carry a path component.
+    """
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "../../etc/passwd",
+            "..",
+            "a/../../b",
+            "C:evil",
+            "sub\\..\\dir",
+            "",
+            "   ",
+            "a\x00b",
+            "a;b",
+            "a|b",
+            "a'b",
+            'a"b',
+            "$HOME/x",
+            "a\nb",
+        ],
+    )
+    def test_rel_path_refuses_adversarial_input(self, bad: str) -> None:
+        from nexus_scalp.position_adviser.paths import AdviserPathError, sanitize_rel_path
+
+        with pytest.raises(AdviserPathError) as exc_info:
+            sanitize_rel_path(bad, label="probe")
+        # The exception message must not echo the payload back at a client.
+        assert (bad.strip() or "x") not in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "good",
+        [
+            "artifacts/position_adviser/model.pt",
+            r"artifacts\position_adviser\model.pt",
+            "pos_adviser_1789000000.pt",
+            "data/positions/pos_ds_438479f6cdcd7668.parquet",
+        ],
+    )
+    def test_rel_path_accepts_legitimate_input(self, good: str) -> None:
+        from nexus_scalp.position_adviser.paths import sanitize_rel_path
+
+        out = sanitize_rel_path(good, label="probe")
+        # The sanitized value is relative: it cannot name a root of its own.
+        assert not out.is_absolute()
+        assert not out.is_absolute()
+        # No component can be a parent-directory reference.
+        assert ".." not in out.parts
+
+    def test_rel_path_normalizes_redundant_separators(self) -> None:
+        from nexus_scalp.position_adviser.paths import sanitize_rel_path
+
+        out = sanitize_rel_path("artifacts//position_adviser", label="probe")
+        assert out == Path("artifacts/position_adviser")
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "../../etc/passwd",
+            "..",
+            "...",
+            ".",
+            "a/../../b",
+            "/etc/passwd",
+            "C:evil",
+            "",
+            "   ",
+        ],
+    )
+    def test_repo_relative_refuses_traversal(self, bad: str, repo_root: Path) -> None:
+        from nexus_scalp.position_adviser.paths import (
+            AdviserPathError,
+            sanitize_repo_relative,
+        )
+
+        with pytest.raises(AdviserPathError):
+            sanitize_repo_relative(bad, root=repo_root, label="probe")
+
+    @pytest.mark.parametrize("bad", ["/etc/passwd", "/artifacts/position_adviser"])
+    def test_root_anchored_path_is_refused(self, bad: str, repo_root: Path) -> None:
+        from nexus_scalp.position_adviser.paths import (
+            AdviserPathError,
+            sanitize_repo_relative,
+        )
+
+        # A leading separator is refused on every platform: on POSIX it escapes
+        # the root, and on Windows "/etc/passwd" is relative (no drive) yet
+        # unanchored. Callers pass repo-relative names, never root-anchored ones.
+        with pytest.raises(AdviserPathError):
+            sanitize_repo_relative(bad, root=repo_root, label="probe")
+
+    def test_repo_relative_narrows_an_absolute_in_repo_path(
+        self, repo_root: Path, in_repo_artifact: Path
+    ) -> None:
+        from nexus_scalp.position_adviser.paths import sanitize_repo_relative
+
+        out = sanitize_repo_relative(in_repo_artifact, root=repo_root, label="probe")
+        assert out == in_repo_artifact.relative_to(repo_root)
+        assert not out.is_absolute()
+
+    def test_repo_relative_rejects_an_absolute_outside_path(
+        self, tmp_path: Path, repo_root: Path
+    ) -> None:
+        from nexus_scalp.position_adviser.paths import (
+            AdviserPathError,
+            sanitize_repo_relative,
+        )
+
+        with pytest.raises(AdviserPathError):
+            sanitize_repo_relative(tmp_path / "foreign.pt", root=repo_root, label="probe")
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "../../etc/passwd",
+            "..",
+            "a/b",
+            "C:evil",
+            "",
+            "x" * 200,
+            "a;b",
+            "a b/root",
+        ],
+    )
+    def test_name_refuses_adversarial_input(self, bad: str) -> None:
+        from nexus_scalp.position_adviser.paths import sanitize_name
+
+        # A name substitutes a fallback rather than raising: it is cosmetic.
+        assert sanitize_name(bad, fallback="fallback") == "fallback"
+
+    @pytest.mark.parametrize(
+        "good",
+        [
+            "pos_adviser_1789000000",
+            "pos_adviser_tune_123_42_9999",
+            "adviser_v2",
+        ],
+    )
+    def test_name_accepts_legitimate_input(self, good: str) -> None:
+        from nexus_scalp.position_adviser.paths import sanitize_name
+
+        assert sanitize_name(good, fallback="fallback") == good
+
+
+class TestTrainerWritesOnlySanitizedPaths:
+    """An end-to-end run of the trainer must keep every write inside the root.
+
+    Exercises the real sink CodeQL flags (``mkdir`` + ``torch.save``) with a
+    ``model_id`` and an ``output_dir`` that would both escape if the sanitizer
+    were removed.
+    """
+
+    @pytest.fixture()
+    def small_dataset(self, repo_root: Path) -> Path:
+        """A real generator-produced position dataset, copied under the repo.
+
+        The trainer requires >= 20 OOS rows and >= 50 trainable rows, so the
+        small 216-row dataset is used (train 130 / val 26 / oos 26).
+        """
+        src = Path(__file__).resolve().parents[3] / (
+            "artifacts/datasets/pos_ds_711e478443e88642.parquet"
+        )
+        if not src.is_file():
+            pytest.skip(f"position dataset fixture absent: {src.name}")
+        dst = repo_root / "artifacts" / "position_adviser_tests" / src.name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+        yield dst
+        if dst.is_file():
+            dst.unlink()
+
+    def test_adversarial_model_id_cannot_escape_output_dir(
+        self, small_dataset: Path, repo_root: Path
+    ) -> None:
+        from nexus_scalp.position_adviser.trainer import train_position_adviser
+
+        out_dir = repo_root / "artifacts" / "position_adviser_tests"
+        before = {p.name for p in out_dir.glob("*")} if out_dir.is_dir() else set()
+
+        res = train_position_adviser(
+            small_dataset,
+            output_dir=out_dir,
+            epochs=1,
+            batch_size=32,
+            model_id="../../pwned",
+        )
+
+        try:
+            # The adversarial id was replaced, and the artifacts landed inside
+            # the output directory — nothing was written outside it.
+            assert res.model_id != "../../pwned"
+            assert ".." not in Path(res.model_id).parts
+            wp = out_dir / f"{res.model_id}.pt"
+            assert wp.is_file()
+            # Nothing escaped to the parent of the artifact tests dir.
+            escaped = (out_dir.parent).glob("pwned*")
+            assert list(escaped) == []
+            after = {p.name for p in out_dir.glob("*")}
+            new = after - before
+            # Every new file lives under the sanitized model id.
+            assert new, "no artifacts were written"
+            for name in new:
+                assert name.startswith(res.model_id), name
+        finally:
+            for p in out_dir.glob(f"{res.model_id}.*"):
+                p.unlink(missing_ok=True)
+
+    def test_adversarial_output_dir_is_refused(self, small_dataset: Path) -> None:
+        from nexus_scalp.position_adviser.paths import AdviserPathError
+        from nexus_scalp.position_adviser.trainer import train_position_adviser
+
+        with pytest.raises(AdviserPathError):
+            train_position_adviser(
+                small_dataset,
+                output_dir="../../evil_out",
+                epochs=1,
+                batch_size=32,
+            )

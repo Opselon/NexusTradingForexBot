@@ -31,6 +31,10 @@ from nexus_scalp.position_adviser.models import (
     ADVISER_ACTIONS,
     ActivationCheckResult,
 )
+from nexus_scalp.position_adviser.paths import (
+    AdviserPathError,
+    sanitize_repo_relative,
+)
 from nexus_scalp.position_adviser.service import PositionAdviserService
 from nexus_scalp.position_adviser.trainer import (
     OOS_SPLITS,
@@ -72,19 +76,40 @@ def _repo_root() -> Path:
     return _ms_root()
 
 
+def _sanitize_path_parts(raw: str | Path) -> Path:
+    """Reduce a request-supplied path to an UNTAINTED root-relative ``Path``.
+
+    SANITIZER BARRIER (CodeQL ``py/path-injection``): the request body supplies
+    the string, so the checker tracks it into every ``Path`` built from it. The
+    containment checks answer "is the result inside the root?"; this answers the
+    different question the sink asks first: "can the string carry a path
+    *component* at all?" Every component is whitelisted (no ``..``, no drive
+    letters, no NUL, no alternates), so the returned object can only name
+    something inside the root it is anchored to. An absolute path is narrowed to
+    its root-relative form first.
+
+    Raises 400 (never echoes the payload) when nothing safe survives.
+    """
+    try:
+        return sanitize_repo_relative(raw, root=_repo_root(), label="adviser artifact path")
+    except AdviserPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _safe_under_repo(p: Path) -> Path:
     """Constrain adviser artifact paths to the repo root (no traversal).
 
-    Mirrors ``service._contained_artifact_path``: resolve ONCE into a local,
-    check THAT local, return THAT local. Returning the unresolved input would
-    be a TOCTOU — the object handed to ``is_file``/``torch.load`` would not be
-    the object that was validated (CodeQL: uncontrolled data in path
-    expression). Resolving also rejects a symlink payload that points outside
-    the root, because ``Path.resolve()`` follows the link.
+    SANITIZER FIRST, CONTAINMENT SECOND. ``p`` is built from request input, so
+    it is reduced to a whitelist-only root-relative ``Path``
+    (``_sanitize_path_parts``) and re-anchored under the root; only that
+    untainted value is resolved and returned. Resolving ONCE into a local and
+    checking THAT local means the object handed to ``is_file``/``torch.load`` is
+    the object that was validated (no TOCTOU). ``Path.resolve()`` follows
+    symlinks, so a symlink payload pointing outside the root is rejected here.
     """
     root = _repo_root().resolve()
-    resolved = (p if p.is_absolute() else (_repo_root() / p)).resolve()
-    if root not in resolved.parents and resolved != root:
+    resolved = (root / _sanitize_path_parts(p)).resolve()
+    if resolved != root and root not in resolved.parents:
         raise HTTPException(
             status_code=400,
             detail="adviser artifact path must stay inside the repository root",
@@ -217,8 +242,8 @@ def route_train(req: AdviserTrainRequest) -> dict[str, Any]:
     root = _repo_root()
     ds = _safe_under_repo(Path(req.dataset_path))
     # Assert containment at the sink, not only inside the validator: this is
-    # the read of the request-supplied path, and the trainer gets a value that
-    # is provably inside the root.
+    # the read of the path, and the trainer gets a value that is provably
+    # inside the root.
     if not ds.is_relative_to(root.resolve()):
         logger.warning("[ADVISER] event=TRAIN_PATH_OUTSIDE_REPO path=%s", ds)
         raise HTTPException(
@@ -231,7 +256,7 @@ def route_train(req: AdviserTrainRequest) -> dict[str, Any]:
             status_code=400,
             detail="position dataset not found (see server logs)",
         )
-    out_dir = root / svc.config.artifact_dir
+    out_dir = root.resolve() / _sanitize_path_parts(svc.config.artifact_dir)
     try:
         res = train_position_adviser(
             ds,
@@ -446,7 +471,7 @@ def _majority_class_baseline(dataset_path: Path) -> float | None:
     """
     import polars as pl
 
-    abs_path = dataset_path if dataset_path.is_absolute() else (_repo_root() / dataset_path)
+    abs_path = _safe_under_repo(dataset_path)
     df = (
         pl.read_parquet(abs_path)
         if abs_path.suffix.lower() == ".parquet"
@@ -479,6 +504,9 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
 
     svc = get_position_adviser_service()
     root = _repo_root()
+    # A request-supplied dataset is reduced to a whitelist-only relative Path
+    # and anchored under the root BEFORE any Path expression the reads use
+    # (CodeQL py/path-injection: only the sanitized value reaches the reads).
     ds = _safe_under_repo(Path(req.dataset_path))
     # Sink-level containment assertion, as in route_train.
     if not ds.is_relative_to(root.resolve()):
@@ -493,7 +521,7 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
             status_code=400,
             detail="position dataset not found (see server logs)",
         )
-    out_dir = root / svc.config.artifact_dir
+    out_dir = root.resolve() / _sanitize_path_parts(svc.config.artifact_dir)
 
     # Build the bounded grid, then cap it deterministically (round-robin so a
     # truncated sweep still spreads across learning rates, not just seeds).
