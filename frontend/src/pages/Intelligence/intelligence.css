@@ -1,0 +1,300 @@
+/*
+ * PURPOSE   — UI/UX skin for the /alt/intelligence page (news, market
+ *             structure, regime, feed forensics). Presentation only: no data
+ *             derivation lives here, every value rendered under these classes
+ *             comes from the backend payloads the page already fetched.
+ * OWNER     — intelligence page lane (future edits: frontend/src/pages/Intelligence/).
+ * CONSUMES  — theme tokens from styles/theme.css only (no rogue hex colours),
+ *             plus the shared primitives (.metric, .panel, .badge, .state-block).
+ * PROVIDES  — namespaced `.ix-*` classes; nothing here can leak onto another
+ *             feature page, and every selector is additive (primitives keep
+ *             their own classes).
+ * INVARIANTS— logical properties only (RTL console mirrors correctly);
+ *             honest states (stale/unavailable banners) keep their copy;
+ *             reduced-motion users get no entry animation or hover lift.
+ * EXTEND    — add new `.ix-*` rules here; never restyle a shared primitive
+ *             globally from this file.
+ */
+
+.ix-page {
+  display: grid;
+  gap: var(--panel-gap);
+  animation: pageIn 0.18s ease-out;
+}
+
+/* ------------------------------ Hero ------------------------------ */
+.ix-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(460px 190px at 4% -40%, rgba(65, 166, 242, 0.16), transparent 70%),
+    radial-gradient(380px 170px at 96% -30%, rgba(157, 123, 240, 0.13), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+.ix-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.55), rgba(157, 123, 240, 0.45), transparent);
+}
+.ix-hero-main {
+  min-width: 0;
+}
+.ix-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.ix-kicker .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.85);
+}
+.ix-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 8px 0 5px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.ix-title .glyph {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.1);
+  border: 1px solid rgba(65, 166, 242, 0.45);
+  border-radius: 9px;
+  padding: 4px 9px;
+  box-shadow: 0 0 14px rgba(65, 166, 242, 0.18);
+}
+.ix-title .word {
+  color: var(--text);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .ix-title .word {
+    background: linear-gradient(115deg, var(--text) 35%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.ix-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  max-width: 82ch;
+}
+
+/* Endpoint provenance chips — where each figure below comes from. */
+.ix-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 11px;
+}
+.ix-ep {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.ix-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Live news-state pill (backend state word + freshness, never inferred). */
+.ix-livechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  padding: 5px 11px;
+}
+.ix-livechip .d {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.ix-livechip .fresh {
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.ix-livechip.good {
+  border-color: rgba(62, 207, 142, 0.4);
+  background: rgba(62, 207, 142, 0.08);
+  color: var(--green);
+}
+.ix-livechip.warn {
+  border-color: rgba(235, 161, 63, 0.45);
+  background: rgba(235, 161, 63, 0.08);
+  color: var(--amber);
+}
+.ix-livechip.bad {
+  border-color: rgba(242, 86, 77, 0.45);
+  background: rgba(242, 86, 77, 0.08);
+  color: #ff8f89;
+}
+.ix-livechip.dim {
+  color: var(--text-dim);
+}
+
+/* ------------------------------ Section labels ------------------------------ */
+.ix-sec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-start: 6px;
+}
+.ix-sec > span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.ix-sec > i {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+
+/* ------------------------------ Honest-state banner ------------------------------ */
+.ix-stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--amber);
+  background: rgba(235, 161, 63, 0.08);
+  border: 1px solid rgba(235, 161, 63, 0.4);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+/* ------------------------------ KPI strip ------------------------------ */
+.ix-kpis .metric {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.ix-kpis .metric:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+  transform: translateY(-1px);
+}
+
+/* Panels on this page: quiet lift on hover, scoped so no other page moves. */
+.ix-page .panel {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ix-page .panel:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+}
+
+/* ------------------------------ Page-local bits ------------------------------ */
+/* Scroll cap for the liquidity feature grid (page override of l4-features). */
+.ix-feats {
+  max-block-size: 160px;
+}
+
+/* Read-only / provenance notes get a softer, inset treatment. */
+.ix-readnote {
+  margin-block-start: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  padding: 6px 9px;
+  line-height: 1.5;
+}
+
+/* Article-title cell: truncate instead of wrapping the row (was inline style). */
+.ix-title-cell {
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Section gap helper replacing the old inline marginTop values. */
+.ix-gap {
+  margin-block-start: 10px;
+}
+
+/* "market context" heading spans the full kv grid (was inline gridColumn). */
+.ix-ctx-head {
+  grid-column: 1 / -1;
+}
+
+/* Skeleton padding inside the tight (table) panels. */
+.ix-skel {
+  padding: 12px;
+}
+
+/* Subtitle inside a panel header renders the source endpoint in mono. */
+.ix-page .panel-subtitle .inline-mono {
+  font-size: 10.5px;
+}
+
+/* ------------------------------ Responsive / motion ------------------------------ */
+@media (max-width: 900px) {
+  .ix-hero-side {
+    align-items: flex-start;
+  }
+  .ix-title {
+    font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ix-page {
+    animation: none;
+  }
+  .ix-kpis .metric,
+  .ix-page .panel {
+    transition: none;
+  }
+  .ix-kpis .metric:hover {
+    transform: none;
+  }
+}
