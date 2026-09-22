@@ -102,6 +102,102 @@ def _bar_ticks(pending: list[dict[str, Any]], bars: list[Any]) -> list[Any]:
 _HORIZON_MINUTES: int = 120
 
 
+def _probs_flat(tensor: Any) -> list[float]:
+    """Flattens the live probability tensor to a 1-D float list.
+
+    ``_last_probs`` is a (1, C) batch tensor straight out of ``masked_softmax``;
+    ``.tolist()`` therefore yields ``[[p0, p1, p2]]`` and ``float(v)`` over
+    that raises ``float() argument must be a string or a real number, not
+    'list'``. SHADOW-PIPELINE (2026-09-22): this path never executed before
+    because no challenger could attach -- the bundle-resolution fix exposed
+    it -- and the exception aborted every shadow decision AND every 70D
+    observation. Accepts the batch and the 1-D shape.
+    """
+    if tensor is None:
+        return []
+    try:
+        values: Any = tensor.tolist()
+    except AttributeError:
+        values = tensor
+    if isinstance(values, list) and len(values) == 1 and isinstance(values[0], list):
+        values = values[0]
+    if not isinstance(values, list):
+        return []
+    out: list[float] = []
+    for v in values:
+        try:
+            out.append(float(v))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _build_shadow_input(
+    om: Any,
+    fv: Any,
+    live_dim: int,
+) -> tuple[list[float], str]:
+    """Assembles the feature vector the challenger must infer on.
+
+    SHADOW-PIPELINE (2026-09-22): the same-input contract (spec 3) requires
+    the challenger to see the SAME vector the champion consumed. The champion
+    serving under a 70D contract consumes the canonical 70D vector (BASE
+    0..49 | FAMILY 50..59 | LIQUIDITY 60..69) assembled by the inference
+    path; ``fv.to_tensor_input()`` returns only the 50D BASE block. Passing
+    the base block to a 70D challenger failed every comparison with
+    "Shadow input dimension 50 != live schema 70D" — a recording that is
+    honest but useless, as the shadow never got to infer.
+
+    Width is asserted, never padded or truncated (INV-009): an assembly
+    failure degrades to the base block and the mismatch is recorded in the
+    decision's invalid_reason rather than silently zero-filled. Returns
+    (vector, assembly_state) where the state is "CANONICAL_70D", "BASE_50D"
+    or "EMPTY".
+    """
+    base = [0.0] * 50
+    if fv is not None and hasattr(fv, "to_tensor_input"):
+        try:
+            v = list(fv.to_tensor_input())
+            if v and len(v) == 50:
+                base = v
+        except Exception:
+            pass
+    if live_dim != 70:
+        return (base, "BASE_50D" if base != [0.0] * 50 else "EMPTY")
+
+    try:
+        from nexus_scalp.features.liquidity_runtime import build_70d_vector
+        from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
+    except Exception:
+        return (base, "BASE_50D")
+
+    news10: list[float] = [0.0] * 10
+    if getattr(om, "_news_enabled", False) and getattr(om, "news_engine", None) is not None:
+        try:
+            news_ctx = om.news_engine.current_context()
+        except Exception:
+            news_ctx = None
+        if news_ctx is not None:
+            try:
+                from nexus_scalp.governance.alignment import vectorize_news_context
+                from nexus_scalp.shadow.shadow70.news_provider import build_news_10
+
+                news10, _ = build_news_10(vectorize_news_context(news_ctx))
+            except Exception:
+                news10 = [0.0] * 10
+
+    liq10: list[float] = [0.0] * 10
+    try:
+        liq10, _ = build_liquidity_10(om, None)
+    except Exception:
+        liq10 = [0.0] * 10
+
+    try:
+        return (list(build_70d_vector(base, family_10=news10, liquidity_10=liq10)), "CANONICAL_70D")
+    except Exception:
+        return (base, "BASE_50D")
+
+
 class ShadowRecorder:
     """Shadow decision + 70D observation recorder (composition: engine)."""
 
@@ -132,7 +228,19 @@ class ShadowRecorder:
             # (which lag at scalp_v1/50D while a 70D bundle serves).
             live_schema_id = str(self.om.effective_feature_schema_id)
             live_dim = int(self.om.effective_feature_dim)
-            x50 = fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else [0.0] * live_dim
+            # SHADOW-PIPELINE (2026-09-22): the challenger must infer on the
+            # SAME vector the champion consumed. Under a 70D serving contract
+            # that is the canonical 70D vector, not fv.to_tensor_input()'s
+            # 50D base block; the engine refused it with
+            # "Shadow input dimension 50 != live schema 70D".
+            x50, assembly_state = _build_shadow_input(self.om, fv, live_dim)
+            if assembly_state != "CANONICAL_70D" and live_dim == 70:
+                logger.warning(
+                    "[SHADOW] event=INPUT_DEGRADED reason=70D_ASSEMBLY_FAILED "
+                    "state=%s (the decision records the base block and is "
+                    "marked invalid rather than zero-filled)",
+                    assembly_state,
+                )
             # CHG-0046 D5: deterministic full-vector fingerprint (the salted
             # 5-element python hash() was irreproducible across processes and
             # insensitive to 90% of the vector — same-input proof impossible).
@@ -151,10 +259,7 @@ class ShadowRecorder:
             champion_action = (
                 proposal.action.value if hasattr(proposal.action, "value") else str(proposal.action)
             )
-            champ_probs = [
-                float(v)
-                for v in (self.om._last_probs.tolist() if self.om._last_probs is not None else [])
-            ]
+            champ_probs = _probs_flat(self.om._last_probs)
             champ_ref_dict: dict[str, Any] = {
                 "model_id": self.om.champion_manager.model_id,
                 "model_version": self.om.champion_manager.model_version,
@@ -497,10 +602,7 @@ class ShadowRecorder:
             champion_action = (
                 proposal.action.value if hasattr(proposal.action, "value") else str(proposal.action)
             )
-            champ_probs = [
-                float(v)
-                for v in (self.om._last_probs.tolist() if self.om._last_probs is not None else [])
-            ]
+            champ_probs = _probs_flat(self.om._last_probs)
             obs = rt70.observe(
                 vector70=vector70,
                 champion_action=champion_action,

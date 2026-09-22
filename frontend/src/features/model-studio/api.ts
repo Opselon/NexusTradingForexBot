@@ -35,6 +35,7 @@ import type {
   StressTestResponse,
   VerifyModelRequest,
   VerifyModelResponse,
+  ArtifactLocationsResponse,
 } from "./model";
 import { compareDatasetsByGranularity } from "./model";
 
@@ -126,4 +127,8 @@ export const modelStudioApi = {
   /** POST /api/model-studio/models/fine-tune — fine-tune model on dataset with frozen backbone. */
   fineTune: (req: FineTuneModelRequest): Promise<FineTuneModelResponse> =>
     send<FineTuneModelResponse>(`${BASE}/models/fine-tune`, req),
+
+  /** GET /api/model-studio/artifact-locations — server-derived on-disk roots. */
+  artifactLocations: (signal?: AbortSignal): Promise<ArtifactLocationsResponse> =>
+    getLegacy<ArtifactLocationsResponse>(`${BASE}/artifact-locations`, signal),
 };

@@ -2593,7 +2593,23 @@ class SignalPolicy:
     # class probability normalized over BUY+SELL+NO_TRADE. O(1), no I/O.
     # ------------------------------------------------------------------
     def _directional_confidence(self, probs: list[float]) -> tuple[float, str]:
-        """Return (confidence, source) under trained-class semantics."""
+        """Return (confidence, source) under trained-class semantics.
+
+        BUG-312 (2026-09-22, live forensics): the returned value is a RATIO over
+        the three trained classes, NOT a raw probability. With a near-uniform
+        head (live evidence: prob_buy mean 0.391 std 0.040, prob_sell mean
+        0.358, prob_no_trade mean 0.251) that ratio is arithmetically pinned
+        near max(p_b,p_s) and carries almost no information — 5866 live rows
+        produced a p50 of 0.369 and only 59 rows >= 0.70 all week. The gates
+        downstream were calibrated against RAW directional probability, so
+        comparing them to this ratio is a unit mismatch that vetoes by
+        construction (3691/6767 decisions = CONFIDENCE_FAIL).
+        The ratio is retained as the gate input, but it is now converted to the
+        raw-probability domain it is actually compared against: a ratio r over
+        trained mass m maps back to the OWN-side raw probability r * m. Under a
+        degenerate/fallback vector the mapping is identity (raw is raw), so the
+        semantics never change where they were already correct.
+        """
         prob_buy = self._sanitize_float(probs[1] if len(probs) > 1 else 0.0, 0.0)
         prob_sell = self._sanitize_float(probs[2] if len(probs) > 2 else 0.0, 0.0)
         prob_no_trade = self._sanitize_float(probs[0] if len(probs) > 0 else 0.0, 0.0)
@@ -2606,9 +2622,14 @@ class SignalPolicy:
             # Degenerate mass (e.g. all-zero or NaN components): never
             # manufacture confidence - pre-fix raw behavior.
             return raw_directional, "RAW_FALLBACK"
-        conf = raw_directional / trained_mass
-        if not math.isfinite(conf) or conf < 0.0:
+        conf_ratio = raw_directional / trained_mass
+        if not math.isfinite(conf_ratio) or conf_ratio < 0.0:
             return raw_directional, "RAW_FALLBACK"
+        # BUG-312: restore the raw-probability domain the gates were
+        # calibrated for. Identity when trained_mass == 1.0 (a pure 3-class
+        # head), and strictly <= raw_directional when WAIT mass is present,
+        # so this never manufactures confidence above the raw signal.
+        conf = min(conf_ratio * trained_mass, raw_directional)
         return conf, "DIRECTIONAL_NORMALIZED"
 
     def _sanitize_float(self, val: float | None, default: float) -> float:

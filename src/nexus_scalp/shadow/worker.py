@@ -134,19 +134,62 @@ class ShadowWorker:
             return False
 
     def _maybe_finalize(self) -> None:
-        """Finalises the active shadow run when it has enough decisions."""
+        """Finalises the active shadow run when it has enough decisions.
+
+        SHADOW-PIPELINE (2026-09-22): after finalizing, the NEXT run must be
+        started here. finish_run() clears `active_run_id`, and nothing else in
+        the live path restarts a run — attach is a one-shot — so a challenger
+        that had successfully attached went permanently silent exactly 30
+        decisions later (the store kept the rows, but the live challenger
+        stopped being evaluated). The challenger/champion identity for the
+        next run is the one the engine already froze.
+        """
         if self._cancel_requested:
             self._cancel_requested = False
             return
         engine = self.engine
         if not engine.active_run_id:
             return
-        if len(engine._decisions) >= self.finalize_after_decisions:
-            engine.finish_run()
+        if len(engine._decisions) < self.finalize_after_decisions:
+            return
+        finished_run_id = engine.active_run_id
+        challenger = engine.active_challenger
+        champion_ref = engine._champion_ref()
+        engine.finish_run()
+        logger.info(
+            "[SHADOW] event=FINALIZED",
+            run_id=finished_run_id,
+            decisions=self.finalize_after_decisions,
+        )
+        # Start the next run so the challenger keeps being evaluated. A
+        # detached challenger (attach was undone, or None) leaves the engine
+        # idle instead of crashing the worker cycle.
+        if challenger is None or challenger.ref is None or champion_ref is None:
             logger.info(
-                "[SHADOW] event=FINALIZED",
-                run_id=engine.active_run_id or "",
-                decisions=self.finalize_after_decisions,
+                "[SHADOW_WORKER] event=NO_NEXT_RUN reason=DETACHED",
+                run_id=finished_run_id,
+            )
+            return
+        try:
+            engine.start_run(
+                run_id=None,
+                champion=champion_ref,
+                challenger_ref=challenger.ref,
+            )
+            logger.info(
+                "[SHADOW_WORKER] event=NEXT_RUN_STARTED",
+                run_id=engine.active_run_id,
+                previous_run_id=finished_run_id,
+            )
+        except Exception as e:
+            # Restart safety (contract 2): a failure to start the next run
+            # must never propagate to the trading host. The next cycle
+            # retries; the previous run is already safely persisted.
+            self.last_error = f"next-run start failed: {e}"
+            logger.error(
+                "[SHADOW_WORKER] event=NEXT_RUN_FAILED",
+                run_id=finished_run_id,
+                error=str(e),
             )
 
 
