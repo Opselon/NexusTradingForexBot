@@ -66,7 +66,12 @@ NEVER start coding before this bootstrap.
   (INV-001..012) · §9 docs/architecture/dependency-map.md · §10 DB ownership
   map · §11-12 git forensics & shared-function protocol · §13 SHARED API
   CHANGED · §14 SEMANTIC CHANGE · §15 REUSE > EXTEND > REFACTOR > CREATE ·
-  §16 agent/<name>/<task> branches · §17 locks.yaml · §18 commit contract
+  §16 branch naming (see `agents/git_governance.md` §5 for the canonical
+  form: `agent/<type>/<ID-or-topic>` — feature/bug/test/refactor/docs/chore/
+  sync/gov — cut from `origin/main`; this file's older `agent/<name>/<task>`
+  summary is the legacy form and is superseded, not forbidden: existing
+  branches keep their names, new branches use the canonical form) ·
+  §17 locks.yaml · §18 commit contract
   (<AGENT>: summary + structured body) · §19-21 commit size / self-audit /
   tests travel with fix · §22 forensic fix workflow (BUG→REPRODUCER→ROOT
   CAUSE→REGRESSION TEST→FIX→RE-RUN→FULL TESTS→RUNTIME VALIDATION→DOCS→COMMIT) ·

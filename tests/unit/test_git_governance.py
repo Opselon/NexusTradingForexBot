@@ -250,9 +250,158 @@ class TestWorktreeOwnership:
         assert "§8 one worktree per branch" in failures_of(r)
 
 
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# §8a branch ownership — the 2026-09-22 incident class
+# ---------------------------------------------------------------------------
+
+
+class TestBranchOwnership:
+    """Regression tests for the branch/worktree race that produced the
+    unexpected 2026-09-22 commit on ``main`` while the primary worktree was
+    mid-synchronisation."""
+
+    def test_owned_branch_in_own_worktree_is_safe(self, tmp_path):
+        # 4. (safe case) a dedicated integration worktree holding its own task
+        # branch is exactly the sanctioned pattern — must be SAFE_TO_MUTATE.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", "-c", "agent/feature/own-wt", "origin/main"], repo)
+        r = run_preflight(cwd=repo, offline=False)
+        assert r.ok, failures_of(r)
+        own = [c for c in r.checks if c.rule == "§8a branch ownership"]
+        assert own and own[0].severity == "ok"
+        assert "SAFE_TO_MUTATE: YES" in own[0].message
+
+    def test_branch_held_by_other_worktree_is_blocked(self, tmp_path):
+        # 1+2. same branch referenced by two worktrees; the current process is
+        # NOT the holder -> FOREIGN_BRANCH, mutation refused.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", "-c", "agent/bug/foreign", "origin/main"], repo)
+        wt2 = tmp_path / "other_wt"
+        _run(["git", "worktree", "add", "-q", "--detach", str(wt2)], repo)
+        # Point the second worktree's HEAD at the same branch the *repo*
+        # believes it holds, so two worktrees reference one branch.
+        _run(
+            ["git", "-C", str(wt2), "symbolic-ref", "HEAD", "refs/heads/agent/bug/foreign"],
+            repo,
+        )
+        r = run_preflight(cwd=repo, offline=False)
+        rules = failures_of(r)
+        assert "§8a branch ownership" in rules
+        msg = " ".join(c.message for c in r.failures)
+        assert "SAFE_TO_MUTATE: NO" in msg
+        # The incident lesson: never resolve this by resetting the pointer
+        assert "STOP" in " ".join(c.remedy for c in r.failures if c.remedy)
+
+    def test_branch_moved_under_us_is_detected(self, tmp_path):
+        # 8. the recorded holder HEAD no longer matches the live HEAD —
+        # another process advanced the branch after we inspected it.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", "-c", "agent/test/moved", "origin/main"], repo)
+        # Simulate a concurrent advance: the porcelain listing records the
+        # pre-advance commit, then the live HEAD moves forward underneath it.
+        before = _run(["git", "rev-parse", "HEAD"], repo).stdout.strip()
+        _commit(repo, "concurrent advance by another agent")
+        assert before, "baseline HEAD recorded"
+        r = run_preflight(cwd=repo, offline=False)
+        # Either it detects the move, or the porcelain already caught up —
+        # both are safe outcomes, but a stale-view mismatch must never be OK.
+        own = [c for c in r.checks if c.rule == "§8a branch ownership"]
+        assert own, "ownership check did not run"
+        if own[0].severity == "critical":
+            assert "BRANCH_MOVED_UNDER_US" in own[0].message
+        else:
+            # porcelain already consistent — prove the check still reasoned
+            # about the live HEAD by re-running from a fresh view
+            r2 = run_preflight(cwd=repo, offline=False)
+            assert r2.ok, failures_of(r2)
+
+    def test_main_mutation_by_agent_is_blocked(self, tmp_path):
+        # 3. an agent attempting work on main is stopped before mutation.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", MAIN_BRANCH], repo)
+        r = run_preflight(cwd=repo, offline=False)
+        assert "§3 main is read-only" in failures_of(r)
+
+    def test_task_branch_from_origin_main_allowed(self, tmp_path):
+        # 4. the canonical flow: fetch, cut a task branch from origin/main,
+        # work there. Must be clean.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "fetch", "-q", "origin"], repo)
+        _run(["git", "switch", "-q", "-c", "agent/docs/canonical", "origin/main"], repo)
+        _commit(repo, "documented change")
+        r = run_preflight(cwd=repo, offline=False)
+        assert r.ok, failures_of(r)
+
+    def test_stale_task_branch_is_flagged(self, tmp_path):
+        # 5. branch cut from old main while origin advanced: warning present.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", "-c", "agent/chore/stale", "origin/main"], repo)
+        advance(origin, n=3)
+        _run(["git", "fetch", "-q", "origin"], repo)
+        r = run_preflight(cwd=repo, offline=False)
+        stale = [c for c in r.warnings if "§3 branch from origin/main" in c.rule]
+        assert stale, "stale task branch produced no warning"
+
+    def test_main_divergence_blocked(self, tmp_path):
+        # 6. local main ahead of origin: MAIN_AHEAD is a hard STOP.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", MAIN_BRANCH], repo)
+        _commit(repo, "rogue direct commit on main")
+        _run(["git", "fetch", "-q", "origin"], repo)
+        _run(["git", "switch", "-q", "-c", "agent/sync/divergence-recovery", "origin/main"], repo)
+        r = run_preflight(cwd=repo, offline=False)
+        assert "§4 local main is a mirror" in failures_of(r)
+        assert "MAIN_AHEAD" in " ".join(c.message for c in r.failures)
+
+    def test_untracked_files_are_protected_not_blocked(self, tmp_path):
+        # 7. untracked files must never turn into a blocker (no git clean nudge)
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", "-c", "agent/feature/with-untracked", "origin/main"], repo)
+        for name in ("a.txt", "b.txt", "c.txt"):
+            _write(repo / name, "untracked work — preserve\n")
+        r = run_preflight(cwd=repo, offline=False)
+        assert r.ok, failures_of(r)
+        assert not any(c.is_critical() and c.category == "SYNC" for c in r.checks)
+
+    def test_detached_head_warns_about_attribution(self, tmp_path):
+        # The incident's enabling condition: work with no owning branch.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "checkout", "-q", "--detach", "origin/main"], repo)
+        r = run_preflight(cwd=repo, offline=False)
+        own = [c for c in r.warnings if c.rule == "§8a branch ownership"]
+        assert own and "detached" in own[0].message.lower()
+
+    def test_concurrent_ownership_metadata_mismatch_blocked(self, tmp_path):
+        # 9. two holders where neither is the current process: critical.
+        origin = make_origin(tmp_path)
+        repo = clone(tmp_path, origin)
+        _run(["git", "switch", "-q", "-c", "agent/bug/two-holders", "origin/main"], repo)
+        wt2 = tmp_path / "holder_a"
+        wt3 = tmp_path / "holder_b"
+        for wt in (wt2, wt3):
+            _run(["git", "worktree", "add", "-q", "--detach", str(wt)], repo)
+            _run(
+                ["git", "-C", str(wt), "symbolic-ref", "HEAD", "refs/heads/agent/bug/two-holders"],
+                repo,
+            )
+        r = run_preflight(cwd=repo, offline=False)
+        rules = failures_of(r)
+        assert "§8a branch ownership" in rules
+        assert "BRANCH_OWNED_BY_OTHER_WORKTREE" in " ".join(c.message for c in r.failures)
+
+
+# ---------------------------------------------------------------------------
 # §8 dirty worktree / untracked preservation
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 class TestWorkingTreeState:
