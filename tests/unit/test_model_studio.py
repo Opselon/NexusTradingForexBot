@@ -191,9 +191,17 @@ def test_latency_benchmark_profiler() -> None:
     assert res["latency_max_ms"] >= res["latency_p99_ms"]
     assert res["latency_min_ms"] <= res["latency_p50_ms"]
     assert res["throughput_inferences_per_sec"] > 0.0
-    # The reported SLA verdict must agree with the measured p99, whatever it
-    # was on this host — the flag may never disagree with its own metric.
+    # The absolute P99 threshold is a wall-clock SLA, not a correctness
+    # invariant: it holds with large headroom on an unloaded runner but is
+    # breached purely by CPU starvation when pytest-xdist saturates every
+    # core (-n auto --dist loadgroup, as the quality job does). When the p99
+    # breaches, require the median to stay far below the SLA — only genuine
+    # serialization cost inflates the median, scheduler preemption does not.
+    # The function's own sla_passed flag must also agree with its p99.
     assert res["sla_passed"] is (res["latency_p99_ms"] < 10.0)
+    assert res["latency_p99_ms"] < 10.0 or res["latency_p50_ms"] < 5.0, (
+        f"median {res['latency_p50_ms']:.3f}ms indicates real cost, not scheduler load"
+    )
 
 
 def test_training_dispatch_lifecycle() -> None:
