@@ -1,6 +1,6 @@
 /**
  * PURPOSE:  Control Center — operator console shell (hero strip → action rack →
- *           evidence panels, plus the five evidence tabs).
+ *           evidence panels → event tape, plus the five evidence tabs).
  * OWNER:    uiux-wave5-control
  * CONSUMES: @tanstack/react-query (summary snapshot), ../model (VO helpers),
  *           @/components/primitives (Segmented), lane5Kit (FreshnessCaption),
@@ -24,6 +24,7 @@ import { bool, obj, str } from "../model";
 import { controlCenterQueries } from "../useCases";
 import { ActionRack } from "./ActionRack";
 import { DecisionInspector } from "./DecisionInspector";
+import { EventTape } from "./EventTape";
 
 import { HeroStrip } from "./HeroStrip";
 import { OverviewPanels } from "./OverviewPanels";
@@ -128,6 +129,7 @@ export default function ControlCenterPage(props: ShellPageProps) {
               errorMessage={summaryError}
               onRetry={() => void summaryQ.refetch()}
             />
+            <EventTape onInspect={setDetailId} />
           </>
         )}
 
