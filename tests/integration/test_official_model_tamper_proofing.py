@@ -563,6 +563,11 @@ def test_persistent_slot_lock_survives_installs(drill):
         pass  # liveness probe: acquisition succeeds after a clean transaction
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="holder child uses POSIX fcntl.flock; the installer's own win32 lock "
+    "path is covered by the other slot-lock tests",
+)
 def test_slot_lock_excludes_concurrent_process(drill):
     """A competing holder (separate process) must block acquisition."""
     out, manifest, model_path = drill

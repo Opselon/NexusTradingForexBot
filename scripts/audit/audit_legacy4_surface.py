@@ -53,7 +53,19 @@ _PATH_CLASS = [
 ]
 
 
+def _rel_posix(path: Path, root: Path) -> str:
+    """Repo-relative path with ``/`` separators on every OS.
+
+    ``Path.relative_to`` joins with ``os.sep`` (``\\`` on Windows). This probe's
+    classification table and its tests compare forward-slash substrings, so on
+    the OS Matrix the Windows leg read every site as OTHER and misclassified the
+    smoke/shadow legacy-4 surface (BUG-307D). Normalise once, at the boundary.
+    """
+    return path.relative_to(root).as_posix()
+
+
 def _classify(rel: str) -> str:
+    # ``rel`` is forward-slash normalised by _rel_posix; the table is POSIX.
     for label, prefixes in _PATH_CLASS:
         if any(p in rel for p in prefixes):
             return label
@@ -76,7 +88,7 @@ def scan_literals(root: Path, sub: str) -> list[dict[str, object]]:
     if not base.exists():
         return out
     for path in sorted(base.rglob("*.py")):
-        rel = str(path.relative_to(root))
+        rel = _rel_posix(path, root)
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
