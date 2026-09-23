@@ -7,7 +7,8 @@
  * the trace actually reports (a missing commission is an UNKNOWN bar).
  */
 
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { PnlWaterfall, buildTradeWaterfall } from "@/components/viz";
 import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
@@ -94,19 +95,14 @@ export function TradesSection() {
 function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () => void }) {
   const trace = useTradeForensics(ticket);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const boxRef = useRef<HTMLElement | null>(null);
+  useDialogA11y(boxRef, onClose);
 
   const d = trace.data;
 
   return (
     <div className="acct-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="acct-drawer" role="dialog" aria-modal="true" aria-label={`Trade ${ticket} forensics`}>
+      <aside ref={boxRef} className="acct-drawer" role="dialog" aria-modal="true" aria-label={`Trade ${ticket} forensics`}>
         <header aria-label="Trades">
           <span>Trade forensics</span>
           <span className="inline-mono tiny faint">#{ticket}</span>

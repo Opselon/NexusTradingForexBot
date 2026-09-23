@@ -248,7 +248,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               {liqFeatureRows.length > 0 && (
                 <>
                   <div className="section-title ix-gap">Feature values ({liq.feature_count ?? liqFeatureRows.length})</div>
-                  <div className="l4-features ix-feats">
+                  <div tabIndex={0} className="l4-features ix-feats">
                     {liqFeatureRows.map(([k, v]) => (
                       <div key={k} className="l4-feature" title={k}>
                         <div className="n">{k}</div>

@@ -269,7 +269,7 @@ export function AppShell() {
           <div className="side-row" title={t("ux.shortcut.help", "Keyboard shortcuts")}>
             <span><kbd>alt</kbd> 1–9 · <kbd>ctrl</kbd>K</span>
           </div>
-          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)">
+          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)" aria-label="Toggle sidebar" aria-expanded={!collapsed}>
             {collapsed ? "»" : "«"}
           </button>
         </div>

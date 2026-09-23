@@ -218,7 +218,7 @@ export function ModelInferencePanel({
                 Layer Activation Inspection (Forward Hooks)
               </div>
               {predictData.layer_inspection && predictData.layer_inspection.length > 0 ? (
-                <div className="table-wrap" style={{ maxHeight: 260 }}>
+                <div tabIndex={0} className="table-wrap" style={{ maxHeight: 260 }}>
                   <table className="data-table">
                     <thead>
                       <tr>
@@ -301,7 +301,7 @@ export function ModelInferencePanel({
               No 70D component snapshot loaded — fetch live slots to audit the assembled tensor.
             </div>
           ) : (
-            <div className="ms-slots-grid">
+            <div tabIndex={0} className="ms-slots-grid">
               {components70.map((s) => (
                 <div key={s.index} className="ms-slot-card">
                   <span className="ms-slot-idx">{String(s.index).padStart(2, "0")}</span>

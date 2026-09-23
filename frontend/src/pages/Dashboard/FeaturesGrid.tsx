@@ -144,7 +144,7 @@ export function FeaturesGrid({
             })}
           </div>
 
-          <div className="mc-feat__grid">
+          <div tabIndex={0} className="mc-feat__grid">
             {active.map((f) => {
               const pulse = pulses.get(f.index);
               return (
