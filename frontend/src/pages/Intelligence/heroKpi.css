@@ -203,6 +203,222 @@
   to { transform: rotate(360deg); }
 }
 
+/* ============================ KPI strip ============================ */
+
+.ix-kpi-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.ix-kpi-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+.ix-kpi-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: var(--elev-2);
+  transform: translateY(-2px);
+}
+/* consistent accent rail + top hairline on every card (decoration only) */
+.ix-kpi-card::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--violet) 70%, transparent));
+  opacity: 0.85;
+}
+.ix-kpi-card::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  block-size: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent), transparent);
+  opacity: 0.6;
+}
+
+/* ------------------------------ Card head / value / sub ------------------------------ */
+
+.ix-kpi-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ix-kpi-ico {
+  inline-size: 22px;
+  block-size: 22px;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.ix-kpi-lab {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* stale chip restate of the backend's own stale flag */
+.ix-kpi-flag {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--amber);
+  background: var(--amber-dim);
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
+.ix-kpi-val {
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* is-neg restate: backend state word BREAKING/HIGH_IMPACT only */
+.ix-kpi-val.is-neg {
+  color: var(--red);
+}
+/* is-dim marks absence: "—", UNAVAILABLE or the loading placeholder */
+.ix-kpi-val.is-dim {
+  color: var(--text-dim);
+}
+
+.ix-kpi-sub {
+  display: grid;
+  gap: 5px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+.ix-kpi-cap {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+/* ------------------------------ Score rows (split + meters) ------------------------------ */
+
+.ix-kpi-srow {
+  display: grid;
+  grid-template-columns: auto minmax(40px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.ix-kpi-srow .lab {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+/* label tints restate the backend's own field names (bullish/bearish) */
+.ix-kpi-srow .lab.bull {
+  color: var(--green);
+}
+.ix-kpi-srow .lab.bear {
+  color: var(--red);
+}
+.ix-kpi-srow .track {
+  block-size: 6px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.ix-kpi-srow .track i {
+  display: block;
+  block-size: 100%;
+  border-radius: 3px;
+  transition: inline-size 0.5s ease;
+}
+.ix-kpi-srow .track i.bull {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--green) 45%, transparent), var(--green));
+}
+.ix-kpi-srow .track i.bear {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 45%, transparent), var(--red));
+}
+.ix-kpi-srow .track i.accent {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 45%, transparent), var(--accent-strong));
+}
+.ix-kpi-srow .num {
+  min-inline-size: 44px;
+  text-align: end;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* field not sent by the backend → dashed track + "—" (never a zero-fill) */
+.ix-kpi-srow.is-empty .track {
+  border-style: dashed;
+  opacity: 0.5;
+}
+.ix-kpi-srow.is-empty .num {
+  color: var(--text-faint);
+}
+
+/* ------------------------------ Event pulse / fetch caption ------------------------------ */
+
+/* pulse scales with active_event_count > 0 — a visual restatement of the
+   raw count rendered in the value above, not a computed verdict */
+.ix-kpi--events.has-pulse .ix-kpi-ico {
+  animation: ix-kpi-eventPulse 2.2s ease-in-out infinite;
+}
+@keyframes ix-kpi-eventPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  55% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+
+.ix-kpi-fetched {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-inline-start: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.ix-kpi-fetched .dot {
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
 /* ------------------------------ Responsive / motion ------------------------------ */
 
 @media (max-width: 900px) {
@@ -235,6 +451,19 @@
     border-block-start-color: var(--accent-strong);
   }
   .ix-ep {
+    transition: none;
+  }
+  .ix-kpi--events.has-pulse .ix-kpi-ico {
+    animation: none;
+    box-shadow: none;
+  }
+  .ix-kpi-card {
+    transition: none;
+  }
+  .ix-kpi-card:hover {
+    transform: none;
+  }
+  .ix-kpi-srow .track i {
     transition: none;
   }
 }
