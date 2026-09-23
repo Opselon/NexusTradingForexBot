@@ -36,6 +36,7 @@ import {
 } from "@/components/primitives";
 import type { ShellPageProps } from "@/app/featureModule";
 import { ApiError } from "@/types/api";
+import { useI18n } from "@/stores/i18nStore";
 import {
   dependencyApi,
   type DependencyCycle,
@@ -119,6 +120,7 @@ const KIND_CHIPS: Array<{ key: NodeKindFilter; label: string; countKey: string }
 ];
 
 export default function DependencyPage(props: ShellPageProps) {
+  const t = useI18n((s) => s.t);
   void props;
   const [tab, setTab] = useState<Tab>("overview");
   const [selectedNode, setSelectedNode] = useState<string>("");
@@ -234,7 +236,7 @@ export default function DependencyPage(props: ShellPageProps) {
           </div>
           <h1 className="dp-title">
             <span className="glyph" aria-hidden="true">⌬</span>
-            <span className="word">Dependency Intelligence</span>
+            <span className="word">{t("dependency.page.hero_title", "Dependency Intelligence")}</span>
           </h1>
           <p className="dp-desc">
             Whole-repo import / DI / inheritance graph from{" "}

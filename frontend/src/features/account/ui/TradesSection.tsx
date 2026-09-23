@@ -21,6 +21,7 @@
 
 import type { CSSProperties } from "react";
 import { useMemo, useRef, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { useDialogA11y } from "../../../components/useDialogA11y";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { PnlWaterfall, buildTradeWaterfall } from "@/components/viz";
@@ -277,6 +278,7 @@ export function TradesSection() {
 }
 
 function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () => void }) {
+  const t = useI18n((s) => s.t);
   const trace = useTradeForensics(ticket);
 
   const boxRef = useRef<HTMLElement | null>(null);
@@ -324,7 +326,7 @@ function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () =>
     <div className="acct-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside ref={boxRef} className="acct-drawer" role="dialog" aria-modal="true" aria-label={`Trade ${ticket} forensics`}>
         <header aria-label="Trades">
-          <span>Trade forensics</span>
+          <span>{t("account.trades.forensics", "Trade forensics")}</span>
           <span className="inline-mono tiny faint">#{ticket}</span>
           <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={() => trace.refetch()}>
             Reload

@@ -16,6 +16,7 @@ import type { Bar } from "@/types/domain";
 import type { OverlayLine, OverlayRect, OverlayOrderLines } from "@/pages/_shared/contracts";
 import { niceTicks } from "@/components/viz/geometry";
 import { formatPrice } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { paintVolume } from "./chart/volumeOverlay";
 import { paintAxisTags } from "./chart/axisCrosshair";
 import { paintSeries } from "./chart/renderers/seriesRender";
@@ -145,6 +146,7 @@ export function paintChart(
 ): void {
   const { w, h } = size;
   if (w <= 0 || h <= 0 || sc.count <= 0 || sc.shown.length === 0) return;
+  const t = useI18n.getState().t;
   const { lo, hi } = scale;
   const plotW = w - AXIS_W - PAD_LEFT;
   const plotH = h - PAD_TOP - PAD_BOTTOM;
@@ -362,12 +364,12 @@ export function paintChart(
     const profit = typeof ol.profit_usd === "number" ? ol.profit_usd : null;
     const zone = typeof ol.zone_score === "number" ? ol.zone_score : null;
     const lines = [
-      typeof ol.direction === "string" ? `Order Evaluated: ${ol.direction}` : null,
+      typeof ol.direction === "string" ? t("dash.chart.order_evaluated", "Order Evaluated: {d}", { d: ol.direction }) : null,
       rr !== null || risk !== null
-        ? `Target RR: ${rr !== null ? `1:${rr.toFixed(2)}` : "—"} | Dollar Risk: ${risk !== null ? `$${risk.toFixed(2)}` : "—"}`
+        ? t("dash.chart.order_rr", "Target RR: {rr} | Dollar Risk: {risk}", { rr: rr !== null ? `1:${rr.toFixed(2)}` : "—", risk: risk !== null ? `$${risk.toFixed(2)}` : "—" })
         : null,
       profit !== null || zone !== null
-        ? `Potential Profit: ${profit !== null ? `$${profit.toFixed(2)}` : "—"} | Zone Score: ${zone !== null ? `${zone.toFixed(0)}%` : "—"}`
+        ? t("dash.chart.order_profit", "Potential Profit: {p} | Zone Score: {z}", { p: profit !== null ? `$${profit.toFixed(2)}` : "—", z: zone !== null ? `${zone.toFixed(0)}%` : "—" })
         : null,
     ].filter((s): s is string => s !== null);
     if (lines.length > 0 && entryY !== null) {
@@ -409,8 +411,8 @@ export function paintChart(
       ctx.setLineDash([]);
       ctx.fillStyle = pal.accentStrong;
       ctx.font = `bold 9px ${mono}`;
-      ctx.fillText("REPLAY CURSOR (KNOWN)", Math.min(cx2 + 4, w - AXIS_W - 150), 12);
-      ctx.fillText("FUTURE = UNKNOWN", Math.min(cx2 + 4, w - AXIS_W - 150), 24);
+      ctx.fillText(t("dash.chart.cursor_label", "REPLAY CURSOR (KNOWN)"), Math.min(cx2 + 4, w - AXIS_W - 150), 12);
+      ctx.fillText(t("dash.chart.future_label", "FUTURE = UNKNOWN"), Math.min(cx2 + 4, w - AXIS_W - 150), 24);
     }
   }
 
@@ -430,7 +432,7 @@ export function paintChart(
       ctx.setLineDash([]);
       ctx.fillStyle = pal.axisText;
       ctx.font = `9px ${mono}`;
-      ctx.fillText("future", edgeX + 5, h - PAD_BOTTOM - 6);
+      ctx.fillText(t("dash.chart.future_edge", "future"), edgeX + 5, h - PAD_BOTTOM - 6);
     }
   }
 

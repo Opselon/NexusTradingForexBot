@@ -13,6 +13,7 @@
  */
 
 import type { EngineSnapshot } from "@/types/domain";
+import { useI18n } from "@/stores/i18nStore";
 import "./shell.css";
 
 interface Props {
@@ -20,8 +21,9 @@ interface Props {
 }
 
 export function ModeIndicator({ snapshot }: Props) {
+  const t = useI18n((s) => s.t);
   if (!snapshot) {
-    return <span className="mode-badge unknown">MODE —</span>;
+    return <span className="mode-badge unknown">{t("ui.mode.none", "MODE —")}</span>;
   }
   const mode = (snapshot.runtime_mode ?? snapshot.execution_mode ?? "UNKNOWN").toUpperCase();
 
@@ -29,9 +31,13 @@ export function ModeIndicator({ snapshot }: Props) {
     return (
       <span
         className="mode-badge live mismatch"
-        title={`MODE-SOURCE MISMATCH: runtime_mode=${mode} but data_source=${snapshot.data_source ?? "UNKNOWN"} (BUG-232 guard). Do not trust this as real broker state.`}
+        title={t(
+          "ui.mode.mismatch_title",
+          "MODE-SOURCE MISMATCH: runtime_mode={m} but data_source={d} (BUG-232 guard). Do not trust this as real broker state.",
+          { m: mode, d: snapshot.data_source ?? "UNKNOWN" },
+        )}
       >
-        ⚠ {mode} (SOURCE MISMATCH)
+        ⚠ {mode} {t("ui.mode.mismatch", "(SOURCE MISMATCH)")}
       </span>
     );
   }
@@ -42,8 +48,12 @@ export function ModeIndicator({ snapshot }: Props) {
       className={`mode-badge ${cls}`}
       title={`execution_mode=${snapshot.execution_mode ?? "—"} · data_source=${snapshot.data_source ?? "—"} · adapter=${snapshot.adapter_class ?? "—"}`}
     >
-      {mode === "UNKNOWN" ? "MODE —" : mode}
-      {mode.startsWith("LIVE") && <span className="mode-src tiny" aria-hidden="true">REAL ORDERS</span>}
+      {mode === "UNKNOWN" ? t("ui.mode.none", "MODE —") : mode}
+      {mode.startsWith("LIVE") && (
+        <span className="mode-src tiny" aria-hidden="true">
+          {t("ui.mode.real_orders", "REAL ORDERS")}
+        </span>
+      )}
     </span>
   );
 }

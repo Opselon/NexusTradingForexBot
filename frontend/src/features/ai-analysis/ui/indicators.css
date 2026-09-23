@@ -647,6 +647,36 @@ body.dense .ic-table th {
 /* CountChip label beside the big value */
 .ic-count-k { font-size: 9.5px; letter-spacing: 0.14em; opacity: 0.75; }
 
+/* ── RTL (fa/ar) fixes — translated labels, mirrored accents ──────────────
+   Letter-spacing + uppercase tracking mangles connected Arabic script and
+   over-widens Persian words; reset it for the label classes that carry
+   translated text when the document direction is RTL. */
+[dir="rtl"] .ic-plabel,
+[dir="rtl"] .ic-live,
+[dir="rtl"] .ic-signal-name,
+[dir="rtl"] .ic-cycle-name,
+[dir="rtl"] .ic-panel-sub,
+[dir="rtl"] .ic-count,
+[dir="rtl"] .ic-count-k,
+[dir="rtl"] .ic-table th {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Pivot row tints paint from the inline start (physical 90deg points the
+   wrong way once the row itself flows right-to-left). */
+[dir="rtl"] .ic-pivot-table tr.is-res {
+  background: linear-gradient(270deg, rgba(242, 86, 77, 0.07), transparent 70%);
+}
+[dir="rtl"] .ic-pivot-table tr.is-sup {
+  background: linear-gradient(270deg, rgba(62, 207, 142, 0.07), transparent 70%);
+}
+
+/* Translated verdict/action pills may wrap instead of clipping (de/es run
+   ~30% longer than EN); indicator NAMES and numeric cells stay single-line
+   LTR — they are code/numbers, not prose (dir="ltr" set in the markup). */
+.ic-act { white-space: normal; }
+
 /* reading tables + pivot matrix: data tables take the full row of .ic-tables */
 .ic-table-panel { grid-column: 1 / -1; }
 .ic-pivots { grid-column: 1 / -1; }

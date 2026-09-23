@@ -26,6 +26,7 @@ import { Panel } from "@/components/primitives";
 import { SectionState, type QueryLike } from "@/pages/_shared/SectionState";
 import type { AutopsyRow } from "@/types/domain";
 import { WordBadge, outcomeTone } from "./signalBits";
+import { useI18n } from "@/stores/i18nStore";
 
 type AutopsyPayload = { available: boolean; autopsies?: AutopsyRow[] };
 
@@ -37,6 +38,7 @@ function raw(value: string | number | null | undefined): string {
 }
 
 function AutopsyCard({ row, index }: { row: AutopsyRow; index: number }) {
+  const t = useI18n((s) => s.t);
   const r = typeof row.realized_r === "number" ? row.realized_r : null;
   const tone = outcomeTone(row.outcome);
   const outcomeRaw = row.outcome === null || row.outcome === undefined ? "" : String(row.outcome).trim();
@@ -47,49 +49,50 @@ function AutopsyCard({ row, index }: { row: AutopsyRow; index: number }) {
       style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}
     >
       <div className="itl-card__head">
-        <span className="itl-type">trade autopsy</span>
+        <span className="itl-type">{t("intelligence.card.autopsy", "trade autopsy")}</span>
         <WordBadge
           word={row.outcome}
           fallback="—"
           tone={tone}
-          title={outcomeRaw ? `outcome (verbatim): ${outcomeRaw}` : "backend sent no outcome"}
+          title={outcomeRaw ? t("intelligence.autopsy.outcome_verb", "outcome (verbatim): {v}", { v: outcomeRaw }) : t("intelligence.autopsy.no_outcome", "backend sent no outcome")}
         />
-        <span className="itl-ticket" title="ticket (raw payload value)">
+        <span className="itl-ticket" title={t("intelligence.autopsy.ticket_title", "ticket (raw payload value)")}>
           #{raw(row.ticket)}
         </span>
       </div>
       <div className="itl-autopsy__figures">
-        <span className="itl-fig" title="strategy_id (raw payload value)">
-          <span className="k">strategy</span>
+        <span className="itl-fig" title={t("intelligence.autopsy.strategy_title", "strategy_id (raw payload value)")}>
+          <span className="k">{t("intelligence.th.strategy", "strategy")}</span>
           <span className="v">{raw(row.strategy_id)}</span>
         </span>
         <span
           className="itl-fig"
-          title={r === null ? "realized_r missing in payload" : "realized_r (raw payload value, sign-coloured)"}
+          title={r === null ? t("intelligence.autopsy.realized_missing", "realized_r missing in payload") : t("intelligence.autopsy.realized_title", "realized_r (raw payload value, sign-coloured)")}
         >
-          <span className="k">realized r</span>
+          <span className="k">{t("intelligence.th.realized_r", "realized r")}</span>
           <span className={`v ${r === null ? "" : r >= 0 ? "pnl-pos" : "pnl-neg"}`}>{raw(row.realized_r)}</span>
         </span>
       </div>
       <div
         className="itl-autopsy__exit"
-        title={row.exit_reason ? "exit_reason (raw payload value)" : "backend sent no exit_reason"}
+        title={row.exit_reason ? t("intelligence.autopsy.exit_title", "exit_reason (raw payload value)") : t("intelligence.autopsy.no_exit", "backend sent no exit_reason")}
       >
-        <span className="k">exit</span> {raw(row.exit_reason)}
+        <span className="k">{t("intelligence.autopsy.exit_label", "exit")}</span> {raw(row.exit_reason)}
       </div>
     </div>
   );
 }
 
 export default function AutopsyFeed({ query }: { query: QueryLike<AutopsyPayload> }) {
+  const t = useI18n((s) => s.t);
   return (
     <Panel
-      title="Recent trade autopsies (why trades won/lost)"
+      title={t("intelligence.panel.autopsies", "Recent trade autopsies (why trades won/lost)")}
       tight
       right={
         <span
           className="itl-epcap"
-          title="static provenance — every figure below is loaded from this endpoint"
+          title={t("intelligence.feed.provenance_title", "static provenance — every figure below is loaded from this endpoint")}
         >
           /api/intelligence/autopsies
         </span>
@@ -99,8 +102,8 @@ export default function AutopsyFeed({ query }: { query: QueryLike<AutopsyPayload
         query={query}
         skeletonRows={3}
         emptyWhen={(d) => !(d.available && (d.autopsies?.length ?? 0) > 0)}
-        emptyMessage="No autopsies recorded."
-        errorFallback="Autopsy endpoint failed."
+        emptyMessage={t("intelligence.autopsy.empty", "No autopsies recorded.")}
+        errorFallback={t("intelligence.error.autopsy", "Autopsy endpoint failed.")}
       >
         {(d) => (
           <div className="itl-autopsies">

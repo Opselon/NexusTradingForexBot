@@ -19,6 +19,7 @@
 import { useState } from "react";
 import type { ShellPageProps } from "@/app/featureModule";
 import { StatusBadge } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { useDebugFeaturesQuery, useDebugHealthQuery, useDebugStateQuery } from "../hooks";
 import { StateTab } from "./tabs/StateTab";
 import { HealthTab } from "./tabs/HealthTab";
@@ -43,19 +44,21 @@ interface TabDef {
   ep: string;
 }
 
-const TABS: TabDef[] = [
-  { id: "state", label: "State", icon: "▦", ep: "/api/debug/state" },
-  { id: "health", label: "Health", icon: "✚", ep: "/api/debug/health" },
-  { id: "features", label: "Features", icon: "ƒ", ep: "/api/debug/features" },
-  { id: "freshness", label: "Freshness", icon: "◴", ep: "/api/debug/freshness" },
-  { id: "ipc", label: "IPC", icon: "⇄", ep: "/api/debug/ipc-telemetry" },
-  { id: "compare", label: "Compare", icon: "⚖", ep: "/api/debug/compare" },
-  { id: "snapshots", label: "Snapshots", icon: "◈", ep: "/api/debug/snapshots" },
-  { id: "modeltest", label: "Model test", icon: "⚗", ep: "POST /api/debug/model-test" },
-  { id: "trace", label: "Trace", icon: "⌁", ep: "/api/debug/trace/{id}" },
-  { id: "research", label: "Research", icon: "⌕", ep: "/api/research/*" },
-  { id: "ops", label: "Ops", icon: "⚙", ep: "/api/simulation/tick · /api/observability/stats" },
-];
+function useDebugTabs(t: (k: string, fb: string, v?: Record<string, string | number>) => string): TabDef[] {
+  return [
+    { id: "state", label: t("debug.tab.state", "State"), icon: "▦", ep: "/api/debug/state" },
+    { id: "health", label: t("debug.tab.health", "Health"), icon: "✚", ep: "/api/debug/health" },
+    { id: "features", label: t("debug.tab.features", "Features"), icon: "ƒ", ep: "/api/debug/features" },
+    { id: "freshness", label: t("debug.tab.freshness", "Freshness"), icon: "◴", ep: "/api/debug/freshness" },
+    { id: "ipc", label: t("debug.tab.ipc", "IPC"), icon: "⇄", ep: "/api/debug/ipc-telemetry" },
+    { id: "compare", label: t("debug.tab.compare", "Compare"), icon: "⚖", ep: "/api/debug/compare" },
+    { id: "snapshots", label: t("debug.tab.snapshots", "Snapshots"), icon: "◈", ep: "/api/debug/snapshots" },
+    { id: "modeltest", label: t("debug.tab.modeltest", "Model test"), icon: "⚗", ep: "POST /api/debug/model-test" },
+    { id: "trace", label: t("debug.tab.trace", "Trace"), icon: "⌁", ep: "/api/debug/trace/{id}" },
+    { id: "research", label: t("debug.tab.research", "Research"), icon: "⌕", ep: "/api/research/*" },
+    { id: "ops", label: t("debug.tab.ops", "Ops"), icon: "⚙", ep: "/api/simulation/tick · /api/observability/stats" },
+  ];
+}
 
 const ENDPOINTS = [
   "/api/debug/state",
@@ -92,6 +95,7 @@ function RailItem({ label, value, tone, title }: { label: string; value: string;
 }
 
 function StatusRail() {
+  const t = useI18n((s) => s.t);
   // paused=true ⇒ refetchInterval false: this observer never polls on its own.
   const state = useDebugStateQuery(true);
   const health = useDebugHealthQuery(true);
@@ -104,32 +108,64 @@ function StatusRail() {
   const age = features.data?.age_seconds;
 
   return (
-    <div className="dbg-rail" aria-label="live status rail">
+    <div className="dbg-rail" aria-label={t("debug.rail.aria", "live status rail")}>
       <div className="dbg-rail-cell">
-        <RailItem label="engine" value={mode ?? "—"} tone={modeTone(mode)} title={mode ? `mode ${mode}${symbol ? ` · ${symbol} ${timeframe ?? ""}` : ""}` : "state query has not loaded"} />
+        <RailItem
+          label={t("debug.rail.engine", "engine")}
+          value={mode ?? "—"}
+          tone={modeTone(mode)}
+          title={
+            mode
+              ? t("debug.rail.engine_title", "mode {mode}{suffix}", {
+                  mode,
+                  suffix: symbol ? t("debug.rail.engine_title_suffix", " · {symbol} {timeframe}", { symbol, timeframe: timeframe ?? "" }) : "",
+                })
+              : t("debug.rail.not_loaded", "state query has not loaded")
+          }
+        />
       </div>
       <div className="dbg-rail-cell">
-        <span className="dbg-rail-label">health</span>
+        <span className="dbg-rail-label">{t("debug.rail.health", "health")}</span>
         <span className="dbg-rail-value">{health.data ? <StatusBadge status={health.data.overall_status} /> : "—"}</span>
       </div>
       <div className="dbg-rail-cell">
         <RailItem
-          label="vector"
+          label={t("debug.rail.vector", "vector")}
           value={features.data ? `${features.data.feature_count}D` : "—"}
           tone={features.data ? (features.data.is_stale ? "stale" : "fresh") : undefined}
-          title={features.data ? `age ${age === null || age === undefined ? "unknown" : `${age.toFixed(1)}s`} · threshold ${features.data.stale_threshold_seconds}s · anomalies ${features.data.anomaly_count}` : "features query has not loaded"}
+          title={
+            features.data
+              ? t("debug.rail.vector_title", "age {age} · threshold {threshold}s · anomalies {anomalies}", {
+                  age: age === null || age === undefined ? t("debug.rail.unknown", "unknown") : `${age.toFixed(1)}s`,
+                  threshold: features.data.stale_threshold_seconds,
+                  anomalies: features.data.anomaly_count,
+                })
+              : t("debug.rail.features_not_loaded", "features query has not loaded")
+          }
         />
       </div>
       <div className="dbg-rail-cell">
         <RailItem
-          label="anomalies"
+          label={t("debug.rail.anomalies", "anomalies")}
           value={features.data ? `${features.data.anomaly_count}` : "—"}
           tone={features.data ? (features.data.anomaly_count > 0 ? "bad" : "fresh") : undefined}
-          title={features.data ? `NaN ${features.data.nan_count} · Inf ${features.data.inf_count} of ${features.data.feature_count}` : "features query has not loaded"}
+          title={
+            features.data
+              ? t("debug.rail.anomalies_title", "NaN {nan} · Inf {inf} of {total}", {
+                  nan: features.data.nan_count,
+                  inf: features.data.inf_count,
+                  total: features.data.feature_count,
+                })
+              : t("debug.rail.features_not_loaded", "features query has not loaded")
+          }
         />
       </div>
       <div className="dbg-rail-cell">
-        <RailItem label="snapshot" value={state.data?.snapshot_id ?? "—"} title={state.data?.timestamp ? `captured ${state.data.timestamp}` : "no snapshot id"} />
+        <RailItem
+          label={t("debug.rail.snapshot", "snapshot")}
+          value={state.data?.snapshot_id ?? "—"}
+          title={state.data?.timestamp ? t("debug.rail.snapshot_title", "captured {at}", { at: state.data.timestamp }) : t("debug.rail.no_snapshot", "no snapshot id")}
+        />
       </div>
     </div>
   );
@@ -141,6 +177,8 @@ function StatusRail() {
 
 export default function DebugPage(props: ShellPageProps) {
   void props;
+  const t = useI18n((s) => s.t);
+  const TABS = useDebugTabs(t);
   const [tab, setTab] = useState<TabId>("state");
   const [cmpA, setCmpA] = useState<string | null>(null);
   const [cmpB, setCmpB] = useState<string | null>(null);
@@ -157,14 +195,16 @@ export default function DebugPage(props: ShellPageProps) {
         <div className="dbg-hero-main">
           <div className="dbg-eyebrow">
             <span className="dbg-eyebrow-bar" aria-hidden="true" />
-            PLATFORM · DEBUG HUB
+            {t("debug.head.crumb2", "PLATFORM · DEBUG HUB")}
           </div>
-          <h1 className="dbg-title">Debug everything, verbatim.</h1>
+          <h1 className="dbg-title">{t("debug.head.title2", "Debug everything, verbatim.")}</h1>
           <p className="dbg-desc">
-            Canonical snapshot · subsystem health · feature contract · freshness · IPC · compare · snapshots · model test · traces · research · ops (legacy tab-debug). Every figure below is a backend
-            read — UNAVAILABLE sections show their own reason + correlation id, never a blank lie.
+            {t(
+              "debug.head.desc2",
+              "Canonical snapshot · subsystem health · feature contract · freshness · IPC · compare · snapshots · model test · traces · research · ops (legacy tab-debug). Every figure below is a backend read — UNAVAILABLE sections show their own reason + correlation id, never a blank lie.",
+            )}
           </p>
-          <div className="dbg-endpoints" aria-label="endpoints served by this hub">
+          <div className="dbg-endpoints" aria-label={t("debug.head.endpoints_aria", "endpoints served by this hub")}>
             {ENDPOINTS.map((ep) => (
               <span className="dbg-ep" key={ep}>
                 {ep}
@@ -175,7 +215,7 @@ export default function DebugPage(props: ShellPageProps) {
         <StatusRail />
       </header>
 
-      <nav className="dbg-tabs" role="tablist" aria-label="debug sections">
+      <nav className="dbg-tabs" role="tablist" aria-label={t("debug.head.tabs_aria", "debug sections")}>
         {TABS.map((t) => (
           <button
             key={t.id}

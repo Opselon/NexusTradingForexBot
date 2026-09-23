@@ -11,6 +11,7 @@
 
 import { useMemo, type ReactNode } from "react";
 import { useUiStore } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
 import { catTone, type RuleSort, type RuleSortKey, type RuleVO } from "../model";
 
 /** Case-insensitive `<mark>` highlight of every `q` occurrence in `text`. */
@@ -59,7 +60,15 @@ function Th({
   onSort: (k: RuleSortKey) => void;
   end?: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   const active = col ? sort.key === col.key : false;
+  const text: string = !col
+    ? (label ?? "")
+    : col.key === "name"
+      ? t("rules.th.rule", "rule")
+      : col.key === "category"
+        ? t("rules.th.category", "category")
+        : t("rules.th.status", "status");
   return (
     <th
       className={end ? "a-end" : undefined}
@@ -67,8 +76,12 @@ function Th({
     >
       <div className="th-in">
         {col ? (
-          <button className="rl-th-btn" onClick={() => onSort(col.key)} title={`sort by ${col.label}`}>
-            {col.label}
+          <button
+            className="rl-th-btn"
+            onClick={() => onSort(col.key)}
+            title={t("rules.toolbar.sort_by", "sort by {key}", { key: text })}
+          >
+            {text}
             {active && <span className="arrow" aria-hidden="true">{sort.dir === "asc" ? "▲" : "▼"}</span>}
           </button>
         ) : (
@@ -99,17 +112,18 @@ export function RuleTable({
   busy: boolean;
 }) {
   const pushToast = useUiStore((s) => s.pushToast);
+  const t = useI18n((s) => s.t);
 
   const copyName = (rule: RuleVO) => {
     const clip = navigator.clipboard;
     if (!clip?.writeText) {
-      pushToast("fail", "clipboard unavailable in this context");
+      pushToast("fail", t("rules.row.clip_unavailable", "clipboard unavailable in this context"));
       return;
     }
     void clip
       .writeText(rule.name)
-      .then(() => pushToast("ok", `rule id copied — ${rule.name}`))
-      .catch(() => pushToast("fail", "clipboard write blocked by the browser"));
+      .then(() => pushToast("ok", t("rules.row.clip_copied", "rule id copied — {name}", { name: rule.name })))
+      .catch(() => pushToast("fail", t("rules.row.clip_blocked", "clipboard write blocked by the browser")));
   };
 
   // Group into consecutive same-category runs (valid only when the page sorted
@@ -139,8 +153,8 @@ export function RuleTable({
           <button
             className="rl-name"
             onClick={() => copyName(rule)}
-            title={`copy ${rule.name}`}
-            aria-label={`Copy rule id ${rule.name}`}
+            title={t("rules.row.copy_title", "copy {name}", { name: rule.name })}
+            aria-label={t("rules.row.copy_a11y", "Copy rule id {name}", { name: rule.name })}
           >
             {pfx && <span className="pfx">{highlight(pfx, query)}</span>}
             <span className="txt">{highlight(bare, query)}</span>
@@ -158,26 +172,26 @@ export function RuleTable({
               className={`rl-sw ${rule.enabled ? "on" : ""}`}
               role="switch"
               aria-checked={rule.enabled}
-              aria-label={`${rule.enabled ? "Disable" : "Enable"} rule ${rule.name}`}
+              aria-label={`${rule.enabled ? t("rules.confirm.disable_label", "Disable rule") : t("rules.confirm.enable_label", "Enable rule")} ${rule.name}`}
               disabled={busy}
               onClick={() => onToggleRequest(rule)}
-              title={rule.enabled ? "disable this rule…" : "enable this rule…"}
+              title={rule.enabled ? t("rules.row.sw_disable", "disable this rule…") : t("rules.row.sw_enable", "enable this rule…")}
             />
-            <span className={`rl-state ${rule.enabled ? "on" : ""}`}>{rule.enabled ? "ON" : "OFF"}</span>
+            <span className={`rl-state ${rule.enabled ? "on" : ""}`}>{rule.enabled ? t("rules.row.on", "ON") : t("rules.row.off", "OFF")}</span>
           </div>
         </td>
         <td>
           {rule.paramsError ? (
-            <span className="badge bad" title={rule.paramsError}>PARAMS PARSE ERROR</span>
+            <span className="badge bad" title={rule.paramsError}>{t("rules.row.params_error", "PARAMS PARSE ERROR")}</span>
           ) : rule.params.length === 0 ? (
-            <span className="rl-pempty">no parameters</span>
+            <span className="rl-pempty">{t("rules.row.no_params", "no parameters")}</span>
           ) : (
             <div className="rl-params">
               {rule.params.map((p) => (
                 <span
                   key={p.key}
                   className={`rl-pchip ${p.threshold ? "thr" : ""}`}
-                  title={`${p.key} = ${p.value}${p.threshold ? " (threshold-shaped key)" : ""}`}
+                  title={`${p.key} = ${p.value}${p.threshold ? t("rules.row.thr_key", " (threshold-shaped key)") : ""}`}
                 >
                   {p.key}=<b>{p.value}</b>
                 </span>
@@ -191,9 +205,13 @@ export function RuleTable({
               className="btn small ghost"
               onClick={() => onEdit(rule)}
               disabled={rule.params.length === 0}
-              title={rule.params.length === 0 ? "this rule stores no parameters" : "edit parameters…"}
+              title={
+                rule.params.length === 0
+                  ? t("rules.row.no_params_title", "this rule stores no parameters")
+                  : t("rules.action.edit_params", "edit parameters…")
+              }
             >
-              ✎ Edit
+              ✎ {t("rules.action.edit", "Edit")}
             </button>
           </div>
         </td>
@@ -209,8 +227,8 @@ export function RuleTable({
             <Th col={SORTABLE[0]} sort={sort} onSort={onSort} />
             <Th col={SORTABLE[1]} sort={sort} onSort={onSort} />
             <Th col={SORTABLE[2]} sort={sort} onSort={onSort} />
-            <Th label="parameters / thresholds" sort={sort} onSort={onSort} />
-            <Th label="actions" sort={sort} onSort={onSort} end />
+            <Th label={t("rules.th.params", "parameters / thresholds")} sort={sort} onSort={onSort} />
+            <Th label={t("rules.th.actions", "actions")} sort={sort} onSort={onSort} end />
           </tr>
         </thead>
         {grouped ? (
@@ -225,9 +243,11 @@ export function RuleTable({
                         <span className="lbl">{cat}</span>
                       </span>
                       <span className="g-meta">
-                        {items.length} rule{items.length === 1 ? "" : "s"}
+                        {items.length === 1
+                          ? t("rules.group.rule_one", "{n} rule", { n: items.length })
+                          : t("rules.group.rule_n", "{n} rules", { n: items.length })}
                       </span>
-                      <span className={`g-meta ${on > 0 ? "on" : ""}`}>{on} enabled</span>
+                      <span className={`g-meta ${on > 0 ? "on" : ""}`}>{t("rules.group.on_n", "{n} enabled", { n: on })}</span>
                     </div>
                   </td>
                 </tr>

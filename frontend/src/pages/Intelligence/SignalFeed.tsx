@@ -32,6 +32,7 @@ import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime } from "@/lib/format";
 import type { NewsArticle } from "@/types/domain";
 import { ScoreBar, WordBadge, importanceTone, relTime } from "./signalBits";
+import { useI18n } from "@/stores/i18nStore";
 
 type FeedPayload = { available: boolean; articles?: NewsArticle[] };
 
@@ -95,8 +96,9 @@ function dayLabel(d: Date): string {
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
-  if (same(d, now)) return `today · ${day}`;
-  if (same(d, yesterday)) return `yesterday · ${day}`;
+  const t = useI18n.getState().t;
+  if (same(d, now)) return t("intelligence.feed.today_prefix", "today · {d}", { d: day });
+  if (same(d, yesterday)) return t("intelligence.feed.yesterday_prefix", "yesterday · {d}", { d: day });
   return day;
 }
 
@@ -132,7 +134,7 @@ function groupByDay(list: RailEntry[]): DayGroup[] {
     const t = iso ? Date.parse(iso) : NaN;
     if (!Number.isFinite(t)) {
       // no (parseable) published_at — honest "undated" bucket, no invented date
-      ensure(UNDATED_KEY, "undated", true).entries.push(entry);
+      ensure(UNDATED_KEY, useI18n.getState().t("intelligence.feed.undated", "undated"), true).entries.push(entry);
       continue;
     }
     const d = new Date(t);
@@ -163,6 +165,7 @@ function onChipRowKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
 }
 
 function SignalCard({ article, newest, index }: { article: NewsArticle; newest: boolean; index: number }) {
+  const t = useI18n((s) => s.t);
   const score = typeof article.importance_score === "number" ? article.importance_score : null;
   const rel = relTime(article.published_at ?? null);
   const source = (article.source_name ?? "").trim();
@@ -174,26 +177,26 @@ function SignalCard({ article, newest, index }: { article: NewsArticle; newest: 
         <div className="itl-card__head">
           <span
             className={`itl-avatar itl-avatar--${avatarTone(source)}`}
-            title={source ? `source_name: ${source}` : "backend sent no source_name"}
+            title={source ? `source_name: ${source}` : t("intelligence.feed.no_source_title", "backend sent no source_name")}
             aria-hidden="true"
           >
             {source ? source.slice(0, 1).toUpperCase() : "—"}
           </span>
-          <span className="itl-type">news</span>
+          <span className="itl-type">{t("intelligence.card.news", "news")}</span>
           <WordBadge
             word={article.importance}
             tone={importanceTone(article.importance)}
             title={
               article.importance !== null && article.importance !== undefined &&
               String(article.importance).trim() !== ""
-                ? `importance (verbatim): ${String(article.importance).trim()}`
-                : "backend sent no importance"
+                ? t("intelligence.card.importance_verb", "importance (verbatim): {v}", { v: String(article.importance).trim() })
+                : t("intelligence.card.no_importance", "backend sent no importance")
             }
           />
           <time
             className="itl-time"
             dateTime={article.published_at ?? undefined}
-            title={article.published_at ? formatDateTime(article.published_at) : "backend sent no published_at"}
+            title={article.published_at ? formatDateTime(article.published_at) : t("intelligence.feed.no_published", "backend sent no published_at")}
           >
             {rel ?? (article.published_at ? formatDateTime(article.published_at) : "—")}
           </time>
@@ -204,21 +207,21 @@ function SignalCard({ article, newest, index }: { article: NewsArticle; newest: 
         <div className="itl-card__figures">
           <span
             className="itl-fig"
-            title={score === null ? "importance_score missing in payload" : "importance_score (raw payload value)"}
+            title={score === null ? t("intelligence.fig.score_missing", "importance_score missing in payload") : t("intelligence.fig.score_raw", "importance_score (raw payload value)")}
           >
-            <span className="k">score</span>
+            <span className="k">{t("intelligence.fig.score", "score")}</span>
             <span className="v">{score === null ? "—" : String(score)}</span>
           </span>
-          <span className="itl-fig" title={source ? "source_name (raw payload value)" : "source_name missing in payload"}>
-            <span className="k">source</span>
+          <span className="itl-fig" title={source ? t("intelligence.fig.source_raw", "source_name (raw payload value)") : t("intelligence.fig.source_missing", "source_name missing in payload")}>
+            <span className="k">{t("intelligence.kv.source", "source")}</span>
             <span className="v">{source || "—"}</span>
           </span>
-          <span className="itl-fig" title="article_id (raw payload value)">
-            <span className="k">id</span>
+          <span className="itl-fig" title={t("intelligence.fig.id_raw", "article_id (raw payload value)")}>
+            <span className="k">{t("intelligence.fig.id", "id")}</span>
             <span className="v">{article.article_id}</span>
           </span>
         </div>
-        <ScoreBar value={score} label="importance score" />
+        <ScoreBar value={score} label={t("intelligence.card.importance_score", "importance score")} />
       </article>
     </li>
   );
@@ -226,6 +229,7 @@ function SignalCard({ article, newest, index }: { article: NewsArticle; newest: 
 
 /** Filter chips + count + grouped rail. Owns the (persisted) filter selection. */
 function FeedBody({ articles }: { articles: NewsArticle[] }) {
+  const t = useI18n((s) => s.t);
   const [filter, setFilter] = useState<string>(readStoredFilter);
   const sorted = useMemo(() => [...articles].sort(byPublishedDesc), [articles]);
 
@@ -257,16 +261,16 @@ function FeedBody({ articles }: { articles: NewsArticle[] }) {
       <div
         className="itl-chiprow"
         role="group"
-        aria-label="Filter articles by importance"
+        aria-label={t("intelligence.feed.filter_aria", "Filter articles by importance")}
         onKeyDown={onChipRowKeyDown}
       >
         <button
           className="itl-chip"
           aria-pressed={active === ALL}
-          title={`show all ${sorted.length} loaded payload rows`}
+          title={t("intelligence.feed.show_all_title", "show all {n} loaded payload rows", { n: sorted.length })}
           onClick={() => pick(ALL)}
         >
-          <span className="itl-chip__label">all</span>
+          <span className="itl-chip__label">{t("intelligence.feed.all", "all")}</span>
           <span className="itl-chip__n">{sorted.length}</span>
         </button>
         {chips.map((c) => (
@@ -274,7 +278,7 @@ function FeedBody({ articles }: { articles: NewsArticle[] }) {
             key={c.word}
             className="itl-chip"
             aria-pressed={active === c.word}
-            title={`importance "${c.word}" — ${c.count} of ${sorted.length} payload rows`}
+            title={t("intelligence.feed.chip_title", "importance \"{w}\" — {c} of {n} payload rows", { w: c.word, c: c.count, n: sorted.length })}
             onClick={() => pick(c.word)}
           >
             <span className="itl-chip__label">{c.word.toLowerCase()}</span>
@@ -283,15 +287,15 @@ function FeedBody({ articles }: { articles: NewsArticle[] }) {
         ))}
         <span className="itl-count" aria-live="polite">
           {visible.length === sorted.length
-            ? `${sorted.length} signals`
-            : `${visible.length} of ${sorted.length} signals`}
+            ? t("intelligence.feed.count", "{n} signals", { n: sorted.length })
+            : t("intelligence.feed.count_filtered", "{a} of {b} signals", { a: visible.length, b: sorted.length })}
         </span>
       </div>
 
       {visible.length === 0 ? (
         <EmptyState
-          message="No signals match the current filter."
-          hint={`The payload changed since the filter was chosen — pick "all" to show ${sorted.length} loaded signals.`}
+          message={t("intelligence.feed.empty", "No signals match the current filter.")}
+          hint={t("intelligence.feed.empty_hint", "The payload changed since the filter was chosen — pick \"all\" to show {n} loaded signals.", { n: sorted.length })}
         />
       ) : (
         <div className="itl-rail">
@@ -299,12 +303,12 @@ function FeedBody({ articles }: { articles: NewsArticle[] }) {
             <section className="itl-group" key={g.key} aria-label={g.label}>
               <h3
                 className="itl-grouphead"
-                title={g.undated ? "backend sent no published_at for these rows" : `published_at day group: ${g.label}`}
+                title={g.undated ? t("intelligence.feed.no_undated_title", "backend sent no published_at for these rows") : t("intelligence.feed.group_title", "published_at day group: {label}", { label: g.label })}
               >
                 <span className="itl-groupdate">{g.label}</span>
                 <i className="itl-groupsep" aria-hidden="true" />
                 <span className="itl-groupcount">
-                  {g.entries.length} {g.entries.length === 1 ? "signal" : "signals"}
+                  {g.entries.length} {g.entries.length === 1 ? t("intelligence.feed.signal", "signal") : t("intelligence.feed.signals", "signals")}
                 </span>
               </h3>
               <ul className="itl-list">
@@ -321,15 +325,16 @@ function FeedBody({ articles }: { articles: NewsArticle[] }) {
 }
 
 export default function SignalFeed({ query }: { query: QueryLike<FeedPayload> }) {
+  const t = useI18n((s) => s.t);
   return (
     <Panel
-      title="Latest canonical articles"
+      title={t("intelligence.panel.articles", "Latest canonical articles")}
       tight
       right={
         <>
           <span
             className="itl-epcap"
-            title="static provenance — every figure below is loaded from this endpoint"
+            title={t("intelligence.feed.provenance_title", "static provenance — every figure below is loaded from this endpoint")}
           >
             /api/news/latest
           </span>
@@ -350,7 +355,7 @@ export default function SignalFeed({ query }: { query: QueryLike<FeedPayload> })
                   ]),
                 })
               }
-              title="exports exactly the rows returned by /api/news/latest"
+              title={t("intelligence.csv.articles_title", "exports exactly the rows returned by /api/news/latest")}
             >
               ⇩ CSV
             </button>
@@ -362,9 +367,9 @@ export default function SignalFeed({ query }: { query: QueryLike<FeedPayload> })
         query={query}
         skeletonRows={4}
         emptyWhen={(d) => !(d.available && (d.articles?.length ?? 0) > 0)}
-        emptyMessage="No articles available."
-        emptyHint="The feed endpoint answered with an empty list — the parser or the source may be warming up."
-        errorFallback="News feed endpoint failed."
+        emptyMessage={t("intelligence.articles.empty", "No articles available.")}
+        emptyHint={t("intelligence.articles.empty_hint", "The feed endpoint answered with an empty list — the parser or the source may be warming up.")}
+        errorFallback={t("intelligence.error.news_feed", "News feed endpoint failed.")}
       >
         {(d) => <FeedBody articles={d.articles ?? []} />}
       </SectionState>

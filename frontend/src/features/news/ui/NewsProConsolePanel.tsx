@@ -18,6 +18,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import {
   ConfirmModal,
   DataTable,
@@ -55,6 +56,7 @@ const ANSWERS_LIMIT = 8;
 const LOG_LIMIT = 200;
 
 export function NewsProConsolePanel() {
+  const t = useI18n((s) => s.t);
   const status = useNewsProStatus();
   const answers = useNewsProAnswers(ANSWERS_LIMIT);
   const autoState = useNewsAutoState();
@@ -102,7 +104,7 @@ export function NewsProConsolePanel() {
     analyzeAll.mutate({ limit: 200 }, {
       onSuccess: (res) => {
         const v = analyzeAllVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
         setConfirm(null);
         void log.pollNow();
         void status.refetch();
@@ -118,7 +120,7 @@ export function NewsProConsolePanel() {
     purge.mutate({ hardDelete: hard, limit: 5000 }, {
       onSuccess: (res) => {
         const v = purgeVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
         setConfirm(null);
         void log.pollNow();
         void status.refetch();
@@ -134,7 +136,7 @@ export function NewsProConsolePanel() {
     prune.mutate(undefined, {
       onSuccess: (res) => {
         const v = autoPruneSafeVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
         setConfirm(null);
         void log.pollNow();
         void status.refetch();
@@ -310,14 +312,12 @@ export function NewsProConsolePanel() {
           )}
           {confirm === "purge-soft" && (
             <div>
-              Reports how many <b className="inline-mono">IRRELEVANT</b> rows exist and how many fall inside the limit window
-              (5000). <b>Nothing is deleted</b> by a soft purge.
+              {t("news.pro.soft_body_1", "Reports how many ")}<b className="inline-mono">IRRELEVANT</b>{t("news.pro.soft_body_2", " rows exist and how many fall inside the limit window (5000). ")}<b>{t("news.pro.soft_body_3", "Nothing is deleted")}</b>{t("news.pro.soft_body_4", " by a soft purge.")}
             </div>
           )}
           {confirm === "purge-hard" && (
             <div>
-              <b>HARD DELETE</b>: removes up to 5000 IRRELEVANT articles and their derived rows (analysis, AI answers,
-              entities, topics, impacts, consensus) from the news DB. <b>This cannot be undone.</b>
+              <b>{t("news.pro.hard_body_1", "HARD DELETE")}</b>{t("news.pro.hard_body_2", ": removes up to 5000 IRRELEVANT articles and their derived rows (analysis, AI answers, entities, topics, impacts, consensus) from the news DB. ")}<b>{t("news.pro.hard_body_3", "This cannot be undone.")}</b>
             </div>
           )}
           {confirm === "auto-prune" && (
@@ -335,6 +335,7 @@ export function NewsProConsolePanel() {
 
 /** One console entry — mirrors legacy `_proRow`: ts · LABEL · msg + answer/via/id extras. */
 function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
+  const t = useI18n((s) => s.t);
   const kind = e.kind ?? "log";
   const msg = e.msg ?? e.summary ?? "";
   const ts = String(e.ts ?? "").slice(11, 19);
@@ -347,7 +348,7 @@ function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
   return (
     <div className={`news-pro-row ${proKindTone(kind)}`}>
       <span className="ts">{ts || "—"}</span>
-      <span className="label">{proKindLabel(kind)}</span>
+      <span className="label">{proKindLabel(t, kind)}</span>
       <span className="msg" title={String(msg)}>{truncate(String(msg), 260)}</span>
       {answer && <span className="answer">{answer}</span>}
       {e.via && <span className="extra">via:{String(e.via)}</span>}

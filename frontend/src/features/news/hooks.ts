@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useI18n } from "@/stores/i18nStore";
 import { newsCommands, newsQueries } from "./useCases";
 import { maxConsoleSeq } from "./model";
 import type { ProConsoleEntry } from "./proTypes";
@@ -271,6 +272,9 @@ export const PRO_POLL_MS = 1_500;
  * `error` carries the last refusal so the panel can show it once, not spin.
  */
 export function useProConsoleLog(opts: { limit?: number; pollMs?: number } = {}) {
+  // Resolved at the moment the failure happens (backend error messages pass
+  // through verbatim; only the non-Error fallback is client copy).
+  const t = useI18n((s) => s.t);
   const limit = opts.limit ?? 200;
   const pollMs = opts.pollMs ?? PRO_POLL_MS;
   const [entries, setEntries] = useState<ProConsoleEntry[]>([]);
@@ -311,11 +315,12 @@ export function useProConsoleLog(opts: { limit?: number; pollMs?: number } = {})
       }
       setError(null);
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : "console poll failed");
+      if (mounted.current)
+        setError(e instanceof Error ? e.message : t("news.pro.poll_failed", "console poll failed"));
     } finally {
       inflight.current = false;
     }
-  }, [limit]);
+  }, [limit, t]);
 
   useEffect(() => {
     if (!polling) return;

@@ -16,6 +16,7 @@
 import { limitUtilization } from "@/lib/riskVizMath";
 import { formatNumber } from "@/lib/format";
 import { utilTone, type RskTone, type RiskLimitRow } from "./riskThresholds";
+import { useI18n } from "@/stores/i18nStore";
 
 /** Ring geometry: r=40 → circumference ≈ 251.33, rotated so 0% starts at 12 o'clock. */
 const R = 40;
@@ -29,6 +30,7 @@ function centreSize(text: string): number {
 }
 
 export function LimitGauge({ row }: { row: RiskLimitRow }) {
+  const t = useI18n((s) => s.t);
   const util = limitUtilization(row.value, row.limit);
   const tone: RskTone = utilTone(util);
   const hasValue = row.value !== null;
@@ -43,17 +45,25 @@ export function LimitGauge({ row }: { row: RiskLimitRow }) {
   const shown = sweep === null ? 0 : sweep * CIRC;
 
   const caption = hasLimit
-    ? `${pct}% of the backend limit (${formatNumber(row.limit, row.digits)}${row.unit})`
+    ? t("risk.gauge.caption_pct", "{pct}% of the backend limit ({limit}{unit})", { pct: pct === null ? "" : pct, limit: formatNumber(row.limit, row.digits), unit: row.unit })
     : hasValue
       ? row.limit === null
-        ? "no backend limit in payload — ring indeterminate, never satisfied"
-        : "no comparable limit — ring indeterminate, never satisfied"
-      : "no backend value in payload — nothing measured";
+        ? t("risk.gauge.no_limit", "no backend limit in payload — ring indeterminate, never satisfied")
+        : t("risk.gauge.no_comparable", "no comparable limit — ring indeterminate, never satisfied")
+      : t("risk.gauge.no_value", "no backend value in payload — nothing measured");
 
   return (
     <section
       className={`rsk-gauge tone-${tone}`}
-      aria-label={`${row.label}: ${hasValue ? `${centreWithUnit}` : "unknown"}${pct !== null ? `, ${pct}% of backend limit` : ", no backend limit"}`}
+      aria-label={
+        hasValue
+          ? pct !== null
+            ? t("risk.gauge.aria_limit", "{label}: {value}, {pct}% of backend limit", { label: row.label, value: centreWithUnit, pct: String(pct) })
+            : t("risk.gauge.aria_none", "{label}: {value}, no backend limit", { label: row.label, value: centreWithUnit })
+          : pct !== null
+            ? t("risk.gauge.aria_unknown_limit", "{label}: {value}, {pct}% of backend limit", { label: row.label, value: t("risk.status.unknown", "unknown"), pct: String(pct) })
+            : t("risk.gauge.aria_unknown_none", "{label}: {value}, no backend limit", { label: row.label, value: t("risk.status.unknown", "unknown") })
+      }
       title={`${row.label} — ${row.field}`}
     >
       <svg viewBox="0 0 120 120" width={118} height={118} role="img" aria-hidden="true">
@@ -74,7 +84,7 @@ export function LimitGauge({ row }: { row: RiskLimitRow }) {
           {centreWithUnit}
         </text>
         <text className="rsk-gauge__pct" x="60" y="73" textAnchor="middle">
-          {pct === null ? "no limit" : `${pct}% of limit`}
+          {pct === null ? t("risk.gauge.no_limit_short", "no limit") : t("risk.gauge.pct_of_limit", "{pct}% of limit", { pct })}
         </text>
       </svg>
       <span className="rsk-gauge__lab">{row.label}</span>

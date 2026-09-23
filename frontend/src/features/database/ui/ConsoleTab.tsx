@@ -48,6 +48,7 @@ import {
   truncationNote,
 } from "../uiLogic";
 import type { ConsoleColumn, ConsoleDatabase } from "../api";
+import { useI18n } from "@/stores/i18nStore";
 
 const QUICK_KINDS = ["top100", "count", "recent", "schema", "integrity"] as const;
 const PAGE_SIZE = 100;
@@ -62,8 +63,11 @@ interface GridResult {
 }
 
 function Grid({ columns, rows, small }: { columns: string[]; rows: Array<Record<string, unknown>>; small?: boolean }) {
-  if (columns.length === 0) return <div className="dbc-empty">No columns — the query returned no projection.</div>;
-  if (rows.length === 0) return <div className="dbc-empty">No rows.</div>;
+  const t = useI18n((s) => s.t);
+  if (columns.length === 0) {
+    return <div className="dbc-empty">{t("database.explorer.grid_no_columns", "No columns — the query returned no projection.")}</div>;
+  }
+  if (rows.length === 0) return <div className="dbc-empty">{t("database.explorer.grid_no_rows", "No rows.")}</div>;
   return (
     <div tabIndex={0} className={`dbc-grid ${small ? "sm" : ""}`}>
       <table>
@@ -91,16 +95,19 @@ function Grid({ columns, rows, small }: { columns: string[]; rows: Array<Record<
 }
 
 function ColumnsGrid({ columns }: { columns: ConsoleColumn[] }) {
-  if (columns.length === 0) return <EmptyState message="The backend reported no columns for this table." />;
+  const t = useI18n((s) => s.t);
+  if (columns.length === 0) {
+    return <EmptyState message={t("database.explorer.no_columns", "The backend reported no columns for this table.")} />;
+  }
   return (
     <div tabIndex={0} className="dbc-grid sm">
       <table>
         <thead>
           <tr>
-            <th scope="col">column</th>
-            <th scope="col">type</th>
-            <th scope="col">flags</th>
-            <th scope="col">default</th>
+            <th scope="col">{t("database.explorer.th_column", "column")}</th>
+            <th scope="col">{t("database.explorer.th_type", "type")}</th>
+            <th scope="col">{t("database.explorer.th_flags", "flags")}</th>
+            <th scope="col">{t("database.explorer.th_default", "default")}</th>
           </tr>
         </thead>
         <tbody>
@@ -109,7 +116,7 @@ function ColumnsGrid({ columns }: { columns: ConsoleColumn[] }) {
               <td>{c.name}</td>
               <td>{c.type}</td>
               <td>
-                {c.pk && <span className="badge good">PK</span>} {c.notnull && <span className="badge neutral">NOT NULL</span>}
+                {c.pk && <span className="badge good">PK</span>}{" "}{c.notnull && <span className="badge neutral">NOT NULL</span>}
               </td>
               <td className={c.default === null || c.default === undefined ? "null" : undefined}>
                 {c.default === null || c.default === undefined ? "null" : String(c.default)}
@@ -127,6 +134,7 @@ function ColumnsGrid({ columns }: { columns: ConsoleColumn[] }) {
 /* ------------------------------------------------------------------ */
 
 function ExplorerPanel() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(60_000);
   const dbs = useConsoleDatabases(poll.paused);
   const manage = useDbManageStatus(poll.paused);
@@ -163,7 +171,7 @@ function ExplorerPanel() {
     if (sqlApplied === null) setQuery(defaultSqlForProvider(provider));
   }, [provider, sqlApplied]);
 
-  const blocker = consoleBlocker(active);
+  const blocker = consoleBlocker(active, t);
   const tableRows = tables.data?.tables ?? [];
   const filteredTables = filter.trim()
     ? tableRows.filter((t) => t.name.toLowerCase().includes(filter.trim().toLowerCase()))
@@ -194,29 +202,33 @@ function ExplorerPanel() {
   return (
     <>
       <Panel
-        title="Database console — explorer (provider-abstracted)"
+        title={t("database.explorer.title", "Database console — explorer (provider-abstracted)")}
         accent
         right={
           <>
             <FreshnessCaption fetchedAtMs={dbs.dataUpdatedAt || null} intervalMs={60_000} stale={poll.paused} />
             <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={60_000} busy={dbs.isFetching} />
             <button className="btn small" onClick={() => void refresh.mutateAsync()} disabled={refresh.isPending}>
-              {refresh.isPending ? "re-scanning…" : "re-scan"}
+              {refresh.isPending
+                ? t("database.explorer.rescanning", "re-scanning…")
+                : t("database.explorer.rescan", "re-scan")}
             </button>
           </>
         }
       >
         <QuerySection<{ success: boolean; databases: ConsoleDatabase[] }>
-          title="databases"
+          title={t("database.explorer.databases_title", "databases")}
           query={dbs}
           skeletonRows={3}
-          emptyMessage="No databases discovered."
-          emptyHint="Use re-scan to force a fresh discovery pass."
+          emptyMessage={t("database.explorer.empty_dbs", "No databases discovered.")}
+          emptyHint={t("database.explorer.empty_dbs_hint", "Use re-scan to force a fresh discovery pass.")}
         >
           {(data) => (
             <div className="dbc-console">
               <div className="dbc-side">
-                <div className="dbc-side-title">databases · {(data.databases ?? []).length}</div>
+                <div className="dbc-side-title">
+                  {t("database.explorer.side_databases", "databases · {n}", { n: (data.databases ?? []).length })}
+                </div>
                 <div tabIndex={0} className="dbc-list">
                   {(data.databases ?? []).map((d) => (
                     <button
@@ -236,9 +248,17 @@ function ExplorerPanel() {
                     </button>
                   ))}
                 </div>
-                <div className="dbc-side-title">tables{table ? ` · ${table}` : ""}</div>
-                <FieldRow label="filter tables" hint={`${filteredTables.length} of ${tableRows.length} shown`}>
-                  <TextField value={filter} onChange={setFilter} placeholder="substr…" />
+                <div className="dbc-side-title">
+                  {table ? t("database.explorer.tables_of", "tables · {db}", { db: table }) : t("database.explorer.tables", "tables")}
+                </div>
+                <FieldRow
+                  label={t("database.explorer.filter_label", "filter tables")}
+                  hint={t("database.explorer.filter_hint", "{shown} of {total} shown", {
+                    shown: filteredTables.length,
+                    total: tableRows.length,
+                  })}
+                >
+                  <TextField value={filter} onChange={setFilter} placeholder={t("database.explorer.filter_ph", "substr…")} />
                 </FieldRow>
                 <div tabIndex={0} className="dbc-list">
                   {tables.isPending ? (
@@ -249,20 +269,24 @@ function ExplorerPanel() {
                       {tables.data.hint && <span className="dbc-hintline">{tables.data.hint}</span>}
                     </div>
                   ) : filteredTables.length === 0 ? (
-                    <div className="dbc-empty">No matching table.</div>
+                    <div className="dbc-empty">{t("database.explorer.no_match", "No matching table.")}</div>
                   ) : (
-                    filteredTables.map((t) => (
+                    filteredTables.map((tb) => (
                       <button
-                        key={t.name}
-                        className={`dbc-item ${t.name === table ? "active" : ""}`}
+                        key={tb.name}
+                        className={`dbc-item ${tb.name === table ? "active" : ""}`}
                         onClick={() => {
-                          setTable(t.name);
+                          setTable(tb.name);
                           setPage(0);
                         }}
-                        title={`${t.name} · ${t.rows === null ? "row count unknown" : `${t.rows.toLocaleString("en-US")} rows`}`}
+                        title={`${tb.name} · ${
+                          tb.rows === null
+                            ? t("database.explorer.rows_unknown", "row count unknown")
+                            : `${tb.rows.toLocaleString("en-US")} ${t("database.explorer.rows_word", "rows")}`
+                        }`}
                       >
-                        <span className="name">{t.name}</span>
-                        <span className="meta">{t.rows === null ? "?" : t.rows.toLocaleString("en-US")}</span>
+                        <span className="name">{tb.name}</span>
+                        <span className="meta">{tb.rows === null ? "?" : tb.rows.toLocaleString("en-US")}</span>
                       </button>
                     ))
                   )}
@@ -272,16 +296,21 @@ function ExplorerPanel() {
               <div className="dbc-main">
                 <div className="dbc-row between">
                   <span className="dbc-row">
-                    <span className="inline-mono">{db ?? "no database"}</span>
+                    <span className="inline-mono">{db ?? t("database.explorer.no_db", "no database")}</span>
                     <StatusBadge status={active ? String(active.status) : "UNKNOWN"} />
                     {active && <span className="dbc-sub">{active.provider}{active.server ? ` · ${active.server}` : ""}</span>}
                   </span>
-                  <span className="dbc-sub">{reachable.length}/{list.length} reachable</span>
+                  <span className="dbc-sub">
+                    {t("database.explorer.reachable_count", "{reachable}/{total} reachable", {
+                      reachable: reachable.length,
+                      total: list.length,
+                    })}
+                  </span>
                 </div>
 
                 {blocker && (
                   <div className="dbc-blocker" role="alert">
-                    <span className="title">This database cannot be opened.</span>
+                    <span className="title">{t("database.explorer.blocker_title", "This database cannot be opened.")}</span>
                     <span>{blocker.message}</span>
                     {blocker.hint && <span className="hint">{blocker.hint}</span>}
                     {reachable.length > 0 && (
@@ -298,7 +327,7 @@ function ExplorerPanel() {
                               setShowSchema(false);
                             }}
                           >
-                            switch to {r.name}
+                            {t("database.explorer.switch_to", "switch to")} {r.name}
                           </button>
                         ))}
                       </span>
@@ -320,20 +349,20 @@ function ExplorerPanel() {
                           onClick={() => setShowSchema((s) => !s)}
                           aria-pressed={showSchema}
                         >
-                          columns
+                          {t("database.explorer.columns_btn", "columns")}
                         </button>
                       </div>
                       <span className="dbc-row">
-                        <span className="dbc-sub">{pageCaption(page * PAGE_SIZE, rows.data?.rows?.length ?? 0)}</span>
+                        <span className="dbc-sub">{pageCaption(page * PAGE_SIZE, rows.data?.rows?.length ?? 0, t)}</span>
                         <button className="btn small" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                          ‹ prev
+                          {t("database.explorer.prev", "‹ prev")}
                         </button>
                         <button
                           className="btn small"
                           disabled={(rows.data?.rows?.length ?? 0) < PAGE_SIZE}
                           onClick={() => setPage((p) => p + 1)}
                         >
-                          next ›
+                          {t("database.explorer.next", "next ›")}
                         </button>
                       </span>
                     </div>
@@ -365,35 +394,41 @@ function ExplorerPanel() {
 
                 <div>
                   <div className="dbc-section-title" style={{ marginTop: 0 }}>
-                    SQL console — read only: SELECT / EXPLAIN / WITH / PRAGMA / VALUES
+                    {t("database.explorer.sql_title", "SQL console — read only: SELECT / EXPLAIN / WITH / PRAGMA / VALUES")}
                   </div>
                   <textarea
                     className="dbc-sql"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     spellCheck={false}
-                    aria-label="SQL query"
+                    aria-label={t("database.explorer.aria_sql", "SQL query")}
                     placeholder={defaultSqlForProvider(provider)}
                   />
                   <div className="dbc-row end" style={{ marginTop: 6 }}>
-                    <span className="dbc-sub">{db ?? "no database selected"}</span>
+                    <span className="dbc-sub">{db ?? t("database.explorer.no_db_selected", "no database selected")}</span>
                     <button className="btn primary" onClick={() => void runQuery()} disabled={sql.isPending || !db || blocker !== null}>
-                      {sql.isPending ? "running…" : "Run (cap 500 rows, 10s timeout)"}
+                      {sql.isPending
+                        ? t("database.explorer.running", "running…")
+                        : t("database.explorer.run", "Run (cap 500 rows, 10s timeout)")}
                     </button>
                   </div>
                   <div className="dbc-sub" style={{ marginTop: 4 }}>
-                    The backend enforces the allow-list and a hard row cap — multi-statement and write SQL are refused before touching the
-                    database.
+                    {t(
+                      "database.explorer.allowlist_note",
+                      "The backend enforces the allow-list and a hard row cap — multi-statement and write SQL are refused before touching the database.",
+                    )}
                   </div>
                   {result && (
                     <div style={{ marginTop: 8 }}>
                       <div className={`dbc-note ${result.ok ? "good" : "bad"}`}>
                         <span className={`dbc-result-note ${result.ok ? "ok" : "fail"}`}>{result.note}</span>
-                        {result.truncated && <span>{truncationNote(result.truncated, result.cap)}</span>}
+                        {result.truncated && <span>{truncationNote(result.truncated, result.cap, t)}</span>}
                       </div>
                       {result.ok && <Grid columns={result.columns} rows={result.rows} small />}
                       <details className="dbc-raw" style={{ marginTop: 6 }}>
-                        <summary>raw payload ({result.rows.length} rows kept)</summary>
+                        <summary>
+                          {t("database.explorer.raw_result", "raw payload ({n} rows kept)", { n: result.rows.length })}
+                        </summary>
                         <div tabIndex={0} className="dbc-raw-body">
                           <JsonView value={{ columns: result.columns, rows: result.rows.slice(0, 20) }} name="result" depth={1} />
                         </div>
@@ -416,6 +451,7 @@ function ExplorerPanel() {
 /* ------------------------------------------------------------------ */
 
 function ApiKeysPanel({ paused }: { paused: boolean }) {
+  const t = useI18n((s) => s.t);
   const keys = useApiKeys(paused);
   const saveKey = useSaveApiKey();
   const delKey = useDeleteApiKey();
@@ -423,25 +459,33 @@ function ApiKeysPanel({ paused }: { paused: boolean }) {
 
   return (
     <Panel
-      title="Named API keys (OS SecretStore — values never shown)"
+      title={t("database.explorer.keys_title", "Named API keys (OS SecretStore — values never shown)")}
       right={<FreshnessCaption fetchedAtMs={keys.dataUpdatedAt || null} intervalMs={60_000} stale={paused} />}
     >
       {keys.isPending ? (
         <Skeleton count={3} />
       ) : keys.data && !keys.data.success ? (
-        <div className="dbc-note bad">{String(keys.data.error ?? "listing keys failed")}</div>
+        <div className="dbc-note bad">
+          {String(keys.data.error ?? t("database.explorer.keys_list_failed", "listing keys failed"))}
+        </div>
       ) : (keys.data?.apikeys ?? []).length === 0 ? (
-        <EmptyState message="No named keys stored." hint="Store a key below — the value is written straight to the OS secret store." />
+        <EmptyState
+          message={t("database.explorer.empty_keys", "No named keys stored.")}
+          hint={t(
+            "database.explorer.empty_keys_hint",
+            "Store a key below — the value is written straight to the OS secret store.",
+          )}
+        />
       ) : (
         <>
           <div tabIndex={0} className="dbc-grid">
             <table>
               <thead>
                 <tr>
-                  <th scope="col">name</th>
-                  <th scope="col">stored as</th>
-                  <th scope="col">state</th>
-                  <th scope="col">actions</th>
+                  <th scope="col">{t("database.th.name", "name")}</th>
+                  <th scope="col">{t("database.th.stored_as", "stored as")}</th>
+                  <th scope="col">{t("database.th.state", "state")}</th>
+                  <th scope="col">{t("database.th.actions", "actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -454,7 +498,7 @@ function ApiKeysPanel({ paused }: { paused: boolean }) {
                     </td>
                     <td>
                       <button className="btn small danger" disabled={delKey.isPending} onClick={() => void delKey.mutateAsync(k.name)}>
-                        Delete…
+                        {t("database.explorer.delete", "Delete…")}
                       </button>
                     </td>
                   </tr>
@@ -463,10 +507,22 @@ function ApiKeysPanel({ paused }: { paused: boolean }) {
             </table>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "end", marginTop: 10 }}>
-            <FieldRow label="key name" hint="simple identifier (server rejects spaces/slashes, reserved names)">
+            <FieldRow
+              label={t("database.explorer.key_name_label", "key name")}
+              hint={t(
+                "database.explorer.key_name_hint",
+                "simple identifier (server rejects spaces/slashes, reserved names)",
+              )}
+            >
               <TextField value={newKey.name} onChange={(v) => setNewKey((s) => ({ ...s, name: v }))} />
             </FieldRow>
-            <FieldRow label="value" hint="sent once, stored in the SecretStore, never echoed">
+            <FieldRow
+              label={t("database.explorer.key_value_label", "value")}
+              hint={t(
+                "database.explorer.key_value_hint",
+                "sent once, stored in the SecretStore, never echoed",
+              )}
+            >
               <TextField value={newKey.value} onChange={(v) => setNewKey((s) => ({ ...s, value: v }))} placeholder="••••••••" />
             </FieldRow>
             <button
@@ -474,7 +530,7 @@ function ApiKeysPanel({ paused }: { paused: boolean }) {
               disabled={saveKey.isPending || newKey.name.trim() === "" || newKey.value === ""}
               onClick={() => void saveKey.mutateAsync(newKey)}
             >
-              {saveKey.isPending ? "saving…" : "Store key"}
+              {saveKey.isPending ? t("database.manage.saving", "saving…") : t("database.explorer.store_key", "Store key")}
             </button>
           </div>
           <div className="dbc-stack" style={{ gap: 6, marginTop: 8 }}>

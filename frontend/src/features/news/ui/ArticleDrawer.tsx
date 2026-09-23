@@ -9,6 +9,7 @@ import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { HeatBar } from "@/components/viz";
+import { useI18n } from "@/stores/i18nStore";
 import { useNewsAnalysis, useNewsArticle, useNewsProAnswers } from "../hooks";
 import { decodeStringList } from "../model";
 import type { NewsAiAnalysisRow, NewsFeedArticle } from "../types";
@@ -42,6 +43,7 @@ export function ArticleDrawer({
   onAnalyze: (force: boolean) => void;
 }) {
   const detail = useNewsArticle(articleId);
+  const t = useI18n((s) => s.t);
   const analysis = useNewsAnalysis(articleId);
   /* GET /api/news/{id} carries no ai_analysis block (verified in
    * news_liquidity_mslie_routes.py get_news_detail), so the drawer's LLM verdict
@@ -83,7 +85,7 @@ export function ArticleDrawer({
     <div className="news-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside ref={boxRef} className="news-drawer" role="dialog" aria-modal="true" aria-label="News article detail">
         <header aria-label="Article">
-          <span>Article detail</span>
+          <span>{t("news.article.header", "Article detail")}</span>
           <span className="inline-mono tiny faint">#{articleId.slice(0, 10)}</span>
           <button className="btn small close" onClick={onClose}>
             Close <kbd>esc</kbd>
@@ -129,7 +131,7 @@ export function ArticleDrawer({
               </section>
 
               <section>
-                <div className="section-title">Deterministic analysis</div>
+                <div className="section-title">{t("news.article.det_title", "Deterministic analysis")}</div>
                 {ana ? (
                   <>
                     <dl className="kv">
@@ -236,7 +238,7 @@ export function ArticleDrawer({
               )}
 
               <section>
-                <div className="section-title">Asset impacts</div>
+                <div className="section-title">{t("news.article.impacts_title", "Asset impacts")}</div>
                 {impacts.length === 0 ? (
                   <EmptyState message="No impact records for this article." />
                 ) : (
@@ -254,7 +256,7 @@ export function ArticleDrawer({
               </section>
 
               <section>
-                <div className="section-title">Consensus across sources</div>
+                <div className="section-title">{t("news.article.consensus_title", "Consensus across sources")}</div>
                 {consensus ? (
                   <dl className="kv">
                     <dt>sources / independent</dt>
@@ -295,7 +297,7 @@ export function ArticleDrawer({
 
               {related.length > 0 && (
                 <section>
-                  <div className="section-title">Related coverage</div>
+                  <div className="section-title">{t("news.article.related_title", "Related coverage")}</div>
                   <ul className="small muted" style={{ margin: 0, paddingInlineStart: 16 }}>
                     {related.map((r, i) => (
                       <li key={i}>{String(r.title ?? r.article_id ?? "—")}</li>
@@ -306,7 +308,7 @@ export function ArticleDrawer({
 
               {postEventsText && (
                 <section>
-                  <div className="section-title">Post-event validation</div>
+                  <div className="section-title">{t("news.article.post_event_title", "Post-event validation")}</div>
                   <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
                     {postEventsText}
                   </pre>

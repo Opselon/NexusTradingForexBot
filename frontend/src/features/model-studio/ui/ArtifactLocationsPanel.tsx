@@ -16,6 +16,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { ARTIFACT_LOCATION_META, type ArtifactLocationEntry, type ArtifactLocationKey } from "../model";
 import { modelStudioApi } from "../api";
 
@@ -44,7 +45,32 @@ function displayPath(entry: { relative_path?: string; absolute_path?: string }):
   return p.replace(/\\/g, "/");
 }
 
+
+/** Display label per artifact root — literal t() keys (dynamic keys are banned). */
+function ArtifactLabel({ k }: { k: ArtifactLocationKey }) {
+  const t = useI18n((s) => s.t);
+  switch (k) {
+    case "datasets":
+      return <>{t("model-studio.artifacts.datasets", "Market Datasets")}</>;
+    case "position_datasets":
+      return <>{t("model-studio.artifacts.position_datasets", "Position Datasets")}</>;
+    case "position_datasets_alt":
+      return (
+        <>{t("model-studio.artifacts.position_datasets_alt", "Position Datasets (data/positions)")}</>
+      );
+    case "model_checkpoints":
+      return <>{t("model-studio.artifacts.model_checkpoints", "Model Checkpoints")}</>;
+    case "training_datasets":
+      return <>{t("model-studio.artifacts.training_datasets", "Training Datasets")}</>;
+    case "registry_database":
+      return <>{t("model-studio.artifacts.registry_database", "SQLite Registry")}</>;
+    default:
+      return null;
+  }
+}
+
 export function ArtifactLocationsPanel() {
+  const t = useI18n((s) => s.t);
   const q = useQuery({
     queryKey: ["model-studio", "artifact-locations"],
     queryFn: ({ signal }) => modelStudioApi.artifactLocations(signal),
@@ -64,11 +90,14 @@ export function ArtifactLocationsPanel() {
 
   return (
     <Panel
-      title="Artifact locator (on-disk roots)"
+      title={t("model-studio.artifacts.title", "Artifact locator (on-disk roots)")}
       right={
         q.data ? (
           <span className={`badge ${allPresent ? "good" : present === 0 ? "bad" : "warn"}`}>
-            {present}/{total} roots present
+            {t("model-studio.artifacts.roots_present", "{p}/{n} roots present", {
+              p: present,
+              n: total,
+            })}
           </span>
         ) : null
       }
@@ -78,16 +107,24 @@ export function ArtifactLocationsPanel() {
         <Skeleton count={3} />
       ) : q.isError ? (
         <ErrorState
-          message={q.error instanceof Error ? q.error.message : "artifact-locations endpoint failed"}
+          message={
+            q.error instanceof Error
+              ? q.error.message
+              : t("model-studio.artifacts.endpoint_failed", "artifact-locations endpoint failed")
+          }
           onRetry={() => void q.refetch()}
         />
       ) : !q.data || total === 0 ? (
-        <EmptyState message="Artifact map unavailable." hint="The backend reported no artifact roots." />
+        <EmptyState
+          message={t("model-studio.artifacts.empty_msg", "Artifact map unavailable.")}
+          hint={t("model-studio.artifacts.empty_hint", "The backend reported no artifact roots.")}
+        />
       ) : (
         <div style={{ display: "grid", gap: 6 }}>
           {q.data.repo_root && (
             <div className="tiny muted" style={{ marginBottom: 2, fontFamily: "var(--mono)" }}>
-              repo root: {displayPath({ absolute_path: q.data.repo_root })}
+              {t("model-studio.artifacts.repo_root", "repo root:")}{" "}
+              <span dir="ltr">{displayPath({ absolute_path: q.data.repo_root })}</span>
             </div>
           )}
           {roots.map((key) => {
@@ -114,20 +151,28 @@ export function ArtifactLocationsPanel() {
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="small">
-                    <strong>{meta.label}</strong>{" "}
-                    <span className="tiny faint" style={{ fontFamily: "var(--mono)" }}>
+                    <strong>
+                      <ArtifactLabel k={key} />
+                    </strong>{" "}
+                    <span className="tiny faint" dir="ltr" style={{ fontFamily: "var(--mono)" }}>
                       {meta.hint}
                     </span>
                   </div>
-                  <div className="tiny muted" style={{ fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div
+                    className="tiny muted"
+                    dir="ltr"
+                    style={{ fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
                     {displayPath(entry)}
                   </div>
                 </div>
-                <span style={{ textAlign: "right", flexShrink: 0 }}>
-                  <span className={`badge ${ok ? "good" : "unknown"}`}>{ok ? "present" : "absent"}</span>
+                <span style={{ textAlign: "end", flexShrink: 0 }}>
+                  <span className={`badge ${ok ? "good" : "unknown"}`}>{ok
+                      ? t("model-studio.artifacts.present", "present")
+                      : t("model-studio.artifacts.absent", "absent")}</span>
                   {entry.is_dir ? (
-                    <span className="tiny faint" style={{ marginLeft: 6 }}>
-                      {entry.file_count} files
+                    <span className="tiny faint" style={{ marginInlineStart: 6 }}>
+                      {t("model-studio.artifacts.files", "{n} files", { n: entry.file_count })}
                     </span>
                   ) : null}
                 </span>
@@ -135,8 +180,10 @@ export function ArtifactLocationsPanel() {
             );
           })}
           <div className="tiny faint" style={{ marginTop: 4 }}>
-            Paths are resolved server-side from the repo root and reported read-only — the UI never sends a path
-            back to the backend.
+            {t(
+              "model-studio.artifacts.footer",
+              "Paths are resolved server-side from the repo root and reported read-only — the UI never sends a path back to the backend.",
+            )}
           </div>
         </div>
       )}

@@ -222,7 +222,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
       style={{ alignItems: "flex-start", paddingTop: "12vh" }}
       onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
     >
-      <div ref={boxRef} className="modal cp-modal" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div ref={boxRef} className="modal cp-modal" role="dialog" aria-modal="true" aria-label={t("ux.shortcut.palette", "Command palette")}>
         <div className="cp-searchrow">
           <span className="cp-glyph" aria-hidden="true">⌘</span>
           <input
@@ -232,7 +232,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
                         aria-expanded="true"
                         aria-controls="cp-listbox"
                         aria-activedescendant={`cp-opt-${selected}`}
-                        aria-label="Search commands"
+                        aria-label={t("ux.palette.search_aria", "Search commands")}
             placeholder={t("ux.palette.placeholder", "Search commands… (e.g. “signal”, “position”, “diagnostics”)")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -245,7 +245,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
           />
           <span className="cp-count tiny faint inline-mono">{filtered.length ? `${filtered.length}` : "0"}</span>
         </div>
-        <div className="palette-list cp-list" id="cp-listbox" ref={listRef} role="listbox" aria-label="Commands">
+        <div className="palette-list cp-list" id="cp-listbox" ref={listRef} role="listbox" aria-label={t("ux.palette.list_aria", "Commands")}>
           {filtered.length === 0 ? (
             <div className="palette-empty">{t("ux.palette.empty", "No results")}</div>
           ) : (

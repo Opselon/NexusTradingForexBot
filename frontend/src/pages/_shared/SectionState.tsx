@@ -16,6 +16,7 @@
 import type { ReactNode } from "react";
 import { ApiError } from "@/types/api";
 import { EmptyState, ErrorState, Skeleton } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 
 /** Minimal structural view of a TanStack Query result (read + refetch). */
 export interface QueryLike<T> {
@@ -54,7 +55,7 @@ export function SectionState<T>({
   emptyWhen,
   emptyMessage,
   emptyHint,
-  errorFallback = "Endpoint unavailable.",
+  errorFallback,
   children,
 }: {
   query: QueryLike<T>;
@@ -66,6 +67,7 @@ export function SectionState<T>({
   errorFallback?: string;
   children: (data: T) => ReactNode;
 }) {
+  const t = useI18n((s) => s.t);
   if (query.isPending && query.data === undefined) {
     return (
       <div style={{ padding: "4px 2px" }}>
@@ -76,7 +78,7 @@ export function SectionState<T>({
   if (query.data === undefined) {
     return (
       <ErrorState
-        message={errorText(query.error, errorFallback)}
+        message={errorText(query.error, errorFallback ?? t("shell.section.error_fallback", "Endpoint unavailable."))}
         requestId={errorRequestId(query.error)}
         onRetry={() => void query.refetch()}
       />
@@ -134,6 +136,8 @@ export function triLevel(value: boolean | null | undefined): "good" | "bad" | "u
 }
 
 export function TriBadge({ value, on, off }: { value: boolean | null | undefined; on: string; off: string }) {
+  const t = useI18n((s) => s.t);
   const level = value === true ? "good" : value === false ? "bad" : "unknown";
-  return <span className={`badge ${level}`}>{triWord(value, on, off)}</span>;
+  const word = value === true ? on : value === false ? off : t("shell.tri.unknown", "UNKNOWN");
+  return <span className={`badge ${level}`}>{word}</span>;
 }

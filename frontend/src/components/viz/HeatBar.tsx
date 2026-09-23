@@ -8,6 +8,7 @@
  */
 
 import { clampRatio } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface HeatBarItem {
@@ -57,11 +58,13 @@ const VAR: Record<string, string> = {
 export function HeatBar({
   items,
   scaleCaptions,
-  emptyHint = "no rows reported",
+  emptyHint,
   invert = false,
   segments = 4,
 }: HeatBarProps) {
-  if (items.length === 0) return <div className="viz-empty">{emptyHint}</div>;
+  const t = useI18n((s) => s.t);
+  if (items.length === 0)
+    return <div className="viz-empty">{emptyHint ?? t("ui.viz.heatbar_empty", "no rows reported")}</div>;
   const W = 120;
   const gap = 2;
   const cellW = (W - gap * (segments - 1)) / segments;
@@ -80,7 +83,7 @@ export function HeatBar({
               viewBox={`0 0 ${W} 14`}
               style={{ height: 14 }}
               role="img"
-              aria-label={`${it.label}: ${ratio === null ? "unknown" : `${(ratio * 100).toFixed(0)}%`}`}
+              aria-label={`${it.label}: ${ratio === null ? t("ui.word.unknown", "UNKNOWN") : `${(ratio * 100).toFixed(0)}%`}`}
             >
               {Array.from({ length: segments }, (_, s) => {
                 const on = s < lit;
@@ -100,7 +103,7 @@ export function HeatBar({
                 );
               })}
             </svg>
-            <span className="val">{ratio === null ? "UNKNOWN" : (it.caption ?? `${(ratio * 100).toFixed(0)}%`)}</span>
+            <span className="val">{ratio === null ? t("ui.word.unknown", "UNKNOWN") : (it.caption ?? `${(ratio * 100).toFixed(0)}%`)}</span>
           </div>
         );
       })}

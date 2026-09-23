@@ -245,21 +245,42 @@ export function registryCounters(summary: ResearchSummaryDto["summary"]): Array<
     .sort((a, b) => b.value - a.value);
 }
 
-/** Normalize a command response (available/success/reason) into a verdict. */
-export function commandVerdict(res: unknown): { ok: boolean; message: string } {
+/** Normalize a command response (available/success/reason) into a verdict.
+ *  `t` (i18n wave) is OPTIONAL: pure/unit-testable callers keep the English
+ *  fallbacks with {var} interpolation; UI callers pass their translate fn. */
+export function commandVerdict(
+  res: unknown,
+  t?: (key: string, fallback: string, vars?: Record<string, string | number>) => string,
+): { ok: boolean; message: string } {
+  t =
+    t ??
+    ((_: string, fallback: string, vars?: Record<string, string | number>) =>
+      vars
+        ? Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), fallback)
+        : fallback);
   const o = obj(res);
   const err = obj(o.error);
   if (err.code || err.message) {
-    return { ok: false, message: str(err.message) ?? `Backend error: ${str(err.code) ?? "UNKNOWN"}` };
+    return {
+      ok: false,
+      message:
+        str(err.message) ??
+        t("research.model.backend_error", "Backend error: {code}", { code: str(err.code) ?? "UNKNOWN" }),
+    };
   }
   const available = bool(o.available);
   const success = bool(o.success) ?? bool(o.cancelled);
   if (available === false || success === false) {
-    return { ok: false, message: str(o.reason) ?? str(o.error) ?? "Backend refused the command." };
+    return { ok: false, message: str(o.reason) ?? str(o.error) ?? t("research.model.refused", "Backend refused the command.") };
   }
   if (available === true || success === true) {
     const detail = str(o.status) ?? str(o.dataset_id) ?? (o.repaired !== undefined ? `repaired=${String(o.repaired)}` : "");
-    return { ok: true, message: detail ? `Backend accepted: ${detail}` : "Backend accepted the command." };
+    return {
+      ok: true,
+      message: detail
+        ? t("research.model.accepted", "Backend accepted: {s}", { s: detail })
+        : t("research.model.accepted_generic", "Backend accepted the command."),
+    };
   }
-  return { ok: true, message: "Backend responded without an explicit verdict." };
+  return { ok: true, message: t("research.model.no_verdict", "Backend responded without an explicit verdict.") };
 }

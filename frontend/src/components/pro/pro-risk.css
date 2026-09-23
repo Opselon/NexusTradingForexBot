@@ -54,11 +54,11 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  min-width: 0;
+  min-inline-size: 0; /* logical, lets long de/es labels wrap inside grid tracks */
 }
 .rv-tile__k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); }
-.rv-tile__v { font-family: var(--mono); font-size: 15px; font-weight: 650; }
-.rv-tile__s { font-size: 11px; color: var(--text-dim); }
+.rv-tile__v { font-family: var(--mono); font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.rv-tile__s { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
 .rv-tile.tone-ok .rv-tile__v { color: var(--green); }
 .rv-tile.tone-bad .rv-tile__v { color: #ff8f89; }
 .rv-tile.tone-warn .rv-tile__v { color: var(--amber); }
@@ -82,13 +82,18 @@
   border: 1px solid var(--border);
   overflow: hidden;
 }
-.rv-limit__fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; transition: width 0.18s ease; }
+/* logical: fill grows from the START edge (right in RTL) */
+.rv-limit__fill { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: 6px; transition: width 0.18s ease; }
 .rv-limit__track.tone-ok .rv-limit__fill { background: linear-gradient(90deg, rgba(62, 207, 142, 0.55), var(--green)); }
 .rv-limit__track.tone-warn .rv-limit__fill { background: linear-gradient(90deg, rgba(235, 161, 63, 0.55), var(--amber)); }
 .rv-limit__track.tone-bad .rv-limit__fill { background: linear-gradient(90deg, rgba(242, 86, 77, 0.55), var(--red)); }
 .rv-limit__track.tone-unknown .rv-limit__fill { background: repeating-linear-gradient(45deg, #1d2937 0 6px, #131c27 6px 12px); }
-/* backend limit marker at the 100 % point of the track */
-.rv-limit__mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--border-strong); }
+/* RTL: the vivid end of each gradient belongs at the fill's START edge */
+:root[dir="rtl"] .rv-limit__track.tone-ok .rv-limit__fill { background: linear-gradient(270deg, rgba(62, 207, 142, 0.55), var(--green)); }
+:root[dir="rtl"] .rv-limit__track.tone-warn .rv-limit__fill { background: linear-gradient(270deg, rgba(235, 161, 63, 0.55), var(--amber)); }
+:root[dir="rtl"] .rv-limit__track.tone-bad .rv-limit__fill { background: linear-gradient(270deg, rgba(242, 86, 77, 0.55), var(--red)); }
+/* backend limit marker at the 100 % point of the track (track END in both dirs) */
+.rv-limit__mark { position: absolute; inset-block: -3px; inset-inline-end: 0; width: 2px; background: var(--border-strong); }
 .rv-limit__note { font-size: 11px; color: var(--text-faint); }
 .rv-limit__note.no-budget { color: var(--amber); }
 
@@ -102,7 +107,7 @@
 .rv-arc.tone-bad .rv-arc__value { stroke: var(--red); }
 .rv-arc.tone-unknown .rv-arc__value { stroke: var(--text-faint); stroke-dasharray: 3 5; }
 .rv-arc__num { font-family: var(--mono); font-size: 18px; font-weight: 700; fill: currentColor; }
-.rv-arc__legend { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--text-dim); min-width: 0; }
+.rv-arc__legend { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--text-dim); min-inline-size: 0; }
 .rv-arc__legend b { font-family: var(--mono); color: var(--text); font-weight: 650; }
 
 /* ------------------------------- gate funnel -------------------------------- */
@@ -117,7 +122,9 @@
   font-family: var(--mono);
   max-width: 100%;
 }
-.rv-chip__n { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* min-inline-size:0 lets the name cell shrink so the ellipsis applies once the
+   longer translated verdict (de "NICHT BESTANDEN") would overflow the chip */
+.rv-chip__n { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
 .rv-chip__v { font-weight: 700; letter-spacing: 0.04em; }
 .rv-chip.tone-pass { border-color: rgba(62, 207, 142, 0.4); }
 .rv-chip.tone-pass .rv-chip__v { color: var(--green); }
@@ -131,6 +138,7 @@
 /* ------------------------------ breaker tiles ------------------------------ */
 .rv-breakers { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .rv-breakers .rv-tile__v { font-size: 17px; }
+.rv-funnel__count, .rv-limit__note, .rv-hero__src, .rv-hero__reason { overflow-wrap: break-word; }
 
 @media (max-width: 860px) {
   .rv-hero { grid-template-columns: 1fr; }

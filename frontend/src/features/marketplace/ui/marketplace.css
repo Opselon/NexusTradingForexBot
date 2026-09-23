@@ -101,6 +101,9 @@
   font-size: 18px;
   font-weight: 800;
   display: flex;
+  /* i18n: translated badge (e.g. es LABORATORIO DE INVESTIGACIÓN) must be
+     able to drop to its own line instead of overflowing the hero. */
+  flex-wrap: wrap;
 }
 
 .mkt-hero-badge {
@@ -216,7 +219,10 @@
   display: flex;
   position: sticky;
   top: 0;
-  overflow-x: auto;
+  /* i18n: de/es labels run ~30% longer — wrap onto a new line instead of
+     scrolling horizontally with the scrollbar hidden (silent clipping). */
+  flex-wrap: wrap;
+  overflow-x: visible;
 }
 
 .mkt-nav::-webkit-scrollbar { display: none; }
@@ -226,7 +232,7 @@
   text-transform: uppercase;
   color: var(--text-dim);
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal;
   background: none;
   border: 1px solid transparent;
   border-radius: 7px;
@@ -522,6 +528,19 @@
   to { opacity: 1; transform: none; }
 }
 
+/* i18n RTL (fa/ar): the drawer sits on the inline-end (left) edge, so the
+   entrance slides from -x and the drop shadow falls toward +x (content side).
+   Physical values mirrored — box-shadow/transform have no logical forms. */
+@keyframes mktDrawerInRtl {
+  0% { opacity: 0.4; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+
+[dir="rtl"] .mkt-drawer {
+  box-shadow: 22px 0 48px rgba(0, 0, 0, 0.55);
+  animation-name: mktDrawerInRtl;
+}
+
 .mkt-drawer header {
   border-block-end: 1px solid var(--border-strong);
   letter-spacing: 0.11em;
@@ -667,6 +686,21 @@
   width: 6px;
   height: 6px;
   box-shadow: 0 0 6px rgba(62, 207, 142, 0.7);
+}
+
+/* ==========================================================================
+   RTL (fa/ar) — letter-spacing pulls cursive scripts apart; keep the
+   tracking of LTR design only where the script can take it.
+   ========================================================================== */
+[dir="rtl"] .mkt-hero-title,
+[dir="rtl"] .mkt-hero-badge,
+[dir="rtl"] .mkt-ribbon-item .lab,
+[dir="rtl"] .mkt-nav-item,
+[dir="rtl"] .mkt-family-tag,
+[dir="rtl"] .mkt-actions .btn.small,
+[dir="rtl"] .mkt-drawer header,
+[dir="rtl"] .mkt-snapshot-tile .k {
+  letter-spacing: normal;
 }
 
 /* ==========================================================================

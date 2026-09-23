@@ -29,6 +29,7 @@
  */
 
 import { type JSX } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import type { FieldErrors, FieldValues } from "@/features/config/validation";
 import { FieldRow, NumberField, SelectField, TextField } from "@/features/config/ui/kit";
 import type { DbManageStatus } from "../api";
@@ -43,6 +44,7 @@ export function ConnectionPanel(props: {
   set: (k: string, v: string | boolean) => void;
   errors: FieldErrors;
 }): JSX.Element {
+  const t = useI18n((s) => s.t);
   const { manage, values, set, errors } = props;
 
   /* A URL-carried password lands in BOTH password fields at once, so the
@@ -60,7 +62,7 @@ export function ConnectionPanel(props: {
       <ConnectionUrlField values={values} set={set} onPassword={capturePassword} />
 
       <div className="dbcp-grid">
-        {pgSpecs().map((spec) => {
+        {pgSpecs(t).map((spec) => {
           const err = errors[spec.key]?.[0] ?? null;
           const v = values[spec.key];
           return (

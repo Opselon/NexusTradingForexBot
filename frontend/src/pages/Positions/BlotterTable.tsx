@@ -18,6 +18,7 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { type Column } from "@/pages/_shared/widgets";
 import type { Density } from "./density";
+import { useI18n } from "@/stores/i18nStore";
 
 interface SortState {
   key: string;
@@ -49,10 +50,11 @@ export default function BlotterTable<T>({
   initialSort,
   query,
   onQueryChange,
-  emptyMessage = "No rows.",
+  emptyMessage,
   rowClassName,
   density,
 }: BlotterTableProps<T>) {
+  const t = useI18n((s) => s.t);
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [focusRow, setFocusRow] = useState(0);
 
@@ -73,7 +75,7 @@ export default function BlotterTable<T>({
   }, [rows, sort, columns]);
 
   const activeRow = focusRow < visible.length ? focusRow : Math.max(0, visible.length - 1);
-  const countLabel = visible.length === totalCount ? `${totalCount} rows` : `${visible.length} of ${totalCount} rows`;
+  const countLabel = visible.length === totalCount ? `${totalCount} ${t("ux.table.rows", "rows")}` : `${visible.length} ${t("ux.table.of", "of")} ${totalCount} ${t("ux.table.rows", "rows")}`;
 
   /** Arrow/Home/End move the roving row focus; keys inside action buttons are
    *  left alone (target !== currentTarget) so button shortcuts keep working. */
@@ -97,18 +99,18 @@ export default function BlotterTable<T>({
         <input
           className="input"
           style={{ inlineSize: 240 }}
-          placeholder="filter rows (ticket / symbol / text)…"
+          placeholder={t("ux.table.filter_ph", "filter rows (ticket / symbol / text)…")}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          aria-label="Filter table rows"
+          aria-label={t("ux.table.filter_aria", "Filter table rows")}
         />
         <span className="timestamp-note">{countLabel}</span>
-        <span className="timestamp-note" title="keyboard row navigation — focus a row, then move with the arrow keys">
-          rows: ↑ ↓ Home End
+        <span className="timestamp-note" title={t("positions.filter.kbd_title", "keyboard row navigation — focus a row, then move with the arrow keys")}>
+          {t("positions.filter.keys", "rows: ↑ ↓ Home End")}
         </span>
         {query && (
           <button className="btn small ghost" onClick={() => onQueryChange("")}>
-            clear
+            {t("ux.table.clear", "clear")}
           </button>
         )}
       </div>
@@ -131,7 +133,7 @@ export default function BlotterTable<T>({
                         onClick={() =>
                           setSort((s) => (s?.key === c.key ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" } : { key: c.key, dir: "desc" }))
                         }
-                        title={`sort by ${c.label}`}
+                        title={t("ux.table.sort_by", "sort by {name}", { name: c.label })}
                       >
                         {c.label}
                         <span className="dir">{active ? (sort!.dir === "asc" ? "▲" : "▼") : "⇅"}</span>
@@ -163,7 +165,7 @@ export default function BlotterTable<T>({
             {visible.length === 0 && (
               <tr>
                 <td colSpan={columns.length} style={{ textAlign: "center", color: "var(--text-faint)", paddingBlock: 18 }}>
-                  {rows.length === 0 ? emptyMessage : "No rows match the filter."}
+                  {rows.length === 0 ? (emptyMessage ?? t("ux.table.empty", "No rows.")) : t("ux.table.empty_filter", "No rows match the filter.")}
                 </td>
               </tr>
             )}

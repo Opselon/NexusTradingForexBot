@@ -47,8 +47,7 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  inset-inline: 0;
   height: 2px;
   background: linear-gradient(90deg, var(--accent), var(--violet), var(--green));
   opacity: 0.85;
@@ -242,6 +241,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .ms-pill {
@@ -328,7 +328,7 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 0;
+  inset-inline-start: 0;
   width: 100%;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.3), transparent);
@@ -488,7 +488,7 @@
   font-weight: 700;
   color: var(--accent-strong);
   min-width: 48px;
-  text-align: right;
+  text-align: end;
 }
 
 /* ==========================================================================
@@ -727,7 +727,7 @@
   gap: 6px;
   max-height: 280px;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-inline-end: 4px;
 }
 
 .ms-slot-card {
@@ -776,6 +776,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ==========================================================================
+   RTL (fa/ar): Latin letter-spacing tracking tears the joined Arabic and
+   Persian script apart on translated copy. Code/mono badges (.ms-dim-badge,
+   .ms-slot-*) keep their tracking — they render identifiers, not sentences.
+   ========================================================================== */
+[dir="rtl"] .ms-title-wrap h1,
+[dir="rtl"] .ms-title-subtitle,
+[dir="rtl"] .ms-tab-item,
+[dir="rtl"] .ms-pill,
+[dir="rtl"] .ms-metric-label,
+[dir="rtl"] .ms-form-row label,
+[dir="rtl"] .ms-btn-action,
+[dir="rtl"] .ms-decision-label,
+[dir="rtl"] .ms-decision-badge {
+  letter-spacing: normal;
 }
 
 .ms-slot-val {

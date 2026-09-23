@@ -17,6 +17,7 @@
 
 import type { AccountState, RiskChecks, RuntimeRiskState } from "@/types/domain";
 import { formatNumber, formatPct } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import {
   UNKNOWN_WORD,
   backendWord,
@@ -33,6 +34,24 @@ import "./pro-risk.css";
 type ToneClass = "ok" | "warn" | "bad" | "unknown";
 
 const UNKNOWN_LABEL = UNKNOWN_WORD;
+
+/** t signature shared by the display helpers below (see stores/i18nStore). */
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * Display word -> localized word for the FOUR literals this file may show on
+ * its own (ACTIVE / DISENGAGED / OFF / UNKNOWN — see killSwitchWord and the
+ * tiles). Every other word is a backend payload string and passes through
+ * VERBATIM: this helper invents no vocabulary, it only translates the ones
+ * this component already owned.
+ */
+function dispT(t: Translate, word: string): string {
+  if (word === "ACTIVE") return t("ui.word.active", "ACTIVE");
+  if (word === "DISENGAGED") return t("ui.word.disengaged", "DISENGAGED");
+  if (word === "OFF") return t("ui.word.off", "OFF");
+  if (word === "UNKNOWN") return t("ui.word.unknown", "UNKNOWN");
+  return word;
+}
 
 /** Kill-switch word: a boolean restated, never inferred. null = payload absent. */
 export function killSwitchWord(killSwitchActive: boolean | null | undefined): string {
@@ -106,39 +125,42 @@ export function GuardianHero({
   /** Optional freshness note supplied by the caller (rendered as-is). */
   probedNote?: string;
 }) {
+  const t = useI18n((s) => s.t);
   const tone = guardianTone(state);
   const word = state ? backendWord(state.runtime_risk_state_effective) : UNKNOWN_LABEL;
   return (
-    <section className="rv-hero" aria-label="Guardian state">
+    <section className="rv-hero" aria-label={t("ui.risk.guardian_aria", "Guardian state")}>
       <div className={`rv-hero__state tone-${tone}`}>
-        <span className="rv-hero__k">Runtime risk state (backend)</span>
-        <span className="rv-hero__word">{word}</span>
+        <span className="rv-hero__k">{t("ui.risk.runtime_state_k", "Runtime risk state (backend)")}</span>
+        <span className="rv-hero__word">{dispT(t, word)}</span>
         <span className="rv-hero__src">
           {state
-            ? `source: runtime_risk_state_effective${state.runtime_risk_state ? ` · raw=${state.runtime_risk_state}` : ""}`
-            : "source: /api/debug/state — payload unavailable"}
+            ? `${t("ui.risk.source_field", "source: runtime_risk_state_effective")}${state.runtime_risk_state ? ` · raw=${state.runtime_risk_state}` : ""}`
+            : t("ui.risk.source_unavailable", "source: /api/debug/state — payload unavailable")}
         </span>
         {state && state.halt_reason ? (
-          <span className="rv-hero__reason">backend halt_reason: {state.halt_reason}</span>
+          <span className="rv-hero__reason">
+            {t("ui.risk.halt_reason", "backend halt_reason: {r}", { r: state.halt_reason })}
+          </span>
         ) : null}
       </div>
       <div className="rv-hero__side">
         <Tile
-          k="Kill switch"
-          v={killSwitchWord(state?.kill_switch_active)}
-          s={state ? "field: kill_switch_active" : "no backend payload"}
+          k={t("ui.risk.kill_switch", "Kill switch")}
+          v={dispT(t, killSwitchWord(state?.kill_switch_active))}
+          s={state ? t("ui.risk.field", "field: {f}", { f: "kill_switch_active" }) : t("ui.risk.no_payload", "no backend payload")}
           tone={state ? (state.kill_switch_active ? "bad" : "ok") : "unknown"}
         />
         <Tile
-          k="Survival mode"
-          v={state ? (state.survival_mode ? "ACTIVE" : "OFF") : UNKNOWN_LABEL}
-          s={state ? "field: survival_mode" : undefined}
+          k={t("ui.risk.survival_mode", "Survival mode")}
+          v={dispT(t, state ? (state.survival_mode ? "ACTIVE" : "OFF") : UNKNOWN_LABEL)}
+          s={state ? t("ui.risk.field", "field: {f}", { f: "survival_mode" }) : undefined}
           tone={state ? (state.survival_mode ? "warn" : "ok") : "unknown"}
         />
         <Tile
-          k="Account freshness"
-          v={state ? backendWord(state.account_freshness) : UNKNOWN_LABEL}
-          s={state ? "field: account_freshness" : undefined}
+          k={t("ui.risk.account_freshness", "Account freshness")}
+          v={state ? backendWord(state.account_freshness) : dispT(t, UNKNOWN_LABEL)}
+          s={state ? t("ui.risk.field", "field: {f}", { f: "account_freshness" }) : undefined}
           tone={freshnessTone(state?.account_freshness)}
         />
         {probedNote ? <span className="rv-hero__src">{probedNote}</span> : null}
@@ -157,14 +179,17 @@ export function GuardianHero({
 export function DrawdownBar({
   actualPct,
   limitPct,
-  label = "Account drawdown",
+  label,
 }: {
   /** AccountState.drawdown (backend-computed, same scale as the config limit). */
   actualPct: number | null | undefined;
   /** risk_config.max_account_drawdown_pct — null when the engine sent none. */
   limitPct: number | null | undefined;
+  /** Caption override; defaults to the localized "Account drawdown". */
   label?: string;
 }) {
+  const t = useI18n((s) => s.t);
+  const lab = label ?? t("ui.risk.drawdown_label", "Account drawdown");
   const util = limitUtilization(actualPct, limitPct);
   const hasActual = typeof actualPct === "number" && Number.isFinite(actualPct);
   const hasLimit = typeof limitPct === "number" && Number.isFinite(limitPct);
@@ -173,25 +198,31 @@ export function DrawdownBar({
   const tone: ToneClass = !hasActual && !hasLimit ? "unknown" : util === null ? "warn" : limitTone(util);
   const width = clamp01(util);
   return (
-    <section className="rv-limit" aria-label={label}>
+    <section className="rv-limit" aria-label={lab}>
       <div className="rv-limit__row">
         <span className={`rv-limit__actual tone-${tone}`}>
-          {hasActual ? formatPct(actualPct) : UNKNOWN_LABEL}
+          {hasActual ? formatPct(actualPct) : dispT(t, UNKNOWN_LABEL)}
         </span>
         <span className="rv-limit__limit">
           {limitPct === null || limitPct === undefined
-            ? "no backend limit"
-            : `limit ${formatPct(limitPct)} (max_account_drawdown_pct)`}
+            ? t("ui.risk.no_limit", "no backend limit")
+            : t("ui.risk.limit_line", "limit {v} (max_account_drawdown_pct)", { v: formatPct(limitPct) })}
         </span>
       </div>
-      <div className={`rv-limit__track tone-${tone}`} role="img" aria-label={`${label}: ${hasActual ? formatPct(actualPct) : "unknown"}${util !== null ? ` (${(util * 100).toFixed(0)}% of backend limit)` : ""}`}>
+      <div
+        className={`rv-limit__track tone-${tone}`}
+        role="img"
+        aria-label={`${lab}: ${hasActual ? formatPct(actualPct) : t("ui.word.unknown", "UNKNOWN")}${
+          util !== null ? ` (${t("ui.risk.of_limit", "{p}% of backend limit", { p: (util * 100).toFixed(0) })})` : ""
+        }`}
+      >
         <i className="rv-limit__fill" style={{ width: width === null ? "100%" : `${width * 100}%` }} />
-        {util !== null && util > 1 ? <span className="rv-limit__mark" style={{ left: "calc(100% - 2px)" }} /> : null}
+        {util !== null && util > 1 ? <span className="rv-limit__mark" /> : null}
       </div>
       <span className={`rv-limit__note${util === null ? " no-budget" : ""}`}>
         {util === null
-          ? "Backend supplied no drawdown limit — the budget is unknown, never assumed."
-          : `${(util * 100).toFixed(0)}% of the backend-supplied limit consumed (arithmetic on two backend values).`}
+          ? t("ui.risk.no_limit_note", "Backend supplied no drawdown limit — the budget is unknown, never assumed.")
+          : t("ui.risk.limit_consumed", "{p}% of the backend-supplied limit consumed (arithmetic on two backend values).", { p: (util * 100).toFixed(0) })}
       </span>
     </section>
   );
@@ -209,7 +240,7 @@ export function MarginArc({
   marginLevelPct,
   thresholdPct,
   thresholdWord,
-  label = "Margin level",
+  label,
 }: {
   /** AccountState.margin_level / exposure.account.margin_level (broker %). */
   marginLevelPct: number | null | undefined;
@@ -217,8 +248,11 @@ export function MarginArc({
   thresholdPct?: number | null;
   /** Backend-supplied threshold wording echoed verbatim; no fallback text. */
   thresholdWord?: string | null;
+  /** Caption override; defaults to the localized "Margin level". */
   label?: string;
 }) {
+  const t = useI18n((s) => s.t);
+  const lab = label ?? t("ui.risk.margin_label", "Margin level");
   const hasValue = typeof marginLevelPct === "number" && Number.isFinite(marginLevelPct);
   const hasThreshold = typeof thresholdPct === "number" && Number.isFinite(thresholdPct);
   // Floor semantics: margin level ABOVE the backend floor is the clean side.
@@ -235,7 +269,7 @@ export function MarginArc({
   const arcLen = CIRC * 0.75; // 270° dial
   const shown = sweep === null ? null : sweep * arcLen;
   return (
-    <section className={`rv-arc tone-${tone}`} aria-label={label}>
+    <section className={`rv-arc tone-${tone}`} aria-label={lab}>
       <svg viewBox="0 0 120 120" width={104} height={104} role="img">
         <path
           className="rv-arc__track"
@@ -259,20 +293,24 @@ export function MarginArc({
       </svg>
       <div className="rv-arc__legend">
         <span>
-          <b>{hasValue ? `${marginLevelPct}` : UNKNOWN_LABEL}</b> {label}
-          {hasValue ? " (broker margin_level)" : ""}
+          <b>{hasValue ? `${marginLevelPct}` : dispT(t, UNKNOWN_LABEL)}</b> {lab}
+          {hasValue ? ` ${t("ui.risk.broker_margin", "(broker margin_level)")}` : ""}
         </span>
         {thresholdWord ? (
           <span>
-            backend threshold: <b>{backendWord(thresholdWord)}</b>
+            {t("ui.risk.backend_threshold", "backend threshold: ")}
+            <b>{backendWord(thresholdWord)}</b>
           </span>
         ) : null}
         {!hasThreshold ? (
           <span className="rv-limit__note no-budget">
-            No backend margin threshold in payload — arc is indeterminate by design.
+            {t("ui.risk.no_threshold_note", "No backend margin threshold in payload — arc is indeterminate by design.")}
           </span>
         ) : (
-          <span>backend floor <b>{formatPct(thresholdPct)}</b></span>
+          <span>
+            {t("ui.risk.backend_floor", "backend floor ")}
+            <b>{formatPct(thresholdPct)}</b>
+          </span>
         )}
       </div>
     </section>
@@ -292,24 +330,44 @@ export function MarginArc({
  */
 export function GateFunnel({
   checks,
-  emptyMessage = "No gate trace on the last proposal (risk_checks absent or empty).",
+  emptyMessage,
 }: {
   /** V1RiskStatus.risk_checks — untrusted record, narrowed inside gateEvidence. */
   checks: RiskChecks | null | undefined;
+  /** Optional override for the empty-funnel caption (localized default). */
   emptyMessage?: string;
 }) {
+  const t = useI18n((s) => s.t);
   const funnel = gateEvidence(checks);
-  if (funnel.total === 0) return <p className="rv-funnel__empty">{emptyMessage}</p>;
+  if (funnel.total === 0)
+    return (
+      <p className="rv-funnel__empty">
+        {emptyMessage ?? t("ui.risk.gate_empty", "No gate trace on the last proposal (risk_checks absent or empty).")}
+      </p>
+    );
   return (
-    <div className="rv-funnel" aria-label="Risk gate funnel">
-      {funnel.rows.map((row) => (
-        <span key={row.name} className={`rv-chip tone-${row.verdict}`} title={row.detail ?? undefined}>
-          <span className="rv-chip__n">{row.name.replace(/_/g, " ")}</span>
-          <span className="rv-chip__v">{verdictWord(row.verdict)}</span>
-        </span>
-      ))}
+    <div className="rv-funnel" aria-label={t("ui.risk.funnel_aria", "Risk gate funnel")}>
+      {funnel.rows.map((row) => {
+        const verdict = verdictWord(row.verdict);
+        const verdictText =
+          verdict === "PASS"
+            ? t("ui.word.pass", "PASS")
+            : verdict === "FAIL"
+              ? t("ui.word.fail", "FAIL")
+              : t("ui.word.unknown", "UNKNOWN");
+        return (
+          <span key={row.name} className={`rv-chip tone-${row.verdict}`} title={row.detail ?? undefined}>
+            <span className="rv-chip__n">{row.name.replace(/_/g, " ")}</span>
+            <span className="rv-chip__v">{verdictText}</span>
+          </span>
+        );
+      })}
       <span className="rv-funnel__count">
-        {funnel.pass} pass · {funnel.fail} fail · {funnel.unknown} unknown — value vs its own backend limit
+        {t("ui.risk.gate_count", "{p} pass · {f} fail · {u} unknown — value vs its own backend limit", {
+          p: funnel.pass,
+          f: funnel.fail,
+          u: funnel.unknown,
+        })}
       </span>
     </div>
   );
@@ -323,27 +381,54 @@ export function GateFunnel({
  * UNKNOWN tile in the warn colour — an unproven zero is never coloured clean.
  */
 export function BreakerTiles({ state }: { state: RuntimeRiskState | null | undefined }) {
+  const t = useI18n((s) => s.t);
   const counters: Array<{ k: string; field: string; v: number | null | undefined }> = [
-    { k: "Telemetry dropped", field: "telemetry_dropped", v: state?.telemetry_dropped },
-    { k: "Audit dead-letter rows", field: "audit_dead_letter_rows", v: state?.audit_dead_letter_rows },
-    { k: "Audit batch failures", field: "audit_batch_failures", v: state?.audit_batch_failures },
-    { k: "Financial events failed", field: "financial_events_failed", v: state?.financial_events_failed },
+    { k: t("ui.risk.counter.telemetry_dropped", "Telemetry dropped"), field: "telemetry_dropped", v: state?.telemetry_dropped },
+    { k: t("ui.risk.counter.audit_dead_letter_rows", "Audit dead-letter rows"), field: "audit_dead_letter_rows", v: state?.audit_dead_letter_rows },
+    { k: t("ui.risk.counter.audit_batch_failures", "Audit batch failures"), field: "audit_batch_failures", v: state?.audit_batch_failures },
+    { k: t("ui.risk.counter.financial_events_failed", "Financial events failed"), field: "financial_events_failed", v: state?.financial_events_failed },
   ];
   return (
-    <div className="rv-breakers" aria-label="Circuit-breaker counters">
+    <div className="rv-breakers" aria-label={t("ui.risk.breakers_aria", "Circuit-breaker counters")}>
       {counters.map((c) => {
         const tone: ToneClass = state ? counterTone(c.v) : "unknown";
-        const value = state ? (typeof c.v === "number" && Number.isFinite(c.v) ? String(c.v) : UNKNOWN_LABEL) : UNKNOWN_LABEL;
-        return <Tile key={c.field} k={c.k} v={value} s={state ? `field: ${c.field}` : "no backend payload"} tone={tone} />;
+        const value = state
+          ? typeof c.v === "number" && Number.isFinite(c.v)
+            ? String(c.v)
+            : dispT(t, UNKNOWN_LABEL)
+          : dispT(t, UNKNOWN_LABEL);
+        return (
+          <Tile
+            key={c.field}
+            k={c.k}
+            v={value}
+            s={state ? t("ui.risk.field", "field: {f}", { f: c.field }) : t("ui.risk.no_payload", "no backend payload")}
+            tone={tone}
+          />
+        );
       })}
     </div>
   );
 }
 
 /** Convenience: backend `exposureTotals(...)` + account block -> one-line caption.
- *  A null totals object (no backend rows) is worded as "no rows", never "flat". */
+ *  A null totals object (no backend rows) is worded as "no rows", never "flat".
+ *
+ *  i18n: this is a plain function (not a component), so it reads `t` from the
+ *  store at CALL time instead of subscribing — callers that render the caption
+ *  should select `t` themselves (or re-render on language change) so the line
+ *  follows a switch. It currently has no call sites in the repo. */
 export function exposureCaption(exposure: AccountState | null | undefined, totals?: ExposureTotals | null): string {
-  if (!totals) return "Exposure: no backend rows — not rendered as flat.";
+  const t = useI18n.getState().t;
+  if (!totals) return t("ui.risk.exposure_none", "Exposure: no backend rows — not rendered as flat.");
   const equity = exposure?.equity;
-  return `Exposure: ${totals.positions ?? "?"} pos · ${totals.volume ?? "?"} lots across ${totals.symbols} symbol(s)${typeof equity === "number" ? ` · equity ${formatNumber(equity)}` : ""}`;
+  return t("ui.risk.exposure_line", "Exposure: {pos} pos · {vol} lots across {sym} symbol(s){eq}", {
+    pos: totals.positions ?? "?",
+    vol: totals.volume ?? "?",
+    sym: totals.symbols,
+    eq:
+      typeof equity === "number"
+        ? ` · ${t("ui.risk.exposure_equity", "equity {e}", { e: formatNumber(equity) })}`
+        : "",
+  });
 }

@@ -41,9 +41,10 @@ import { BreakerTiles, GateFunnel, GuardianHero, MarginArc } from "@/components/
 import { EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState, errorText } from "@/pages/_shared/SectionState";
 import { MeterBar, SortableTable, type Column } from "@/pages/_shared/widgets";
-import { gateEvidence, verdictWord, directionWord, type GateEvidenceRow } from "@/lib/riskGateTrace";
+import { gateEvidence, directionWord, type GateEvidenceRow } from "@/lib/riskGateTrace";
 import { formatMoney, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import { useI18n } from "@/stores/i18nStore";
 import { buildLimitRows } from "./limitRows";
 import { pressureOf, rampStyle } from "./riskThresholds";
 import { HeroStrip } from "./HeroStrip";
@@ -65,7 +66,8 @@ interface GateRowVM {
   verdict: "pass" | "fail" | "unknown";
   value: string;
   limit: string;
-  reason: string;
+  /** Backend reason text; null = payload carried none (translated at render). */
+  reason: string | null;
   /** Depth vs the gate's own limit (1.00 = at the limit) — drives the tint. */
   pressure: number | null;
 }
@@ -88,7 +90,7 @@ function gateRow(row: GateEvidenceRow): GateRowVM {
     verdict: row.verdict,
     value: cell(row.value),
     limit: `${directionWord(row.direction)} ${cell(row.limit)}`,
-    reason: row.detail ?? "no backend reason in payload — not a passing gate",
+    reason: row.detail ?? null,
     // Colour-only depth from the same two backend numbers (never a new
     // verdict): 1.00 = at the gate's own limit, >1 = past it.
     pressure: pressureOf(row.value, row.limit, row.direction),
@@ -96,82 +98,93 @@ function gateRow(row: GateEvidenceRow): GateRowVM {
 }
 
 function RiskMatrix({ checks }: { checks: RiskChecks }) {
+  const t = useI18n((s) => s.t);
+  const verdictText = (v: "pass" | "fail" | "unknown"): string =>
+    v === "pass" ? t("risk.matrix.verdict.pass", "PASS") : v === "fail" ? t("risk.matrix.verdict.fail", "FAIL") : t("risk.matrix.verdict.unknown", "UNKNOWN");
   const ev = useMemo(() => gateEvidence(checks), [checks]);
   const rows = useMemo(() => ev.rows.map(gateRow), [ev]);
   const cols = useMemo<Array<Column<GateRowVM>>>(
     () => [
       {
         key: "gate",
-        label: "Gate",
+        label: t("risk.matrix.col.gate", "Gate"),
         sortValue: (r) => r.name,
         render: (r) => r.name.replace(/_/g, " "),
       },
       {
         key: "verdict",
-        label: "Verdict",
+        label: t("risk.matrix.col.verdict", "Verdict"),
         sortValue: (r) => r.verdict,
         render: (r) => (
           <span className={`l4-chip ${r.verdict === "pass" ? "good" : r.verdict === "fail" ? "bad" : ""}`}>
-            {verdictWord(r.verdict)}
+            {verdictText(r.verdict)}
           </span>
         ),
       },
       {
         key: "value",
-        label: "Value",
+        label: t("risk.matrix.col.value", "Value"),
         num: true,
         sortValue: (r) => (r.value === "—" ? null : r.value),
         render: (r) => <span className="rsk-cell" style={rampStyle(r.pressure)}>{r.value}</span>,
       },
-      { key: "limit", label: "Limit", num: true, sortValue: (r) => (r.limit === "—" ? null : r.limit), render: (r) => r.limit },
+      { key: "limit", label: t("risk.matrix.col.limit", "Limit"), num: true, sortValue: (r) => (r.limit === "—" ? null : r.limit), render: (r) => r.limit },
       {
         key: "reason",
-        label: "Reason (backend)",
-        render: (r) => <span className="small muted" title={r.reason}>{r.reason.length > 60 ? `${r.reason.slice(0, 60)}…` : r.reason}</span>,
+        label: t("risk.matrix.col.reason", "Reason (backend)"),
+        render: (r) => {
+          const text = r.reason ?? t("risk.matrix.no_reason", "no backend reason in payload — not a passing gate");
+          return <span className="small muted" title={text}>{text.length > 60 ? `${text.slice(0, 60)}…` : text}</span>;
+        },
       },
     ],
-    [],
+    [t],
   );
   return (
     <>
-      <SortableTable columns={cols} rows={rows} rowKey={(r) => r.name} emptyMessage="No gate rows." maxHeight={null} />
+      <SortableTable columns={cols} rows={rows} rowKey={(r) => r.name} emptyMessage={t("risk.matrix.empty", "No gate rows.")} maxHeight={null} />
       <div className="l4-note" style={{ padding: "6px 12px" }}>
-        {ev.pass} pass · {ev.fail} fail · {ev.unknown} unknown — each PASS/FAIL is the arithmetic restatement of two
-        backend-supplied numbers (value vs its own declared limit); an entry whose limit is absent is UNKNOWN, never FAIL.
+        {t(
+          "risk.matrix.summary",
+          "{pass} pass · {fail} fail · {unknown} unknown — each PASS/FAIL is the arithmetic restatement of two backend-supplied numbers (value vs its own declared limit); an entry whose limit is absent is UNKNOWN, never FAIL.",
+          { pass: ev.pass, fail: ev.fail, unknown: ev.unknown },
+        )}
       </div>
     </>
   );
 }
 
 function GuardianBlock({ state }: { state: RuntimeRiskState | null }) {
-  if (!state) return <EmptyState message="Runtime risk state unavailable (shown as UNKNOWN — never inferred)." hint="/api/debug/state risk section did not answer." />;
+  const t = useI18n((s) => s.t);
+  if (!state) return <EmptyState message={t("risk.guardian.empty_msg", "Runtime risk state unavailable (shown as UNKNOWN — never inferred).")} hint={t("risk.guardian.empty_hint", "/api/debug/state risk section did not answer.")} />;
   const effective = state.runtime_risk_state_effective.toUpperCase();
   const level = state.kill_switch_active || effective === "HALTED" ? "bad" : effective === "RUNNING" ? "good" : "warn";
   return (
     <dl className="kv">
-      <dt>safety status</dt>
-      <dd><span className={`badge ${level}`}>{state.kill_switch_active ? "KILL SWITCH ACTIVE" : effective}</span></dd>
-      <dt>halt reason</dt>
+      <dt>{t("risk.guardian.safety_status", "safety status")}</dt>
+      <dd><span className={`badge ${level}`}>{state.kill_switch_active ? t("risk.guardian.kill_switch", "KILL SWITCH ACTIVE") : effective}</span></dd>
+      <dt>{t("risk.guardian.halt_reason", "halt reason")}</dt>
       <dd>{state.halt_reason || "—"}</dd>
-      <dt>halt triggered</dt>
+      <dt>{t("risk.guardian.halt_triggered", "halt triggered")}</dt>
       <dd>{state.halt_triggered_at || "—"}</dd>
-      <dt>survival mode</dt>
-      <dd>{state.survival_mode ? <span className="badge warn">ACTIVE</span> : <span className="badge good">OFF</span>}</dd>
-      <dt>account freshness</dt>
+      <dt>{t("risk.guardian.survival_mode", "survival mode")}</dt>
+      <dd>{state.survival_mode ? <span className="badge warn">{t("risk.guardian.active", "ACTIVE")}</span> : <span className="badge good">{t("risk.guardian.off", "OFF")}</span>}</dd>
+      <dt>{t("risk.guardian.account_freshness", "account freshness")}</dt>
       <dd><StatusBadge status={state.account_freshness} /></dd>
-      <dt>consecutive losses</dt>
+      <dt>{t("risk.guardian.consecutive_losses", "consecutive losses")}</dt>
       <dd>{state.consecutive_losses}</dd>
-      <dt>hard max lots</dt>
+      <dt>{t("risk.guardian.hard_max_lots", "hard max lots")}</dt>
       <dd>{formatNumber(state.hard_max_lots)}</dd>
-      <dt>financial backpressure</dt>
+      <dt>{t("risk.guardian.backpressure", "financial backpressure")}</dt>
       <dd className={state.financial_queue_backpressure > 0 ? "pnl-neg" : undefined}>{state.financial_queue_backpressure}</dd>
-      <dt>config error</dt>
+      <dt>{t("risk.guardian.config_error", "config error")}</dt>
       <dd className={state.config_error ? "pnl-neg" : undefined}>{state.config_error ?? "—"}</dd>
     </dl>
   );
 }
 
 export default function RiskPage({ snapshot, nowMs }: Props) {
+  const t = useI18n((s) => s.t);
   const tickMs = nowMs ?? Date.now();
   const statusQuery = useQuery({
     queryKey: ["risk-status"],
@@ -212,8 +225,8 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
   // matrix: value vs backend limit, every field read from the existing
   // payloads (no new endpoint, no invented number).
   const limitRows = useMemo(
-    () => buildLimitRows({ cfg, exposure, account: acct, spread: snapshot?.spread ?? null }),
-    [cfg, exposure, acct, snapshot?.spread],
+    () => buildLimitRows({ cfg, exposure, account: acct, spread: snapshot?.spread ?? null, t }),
+    [cfg, exposure, acct, snapshot?.spread, t],
   );
   const ceilingRows = useMemo(() => limitRows.filter((r) => r.direction === "le"), [limitRows]);
 
@@ -221,9 +234,9 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
   // one, otherwise the query's receive time. No parsable timestamp ⇒ NO chip
   // (an absent timestamp must never render as "0s ago = fresh").
   const probeCandidates: Array<{ key: string; label: string; atMs: number | null }> = [
-    { key: "status", label: "risk status", atMs: statusQuery.data ? Date.parse(statusQuery.data.probed_at) : null },
-    { key: "summary", label: "risk summary", atMs: summaryQuery.data ? Date.parse(summaryQuery.data.probed_at) : null },
-    { key: "guardian", label: "guardian", atMs: runtimeQuery.dataUpdatedAt || null },
+    { key: "status", label: t("risk.chip.label_status", "risk status"), atMs: statusQuery.data ? Date.parse(statusQuery.data.probed_at) : null },
+    { key: "summary", label: t("risk.chip.label_summary", "risk summary"), atMs: summaryQuery.data ? Date.parse(summaryQuery.data.probed_at) : null },
+    { key: "guardian", label: t("risk.chip.label_guardian", "guardian"), atMs: runtimeQuery.dataUpdatedAt || null },
   ];
   const probes = probeCandidates.filter(
     (p): p is { key: string; label: string; atMs: number } => p.atMs !== null && Number.isFinite(p.atMs),
@@ -237,7 +250,7 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
       {/* Derived breach/ok sums over the rows rendered below (hidden when empty) */}
       <HeroStrip rows={limitRows} />
       {probes.length > 0 && (
-        <div className="rsk-probes" aria-label="Probe freshness">
+        <div className="rsk-probes" aria-label={t("risk.chip.aria", "Probe freshness")}>
           {probes.map((p) => (
             <FreshnessChip key={p.key} label={p.label} atMs={p.atMs} nowMs={tickMs} />
           ))}
@@ -245,23 +258,23 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
       )}
       <div className="grid cols-4">
         <MetricCard
-          label="Safety status"
-          value={haltState ? (haltState.kill_switch_active ? "BLOCKED" : haltState.runtime_risk_state_effective.toUpperCase() === "RUNNING" ? "SAFE" : "WARNING") : "UNKNOWN"}
+          label={t("risk.metric.safety_status", "Safety status")}
+          value={haltState ? (haltState.kill_switch_active ? t("risk.status.blocked", "BLOCKED") : haltState.runtime_risk_state_effective.toUpperCase() === "RUNNING" ? t("risk.status.safe", "SAFE") : t("risk.status.warning", "WARNING")) : t("risk.status.unknown", "UNKNOWN")}
           tone={haltState ? (haltState.kill_switch_active ? "neg" : haltState.runtime_risk_state_effective.toUpperCase() === "RUNNING" ? "pos" : undefined) : "dim"}
-          sub={haltState ? `effective=${haltState.runtime_risk_state_effective}` : "backend state unavailable"}
+          sub={haltState ? `effective=${haltState.runtime_risk_state_effective}` : t("risk.metric.state_unavailable", "backend state unavailable")}
         />
-        <MetricCard label="Equity" value={formatMoney(exposure?.account?.equity ?? acct?.equity ?? null)} sub={`margin ${formatMoney(exposure?.account?.margin ?? acct?.margin ?? null)}`} />
+        <MetricCard label={t("risk.metric.equity", "Equity")} value={formatMoney(exposure?.account?.equity ?? acct?.equity ?? null)} sub={t("risk.metric.margin_sub", "margin {m}", { m: formatMoney(exposure?.account?.margin ?? acct?.margin ?? null) })} />
         <MetricCard
-          label="Open exposure"
-          value={exposure?.available ? `${exposure.open_positions ?? 0} pos · ${formatNumber(exposure.total_volume)} lots` : "—"}
+          label={t("risk.metric.open_exposure", "Open exposure")}
+          value={exposure?.available ? t("risk.metric.open_value", "{n} pos · {v} lots", { n: exposure.open_positions ?? 0, v: formatNumber(exposure.total_volume) }) : "—"}
           tone="dim"
-          sub={exposure?.available ? `floating ${formatMoney(exposure.total_floating_profit)}` : (exposure?.reason ?? "unavailable")}
+          sub={exposure?.available ? t("risk.metric.floating_sub", "floating {m}", { m: formatMoney(exposure.total_floating_profit) }) : (exposure?.reason ?? t("risk.metric.unavailable", "unavailable"))}
         />
         <MetricCard
-          label="Margin level"
+          label={t("risk.metric.margin_level", "Margin level")}
           value={marginLevel === null || marginLevel === undefined ? "—" : formatPct(marginLevel, 1)}
           tone={typeof marginLevel === "number" && marginLevel < 200 ? "neg" : "dim"}
-          sub="broker margin_level %"
+          sub={t("risk.metric.margin_level_sub", "broker margin_level %")}
         />
       </div>
 
@@ -269,14 +282,14 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
       <div className="l4-section-gap">
         <GuardianHero
           state={haltState}
-          probedNote={runtimeQuery.dataUpdatedAt ? `probed ${Math.max(0, (tickMs - runtimeQuery.dataUpdatedAt) / 1000).toFixed(1)}s ago` : undefined}
+          probedNote={runtimeQuery.dataUpdatedAt ? t("risk.guardian.probed", "probed {s}s ago", { s: Math.max(0, (tickMs - runtimeQuery.dataUpdatedAt) / 1000).toFixed(1) }) : undefined}
         />
       </div>
       <div className="grid cols-2 l4-section-gap">
-        <Panel title="Circuit-breaker counters" right={<AgeNote label="age" ageSec={runtimeQuery.dataUpdatedAt ? (tickMs - runtimeQuery.dataUpdatedAt) / 1000 : null} />}>
+        <Panel title={t("risk.panel.breakers", "Circuit-breaker counters")} right={<AgeNote label={t("risk.age.label", "age")} ageSec={runtimeQuery.dataUpdatedAt ? (tickMs - runtimeQuery.dataUpdatedAt) / 1000 : null} />}>
           <BreakerTiles state={haltState} />
         </Panel>
-        <Panel title="Limit gauges (backend value vs backend limit)" right={<span className="timestamp-note">missing limit ⇒ indeterminate, never satisfied</span>}>
+        <Panel title={t("risk.panel.gauges", "Limit gauges (backend value vs backend limit)")} right={<span className="timestamp-note">{t("risk.gauges.note", "missing limit ⇒ indeterminate, never satisfied")}</span>}>
           {statusQuery.isPending && !statusQuery.data ? (
             <Skeleton count={3} />
           ) : (
@@ -295,10 +308,10 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
       {/* Stress/limits matrix: every visible value-vs-limit pair as a grid,
           hover a cell (title attr) for the payload paths behind the numbers. */}
       <Panel
-        title="Stress / limits matrix (value vs backend limit)"
+        title={t("risk.panel.stress", "Stress / limits matrix (value vs backend limit)")}
         right={
           <span className="timestamp-note">
-            hover a cell for payload paths · tint = depth past the 80 % soft threshold (100 % = the backend limit)
+            {t("risk.stress.note", "hover a cell for payload paths · tint = depth past the 80 % soft threshold (100 % = the backend limit)")}
           </span>
         }
       >
@@ -312,51 +325,51 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
       </Panel>
 
       <div className="grid cols-2 l4-section-gap">
-        <Panel title="Guardian / runtime detail">
+        <Panel title={t("risk.panel.guardian", "Guardian / runtime detail")}>
           {runtimeQuery.isPending ? (
             <Skeleton count={5} />
           ) : runtimeQuery.isError ? (
-            <ErrorState message={errorText(runtimeQuery.error, "Guardian state endpoint failed.")} requestId={runtimeQuery.error instanceof ApiError ? runtimeQuery.error.requestId : null} onRetry={() => void runtimeQuery.refetch()} />
+            <ErrorState message={errorText(runtimeQuery.error, t("risk.error.guardian", "Guardian state endpoint failed."))} requestId={runtimeQuery.error instanceof ApiError ? runtimeQuery.error.requestId : null} onRetry={() => void runtimeQuery.refetch()} />
           ) : (
             <GuardianBlock state={runtimeQuery.data ?? null} />
           )}
         </Panel>
 
-        <Panel title="Risk configuration (engine, sanitized)">
+        <Panel title={t("risk.panel.config", "Risk configuration (engine, sanitized)")}>
           {statusQuery.isPending ? (
             <Skeleton count={5} />
           ) : statusQuery.isError ? (
-            <ErrorState message={errorText(statusQuery.error, "Risk status endpoint failed.")} requestId={statusQuery.error instanceof ApiError ? statusQuery.error.requestId : null} onRetry={() => void statusQuery.refetch()} />
+            <ErrorState message={errorText(statusQuery.error, t("risk.error.status", "Risk status endpoint failed."))} requestId={statusQuery.error instanceof ApiError ? statusQuery.error.requestId : null} onRetry={() => void statusQuery.refetch()} />
           ) : cfg ? (
             <dl className="kv">
-              <dt>max drawdown %</dt>
+              <dt>{t("risk.cfg.max_drawdown", "max drawdown %")}</dt>
               <dd>{formatPct(cfg.max_account_drawdown_pct)}</dd>
-              <dt>risk per trade %</dt>
+              <dt>{t("risk.cfg.risk_per_trade", "risk per trade %")}</dt>
               <dd>{formatPct(cfg.risk_per_trade_pct)}</dd>
-              <dt>max concurrent positions</dt>
+              <dt>{t("risk.cfg.max_concurrent", "max concurrent positions")}</dt>
               <dd>{cfg.max_concurrent_positions ?? "—"}</dd>
-              <dt>max spread points</dt>
+              <dt>{t("risk.cfg.max_spread", "max spread points")}</dt>
               <dd>{formatNumber(cfg.max_spread_points)}</dd>
-              <dt>max margin usage %</dt>
+              <dt>{t("risk.cfg.max_margin", "max margin usage %")}</dt>
               <dd>{formatPct(cfg.max_margin_usage_pct)}</dd>
-              <dt>max allowed lots</dt>
+              <dt>{t("risk.cfg.max_lots", "max allowed lots")}</dt>
               <dd>{formatNumber(cfg.max_allowed_lots)}</dd>
-              <dt>enforce stop loss</dt>
-              <dd>{cfg.enforce_stop_loss === null ? "—" : cfg.enforce_stop_loss ? <span className="badge good">ON</span> : <span className="badge warn">OFF</span>}</dd>
+              <dt>{t("risk.cfg.enforce_sl", "enforce stop loss")}</dt>
+              <dd>{cfg.enforce_stop_loss === null ? "—" : cfg.enforce_stop_loss ? <span className="badge good">{t("risk.cfg.on", "ON")}</span> : <span className="badge warn">{t("risk.cfg.off", "OFF")}</span>}</dd>
             </dl>
           ) : (
-            <EmptyState message="Risk config unavailable (engine offline or endpoint refused)." hint="Rendered as UNKNOWN — limits are never assumed." />
+            <EmptyState message={t("risk.cfg.empty", "Risk config unavailable (engine offline or endpoint refused).")} hint={t("risk.cfg.empty_hint", "Rendered as UNKNOWN — limits are never assumed.")} />
           )}
         </Panel>
       </div>
 
       <Panel
-        title="Last proposal gate matrix (risk_checks)"
+        title={t("risk.panel.matrix", "Last proposal gate matrix (risk_checks)")}
         right={
           <AgeNote
-            label="probed"
+            label={t("risk.age.probed", "probed")}
             ageSec={statusQuery.data ? (tickMs - Date.parse(statusQuery.data.probed_at)) / 1000 : null}
-            suffix={statusQuery.data?.last_proposal_present ? "proposal present" : "no proposal yet"}
+            suffix={statusQuery.data?.last_proposal_present ? t("risk.matrix.suffix_present", "proposal present") : t("risk.matrix.suffix_absent", "no proposal yet")}
           />
         }
         tight
@@ -364,7 +377,7 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
         {statusQuery.isPending && !statusQuery.data ? (
           <div style={{ padding: 12 }}><Skeleton count={4} /></div>
         ) : statusQuery.isError && !statusQuery.data ? (
-          <ErrorState message={errorText(statusQuery.error, "Risk status endpoint failed.")} requestId={statusQuery.error instanceof ApiError ? statusQuery.error.requestId : null} onRetry={() => void statusQuery.refetch()} />
+          <ErrorState message={errorText(statusQuery.error, t("risk.error.status", "Risk status endpoint failed."))} requestId={statusQuery.error instanceof ApiError ? statusQuery.error.requestId : null} onRetry={() => void statusQuery.refetch()} />
         ) : statusQuery.data?.last_proposal_present && statusQuery.data.risk_checks ? (
           <>
             <div style={{ padding: "10px 12px 0" }}>
@@ -373,64 +386,64 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
             <RiskMatrix checks={statusQuery.data.risk_checks} />
           </>
         ) : (
-          <EmptyState message="No proposal risk_checks yet (engine has not evaluated a trade this session)." hint="The matrix appears with the first proposal — an empty store is not a passing gate." />
+          <EmptyState message={t("risk.matrix.empty_state", "No proposal risk_checks yet (engine has not evaluated a trade this session).")} hint={t("risk.matrix.empty_state_hint", "The matrix appears with the first proposal — an empty store is not a passing gate.")} />
         )}
       </Panel>
 
       <Panel
-        title="Exposure by symbol"
+        title={t("risk.panel.exposure", "Exposure by symbol")}
         right={
           <>
-            <span className="timestamp-note">source /api/v1/risk/summary</span>
-            <button aria-label="Refresh summary" className="btn small ghost" onClick={() => void summaryQuery.refetch()} disabled={summaryQuery.isFetching}>⟳</button>
+            <span className="timestamp-note">{t("risk.exposure.source_note", "source /api/v1/risk/summary")}</span>
+            <button aria-label={t("risk.exposure.refresh_aria", "Refresh summary")} className="btn small ghost" onClick={() => void summaryQuery.refetch()} disabled={summaryQuery.isFetching}>⟳</button>
           </>
         }
       >
         <SectionState
           query={summaryQuery}
-          emptyMessage="No open exposure."
-          emptyHint="The backend reported zero rows — not a rendering gap."
-          errorFallback="Exposure endpoint failed."
+          emptyMessage={t("risk.exposure.empty", "No open exposure.")}
+          emptyHint={t("risk.exposure.empty_hint", "The backend reported zero rows — not a rendering gap.")}
+          errorFallback={t("risk.error.exposure", "Exposure endpoint failed.")}
           emptyWhen={(d) => !(d.exposure?.available && Object.keys(d.exposure.by_symbol ?? {}).length > 0)}
         >
           {(d) => (
             <div style={{ display: "grid", gap: 8 }}>
-              {d.exposure?.available === false && d.exposure.reason ? <div className="l4-note warn">exposure unavailable: {d.exposure.reason}</div> : null}
+              {d.exposure?.available === false && d.exposure.reason ? <div className="l4-note warn">{t("risk.exposure.unavailable", "exposure unavailable: {reason}", { reason: d.exposure.reason })}</div> : null}
               {(() => {
                 const rows = Object.entries(d.exposure?.by_symbol ?? {});
                 if (rows.length === 0) {
-                  return <EmptyState message="No open exposure." hint="The backend reported zero rows — not a rendering gap." />;
+                  return <EmptyState message={t("risk.exposure.empty", "No open exposure.")} hint={t("risk.exposure.empty_hint", "The backend reported zero rows — not a rendering gap.")} />;
                 }
                 const maxVol = Math.max(...rows.map(([, s]) => (Number.isFinite(s.volume) ? s.volume : 0)), 0) || 1;
                 return rows.map(([sym, s]) => (
                   <MeterBar
                     key={sym}
-                    label={`${sym} · ${s.positions} pos`}
+                    label={t("risk.exposure.symbol_label", "{sym} · {n} pos", { sym, n: s.positions })}
                     value={s.volume}
                     limit={maxVol}
-                    unit=" lots"
+                    unit={t("risk.unit.lots", " lots")}
                     tone={(s.profit ?? 0) < 0 ? "warn" : "ok"}
                     fraction={s.volume / maxVol}
-                    caption={`${formatMoney(s.profit)} floating · share of the largest symbol (relativity only, no limit claimed)`}
+                    caption={t("risk.exposure.symbol_caption", "{m} floating · share of the largest symbol (relativity only, no limit claimed)", { m: formatMoney(s.profit) })}
                   />
                 ));
               })()}
               {crossMismatch && (
                 <div className="confirm-box" style={{ borderColor: "rgba(235,161,63,0.5)" }}>
                   <span>
-                    <b>Read mismatch:</b> /api/v1/risk/summary counts {String(posA)} open positions, the canonical snapshot {String(posB)}. Two backend
-                    reads at different instants — re-probe; if it persists, reconcile on the Trading page before trusting the aggregate.
+                    <b>{t("risk.exposure.crosscheck_lead", "Read mismatch:")}</b>{" "}
+                    {t("risk.exposure.crosscheck_text", "/api/v1/risk/summary counts {a} open positions, the canonical snapshot {b}. Two backend reads at different instants — re-probe; if it persists, reconcile on the Trading page before trusting the aggregate.", { a: String(posA), b: String(posB) })}
                   </span>
                 </div>
               )}
-              {exposureRows.length === 0 && d.exposure?.available && <div className="l4-note">summary reports available with an empty by_symbol map.</div>}
+              {exposureRows.length === 0 && d.exposure?.available && <div className="l4-note">{t("risk.exposure.available_empty", "summary reports available with an empty by_symbol map.")}</div>}
             </div>
           )}
         </SectionState>
       </Panel>
 
       {statusQuery.error instanceof ApiError && statusQuery.error.isAuthError && (
-        <div className="banner auth"><span>⛔ Re-authentication required — reopen with ?token=…</span></div>
+        <div className="banner auth"><span>⛔ {t("risk.auth.banner", "Re-authentication required — reopen with ?token=…")}</span></div>
       )}
     </div>
   );

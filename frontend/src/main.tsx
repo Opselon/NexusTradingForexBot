@@ -1,3 +1,6 @@
+// Register every scope's i18n messages before any component renders
+// (module side effects run in import order — this must stay first).
+import "@/lib/i18nMessages";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";

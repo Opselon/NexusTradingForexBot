@@ -31,6 +31,7 @@ import {
   useWorkers,
 } from "../useCases";
 import { cellFromCheck, cellFromSubsystem, cellFromWorker, cellTone, matrixSummary, type MatrixCell } from "../model";
+import { useI18n } from "@/stores/i18nStore";
 import "./health.css";
 
 function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
@@ -79,6 +80,7 @@ function FailedCell({ name, error, onRetry, busy }: { name: string; error: unkno
 }
 
 export default function HealthPage(props: ShellPageProps) {
+  const t = useI18n((s) => s.t);
   void props;
   const poll = usePolling(10_000);
   const [tab, setTab] = useState<"matrix" | "layers" | "workers" | "identity">("matrix");
@@ -287,7 +289,7 @@ export default function HealthPage(props: ShellPageProps) {
       {tab === "matrix" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">Subsystem matrix</span>
+            <span className="lbl">{t("health.panel.matrix", "Subsystem matrix")}</span>
             <span className="src">
               <span className="hl-chip dim">/api/debug/health</span>
               <span className="hl-chip dim">/api/v1/system/health</span>
@@ -312,7 +314,7 @@ export default function HealthPage(props: ShellPageProps) {
       {tab === "layers" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">Required vs optional layers</span>
+            <span className="lbl">{t("health.section.layers", "Required vs optional layers")}</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/readiness</span>
             </span>

@@ -3,21 +3,27 @@
  *  PriceChart/scene assembly does the actual filtering from this state. */
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useChartSettings, type OverlayKey } from "../chart/chartSettings";
+import { useI18n } from "@/stores/i18nStore";
 import "./overlays.css";
 
 /** Rows in menu order: key must match OverlayKey in chart/chartSettings.tsx. */
-const OVERLAY_ROWS: ReadonlyArray<{ key: OverlayKey; label: string }> = [
-  { key: "zones", label: "Zones (FVG / OB / stop-hunt)" },
-  { key: "bos", label: "BOS lines" },
-  { key: "midlines", label: "50% equilibrium" },
-  { key: "liq", label: "Liquidity sweeps" },
-  { key: "orderLines", label: "Order lines (entry/SL/TP)" },
-];
+const OVERLAY_KEYS: ReadonlyArray<OverlayKey> = ["zones", "bos", "midlines", "liq", "orderLines"];
 
 export function ChartOverlaysButton() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLSpanElement>(null);
   const { overlayVisible, setOverlayVisible } = useChartSettings();
+  const t = useI18n((s) => s.t);
+
+  /* Row labels resolve at render (literal keys — dynamic t() keys are banned)
+     so a language switch re-translates the menu. */
+  const rowLabels: Record<OverlayKey, string> = {
+    zones: t("dash.tools.ov_zones", "Zones (FVG / OB / stop-hunt)"),
+    bos: t("dash.tools.ov_bos", "BOS lines"),
+    midlines: t("dash.tools.ov_mid", "50% equilibrium"),
+    liq: t("dash.tools.ov_liq", "Liquidity sweeps"),
+    orderLines: t("dash.tools.ov_orders", "Order lines (entry/SL/TP)"),
+  };
 
   // Close on outside pointerdown / Escape while the popover is mounted.
   useEffect(() => {
@@ -43,21 +49,21 @@ export function ChartOverlaysButton() {
         className="btn small ghost"
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="engine-computed overlays — show/hide only"
+        title={t("dash.tools.overlays_title", "engine-computed overlays — show/hide only")}
         onClick={() => setOpen((o) => !o)}
       >
-        ◫ SMC
+        {t("dash.tools.smc_btn", "◫ SMC")}
       </button>
       {open && (
-        <div className="smc-pop" role="dialog" aria-label="SMC overlay visibility">
-          {OVERLAY_ROWS.map(({ key, label }) => (
+        <div className="smc-pop" role="dialog" aria-label={t("dash.tools.overlays_aria", "SMC overlay visibility")}>
+          {OVERLAY_KEYS.map((key) => (
             <label className="smc-row" key={key}>
               <input
                 type="checkbox"
                 checked={overlayVisible[key]}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setOverlayVisible(key, e.target.checked)}
               />
-              <span>{label}</span>
+              <span>{rowLabels[key]}</span>
             </label>
           ))}
         </div>

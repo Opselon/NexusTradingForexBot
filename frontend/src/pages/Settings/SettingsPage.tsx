@@ -83,39 +83,6 @@ function removeUiPrefKeys(keys: string[]): string[] {
 /*  - Esc closes dialogs (ConfirmModal, palette) and only cancels.     */
 /* ------------------------------------------------------------------ */
 
-const SHORTCUTS: Array<{ keys: string[]; action: string; note: string }> = [
-  {
-    keys: ["Ctrl", "K"],
-    action: "Open / close the command palette",
-    note: "Cmd+K on macOS — bound in CommandPalette.tsx; palette commands only navigate or re-run existing queries.",
-  },
-  {
-    keys: ["Alt", "1–7"],
-    action: "Jump to sidebar page by position",
-    note: "Dynamic: one slot per NAV item — becomes 1–8 once the /settings NAV entry lands. Disabled while typing.",
-  },
-  {
-    keys: ["Alt", "B"],
-    action: "Collapse / expand the sidebar",
-    note: "Same action as the sidebar-foot toggle and the Sidebar switch below.",
-  },
-  {
-    keys: ["R"],
-    action: "Refresh the engine snapshot",
-    note: "Plain R (no modifier), ignored while typing, and only acts after a first snapshot has loaded.",
-  },
-  {
-    keys: ["↑", "↓", "Enter"],
-    action: "Move / run inside the palette",
-    note: "Only while the palette input is focused.",
-  },
-  {
-    keys: ["Esc"],
-    action: "Close palette / dialog",
-    note: "Cancel only — Esc never confirms an action.",
-  },
-];
-
 /* Token NAMES exactly as declared in styles/theme.css :root (verified
  * 2026-09-13, 27 tokens). Values are deliberately NOT restated here — the
  * stylesheet is the single source; `body.dense` overrides --row-pad,
@@ -140,6 +107,42 @@ export default function SettingsPage({ snapshot }: Props) {
   const setLang = useI18n((s) => s.setLang);
   const t = useI18n((s) => s.t);
 
+  /* Verified keyboard bindings (read of AppShell.tsx + CommandPalette).
+     Built during render so every label goes through t() and follows the
+     language switch; keys stay string literals for the parity gate. */
+  const shortcuts: Array<{ keys: string[]; action: string; note: string }> = [
+    {
+      keys: ["Ctrl", "K"],
+      action: t("settings.shortcut.palette.action", "Open / close the command palette"),
+      note: t("settings.shortcut.palette.note", "Cmd+K on macOS — bound in CommandPalette.tsx; palette commands only navigate or re-run existing queries."),
+    },
+    {
+      keys: ["Alt", "1–7"],
+      action: t("settings.shortcut.alt.action", "Jump to sidebar page by position"),
+      note: t("settings.shortcut.alt.note", "Dynamic: one slot per NAV item — becomes 1–8 once the /settings NAV entry lands. Disabled while typing."),
+    },
+    {
+      keys: ["Alt", "B"],
+      action: t("settings.shortcut.sidebar.action", "Collapse / expand the sidebar"),
+      note: t("settings.shortcut.sidebar.note", "Same action as the sidebar-foot toggle and the Sidebar switch below."),
+    },
+    {
+      keys: ["R"],
+      action: t("settings.shortcut.refresh.action", "Refresh the engine snapshot"),
+      note: t("settings.shortcut.refresh.note", "Plain R (no modifier), ignored while typing, and only acts after a first snapshot has loaded."),
+    },
+    {
+      keys: ["↑", "↓", "Enter"],
+      action: t("settings.shortcut.move.action", "Move / run inside the palette"),
+      note: t("settings.shortcut.move.note", "Only while the palette input is focused."),
+    },
+    {
+      keys: ["Esc"],
+      action: t("settings.shortcut.esc.action", "Close palette / dialog"),
+      note: t("settings.shortcut.esc.note", "Cancel only — Esc never confirms an action."),
+    },
+  ];
+
   const [clearOpen, setClearOpen] = useState(false);
   const [keysAtOpen, setKeysAtOpen] = useState<string[]>([]);
   const [clearedCount, setClearedCount] = useState<number | null>(null);
@@ -159,7 +162,7 @@ export default function SettingsPage({ snapshot }: Props) {
     const removed = removeUiPrefKeys(listUiPrefKeys());
     setClearedCount(removed.length);
     setClearOpen(false);
-    pushToast("ok", `Local UI prefs cleared (${removed.length} key${removed.length === 1 ? "" : "s"})`);
+    pushToast("ok", t("settings.local.cleared_toast", "Local UI prefs cleared ({n} key(s))", { n: removed.length }));
   };
 
   const versioningEntries = useMemo(
@@ -170,31 +173,29 @@ export default function SettingsPage({ snapshot }: Props) {
   return (
     <div className="set-wrap">
       <div className="page-head">
-        <h1>Settings</h1>
-        <span className="crumb">ALT CONSOLE</span>
-        <span className="desc">{t("ux.sidebar.system", "System")} — visual preferences only</span>
+        <h1>{t("settings.head.title", "Settings")}</h1>
+        <span className="crumb">{t("settings.head.crumb", "ALT CONSOLE")}</span>
+        <span className="desc">{t("ux.sidebar.system", "System")} — {t("settings.head.desc_suffix", "visual preferences only")}</span>
       </div>
 
       <div className="set-note">
-        ⚠ Nothing on this page reads or changes NSE state. Engine mode, risk gates, positions and
-        snapshots stay backend-authoritative; the About block merely mirrors the snapshot the shell
-        already polled.
+        {t("settings.note.backend_authority", "⚠ Nothing on this page reads or changes NSE state. Engine mode, risk gates, positions and snapshots stay backend-authoritative; the About block merely mirrors the snapshot the shell already polled.")}
       </div>
 
       <div className="set-grid">
-        <Panel title="Appearance" accent>
+        <Panel title={t("settings.panel.appearance", "Appearance")} accent>
           <div className="set-row">
             <div>
               <div className="lab">{t("ux.settings.density", "Row density")}</div>
               <div className="sub">
-                Shared with the sidebar DENSITY switch — <code className="inline-mono">nse.altui.dense</code>{" "}
-                <span className="badge">{dense ? "1 (dense)" : "0 (comfortable)"}</span>
+                {t("settings.density.sub", "Shared with the sidebar DENSITY switch —")} <code className="inline-mono">nse.altui.dense</code>{" "}
+                <span className="badge">{dense ? t("settings.density.badge_dense", "1 (dense)") : t("settings.density.badge_comfortable", "0 (comfortable)")}</span>
               </div>
             </div>
             <Segmented
               options={[
-                { id: "comfortable", label: "Comfortable" },
-                { id: "dense", label: "Dense" },
+                { id: "comfortable", label: t("settings.density.opt_comfortable", "Comfortable") },
+                { id: "dense", label: t("settings.density.opt_dense", "Dense") },
               ]}
               value={dense ? "dense" : "comfortable"}
               onChange={(v) => {
@@ -207,14 +208,14 @@ export default function SettingsPage({ snapshot }: Props) {
             <div>
               <div className="lab">{t("ux.settings.sidebar", "Sidebar")}</div>
               <div className="sub">
-                Same action as Alt+B and the « button — <code className="inline-mono">nse.altui.sidebar</code>{" "}
-                <span className="badge">{collapsed ? "1 (collapsed)" : "0 (expanded)"}</span>
+                {t("settings.sidebar.sub", "Same action as Alt+B and the « button —")} <code className="inline-mono">nse.altui.sidebar</code>{" "}
+                <span className="badge">{collapsed ? t("settings.sidebar.badge_collapsed", "1 (collapsed)") : t("settings.sidebar.badge_expanded", "0 (expanded)")}</span>
               </div>
             </div>
             <Segmented
               options={[
-                { id: "expanded", label: "Expanded" },
-                { id: "collapsed", label: "Collapsed" },
+                { id: "expanded", label: t("settings.sidebar.opt_expanded", "Expanded") },
+                { id: "collapsed", label: t("settings.sidebar.opt_collapsed", "Collapsed") },
               ]}
               value={collapsed ? "collapsed" : "expanded"}
               onChange={(v) => {
@@ -225,31 +226,30 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
           <div className="set-row">
             <div>
-              <div className="lab">Toast dedupe</div>
+              <div className="lab">{t("settings.toast.lab", "Toast dedupe")}</div>
               <div className="sub">
-                Identical toasts inside a 4&nbsp;second window are merged once (uiStore toastGuard — parity with
-                legacy NX.toast). Display behaviour, always on, not a backend setting.
+                {t("settings.toast.sub", "Identical toasts inside a 4 second window are merged once (uiStore toastGuard — parity with legacy NX.toast). Display behaviour, always on, not a backend setting.")}
               </div>
             </div>
-            <span className="badge neutral">INFO</span>
+            <span className="badge neutral">{t("settings.toast.badge", "INFO")}</span>
           </div>
         </Panel>
 
-        <Panel title="Language" accent>
+        <Panel title={t("ux.lang.label", "Language")} accent>
           <div className="set-row">
             <div>
               <div className="lab">{t("ux.lang.label", "Language")}</div>
               <div className="sub">
-                One surface with the sidebar LangRow; stored as <code className="inline-mono">nexus.ui.lang</code>{" "}
-                (shared with the legacy dashboard). Selecting RTL (فارسی / العربية) flips{" "}
-                <code className="inline-mono">&lt;html dir&gt;</code> through the store immediately.
+                {t("settings.lang.sub_a", "One surface with the sidebar LangRow; stored as")} <code className="inline-mono">nexus.ui.lang</code>{" "}
+                {t("settings.lang.sub_b", "(shared with the legacy dashboard). Selecting RTL (فارسی / العربية) flips")}{" "}
+                <code className="inline-mono">&lt;html dir&gt;</code> {t("settings.lang.sub_c", "through the store immediately.")}
               </div>
             </div>
             <select
               className="select"
               value={lang}
               onChange={(e) => setLang(e.target.value as Lang)}
-              aria-label="Language"
+              aria-label={t("ux.lang.label", "Language")}
             >
               {LANGUAGES.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -260,19 +260,19 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
           <div className="set-row">
             <div>
-              <div className="lab">Direction</div>
+              <div className="lab">{t("settings.direction.lab", "Direction")}</div>
               <div className="sub">
                 <code className="inline-mono">&lt;html lang&gt;</code> = {lang} ·{" "}
                 <code className="inline-mono">&lt;html dir&gt;</code> = {["fa", "ar"].includes(lang) ? "rtl" : "ltr"}{" "}
-                (applied by i18nStore, mirrored from the legacy applyDirection)
+                {t("settings.direction.note", "(applied by i18nStore, mirrored from the legacy applyDirection)")}
               </div>
             </div>
           </div>
         </Panel>
 
-        <Panel title="Keyboard shortcuts">
+        <Panel title={t("settings.panel.shortcuts", "Keyboard shortcuts")}>
           <div className="set-kbd-list">
-            {SHORTCUTS.map((s) => (
+            {shortcuts.map((s) => (
               <div className="set-kbd-row" key={s.action}>
                 <span className="set-kbd-keys">
                   {s.keys.map((k) => (
@@ -287,17 +287,15 @@ export default function SettingsPage({ snapshot }: Props) {
             ))}
           </div>
           <div className="sub tiny" style={{ marginTop: 8 }}>
-            Verified against AppShell.tsx (Alt+digit / Alt+B / R) and CommandPalette.tsx (Ctrl/Cmd+K,
-            ↑↓/Enter/Esc) — not against the sidebar chip, which shortens the truth to{" "}
+            {t("settings.shortcuts.footnote", "Verified against AppShell.tsx (Alt+digit / Alt+B / R) and CommandPalette.tsx (Ctrl/Cmd+K, ↑↓/Enter/Esc) — not against the sidebar chip, which shortens the truth to")}{" "}
             <span className="inline-mono">alt 1–7 · ctrl K</span>.
           </div>
         </Panel>
 
-        <Panel title="Theme tokens" right={<span className="timestamp-note">{THEME_TOKENS.length} vars · :root</span>}>
+        <Panel title={t("settings.panel.theme", "Theme tokens")} right={<span className="timestamp-note">{t("settings.theme.vars", "{n} vars · :root", { n: THEME_TOKENS.length })}</span>}>
           <div className="sub" style={{ marginBottom: 8 }}>
-            Names as declared in <code className="inline-mono">src/styles/theme.css</code> :root — the stylesheet
-            owns the values. <code className="inline-mono">body.dense</code> overrides --row-pad, --card-pad,
-            --panel-gap; color stays semantic (backend state), never user-picked.
+            {t("settings.theme.sub_a", "Names as declared in")} <code className="inline-mono">src/styles/theme.css</code> :root — {t("settings.theme.sub_b", "the stylesheet owns the values.")}{" "}
+            <code className="inline-mono">body.dense</code> {t("settings.theme.sub_c", "overrides --row-pad, --card-pad, --panel-gap; color stays semantic (backend state), never user-picked.")}
           </div>
           <div className="set-tokens">
             {THEME_TOKENS.map((tok) => (
@@ -306,51 +304,47 @@ export default function SettingsPage({ snapshot }: Props) {
           </div>
         </Panel>
 
-        <Panel title="About" accent>
+        <Panel title={t("settings.panel.about", "About")} accent>
           <dl className="kv">
-            <dt>console build</dt>
+            <dt>{t("settings.about.console_build", "console build")}</dt>
             <dd>v{UI_VERSION} (frontend/package.json)</dd>
-            <dt>snapshot state_version</dt>
-            <dd>{snapshot ? String(snapshot.state_version) : "— (no snapshot yet)"}</dd>
+            <dt>{t("settings.about.state_version", "snapshot state_version")}</dt>
+            <dd>{snapshot ? String(snapshot.state_version) : t("settings.about.no_snapshot", "— (no snapshot yet)")}</dd>
             <dt>snapshot_timestamp</dt>
             <dd>{snapshot?.snapshot_timestamp ?? "—"}</dd>
             <dt>generated_at</dt>
             <dd>{snapshot?.generated_at ?? "—"}</dd>
-            <dt>backend versioning block</dt>
+            <dt>{t("settings.about.versioning_block", "backend versioning block")}</dt>
             <dd>
               {versioningEntries.length > 0
                 ? versioningEntries.map(([k, v]) => `${k}=${String(v)}`).join(" · ")
-                : "— (not provided by /api/status)"}
+                : t("settings.about.no_versioning", "— (not provided by /api/status)")}
             </dd>
-            <dt>realtime feed</dt>
-            <dd>SSE /api/ticks/stream (state_version guards out-of-order frames)</dd>
+            <dt>{t("settings.about.feed_label", "realtime feed")}</dt>
+            <dd>{t("settings.about.feed_value", "SSE /api/ticks/stream (state_version guards out-of-order frames)")}</dd>
           </dl>
           <div className="sub tiny" style={{ marginTop: 8 }}>
-            Read-only mirror of the shell's already-polled snapshot — this page issues no fetches and
-            invalidates no queries.
+            {t("settings.about.readonly", "Read-only mirror of the snapshot the shell already polled — this page issues no fetches and invalidates no queries.")}
           </div>
         </Panel>
 
-        <Panel title="Local data">
+        <Panel title={t("settings.panel.local", "Local data")}>
           <div className="set-row">
             <div>
-              <div className="lab">Stored UI preferences</div>
+              <div className="lab">{t("settings.local.stored_lab", "Stored UI preferences")}</div>
               <div className="sub">
                 <code className="inline-mono">nse.altui.dense</code> ·{" "}
                 <code className="inline-mono">nse.altui.sidebar</code> ·{" "}
-                <code className="inline-mono">nexus.ui.lang</code> — visual values only; the WEB-AUTH token is
-                sessionStorage and out of scope.
+                <code className="inline-mono">nexus.ui.lang</code> — {t("settings.local.sub", "visual values only; the WEB-AUTH token is sessionStorage and out of scope.")}
               </div>
             </div>
             <button className="btn danger" onClick={openClearDialog}>
-              Clear local UI prefs…
+              {t("settings.local.clear_btn", "Clear local UI prefs…")}
             </button>
           </div>
           {clearedCount !== null && (
             <div className="set-cleared" role="status">
-              ✓ Removed {clearedCount} localStorage key{clearedCount === 1 ? "" : "s"}. Density and sidebar are back
-              to defaults for this session; the language selection stays on screen until reload, then falls back to
-              browser detection.
+              {t("settings.local.cleared", "✓ Removed {n} localStorage key(s). Density and sidebar are back to defaults for this session; the language selection stays on screen until reload, then falls back to browser detection.", { n: clearedCount })}
             </div>
           )}
         </Panel>
@@ -358,17 +352,16 @@ export default function SettingsPage({ snapshot }: Props) {
 
       {clearOpen && (
         <ConfirmModal
-          title="Clear local UI preferences"
+          title={t("settings.clear.title", "Clear local UI preferences")}
           danger
-          confirmLabel="Clear prefs"
+          confirmLabel={t("settings.clear.confirm", "Clear prefs")}
           onCancel={() => setClearOpen(false)}
           onConfirm={confirmClear}
         >
           <div className="confirm-box">
             <div className="note">
-              Removes ONLY these localStorage keys in this browser: every <code className="inline-mono">nse.altui.*</code>{" "}
-              pref and <code className="inline-mono">nexus.ui.lang</code>. Backend state, engine settings and the
-              session auth token are untouched. This console keeps working — the values just stop persisting.
+              {t("settings.clear.note_a", "Removes ONLY these localStorage keys in this browser: every")} <code className="inline-mono">nse.altui.*</code>{" "}
+              {t("settings.clear.note_b", "pref and")} <code className="inline-mono">nexus.ui.lang</code>. {t("settings.clear.note_c", "Backend state, engine settings and the session auth token are untouched. This console keeps working — the values just stop persisting.")}
             </div>
             <div className="row">
               {keysAtOpen.length > 0 ? (
@@ -378,7 +371,7 @@ export default function SettingsPage({ snapshot }: Props) {
                   </span>
                 ))
               ) : (
-                <span className="muted">No nse.altui.* / nexus.ui.lang keys are currently stored.</span>
+                <span className="muted">{t("settings.clear.no_keys", "No nse.altui.* / nexus.ui.lang keys are currently stored.")}</span>
               )}
             </div>
           </div>

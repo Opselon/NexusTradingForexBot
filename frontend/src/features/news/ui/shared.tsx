@@ -17,10 +17,12 @@ import { ApiError } from "@/types/api";
 const inlineCache = new WeakMap<object, string>();
 const prettyCache = new WeakMap<object, string>();
 
-export function asErrorText(e: unknown): string {
+export type TFunc = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+export function asErrorText(e: unknown, t?: TFunc): string {
   if (e instanceof ApiError) return `${e.message}${e.requestId ? ` (request_id: ${e.requestId})` : ""}`;
   if (e instanceof Error) return e.message;
-  return "unknown error";
+  return t ? t("news.err.unknown", "unknown error") : "unknown error";
 }
 
 /** "state · 12.0s ago" — client-captured cache age, explicitly labeled. */

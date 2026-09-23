@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { ConfirmModal, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
@@ -24,6 +25,7 @@ import { newsStateTone, refreshVerdict, selfHealVerdict } from "../model";
 import { FreshnessNote, asErrorText } from "./shared";
 
 export function NewsStatePanel() {
+  const t = useI18n((s) => s.t);
   const stateQuery = useNewsState();
   const toggleQuery = useNewsToggleState();
   const autoQuery = useNewsAutoState();
@@ -51,7 +53,7 @@ export function NewsStatePanel() {
       onSuccess: (res) => {
         const v = refreshVerdict(res);
         setCmdErr(!v.ok);
-        setCmdNote(v.message);
+        setCmdNote(v.message(t));
       },
       onError: (e) => {
         setCmdErr(true);
@@ -65,7 +67,7 @@ export function NewsStatePanel() {
       onSuccess: (res) => {
         const v = selfHealVerdict(res);
         setCmdErr(!v.ok);
-        setCmdNote(v.message);
+        setCmdNote(v.message(t));
         setHealOpen(false);
       },
       onError: (e) => {

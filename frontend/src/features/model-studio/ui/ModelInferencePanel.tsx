@@ -8,6 +8,7 @@
 
 import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import type { Fetch70dResponse, PredictResponse } from "../model";
 
 interface ModelInferencePanelProps {
@@ -60,6 +61,7 @@ export function ModelInferencePanel({
   schemaHash,
   onFetch70d,
 }: ModelInferencePanelProps) {
+  const t = useI18n((s) => s.t);
   const probs = predictData?.probabilities;
   // Slot family histogram: a reduce over the 70D slots array; deps are exactly
   // the array the derivation reads (re-runs only when the fetched slots change).
@@ -78,14 +80,18 @@ export function ModelInferencePanel({
       <div className="ms-grid-dual">
         {/* LEFT: Inference controls + decision output */}
         <Panel
-          title="Interactive Forward Pass"
-          subtitle="Live tick tensor or Gaussian-jittered perturbation, forward through the active champion."
+          title={t("model-studio.inference.title", "Interactive Forward Pass")}
+          subtitle={t(
+            "model-studio.inference.subtitle",
+            "Live tick tensor or Gaussian-jittered perturbation, forward through the active champion.",
+          )}
           accent
         >
           <div className="ms-control-group">
             <label className="ms-checkbox-row">
               <span className="ms-checkbox-label">
-                <span>📡</span> Use Live Tick Features
+                <span>📡</span>{" "}
+                {t("model-studio.inference.use_live", "Use Live Tick Features")}
               </span>
               <input
                 type="checkbox"
@@ -95,7 +101,7 @@ export function ModelInferencePanel({
             </label>
 
             <div className="ms-form-row">
-              <label htmlFor="ms-noise-slider">Perturbation σ (Gaussian Noise)</label>
+              <label htmlFor="ms-noise-slider">{t("model-studio.inference.noise_label", "Perturbation σ (Gaussian Noise)")}</label>
               <div className="ms-range-wrapper">
                 <input
                   id="ms-noise-slider"
@@ -112,7 +118,7 @@ export function ModelInferencePanel({
             </div>
 
             <div className="ms-form-row">
-              <label htmlFor="ms-threshold-slider">Policy Threshold (Confidence Gate)</label>
+              <label htmlFor="ms-threshold-slider">{t("model-studio.inference.threshold_label", "Policy Threshold (Confidence Gate)")}</label>
               <div className="ms-range-wrapper">
                 <input
                   id="ms-threshold-slider"
@@ -134,16 +140,21 @@ export function ModelInferencePanel({
               className="ms-btn-action ms-btn-primary"
               style={{ padding: "11px 20px" }}
             >
-              {loading ? "⏳ Executing Forward Pass…" : "▶ Run Inference"}
+              {loading
+                ? t("model-studio.inference.run_busy", "⏳ Executing Forward Pass…")
+                : t("model-studio.inference.run_idle", "▶ Run Inference")}
             </button>
 
             {predictData && (
               <>
                 <div className="ms-decision-banner">
                   <div>
-                    <div className="ms-decision-label">Signal Policy Verdict</div>
+                    <div className="ms-decision-label">{t("model-studio.inference.verdict", "Signal Policy Verdict")}</div>
                     <div className="tiny faint" style={{ marginTop: 2 }}>
-                      Latency {predictData.latency_ms.total_e2e.toFixed(2)} ms · {predictData.dimension}D tensor
+                      {t("model-studio.inference.latency_line", "Latency {l} ms · {d}D tensor", {
+                        l: predictData.latency_ms.total_e2e.toFixed(2),
+                        d: predictData.dimension,
+                      })}
                     </div>
                   </div>
                   <span className={`ms-decision-badge ${decisionBadgeClass(predictData.predicted_label)}`}>
@@ -180,39 +191,47 @@ export function ModelInferencePanel({
 
         {/* RIGHT: Saliency + layer inspection */}
         <Panel
-          title="Explainability: Saliency & Activation Hooks"
-          subtitle="dScore/dX gradient attribution and PyTorch forward-hook activation statistics."
+          title={t("model-studio.inference.explain_title", "Explainability: Saliency & Activation Hooks")}
+          subtitle={t(
+            "model-studio.inference.explain_subtitle",
+            "dScore/dX gradient attribution and PyTorch forward-hook activation statistics.",
+          )}
           accent
           right={
             predictData ? (
-              <span className="badge good">CALIBRATED</span>
+              <span className="badge good">
+                {t("model-studio.inference.calibrated", "CALIBRATED")}
+              </span>
             ) : null
           }
         >
           {!predictData ? (
             <div className="tiny faint" style={{ padding: "20px 4px", textAlign: "center" }}>
-              Execute a forward pass to reveal gradient saliency drivers and per-layer activation norms.
+              {t(
+                "model-studio.inference.empty",
+                "Execute a forward pass to reveal gradient saliency drivers and per-layer activation norms.",
+              )}
             </div>
           ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {/* Saliency */}
             <div>
               <div className="tiny uppercase font-bold" style={{ color: "var(--accent-strong)", marginBottom: 8 }}>
-                Top Gradient Drivers (dScore/dX)
+                {t("model-studio.inference.top_drivers", "Top Gradient Drivers (dScore/dX)")}
               </div>
               {(!predictData.saliency ||
                 (predictData.saliency.top_positive_drivers?.length ?? 0) === 0 &&
                   (predictData.saliency.top_negative_drivers?.length ?? 0) === 0) ? (
-                <div className="tiny faint">Saliency unavailable for this checkpoint.</div>
+                <div className="tiny faint">{t("model-studio.inference.saliency_unavailable", "Saliency unavailable for this checkpoint.")}</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <SaliencyRow
-                    title="Positive (↑ Score)"
+                    title={t("model-studio.inference.sal_pos", "Positive (↑ Score)")}
                     drivers={predictData.saliency?.top_positive_drivers ?? []}
                     sign="pos"
                   />
                   <SaliencyRow
-                    title="Negative (↓ Score)"
+                    title={t("model-studio.inference.sal_neg", "Negative (↓ Score)")}
                     drivers={predictData.saliency?.top_negative_drivers ?? []}
                     sign="neg"
                   />
@@ -223,20 +242,22 @@ export function ModelInferencePanel({
             {/* Layer activations */}
             <div>
               <div className="tiny uppercase font-bold" style={{ color: "var(--violet)", marginBottom: 8 }}>
-                Layer Activation Inspection (Forward Hooks)
+                {t("model-studio.inference.layer_title", "Layer Activation Inspection (Forward Hooks)")}
               </div>
               {predictData.layer_inspection && predictData.layer_inspection.length > 0 ? (
                 <div tabIndex={0} className="table-wrap" style={{ maxHeight: 260 }}>
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th scope="col">Layer</th>
-                        <th scope="col">Type</th>
-                        <th scope="col">Shape</th>
-                        <th scope="col" className="num">L2 Norm</th>
-                        <th scope="col" className="num">Mean</th>
-                        <th scope="col" className="num">Std</th>
-                        <th scope="col" style={{ textAlign: "center" }}>Zero %</th>
+                        <th scope="col">{t("model-studio.inference.th_layer", "Layer")}</th>
+                        <th scope="col">{t("model-studio.inference.th_type", "Type")}</th>
+                        <th scope="col">{t("model-studio.inference.th_shape", "Shape")}</th>
+                        <th scope="col" className="num">{t("model-studio.inference.th_l2", "L2 Norm")}</th>
+                        <th scope="col" className="num">{t("model-studio.inference.th_mean", "Mean")}</th>
+                        <th scope="col" className="num">{t("model-studio.inference.th_std", "Std")}</th>
+                        <th scope="col" style={{ textAlign: "center" }}>
+                          {t("model-studio.inference.th_zero", "Zero %")}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -263,7 +284,7 @@ export function ModelInferencePanel({
                   </table>
                 </div>
               ) : (
-                <div className="tiny faint">Layer hooks did not capture activations for this pass.</div>
+                <div className="tiny faint">{t("model-studio.inference.layer_empty", "Layer hooks did not capture activations for this pass.")}</div>
               )}
             </div>
           </div>
@@ -274,15 +295,23 @@ export function ModelInferencePanel({
       {/* 70D Component Assembly Matrix — only meaningful on the 70D contract */}
       {dimension === 70 && (
         <Panel
-          title="70D Live Multi-Source Component Assembly"
-          subtitle="BASE + NEWS + LIQUIDITY tensors fused into the scalp_v3 serving contract."
+          title={t("model-studio.inference.title_70", "70D Live Multi-Source Component Assembly")}
+          subtitle={t(
+            "model-studio.inference.subtitle_70",
+            "BASE + NEWS + LIQUIDITY tensors fused into the scalp_v3 serving contract.",
+          )}
           accent
           right={
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="tiny faint inline-mono">schema {schemaHash.substring(0, 10) || "—"}</span>
+              <span className="tiny faint inline-mono">
+                {t("model-studio.inference.schema_prefix", "schema")}{" "}
+                <span dir="ltr">{schemaHash.substring(0, 10) || "—"}</span>
+              </span>
               {contractValid !== null && (
                 <span className={`badge ${contractValid ? "good" : "bad"}`}>
-                  {contractValid ? "CONTRACT VALID" : "CONTRACT INVALID"}
+                  {contractValid
+                    ? t("model-studio.inference.contract_valid", "CONTRACT VALID")
+                    : t("model-studio.inference.contract_invalid", "CONTRACT INVALID")}
                 </span>
               )}
             </div>
@@ -290,7 +319,7 @@ export function ModelInferencePanel({
         >
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 10 }}>
             <button onClick={onFetch70d} className="ms-btn-action ms-btn-purple">
-              ⚡ Fetch Live 70D Slots
+              {t("model-studio.inference.fetch70", "⚡ Fetch Live 70D Slots")}
             </button>
             {components70.length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -299,14 +328,19 @@ export function ModelInferencePanel({
                     {fam}: {n}
                   </span>
                 ))}
-                <span className="badge neutral">{components70.length} / 70 slots</span>
+                <span className="badge neutral">
+                  {t("model-studio.inference.slots_badge", "{n} / 70 slots", { n: components70.length })}
+                </span>
               </div>
             )}
           </div>
 
           {components70.length === 0 ? (
             <div className="tiny faint" style={{ textAlign: "center", padding: "16px 0" }}>
-              No 70D component snapshot loaded — fetch live slots to audit the assembled tensor.
+              {t(
+                "model-studio.inference.empty_70",
+                "No 70D component snapshot loaded — fetch live slots to audit the assembled tensor.",
+              )}
             </div>
           ) : (
             <div tabIndex={0} className="ms-slots-grid">
@@ -392,17 +426,23 @@ function SaliencyRow({
 }
 
 function CalibrationStrip({ predict }: { predict: PredictResponse }) {
+  const t = useI18n((s) => s.t);
   const items: Array<{ label: string; value: string; color?: string }> = [
-    { label: "Confidence", value: (predict.confidence * 100).toFixed(1) + "%", color: "var(--accent-strong)" },
-    { label: "Margin", value: predict.confidence_margin.toFixed(3), color: "var(--green)" },
-    { label: "Entropy", value: predict.shannon_entropy_bits.toFixed(3) + " bits" },
+    { label: t("ux.signal.confidence", "Confidence"), value: (predict.confidence * 100).toFixed(1) + "%", color: "var(--accent-strong)" },
+    { label: t("model-studio.inference.margin", "Margin"), value: predict.confidence_margin.toFixed(3), color: "var(--green)" },
     {
-      label: "Numerical",
-      value: predict.numerical_validation.valid ? "VALID" : "INVALID",
+      label: t("model-studio.inference.entropy", "Entropy"),
+      value: t("model-studio.inference.bits", "{v} bits", { v: predict.shannon_entropy_bits.toFixed(3) }),
+    },
+    {
+      label: t("model-studio.inference.numerical", "Numerical"),
+      value: predict.numerical_validation.valid
+        ? t("model-studio.inference.valid", "VALID")
+        : t("model-studio.inference.invalid", "INVALID"),
       color: predict.numerical_validation.valid ? "var(--green)" : "var(--red)",
     },
     {
-      label: "OoD Max-Z",
+      label: t("model-studio.inference.ood_label", "OoD Max-Z"),
       value: predict.ood_metrics.max_z_score.toFixed(2) +
         (predict.ood_metrics.is_out_of_distribution ? " ⚠" : ""),
       color: predict.ood_metrics.is_out_of_distribution ? "var(--amber)" : "var(--text-dim)",

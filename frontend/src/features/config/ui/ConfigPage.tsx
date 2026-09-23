@@ -22,6 +22,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { useUiStore } from "@/stores/uiStore";
 import {
   CheckField,
@@ -607,6 +608,7 @@ function ModelSwapCard() {
 /* ------------------------------------------------------------------ */
 
 function SettingsProvenance() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(60_000);
   const query = useSettingsSnapshotQuery(poll.paused);
   const [open, setOpen] = useState(false);
@@ -666,7 +668,7 @@ function SettingsProvenance() {
             Read-only provenance ("which value is active, where did it come from"). Writes go through the runtime-config
             gate above or the Telegram panel — never by editing this table; secret rows are masked by the backend itself.
           </div>
-          <div className="cfg-sec-title" style={{ marginTop: 10 }}>Recent settings audit</div>
+          <div className="cfg-sec-title" style={{ marginTop: 10 }}>{t("config.prov.recent_audit", "Recent settings audit")}</div>
           <KeyValueList
             rows={(query.data?.recent_audit ?? []).slice(0, 8).map((row, i) => [
               `${STR(row.key) || STR((row as Record<string, unknown>).setting_key) || "event"} · ${STR(row.timestamp) || `#${i}`}`,
