@@ -30,6 +30,7 @@
  *           .ixviz-* rules in ./structureViz.css.
  */
 
+import { useMemo } from "react";
 import { formatDateTime } from "@/lib/format";
 
 /** Wiring contract (amended by the orchestrator at integration: the band
@@ -306,30 +307,38 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
  * evidence is an honest empty note, never filled.
  */
 export function RegimeEvidence({ evidence }: { evidence: Record<string, unknown> | null | undefined }) {
-  const entries = Object.entries(evidence ?? {});
-  if (entries.length === 0) {
-    return <p className="ixviz-empty">No regime evidence in the payload — shown empty, never inferred.</p>;
-  }
-  return (
-    <dl className="ixviz ixviz-evidence">
-      {entries.map(([k, v]) => {
-        const text =
+  // One memo per payload (NOT inside the map — a hook in a loop would vary
+  // with entry count): the serialized text is computed only when the payload
+  // reference changes, byte-identical to the previous inline expression.
+  const rows = useMemo(
+    () =>
+      Object.entries(evidence ?? {}).map(([k, v]) => ({
+        k,
+        v,
+        tone: (typeof v === "string" ? wordTone(v) : "neutral") as Tone,
+        text:
           v === null || v === undefined
             ? "—" // missing field -> em dash, never zero-filled
             : typeof v === "object"
               ? (JSON.stringify(v) ?? "—") // raw payload serialization, no re-derivation
               : typeof v === "function" || typeof v === "symbol"
                 ? "—"
-                : String(v); // scalars verbatim (no rounding, no units)
-        const tone: Tone = typeof v === "string" ? wordTone(v) : "neutral";
-        return (
-          <div className={`ixviz-ev is-${tone}`} key={k}>
-            {/* verbatim payload key — cited, never renamed or judged */}
-            <dt className="ixviz-ev-k">{k}</dt>
-            <dd className="ixviz-ev-v">{text}</dd>
-          </div>
-        );
-      })}
+                : String(v), // scalars verbatim (no rounding, no units)
+      })),
+    [evidence],
+  );
+  if (rows.length === 0) {
+    return <p className="ixviz-empty">No regime evidence in the payload — shown empty, never inferred.</p>;
+  }
+  return (
+    <dl className="ixviz ixviz-evidence">
+      {rows.map(({ k, tone, text }) => (
+        <div className={`ixviz-ev is-${tone}`} key={k}>
+          {/* verbatim payload key — cited, never renamed or judged */}
+          <dt className="ixviz-ev-k">{k}</dt>
+          <dd className="ixviz-ev-v">{text}</dd>
+        </div>
+      ))}
     </dl>
   );
 }

@@ -8,7 +8,10 @@
              --row-pad, --elevate-hi, --elev-*); rgba() of those token hues and
              the theme's own white-alpha zebra convention (see §5) are the only
              non-token values — no other hardcoded hex anywhere.
-   PROVIDES: every selector below, all prefixed `ctl-` (page root .ctl-page)
+   PROVIDES: every selector below, all prefixed `ctl-` (page root .ctl-page);
+             the tape's `th`/`td` cells are reached through child combinators
+             (.ctl-tape > thead > tr > th) so they style only this feature's
+             own event table and no other page's tables.
    INVARIANTS: colors re-state backend words only (never a fabricated verdict);
                logical properties everywhere (RTL-safe); motion is decorative
                and wrapped in (prefers-reduced-motion: no-preference).
@@ -81,7 +84,7 @@
   color: var(--text); font-variant-numeric: tabular-nums;
   max-inline-size: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.ctl-rail-value.dim { color: var(--text-faint); font-weight: 500; }
+.ctl-rail-value.ctl-dim { color: var(--text-faint); font-weight: 500; }
 .ctl-rail-loading { padding: 10px 14px; min-inline-size: 240px; }
 
 /* --- 3. status glow pills — dot + label + backend word ------------------- */
@@ -146,7 +149,7 @@
   font-family: var(--mono); font-size: 10px; font-weight: 700;
   letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint);
 }
-.ctl-rack-head .sep {
+.ctl-rack-head .ctl-sep {
   flex: 1 1 24px; min-inline-size: 16px; height: 1px;
   background: linear-gradient(90deg, var(--border-strong), transparent);
 }
@@ -191,20 +194,20 @@
   border-collapse: separate; border-spacing: 0;
   font-family: var(--mono); font-size: 11.5px;
 }
-.ctl-tape th {
+.ctl-tape > thead > tr > th {
   position: sticky; top: 0; z-index: 1; text-align: start; white-space: nowrap;
   font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);
   background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-inset));
   border-bottom: 1px solid var(--border-strong); padding: 7px 12px;
 }
-.ctl-tape td {
+.ctl-tape > tbody > tr > td {
   padding: var(--row-pad) 12px; border-bottom: 1px solid var(--border);
   vertical-align: top; color: var(--text); font-variant-numeric: tabular-nums;
 }
 /* zebra + hover — white-alpha follows theme.css's own zebra convention
    (rgba(255,255,255,.015)); density follows body.dense automatically */
-.ctl-tape tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
-.ctl-tape tbody tr:hover td { background: var(--bg-panel-2); }
+.ctl-tape > tbody > tr:nth-child(even) > td { background: rgba(255, 255, 255, 0.02); }
+.ctl-tape > tbody > tr:hover > td { background: var(--bg-panel-2); }
 .ctl-tape .ctl-rel { color: var(--text-faint); white-space: nowrap; }
 .ctl-tape .ctl-ts { color: var(--text-dim); font-size: 10.5px; white-space: nowrap; }
 .ctl-tape .ctl-act { white-space: nowrap; }
