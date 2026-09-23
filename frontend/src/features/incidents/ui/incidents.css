@@ -167,7 +167,7 @@
   font-family: var(--mono);
   font-size: 15px;
   font-weight: 800;
-  color: #ffd9d4;
+  color: color-mix(in srgb, var(--red) 22%, white);
   background: linear-gradient(135deg, rgba(242, 86, 77, 0.26), rgba(235, 161, 63, 0.22));
   border: 1px solid rgba(242, 86, 77, 0.45);
   box-shadow: 0 0 14px rgba(242, 86, 77, 0.2), 0 4px 10px rgba(0, 0, 0, 0.35);
@@ -281,7 +281,7 @@
 
 .inc-ep:hover {
   border-color: rgba(242, 86, 77, 0.5);
-  color: #ffd9d4;
+  color: color-mix(in srgb, var(--red) 22%, white);
   transform: translateY(-1px);
 }
 
