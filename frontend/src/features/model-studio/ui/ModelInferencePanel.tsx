@@ -296,7 +296,8 @@ export function ModelInferencePanel({
           right={
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span className="tiny faint inline-mono">
-                {t("model-studio.inference.schema_prefix", "schema")} {schemaHash.substring(0, 10) || "—"}
+                {t("model-studio.inference.schema_prefix", "schema")}{" "}
+                <span dir="ltr">{schemaHash.substring(0, 10) || "—"}</span>
               </span>
               {contractValid !== null && (
                 <span className={`badge ${contractValid ? "good" : "bad"}`}>

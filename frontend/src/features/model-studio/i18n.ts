@@ -240,4 +240,5 @@ export const MESSAGES: FeatureMessages = {
   "model-studio.page.rollback_failed": { fa: "عملیات بازگشت ناموفق بود: {e}", de: "Zurücksetzen fehlgeschlagen: {e}", es: "La reversión falló: {e}", ar: "فشل التراجع: {e}" },
   "model-studio.page.train_done": { fa: "تمام شد: {e} اپوک | اتلاف {l} | اعتبار {v} → {p}", de: "Fertig: {e} Epochen | Loss {l} | Val. {v} → {p}", es: "Hecho: {e} épocas | pérdida {l} | validación {v} → {p}", ar: "تم: {e} دورة | الخسارة {l} | التحقق {v} → {p}" },
   // __APPEND_BELOW__
+  "model-studio.pipeline.ph_symbol": { fa: "XAUUSD", de: "XAUUSD", es: "XAUUSD", ar: "XAUUSD" },
 };
