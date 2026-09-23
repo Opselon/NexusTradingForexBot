@@ -8,20 +8,38 @@
  *   keyword intelligence, and the news↔trade linkage probe.
  *
  * Presentation only: every read goes through ../useCases via ../hooks.
+ *
+ * Loading speed (perf lane): the five secondary panels each own their queries
+ * and render below the fold, so they are inner code-splits behind LOCAL
+ * Suspense boundaries (the shell's shared Suspense would blank the whole
+ * route). State + feed stay eager — they are the above-the-fold content.
  */
 
-import { Panel, Skeleton } from "@/components/primitives";
+import { Suspense, lazy } from "react";
+import { ErrorState, Panel, Skeleton } from "@/components/primitives";
+import { ApiError } from "@/types/api";
 import { useNewsAiStatus } from "../hooks";
 import { ArticleAiStatusLine } from "./AiStatusLine";
 import { NewsFeedSection } from "./NewsFeedSection";
-import { NewsKeywordsPanel } from "./NewsKeywordsPanel";
-import { NewsProConsolePanel } from "./NewsProConsolePanel";
-import { NewsSourcesPanel } from "./NewsSourcesPanel";
 import { NewsStatePanel } from "./NewsStatePanel";
-import { NewsTimelinePanel } from "./NewsTimelinePanel";
-import { NewsTradesPanel } from "./NewsTradesPanel";
 import { FreshnessNote } from "./shared";
 import "./news.css";
+
+/* ── inner splits (module-per-panel, fetched in parallel after route entry) ── */
+const NewsProConsolePanel = lazy(() => import("./NewsProConsolePanel").then((m) => ({ default: m.NewsProConsolePanel })));
+const NewsTimelinePanel = lazy(() => import("./NewsTimelinePanel").then((m) => ({ default: m.NewsTimelinePanel })));
+const NewsSourcesPanel = lazy(() => import("./NewsSourcesPanel").then((m) => ({ default: m.NewsSourcesPanel })));
+const NewsKeywordsPanel = lazy(() => import("./NewsKeywordsPanel").then((m) => ({ default: m.NewsKeywordsPanel })));
+const NewsTradesPanel = lazy(() => import("./NewsTradesPanel").then((m) => ({ default: m.NewsTradesPanel })));
+
+/** Shell-matching skeleton for a lazy panel while its chunk streams in. */
+function PanelFallback({ title, count = 3, height = 32 }: { title: string; count?: number; height?: number }) {
+  return (
+    <Panel title={title} tight>
+      <Skeleton count={count} height={height} />
+    </Panel>
+  );
+}
 
 export default function NewsPage() {
   const aiStatus = useNewsAiStatus();
@@ -38,15 +56,38 @@ export default function NewsPage() {
 
       <NewsStatePanel />
       <NewsFeedSection />
-      <NewsProConsolePanel />
-      <NewsTimelinePanel />
-      <NewsSourcesPanel />
-      <NewsKeywordsPanel />
-      <NewsTradesPanel />
+      <Suspense fallback={<PanelFallback title="Pro auto console" count={4} height={44} />}>
+        <NewsProConsolePanel />
+      </Suspense>
+      <Suspense fallback={<PanelFallback title="Impact timeline" count={3} height={64} />}>
+        <NewsTimelinePanel />
+      </Suspense>
+      <Suspense
+        fallback={
+          <div className="grid cols-2">
+            <PanelFallback title={`Source registry (…)`} count={4} height={30} />
+            <PanelFallback title="Subsystem health" count={4} height={28} />
+          </div>
+        }
+      >
+        <NewsSourcesPanel />
+      </Suspense>
+      <Suspense fallback={<PanelFallback title="Keyword intelligence" count={4} height={30} />}>
+        <NewsKeywordsPanel />
+      </Suspense>
+      <Suspense fallback={<PanelFallback title="News ↔ trade linkage" count={2} height={30} />}>
+        <NewsTradesPanel />
+      </Suspense>
 
       <Panel title="AI readiness (secret-free)" right={<span className="timestamp-note">GET /api/news/ai-status</span>}>
         {aiStatus.isPending ? (
           <Skeleton count={1} height={28} />
+        ) : aiStatus.isError ? (
+          <ErrorState
+            message={aiStatus.error instanceof Error ? aiStatus.error.message : "GET /api/news/ai-status failed"}
+            requestId={aiStatus.error instanceof ApiError ? aiStatus.error.requestId : null}
+            onRetry={() => void aiStatus.refetch()}
+          />
         ) : (
           <ArticleAiStatusLine status={aiStatus.data?.ai_status ?? null} />
         )}

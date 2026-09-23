@@ -17,7 +17,7 @@
  * code + message + request_id.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ConfirmModal,
   DataTable,
@@ -333,8 +333,10 @@ export function NewsProConsolePanel() {
   );
 }
 
-/** One console entry — mirrors legacy `_proRow`: ts · LABEL · msg + answer/via/id extras. */
-function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
+/** One console entry — mirrors legacy `_proRow`: ts · LABEL · msg + answer/via/id extras.
+ *  memoized: the log holds stable entry objects, so a 1.5s poll with no new
+ *  rows (or a status poll) must not re-render the whole ring. */
+const ConsoleRow = memo(function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
   const kind = e.kind ?? "log";
   const msg = e.msg ?? e.summary ?? "";
   const ts = String(e.ts ?? "").slice(11, 19);
@@ -351,7 +353,7 @@ function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
       {e.provider && <span className="extra">{String(e.provider)}</span>}
     </div>
   );
-}
+});
 
 /** status_counts dict -> compact "ACTIVE=210 · IRRELEVANT=90" text (backend keys only). */
 function jsonish(counts: Record<string, number> | undefined): string {
@@ -382,7 +384,10 @@ function useAutoScroll(count: number): (node: HTMLDivElement | null) => void {
     const el = elRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [count]);
-  return (node) => {
+  /* Stable ref callback — an inline closure would detach/reattach the node on
+   * every parent render (1.5s poll) for no reason. */
+  const setNode = useCallback((node: HTMLDivElement | null) => {
     elRef.current = node;
-  };
+  }, []);
+  return setNode;
 }

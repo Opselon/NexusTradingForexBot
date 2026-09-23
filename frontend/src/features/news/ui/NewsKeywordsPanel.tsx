@@ -4,7 +4,7 @@
  * coverage table always comes from the backend's own scan.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel } from "@/components/primitives";
 import { HeatBar } from "@/components/viz";
 import { formatNumber } from "@/lib/format";
@@ -24,10 +24,21 @@ export function NewsKeywordsPanel() {
   const cats = data?.dataset?.categories ?? {};
   const dir = cov?.direction_distribution ?? {};
 
+  /* Debounce lives in a ref so a pending timer can be cleared on unmount
+   * (never setState after teardown) and never double-schedules. */
+  const debounceRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    },
+    [],
+  );
+
   const submitSearch = (value: string): void => {
     setQ(value);
-    // debounce by one tick — the query key only changes on the applied value
-    window.setTimeout(() => setDebounced(value.trim()), 250);
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    // debounce — the query key only changes on the applied value
+    debounceRef.current = window.setTimeout(() => setDebounced(value.trim()), 250);
   };
 
   return (

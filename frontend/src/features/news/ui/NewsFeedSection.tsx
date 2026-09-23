@@ -7,15 +7,19 @@
  * refetched feed decide what to show (server owns the state).
  */
 
-import { useMemo, useState } from "react";
+import { Suspense, lazy, memo, useCallback, useMemo, useState } from "react";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useAnalyzeArticle, useAutoPrune, useBatchAnalyze, useNewsAiStatus, useNewsFeed, useRestoreArticle } from "../hooks";
 import { batchVerdict, directionOf, errorText, impactPct, NEWS_FILTERS, xauusdRelPct } from "../model";
 import type { NewsFeedArticle, NewsFilter } from "../types";
-import { ArticleDrawer } from "./ArticleDrawer";
 import { FreshnessNote, asErrorText } from "./shared";
 import "./news.css";
+
+/* Inner split: the drawer only exists while an article is selected, so its
+ * chunk loads on open — local Suspense (never the shell's, which would blank
+ * the whole route while the chunk streams). */
+const ArticleDrawer = lazy(() => import("./ArticleDrawer").then((m) => ({ default: m.ArticleDrawer })));
 
 export function NewsFeedSection() {
   const [filter, setFilter] = useState<NewsFilter>("ACTIVE");
@@ -38,8 +42,14 @@ export function NewsFeedSection() {
 
   const ai = aiStatus.data?.ai_status;
 
-  const runAnalyze = (articleId: string, force: boolean): void => {
-    analyze.mutate(
+  /* Row callbacks are stable (useCallback over the stable react-query mutate)
+   * so the memoized ArticleRow skips re-renders on unrelated state changes. */
+  const { mutate: mutateAnalyze } = analyze;
+  const { mutate: mutateRestore } = restore;
+
+  const runAnalyze = useCallback(
+    (articleId: string, force: boolean): void => {
+      mutateAnalyze(
       { articleId, force },
       {
         onSuccess: (res) =>
@@ -53,8 +63,12 @@ export function NewsFeedSection() {
           }),
         onError: (e) => setNote({ err: true, text: `Analyze failed: ${asErrorText(e)}` }),
       },
-    );
-  };
+      );
+    },
+    [mutateAnalyze],
+  );
+
+  const runSelect = useCallback((articleId: string): void => setSelected(articleId), []);
 
   const runBatch = (): void => {
     if (ids.length === 0) {
@@ -90,12 +104,15 @@ export function NewsFeedSection() {
     });
   };
 
-  const runRestore = (articleId: string): void => {
-    restore.mutate(articleId, {
-      onSuccess: (res) => setNote({ err: !!res.error, text: res.error ? `Restore refused: ${res.error}` : "Article restored to ACTIVE (backend-confirmed)." }),
-      onError: (e) => setNote({ err: true, text: `Restore failed: ${asErrorText(e)}` }),
-    });
-  };
+  const runRestore = useCallback(
+    (articleId: string): void => {
+      mutateRestore(articleId, {
+        onSuccess: (res) => setNote({ err: !!res.error, text: res.error ? `Restore refused: ${res.error}` : "Article restored to ACTIVE (backend-confirmed)." }),
+        onError: (e) => setNote({ err: true, text: `Restore failed: ${asErrorText(e)}` }),
+      });
+    },
+    [mutateRestore],
+  );
 
   return (
     <Panel
@@ -153,23 +170,25 @@ export function NewsFeedSection() {
               article={a}
               selected={selected === a.article_id}
               busy={analyze.isPending}
-              onSelect={() => setSelected(a.article_id)}
-              onAnalyze={(force) => runAnalyze(a.article_id, force)}
-              onRestore={() => runRestore(a.article_id)}
+              onSelect={runSelect}
+              onAnalyze={runAnalyze}
+              onRestore={runRestore}
             />
           ))}
         </div>
       )}
 
       {selected && (
-        <ArticleDrawer
-          articleId={selected}
-          fallback={articles.find((a) => a.article_id === selected)}
-          busy={analyze.isPending}
-          analyzeNote={note?.text ?? null}
-          onClose={() => setSelected(null)}
-          onAnalyze={(force) => runAnalyze(selected, force)}
-        />
+        <Suspense fallback={<Skeleton count={4} height={44} />}>
+          <ArticleDrawer
+            articleId={selected}
+            fallback={articles.find((a) => a.article_id === selected)}
+            busy={analyze.isPending}
+            analyzeNote={note?.text ?? null}
+            onClose={() => setSelected(null)}
+            onAnalyze={(force) => runAnalyze(selected, force)}
+          />
+        </Suspense>
       )}
 
       {pruneOpen && (
@@ -198,7 +217,7 @@ function impClass(pct: number | null): string {
   return "news-imp";
 }
 
-export function ArticleRow({
+export const ArticleRow = memo(function ArticleRow({
   article: a,
   selected,
   busy,
@@ -209,9 +228,10 @@ export function ArticleRow({
   article: NewsFeedArticle;
   selected: boolean;
   busy: boolean;
-  onSelect: () => void;
-  onAnalyze: (force: boolean) => void;
-  onRestore: () => void;
+  /** articleId-bearing callbacks keep this memo effective (no inline closures). */
+  onSelect: (articleId: string) => void;
+  onAnalyze: (articleId: string, force: boolean) => void;
+  onRestore: (articleId: string) => void;
 }) {
   const dir = directionOf(a);
   const imp = impactPct(a);
@@ -219,7 +239,7 @@ export function ArticleRow({
   const status = (a.article_status ?? "ACTIVE").toUpperCase();
   const aiDone = !!(a.ai_analysis && (a.ai_analysis.summary || a.ai_analysis.analysis_status === "failed"));
   return (
-    <article className={`news-item ${selected ? "selected" : ""}`} onClick={onSelect}>
+    <article className={`news-item ${selected ? "selected" : ""}`} onClick={() => onSelect(a.article_id)}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
         <span className="title" style={{ flex: 1, minWidth: 0 }}>
           {a.title}
@@ -247,16 +267,16 @@ export function ArticleRow({
       )}
       <div className="news-actions" onClick={(e) => e.stopPropagation()}>
         {status === "IRRELEVANT" && (
-          <button className="btn small" onClick={onRestore} disabled={busy}>
+          <button className="btn small" onClick={() => onRestore(a.article_id)} disabled={busy}>
             Restore
           </button>
         )}
         {aiDone ? (
-          <button className="btn small primary" onClick={() => onAnalyze(true)} disabled={busy}>
+          <button className="btn small primary" onClick={() => onAnalyze(a.article_id, true)} disabled={busy}>
             {busy ? "analyzing…" : "Re-analyze (force)"}
           </button>
         ) : (
-          <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy}>
+          <button className="btn small primary" onClick={() => onAnalyze(a.article_id, false)} disabled={busy}>
             {busy ? "analyzing…" : "Analyze with AI"}
           </button>
         )}
@@ -265,4 +285,4 @@ export function ArticleRow({
       </div>
     </article>
   );
-}
+});
