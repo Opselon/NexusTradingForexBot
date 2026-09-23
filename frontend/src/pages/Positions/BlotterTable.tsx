@@ -103,6 +103,9 @@ export default function BlotterTable<T>({
           aria-label="Filter table rows"
         />
         <span className="timestamp-note">{countLabel}</span>
+        <span className="timestamp-note" title="keyboard row navigation — focus a row, then move with the arrow keys">
+          rows: ↑ ↓ Home End
+        </span>
         {query && (
           <button className="btn small ghost" onClick={() => onQueryChange("")}>
             clear

@@ -93,10 +93,13 @@
 .pos-blotter td.num,
 .pos-blotter th.num { text-align: end; }
 
-/* Row hover + keyboard focus rings (focus inset so it is not clipped by the
-   scroll container; rows use a roving tabindex from BlotterTable). */
+/* Row hover ring + keyboard focus ring (focus is inset so the scroll
+   container never clips it; rows use a roving tabindex from BlotterTable).
+   scroll-margin keeps an arrow-keyed row from parking under the sticky th. */
+.pos-blotter tbody tr { scroll-margin-block-start: 48px; }
 .pos-blotter tbody tr:hover td,
 .pos-blotter tbody tr:focus-visible td { background: var(--bg-panel-2); }
+.pos-blotter tbody tr:hover { outline: 1px solid var(--border-strong); outline-offset: -1px; }
 .pos-blotter tbody tr:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -134,8 +137,8 @@
 .pos-side-cell__sub[data-side="short"] { color: var(--red); }
 
 /* ------------------------------ Signed P&L magnitude ramp ------------------------------ */
-/* Hue from the sign (theme tokens), alpha from --pos-pnl-mix, which the cell
-/* sets per row as 55%..100% of that token scaled by sqrt(|value| / largest
+/* Hue from the sign (theme tokens), alpha from --pos-pnl-mix, which each
+   cell sets to 55%..100% of that token, scaled by sqrt(|value| / largest
    |P&L| on screen) — derived display logic over backend values only.
    The plain colour is declared first so browsers without color-mix() keep an
    honest, fully-opaque sign colour (an unsupported later declaration is
