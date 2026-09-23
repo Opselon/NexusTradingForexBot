@@ -140,4 +140,8 @@ export const MESSAGES: FeatureMessages = {
   "governance.verdict.backend_error": { fa: "خطای بک‌اند: {code}", de: "Backend-Fehler: {code}", es: "error del backend: {code}", ar: "خطأ الخادم: {code}" },
   "governance.verdict.unavailable": { fa: "زیرسیستم بک‌اند در دسترس نیست.", de: "Backend-Untersystem nicht verfügbar.", es: "subsistema del backend no disponible.", ar: "النظام الفرعي للخادم غير متاح." },
   "governance.verdict.ok": { fa: "بک‌اند دستور را پذیرفت.", de: "Das Backend hat den Befehl angenommen.", es: "El backend aceptó el comando.", ar: "قبل الخادم الأمر." },
+  "governance.field.event_filter_a11y": { fa: "فیلتر نوع رویداد", de: "Filter nach Ereignistyp", es: "filtro por tipo de evento", ar: "ترشيح حسب نوع الحدث", en: "Event type filter" },
+  "governance.th.acc": { fa: "دقت", de: "Genauigkeit", es: "precisión", ar: "الدقة", en: "acc" },
+  "governance.th.dim": { fa: "بُعد", de: "Dim.", es: "dimensión", ar: "بُعد", en: "dim" },
+  "governance.th.score": { fa: "امتیاز", de: "Punktwert", es: "puntuación", ar: "التقييم", en: "score" },
 };
