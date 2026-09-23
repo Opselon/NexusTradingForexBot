@@ -4,8 +4,10 @@
  * The implementation lives in `@/hooks/useRealtime` (the single home of the
  * realtime hooks). This module keeps its own import path — AppShell and every
  * lane that imported `@/hooks/useRealtimeSnapshot` must keep resolving — and
- * delegates instead of maintaining a second copy of the subscription logic
- * (the two bodies had already drifted; one implementation = one fix site).
+ * delegates instead of maintaining a second copy of the subscription logic —
+ * at wave base both files carried a near-identical body (the only difference
+ * was an inline `subscribe((snap) => …)` wrapper), so one implementation =
+ * one fix site.
  *
  * Server state comes from the backend's canonical snapshot; the REST snapshot
  * query seeds initial data and the socket keeps it live. When the socket is
