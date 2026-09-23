@@ -230,6 +230,5 @@ export const MESSAGES: FeatureMessages = {
   "config.validation.must_be_one_of": { fa: "{label} باید یکی از این مقادیر باشد: {options}", de: "{label} muss einer dieser Werte sein: {options}", es: "{label} debe ser uno de estos valores: {options}", ar: "{label} يجب أن يكون أحد هذه القيم: {options}" },
   "config.validation.token_shape": { fa: "قالب {label} با شکل مورد انتظار مطابقت ندارد", de: "{label} entspricht nicht der erwarteten Token-Form", es: "{label} no coincide con la forma de token esperada", ar: "{label} لا يطابق شكل الرمز المتوقع" },
   "config.swap.ph": { fa: "artifacts/model.pt", de: "artifacts/model.pt", es: "artifacts/model.pt", ar: "artifacts/model.pt" },
-  "config.diag.live_yaml_absent2": { fa: "live.yaml: غایب", de: "live.yaml: nicht vorhanden", es: "live.yaml: ausente", ar: "live.yaml: مفقود" },
 
 };
