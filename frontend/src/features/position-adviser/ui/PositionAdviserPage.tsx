@@ -386,7 +386,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   return (
     <div className="pa-page">
       {/* ---------------------------------------------------------- header */}
-      <header className="pa-hero" aria-label="Position adviser">
+      <header className="pa-hero" aria-label={t("position-adviser.page.hero_aria", "Position adviser")}>
         <div className="pa-hero-left">
           <span className="pa-scales-icon" aria-hidden="true">
             ⚖

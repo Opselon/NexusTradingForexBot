@@ -20,25 +20,27 @@ import { formatDateTime } from "@/lib/format";
 import { useNow } from "../../research/ui/lane5Kit";
 import { num, type OperatorDecisionRow } from "../model";
 import { controlCenterQueries, controlCenterUseCases } from "../useCases";
+import { useI18n } from "@/stores/i18nStore";
 
 /** Window/limit are choices made here (not backend defaults) and are disclosed in the UI. */
 const TAPE_HOURS = 24;
 const TAPE_LIMIT = 12;
 
 /** Client-side relative age from a backend timestamp; unparsable → "—". */
-function relAge(ts: string | null | undefined, now: number): string {
+function relAge(ts: string | null | undefined, now: number, t: (key: string, fallback: string, vars?: Record<string, string | number>) => string): string {
   if (!ts) return "—";
-  const t = Date.parse(ts);
-  if (Number.isNaN(t)) return "—";
-  const s = Math.max(0, (now - t) / 1000);
-  if (s < 5) return "just now";
-  if (s < 60) return `${Math.floor(s)}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+  const ms = Date.parse(ts);
+  if (Number.isNaN(ms)) return "—";
+  const s = Math.max(0, (now - ms) / 1000);
+  if (s < 5) return t("control-center.age.just_now", "just now");
+  if (s < 60) return t("control-center.age.seconds_ago", "{n}s ago", { n: Math.floor(s) });
+  if (s < 3600) return t("control-center.age.minutes_ago", "{n}m ago", { n: Math.floor(s / 60) });
+  if (s < 86400) return t("control-center.age.hours_ago", "{n}h ago", { n: Math.floor(s / 3600) });
+  return t("control-center.age.days_ago", "{n}d ago", { n: Math.floor(s / 86400) });
 }
 
 export function EventTape({ onInspect }: { onInspect: (id: number | null) => void }) {
+  const t = useI18n((s) => s.t);
   const now = useNow(1000);
   const tapeQ = useQuery({
     queryKey: ["control-center", "tape", TAPE_HOURS, TAPE_LIMIT],
@@ -50,35 +52,35 @@ export function EventTape({ onInspect }: { onInspect: (id: number | null) => voi
 
   return (
     <Panel
-      title="Event tape — decision ledger rows"
-      subtitle={`/api/operator/decisions · window ${TAPE_HOURS}h · up to ${TAPE_LIMIT} rows · backend order`}
-      right={tapeQ.data ? <span className="tiny muted">{rows.length} rows</span> : undefined}
+      title={t("control-center.panel.tape_title", "Event tape — decision ledger rows")}
+      subtitle={`/api/operator/decisions · ${t("control-center.tape.window", "window {h}h · up to {n} rows · backend order", { h: TAPE_HOURS, n: TAPE_LIMIT })}`}
+      right={tapeQ.data ? <span className="tiny muted">{t("control-center.tape.rows", "{n} rows", { n: rows.length })}</span> : undefined}
       tight
     >
       {tapeQ.isPending ? (
         <Skeleton count={6} />
       ) : tapeQ.isError ? (
         <ErrorState
-          message={tapeQ.error instanceof Error ? tapeQ.error.message : "tape query failed"}
+          message={tapeQ.error instanceof Error ? tapeQ.error.message : t("control-center.err.tape", "tape query failed")}
           onRetry={() => void tapeQ.refetch()}
         />
       ) : tapeQ.data?.available === false ? (
-        <EmptyState message="ledger unavailable" hint="operator/decisions answered available:false" />
+        <EmptyState message={t("control-center.empty.ledger_unavailable", "ledger unavailable")} hint={t("control-center.tape.unavailable_hint", "operator/decisions answered available:false")} />
       ) : rows.length === 0 ? (
-        <EmptyState message="No decision rows in this window." />
+        <EmptyState message={t("control-center.empty.no_rows_in_window", "No decision rows in this window.")} />
       ) : (
         <div className="ctl-tape-wrap">
           <table className="ctl-tape">
             <thead>
               <tr>
-                <th scope="col">age</th>
-                <th scope="col">timestamp</th>
-                <th scope="col">action</th>
-                <th scope="col">stage</th>
-                <th scope="col">gate</th>
-                <th scope="col">reason</th>
+                <th scope="col">{t("control-center.th.age", "age")}</th>
+                <th scope="col">{t("control-center.th.timestamp", "timestamp")}</th>
+                <th scope="col">{t("control-center.th.action", "action")}</th>
+                <th scope="col">{t("control-center.th.stage", "stage")}</th>
+                <th scope="col">{t("control-center.th.gate", "gate")}</th>
+                <th scope="col">{t("control-center.th.reason", "reason")}</th>
                 <th scope="col">
-                  <span className="sr-only">inspect</span>
+                  <span className="sr-only">{t("control-center.action.inspect", "inspect")}</span>
                 </th>
               </tr>
             </thead>
@@ -89,7 +91,7 @@ export function EventTape({ onInspect }: { onInspect: (id: number | null) => voi
                 return (
                   <tr key={controlCenterUseCases.decisionKey(r)}>
                     <td className="ctl-rel" title={formatDateTime(at)}>
-                      {relAge(at, now)}
+                      {relAge(at, now, t)}
                     </td>
                     <td className="ctl-ts">{formatDateTime(at)}</td>
                     <td className="ctl-act">
@@ -102,7 +104,7 @@ export function EventTape({ onInspect }: { onInspect: (id: number | null) => voi
                     </td>
                     <td className="ctl-open">
                       <button className="btn small ghost" disabled={r.payload_ok === false || id === null} onClick={() => onInspect(id)}>
-                        {r.payload_ok === false ? "payload ✗" : "inspect"}
+                        {r.payload_ok === false ? t("control-center.action.payload_bad", "payload ✗") : t("control-center.action.inspect", "inspect")}
                       </button>
                     </td>
                   </tr>
@@ -113,8 +115,7 @@ export function EventTape({ onInspect }: { onInspect: (id: number | null) => voi
         </div>
       )}
       <div className="tiny faint ctl-tape-foot">
-        rows with unparseable payload are kept and flagged (never silently dropped) — age is computed client-side from the backend timestamp;
-        ordering is the backend&apos;s own.
+        {t("control-center.tape.footnote", "rows with unparseable payload are kept and flagged (never silently dropped) — age is computed client-side from the backend timestamp; ordering is the backend’s own.")}
       </div>
     </Panel>
   );

@@ -14,6 +14,7 @@ import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from 
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { num, type OperatorDecisionRow } from "../../model";
 import { controlCenterQueries, controlCenterUseCases } from "../../useCases";
+import { useI18n } from "@/stores/i18nStore";
 
 interface DecisionsTabProps {
   hours: number | undefined;
@@ -26,6 +27,7 @@ interface DecisionsTabProps {
 }
 
 export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFilter, onSearch, onInspect }: DecisionsTabProps) {
+  const t = useI18n((s) => s.t);
   const decisionsQ = useQuery({
     queryKey: ["control-center", "decisions", hours, actionFilter, search],
     queryFn: ({ signal }) =>
@@ -35,25 +37,25 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
 
   return (
     <Panel
-      title="Decision observatory (audit_signals, read-only)"
+      title={t("control-center.panel.decisions", "Decision observatory (audit_signals, read-only)")}
       right={
         <div style={{ display: "flex", gap: 6 }}>
           <input
             className="input"
             style={{ width: 150 }}
-            aria-label="Search decisions"
-            placeholder="search"
+            aria-label={t("control-center.a11y.search_decisions", "Search decisions")}
+            placeholder={t("control-center.action.search", "search")}
             value={search}
             onChange={(e) => onSearch(e.target.value)}
           />
           <select
-            aria-label="Action filter"
+            aria-label={t("control-center.a11y.action_filter", "Action filter")}
             className="select"
             style={{ width: 120 }}
             value={actionFilter}
             onChange={(e) => onActionFilter(e.target.value)}
           >
-            <option value="">action: any</option>
+            <option value="">{t("control-center.filter.action_any", "action: any")}</option>
             {["BUY", "SELL", "NO_TRADE"].map((a) => (
               <option key={a} value={a}>
                 {a}
@@ -61,7 +63,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
             ))}
           </select>
           <select
-            aria-label="Window (hours)"
+            aria-label={t("control-center.a11y.window_hours", "Window (hours)")}
             className="select"
             style={{ width: 96 }}
             value={String(hours ?? 72)}
@@ -81,24 +83,24 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
         <Skeleton count={5} />
       ) : decisionsQ.isError ? (
         <ErrorState
-          message={decisionsQ.error instanceof Error ? decisionsQ.error.message : "decisions failed"}
+          message={decisionsQ.error instanceof Error ? decisionsQ.error.message : t("control-center.err.decisions", "decisions failed")}
           onRetry={() => void decisionsQ.refetch()}
         />
       ) : decisionsQ.data?.available === false ? (
-        <EmptyState message="ledger unavailable" />
+        <EmptyState message={t("control-center.empty.ledger_unavailable", "ledger unavailable")} />
       ) : (decisionsQ.data?.rows ?? []).length === 0 ? (
-        <EmptyState message="No decisions match the filters." />
+        <EmptyState message={t("control-center.empty.no_decisions", "No decisions match the filters.")} />
       ) : (
         <DataTable
           headers={[
-            { label: "id", num: true },
-            { label: "symbol" },
-            { label: "action" },
-            { label: "conf", num: true },
-            { label: "stage" },
-            { label: "gate" },
-            { label: "reason" },
-            { label: "at" },
+            { label: t("control-center.th.id", "id"), num: true },
+            { label: t("control-center.th.symbol", "symbol") },
+            { label: t("control-center.th.action", "action") },
+            { label: t("control-center.th.conf", "conf"), num: true },
+            { label: t("control-center.th.stage", "stage") },
+            { label: t("control-center.th.gate", "gate") },
+            { label: t("control-center.th.reason", "reason") },
+            { label: t("control-center.th.at", "at") },
             { label: "" },
           ]}
         >
@@ -109,7 +111,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
               <td>
                 <StatusBadge status={r.action} />
               </td>
-              <td className="num tiny">{r.confidence == null ? "NOT RECORDED" : formatNumber(r.confidence, 3)}</td>
+              <td className="num tiny">{r.confidence == null ? t("control-center.truth.not_recorded", "NOT RECORDED") : formatNumber(r.confidence, 3)}</td>
               <td className="tiny">{r.decision_stage ?? "—"}</td>
               <td className="tiny">{r.blocked_by ?? ""}</td>
               <td className="tiny muted" title={r.reason_code ?? ""}>
@@ -118,7 +120,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
               <td className="tiny">{formatDateTime(r.generated_at)}</td>
               <td>
                 <button className="btn small ghost" disabled={r.payload_ok === false} onClick={() => onInspect(num(r.id) ?? null)}>
-                  {r.payload_ok === false ? "payload ✗" : "inspect"}
+                  {r.payload_ok === false ? t("control-center.action.payload_bad", "payload ✗") : t("control-center.action.inspect", "inspect")}
                 </button>
               </td>
             </tr>
@@ -126,7 +128,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
         </DataTable>
       )}
       <div className="tiny faint" style={{ marginTop: 6 }}>
-        rows with unparseable payload are kept and flagged (never silently dropped) — inspect disabled for them by the backend contract.
+        {t("control-center.decisions.footnote", "rows with unparseable payload are kept and flagged (never silently dropped) — inspect disabled for them by the backend contract.")}
       </div>
     </Panel>
   );

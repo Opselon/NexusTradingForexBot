@@ -20,6 +20,7 @@ import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { CommandResultLine } from "../../research/ui/lane5Kit";
 import { controlCenterUseCases } from "../useCases";
 import type { GlowTone } from "./tones";
+import { useI18n } from "@/stores/i18nStore";
 
 const LIVE_CONFIRM_TEXT = "LIVE";
 
@@ -36,6 +37,7 @@ interface ActionRackProps {
 }
 
 export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: ActionRackProps) {
+  const t = useI18n((s) => s.t);
   const [stopConfirm, setStopConfirm] = useState(false);
   const [startConfirm, setStartConfirm] = useState(false);
   const [modeTarget, setModeTarget] = useState("");
@@ -64,48 +66,48 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
 
   return (
     <>
-      <Panel title="Action rack — engine + mode (guarded)" accent>
+      <Panel title={t("control-center.panel.rack_title", "Action rack — engine + mode (guarded)")} accent>
         <div className="ctl-rack">
           <div className="ctl-rack-group">
             <div className="ctl-rack-head">
-              <span>ENGINE</span>
+              <span>{t("control-center.rack.engine", "ENGINE")}</span>
               <span className="sep" aria-hidden="true" />
-              <span className={`ctl-chip ctl-chip--${engineChipTone}`}>{engineChip}</span>
+              <span className={`ctl-chip ctl-chip--${engineChipTone}`}>{engineChip === "ON" ? t("control-center.engine.on", "ON") : engineChip === "OFF" ? t("control-center.engine.off", "OFF") : t("control-center.engine.unknown_chip", "UNKNOWN")}</span>
             </div>
             <div className="ctl-rack-actions">
               <button className="btn primary" disabled={engineCmd.state.running || running} onClick={() => setStartConfirm(true)}>
-                ▶ Start engine
+                {t("control-center.action.start_engine", "▶ Start engine")}
               </button>
-              <span className="ctl-guard" title="opens the existing confirmation dialog">
-                ⚠ requires confirm
+              <span className="ctl-guard" title={t("control-center.rack.confirm_hint", "opens the existing confirmation dialog")}>
+                {t("control-center.rack.requires_confirm", "⚠ requires confirm")}
               </span>
               <button className="btn danger" disabled={engineCmd.state.running || !running} onClick={() => setStopConfirm(true)}>
-                ■ Stop engine (kill switch)
+                {t("control-center.action.stop_engine", "■ Stop engine (kill switch)")}
               </button>
-              <span className="ctl-guard" title="opens the existing confirmation dialog">
+              <span className="ctl-guard" title={t("control-center.rack.confirm_hint", "opens the existing confirmation dialog")}>
                 ⚠ requires confirm
               </span>
             </div>
             <div className="ctl-rack-note">
-              Enable rules unchanged: Start while STOPPED, Stop while RUNNING — the snapshot decides, chips only re-state it.
+              {t("control-center.rack.enable_rules", "Enable rules unchanged: Start while STOPPED, Stop while RUNNING — the snapshot decides, chips only re-state it.")}
             </div>
           </div>
 
           <div className="ctl-rack-group">
             <div className="ctl-rack-head">
-              <span>EXECUTION MODE</span>
+              <span>{t("control-center.rack.exec_mode", "EXECUTION MODE")}</span>
               <span className="sep" aria-hidden="true" />
               <span className={`ctl-chip ctl-chip--${modeTone}`}>{mode}</span>
-              {armed && <span className="ctl-chip ctl-chip--armed">ARMED · {modeTarget}</span>}
+              {armed && <span className="ctl-chip ctl-chip--armed">{t("control-center.rack.armed", "ARMED")} · {modeTarget}</span>}
             </div>
             <div className="ctl-rack-actions">
               <select
-                aria-label="Target execution mode"
+                aria-label={t("control-center.rack.mode_aria", "Target execution mode")}
                 className="select ctl-mode-select"
                 value={modeTarget}
                 onChange={(e) => setModeTarget(e.target.value)}
               >
-                <option value="">mode switch…</option>
+                <option value="">{t("control-center.action.mode_switch", "mode switch…")}</option>
                 {["PAPER", "LIVE", "SHADOW"].map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -117,17 +119,16 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
                 disabled={!modeTarget || modeCmd.state.running || modeTarget.toUpperCase() === mode}
                 onClick={() => void applyMode()}
               >
-                apply
+                {t("control-center.action.apply", "apply")}
               </button>
               {typedGuard && (
-                <span className="ctl-guard" title="legacy typed LIVE confirmation phrase">
-                  ⚠ typed LIVE guard
+                <span className="ctl-guard" title={t("control-center.rack.live_guard_hint", "legacy typed LIVE confirmation phrase")}>
+                  {t("control-center.rack.typed_live_guard", "⚠ typed LIVE guard")}
                 </span>
               )}
             </div>
             <div className="ctl-rack-note">
-              Commands go to /api/engine/toggle + /api/engine/mode (BUG-148 hot-swap path). The UI never shows a locally-changed state — the
-              next authoritative snapshot decides.
+              {t("control-center.panel.engine_commands_note", "Commands go to /api/engine/toggle + /api/engine/mode (BUG-148 hot-swap path). The UI never shows a locally-changed state — the next authoritative snapshot decides.")}
             </div>
           </div>
         </div>
@@ -140,9 +141,9 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
 
       {(startConfirm || stopConfirm) && (
         <ConfirmModal
-          title={stopConfirm ? "STOP the engine (kill switch)" : "Start the engine"}
+          title={stopConfirm ? t("control-center.confirm.stop_title", "STOP the engine (kill switch)") : t("control-center.confirm.start_title", "Start the engine")}
           danger={stopConfirm}
-          confirmLabel={stopConfirm ? "Stop engine" : "Start engine"}
+          confirmLabel={stopConfirm ? t("control-center.confirm.stop", "Stop engine") : t("control-center.confirm.start", "Start engine")}
           busy={engineCmd.state.running}
           onCancel={() => {
             setStopConfirm(false);
@@ -158,35 +159,35 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
         >
           <div className="small">
             {stopConfirm
-              ? "Stops the engine loop: no new decisions or dispatches. Open positions remain under broker/exits — closing them is a separate explicit action on the Positions page."
-              : "Starts the engine loop via the canonical async start path (BUG-239). The backend response decides."}
+              ? t("control-center.confirm.stop_body", "Stops the engine loop: no new decisions or dispatches. Open positions remain under broker/exits — closing them is a separate explicit action on the Positions page.")
+              : t("control-center.confirm.start_body", "Starts the engine loop via the canonical async start path (BUG-239). The backend response decides.")}
           </div>
         </ConfirmModal>
       )}
 
       {modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT && (
         <ConfirmModal
-          title="Switch execution mode to LIVE"
+          title={t("control-center.live.title", "Switch execution mode to LIVE")}
           danger
-          confirmLabel="abort switch"
+          confirmLabel={t("control-center.live.abort", "abort switch")}
           busy={false}
           onCancel={() => setModeTarget("")}
           onConfirm={() => setModeTarget("")}
         >
           <div className="confirm-box">
             <div className="small">
-              LIVE dispatches real orders. Type “{LIVE_CONFIRM_TEXT}” below the button to arm the switch (legacy parity guard).
+              {t("control-center.live.type_hint", "LIVE dispatches real orders. Type “{w}” below the button to arm the switch (legacy parity guard).", { w: LIVE_CONFIRM_TEXT })}
             </div>
             <div className="row">
               <input
                 className="input ctl-live-input"
                 value={liveConfirm}
                 onChange={(e) => setLiveConfirm(e.target.value)}
-                aria-label="LIVE confirmation phrase"
+                aria-label={t("control-center.live.phrase_aria", "LIVE confirmation phrase")}
                 placeholder={LIVE_CONFIRM_TEXT}
               />
               <button className="btn small danger" disabled={liveConfirm !== LIVE_CONFIRM_TEXT} onClick={() => void applyMode()}>
-                switch to LIVE
+                {t("control-center.live.switch", "switch to LIVE")}
               </button>
             </div>
           </div>

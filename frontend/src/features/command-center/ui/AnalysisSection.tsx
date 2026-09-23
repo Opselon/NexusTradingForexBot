@@ -24,6 +24,7 @@ import {
 } from "../analysis";
 import type { CcFleetDto, CcOverviewDto } from "../model";
 import { ChartCard, Donut, EvidenceRingsChart, FunnelRows, GateOutcomeRows, HistogramChart } from "./charts";
+import { useI18n } from "@/stores/i18nStore";
 import "../command-center.css";
 
 /** Presentation-only lifecycle -> theme token map (colors, never verdicts). */
@@ -59,13 +60,14 @@ export function AnalysisSection({
   fleet: CcFleetDto | undefined;
   fleetQ: Queryish;
 }) {
+  const t = useI18n((s) => s.t);
   if (overviewQ.isPending && fleetQ.isPending) {
     return (
       <div className="grid cols-2">
-        <ChartCard title="loading analysis…">
+        <ChartCard title={t("command-center.analysis.loading_analysis", "loading analysis…")}>
           <Skeleton count={5} />
         </ChartCard>
-        <ChartCard title="loading distributions…">
+        <ChartCard title={t("command-center.analysis.loading_distributions", "loading distributions…")}>
           <Skeleton count={5} />
         </ChartCard>
       </div>
@@ -74,13 +76,13 @@ export function AnalysisSection({
   if (!overview && overviewQ.isError) {
     return (
       <ErrorState
-        message={`overview endpoint failed — ${overviewQ.error instanceof Error ? overviewQ.error.message : "unknown error"}`}
+        message={t("command-center.err.overview_endpoint", "overview endpoint failed — {e}", { e: overviewQ.error instanceof Error ? overviewQ.error.message : t("command-center.err.unknown", "unknown error") })}
         onRetry={() => void overviewQ.refetch()}
       />
     );
   }
   if (!overview) {
-    return <EmptyState message="Backend returned no overview payload." hint="overview.available !== true" />;
+    return <EmptyState message={t("command-center.empty.no_overview", "Backend returned no overview payload.")} hint="overview.available !== true" />;
   }
 
   const funnel = pipelineFunnel(overview);
@@ -106,53 +108,52 @@ export function AnalysisSection({
     <div className="cc-analysis">
       {fleetQ.isError && (
         <ErrorState
-          message={`fleet endpoint failed — ${fleetQ.error instanceof Error ? fleetQ.error.message : "unknown error"}`}
+          message={t("command-center.err.fleet_endpoint", "fleet endpoint failed — {e}", { e: fleetQ.error instanceof Error ? fleetQ.error.message : t("command-center.err.unknown", "unknown error") })}
           onRetry={() => void fleetQ.refetch()}
         />
       )}
 
       <div className="grid cols-2">
         <ChartCard
-          title="Evaluation funnel — where the fleet drops"
-          hint="evaluation_pipeline counts (transient telemetry, not lifecycle) · % = value ÷ entered stage"
+          title={t("command-center.analysis.funnel_title", "Evaluation funnel — where the fleet drops")}
+          hint={t("command-center.analysis.funnel_hint", "evaluation_pipeline counts (transient telemetry, not lifecycle) · % = value ÷ entered stage")}
         >
           <FunnelRows stages={funnel} />
         </ChartCard>
-        <ChartCard title="Gate outcomes — pass / fail per evaluation gate" hint="overview.evaluation_metrics · rate UNKNOWN when a gate was never tested">
+        <ChartCard title={t("command-center.analysis.gates_title", "Gate outcomes — pass / fail per evaluation gate")} hint={t("command-center.analysis.gates_hint", "overview.evaluation_metrics · rate UNKNOWN when a gate was never tested")}>
           <GateOutcomeRows gates={gates} />
         </ChartCard>
       </div>
 
       <div className="grid cols-2">
-        <ChartCard title="Lifecycle census" hint="by_lifecycle + terminal (persistent lifecycle scope)">
-          <Donut segments={donutSegments} centerLabel="strategies" centerValue={String(overview.total_strategies ?? life.reduce((a, s) => a + s.count, 0))} />
+        <ChartCard title={t("command-center.panel.lifecycle_census", "Lifecycle census")} hint={t("command-center.analysis.lifecycle_hint", "by_lifecycle + terminal (persistent lifecycle scope)")}>
+          <Donut segments={donutSegments} centerLabel={t("command-center.kpi.strategies", "strategies")} centerValue={String(overview.total_strategies ?? life.reduce((a, s) => a + s.count, 0))} />
         </ChartCard>
-        <ChartCard title="Execution eligibility" hint="fleet rows, eligibility_state from the domain authority">
+        <ChartCard title={t("command-center.analysis.elig_title", "Execution eligibility")} hint={t("command-center.analysis.elig_hint", "fleet rows, eligibility_state from the domain authority")}>
           {elig.length === 0 ? (
-            <EmptyState message="No fleet rows returned." hint={fleetQ.isError ? "fleet query failed — retry above" : "count=0"} />
+            <EmptyState message={t("command-center.empty.no_fleet_rows", "No fleet rows returned.")} hint={fleetQ.isError ? t("command-center.empty.fleet_query_failed", "fleet query failed — retry above") : "count=0"} />
           ) : (
             <DistBars rows={elig.map((e) => ({ label: e.state, count: e.count }))} tone="var(--accent)" />
           )}
           <div className="tiny faint cc-elig-foot">
-            eligible (YES): {String(overview.execution_eligible_count ?? "—")} · blocked: {String(overview.blocked_count ?? "—")} · running evaluations:{" "}
-            {String(overview.running_evaluations ?? 0)}
+            {t("command-center.analysis.elig_foot", "eligible (YES): {a} · blocked: {b} · running evaluations: {c}", { a: String(overview.execution_eligible_count ?? "—"), b: String(overview.blocked_count ?? "—"), c: String(overview.running_evaluations ?? 0) })}
           </div>
         </ChartCard>
       </div>
 
       <div className="grid cols-3">
-        <ChartCard title="Confidence distribution" hint="fleet rows · confidence 0..1">
-          <HistogramChart data={conf} label="confidence" formatBucket={(lo, hi) => `${lo.toFixed(1)}–${hi.toFixed(1)}`} />
+        <ChartCard title={t("command-center.analysis.conf_title", "Confidence distribution")} hint={t("command-center.analysis.conf_hint", "fleet rows · confidence 0..1")}>
+          <HistogramChart data={conf} label={t("command-center.tip.confidence", "confidence")} formatBucket={(lo, hi) => `${lo.toFixed(1)}–${hi.toFixed(1)}`} />
         </ChartCard>
-        <ChartCard title="Health score distribution" hint="fleet rows · health_final (score verdict present)">
+        <ChartCard title={t("command-center.analysis.health_title", "Health score distribution")} hint={t("command-center.analysis.health_hint", "fleet rows · health_final (score verdict present)")}>
           <HistogramChart
             data={health}
-            label="health"
+            label={t("command-center.analysis.axis_health", "health")}
             tone="var(--green)"
             formatBucket={(lo, hi) => `${formatNumber(lo, 2)}–${formatNumber(hi, 2)}`}
           />
         </ChartCard>
-        <ChartCard title="Evidence depth" hint="PASS count among backtest/walk-forward/OOS/robustness">
+        <ChartCard title={t("command-center.analysis.evid_title", "Evidence depth")} hint={t("command-center.analysis.evid_hint", "PASS count among backtest/walk-forward/OOS/robustness")}>
           <EvidenceRingsChart buckets={rings.buckets} missing={rings.missing} total={rings.total} />
         </ChartCard>
       </div>
