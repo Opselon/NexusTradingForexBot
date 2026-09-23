@@ -6,12 +6,13 @@
  * a rendering of `consecutive_failures` only (null = UNKNOWN row).
  */
 
+import { useMemo } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { HeatBar, Sparkline } from "@/components/viz";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useNewsHealth, useNewsSources } from "../hooks";
 import type { SourceVM } from "../model";
-import { FreshnessNote, asErrorText } from "./shared";
+import { FreshnessNote, asErrorText, jsonInline, jsonPretty } from "./shared";
 
 export function NewsSourcesPanel() {
   const sources = useNewsSources();
@@ -22,6 +23,27 @@ export function NewsSourcesPanel() {
   const worker = health.data?.worker;
   const budget = health.data?.llm_budget;
   const gate = health.data?.event_gate;
+
+  // perf: serialize/slice the health blocks once per data change instead of on
+  // every render — the 30s health poll re-renders this panel on every tick.
+  const dbJson = useMemo(() => (h?.db ? jsonPretty(h.db) : ""), [h?.db]);
+  const gateJson = useMemo(() => (gate ? jsonPretty(gate) : ""), [gate]);
+  const workerStats = useMemo(
+    () =>
+      (worker ? Object.entries(worker).slice(0, 8) : []).map(([k, v]) => ({
+        k,
+        text: typeof v === "object" ? jsonInline(v) : String(v),
+      })),
+    [worker],
+  );
+  const budgetStats = useMemo(
+    () =>
+      (budget ? Object.entries(budget).slice(0, 8) : []).map(([k, v]) => ({
+        k,
+        text: typeof v === "object" ? jsonInline(v) : String(v),
+      })),
+    [budget],
+  );
 
   return (
     <div className="grid cols-2">
@@ -102,7 +124,7 @@ export function NewsSourcesPanel() {
               <div>
                 <div className="section-title">news.db summary (backend)</div>
                 <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, margin: 0, overflowX: "auto" }}>
-                  {JSON.stringify(h.db, null, 2)}
+                  {dbJson}
                 </pre>
               </div>
             )}
@@ -110,13 +132,11 @@ export function NewsSourcesPanel() {
               <div>
                 <div className="section-title">worker telemetry</div>
                 <div className="statline">
-                  {Object.entries(worker)
-                    .slice(0, 8)
-                    .map(([k, v]) => (
-                      <span key={k}>
-                        {k}: <b className="inline-mono">{typeof v === "object" ? JSON.stringify(v) : String(v)}</b>
-                      </span>
-                    ))}
+                  {workerStats.map((s) => (
+                    <span key={s.k}>
+                      {s.k}: <b className="inline-mono">{s.text}</b>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
@@ -124,13 +144,11 @@ export function NewsSourcesPanel() {
               <div>
                 <div className="section-title">LLM budget (news-scoped spend)</div>
                 <div className="statline">
-                  {Object.entries(budget)
-                    .slice(0, 8)
-                    .map(([k, v]) => (
-                      <span key={k}>
-                        {k}: <b className="inline-mono">{typeof v === "object" ? JSON.stringify(v) : String(v)}</b>
-                      </span>
-                    ))}
+                  {budgetStats.map((s) => (
+                    <span key={s.k}>
+                      {s.k}: <b className="inline-mono">{s.text}</b>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
@@ -138,7 +156,7 @@ export function NewsSourcesPanel() {
               <div>
                 <div className="section-title">Calendar event gate</div>
                 <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, margin: 0, overflowX: "auto" }}>
-                  {JSON.stringify(gate, null, 2)}
+                  {gateJson}
                 </pre>
               </div>
             )}

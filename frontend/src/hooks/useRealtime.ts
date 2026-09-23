@@ -76,16 +76,40 @@ export function useRealtimeVersion(): { version: number | null; ageMs: number | 
   }));
   useEffect(() => {
     let alive = true;
+    let timer: number | null = null;
     const tick = () => {
       if (!alive) return;
       const s = realtimeClient.currentStatus();
       setState({ version: s.lastVersion, ageMs: s.lastMessageAt !== null ? Date.now() - s.lastMessageAt : null });
     };
+    const start = () => {
+      if (timer === null) timer = window.setInterval(tick, 1000);
+    };
+    const stop = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    // perf: pause the 1s age poll while the tab is hidden — no network here,
+    // and the value is Date.now()-derived (nothing accumulates, so pausing
+    // cannot corrupt it). Resume runs one immediate tick so the staleness
+    // window on return is 0 (< one tick); visible cadence is unchanged.
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+      } else {
+        tick();
+        start();
+      }
+    };
     tick();
-    const t = window.setInterval(tick, 1000);
+    if (document.visibilityState !== "hidden") start();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       alive = false;
-      window.clearInterval(t);
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
   return state;

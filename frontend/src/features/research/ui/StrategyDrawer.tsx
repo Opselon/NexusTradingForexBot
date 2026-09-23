@@ -5,7 +5,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
@@ -62,7 +62,9 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
   const detail = obj(detailQ.data?.detail);
   const trace = detailQ.data?.available === true ? detail : null;
-  const gates = (gatesQ.data?.gates ?? []).map(toGateVo);
+  // perf: gate VO map derived only when the query data changes
+  // (deps: gatesQ.data — the only reactive value read).
+  const gates = useMemo(() => (gatesQ.data?.gates ?? []).map(toGateVo), [gatesQ.data]);
   const runs = runsQ.data?.runs ?? [];
   const events = eventsQ.data?.events ?? [];
   const evidence = evidenceQ.data?.evidence ?? [];

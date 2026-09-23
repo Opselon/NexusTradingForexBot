@@ -15,7 +15,7 @@
  * hangs (BUG-312 fix).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
@@ -53,8 +53,12 @@ export default function CommandCenterPage(props: ShellPageProps) {
     retryDelay: ccRetryDelay,
   });
 
-  const rows = commandCenterUseCases.fleetByRisk(fleetQ.data?.rows ?? [], nowMs);
   const overview = overviewQ.data?.available === true ? overviewQ.data : null;
+  // perf: risk-first sort + stuck census derived only when their inputs change
+  // (deps: fleetRows / nowMs / overview — every reactive value read).
+  const fleetRows = fleetQ.data?.rows;
+  const rows = useMemo(() => commandCenterUseCases.fleetByRisk(fleetRows ?? [], nowMs), [fleetRows, nowMs]);
+  const stuck = useMemo(() => stuckRows(overview ?? undefined), [overview]);
   const overviewDead = !overview && overviewQ.isError && !overviewQ.isPending;
 
   return (
@@ -104,10 +108,10 @@ export default function CommandCenterPage(props: ShellPageProps) {
 
       <div style={{ height: 12 }} />
 
-      {stuckRows(overview ?? undefined).length > 0 && (
+      {stuck.length > 0 && (
         <Panel title="Stuck strategies (hours in non-terminal state)" tight>
           <DataTable headers={[{ label: "strategy" }, { label: "state" }, { label: "hours", num: true }, { label: "" }]}>
-            {stuckRows(overview ?? undefined).map((s) => (
+            {stuck.map((s) => (
               <tr key={s.strategy_id}>
                 <td className="inline-mono tiny">{s.strategy_id.slice(0, 16)}</td>
                 <td>
@@ -252,3 +256,4 @@ export default function CommandCenterPage(props: ShellPageProps) {
     </div>
   );
 }
+

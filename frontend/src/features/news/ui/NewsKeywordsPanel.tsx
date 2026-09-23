@@ -4,7 +4,7 @@
  * coverage table always comes from the backend's own scan.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel } from "@/components/primitives";
 import { HeatBar } from "@/components/viz";
 import { formatNumber } from "@/lib/format";
@@ -24,6 +24,9 @@ export function NewsKeywordsPanel() {
   const cats = data?.dataset?.categories ?? {};
   const dir = cov?.direction_distribution ?? {};
 
+  // perf: sorted category keys once per dataset, not on every render.
+  const catKeys = useMemo(() => Object.keys(cats).sort(), [cats]);
+
   const submitSearch = (value: string): void => {
     setQ(value);
     // debounce by one tick — the query key only changes on the applied value
@@ -37,13 +40,11 @@ export function NewsKeywordsPanel() {
         <>
           <select className="select" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="category">
             <option value="">all categories</option>
-            {Object.keys(cats)
-              .sort()
-              .map((c) => (
-                <option key={c} value={c}>
-                  {c} ({cats[c]})
-                </option>
-              ))}
+            {catKeys.map((c) => (
+              <option key={c} value={c}>
+                {c} ({cats[c]})
+              </option>
+            ))}
           </select>
           <input
             className="input"

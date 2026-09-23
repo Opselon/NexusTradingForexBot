@@ -32,6 +32,17 @@ export function TimeMachine() {
   const effectiveMs = sliderMs ?? range?.hi ?? null;
   const debouncedIso = useDebounced(effectiveMs === null ? null : new Date(effectiveMs).toISOString(), 350);
   const frameQ = useTimeMachineFrame(debouncedIso);
+  // perf: zone census built once per frame instead of every render
+  // (deps: frame — the only reactive value read; same insertion order/values).
+  const frame = frameQ.data;
+  const zoneRows = useMemo(() => {
+    const byZone = new Map<string, number>();
+    for (const n of arr(frame?.nodes)) {
+      const z = str(n.zone) ?? "UNKNOWN";
+      byZone.set(z, (byZone.get(z) ?? 0) + 1);
+    }
+    return [...byZone.entries()].map(([label, count]) => ({ label, count }));
+  }, [frame]);
 
   if (boundsQ.isPending) return <Panel title="Time machine"><Skeleton count={3} /></Panel>;
   if (!bounds || !range) {
@@ -42,10 +53,6 @@ export function TimeMachine() {
     );
   }
 
-  const frame = frameQ.data;
-  const nodes = arr(frame?.nodes);
-  const byZone = new Map<string, number>();
-  for (const n of nodes) byZone.set(str(n.zone) ?? "UNKNOWN", (byZone.get(str(n.zone) ?? "UNKNOWN") ?? 0) + 1);
   const transitions = arr(frame?.transitions);
 
   return (
@@ -77,7 +84,7 @@ export function TimeMachine() {
           <div className="grid cols-2" style={{ marginTop: 6 }}>
             <div>
               <div className="section-title">zone census at instant</div>
-              <DistBars rows={[...byZone.entries()].map(([label, count]) => ({ label, count }))} />
+              <DistBars rows={zoneRows} />
             </div>
             <div>
               <div className="section-title">transitions in this frame (±60 s)</div>
