@@ -17,6 +17,7 @@
 import { formatDateTime, formatTime } from "@/lib/format";
 import type { IncidentVo } from "../model";
 import { sevClass, sortByRecency } from "./incidentLook";
+import "./incidents-command.css";
 
 export default function IncidentTimeline({
   rows,

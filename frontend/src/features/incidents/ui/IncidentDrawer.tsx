@@ -31,6 +31,7 @@ import { incidentsQueries } from "../useCases";
 import { Drawer, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { evAt, evKind, sevClass } from "./incidentLook";
 import StatusChip from "./StatusChip";
+import "./incidents-command.css";
 
 type Tab = "detail" | "timeline" | "traces" | "report";
 

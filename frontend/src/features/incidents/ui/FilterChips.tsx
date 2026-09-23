@@ -18,6 +18,7 @@
 
 import type { IncidentVo } from "../model";
 import { filterChips } from "./incidentLook";
+import "./incidents-command.css";
 
 function ChipGroup({
   label,

@@ -16,6 +16,7 @@
  */
 
 import { statusClass } from "./incidentLook";
+import "./incidents-command.css";
 
 export default function StatusChip({ status, label }: { status: string | null | undefined; label?: string }) {
   const state = statusClass(status);

@@ -20,6 +20,7 @@ import { formatDateTime } from "@/lib/format";
 import { num, obj, type IncidentVo } from "../model";
 import { sevClass, sortByRecency } from "./incidentLook";
 import StatusChip from "./StatusChip";
+import "./incidents-command.css";
 
 /** One-line impact summary read off the backend impact payload (derived:
  *  counts only, labeled as such). Empty payload → no line rendered. */

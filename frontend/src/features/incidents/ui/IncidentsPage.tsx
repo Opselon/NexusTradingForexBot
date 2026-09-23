@@ -31,8 +31,20 @@ import { incidentsQueries, incidentsUseCases } from "../useCases";
 import ListSection from "./ListSection";
 import IncidentDrawer from "./IncidentDrawer";
 import "./incidents.css";
+import "./incidents-command.css";
 
 type Tab = "list" | "search" | "lineage" | "forensics";
+
+/** Static route contract this console speaks — read-only display of api.ts:4-15 (wave-8 hero). */
+const INCIDENT_ENDPOINTS = [
+  "/api/diagnostics/incidents",
+  "/api/diagnostics/health",
+  "/api/diagnostics/search",
+  "/api/diagnostics/trace",
+  "/api/diagnostics/lineage",
+  "/api/diagnostics/forensics",
+  "POST /api/diagnostics/incidents/reconcile",
+];
 
 export default function IncidentsPage(props: ShellPageProps) {
   void props;
@@ -90,23 +102,92 @@ export default function IncidentsPage(props: ShellPageProps) {
   const counts = healthQ.data?.counts ?? listQ.data?.counts;
   const worker = obj(healthQ.data?.worker);
   const recurring = arr(healthQ.data?.recurring);
+  const workerStatus = str(worker.display_state) ?? str(worker.state) ?? "DISABLED";
+  const recurringCount = recurring.length;
 
   return (
     <div className="inc-root">
-      <div className="page-head">
-        <h2>Incidents</h2>
-        <span className="muted small">forensic incident console · read-only records + guarded audit</span>
-        <FreshnessCaption timestamp={null} source="diagnostics incident store" isFetching={listQ.isFetching} error={listQ.isError} />
-      </div>
-      <div className="grid cols-4">
-        <MetricCard label="total / open" value={`${String(counts?.total ?? "—")} / ${String(counts?.open ?? "—")}`} tone="dim" sub="store.count() backend aggregate" />
-        <MetricCard label="critical / high" value={`${String(counts?.critical ?? 0)} / ${String(counts?.high ?? 0)}`} tone={num(counts?.critical) ? "neg" : "dim"} />
-        <MetricCard
-          label="incident worker"
-          value={<StatusBadge status={str(worker.display_state) ?? str(worker.state) ?? "DISABLED"} />}
-          sub={str(worker.last_error) ?? "state decided by backend"}
-        />
-        <MetricCard label="recurring fingerprints" value={String(recurring.length)} tone="dim" sub="same failure seen repeatedly" />
+      <header className="inc-hero">
+        <div className="inc-hero-main">
+          <div className="inc-kicker">
+            <span className="inc-kicker-bar" aria-hidden="true" />
+            <span className="inc-kicker-dot" aria-hidden="true" />
+            SAFETY &amp; GOVERNANCE · FORENSICS
+          </div>
+          <h1 className="inc-title">
+            <span className="inc-title-mark" aria-hidden="true">
+              ⚠
+            </span>
+            <span className="word">Incidents</span>
+          </h1>
+          <p className="inc-desc">
+            Forensic incident console (legacy tab-incidents): read-only records, health aggregates, bounded
+            search, one-click trace, value lineage and read-only probes — plus one confirm-guarded forensic
+            audit. Every figure below comes from the diagnostics envelope; missing state stays explicit,
+            never fabricated.
+          </p>
+          <div className="inc-endpoints" aria-label="endpoints served by this console">
+            {INCIDENT_ENDPOINTS.map((ep) => (
+              <span className="inc-ep" key={ep}>
+                {ep}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="inc-hero-side">
+          <div className="inc-prov" role="group" aria-label="incident store provenance">
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">total / open</span>
+              <span className={`inc-prov-v ${counts ? "" : "dim"}`}>
+                {String(counts?.total ?? "—")} / {String(counts?.open ?? "—")}
+              </span>
+            </div>
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">crit / high</span>
+              <span
+                className={`inc-prov-v ${num(counts?.critical) ? "neg" : num(counts?.high) ? "warn" : "dim"}`}
+              >
+                {String(counts?.critical ?? "—")} / {String(counts?.high ?? "—")}
+              </span>
+            </div>
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">worker</span>
+              <span className="inc-prov-v">
+                <StatusBadge status={workerStatus} />
+              </span>
+            </div>
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">recurring</span>
+              <span className={`inc-prov-v ${recurringCount ? "warn" : "dim"}`}>{String(recurringCount)}</span>
+            </div>
+          </div>
+          <span className="inc-prov-fresh">
+            <FreshnessCaption
+              timestamp={null}
+              source="diagnostics incident store"
+              isFetching={listQ.isFetching}
+              error={listQ.isError}
+            />
+          </span>
+        </div>
+      </header>
+
+      <div className="inc-sec">
+        <div className="inc-sec-label">
+          Store health
+          <span className="inc-sec-rule" aria-hidden="true" />
+          <span className="inc-sec-hint">counts + worker display state + recurring fingerprints</span>
+        </div>
+        <div className="inc-stats">
+          <MetricCard label="total / open" value={`${String(counts?.total ?? "—")} / ${String(counts?.open ?? "—")}`} tone="dim" sub="store.count() backend aggregate" />
+          <MetricCard label="critical / high" value={`${String(counts?.critical ?? 0)} / ${String(counts?.high ?? 0)}`} tone={num(counts?.critical) ? "neg" : "dim"} />
+          <MetricCard
+            label="incident worker"
+            value={<StatusBadge status={workerStatus} />}
+            sub={str(worker.last_error) ?? "state decided by backend"}
+          />
+          <MetricCard label="recurring fingerprints" value={String(recurringCount)} tone="dim" sub="same failure seen repeatedly" />
+        </div>
       </div>
 
       <Panel
