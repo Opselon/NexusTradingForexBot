@@ -17,6 +17,7 @@ new check families that belong to another domain module.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -343,6 +344,56 @@ def check_chart_semantic_health(bars: list[dict[str, Any]] | None = None) -> Che
     return _ok("CHECK-API-02", f"candle_intel has {n} candles", {"candles": n}, "candles > 0")
 
 
+#: Per-process cache of the resolved OpenAPI path surface. LD-3: the API
+#: check used to call ``create_app()`` + ``openapi()`` on EVERY sweep, which
+#: rebuilds the whole app (routes, static mounts, ALT-UI resolution -> the
+#: repeating ``[ALT-UI] serving ...`` log line) every 7-20s. The route surface
+#: is static after boot, so it is resolved once per process here.
+#:
+#: KEYED BY THE ``create_app`` CALLABLE ITSELF, never by a bare global set: a
+#: plain module-level set describes one app forever and is poisoned by any
+#: earlier build (a test that registers a route on a fresh app would still see
+#: the stale surface). Keying on the resolved callable means a different app
+#: factory — another process, or a test that swaps in its own ``create_app`` —
+#: gets its own cache entry automatically. The held value keeps the built app
+#: plus its route count so a route added to the SAME app after caching is still
+#: detected (surface recomputed from the cached app, without a rebuild).
+_API_SURFACE_CACHE: dict[object, tuple[Any, frozenset[str], int]] = {}
+
+#: Guards the cache against a concurrent double build (check groups may run in
+#: threads); a miss is harmless (worst case two builds), but the lock keeps the
+#: "build once" guarantee that is the whole point of LD-3.
+_API_SURFACE_LOCK = threading.Lock()
+
+
+def _resolved_api_paths() -> tuple[frozenset[str], Exception | None]:
+    """Resolve the app's OpenAPI path surface ONCE per ``create_app`` identity.
+
+    Returns ``(paths, None)`` on success or ``(frozenset(), exc)`` if the app
+    cannot be built — the caller fail-closes to UNKNOWN on an exception, exactly
+    as the inline implementation did. Failures are never cached: a transient
+    build error must remain retriable on the next sweep.
+    """
+    from nexus_scalp.web.server import create_app  # type: ignore[import-not-found]
+
+    with _API_SURFACE_LOCK:
+        cached = _API_SURFACE_CACHE.get(create_app)
+        if cached is not None:
+            app, paths, route_count = cached
+            # The surface is static after boot, but stay honest if the cached
+            # app gained a route after we snapshotted it (recompute paths from
+            # the SAME app — no rebuild, no second create_app() call).
+            if len(app.router.routes) == route_count:
+                return paths, None
+        try:
+            app = create_app()
+            paths = frozenset(app.openapi().get("paths", {}))
+        except Exception as exc:  # isolation boundary: never fabricate a PASS
+            return frozenset(), exc
+        _API_SURFACE_CACHE[create_app] = (app, paths, len(app.router.routes))
+        return paths, None
+
+
 def check_api_200_but_wrong() -> CheckResult:
     """§37: semantic health for the known API endpoints.
 
@@ -352,6 +403,12 @@ def check_api_200_but_wrong() -> CheckResult:
     ``web/<domain>_routes.py`` modules registered via ``include_router``,
     so a source-text grep of ``server.__file__`` can no longer see them.
     Runtime probing is performed by the API integration layer.
+
+    The app is built at most ONCE per process: the route surface is static
+    after boot (LD-3 — rebuilding it per sweep re-emitted the ``[ALT-UI]``
+    log line and the duplicate-operation-ID warning dump every 7-20s).
+    See ``_resolved_api_paths`` for why the cache is keyed by the app factory
+    rather than stored as a bare global set.
     """
     endpoints = {
         "/api/status": False,
@@ -360,20 +417,16 @@ def check_api_200_but_wrong() -> CheckResult:
         "/api/research/health": False,
         "/api/mt5/status": False,
     }
-    try:
-        from nexus_scalp.web.server import create_app  # type: ignore[import-not-found]
-
-        app = create_app()
-        paths = set(app.openapi().get("paths", {}))
-        for ep in endpoints:
-            endpoints[ep] = ep in paths
-    except Exception as exc:  # isolation boundary: never fabricate a PASS
+    paths, err = _resolved_api_paths()
+    if err is not None:
         return _unknown(
             "CHECK-API-01",
-            f"cannot build web app to enumerate routes: {type(exc).__name__}: {exc}",
+            f"cannot build web app to enumerate routes: {type(err).__name__}: {err}",
             endpoints,
             "all semantic-health endpoints exist",
         )
+    for ep in endpoints:
+        endpoints[ep] = ep in paths
     missing = [ep for ep, ok in endpoints.items() if not ok]
     if missing:
         return CheckResult(
