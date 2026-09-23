@@ -8,6 +8,7 @@
 
 import type { ReactNode } from "react";
 import type { FunnelStage, GateOutcome, Histogram } from "../analysis";
+import { useI18n } from "@/stores/i18nStore";
 import "../command-center.css";
 
 /* ------------------------------------------------------------------ Donut */
@@ -21,13 +22,14 @@ export interface DonutSegment {
 }
 
 export function Donut({ segments, centerLabel, centerValue }: { segments: DonutSegment[]; centerLabel: string; centerValue: string }) {
-  if (segments.length === 0) return <div className="cc-chart-empty">no census rows returned by the backend</div>;
+  const t = useI18n((s) => s.t);
+  if (segments.length === 0) return <div className="cc-chart-empty">{t("command-center.analysis.empty_census", "no census rows returned by the backend")}</div>;
   const R = 54;
   const C = 2 * Math.PI * R;
   let offset = 0;
   return (
     <div className="cc-donut-wrap">
-      <svg className="viz cc-donut" viewBox="0 0 140 140" role="img" aria-label={`${centerLabel} distribution`}>
+      <svg className="viz cc-donut" viewBox="0 0 140 140" role="img" aria-label={t("command-center.analysis.aria_distribution", "{v} distribution", { v: centerLabel })}>
         {segments.map((s, i) => {
           const len = Math.max(0, s.share * C);
           const el = (
@@ -86,6 +88,7 @@ export function HistogramChart({
   formatBucket: (lo: number, hi: number) => string;
   tone?: string;
 }) {
+  const t = useI18n((s) => s.t);
   const W = 320;
   const H = 120;
   const padB = 18;
@@ -96,9 +99,9 @@ export function HistogramChart({
     <div className="cc-hist">
       <div className="cc-hist-title">{label}</div>
       {!anyCount ? (
-        <div className="cc-chart-empty">no numeric samples reported by the backend</div>
+        <div className="cc-chart-empty">{t("command-center.analysis.empty_samples", "no numeric samples reported by the backend")}</div>
       ) : (
-        <svg className="viz" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${label} distribution`}>
+        <svg className="viz" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t("command-center.analysis.aria_distribution", "{v} distribution", { v: label })}>
           {data.buckets.map((b, i) => {
             const h = (b.count / data.max) * (H - padB - 6);
             return (
@@ -122,9 +125,9 @@ export function HistogramChart({
       )}
       <div className="cc-hist-foot tiny faint">
         n={data.total}
-        {data.missing > 0 && <span className="cc-gap"> · {data.missing} no sample (gap)</span>}
-        {data.below > 0 && <span> · {data.below} below range</span>}
-        {data.above > 0 && <span> · {data.above} above range</span>}
+        {data.missing > 0 && <span className="cc-gap"> · {t("command-center.analysis.no_sample", "{n} no sample (gap)", { n: data.missing })}</span>}
+        {data.below > 0 && <span> · {t("command-center.analysis.below_range", "{n} below range", { n: data.below })}</span>}
+        {data.above > 0 && <span> · {t("command-center.analysis.above_range", "{n} above range", { n: data.above })}</span>}
       </div>
     </div>
   );
@@ -133,7 +136,8 @@ export function HistogramChart({
 /* ------------------------------------------------------- Gate outcomes */
 
 export function GateOutcomeRows({ gates }: { gates: GateOutcome[] }) {
-  if (gates.length === 0) return <div className="cc-chart-empty">no gate metrics reported by the backend</div>;
+  const t = useI18n((s) => s.t);
+  if (gates.length === 0) return <div className="cc-chart-empty">{t("command-center.analysis.empty_gates", "no gate metrics reported by the backend")}</div>;
   return (
     <div className="cc-gates">
       {gates.map((g) => {
@@ -147,12 +151,12 @@ export function GateOutcomeRows({ gates }: { gates: GateOutcome[] }) {
             </span>
             <span className="cc-gate-num">
               {rate === null ? (
-                <span className="faint">not tested</span>
+                <span className="faint">{t("command-center.analysis.not_tested", "not tested")}</span>
               ) : (
                 <>
                   <b>{g.pass}</b>
-                  <span className="faint">/{g.total} pass · </span>
-                  <span className="cc-fail">{g.fail} fail</span>
+                  <span className="faint">{t("command-center.analysis.pass_of", "/{n} pass · ", { n: g.total })}</span>
+                  <span className="cc-fail">{t("command-center.analysis.fail_count", "{n} fail", { n: g.fail })}</span>
                 </>
               )}
             </span>
@@ -166,7 +170,8 @@ export function GateOutcomeRows({ gates }: { gates: GateOutcome[] }) {
 /* --------------------------------------------------------------- Funnel */
 
 export function FunnelRows({ stages }: { stages: FunnelStage[] }) {
-  if (stages.length === 0) return <div className="cc-chart-empty">no pipeline counts reported by the backend</div>;
+  const t = useI18n((s) => s.t);
+  if (stages.length === 0) return <div className="cc-chart-empty">{t("command-center.analysis.empty_pipeline", "no pipeline counts reported by the backend")}</div>;
   const peak = Math.max(1, ...stages.map((s) => s.value));
   return (
     <div className="cc-funnel">
@@ -195,15 +200,16 @@ export function FunnelRows({ stages }: { stages: FunnelStage[] }) {
 /* ---------------------------------------------------------- ring histogram */
 
 export function EvidenceRingsChart({ buckets, missing, total }: { buckets: number[]; missing: number; total: number }) {
+  const t = useI18n((s) => s.t);
   const peak = Math.max(1, ...buckets);
   const any = buckets.some((b) => b > 0) || missing > 0;
-  if (!any) return <div className="cc-chart-empty">no evidence rows reported by the backend</div>;
+  if (!any) return <div className="cc-chart-empty">{t("command-center.analysis.empty_evidence", "no evidence rows reported by the backend")}</div>;
   return (
     <div className="cc-rings">
       {buckets.map((c, k) => (
         <div className="cc-ring-row" key={k}>
-          <span className="cc-ring-label">{k}/4 pass</span>
-          <span className="cc-ring-track" role="img" aria-label={`${k} of 4 evidence gates passed: ${c} strategies`}>
+          <span className="cc-ring-label">{t("command-center.analysis.ring_pass", "{n}/4 pass", { n: k })}</span>
+          <span className="cc-ring-track" role="img" aria-label={t("command-center.analysis.aria_ring", "{k} of 4 evidence gates passed: {n} strategies", { k, n: c })}>
             <i style={{ width: `${(c / peak) * 100}%` }} />
           </span>
           <span className="cc-ring-num">{c}</span>
@@ -211,14 +217,14 @@ export function EvidenceRingsChart({ buckets, missing, total }: { buckets: numbe
       ))}
       {missing > 0 && (
         <div className="cc-ring-row cc-gap-row">
-          <span className="cc-ring-label">no evidence</span>
-          <span className="cc-ring-track dashed" role="img" aria-label={`${missing} strategies without evidence rows`}>
+          <span className="cc-ring-label">{t("command-center.analysis.no_evidence", "no evidence")}</span>
+          <span className="cc-ring-track dashed" role="img" aria-label={t("command-center.analysis.aria_missing", "{n} strategies without evidence rows", { n: missing })}>
             <i className="dashed" style={{ width: `${(missing / peak) * 100}%` }} />
           </span>
           <span className="cc-ring-num">{missing}</span>
         </div>
       )}
-      <div className="tiny faint">fleet n={total}</div>
+      <div className="tiny faint">{t("command-center.analysis.fleet_n", "fleet n={n}", { n: total })}</div>
     </div>
   );
 }
