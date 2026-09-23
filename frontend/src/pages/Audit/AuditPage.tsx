@@ -116,6 +116,16 @@ export default function AuditPage() {
   const ledgerRows = useMemo(() => ledgerQuery.data?.items ?? [], [ledgerQuery.data]);
   const incidentRows = useMemo(() => incidentsQuery.data?.items ?? [], [incidentsQuery.data]);
 
+  // Export rows are part of the CSV button's output, so the serialization is
+  // hoisted here (recomputed only when the page's own rows change) rather than
+  // rebuilt on every render. Byte-identical to the inline expression it
+  // replaces: a string payload passes through as the backend sent it, an
+  // object payload is serialized, an absent payload renders as an empty cell.
+  const eventCsvRows = useMemo(
+    () => eventRows.map((r) => [r.id, r.created_at ?? "", r.event_type ?? "", typeof r.payload === "string" ? r.payload : JSON.stringify(r.payload ?? "")]),
+    [eventRows],
+  );
+
   return (
     <div>
       <Panel title="Audit database (backend-reported metadata)">
@@ -163,7 +173,7 @@ export default function AuditPage() {
                     downloadCsv({
                       filename: `nse-audit-events-p${eventPage}-${stampForFilename()}.csv`,
                       headers: ["id", "created_at", "event_type", "payload"],
-                      rows: eventRows.map((r) => [r.id, r.created_at ?? "", r.event_type ?? "", typeof r.payload === "string" ? r.payload : JSON.stringify(r.payload ?? "")]),
+                      rows: eventCsvRows,
                     })
                   }
                   title="exports THIS page of the current filtered view (backend rows verbatim)"
