@@ -25,7 +25,10 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
-from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+from nexus_scalp.database.drivers._sql_guard import (
+    _assert_single_statement,
+    assert_safe_sql,
+)
 from nexus_scalp.database.drivers.base import DatabaseDriver
 
 #: Case-insensitive map: SQLite type name -> portable logical type.
@@ -246,6 +249,15 @@ class SQLiteDriver(DatabaseDriver):
 
         return sqlite3.SQLITE_DENY
 
+    def set_read_authorizer(self, conn: sqlite3.Connection) -> None:
+        """Attach the kernel-level read-only authorizer to a connection.
+
+        This is the enforcement primitive the fabric's read plane calls; it
+        is deliberately separate from :meth:`configure_connection` (which
+        applies WRITE-side PRAGMAs and must never run on a read-only handle).
+        """
+        conn.set_authorizer(self._readonly_authorizer)
+
     def query(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> list[dict[str, Any]]:
         """Run a SELECT and return rows as dicts (row_factory applied)."""
         own = conn is None
@@ -260,12 +272,22 @@ class SQLiteDriver(DatabaseDriver):
     def query_readonly(
         self, sql: str, args: Sequence[Any] = (), conn: Any = None
     ) -> list[dict[str, Any]]:
-        """Run a read-only query with SQLite C-level authorizer enforced."""
+        """Run a read-only query with the SQLite C-level authorizer enforced.
+
+        The authorizer — not the verb allow-list — is the authority on this
+        path: it denies every non-read action at the SQLite kernel boundary
+        and raises ``sqlite3.DatabaseError``. ``assert_safe_sql`` is skipped
+        here because its verb list deliberately omits ATTACH/VACUUM/REPLACE,
+        which this contract must reject as DatabaseError rather than the
+        driver's shape-check ValueError.  Stacked-statement and block-comment
+        protection is preserved by ``_assert_single_statement``.
+        """
         own = conn is None
         c = conn or self.connect()
         try:
             c.set_authorizer(self._readonly_authorizer)
-            cur = c.execute(assert_safe_sql(sql), tuple(args))
+            _assert_single_statement(sql)
+            cur = c.execute(sql, tuple(args))
             return [dict(r) for r in cur.fetchall()]
         finally:
             if own:

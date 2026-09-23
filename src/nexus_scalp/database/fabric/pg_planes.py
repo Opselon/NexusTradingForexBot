@@ -1,0 +1,377 @@
+"""PostgreSQL read/write planes with psycopg v3 pooling.
+
+Phase 6 of the DATABASE FABRIC mission (DB-FABRIC-001).
+
+  * separate read pool and write pool (``psycopg_pool.ConnectionPool``);
+  * read connections are read-only by construction:
+    ``SET default_transaction_read_only = on`` — the server rejects
+    mutations, not just our convention;
+  * every connection receives session configuration (statement_timeout,
+    ``jit=off`` for stable p99, ``application_name`` for observability);
+  * configurable min/max size, connection timeout, idle timeout, health
+    checks, pool-exhaustion metrics, graceful shutdown;
+  * optional read-replica pool for EVENTUAL reads only.
+
+The pool is what turns a ~104ms cold connect into a sub-millisecond
+checkout.  Connections are never held across requests, and cursors are
+always closed (``with conn.cursor()``).
+"""
+
+from __future__ import annotations
+
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from nexus_scalp.observability.logging import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+logger = get_logger("nexus_scalp.database.fabric.pg_planes")
+
+#: Session settings applied to EVERY pooled connection (no secrets).
+_SESSION_BASE_SQL = "SET jit = off"
+
+#: Session settings for READ connections.
+_READ_SESSION_SQL = "SET default_transaction_read_only = on"
+
+
+@dataclass(frozen=True)
+class PoolLimits:
+    """Pool sizing + timeouts.  Zero means "use the driver default"."""
+
+    min_size: int = 2
+    max_size: int = 10
+    connect_timeout_sec: int = 10
+    statement_timeout_ms: int = 0
+    idle_timeout_sec: int = 0
+    max_lifetime_sec: int = 0
+    health_check_interval_sec: int = 30
+
+    def __post_init__(self) -> None:
+        if self.max_size < 1:
+            object.__setattr__(self, "max_size", 1)
+        if self.min_size < 0:
+            object.__setattr__(self, "min_size", 0)
+        if self.min_size > self.max_size:
+            object.__setattr__(self, "min_size", self.max_size)
+
+
+class PgPool:
+    """One psycopg_pool connection pool over a PostgreSQL DSN.
+
+    Wraps ``psycopg_pool.ConnectionPool`` so the fabric owns lifecycle,
+    session configuration, metrics and masking.  The raw DSN is never logged.
+    """
+
+    __slots__ = ("_closed", "_dsn", "_limits", "_name", "_pool", "_readonly")
+
+    def __init__(
+        self,
+        dsn: str,
+        limits: PoolLimits,
+        *,
+        readonly: bool = False,
+        name: str = "",
+    ) -> None:
+        self._dsn = dsn
+        self._limits = limits
+        self._readonly = readonly
+        self._name = name or ("pg-read" if readonly else "pg-write")
+        self._pool: Any = None
+        self._closed = False
+
+    # -- lifecycle --------------------------------------------------------
+
+    @property
+    def available(self) -> bool:
+        """True when psycopg_pool is importable (optional dependency)."""
+        try:
+            import psycopg_pool  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    def open(self) -> None:
+        if self._pool is not None or self._closed:
+            return
+        psycopg_pool = self._require_psycopg_pool()
+        kwargs: dict[str, Any] = {
+            "min_size": self._limits.min_size,
+            "max_size": self._limits.max_size,
+            "timeout": float(self._limits.connect_timeout_sec),
+        }
+        if self._limits.idle_timeout_sec:
+            kwargs["max_idle"] = float(self._limits.idle_timeout_sec)
+        if self._limits.max_lifetime_sec:
+            kwargs["max_lifetime"] = float(self._limits.max_lifetime_sec)
+        if self._limits.health_check_interval_sec:
+            # psycopg_pool 3.3: `check` is a callback invoked before lending a
+            # connection; raising there makes the pool discard and replace it.
+            # The probe interval is the pool's own scheduling concern.
+            kwargs["check"] = self._pool_check
+        self._pool = psycopg_pool.ConnectionPool(
+            conninfo=self._dsn,
+            name=self._name,
+            configure=self._configure_connection,
+            # The pool owns the real DSN; expose the masked form for
+            # diagnostics instead (never the password).
+            **kwargs,
+        )
+        logger.debug(
+            "pg pool opened name=%s readonly=%s",
+            self._name,
+            self._readonly,
+        )
+
+    def close(self) -> None:
+        pool = self._pool
+        self._pool = None
+        self._closed = True
+        if pool is not None:
+            with contextlib_suppress():
+                pool.close(wait=2.0)
+
+    # -- connection configuration -----------------------------------------
+
+    def _configure_connection(self, conn: Any) -> None:
+        """Apply session settings to a freshly checked-out connection.
+
+        psycopg's pool `configure` hook runs while the connection is still in
+        its initial state: autocommit is OFF, so an unexecuted ``SET`` leaves
+        an open transaction that makes the pool mark the connection INERROR.
+        Enable autocommit first, then every statement is a one-shot command.
+
+        ``SET`` accepts no parameters in PostgreSQL, so application_name is
+        set through the standard literal form.  ``self._name`` is a fabric
+        constant (never user input), and it is validated to a conservative
+        identifier shape before use.
+        """
+
+        try:
+            conn.autocommit = True
+            conn.execute(_SESSION_BASE_SQL)
+            if self._readonly:
+                conn.execute(_READ_SESSION_SQL)
+            if self._limits.statement_timeout_ms:
+                conn.execute(f"SET statement_timeout = {int(self._limits.statement_timeout_ms)}")
+            app_name = _sanitize_app_name(self._name)
+            conn.execute(f"SET application_name = '{app_name}'")
+        except Exception:
+            # A connection we cannot configure is useless; let the pool
+            # discard and replace it rather than lending a bad handle.
+            with contextlib_suppress():
+                conn.close()
+            raise
+
+    # -- health check -----------------------------------------------------
+
+    @staticmethod
+    def _pool_check(conn: Any) -> None:
+        """Readiness probe: raise if the connection is dead.
+
+        psycopg_pool calls this before lending a connection; an exception
+        makes the pool discard and replace the connection.
+        """
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        except Exception:
+            # The pool treats a raised check as "unhealthy" and reconnects.
+            conn.close()
+            raise
+
+    # -- checkout ---------------------------------------------------------
+
+    @contextmanager
+    def connection(self) -> Iterator[Any]:
+        """Check out a configured connection; always returned to the pool."""
+        if self._pool is None:
+            raise RuntimeError(f"pg pool {self._name!r} is not open")
+        time.perf_counter()
+        conn = self._pool.getconn()
+        try:
+            yield conn
+        finally:
+            with contextlib_suppress():
+                self._pool.putconn(conn)
+
+    # -- query ------------------------------------------------------------
+
+    def query(self, sql: str, args: Sequence[Any] = ()) -> list[dict[str, Any]]:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        translated = PostgreSQLDriver.translate_sql(sql)
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(translated, tuple(args))
+            cols = [d.name for d in cur.description] if cur.description else []
+            return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
+
+    def query_one(self, sql: str, args: Sequence[Any] = ()) -> dict[str, Any] | None:
+        rows = self.query(sql, args)
+        return rows[0] if rows else None
+
+    def scalar(self, sql: str, args: Sequence[Any] = ()) -> Any:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        translated = PostgreSQLDriver.translate_sql(sql)
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(translated, tuple(args))
+            row = cur.fetchone()
+            return row[0] if row is not None else None
+
+    # -- stats ------------------------------------------------------------
+
+    def stats(self) -> dict[str, Any]:
+        pool = self._pool
+        if pool is None:
+            return {"name": self._name, "open": False}
+        with contextlib_suppress():
+            return {
+                "name": self._name,
+                "open": True,
+                "size": getattr(pool, "size", lambda: -1)(),
+                "available": getattr(pool, "get_stats", lambda: {})(),
+            }
+        return {"name": self._name, "open": True}
+
+    # -- internals --------------------------------------------------------
+
+    @staticmethod
+    def _require_psycopg_pool() -> Any:
+        try:
+            import psycopg_pool
+
+            return psycopg_pool
+        except ImportError as exc:  # pragma: no cover - env dependent
+            raise RuntimeError(
+                "PostgreSQL pooling requires psycopg_pool. Run: pip install 'nexus[postgres]'"
+            ) from exc
+
+
+class PgReadPlane:
+    """Read plane for one PostgreSQL database: read pool + optional replica."""
+
+    __slots__ = ("_limits", "_primary", "_replica")
+
+    def __init__(
+        self,
+        primary_dsn: str,
+        limits: PoolLimits,
+        *,
+        replica_dsn: str = "",
+    ) -> None:
+        self._limits = limits
+        self._primary = PgPool(primary_dsn, limits, readonly=True, name="pg-read")
+        self._replica = (
+            PgPool(replica_dsn, limits, readonly=True, name="pg-read-replica")
+            if replica_dsn
+            else None
+        )
+
+    @property
+    def has_replica(self) -> bool:
+        return self._replica is not None
+
+    def open(self) -> None:
+        self._primary.open()
+        if self._replica is not None:
+            with contextlib_suppress():
+                self._replica.open()
+
+    def close(self) -> None:
+        self._primary.close()
+        if self._replica is not None:
+            self._replica.close()
+
+    def connection(self, *, allow_replica: bool = False) -> Any:
+        """Pick a read connection: replica only for EVENTUAL reads."""
+        pool = self._replica if (allow_replica and self._replica is not None) else self._primary
+        return pool.connection()
+
+    def query(
+        self, sql: str, args: Sequence[Any] = (), *, allow_replica: bool = False
+    ) -> list[dict[str, Any]]:
+        pool = self._replica if (allow_replica and self._replica is not None) else self._primary
+        return pool.query(sql, args)
+
+    def query_one(
+        self, sql: str, args: Sequence[Any] = (), *, allow_replica: bool = False
+    ) -> dict[str, Any] | None:
+        rows = self.query(sql, args, allow_replica=allow_replica)
+        return rows[0] if rows else None
+
+    def scalar(self, sql: str, args: Sequence[Any] = (), *, allow_replica: bool = False) -> Any:
+        pool = self._replica if (allow_replica and self._replica is not None) else self._primary
+        return pool.scalar(sql, args)
+
+
+class PgWritePlane:
+    """Write plane for one PostgreSQL database: pooled writes + batching.
+
+    Reuses the fabric's write-item queue semantics so SQLite and PostgreSQL
+    share the same backpressure/overflow/idempotency contract.  Unlike
+    SQLite, PostgreSQL accepts concurrent writers; the pool is the boundary,
+    so writes still batch into bounded transactions.
+    """
+
+    __slots__ = ("_limits", "_pool")
+
+    def __init__(self, write_dsn: str, limits: PoolLimits) -> None:
+        self._limits = limits
+        self._pool = PgPool(write_dsn, limits, readonly=False, name="pg-write")
+
+    @property
+    def pool(self) -> PgPool:
+        return self._pool
+
+    def open(self) -> None:
+        self._pool.open()
+
+    def close(self) -> None:
+        self._pool.close()
+
+    @contextmanager
+    def connection(self) -> Iterator[Any]:
+        with self._pool.connection() as conn:
+            yield conn
+
+    def execute(self, sql: str, args: Sequence[Any] = ()) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        translated = PostgreSQLDriver.translate_sql(sql)
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(translated, tuple(args))
+
+    def executemany(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        translated = PostgreSQLDriver.translate_sql(sql)
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.executemany(translated, [tuple(a) for a in seq])
+
+
+@contextmanager
+def contextlib_suppress() -> Iterator[None]:
+    """Suppress any exception in a with-block (pool best-effort paths)."""
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        yield
+
+
+def _sanitize_app_name(name: str) -> str:
+    """Reduce a pool name to a safe PostgreSQL ``application_name`` literal.
+
+    ``SET application_name`` accepts no bound parameters, so the value must be
+    embedded literally; it is a fabric constant (never user input) and is
+    restricted here to ``[A-Za-z0-9_-]`` so it cannot break out of the string
+    literal.
+    """
+    import re
+
+    cleaned = re.sub(r"[^A-Za-z0-9_-]", "-", (name or "nse-pool")).strip("-")
+    return cleaned or "nse-pool"

@@ -55,3 +55,20 @@ def assert_safe_sql(sql: str) -> str:
     if not _ALLOWED_VERBS.match(sql):
         raise ValueError("SQL verb not allowed at driver boundary (driver guard)")
     return sql
+
+
+def _assert_single_statement(sql: str) -> str:
+    """Shape-only check used where the provider's own authority decides verbs.
+
+    The read-only path relies on SQLite's C-level authorizer to reject every
+    non-read statement, so the verb allow-list must not run there.  Block
+    comments and statement stacking are still rejected: those are shape
+    defects, not verb questions.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        raise ValueError("empty or non-string SQL rejected by driver guard")
+    if _FORBIDDEN.search(sql):
+        raise ValueError("SQL contains block comments (driver guard)")
+    if _INTERIOR_SEMICOLON.search(sql):
+        raise ValueError("SQL contains stacked statements (driver guard)")
+    return sql
