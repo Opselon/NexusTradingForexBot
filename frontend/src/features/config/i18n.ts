@@ -229,5 +229,6 @@ export const MESSAGES: FeatureMessages = {
   "config.apply.not_sent_restart": { fa: "ارسال نشد (راه‌اندازی مجدد لازم، همچنان ویرایش محلی): {keys}.", de: "Nicht gesendet (Neustart erforderlich, weiterhin lokal bearbeitet): {keys}.", es: "No enviado (reinicio requerido, sigue como edición local): {keys}.", ar: "لم يُرسل (إعادة تشغيل مطلوبة، ما زال تعديلًا محليًا): {keys}." },
   "config.validation.must_be_one_of": { fa: "{label} باید یکی از این مقادیر باشد: {options}", de: "{label} muss einer dieser Werte sein: {options}", es: "{label} debe ser uno de estos valores: {options}", ar: "{label} يجب أن يكون أحد هذه القيم: {options}" },
   "config.validation.token_shape": { fa: "قالب {label} با شکل مورد انتظار مطابقت ندارد", de: "{label} entspricht nicht der erwarteten Token-Form", es: "{label} no coincide con la forma de token esperada", ar: "{label} لا يطابق شكل الرمز المتوقع" },
+  "config.swap.ph": { fa: "artifacts/model.pt", de: "artifacts/model.pt", es: "artifacts/model.pt", ar: "artifacts/model.pt" },
 
 };
