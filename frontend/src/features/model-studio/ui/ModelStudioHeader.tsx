@@ -79,6 +79,7 @@ export function ModelStudioHeader({
             <span
               className="ms-champ-name"
               title={activeModel?.model_id}
+              dir="ltr"
               style={{ display: "block", maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             >
               {activeModel?.model_id
@@ -157,7 +158,7 @@ export function ModelStudioHeader({
 
         <div className="ms-metric-card">
           <div className="ms-metric-label">{t("model-studio.header.weights_sha", "Weights SHA256")}</div>
-          <div className="ms-metric-value" style={{ color: "var(--green)", fontSize: 13 }}>
+          <div className="ms-metric-value" dir="ltr" style={{ color: "var(--green)", fontSize: 13 }}>
             {overview?.weights_sha256 ? overview.weights_sha256.substring(0, 12) : "—"}
           </div>
           <div className="ms-metric-sub">{t("model-studio.header.artifact_integrity", "Artifact Integrity")}</div>
