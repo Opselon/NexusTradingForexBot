@@ -10,7 +10,7 @@
  * UI renders that verbatim per section (never a fabricated board).
  */
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -25,14 +25,44 @@ import {
   StatusBadge,
 } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
-import { formatDateTime, formatNumber } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
+import { ApiError } from "@/types/api";
 import { CommandResultLine, FreshnessCaption, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { arr, bool, num, obj, str, type FactoryCommandDto, type Row } from "../model";
 import { factoryQueries, factoryUseCases } from "../useCases";
+import { BenchmarkRow, CandidateRow, EventRow, FailureRow, GenerationRow, RankingRow, type AskFn } from "./FactoryTableRows";
 
 type Tab = "generations" | "candidates" | "benchmarks" | "failures" | "ranking" | "memory" | "console";
 
 const RANK_DIMS = ["OVERALL", "SHARPE", "EXPECTANCY", "STABILITY"];
+
+/** Failure text of a query — backend code + message, verbatim. */
+function errText(e: unknown): string {
+  if (e instanceof ApiError) return `${e.code}: ${e.message}`;
+  if (e instanceof Error) return e.message;
+  return "Backend request failed.";
+}
+
+/** Correlation id carried by ApiError for ErrorState's request_id line. */
+function errRid(e: unknown): string | null {
+  if (e instanceof ApiError) return e.requestId;
+  if (e && typeof e === "object" && "requestId" in e) {
+    const r = (e as { requestId?: unknown }).requestId;
+    return typeof r === "string" && r !== "" ? r : null;
+  }
+  return null;
+}
+
+/** Query -> ErrorState with request_id + Retry (4-state ladder, error rung). */
+function QueryError({ q }: { q: { error: unknown; refetch: () => unknown } }) {
+  return (
+    <ErrorState
+      message={errText(q.error)}
+      requestId={errRid(q.error)}
+      onRetry={() => void q.refetch()}
+    />
+  );
+}
 
 export default function FactoryPage(props: ShellPageProps) {
   void props;
@@ -47,6 +77,9 @@ export default function FactoryPage(props: ShellPageProps) {
   const statusQ = useQuery({
     queryKey: ["factory", "status"],
     queryFn: ({ signal }) => factoryQueries.status(signal),
+    // Bounded poll: 20s while the tab is active; react-query pauses interval
+    // refetches while the window is in the background (default) and aborts
+    // in-flight requests via the queryFn AbortSignal.
     refetchInterval: 20_000,
     retry: false,
   });
@@ -102,7 +135,12 @@ export default function FactoryPage(props: ShellPageProps) {
   const loop = obj(statusQ.data?.loop);
   const provider = obj(statusQ.data?.provider);
   const usage = obj(provider.usage);
-  const gens = factoryUseCases.generationList(arr(generationsQ.data?.generations));
+  // VOs are rebuilt only when the generations payload changes, so the memoized
+  // GenerationRow leaves stay effective across the 20s status poll.
+  const gens = useMemo(
+    () => factoryUseCases.generationList(arr(generationsQ.data?.generations)),
+    [generationsQ.data],
+  );
 
   const runCmd = async (label: string, fn: () => Promise<FactoryCommandDto>) => {
     await cmd.run(async () => {
@@ -112,21 +150,34 @@ export default function FactoryPage(props: ShellPageProps) {
     void qc.invalidateQueries({ queryKey: ["factory"] });
   };
 
-  const ask = (label: string, danger: boolean, run: () => Promise<FactoryCommandDto>) => setPending({ label, danger, run });
+  const ask = useCallback<AskFn>(
+    (label, danger, run) => setPending({ label, danger, run }),
+    [],
+  );
 
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2>Strategy Factory</h2>
         <span className="muted small">autonomous evolution control room — never touches the live path</span>
-        <FreshnessCaption timestamp={null} source="factory store" isFetching={statusQ.isFetching} error={statusQ.isError} />
+        <FreshnessCaption
+          timestamp={statusQ.dataUpdatedAt || null}
+          source="factory store · GET /api/factory/status"
+          isFetching={statusQ.isFetching}
+          error={statusQ.isError}
+        />
       </div>
 
-      {!mounted && !statusQ.isPending && (
-        <div className="banner stale" role="status">
-          Strategy Factory not mounted — {statusQ.data?.reason ?? "backend answered available:false"}. Every section below shows the backend's own
-          unavailability verdict; no data is simulated.
-        </div>
+      {statusQ.isError ? (
+        <QueryError q={statusQ} />
+      ) : (
+        !mounted &&
+        !statusQ.isPending && (
+          <div className="banner stale" role="status">
+            Strategy Factory not mounted — {statusQ.data?.reason ?? "backend answered available:false"}. Every section below shows the backend's own
+            unavailability verdict; no data is simulated.
+          </div>
+        )
       )}
 
       <div className="grid cols-4">
@@ -211,35 +262,15 @@ export default function FactoryPage(props: ShellPageProps) {
             {generationsQ.isPending ? (
               <Skeleton count={4} />
             ) : generationsQ.isError ? (
-              <ErrorState message="generations endpoint failed" onRetry={() => void generationsQ.refetch()} />
+              <QueryError q={generationsQ} />
             ) : generationsQ.data?.available === false ? (
-              <EmptyState message="Factory not mounted" hint={generationsQ.data.reason ?? "FACTORY_UNAVAILABLE"} />
+              <EmptyState message="Factory not mounted" hint={`GET /api/factory/generations: ${generationsQ.data.reason ?? "FACTORY_UNAVAILABLE"}`} />
             ) : gens.length === 0 ? (
-              <EmptyState message="No generations yet — press Generate." />
+              <EmptyState message="No generations yet — press Generate." hint="GET /api/factory/generations returned an empty list." />
             ) : (
               <DataTable headers={[{ label: "generation" }, { label: "mode" }, { label: "state" }, { label: "size", num: true }, { label: "created" }, { label: "" }]}>
                 {gens.map((g) => (
-                  <tr key={g.id}>
-                    <td className="inline-mono tiny" title={g.id}>
-                      {g.number !== null ? `#${g.number} ` : ""}
-                      {g.id.slice(0, 14)}
-                    </td>
-                    <td className="tiny">{g.mode}</td>
-                    <td>
-                      <StatusPill status={g.state} />
-                    </td>
-                    <td className="num tiny">{g.size ?? "—"}</td>
-                    <td className="tiny">{formatDateTime(g.createdAt)}</td>
-                    <td>
-                      <button
-                        className="btn small ghost"
-                        disabled={cmd.state.running || g.state === "COMPLETED"}
-                        onClick={() => ask(`Complete ${g.id.slice(0, 10)}`, false, () => factoryUseCases.complete(g.id))}
-                      >
-                        complete
-                      </button>
-                    </td>
-                  </tr>
+                  <GenerationRow key={g.id} g={g} busy={cmd.state.running} onAsk={ask} />
                 ))}
               </DataTable>
             )}
@@ -250,31 +281,19 @@ export default function FactoryPage(props: ShellPageProps) {
           <Panel title="Candidates (per generation filter)" tight>
             {candidatesQ.isPending ? (
               <Skeleton count={4} />
+            ) : candidatesQ.isError ? (
+              <QueryError q={candidatesQ} />
             ) : candidatesQ.data?.available === false ? (
-              <EmptyState message="Factory not mounted" hint={candidatesQ.data.reason ?? "FACTORY_UNAVAILABLE"} />
+              <EmptyState message="Factory not mounted" hint={`GET /api/factory/candidates: ${candidatesQ.data.reason ?? "FACTORY_UNAVAILABLE"}`} />
             ) : arr(candidatesQ.data?.candidates).length === 0 ? (
-              <EmptyState message="No candidates for this selection." />
+              <EmptyState message="No candidates for this selection." hint="GET /api/factory/candidates returned an empty list for this generation filter." />
             ) : (
               <DataTable headers={[{ label: "candidate" }, { label: "generation" }, { label: "lifecycle" }, { label: "score", num: true }, { label: "" }]}>
                 {arr(candidatesQ.data?.candidates)
                   .slice(0, 100)
                   .map((c: Row, i: number) => {
                     const cid = str(c.candidate_id) ?? str(c.id) ?? "";
-                    return (
-                      <tr key={`${cid}-${i}`}>
-                        <td className="inline-mono tiny">{cid.slice(0, 16) || "—"}</td>
-                        <td className="inline-mono tiny">{str(c.generation_id)?.slice(0, 10) ?? "—"}</td>
-                        <td>
-                          <StatusPill status={str(c.lifecycle) ?? str(c.status)} />
-                        </td>
-                        <td className="num tiny">{num(c.score) === null ? "—" : formatNumber(num(c.score)!, 3)}</td>
-                        <td>
-                          <button className="btn small ghost" disabled={cmd.state.running || !cid} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
-                            evaluate
-                          </button>
-                        </td>
-                      </tr>
-                    );
+                    return <CandidateRow key={cid || `cand-${i}`} c={c} busy={cmd.state.running} onAsk={ask} />;
                   })}
               </DataTable>
             )}
@@ -285,24 +304,18 @@ export default function FactoryPage(props: ShellPageProps) {
           <Panel title="Strategy-aware benchmarks (per-candidate backtests)" tight>
             {benchmarksQ.isPending ? (
               <Skeleton count={4} />
+            ) : benchmarksQ.isError ? (
+              <QueryError q={benchmarksQ} />
             ) : benchmarksQ.data?.available === false ? (
-              <EmptyState message="Factory not mounted" hint={benchmarksQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={`GET /api/factory/benchmarks: ${benchmarksQ.data.reason ?? ""}`} />
             ) : arr(benchmarksQ.data?.benchmarks).length === 0 ? (
-              <EmptyState message="No benchmark rows for this selection." />
+              <EmptyState message="No benchmark rows for this selection." hint="GET /api/factory/benchmarks returned an empty list for this generation filter." />
             ) : (
               <DataTable headers={[{ label: "candidate" }, { label: "coverage", num: true }, { label: "decision" }, { label: "oos" }, { label: "robust" }]}>
                 {arr(benchmarksQ.data?.benchmarks)
                   .slice(0, 60)
-                  .map((b: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="inline-mono tiny">{str(b.candidate_id)?.slice(0, 14) ?? "—"}</td>
-                      <td className="num tiny">{num(b.coverage) === null ? "—" : `${formatNumber(num(b.coverage)!, 1)}%`}</td>
-                      <td>
-                        <StatusPill status={str(b.decision_label) ?? str(b.decision)} />
-                      </td>
-                      <td className="tiny">{str(b.oos_status) ?? "—"}</td>
-                      <td className="tiny">{str(b.robustness_status) ?? "—"}</td>
-                    </tr>
+                  .map((b: Row, i) => (
+                    <BenchmarkRow key={`bench-${i}`} b={b} />
                   ))}
               </DataTable>
             )}
@@ -313,22 +326,18 @@ export default function FactoryPage(props: ShellPageProps) {
           <Panel title="Failure ledger" tight>
             {failuresQ.isPending ? (
               <Skeleton count={3} />
+            ) : failuresQ.isError ? (
+              <QueryError q={failuresQ} />
             ) : failuresQ.data?.available === false ? (
-              <EmptyState message="Factory not mounted" hint={failuresQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={`GET /api/factory/failures: ${failuresQ.data.reason ?? ""}`} />
             ) : arr(failuresQ.data?.failures).length === 0 ? (
-              <EmptyState message="No recorded failures." />
+              <EmptyState message="No recorded failures." hint="GET /api/factory/failures returned an empty ledger." />
             ) : (
               <DataTable headers={[{ label: "at" }, { label: "stage" }, { label: "reason" }]}>
                 {arr(failuresQ.data?.failures)
                   .slice(0, 80)
-                  .map((f: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(str(f.created_at) ?? str(f.at))}</td>
-                      <td className="tiny">{str(f.stage) ?? str(f.kind) ?? "—"}</td>
-                      <td className="tiny muted" title={str(f.reason) ?? ""}>
-                        {(str(f.reason) ?? "—").slice(0, 60)}
-                      </td>
-                    </tr>
+                  .map((f: Row, i) => (
+                    <FailureRow key={`fail-${i}`} f={f} />
                   ))}
               </DataTable>
             )}
@@ -351,19 +360,16 @@ export default function FactoryPage(props: ShellPageProps) {
           >
             {rankingQ.isPending ? (
               <Skeleton count={4} />
+            ) : rankingQ.isError ? (
+              <QueryError q={rankingQ} />
             ) : rankingQ.data?.available === false ? (
-              <EmptyState message="Factory not mounted" hint={rankingQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={`GET /api/factory/ranking: ${rankingQ.data.reason ?? ""}`} />
+            ) : arr(rankingQ.data?.ranked).length === 0 ? (
+              <EmptyState message="No ranked survivors yet." hint={`GET /api/factory/ranking returned an empty list for dimension ${dim}.`} />
             ) : (
               <DataTable headers={[{ label: "#" }, { label: "strategy" }, { label: "lifecycle" }, { label: "value", num: true }]}>
-                {arr(rankingQ.data?.ranked).map((r: Row, i: number) => (
-                  <tr key={i}>
-                    <td className="num tiny">{i + 1}</td>
-                    <td className="inline-mono tiny">{str(r.strategy_id)?.slice(0, 16) ?? "—"}</td>
-                    <td>
-                      <StatusPill status={str(r.lifecycle)} />
-                    </td>
-                    <td className="num tiny">{formatNumber(num(r.score) ?? num(r.value) ?? NaN, 3)}</td>
-                  </tr>
+                {arr(rankingQ.data?.ranked).map((r: Row, i) => (
+                  <RankingRow key={`rank-${dim}-${i}`} r={r} rank={i + 1} />
                 ))}
               </DataTable>
             )}
@@ -374,8 +380,12 @@ export default function FactoryPage(props: ShellPageProps) {
           <Panel title="Structured evolution memory (next-generation input)" tight>
             {memoryQ.isPending ? (
               <Skeleton count={3} />
+            ) : memoryQ.isError ? (
+              <QueryError q={memoryQ} />
             ) : memoryQ.data?.available === false ? (
-              <EmptyState message="Factory not mounted" hint={memoryQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={`GET /api/factory/memory: ${memoryQ.data.reason ?? ""}`} />
+            ) : memoryQ.data?.memory == null ? (
+              <EmptyState message="No evolution memory stored." hint="GET /api/factory/memory answered without a memory payload." />
             ) : (
               <JsonBlock value={memoryQ.data?.memory} maxChars={6000} />
             )}
@@ -386,22 +396,18 @@ export default function FactoryPage(props: ShellPageProps) {
           <Panel title="Factory event console" tight>
             {eventsQ.isPending ? (
               <Skeleton count={4} />
+            ) : eventsQ.isError ? (
+              <QueryError q={eventsQ} />
             ) : eventsQ.data?.available === false ? (
-              <EmptyState message="Factory not mounted" hint={eventsQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={`GET /api/factory/events: ${eventsQ.data.reason ?? ""}`} />
             ) : arr(eventsQ.data?.events).length === 0 ? (
-              <EmptyState message="No events." />
+              <EmptyState message="Console is quiet." hint="GET /api/factory/events returned an empty stream for this generation filter." />
             ) : (
-              <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
+              <DataTable headers={[{ label: "time" }, { label: "event" }, { label: "detail" }]}>
                 {arr(eventsQ.data?.events)
                   .slice(0, 100)
-                  .map((e: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(str(e.created_at) ?? str(e.at))}</td>
-                      <td className="small">{str(e.event_type) ?? str(e.kind) ?? "—"}</td>
-                      <td className="tiny muted" title={str(e.payload) ?? str(e.detail) ?? ""}>
-                        {(str(e.detail) ?? str(e.message) ?? "").slice(0, 80)}
-                      </td>
-                    </tr>
+                  .map((e: Row, i) => (
+                    <EventRow key={`evt-${i}`} e={e} />
                   ))}
               </DataTable>
             )}
@@ -413,8 +419,12 @@ export default function FactoryPage(props: ShellPageProps) {
       <Panel title="LLM provider config (safe status — secrets never round-trip)" tight>
         {llmQ.isPending ? (
           <Skeleton count={2} />
+        ) : llmQ.isError ? (
+          <QueryError q={llmQ} />
         ) : llmQ.data?.available === false ? (
-          <EmptyState message="Factory not mounted — llm-config has no backend data." />
+          <EmptyState message="Factory not mounted" hint={`GET /api/factory/llm-config: ${llmQ.data.reason ?? ""}`} />
+        ) : !llmQ.data?.status && !llmQ.data?.provider ? (
+          <EmptyState message="No LLM config stored." hint="GET /api/factory/llm-config answered without status or provider rows." />
         ) : (
           <dl className="kv">
             <InfoRow label="api_key_present" value={bool(obj(llmQ.data?.status).api_key_present) ? "yes (masked)" : "no"} />
