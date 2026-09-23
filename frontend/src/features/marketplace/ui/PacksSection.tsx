@@ -66,7 +66,7 @@ export function PacksSection() {
                   <span className="badge neutral">not installed</span>
                 )}
                 <button className="btn small primary" onClick={() => setTarget(p.id)} disabled={install.isPending}>
-                  Install
+                  {install.isPending ? "installing…" : "Install"}
                 </button>
               </div>
             </div>

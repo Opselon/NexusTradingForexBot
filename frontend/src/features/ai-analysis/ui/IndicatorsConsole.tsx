@@ -134,8 +134,8 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
               ? `Live feed interrupted — showing values from ${formatTime(snapshotQ.dataUpdatedAt || null)} · ${errorMessage}`
               : errorMessage}
           </span>
-          <button type="button" className="ic-retry" onClick={() => void snapshotQ.refetch()}>
-            Retry
+          <button type="button" className="ic-retry" onClick={() => void snapshotQ.refetch()} disabled={snapshotQ.isFetching}>
+            {snapshotQ.isFetching ? "retrying…" : "Retry"}
           </button>
         </div>
       )}
