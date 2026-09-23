@@ -7,7 +7,7 @@
  * CONSUMES: Position from types/domain, EngineSnapshot from types/domain.
  * PROVIDES: LIVE_CONFIRM_TEXT, MODE_IMPACT, ReconState, ReconRow,
             currentModeOf().
- * INVARANTS: MODE_IMPACT copy restates backend execution semantics and is the
+ * INVARIANTS: MODE_IMPACT copy restates backend execution semantics and is the
              same text the page has always shown; LIVE_CONFIRM_TEXT is the
              phrase the existing typed-confirmation guard requires — this file
              never loosens or tightens that guard.

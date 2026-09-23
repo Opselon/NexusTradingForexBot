@@ -1,0 +1,459 @@
+/* ==========================================================================
+   Trading desk (/trading) — trade-terminal skin for the Trading page.
+
+   Design language: a dark operator console — side-colored order flow
+   (green buy / red sell), a LIVE-mode hazard frame around the typed
+   confirmation guard, monospace numerics everywhere, a derived open-risk
+   strip, and keyboard-visible focus rings.
+
+   Rules (same discipline as the rest of the console):
+     - colors come EXCLUSIVELY from theme.css tokens (plus rgba() of them),
+       so a theme swap / body.dense cascades into this page untouched;
+     - every selector is namespaced `trd-` and scoped under `.trd-page`,
+       additive — no other page's markup is affected;
+     - logical properties (margin-inline-*, inset-inline-*, text-align: end)
+       everywhere so the RTL console (fa/ar) mirrors correctly;
+     - semantics stay backend-authoritative: a color restates a status word
+       or a direction the backend already sent, never a fabricated verdict;
+     - no behavior lives here — this file restyles existing controls only;
+     - motion is decorative-only and neutralized by the theme's
+       prefers-reduced-motion override.
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * 1. Page frame
+ * ------------------------------------------------------------------ */
+
+.trd-page {
+  --trd-gap: var(--panel-gap);
+  --trd-radius: 12px;
+  animation: trdPageIn 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes trdPageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Documented alpha tints of tokens (the only hardcoded channels here):
+   rgba(62, 207, 142, …) = --green, rgba(242, 86, 77, …) = --red,
+   rgba(65, 166, 242, …) = --accent, rgba(235, 161, 63, …) = --amber. */
+
+/* ------------------------------------------------------------------ *
+ * 2. Command rows (engine + mode panels)
+ * ------------------------------------------------------------------ */
+
+/* Button cluster: start/stop, mode select + apply. Keeps the shared .btn
+   base; these rules only add side semantics and spacing. */
+.trd-cmd-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.trd-btn--start {
+  border-color: rgba(62, 207, 142, 0.5);
+  color: var(--green);
+}
+.trd-btn--start:hover:not(:disabled) {
+  border-color: var(--green);
+  box-shadow: 0 0 12px rgba(62, 207, 142, 0.28);
+}
+
+.trd-btn--stop {
+  border-color: rgba(242, 86, 77, 0.5);
+  color: var(--red);
+}
+.trd-btn--stop:hover:not(:disabled) {
+  border-color: var(--red);
+  box-shadow: 0 0 12px rgba(242, 86, 77, 0.28);
+}
+
+/* Running engine pulse — restates snapshot.engine_running (mirrors the
+   RUNNING metric card directly above it). */
+.trd-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(62, 207, 142, 0.8);
+  animation: trdPulse 2s ease-in-out infinite;
+}
+
+@keyframes trdPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(62, 207, 142, 0.5); }
+  50% { opacity: 0.45; box-shadow: 0 0 14px rgba(62, 207, 142, 0.9); }
+}
+
+/* Monospace mode select so the option list reads like the rest of the desk. */
+.trd-mode-select {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  min-inline-size: 210px;
+}
+
+/* The LIVE apply button escalates while the guard is unsatisfied. */
+.trd-btn--live {
+  border-color: var(--red);
+  color: var(--red);
+  background: var(--live-red-bg);
+  box-shadow: 0 0 14px rgba(242, 86, 77, 0.25);
+  animation: trdLiveGlow 2.4s ease-in-out infinite;
+}
+.trd-btn--live:hover:not(:disabled) {
+  box-shadow: 0 0 22px rgba(242, 86, 77, 0.5);
+}
+.trd-btn--live:disabled {
+  animation: none;
+  color: #ff938c;
+}
+
+@keyframes trdLiveGlow {
+  0%, 100% { box-shadow: 0 0 10px rgba(242, 86, 77, 0.2); }
+  50% { box-shadow: 0 0 22px rgba(242, 86, 77, 0.55); }
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. LIVE-mode typed-confirmation guard — affordance only
+ * ------------------------------------------------------------------ */
+
+/* The existing guard flow is untouched: same input, same phrase check, same
+   submit relay. Only its affordance is emphasized: a hazard frame with a
+   red safety stripe, a red confirmation input, and a visible "phrase
+   matches" affordance so the user can see WHY Apply is enabled. */
+.trd-live-guard {
+  position: relative;
+  display: flex;
+  margin-block-start: 10px;
+  border: 1px solid rgba(242, 86, 77, 0.55);
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(440px 150px at 100% 0%, rgba(242, 86, 77, 0.16), transparent 70%),
+    linear-gradient(180deg, var(--live-red-bg), rgba(10, 15, 22, 0.9));
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+/* safety stripe down the reading edge */
+.trd-live-guard__stripe {
+  flex-shrink: 0;
+  inline-size: 3px;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(242, 86, 77, 0.9) 0 6px,
+    rgba(242, 86, 77, 0.22) 6px 12px
+  );
+}
+
+.trd-live-guard__body {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  min-inline-size: 0;
+}
+
+.trd-live-guard__row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* phrase input: mono, tracked, red emphasis while the phrase is incomplete;
+   turns green once the exact phrase is typed (the guard state itself is
+   unchanged — this is only its visible reflection). */
+.trd-live-input {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  border-color: rgba(242, 86, 77, 0.6);
+  background: rgba(10, 15, 22, 0.9);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.trd-live-input:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(242, 86, 77, 0.3);
+}
+.trd-live-input[data-armed="true"] {
+  border-color: var(--green);
+  box-shadow: 0 0 12px rgba(62, 207, 142, 0.3);
+}
+.trd-live-input[data-armed="true"]:focus-visible {
+  outline-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.3);
+}
+
+/* the whole frame calms down once the phrase matches */
+.trd-live-guard[data-armed="true"] {
+  border-color: rgba(62, 207, 142, 0.65);
+  background:
+    radial-gradient(440px 150px at 100% 0%, rgba(62, 207, 142, 0.14), transparent 70%),
+    linear-gradient(180deg, var(--green-dim), rgba(10, 15, 22, 0.9));
+}
+.trd-live-guard[data-armed="true"] .trd-live-guard__stripe {
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(62, 207, 142, 0.9) 0 6px,
+    rgba(62, 207, 142, 0.22) 6px 12px
+  );
+}
+
+/* match affordance — only visible when the typed phrase is exact */
+.trd-live-guard__match {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green);
+  border: 1px dashed rgba(62, 207, 142, 0.4);
+  border-radius: 6px;
+  padding: 6px 9px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.trd-live-guard__match[data-show="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. Quote board (market / execution state)
+ * ------------------------------------------------------------------ */
+
+/* theme .kv gives the dt/dd grid; this adds the desk's quote-board look. */
+.trd-quote dd {
+  font-variant-numeric: tabular-nums;
+}
+.trd-quote__px {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.trd-quote__bid { color: var(--green); }
+.trd-quote__ask { color: var(--red); }
+.trd-quote__sep { color: var(--text-faint); }
+
+.trd-spread {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.trd-spread__val {
+  font-variant-numeric: tabular-nums;
+  min-inline-size: max-content;
+}
+/* spread meter: width is plain arithmetic on the two backend prices
+ * (|ask−bid| / |ask|), so it is a visual of real values — never a verdict. */
+.trd-spread__track {
+  position: relative;
+  display: block;
+  inline-size: 92px;
+  block-size: 5px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.trd-spread__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.35), var(--accent));
+  transition: inline-size 0.3s ease;
+}
+.trd-spread__fill[data-known="false"] {
+  inline-size: 100%;
+  background: repeating-linear-gradient(135deg, var(--border-strong) 0 4px, transparent 4px 8px);
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. Derived open-risk strip
+ * ------------------------------------------------------------------ */
+
+/* Sits under the pending-orders table. Every figure is browser arithmetic
+ * over the positions in view and carries an .l4-prov "derived" chip, so it
+ * can never be read as a backend field. */
+.trd-risk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  margin-block-start: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background:
+    radial-gradient(340px 90px at 100% 0%, rgba(65, 166, 242, 0.08), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 55%),
+    var(--bg-inset);
+}
+.trd-risk__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.trd-risk__lab {
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.trd-risk__val {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.trd-risk__val[data-tone="pos"] { color: var(--green); }
+.trd-risk__val[data-tone="neg"] { color: var(--red); }
+.trd-risk__val[data-tone="partial"] { color: var(--amber); }
+.trd-risk__buy { color: var(--green); }
+.trd-risk__sell { color: var(--red); }
+.trd-risk__slash { color: var(--text-faint); }
+.trd-risk .l4-prov { flex-shrink: 0; }
+
+/* ------------------------------------------------------------------ *
+ * 6. Side chips — buy/sell semantics
+ * ------------------------------------------------------------------ */
+
+/* Green buy / red sell, restating a direction word the backend already sent
+ * (order-flow action string, pending-order type, execution order_type).
+ * Mono digits, tabular-nums, a leading direction arrow. */
+.trd-side-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: var(--bg-panel-2);
+  white-space: nowrap;
+}
+.trd-side-chip.buy {
+  color: var(--green);
+  border-color: rgba(62, 207, 142, 0.45);
+  background: var(--green-dim);
+}
+.trd-side-chip.sell {
+  color: var(--red);
+  border-color: rgba(242, 86, 77, 0.45);
+  background: var(--red-dim);
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. Tables — ladder/desk feel on the monospace grid
+ * ------------------------------------------------------------------ */
+
+/* theme .data-table gives mono cells, zebra rows and a sticky header; these
+ * rules add a side rail that restates the row's direction on the reading
+ * edge (same convention as the Positions blotter). */
+.trd-pending tbody tr[data-side="buy"] td:first-child,
+.trd-exec tbody tr[data-side="buy"] td:first-child {
+  border-inline-start: 2px solid var(--green);
+}
+.trd-pending tbody tr[data-side="sell"] td:first-child,
+.trd-exec tbody tr[data-side="sell"] td:first-child {
+  border-inline-start: 2px solid var(--red);
+}
+/* transparent base keeps every row the same width (no layout shift) */
+.trd-pending tbody td:first-child,
+.trd-exec tbody td:first-child {
+  border-inline-start: 2px solid transparent;
+}
+
+/* Numeric cells: end-aligned in LTR, mirrored in RTL. */
+.trd-pending td.num,
+.trd-pending th.num,
+.trd-exec td.num,
+.trd-exec th.num {
+  text-align: end;
+}
+
+/* keyboard row navigation / focus visibility */
+.trd-pending tbody tr,
+.trd-exec tbody tr {
+  scroll-margin-block-start: 48px;
+}
+.trd-pending tbody tr:hover,
+.trd-exec tbody tr:hover {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+.trd-pending tbody tr:focus-visible,
+.trd-exec tbody tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Execution pager — visible focus order, kept as the original two buttons. */
+.trd-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.trd-pager .btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.4);
+}
+
+/* Order-flow rows are selectable (ticket inspector) — visible affordance
+ * for the shared l4-clickable rows this page opts into. */
+.trd-page .l4-clickable { cursor: pointer; }
+.trd-page .l4-clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.trd-page .l4-clickable:active td { background: rgba(65, 166, 242, 0.1); }
+
+/* Reconciliation broker cell — the side badge + inline-flex so the badge
+ * stays on the reading edge of the cell. */
+.trd-recon-broker {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Drift warning keeps its amber hazard treatment (the confirm-box base is
+ * unchanged; this scopes the token tint to this page). */
+.trd-drift {
+  border-color: rgba(235, 161, 63, 0.5);
+  background:
+    radial-gradient(420px 120px at 100% 0%, rgba(235, 161, 63, 0.1), transparent 70%),
+    var(--amber-dim);
+}
+
+/* ------------------------------------------------------------------ *
+ * 9. Reduced motion
+ * ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .trd-page { animation: none; }
+  .trd-pulse,
+  .trd-btn--live { animation: none; }
+  .trd-live-guard__match { transition: none; }
+  .trd-spread__fill { transition: none; }
+}
+
+/* ------------------------------------------------------------------ *
+ * 10. Responsive breakpoints
+ * ------------------------------------------------------------------ */
+
+/* narrow desks: the quote board keeps mono digits but lets the kv grid
+ * wrap instead of overflowing. */
+@media (max-width: 720px) {
+  .trd-cmd-row { align-items: flex-start; }
+  .trd-mode-select { min-inline-size: 0; inline-size: 100%; }
+  .trd-risk { gap: 6px 12px; }
+  .trd-spread__track { inline-size: 56px; }
+  .trd-live-guard__row { flex-direction: column; align-items: flex-start; }
+  .trd-live-input { inline-size: 100%; }
+}

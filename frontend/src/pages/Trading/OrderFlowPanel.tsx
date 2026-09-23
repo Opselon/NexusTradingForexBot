@@ -1,22 +1,22 @@
 /**
  * PURPOSE:  Dispatch order-flow section (audit_orders + backend latency stats):
- *           sortable table of the dispatched orders with CSV export of exactly
- *           the rows the backend returned, latency stat chips, skeleton /
- *           unavailable / empty states. Extracted from the original
- *           TradingPage so that file stays a composition only.
+ *           BUY/SELL side chips and direction arrows, CSV export of exactly the
+ *           rows the backend returned, latency stat chips, skeleton /
+ *           unavailable / empty states.
  * OWNER:    uiux-w6-trading  (future edits belong to this lane)
  * CONSUMES: operator orders query result (OperatorOrdersResponse from
  *           pages/_shared/contracts), SortableTable + InfoChip, downloadCsv,
- *           AgeNote, Skeleton/EmptyState/StatusBadge, EngineSnapshot
- *           price_digits, format*.
- * PROVIDES: default OrderFlowPanel (props: query, nowMs, priceDigits).
- * INVARIANTS: the action chip tone is derived from the existing `action`
- *             string only (contains BUY → good, SELL → bad); latency chips
- *             render only the backend's own p50/p95/p99; export ships the raw
- *             rows — no re-query, no invented value.
+ *           AgeNote, Skeleton/EmptyState/StatusBadge, ./OrderTicket,
+ *           EngineSnapshot price_digits, format*.
+ * PROVIDES: default OrderFlowPanel (props: query, nowMs, priceDigits) — the
+ *           table plus the side-colored read-only ticket inspector below it.
+ * INVARIANTS: side tone is derived from the existing `action` string only
+ *             (contains BUY → green, SELL → red); latency chips render only the
+ *             backend's own p50/p95/p99; export ships the raw rows; row click
+ *             selects a ticket for inspection only — no order action exists.
  * EXTEND:   New columns read fields that exist on OperatorOrderRow.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { OperatorOrderRow, OperatorOrdersResponse } from "@/pages/_shared/contracts";
 import type { QueryLike } from "@/pages/_shared/SectionState";
 import { AgeNote } from "@/pages/_shared/SectionState";
@@ -24,6 +24,7 @@ import { InfoChip, SortableTable, type Column } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { EmptyState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
+import OrderTicket from "./OrderTicket";
 
 interface Props {
   query: QueryLike<OperatorOrdersResponse>;
@@ -31,15 +32,36 @@ interface Props {
   priceDigits: number;
 }
 
+/** Side semantics from the action string the backend already sent. */
+function sideTone(action: string | null): string {
+  const a = (action ?? "").toUpperCase();
+  if (a.includes("BUY")) return "buy";
+  if (a.includes("SELL")) return "sell";
+  return "";
+}
+
 export default function OrderFlowPanel({ query, nowMs, priceDigits }: Props) {
   const data = query.data;
+  const rows = data?.rows ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = rows.find((r) => String(r.id) === selectedId) ?? null;
 
   const orderCols = useMemo<Array<Column<OperatorOrderRow>>>(
     () => [
       { key: "time", label: "Time", sortValue: (r) => r.timestamp, render: (r) => (r.timestamp ? formatDateTime(r.timestamp) : "—") },
       { key: "ticket", label: "Ticket", sortValue: (r) => r.ticket, render: (r) => r.ticket ?? "—" },
       { key: "symbol", label: "Symbol", sortValue: (r) => r.symbol, render: (r) => r.symbol ?? "—" },
-      { key: "action", label: "Action", sortValue: (r) => r.action, render: (r) => <span className={`l4-chip ${(r.action ?? "").includes("BUY") ? "good" : (r.action ?? "").includes("SELL") ? "bad" : ""}`}>{r.action ?? "—"}</span> },
+      {
+        key: "action",
+        label: "Action",
+        sortValue: (r) => r.action,
+        render: (r) => (
+          <span className={`trd-side-chip ${sideTone(r.action)}`}>
+            {sideTone(r.action) === "buy" ? "▲" : sideTone(r.action) === "sell" ? "▼" : ""}
+            {r.action ?? "—"}
+          </span>
+        ),
+      },
       { key: "vol", label: "Vol", num: true, sortValue: (r) => r.volume, render: (r) => formatNumber(r.volume) },
       { key: "price", label: "Price", num: true, sortValue: (r) => r.price, render: (r) => formatPrice(r.price, priceDigits) },
       { key: "sl", label: "SL", num: true, sortValue: (r) => r.stop_loss, render: (r) => (r.stop_loss ? formatPrice(r.stop_loss) : "—") },
@@ -99,12 +121,14 @@ export default function OrderFlowPanel({ query, nowMs, priceDigits }: Props) {
           </div>
           <SortableTable
             columns={orderCols}
-            rows={data?.rows ?? []}
+            rows={rows}
             rowKey={(r) => String(r.id)}
             initialSort={{ key: "time", dir: "desc" }}
             filter={(r, q) => String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q) || (r.action ?? "").toLowerCase().includes(q)}
+            onRowClick={(r) => setSelectedId((prev) => (String(r.id) === prev ? null : String(r.id)))}
             emptyMessage="No order-flow rows."
           />
+          <OrderTicket row={selected} priceDigits={priceDigits} />
         </>
       )}
     </Panel>

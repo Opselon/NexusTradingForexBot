@@ -1,15 +1,15 @@
 /**
  * PURPOSE:  Recent executions panel (v1 audit_executions): paginated table
  *           with the guardian-state footer and the explicit "no manual order
- *           placement" notice. Extracted from the original TradingPage.
+ *           placement" notice, plus side-toned order-type cells.
  * OWNER:    uiux-w6-trading  (future edits belong to this lane)
  * CONSUMES: execution history query (V1Page<ExecutionHistoryRow>), SectionState,
  *           StatusBadge, format* helpers, EngineSnapshot health/mode for the
- *           footer.
+ *           footer, t() not needed — strings are kept verbatim.
  * PROVIDES: default ExecutionsPanel component (props: execQuery, snapshot,
  *           currentMode, page, onPage).
- * INVARIANTS: no fake order buttons — placement/cancel has no backend route
- *             and the notice says so; pagination keeps its exact behavior.
+ * INVARIANTS: no fake order buttons — placement/cancel has no backend route and
+ *             the notice says so; side tone is derived from order_type text.
  * EXTEND:   new columns read ExecutionHistoryRow fields only.
  */
 import type { EngineSnapshot, ExecutionHistoryRow, V1Page } from "@/types/domain";
@@ -26,6 +26,14 @@ interface Props {
   onPage: (next: number) => void;
 }
 
+/** Side tone derived from the backend's own order_type word. */
+function sideTone(orderType: string | null | undefined): string {
+  const s = String(orderType ?? "").toUpperCase();
+  if (s.includes("BUY")) return "buy";
+  if (s.includes("SELL")) return "sell";
+  return "";
+}
+
 export default function ExecutionsPanel({ execQuery, snapshot, currentMode, page, onPage }: Props) {
   return (
     <Panel
@@ -33,7 +41,7 @@ export default function ExecutionsPanel({ execQuery, snapshot, currentMode, page
       right={
         <>
           <span className="small faint">manual order placement / cancel: NO backend route — no fake buttons here (BUG-242 INV-004)</span>
-          <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          <span className="trd-pager">
             <button aria-label="Previous page" className="btn small" disabled={page <= 1} onClick={() => onPage(Math.max(1, page - 1))}>‹</button>
             <span className="small faint inline-mono">p{page}</span>
             <button aria-label="Next page" className="btn small" disabled={!execQuery.data?.has_more} onClick={() => onPage(page + 1)}>›</button>
@@ -51,17 +59,22 @@ export default function ExecutionsPanel({ execQuery, snapshot, currentMode, page
       >
         {(d) => (
           <div tabIndex={0} className="table-wrap">
-            <table className="data-table">
+            <table className="data-table trd-exec">
               <thead>
                 <tr><th scope="col">#</th><th scope="col">Order id</th><th scope="col">Symbol</th><th scope="col">Type</th><th scope="col">Volume</th><th scope="col">Price</th><th scope="col">Status</th><th scope="col">Executed</th></tr>
               </thead>
               <tbody>
                 {d.items.map((r, i) => (
-                  <tr key={String(r.id ?? `${r.order_id}-${i}`)}>
+                  <tr key={String(r.id ?? `${r.order_id}-${i}`)} data-side={sideTone(r.order_type) || undefined}>
                     <td>{String(r.id ?? "—")}</td>
                     <td className="small">{r.order_id ?? "—"}</td>
                     <td>{r.symbol ?? "—"}</td>
-                    <td>{r.order_type ?? "—"}</td>
+                    <td>
+                      <span className={`trd-side-chip ${sideTone(r.order_type)}`}>
+                        {sideTone(r.order_type) === "buy" ? "▲" : sideTone(r.order_type) === "sell" ? "▼" : ""}
+                        {r.order_type ?? "—"}
+                      </span>
+                    </td>
                     <td className="num">{formatNumber(r.volume)}</td>
                     <td className="num">{formatPrice(r.price)}</td>
                     <td><StatusBadge status={r.status ?? null} /></td>

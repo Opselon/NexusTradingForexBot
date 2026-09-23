@@ -1,0 +1,161 @@
+/* ==========================================================================
+   Trading desk — order-ticket skin (second scoped stylesheet, trd- prefix).
+
+   Splits out of trading.css so both files stay under the 500-line cap:
+   this file owns ONLY the read-only audit ticket inspector (its header rail,
+   price/volume/SL/TP grid, meta line and empty state). trading.css keeps the
+   page frame, command rows, LIVE guard, quote board, derived risk strip,
+   side chips, table chrome, reduced-motion and responsive rules.
+
+   Rules (same discipline as trading.css):
+     - colors come EXCLUSIVELY from theme.css tokens (plus rgba() of them);
+     - every selector is namespaced `trd-`, additive — no other page's
+       markup is affected;
+     - logical properties (margin-inline-*, inset-inline-*) everywhere so
+       the RTL console (fa/ar) mirrors correctly;
+     - semantics stay backend-authoritative: the side color restates the
+       action word the backend already sent, never a fabricated verdict;
+     - no behavior lives here — this file restyles an inspector only;
+     - motion is decorative-only and neutralized by the theme's
+       prefers-reduced-motion override.
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * 8. Order ticket (read-only audit inspector)
+ * ------------------------------------------------------------------ */
+
+/* Side-colored header rail: green for BUY, red for SELL, neutral when the
+ * action word is neither. The rail restates row.action — never a guess. */
+.trd-ticket {
+  margin: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.trd-ticket.buy {
+  border-color: rgba(62, 207, 142, 0.5);
+  box-shadow: 0 0 18px -8px rgba(62, 207, 142, 0.5);
+}
+.trd-ticket.sell {
+  border-color: rgba(242, 86, 77, 0.5);
+  box-shadow: 0 0 18px -8px rgba(242, 86, 77, 0.5);
+}
+.trd-ticket--empty {
+  border-style: dashed;
+}
+
+.trd-ticket__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border-block-end: 1px solid var(--border);
+  font-family: var(--mono);
+  background: var(--bg-inset);
+  border-inline-start: 3px solid var(--border-strong);
+}
+.trd-ticket.buy .trd-ticket__head { border-inline-start-color: var(--green); }
+.trd-ticket.sell .trd-ticket__head { border-inline-start-color: var(--red); }
+
+.trd-ticket__side {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+.trd-ticket.buy .trd-ticket__side { color: var(--green); }
+.trd-ticket.sell .trd-ticket__side { color: var(--red); }
+
+.trd-ticket__symbol {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.trd-ticket__id,
+.trd-ticket__time {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.trd-ticket__time { margin-inline-start: auto; }
+
+/* price / volume / SL / TP hierarchy — hero price, mono tabular digits */
+.trd-ticket__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+}
+.trd-ticket__cell {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+}
+.trd-ticket__lab {
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.trd-ticket__price {
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.trd-ticket.buy .trd-ticket__price { color: var(--green); }
+.trd-ticket.sell .trd-ticket__price { color: var(--red); }
+.trd-ticket__num {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.trd-ticket__sl { color: var(--red); }
+.trd-ticket__tp { color: var(--green); }
+
+.trd-ticket__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 8px 12px;
+  border-block-start: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.trd-ticket__meta-item b {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.trd-ticket__reason {
+  padding: 0 12px 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.trd-ticket__foot {
+  padding: 6px 12px;
+  border-block-start: 1px dashed var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--bg-inset);
+}
+
+@media (max-width: 720px) {
+  .trd-ticket__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trd-ticket__price { font-size: 16px; }
+}
+
+/* reduced-motion + responsive: ticket-only rules */
+

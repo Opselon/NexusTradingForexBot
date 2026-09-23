@@ -7,7 +7,7 @@
            data_source, adapter_class, health, account.trade_allowed),
            MetricCard from components/primitives, currentModeOf.
  * PROVIDES: default DeskStrip component (the top grid of the Trading page).
- * INVARANTS: no fabricated value: every card maps one snapshot field; the LIVE
+ * INVARIANTS: no fabricated value: every card maps one snapshot field; the LIVE
              tone is restated through the theme's existing neg token.
  * EXTEND:   A fifth card reads another existing snapshot field — never a new
           network call.

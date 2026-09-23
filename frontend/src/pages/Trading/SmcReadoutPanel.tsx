@@ -6,7 +6,7 @@
  * CONSUMES: EngineSnapshot.visual_overlays / algo_config / state_version,
  *           SortableTable, EmptyState, formatPrice / formatTime.
  * PROVIDES: default SmcReadoutPanel component (props: snapshot).
- * INVARANTS: every number is read from visual_overlays or algo_config as the
+ * INVARIANTS: every number is read from visual_overlays or algo_config as the
  *             engine emitted it — no zone, line or sweep is ever synthesized;
  *             an empty overlay reads as "engine saw no structure", not as a
  *             rendering failure.

@@ -1,15 +1,16 @@
 /**
- * PURPOSE:  Engine start/stop panel: the two buttons, the mutation-feedback
- *           line and the recovery note. Extracted from the original
- *           TradingPage so that file stays a composition only.
+ * PURPOSE:  Engine start/stop panel: the two buttons, the mutation-feedback line
+           and the recovery note. Wiring unchanged — the styling is a
+           trade-desk command rail.
  * OWNER:    uiux-w6-trading  (future edits belong to this lane)
  * CONSUMES: engineApi.toggleEngine, useMutationFeedback, ConfirmModal, Panel,
- *           t() from i18nStore.
+           t() from i18nStore.
  * PROVIDES: default EnginePanel component (props: running, cmd).
- * INVARANTS: the backend response still decides the outcome; the confirmation
- *             modal is unchanged; only presentational classes change.
+ * INVARIANTS: the backend response still decides the outcome; the confirmation
+             modal is unchanged; only presentational classes change.
  * EXTEND:   New engine commands call the same cmd.run() relay.
  */
+
 import { useState } from "react";
 import { engineApi } from "@/api/engineApi";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
@@ -34,13 +35,22 @@ export default function EnginePanel({ running, cmd }: Props) {
 
   return (
     <Panel title="Engine commands" accent>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button className="btn primary" disabled={cmd.state.running || running} onClick={() => void toggleEngine(true)}>
+      <div className="trd-cmd-row">
+        <button
+          className="btn primary trd-btn--start"
+          disabled={cmd.state.running || running}
+          onClick={() => void toggleEngine(true)}
+        >
           ▶ Start engine
         </button>
-        <button className="btn danger" disabled={cmd.state.running || !running} onClick={() => setStopConfirm(true)}>
+        <button
+          className="btn danger trd-btn--stop"
+          disabled={cmd.state.running || !running}
+          onClick={() => setStopConfirm(true)}
+        >
           ■ Stop engine
         </button>
+        {running && <span className="trd-pulse" role="status" title="engine loop is running (backend-authoritative)" aria-label="engine loop running" />}
       </div>
       {cmd.state.lastMessage && (
         <div className={`cmd-result ${cmd.state.lastResult ? "ok" : "fail"}`}>

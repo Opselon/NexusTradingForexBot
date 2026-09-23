@@ -9,7 +9,7 @@
            ReconRow shape from ./tradingTypes.
  * PROVIDES: useTradingQueries(snapshot, execPage) → the four query results plus
             the derived recon row list.
- * INVARANTS: No endpoint is added or changed — same keys, same intervals, same
+ * INVARIANTS: No endpoint is added or changed — same keys, same intervals, same
              retry flags as before; reconciliation stays pure arithmetic over
              the two reads, and a ticket present in only one read is shown as
              drift, never hidden.

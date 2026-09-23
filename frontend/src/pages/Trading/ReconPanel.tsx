@@ -2,16 +2,15 @@
  * PURPOSE:  Virtual ⇄ real reconciliation: engine ledger OPEN rows matched by
  *           ticket against the broker positions read, with per-row state chips
  *           and an unreconciled-drift warning that is never auto-hidden.
- *           Extracted from the original TradingPage.
  * OWNER:    uiux-w6-trading  (future edits belong to this lane)
  * CONSUMES: ledgerOpen + mt5 query results, ReconRow from ./tradingTypes,
  *           SortableTable, InfoChip, PositionSideBadge, Skeleton /
  *           ErrorState / EmptyState, ApiError, format* helpers.
  * PROVIDES: default ReconPanel component (props: ledgerOpenQuery, mt5Query,
  *           recon).
- * INVARIANTS: drift stays visible as drift — ENGINE_ONLY / BROKER_ONLY rows
- *             are labeled, the empty case is stated as "a clean, consistent
- *             EMPTY", and no verdict is computed beyond the ticket match.
+ * INVARIANTS: drift stays visible as drift — ENGINE_ONLY / BROKER_ONLY rows are
+ *             labeled, the empty case is stated as "a clean, consistent EMPTY",
+ *             and no verdict is computed beyond the ticket match itself.
  * EXTEND:   matching rules live in useTradingQueries; new columns read
  *           existing ReconRow fields only.
  */
@@ -75,7 +74,7 @@ export default function ReconPanel({ ledgerOpenQuery, mt5Query, recon }: Props) 
               sortValue: (r) => r.broker?.symbol ?? null,
               render: (r) =>
                 r.broker ? (
-                  <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                  <span className="trd-recon-broker">
                     {r.broker.symbol ?? "—"} <PositionSideBadge type={r.broker.type} /> {formatNumber(r.broker.volume)} @ {formatPrice(r.broker.price_open)}
                   </span>
                 ) : (
@@ -100,7 +99,7 @@ export default function ReconPanel({ ledgerOpenQuery, mt5Query, recon }: Props) 
         />
       )}
       {drift.length > 0 && (
-        <div className="confirm-box" style={{ marginInline: 12, marginBlock: 12, borderColor: "rgba(235,161,63,0.5)" }}>
+        <div className="confirm-box trd-drift" style={{ marginInline: 12, marginBlock: 12 }}>
           <span>
             <b>{drift.length} unreconciled row(s).</b> ENGINE ONLY usually means the broker rejected/closed without the ledger catching the deal yet;
             BROKER ONLY means a position the engine did not open (manual terminal action or restart gap). Investigate before enabling new risk.

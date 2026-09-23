@@ -6,14 +6,14 @@
  * OWNER:    uiux-w6-trading  (future edits belong to this lane)
  * CONSUMES: EngineSnapshot + nowMs props, useTradingQueries, the colocated
  *           DeskStrip / EnginePanel / ModePanel / MarketPanel /
- *           PendingOrdersPanel / OrderFlowPanel / ReconPanel /
- *           SmcReadoutPanel / ExecutionsPanel components.
+ *           PendingOrdersPanel / OrderFlowPanel / ReconPanel / OpenRiskStrip /
+ *           SmcReadoutPanel / ExecutionsPanel components, trading.css.
  * PROVIDES: default TradingPage (routed at /trading by AppShell).
  * INVARIANTS: every backend-supported action keeps its existing wiring —
  *             start/stop engine, execution-mode switch with the unchanged
- *             typed LIVE confirmation; manual order placement / cancel has no
- *             backend route and stays absent. Honest loading / empty / error
- *             states per section.
+ *             typed LIVE confirmation, close/modify are still on the Positions
+ *             page; manual order placement / cancel has no backend route and
+ *             stays absent. Honest loading / empty / error states per section.
  * EXTEND:   new sections become a colocated component and get composed here;
  *           keep this file a composition, not a component implementation.
  */
@@ -28,11 +28,14 @@ import EnginePanel from "./EnginePanel";
 import ModePanel from "./ModePanel";
 import MarketPanel from "./MarketPanel";
 import PendingOrdersPanel from "./PendingOrdersPanel";
+import OpenRiskStrip from "./OpenRiskStrip";
 import OrderFlowPanel from "./OrderFlowPanel";
 import ReconPanel from "./ReconPanel";
 import SmcReadoutPanel from "./SmcReadoutPanel";
 import ExecutionsPanel from "./ExecutionsPanel";
 import "@/pages/_shared/pages.css";
+import "./trading.css";
+import "./tradingTicket.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -47,7 +50,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
   if (!snapshot) {
     return (
-      <div>
+      <div className="trd-page">
         <Panel title="Trading">
           <Skeleton count={5} />
         </Panel>
@@ -57,9 +60,10 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
   const running = snapshot.engine_running;
   const currentMode = currentModeOf(snapshot);
+  const positionsInFocus = mt5Query.data?.positions ?? snapshot.positions;
 
   return (
-    <div>
+    <div className="trd-page">
       <DeskStrip snapshot={snapshot} />
 
       <div className="grid cols-2" style={{ marginTop: 14 }}>
@@ -69,7 +73,10 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
       <div className="grid cols-2">
         <MarketPanel snapshot={snapshot} />
-        <PendingOrdersPanel mt5Query={mt5Query} />
+        <div>
+          <PendingOrdersPanel mt5Query={mt5Query} />
+          <OpenRiskStrip rows={positionsInFocus} />
+        </div>
       </div>
 
       <OrderFlowPanel query={ordersQuery} nowMs={nowMs} priceDigits={snapshot.price_digits ?? 2} />
