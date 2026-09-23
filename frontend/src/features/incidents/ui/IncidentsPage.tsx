@@ -7,7 +7,7 @@
  * value lineage / forensic probes sections.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -83,9 +83,26 @@ export default function IncidentsPage(props: ShellPageProps) {
     enabled: tab === "forensics",
   });
 
-  const incidents = incidentsUseCases.voList(listQ.data?.incidents ?? []);
+  // perf(7): derivation reads exactly these payloads — memo deps mirror the
+  // data each VO reads, so re-mapping only happens on a real payload change.
+  const incidents = useMemo(
+    () => incidentsUseCases.voList(listQ.data?.incidents ?? []),
+    [listQ.data],
+  );
+  const searchIncidents = useMemo(
+    () => incidentsUseCases.voList(searchQ.data?.incidents ?? []),
+    [searchQ.data],
+  );
   const counts = healthQ.data?.counts ?? listQ.data?.counts;
   const worker = obj(healthQ.data?.worker);
+
+  // perf(7): health strip + list tab derivations — each memo dep is the exact
+  // payload the derivation reads, so mapping only re-runs on a payload change.
+  const byComponent = useMemo(
+    () => Object.entries(obj(healthQ.data?.by_component)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
+    [healthQ.data],
+  );
+  const recurring = useMemo(() => arr(healthQ.data?.recurring), [healthQ.data]);
 
   return (
     <div>
@@ -144,17 +161,14 @@ export default function IncidentsPage(props: ShellPageProps) {
           <>
             <div className="grid cols-2">
               <Panel title="By component" tight>
-                <DistBars
-                  rows={Object.entries(obj(healthQ.data?.by_component)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
-                  tone="var(--violet)"
-                />
+                <DistBars rows={byComponent} tone="var(--violet)" />
               </Panel>
               <Panel title="Recurring (fingerprint)" tight>
-                {arr(healthQ.data?.recurring).length === 0 ? (
+                {recurring.length === 0 ? (
                   <EmptyState message="No recurring incidents." />
                 ) : (
                   <DataTable headers={[{ label: "fingerprint" }, { label: "seen", num: true }, { label: "severity" }]}>
-                    {arr(healthQ.data?.recurring)
+                    {recurring
                       .slice(0, 10)
                       .map((r: Row, i: number) => (
                         <tr key={i}>
@@ -249,11 +263,11 @@ export default function IncidentsPage(props: ShellPageProps) {
                   <EmptyState message="Type a query — the backend answers {available:true, incidents:[]} for empty queries." />
                 ) : searchQ.isFetching ? (
                   <Skeleton count={2} />
-                ) : incidentsUseCases.voList(searchQ.data?.incidents ?? []).length === 0 ? (
+                ) : searchIncidents.length === 0 ? (
                   <EmptyState message="No incidents matched." />
                 ) : (
                   <DataTable headers={[{ label: "incident" }, { label: "sev" }, { label: "status" }, { label: "" }]}>
-                    {incidentsUseCases.voList(searchQ.data?.incidents ?? []).map((i) => (
+                    {searchIncidents.map((i) => (
                       <tr key={i.id}>
                         <td className="inline-mono tiny">{i.id.slice(0, 14)}</td>
                         <td>

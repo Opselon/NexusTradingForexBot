@@ -3,7 +3,7 @@
  * zip link (href to the backend export route) + timeline/value traces.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, SeverityBadge, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -34,6 +34,60 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
 
   const inc = detailQ.data?.incident;
   const impact = obj(inc?.impact);
+
+  // perf(7): payload-array chains (entries/slice/reverse/map) memoized with
+  // deps = the exact incident arrays they read — identical rows, no rebuild
+  // while the payload identity holds (tab switches reuse the memo too).
+  const impactRows = useMemo(
+    () =>
+      Object.entries(impact)
+        .slice(0, 16)
+        .map(([k, v]) => <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />),
+    [impact],
+  );
+  const evidenceRows = useMemo(
+    () =>
+      arr(inc?.evidence)
+        .slice(0, 12)
+        .map((e, i) => (
+          <details key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px" }}>
+            <summary className="tiny">
+              {str(e.kind) ?? str(e.label) ?? `evidence ${i + 1}`} · {formatDateTime(str(e.timestamp) ?? str(e.at))}
+            </summary>
+            <div style={{ marginTop: 4 }}>
+              <JsonBlock value={e} maxChars={1500} />
+            </div>
+          </details>
+        )),
+    [inc?.evidence],
+  );
+  const timelineRows = useMemo(
+    () =>
+      arr(inc?.timeline)
+        .slice()
+        .reverse()
+        .slice(0, 100)
+        .map((t: Row, i: number) => (
+          <tr key={i}>
+            <td className="tiny">{formatDateTime(str(t.timestamp))}</td>
+            <td className="small">{str(t.event) ?? str(t.event_type) ?? "—"}</td>
+            <td className="tiny muted">{str(t.detail) ?? str(t.message) ?? ""}</td>
+          </tr>
+        )),
+    [inc?.timeline],
+  );
+  const valueTraceRows = useMemo(
+    () =>
+      arr(inc?.value_traces).map((t: Row, i: number) => (
+        <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px" }}>
+          <div className="small">
+            <b>{str(t.field) ?? "field"}</b> · <span className="muted tiny">{str(t.source) ?? "—"}</span>
+          </div>
+          <JsonBlock value={t.hops ?? t} maxChars={1200} />
+        </div>
+      )),
+    [inc?.value_traces],
+  );
 
   return (
     <Drawer title={`Incident ${incidentId}`} onClose={onClose}>
@@ -94,11 +148,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
             {Object.keys(impact).length === 0 ? (
               <EmptyState message="no impact payload" />
             ) : (
-              <dl className="kv">
-                {Object.entries(impact).slice(0, 16).map(([k, v]) => (
-                  <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
-                ))}
-              </dl>
+              <dl className="kv">{impactRows}</dl>
             )}
             <div className="tiny muted" style={{ marginTop: 6 }}>
               affected: {arr(inc.affected_records).length} records · {arr(inc.affected_models).length} models · tags{" "}
@@ -109,20 +159,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
             {arr(inc.evidence).length === 0 ? (
               <EmptyState message="No evidence items attached." />
             ) : (
-              <div style={{ display: "grid", gap: 6 }}>
-                {arr(inc.evidence)
-                  .slice(0, 12)
-                  .map((e, i) => (
-                    <details key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px" }}>
-                      <summary className="tiny">
-                        {str(e.kind) ?? str(e.label) ?? `evidence ${i + 1}`} · {formatDateTime(str(e.timestamp) ?? str(e.at))}
-                      </summary>
-                      <div style={{ marginTop: 4 }}>
-                        <JsonBlock value={e} maxChars={1500} />
-                      </div>
-                    </details>
-                  ))}
-              </div>
+              <div style={{ display: "grid", gap: 6 }}>{evidenceRows}</div>
             )}
           </Panel>
           <Panel title="Recovery plan" tight>
@@ -134,19 +171,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
           {arr(inc.timeline).length === 0 ? (
             <EmptyState message="No timeline events recorded." />
           ) : (
-            <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
-              {arr(inc.timeline)
-                .slice()
-                .reverse()
-                .slice(0, 100)
-                .map((t: Row, i: number) => (
-                  <tr key={i}>
-                    <td className="tiny">{formatDateTime(str(t.timestamp))}</td>
-                    <td className="small">{str(t.event) ?? str(t.event_type) ?? "—"}</td>
-                    <td className="tiny muted">{str(t.detail) ?? str(t.message) ?? ""}</td>
-                  </tr>
-                ))}
-            </DataTable>
+            <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>{timelineRows}</DataTable>
           )}
           <div className="section-title" style={{ marginTop: 10 }}>
             quarantine entries
@@ -162,16 +187,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
           {arr(inc.value_traces).length === 0 ? (
             <EmptyState message="No value traces recorded for this incident." />
           ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {arr(inc.value_traces).map((t: Row, i: number) => (
-                <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px" }}>
-                  <div className="small">
-                    <b>{str(t.field) ?? "field"}</b> · <span className="muted tiny">{str(t.source) ?? "—"}</span>
-                  </div>
-                  <JsonBlock value={t.hops ?? t} maxChars={1200} />
-                </div>
-              ))}
-            </div>
+            <div style={{ display: "grid", gap: 8 }}>{valueTraceRows}</div>
           )}
         </Panel>
       ) : (
