@@ -26,6 +26,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// Perf-wave boot skeleton: index.html ships an inline `.nse-boot` placeholder
+// inside #root so the operator gets an instant paint before this large module
+// graph parses. Clear it deterministically first — never rely on createRoot's
+// container-clearing semantics across React versions.
+document.getElementById("root")?.replaceChildren();
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

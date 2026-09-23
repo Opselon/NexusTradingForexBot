@@ -84,6 +84,22 @@ export default defineConfig({
     outDir: "dist",
     sourcemap: false,
     chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        // Perf wave (orchestrator): split stable vendors out of the entry chunk
+        // so an app-code deploy doesn't invalidate the browser cache of the
+        // framework bytes. React + scheduler + jsx-runtime must stay in ONE
+        // chunk (single-React-copy rule); router/query/zustand split apart.
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("node_modules/react-router")) return "vendor-router";
+          if (id.includes("node_modules/@tanstack")) return "vendor-query";
+          if (id.includes("node_modules/zustand")) return "vendor-zustand";
+          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "vendor-react";
+          return undefined;
+        },
+      },
+    },
   },
   resolve: {
     alias: {

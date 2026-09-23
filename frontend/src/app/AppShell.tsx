@@ -13,16 +13,21 @@
  * never by ad-hoc token probing.
  */
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import DashboardPage from "@/pages/Dashboard/DashboardPage";
-import TradingPage from "@/pages/Trading/TradingPage";
-import PositionsPage from "@/pages/Positions/PositionsPage";
-import RiskPage from "@/pages/Risk/RiskPage";
-import MLPage from "@/pages/ML/MLPage";
-import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
-import AuditPage from "@/pages/Audit/AuditPage";
+
+// Perf wave (orchestrator): the 7 legacy pages were static imports, inflating
+// the entry chunk by ~200 KB before first paint. They lazy-load per route now
+// (same components, same props — parity preserved); the shared Suspense/Error
+// boundary around <Routes> below owns the loading/error states.
+const DashboardPage = lazy(() => import("@/pages/Dashboard/DashboardPage"));
+const TradingPage = lazy(() => import("@/pages/Trading/TradingPage"));
+const PositionsPage = lazy(() => import("@/pages/Positions/PositionsPage"));
+const RiskPage = lazy(() => import("@/pages/Risk/RiskPage"));
+const MLPage = lazy(() => import("@/pages/ML/MLPage"));
+const IntelligencePage = lazy(() => import("@/pages/Intelligence/IntelligencePage"));
+const AuditPage = lazy(() => import("@/pages/Audit/AuditPage"));
 import type { EngineSnapshot } from "@/types/domain";
 import { engineApi } from "@/api/engineApi";
 import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
@@ -334,7 +339,9 @@ export function AppShell() {
               onRetry={() => snapshotQuery.refetch()}
             />
           ) : (
-            <Routes>
+            <ErrorBoundary label={routeLabel ?? "NSE Console"} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label="Loading page…" />}>
+                <Routes>
               <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/trading" element={<TradingRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/positions" element={<PositionsRoute snapshot={snapshot} />} />
@@ -355,8 +362,10 @@ export function AppShell() {
                   }
                 />
               ))}
-              <Route path="*" element={<ErrorState message="Unknown route" />} />
-            </Routes>
+                  <Route path="*" element={<ErrorState message="Unknown route" />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           )}
         </main>
       </div>
@@ -383,8 +392,10 @@ export function AppShell() {
   );
 }
 
-/* Legacy page routes are statically imported (parity guarantee — they must
- * keep working while feature pages lazy-load). Wrappers keep the JSX terse. */
+/* Legacy page routes are lazy-loaded (perf wave) inside the shared Suspense +
+ * ErrorBoundary around <Routes>. NOTE: the 1s nowMs ticker in AppShell is the
+ * clock these pages' AgeNote age displays ride on — do not memoize these
+ * wrappers without first giving AgeNote its own ticker. */
 function DashboardRoute({ snapshot, nowMs }: { snapshot: EngineSnapshot | undefined; nowMs: number }) {
   return <DashboardPage snapshot={snapshot} nowMs={nowMs} />;
 }

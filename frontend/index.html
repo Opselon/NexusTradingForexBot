@@ -4,10 +4,60 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#070a0f" />
     <title>NSE — Alternative Console</title>
+    <!-- Perf wave (orchestrator): instant boot paint — the #root placeholder
+         renders before the large module graph parses; main.tsx clears it
+         deterministically right before React mounts. -->
+    <style>
+      .nse-boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #070a0f;
+        color: #8b98a8;
+        font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        z-index: 2147483647;
+      }
+      .nse-boot-mark {
+        font-size: 26px;
+        font-weight: 700;
+        color: #e6edf3;
+        letter-spacing: 0.32em;
+      }
+      .nse-boot-text {
+        opacity: 0.7;
+        animation: nseBootPulse 1.2s ease-in-out infinite;
+      }
+      @keyframes nseBootPulse {
+        0%,
+        100% {
+          opacity: 0.35;
+        }
+        50% {
+          opacity: 0.85;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .nse-boot-text {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="nse-boot" role="status" aria-label="Loading NSE console">
+        <span class="nse-boot-mark">NSE</span>
+        <span class="nse-boot-text">Connecting to NSE console…</span>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
