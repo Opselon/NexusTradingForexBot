@@ -197,7 +197,7 @@ export function RuleTable({
   };
 
   return (
-    <div className="rl-table-wrap">
+    <div tabIndex={0} className="rl-table-wrap">
       <table className="rl-table">
         <thead>
           <tr>

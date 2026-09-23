@@ -58,12 +58,11 @@ exclusive_locks:
 #   (ML-ARCH-002, AGENT-ML-ARCH) — released, PR #351 opened
 
 # Released this cycle:
-# - src/nexus_scalp/model_lab/experiment_registry.py (ML-EXP-001, AGENT-ML-EXP) — landed in PR #335
-# - scripts/experiments/hyperparam_search.py + tests/unit/test_hyperparam_search.py
-#   (ML-EXP-003, AGENT-ML-EXP) — branch agent/ml-exp/ml-exp-003
-# - tests/unit/test_robustness_stress_scenarios.py (ML-VAL-003, AGENT-ML-VALIDATION) — landed in PR #324
-# - src/nexus_scalp/training/optimizers.py + tests/unit/test_optimizers_schedulers.py
-#   (ML-TRAIN-003, AGENT-ML-TRAIN) — landed in PR #333
+# - src/nexus_scalp/models/attention.py + src/nexus_scalp/models/attention_ablation.py
+#   (ML-ARCH-003, AGENT-ML-ARCH) — released, PR #354 opened
+# - .github/workflows/nightly-ml-benchmark.yml
+#   + tests/integration/test_walk_forward_pipeline_real.py (ML-CI-001, AGENT-QA)
+#   — released, PR opened
 
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)

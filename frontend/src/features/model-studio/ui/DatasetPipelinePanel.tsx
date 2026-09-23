@@ -371,7 +371,7 @@ export function DatasetPipelinePanel({
                 ))}
               </div>
 
-              <div className="table-wrap" style={{ maxHeight: 420 }}>
+              <div tabIndex={0} className="table-wrap" style={{ maxHeight: 420 }}>
                 <table className="data-table">
                   <thead>
                     <tr>

@@ -621,7 +621,7 @@ function SettingsProvenance() {
             <span>{Object.keys(query.data?.settings ?? {}).length} tracked keys</span>
           </div>
           {open && query.data && (
-            <div className="l3-scroll sm" style={{ marginTop: 8 }}>
+            <div tabIndex={0} className="l3-scroll sm" style={{ marginTop: 8 }}>
               <table className="data-table">
                 <thead>
                   <tr>

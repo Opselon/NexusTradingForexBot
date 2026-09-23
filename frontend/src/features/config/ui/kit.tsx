@@ -13,7 +13,8 @@
  * the RTL switch (`<html dir=fa>`) mirrors correctly.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { useUiStore } from "@/stores/uiStore";
 import { formatAgeMs } from "@/lib/format";
 import { Panel, EmptyState, ErrorState, Skeleton } from "@/components/primitives";
@@ -429,19 +430,16 @@ export function TypedConfirmModal({
 }) {
   const [typed, setTyped] = useState("");
   const matches = typed.trim() === word;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const typedInputRef = useRef<HTMLInputElement | null>(null);
+  // Typed confirm: land focus in the token input so typing works immediately.
+  useDialogA11y(boxRef, onCancel, { initialFocusRef: typedInputRef });
   return (
     <div
       className="modal-overlay"
       onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}
     >
-      <div className="modal danger" role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={boxRef} className="modal danger" role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-header">{title}</div>
         <div className="modal-body">
           <div className="confirm-box">
@@ -452,6 +450,7 @@ export function TypedConfirmModal({
               </label>
               <input
                 id={`typed-${word}`}
+                ref={typedInputRef}
                 className="input l3-input"
                 value={typed}
                 autoComplete="off"

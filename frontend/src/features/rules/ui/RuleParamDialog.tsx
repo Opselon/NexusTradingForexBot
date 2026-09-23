@@ -13,7 +13,8 @@
  * the first rejected save and kept live while editing, "N edited" dirty tag.
  */
 
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { FieldRow, NumberField, TextField } from "@/features/config/ui/kit";
 import { firstError, type FieldErrors } from "@/features/config/validation";
 import { catTone, validateParamEdits, type RuleVO } from "../model";
@@ -44,21 +45,9 @@ export function RuleParamDialog({
   const errors: FieldErrors = validateParamEdits(rule, draft);
   const changed = rule.params.filter((p) => (draft[p.key] ?? "") !== p.value).length;
 
-  // Focus the dialog on open so Esc and Tab start here.
-  useEffect(() => {
-    boxRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !locked) {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [locked, onClose]);
+  // Focus-in / trap / restore + Esc — shared contract; Esc stays disabled
+  // while `locked` (matches the previous stopPropagation semantics).
+  useDialogA11y(boxRef, onClose, { escEnabled: !locked });
 
   const onBackdrop = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (!locked && e.target === e.currentTarget && !busy) onClose();
@@ -90,7 +79,7 @@ export function RuleParamDialog({
           </button>
         </div>
 
-        <div className="rl-dialog-body">
+        <div tabIndex={0} className="rl-dialog-body">
           <div className="rl-form-grid">
             {rule.params.map((p) => {
               const err = showErrors ? firstError(errors, p.key) : null;

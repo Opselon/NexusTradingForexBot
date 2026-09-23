@@ -60,7 +60,7 @@ export function ModelStressBenchPanel({
               No stress results yet — run the battery to audit the champion under adversarial conditions.
             </div>
           ) : (
-            <div className="table-wrap" style={{ maxHeight: 380 }}>
+            <div tabIndex={0} className="table-wrap" style={{ maxHeight: 380 }}>
               <table className="data-table">
                 <thead>
                   <tr>

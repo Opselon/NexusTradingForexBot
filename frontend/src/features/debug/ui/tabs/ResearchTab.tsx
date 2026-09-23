@@ -52,7 +52,7 @@ export function ResearchTab() {
           {typeof data.error !== "undefined" && data.error !== null && (
             <div className="l3-note bad">backend error envelope: {JSON.stringify(data.error)}</div>
           )}
-          <div className="l3-scroll dbg-json">
+          <div tabIndex={0} className="l3-scroll dbg-json">
             <JsonView value={data} name={kind} />
           </div>
           <div className="tiny faint" style={{ marginTop: 6 }}>

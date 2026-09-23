@@ -76,7 +76,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
     <Drawer title={`Strategy trace — ${strategyId}`} onClose={onClose}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         {tabs.map(([id, label]) => (
-          <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} onClick={() => setTab(id)}>
+          <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
