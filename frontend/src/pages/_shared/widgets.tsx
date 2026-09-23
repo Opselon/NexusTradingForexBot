@@ -105,7 +105,7 @@ export function SortableTable<T>({
               {columns.map((c) => {
                 const active = sort?.key === c.key;
                 return (
-                  <th
+                  <th scope="col"
                     key={c.key}
                     className={c.num ? "num" : undefined}
                     style={c.width ? { inlineSize: c.width } : undefined}
@@ -136,6 +136,17 @@ export function SortableTable<T>({
                 key={rowKey(row, i)}
                 className={onRowClick ? "l4-clickable" : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onKeyDown={
+                                  onRowClick
+                                    ? (e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                          e.preventDefault();
+                                          e.currentTarget.click();
+                                        }
+                                      }
+                                    : undefined
+                                }
               >
                 {columns.map((c) => (
                   <td key={c.key} className={c.num ? "num" : undefined} style={dense ? { paddingBlock: 2 } : undefined}>

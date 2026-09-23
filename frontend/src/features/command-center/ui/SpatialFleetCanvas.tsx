@@ -148,7 +148,7 @@ export function SpatialFleetCanvas({
 
   return (
     <div className="spatial-wrap" ref={wrapRef}>
-      <canvas ref={canvasRef} className="spatial-canvas" aria-label="Spatial fleet map (2.5D)" />
+      <canvas ref={canvasRef} className="spatial-canvas" role="img" aria-label="Spatial fleet map (2.5D)" />
 
       {/* camera toolbar (legacy scc-fit-all / reset / focus set) */}
       <div className="spatial-tools">
@@ -174,10 +174,10 @@ export function SpatialFleetCanvas({
         <button className="btn small ghost" onClick={() => engineRef.current?.focusActive()}>focus live</button>
         <button className="btn small ghost" onClick={() => engineRef.current?.focusBlocked()}>focus terminal</button>
         <span className="spatial-legend" aria-hidden="true">
-          <i style={{ background: "#10b981" }} /> live
-          <i style={{ background: "#eab308" }} /> shadow
-          <i style={{ background: "#84cc16" }} /> validated
-          <i style={{ background: "#f43f5e" }} /> terminal
+          <i className="sl-live" /> live
+          <i className="sl-shadow" /> shadow
+          <i className="sl-validated" /> validated
+          <i className="sl-terminal" /> terminal
         </span>
       </div>
 

@@ -1,0 +1,75 @@
+/**
+ * Trace tab — /api/debug/trace/{execution_id}: read-only forensic join
+ * (audit_signals + audit_orders) rendered as a chronological timeline.
+ *
+ * When the backend answers with rows-less payloads it carries its own
+ * reason (e.g. NO_AUDIT_DB) — that reason is surfaced verbatim instead of a
+ * misleading "0 stages" empty state.
+ */
+
+import { useState } from "react";
+import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
+import { useTraceQuery } from "../../hooks";
+import { traceTimeline } from "../../model";
+
+export function TraceTab() {
+  const [id, setId] = useState("");
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const trace = useTraceQuery(submitted);
+  const shapeOk = id.trim() === "" || /^[A-Za-z0-9_-]{4,}$/.test(id.trim());
+  const timeline = trace.data ? traceTimeline(trace.data) : [];
+  const rowCount = (trace.data?.signal?.length ?? 0) + (trace.data?.orders?.length ?? 0);
+
+  return (
+    <Panel title="Execution trace (/api/debug/trace/{execution_id})" accent right={<span className="timestamp-note">read-only join: audit_signals + audit_orders</span>}>
+      <div className="dbg-sec">
+        <div className="l3-toolbar">
+          <input className="input" style={{ minWidth: 280 }} aria-label="Execution id" placeholder="EXEC-…" value={id} aria-invalid={!shapeOk} onChange={(e) => setId(e.target.value)} />
+          <button className="btn primary" disabled={!shapeOk || id.trim() === ""} onClick={() => setSubmitted(id.trim())}>
+            Trace
+          </button>
+          {!shapeOk && <span className="l3-field-error">id must be ≥4 chars of [A-Za-z0-9_-]</span>}
+        </div>
+        {!submitted ? (
+          <EmptyState message="No execution id submitted." hint="Find ids in audit/orders views or the legacy forensic console." />
+        ) : trace.isPending ? (
+          <Skeleton count={4} />
+        ) : trace.isError ? (
+          <ErrorState message={trace.error instanceof Error ? trace.error.message : "trace failed"} onRetry={() => void trace.refetch()} />
+        ) : !trace.data?.available ? (
+          <div className="l3-note warn">trace unavailable: {String(trace.data?.reason ?? "UNKNOWN")}</div>
+        ) : (
+          <>
+            <div className="timestamp-note" style={{ marginBottom: 6 }}>
+              {submitted} · {trace.data.signal?.length ?? 0} signal row(s) · {trace.data.orders?.length ?? 0} order row(s)
+              {trace.data.db_path ? ` · db ${trace.data.db_path}` : ""}
+            </div>
+            {rowCount === 0 ? (
+              <>
+                <div className="l3-note warn">
+                  Rows empty{trace.data.reason ? ` — backend reason: ${String(trace.data.reason)}` : ""}. The id is valid; the join found nothing to place on the timeline.
+                </div>
+                <EmptyState message="Nothing to trace for this execution id." hint="Try an id from a window where the audit DB was attached." />
+              </>
+            ) : (
+              <div className="l3-timeline dbg-timeline">
+                {timeline.map((row, i) => (
+                  <div className="l3-tl-row dbg-tl-row" key={i}>
+                    <span className="t">{row.ts}</span>
+                    <span className="body">
+                      <b>{row.stage}</b>
+                      <div className="tiny faint l3-cell" title={row.detail}>
+                        {row.detail}
+                      </div>
+                    </span>
+                  </div>
+                ))}
+                {timeline.length === 0 && <EmptyState message="Rows found but no timestamped stages to place on the timeline." />}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </Panel>
+  );
+}

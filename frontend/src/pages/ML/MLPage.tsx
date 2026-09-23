@@ -58,7 +58,7 @@ function VerdictChip({ disagreement, valid }: { disagreement: string; valid?: bo
   if (!disagreement) return <span className="tiny">—</span>;
   if (compared) return <span className="tiny">{disagreement}</span>;
   return (
-    <span className="tiny" style={{ color: "var(--rose)" }} title="No shadow inference ran for this tick — the shadow model was not attached or the 70D vector was rejected. This is not a trade decision.">
+    <span className="tiny"  title="No shadow inference ran for this tick — the shadow model was not attached or the 70D vector was rejected. This is not a trade decision.">
       {disagreement}
     </span>
   );
@@ -377,7 +377,7 @@ export default function MLPage({ snapshot }: Props) {
         right={
           <>
             <span className="timestamp-note">/api/operator/calibration</span>
-            <button className="btn small ghost" onClick={() => void calibrationQuery.refetch()} disabled={calibrationQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh calibration" className="btn small ghost" onClick={() => void calibrationQuery.refetch()} disabled={calibrationQuery.isFetching}>⟳</button>
           </>
         }
       >
@@ -468,7 +468,7 @@ export default function MLPage({ snapshot }: Props) {
           right={
             <>
               <InfoChip k="generated" v={shadow70V1Query.data?.generated_at ? fmtAge((Date.now() - Date.parse(shadow70V1Query.data.generated_at)) / 1000) : "—"} />
-              <button className="btn small ghost" onClick={() => void shadow70V1Query.refetch()} disabled={shadow70V1Query.isFetching}>⟳</button>
+              <button aria-label="Refresh shadow 70D" className="btn small ghost" onClick={() => void shadow70V1Query.refetch()} disabled={shadow70V1Query.isFetching}>⟳</button>
             </>
           }
         >
@@ -521,7 +521,7 @@ export default function MLPage({ snapshot }: Props) {
         right={
           <>
             <InfoChip k="60d" v={shadowStatusQuery.data?.shadow_60d?.available ? `${shadowStatusQuery.data.shadow_60d.decisions ?? 0} decisions` : shadowStatusQuery.data ? "STORE EMPTY" : "…"} tone={shadowStatusQuery.data?.shadow_60d?.available ? "good" : ""} />
-            <button className="btn small ghost" onClick={() => void shadowStatusQuery.refetch()} disabled={shadowStatusQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh shadow status" className="btn small ghost" onClick={() => void shadowStatusQuery.refetch()} disabled={shadowStatusQuery.isFetching}>⟳</button>
           </>
         }
       >
@@ -573,9 +573,9 @@ export default function MLPage({ snapshot }: Props) {
                       ⇩ CSV
                     </button>
                   )}
-                  <button className="btn small" disabled={runsPage <= 1} onClick={() => setRunsPage((p) => Math.max(1, p - 1))}>‹</button>
+                  <button aria-label="Previous page" className="btn small" disabled={runsPage <= 1} onClick={() => setRunsPage((p) => Math.max(1, p - 1))}>‹</button>
                   <span className="small faint inline-mono">p{runsPage}</span>
-                  <button className="btn small" disabled={!shadowRunsQuery.data?.has_more} onClick={() => setRunsPage((p) => p + 1)}>›</button>
+                  <button aria-label="Next page" className="btn small" disabled={!shadowRunsQuery.data?.has_more} onClick={() => setRunsPage((p) => p + 1)}>›</button>
                 </span>
               </div>
               <SectionState

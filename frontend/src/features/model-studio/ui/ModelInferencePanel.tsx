@@ -222,27 +222,27 @@ export function ModelInferencePanel({
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Layer</th>
-                        <th>Type</th>
-                        <th>Shape</th>
-                        <th className="num">L2 Norm</th>
-                        <th className="num">Mean</th>
-                        <th className="num">Std</th>
-                        <th style={{ textAlign: "center" }}>Zero %</th>
+                        <th scope="col">Layer</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Shape</th>
+                        <th scope="col" className="num">L2 Norm</th>
+                        <th scope="col" className="num">Mean</th>
+                        <th scope="col" className="num">Std</th>
+                        <th scope="col" style={{ textAlign: "center" }}>Zero %</th>
                       </tr>
                     </thead>
                     <tbody>
                       {predictData.layer_inspection.map((l) => (
                         <tr key={l.layer}>
                           <td className="inline-mono" style={{ color: "var(--text)", fontWeight: 600 }}>{l.layer}</td>
-                          <td className="tiny" style={{ color: "var(--text-dim)" }}>{l.type}</td>
-                          <td className="inline-mono tiny" style={{ color: "var(--text-faint)" }}>
+                          <td className="tiny tx-dim" >{l.type}</td>
+                          <td className="inline-mono tiny tx-faint" >
                             [{l.shape.join("×")}]
                           </td>
-                          <td className="num" style={{ color: "var(--accent-strong)" }}>
+                          <td className="num tx-accent" >
                             {l.l2_norm.toFixed(4)}
                           </td>
-                          <td className="num" style={{ color: "var(--green)" }}>{l.mean.toFixed(4)}</td>
+                          <td className="num tx-good" >{l.mean.toFixed(4)}</td>
                           <td className="num">{l.std.toFixed(4)}</td>
                           <td style={{ textAlign: "center" }}>
                             <span className={`badge ${l.zero_fraction > 0.5 ? "warn" : "neutral"}`}>
@@ -332,11 +332,11 @@ function ProbRow({
   return (
     <div className="ms-prob-row">
       <div className="ms-prob-meta">
-        <span style={{ color: dominant ? "var(--text)" : "var(--text-dim)" }}>
+        <span className={ dominant ? "tx-text" : "tx-dim" } >
           {dominant ? "◆ " : ""}
           {label}
         </span>
-        <span style={{ color: dominant ? "var(--accent-strong)" : "var(--text-dim)" }}>
+        <span className={ dominant ? "tx-accent" : "tx-dim" } >
           {(value * 100).toFixed(2)}%
         </span>
       </div>

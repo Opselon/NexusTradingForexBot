@@ -145,7 +145,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
           title={`Fleet (${String(fleetQ.data?.count ?? 0)} rows, risk-first order)`}
           right={
             <div style={{ display: "flex", gap: 6 }}>
-              <select className="select" style={{ width: 150 }} value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
+              <select aria-label="Lifecycle filter" className="select" style={{ width: 150 }} value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
                 <option value="">lifecycle: any</option>
                 {["DISCOVERED", "VALIDATED", "SHADOW", "ACTIVE", "REJECTED", "DEGRADED", "RETIRED"].map((l) => (
                   <option key={l} value={l}>
@@ -153,7 +153,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
                   </option>
                 ))}
               </select>
-              <select className="select" style={{ width: 140 }} value={executionFilter} onChange={(e) => setExecutionFilter(e.target.value)}>
+              <select aria-label="Eligibility filter" className="select" style={{ width: 140 }} value={executionFilter} onChange={(e) => setExecutionFilter(e.target.value)}>
                 <option value="">eligibility: any</option>
                 {["YES", "BLOCKED", "CONDITIONAL", "UNKNOWN"].map((l) => (
                   <option key={l} value={l}>
@@ -178,15 +178,15 @@ export default function CommandCenterPage(props: ShellPageProps) {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>strategy</th>
-                    <th>lifecycle</th>
-                    <th className="num">conf</th>
-                    <th className="num">samples</th>
-                    <th className="num">health</th>
-                    <th>eligibility</th>
-                    <th>reason</th>
-                    <th>updated</th>
-                    <th />
+                    <th scope="col">strategy</th>
+                    <th scope="col">lifecycle</th>
+                    <th scope="col" className="num">conf</th>
+                    <th scope="col" className="num">samples</th>
+                    <th scope="col" className="num">health</th>
+                    <th scope="col">eligibility</th>
+                    <th scope="col">reason</th>
+                    <th scope="col">updated</th>
+                    <th scope="col" />
                   </tr>
                 </thead>
                 <tbody>

@@ -74,7 +74,7 @@ export function ArticleDrawer({
   return (
     <div className="news-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside className="news-drawer" role="dialog" aria-modal="true" aria-label="News article detail">
-        <header>
+        <header aria-label="Article">
           <span>Article detail</span>
           <span className="inline-mono tiny faint">#{articleId.slice(0, 10)}</span>
           <button className="btn small close" onClick={onClose}>

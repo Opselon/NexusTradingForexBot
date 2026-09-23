@@ -64,9 +64,9 @@ export function ModelStressBenchPanel({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Adversarial Test</th>
-                    <th style={{ textAlign: "center" }}>Verdict</th>
-                    <th>Diagnostic Detail</th>
+                    <th scope="col">Adversarial Test</th>
+                    <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
+                    <th scope="col">Diagnostic Detail</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -78,7 +78,7 @@ export function ModelStressBenchPanel({
                           {r.passed ? "PASS" : "FAIL"}
                         </span>
                       </td>
-                      <td className="tiny" style={{ color: "var(--text-dim)" }}>{r.detail}</td>
+                      <td className="tiny tx-dim" >{r.detail}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -174,7 +174,7 @@ export function ModelStressBenchPanel({
                         <div key={b.l} className="ms-prob-row">
                           <div className="ms-prob-meta">
                             <span style={{ color: b.c }}>{b.l}</span>
-                            <span style={{ color: "var(--text-dim)" }}>{b.v.toFixed(3)} ms</span>
+                            <span className="tx-dim" >{b.v.toFixed(3)} ms</span>
                           </div>
                           <div className="ms-prob-track">
                             <div

@@ -173,7 +173,7 @@ export default function IncidentsPage(props: ShellPageProps) {
               title="Incident list"
               right={
                 <div style={{ display: "flex", gap: 6 }}>
-                  <select className="select" style={{ width: 110 }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
+                  <select aria-label="Severity filter" className="select" style={{ width: 110 }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
                     <option value="">severity: any</option>
                     {["CRITICAL", "HIGH", "MEDIUM", "LOW"].map((s) => (
                       <option key={s} value={s}>
@@ -181,7 +181,7 @@ export default function IncidentsPage(props: ShellPageProps) {
                       </option>
                     ))}
                   </select>
-                  <select className="select" style={{ width: 110 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+                  <select aria-label="Status filter" className="select" style={{ width: 110 }} value={status} onChange={(e) => setStatus(e.target.value)}>
                     <option value="">status: any</option>
                     {["OPEN", "INVESTIGATING", "RECOVERED", "FALSE_POSITIVE", "CLOSED"].map((s) => (
                       <option key={s} value={s}>
@@ -243,7 +243,7 @@ export default function IncidentsPage(props: ShellPageProps) {
         {tab === "search" && (
           <div className="grid cols-2">
             <Panel title="Search incidents (bounded, deterministic)" tight>
-              <input className="input" style={{ width: "100%" }} placeholder="query text (id / root cause / tag)" value={q} onChange={(e) => setQ(e.target.value)} />
+              <input className="input" style={{ width: "100%" }} aria-label="Search incidents" placeholder="query text (id / root cause / tag)" value={q} onChange={(e) => setQ(e.target.value)} />
               <div style={{ marginTop: 8 }}>
                 {q.trim() === "" ? (
                   <EmptyState message="Type a query — the backend answers {available:true, incidents:[]} for empty queries." />
@@ -277,7 +277,7 @@ export default function IncidentsPage(props: ShellPageProps) {
               <input
                 className="input"
                 style={{ width: "100%" }}
-                placeholder="incident_id | ticket | execution_id | order_id | model_id | research_run_id"
+                aria-label="Related id filter" placeholder="incident_id | ticket | execution_id | order_id | model_id | research_run_id"
                 value={traceQ}
                 onChange={(e) => setTraceQ(e.target.value)}
               />
@@ -299,14 +299,14 @@ export default function IncidentsPage(props: ShellPageProps) {
             title="Value lineage (how a number is derived)"
             right={
               <div style={{ display: "flex", gap: 6 }}>
-                <select className="select" style={{ width: 150 }} value={lineageField} onChange={(e) => setLineageField(e.target.value)}>
+                <select aria-label="Lineage field" className="select" style={{ width: 150 }} value={lineageField} onChange={(e) => setLineageField(e.target.value)}>
                   {["pnl", "realized_r", "open_positions", "model_output"].map((f) => (
                     <option key={f} value={f}>
                       {f}
                     </option>
                   ))}
                 </select>
-                <input className="input" style={{ width: 110 }} placeholder="ticket (why)" value={lineageTicket} onChange={(e) => setLineageTicket(e.target.value)} />
+                <input className="input" style={{ width: 110 }} aria-label="Ticket for lineage" placeholder="ticket (why)" value={lineageTicket} onChange={(e) => setLineageTicket(e.target.value)} />
               </div>
             }
             tight
@@ -349,7 +349,7 @@ export default function IncidentsPage(props: ShellPageProps) {
           <Panel
             title="Read-only forensic probes"
             right={
-              <select className="select" style={{ width: 150 }} value={forensicKind} onChange={(e) => setForensicKind(e.target.value)}>
+              <select aria-label="Forensic probe" className="select" style={{ width: 150 }} value={forensicKind} onChange={(e) => setForensicKind(e.target.value)}>
                 <option value="accounting">accounting</option>
                 <option value="timebase">timebase</option>
               </select>

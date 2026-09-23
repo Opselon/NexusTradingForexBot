@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { positionSide } from "@/lib/format";
 import { useUiStore, type ToastItem } from "@/stores/uiStore";
 
@@ -78,15 +78,15 @@ export function Panel({
     <section className="panel">
       <div className="panel-header">
         {accent && <span className="dot-accent" aria-hidden="true" />}
-        <span>
+        <h2>
           {title}
           {subtitle !== undefined && subtitle !== null && subtitle !== "" && (
             <span className="panel-subtitle muted">
               {subtitle}
             </span>
           )}
-        </span>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{right}</span>
+        </h2>
+        <span className="panel-tools">{right}</span>
       </div>
       <div className={`panel-body ${tight ? "tight" : ""}`}>{children}</div>
     </section>
@@ -145,7 +145,7 @@ export function DataTable({ headers, children }: { headers: Array<{ label: strin
         <thead>
           <tr>
             {headers.map((h) => (
-              <th key={h.label} className={h.num ? "num" : undefined}>
+              <th scope="col" key={h.label} className={h.num ? "num" : undefined}>
                 {h.label}
               </th>
             ))}
@@ -221,9 +221,40 @@ export function ConfirmModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
+  // Focus enters the dialog on open and returns to the trigger on close.
+  useEffect(() => {
+    prevFocusRef.current = document.activeElement as HTMLElement | null;
+    modalRef.current?.focus({ preventScroll: true });
+    return () => prevFocusRef.current?.focus?.();
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      const root = modalRef.current;
+      // A stacked dialog (drawer beneath / modal above) owns the keyboard
+      // while it holds focus — only react when focus is inside this dialog.
+      if (!root || !root.contains(document.activeElement)) return;
+      if (e.key === "Escape") {
+        onCancel();
+        return;
+      }
+      if (e.key === "Tab") {
+        const focusables = Array.from(
+          root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+        ).filter((el) => !el.hasAttribute("disabled"));
+        if (focusables.length === 0) return;
+        const first = focusables[0] as HTMLElement;
+        const last = focusables[focusables.length - 1] as HTMLElement;
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !root.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -231,7 +262,7 @@ export function ConfirmModal({
 
   return (
     <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}>
-      <div className={`modal ${danger ? "danger" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={modalRef} tabIndex={-1} className={`modal ${danger ? "danger" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-header">{title}</div>
         <div className="modal-body">{children}</div>
         <div className="modal-actions">

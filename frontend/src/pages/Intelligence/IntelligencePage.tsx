@@ -6,6 +6,7 @@
  * or interpretations are computed in the frontend — raw backend signals only.
  *
  * Sections:
+ *  - Hero header: endpoint provenance chips, live news-state pill, refresh-all
  *  - News state KPI strip + subsystem health (existing parity)
  *  - Liquidity governor panel — READ-ONLY render of /api/liquidity/state
  *    (the liquidity tab itself belongs to lane 5; this page only surfaces
@@ -15,6 +16,10 @@
  *  - Regime readout — canonical snapshot regime + /api/v1/market/regime
  *    evidence (no inference yet renders as the backend's own note)
  *  - Trade intelligence summary, articles, autopsies (parity)
+ *
+ * UI pass: presentation-only rework (hero, section grouping, tone badges).
+ * Every query, derivation and honest-state branch below is unchanged — the
+ * sibling intelligence.css owns all styling under the `.ix-*` namespace.
  */
 
 import { useMemo } from "react";
@@ -22,17 +27,30 @@ import { useQuery } from "@tanstack/react-query";
 import { intelligenceApi } from "@/api/intelligenceApi";
 import { contextApi, marketApi2 } from "@/pages/_shared/edgeApi";
 import type { EngineSnapshot } from "@/types/domain";
-import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { DataTable, EmptyState, ErrorState, MetricCard, Panel, SeverityBadge, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState, errorText, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
 import { InfoChip } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import "@/pages/_shared/pages.css";
+import "@/pages/Intelligence/intelligence.css";
 
 interface Props {
   snapshot?: EngineSnapshot | undefined;
 }
+
+/** Endpoints this page reads — provenance shown in the hero (never decoration). */
+const ENDPOINTS = [
+  "/api/news/state",
+  "/api/news/health",
+  "/api/news/latest",
+  "/api/intelligence/summary",
+  "/api/intelligence/autopsies",
+  "/api/liquidity/state",
+  "/api/mslie/status",
+  "/api/v1/market/regime",
+] as const;
 
 /** Echo a backend record's scalar fields as kv rows (objects collapsed). */
 function scalarRows(rec: Record<string, unknown> | null | undefined, max = 12): Array<[string, string]> {
@@ -41,6 +59,16 @@ function scalarRows(rec: Record<string, unknown> | null | undefined, max = 12): 
     .filter(([, v]) => v === null || typeof v !== "object")
     .slice(0, max)
     .map(([k, v]) => [k.replace(/_/g, " "), typeof v === "number" ? formatNumber(v, Number.isInteger(v) ? 0 : 3) : String(v ?? "—")] as [string, string]);
+}
+
+/** Section eyebrow: a label + hairline rule (pure presentation). */
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <div className="ix-sec">
+      <span>{children}</span>
+      <i aria-hidden="true" />
+    </div>
+  );
 }
 
 export default function IntelligencePage({ snapshot }: Props) {
@@ -101,9 +129,60 @@ export default function IntelligencePage({ snapshot }: Props) {
   const ctxRows = useMemo(() => scalarRows(ms?.market_context ?? null), [ms?.market_context]);
   const liqFeatureRows = useMemo(() => Object.entries(liq?.features ?? {}).slice(0, 14), [liq?.features]);
 
+  const allQueries = [stateQuery, healthQuery, articlesQuery, summaryQuery, autopsyQuery, liqQuery, mslieQuery, regimeQuery];
+  const anyFetching = allQueries.some((q) => q.isFetching);
+  /** Refresh every section at once — each query stays backend-authoritative. */
+  const refreshAll = () => allQueries.forEach((q) => void q.refetch());
+
+  /** Hero pill tone restates the backend's own availability/staleness/state. */
+  const liveTone = !ns?.available ? "dim" : ns.stale ? "warn" : ns.state === "BREAKING" || ns.state === "HIGH_IMPACT" ? "bad" : "good";
+
   return (
-    <div>
-      <div className="grid cols-4">
+    <div className="ix-page">
+      <header className="ix-hero">
+        <div className="ix-hero-main">
+          <div className="ix-kicker">
+            <span className="dot" aria-hidden="true" />
+            NEWS · STRUCTURE · REGIME
+          </div>
+          <h1 className="ix-title">
+            <span className="glyph" aria-hidden="true">≈</span>
+            <span className="word">Intelligence</span>
+          </h1>
+          <p className="ix-desc">
+            News flow, market structure and engine regime in one read — raw backend signals only. Stale or unavailable context is labeled as such,
+            never inferred or zero-filled in the frontend.
+          </p>
+          <div className="ix-endpoints" aria-label="endpoints surfaced by this page">
+            {ENDPOINTS.map((ep) => (
+              <span className="ix-ep" key={ep}>
+                {ep}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="ix-hero-side">
+          <span
+            className={`ix-livechip ${liveTone}`}
+            title="Backend news state + freshness from /api/news/state — displayed verbatim, never inferred."
+          >
+            <span className="d" aria-hidden="true" />
+            {ns?.available ? (ns.state ?? "—") : "NEWS UNAVAILABLE"}
+            <span className="fresh">{ns?.available ? (ns.stale ? "· STALE" : `· freshness ${ns.freshness ?? "—"}`) : "· subsystem offline"}</span>
+          </span>
+          <button className="btn small" onClick={refreshAll} disabled={anyFetching} aria-label="Refresh every intelligence section">
+            {anyFetching ? "⟳ Refreshing…" : "⟳ Refresh all"}
+          </button>
+        </div>
+      </header>
+
+      {ns?.stale && (
+        <div className="ix-stale" role="alert">
+          <span>⚠ News context is STALE per the backend — no recent fetch. Values above are not current market context.</span>
+        </div>
+      )}
+
+      <div className="grid cols-4 ix-kpis">
         <MetricCard
           label="News state (backend)"
           value={stateQuery.isPending ? "…" : ns?.available ? (ns.state ?? "—") : "UNAVAILABLE"}
@@ -130,20 +209,16 @@ export default function IntelligencePage({ snapshot }: Props) {
         />
       </div>
 
-      {ns?.stale && (
-        <div className="banner stale" style={{ border: "1px solid rgba(235,161,63,0.4)", borderRadius: 6, marginTop: 10 }}>
-          <span>⚠ News context is STALE per the backend — no recent fetch. Values above are not current market context.</span>
-        </div>
-      )}
-
       {/* Structure context: liquidity governor + mSLIE (read-only here) */}
-      <div className="grid cols-2" style={{ marginTop: 14 }}>
+      <SectionLabel>Market structure</SectionLabel>
+      <div className="grid cols-2">
         <Panel
           title="Liquidity governor (read-only)"
+          subtitle={<span className="inline-mono">/api/liquidity/state</span>}
           right={
             <>
               <InfoChip k="availability" v={liq?.feature_availability ?? "—"} tone={liq?.feature_availability === "AVAILABLE" ? "good" : liq?.feature_availability === "STALE_CACHE" ? "warn" : ""} />
-              <button className="btn small ghost" onClick={() => void liqQuery.refetch()} disabled={liqQuery.isFetching}>⟳</button>
+              <button aria-label="Refresh liquidity" className="btn small ghost" onClick={() => void liqQuery.refetch()} disabled={liqQuery.isFetching}>⟳</button>
             </>
           }
         >
@@ -169,11 +244,11 @@ export default function IntelligencePage({ snapshot }: Props) {
                 <dt>algorithm</dt>
                 <dd className="small">{liq.algorithm_version ?? "—"}</dd>
               </dl>
-              {liq.error && <div className="l4-note warn">backend error{liq.error_at ? ` @ ${liq.error_at}` : ""}: {liq.error}</div>}
+              {liq.error && <div className="l4-note warn ix-gap">backend error{liq.error_at ? ` @ ${liq.error_at}` : ""}: {liq.error}</div>}
               {liqFeatureRows.length > 0 && (
                 <>
-                  <div className="section-title" style={{ marginTop: 10 }}>Feature values ({liq.feature_count ?? liqFeatureRows.length})</div>
-                  <div className="l4-features" style={{ maxBlockSize: 160 }}>
+                  <div className="section-title ix-gap">Feature values ({liq.feature_count ?? liqFeatureRows.length})</div>
+                  <div className="l4-features ix-feats">
                     {liqFeatureRows.map(([k, v]) => (
                       <div key={k} className="l4-feature" title={k}>
                         <div className="n">{k}</div>
@@ -185,7 +260,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               )}
               {(liq.pools?.length ?? 0) > 0 && (
                 <>
-                  <div className="section-title" style={{ marginTop: 10 }}>Liquidity pools</div>
+                  <div className="section-title ix-gap">Liquidity pools</div>
                   <DataTable headers={[{ label: "Side" }, { label: "Price", num: true }, { label: "State" }, { label: "Source" }, { label: "Confirmed" }]}>
                     {liq.pools!.slice(0, 8).map((p, i) => (
                       <tr key={i}>
@@ -199,7 +274,7 @@ export default function IntelligencePage({ snapshot }: Props) {
                   </DataTable>
                 </>
               )}
-              <div className="l4-note" style={{ marginTop: 8 }}>
+              <div className="l4-note ix-readnote">
                 Read-only view (governor report). The toggle and the full contract live on the Liquidity tab; enabling/disabling here would bypass that
                 feature's own gate.
               </div>
@@ -209,6 +284,7 @@ export default function IntelligencePage({ snapshot }: Props) {
 
         <Panel
           title="mSLIE market structure"
+          subtitle={<span className="inline-mono">/api/mslie/status</span>}
           right={<InfoChip k="engine" v={ms?.status ?? (mslieQuery.isPending ? "…" : "—")} tone={ms?.status === "ONLINE" ? "good" : ms?.status === "DEGRADED" ? "bad" : "warn"} />}
         >
           {mslieQuery.isPending && !mslieQuery.data ? (
@@ -220,7 +296,7 @@ export default function IntelligencePage({ snapshot }: Props) {
           ) : ms ? (
             <>
               <dl className="kv">
-                {ctxRows.length > 0 && <dt className="section-title" style={{ gridColumn: "1 / -1" }}>market context</dt>}
+                {ctxRows.length > 0 && <dt className="section-title ix-ctx-head">market context</dt>}
                 {ctxRows.map(([k, v]) => (
                   <div key={k} style={{ display: "contents" }}>
                     <dt>{k}</dt>
@@ -232,7 +308,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               </dl>
               {(ms.liquidity_map?.length ?? 0) > 0 && (
                 <>
-                  <div className="section-title" style={{ marginTop: 10 }}>Liquidity map ({ms.liquidity_map!.length} bands)</div>
+                  <div className="section-title ix-gap">Liquidity map ({ms.liquidity_map!.length} bands)</div>
                   <DataTable headers={[{ label: "Price range" }, { label: "Type" }, { label: "Touches", num: true }, { label: "Strength", num: true }]}>
                     {ms.liquidity_map!.slice(0, 8).map((z, i) => (
                       <tr key={i}>
@@ -246,7 +322,7 @@ export default function IntelligencePage({ snapshot }: Props) {
                 </>
               )}
               {ms.last_sweep && (
-                <div className="l4-note" style={{ marginTop: 8 }}>
+                <div className="l4-note ix-readnote">
                   last sweep: {String(ms.last_sweep.type ?? ms.last_sweep.side ?? "—")} @ {String(ms.last_sweep.price ?? "—")}
                   {ms.last_sweep.time ? ` · ${formatDateTime(String(ms.last_sweep.time))}` : ""}
                 </div>
@@ -257,12 +333,14 @@ export default function IntelligencePage({ snapshot }: Props) {
       </div>
 
       {/* Regime readout */}
+      <SectionLabel>Engine readout</SectionLabel>
       <Panel
         title="Regime (engine classifier)"
+        subtitle={<span className="inline-mono">snapshot · /api/v1/market/regime</span>}
         right={
           <>
             <AgeNote label="inference age" ageSec={snapshot?.diagnostics.inference_age_sec} />
-            <button className="btn small ghost" onClick={() => void regimeQuery.refetch()} disabled={regimeQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh regime" className="btn small ghost" onClick={() => void regimeQuery.refetch()} disabled={regimeQuery.isFetching}>⟳</button>
           </>
         }
       >
@@ -302,8 +380,9 @@ export default function IntelligencePage({ snapshot }: Props) {
         </div>
       </Panel>
 
+      <SectionLabel>Subsystem state</SectionLabel>
       <div className="grid cols-2">
-        <Panel title="News subsystem health">
+        <Panel title="News subsystem health" subtitle={<span className="inline-mono">/api/news/health</span>}>
           {healthQuery.isPending ? (
             <Skeleton count={4} />
           ) : healthQuery.isError ? (
@@ -326,7 +405,7 @@ export default function IntelligencePage({ snapshot }: Props) {
           )}
         </Panel>
 
-        <Panel title="Trade intelligence summary">
+        <Panel title="Trade intelligence summary" subtitle={<span className="inline-mono">/api/intelligence/summary</span>}>
           {summaryQuery.isPending ? (
             <Skeleton count={4} />
           ) : summaryQuery.data?.available ? (
@@ -354,8 +433,10 @@ export default function IntelligencePage({ snapshot }: Props) {
         </Panel>
       </div>
 
+      <SectionLabel>Feed &amp; forensics</SectionLabel>
       <Panel
         title="Latest canonical articles"
+        subtitle={<span className="inline-mono">/api/news/latest</span>}
         tight
         right={
           articlesQuery.data?.articles && articlesQuery.data.articles.length > 0 ? (
@@ -376,15 +457,15 @@ export default function IntelligencePage({ snapshot }: Props) {
         }
       >
         {articlesQuery.isPending ? (
-          <div style={{ padding: 12 }}><Skeleton count={3} /></div>
+          <div className="ix-skel"><Skeleton count={3} /></div>
         ) : articlesQuery.data?.available && articlesQuery.data.articles && articlesQuery.data.articles.length > 0 ? (
           <DataTable headers={[{ label: "Published" }, { label: "Source" }, { label: "Title" }, { label: "Importance" }]}>
             {articlesQuery.data.articles.map((a) => (
               <tr key={a.article_id}>
-                <td>{a.published_at ? formatDateTime(a.published_at) : "—"}</td>
+                <td className="small">{a.published_at ? formatDateTime(a.published_at) : "—"}</td>
                 <td>{a.source_name ?? "—"}</td>
-                <td style={{ maxWidth: 480, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={a.title}>{a.title}</td>
-                <td>{String(a.importance ?? "—")}</td>
+                <td className="ix-title-cell" title={a.title}>{a.title}</td>
+                <td>{a.importance === null || a.importance === undefined ? "—" : <SeverityBadge severity={String(a.importance)} />}</td>
               </tr>
             ))}
           </DataTable>
@@ -395,18 +476,26 @@ export default function IntelligencePage({ snapshot }: Props) {
         )}
       </Panel>
 
-      <Panel title="Recent trade autopsies (why trades won/lost)" tight>
+      <Panel title="Recent trade autopsies (why trades won/lost)" subtitle={<span className="inline-mono">/api/intelligence/autopsies</span>} tight>
         {autopsyQuery.isPending ? (
-          <div style={{ padding: 12 }}><Skeleton count={3} /></div>
+          <div className="ix-skel"><Skeleton count={3} /></div>
         ) : autopsyQuery.data?.available && autopsyQuery.data.autopsies && autopsyQuery.data.autopsies.length > 0 ? (
           <DataTable
             headers={[{ label: "Ticket" }, { label: "Strategy" }, { label: "Outcome" }, { label: "Realized R", num: true }, { label: "Exit reason" }]}
           >
             {autopsyQuery.data.autopsies.map((a, i) => (
               <tr key={String(a.ticket ?? i)}>
-                <td>{String(a.ticket ?? "—")}</td>
-                <td>{a.strategy_id ?? "—"}</td>
-                <td>{a.outcome ?? "—"}</td>
+                <td className="small">{String(a.ticket ?? "—")}</td>
+                <td className="small">{a.strategy_id ?? "—"}</td>
+                <td>
+                  {a.outcome ? (
+                    <span className={`badge ${a.outcome.toUpperCase() === "WIN" ? "good" : a.outcome.toUpperCase() === "LOSS" ? "bad" : "neutral"}`}>
+                      {a.outcome}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className={`num ${a.realized_r !== null && a.realized_r !== undefined && a.realized_r >= 0 ? "pnl-pos" : "pnl-neg"}`}>
                   {a.realized_r === null || a.realized_r === undefined ? "—" : a.realized_r.toFixed(2)}
                 </td>

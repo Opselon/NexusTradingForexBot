@@ -222,7 +222,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
         <Panel title="Execution mode (PAPER ⇄ LIVE)" accent>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select className="select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
+            <select aria-label="Target execution mode" className="select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
               <option value="">select mode…</option>
               <option value="PAPER">PAPER (simulation adapter)</option>
               <option value="SHADOW">SHADOW (no execution)</option>
@@ -251,7 +251,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
                 <input
                   className="input"
                   style={{ width: 200 }}
-                  placeholder={t("ux.confirm.type", "Type {w} to enable confirmation", { w: LIVE_CONFIRM_TEXT })}
+                  aria-label="LIVE confirmation phrase" placeholder={t("ux.confirm.type", "Type {w} to enable confirmation", { w: LIVE_CONFIRM_TEXT })}
                   value={liveConfirm}
                   onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
                 />
@@ -297,7 +297,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
-                  <tr><th>Ticket</th><th>Type</th><th>Volume</th><th>Price</th><th>State</th><th>Setup</th></tr>
+                  <tr><th scope="col">Ticket</th><th scope="col">Type</th><th scope="col">Volume</th><th scope="col">Price</th><th scope="col">State</th><th scope="col">Setup</th></tr>
                 </thead>
                 <tbody>
                   {mt5Query.data.orders.map((o, i) => (
@@ -520,9 +520,9 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           <>
             <span className="small faint">manual order placement / cancel: NO backend route — no fake buttons here (BUG-242 INV-004)</span>
             <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-              <button className="btn small" disabled={execPage <= 1} onClick={() => setExecPage((p) => Math.max(1, p - 1))}>‹</button>
+              <button aria-label="Previous page" className="btn small" disabled={execPage <= 1} onClick={() => setExecPage((p) => Math.max(1, p - 1))}>‹</button>
               <span className="small faint inline-mono">p{execPage}</span>
-              <button className="btn small" disabled={!execQuery.data?.has_more} onClick={() => setExecPage((p) => p + 1)}>›</button>
+              <button aria-label="Next page" className="btn small" disabled={!execQuery.data?.has_more} onClick={() => setExecPage((p) => p + 1)}>›</button>
             </span>
           </>
         }
@@ -539,7 +539,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
-                  <tr><th>#</th><th>Order id</th><th>Symbol</th><th>Type</th><th>Volume</th><th>Price</th><th>Status</th><th>Executed</th></tr>
+                  <tr><th scope="col">#</th><th scope="col">Order id</th><th scope="col">Symbol</th><th scope="col">Type</th><th scope="col">Volume</th><th scope="col">Price</th><th scope="col">Status</th><th scope="col">Executed</th></tr>
                 </thead>
                 <tbody>
                   {d.items.map((r, i) => (

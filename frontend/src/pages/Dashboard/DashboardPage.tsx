@@ -20,8 +20,8 @@
  * render "—" (UNKNOWN). Command outcomes come from the backend reply only.
  */
 
-import { useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useRef, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { riskApi } from "@/api/riskApi";
 import { chartApi, replayApi, runtimeApi } from "@/pages/_shared/edgeApi";
@@ -69,6 +69,9 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayCmd, setReplayCmd] = useState<{ busy: boolean; msg: string | null; ok: boolean | null }>({ busy: false, msg: null, ok: null });
   const [replayCursor, setReplayCursor] = useState<string | null>(null);
+  // Chart timeframe switcher (null = the engine's own execution timeframe).
+  const [tfParam, setTfParam] = useState<string | null>(null);
+  const engineTfRef = useRef<string | null>(null);
 
   const mt5Query = useQuery({
     queryKey: ["mt5-status"],
@@ -83,13 +86,24 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
     retry: false,
   });
 
+  // 3000-bar window for deep pan/zoom (backend caps 5000); the key carries
+  // the timeframe so each TF caches separately, and keepPreviousData holds
+  // the old bars while the new TF loads (TradingView-like continuity).
   const chartQuery = useQuery({
-    queryKey: ["chart-history", snapshot?.symbol ?? ""],
-    queryFn: ({ signal }) => chartApi.history(900, signal),
+    queryKey: ["chart-history", snapshot?.symbol ?? "", tfParam ?? "engine"],
+    queryFn: ({ signal }) => chartApi.history(3000, tfParam, signal),
     refetchInterval: 60_000,
     retry: 1,
     enabled: Boolean(snapshot),
+    placeholderData: keepPreviousData,
   });
+  // Engine-native timeframe = what a no-param response echoes (the backend
+  // reports the tf the engine trades on). Captured for the overlay
+  // disclosure chip whenever a foreign timeframe is served.
+  if (chartQuery.data && tfParam === null) engineTfRef.current = chartQuery.data.timeframe;
+  const activeTf = chartQuery.isFetching
+    ? (tfParam ?? engineTfRef.current ?? "M1")
+    : (chartQuery.data?.timeframe ?? engineTfRef.current ?? "M1");
 
   const runtimeModeQuery = useQuery({
     queryKey: ["runtime-mode"],
@@ -249,6 +263,9 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
               source={chartSource ?? (chartBars.length ? "UNKNOWN" : "UNAVAILABLE")}
               symbol={chartQuery.data?.symbol ?? snapshot.symbol}
               timeframe={chartQuery.data?.timeframe ?? "M1"}
+              activeTf={activeTf}
+              onTfChange={setTfParam}
+              engineTimeframe={engineTfRef.current}
               overlays={chartQuery.data?.visual_overlays ?? (snapshot.visual_overlays as VisualOverlays)}
               liveBid={snapshot.bid}
               cursorIso={replayCursor}
@@ -386,7 +403,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
                 <input
                   className="input"
                   style={{ width: 200 }}
-                  placeholder="Type LIVE to arm confirmation"
+                  aria-label="LIVE confirmation phrase" placeholder="Type LIVE to arm confirmation"
                   value={liveConfirm}
                   onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
                 />

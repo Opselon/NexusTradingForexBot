@@ -193,7 +193,7 @@ export default function ControlCenterPage(props: ShellPageProps) {
                 <button className="btn danger" disabled={engineCmd.state.running || !running} onClick={() => setStopConfirm(true)}>
                   ■ Stop engine (kill switch)
                 </button>
-                <select className="select" style={{ width: 130 }} value={modeTarget} onChange={(e) => setModeTarget(e.target.value)}>
+                <select aria-label="Target execution mode" className="select" style={{ width: 130 }} value={modeTarget} onChange={(e) => setModeTarget(e.target.value)}>
                   <option value="">mode switch…</option>
                   {["PAPER", "LIVE", "SHADOW"].map((m) => (
                     <option key={m} value={m}>
@@ -224,8 +224,8 @@ export default function ControlCenterPage(props: ShellPageProps) {
             title="Decision observatory (audit_signals, read-only)"
             right={
               <div style={{ display: "flex", gap: 6 }}>
-                <input className="input" style={{ width: 150 }} placeholder="search" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <select className="select" style={{ width: 120 }} value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+                <input className="input" style={{ width: 150 }} aria-label="Search decisions" placeholder="search" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <select aria-label="Action filter" className="select" style={{ width: 120 }} value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
                   <option value="">action: any</option>
                   {["BUY", "SELL", "NO_TRADE"].map((a) => (
                     <option key={a} value={a}>
@@ -233,7 +233,7 @@ export default function ControlCenterPage(props: ShellPageProps) {
                     </option>
                   ))}
                 </select>
-                <select className="select" style={{ width: 96 }} value={String(hours ?? 72)} onChange={(e) => setHours(Number(e.target.value))}>
+                <select aria-label="Window (hours)" className="select" style={{ width: 96 }} value={String(hours ?? 72)} onChange={(e) => setHours(Number(e.target.value))}>
                   {[1, 24, 72, 168].map((h) => (
                     <option key={h} value={h}>
                       {h}h
@@ -482,7 +482,7 @@ export default function ControlCenterPage(props: ShellPageProps) {
           <div className="confirm-box">
             <div className="small">LIVE dispatches real orders. Type “{LIVE_CONFIRM_TEXT}” below the button to arm the switch (legacy parity guard).</div>
             <div className="row">
-              <input className="input" style={{ width: 160 }} value={liveConfirm} onChange={(e) => setLiveConfirm(e.target.value)} placeholder={LIVE_CONFIRM_TEXT} />
+              <input className="input" style={{ width: 160 }} value={liveConfirm} onChange={(e) => setLiveConfirm(e.target.value)} aria-label="LIVE confirmation phrase" placeholder={LIVE_CONFIRM_TEXT} />
               <button className="btn small danger" disabled={liveConfirm !== LIVE_CONFIRM_TEXT} onClick={() => void applyMode()}>
                 switch to LIVE
               </button>

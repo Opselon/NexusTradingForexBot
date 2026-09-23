@@ -15,7 +15,7 @@ import threading
 import time
 from collections import deque
 from datetime import UTC, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -1989,9 +1989,39 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_diagnostics_state_routes(app, _err, _log_err, serialize_enums, get_system_state)
 
+    # Chart timeframe allowlist (MT5 codes). Requesting anything else is a
+    # 422 at the boundary - never a silent M1 fallback (a mislabeled bar is
+    # a lie to the operator). M3/M10/W1/MN1 extended 2026-09-23 for the
+    # /alt chart timeframe switcher.
+    class ChartTimeframe(StrEnum):
+        M1 = "M1"
+        M2 = "M2"
+        M3 = "M3"
+        M4 = "M4"
+        M5 = "M5"
+        M6 = "M6"
+        M10 = "M10"
+        M12 = "M12"
+        M15 = "M15"
+        M20 = "M20"
+        M30 = "M30"
+        H1 = "H1"
+        H2 = "H2"
+        H3 = "H3"
+        H4 = "H4"
+        H6 = "H6"
+        H8 = "H8"
+        H12 = "H12"
+        D1 = "D1"
+        W1 = "W1"
+        MN1 = "MN1"
+
     # GET /api/chart/history - authoritative MT5 rate history (chart at the core)
     @app.get("/api/chart/history")
-    def get_chart_history(count: int = 900) -> dict[str, Any]:
+    def get_chart_history(
+        count: int = 900,
+        timeframe: ChartTimeframe | None = None,
+    ) -> dict[str, Any]:
         """Bounded broker history via the official copy_rates_* provider.
 
         The chart data source is the MT5 rate provider (BROKER_NATIVE) with
@@ -1999,6 +2029,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         when the broker is unavailable - provenance is ALWAYS explicit.
         Diagnostics: source, symbol, timeframe, requested/returned bars,
         first/last timestamps, generated_at, freshness.
+
+        TIMEFRAME (2026-09-23): `?timeframe=` serves any allowlisted MT5
+        timeframe as broker-native bars; omitting it keeps the engine's own
+        execution timeframe (backward compatible). FOREIGN timeframes never
+        touch engine state: the aggregator reseed and the ENGINE_STATE
+        fallback are both gated on serving the engine's own timeframe - an
+        H4 fetch must not reseed the M1 feature stream (guard mirrors the
+        lag-storm reseed guard below).
 
         RESYNC (BUG-054): after a 5-6h downtime the frontend reloads the full
         session; the default window is 900 bars and a successful broker fetch
@@ -2012,7 +2050,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         bars: list[dict[str, Any]] = []
         source = "UNAVAILABLE"
         symbol: str | None = None
-        timeframe = "M1"
+        engine_tf = "M1"
+        # Chart timeframe: explicit allowlisted request, else the engine's own
+        # execution timeframe (refined below when the engine is attached and
+        # no explicit timeframe was requested).
+        req_tf = timeframe.value.upper() if timeframe else engine_tf
         requested = max(1, min(int(count), 5000))
         returned = 0
         first_ts: str | None = None
@@ -2025,14 +2067,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 symbol = "XAUUSD"
             try:
-                timeframe = str(getattr(engine.config.execution, "timeframe", "M1") or "M1").upper()
+                engine_tf = str(getattr(engine.config.execution, "timeframe", "M1") or "M1").upper()
             except Exception:
-                timeframe = "M1"
+                engine_tf = "M1"
+            if timeframe is None:
+                req_tf = engine_tf
 
             # 1) Authoritative path: official MT5 rate provider.
             try:
                 rate_bars = engine.adapter.get_rate_history(
-                    symbol=symbol, timeframe=timeframe, count=requested
+                    symbol=symbol, timeframe=req_tf, count=requested
                 )
                 if rate_bars:
                     for r in rate_bars:
@@ -2059,7 +2103,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     logger.info(
                         "[MT5_CHART] event=HISTORY_LOADED symbol=%s timeframe=%s requested=%s received=%s last=%s",
                         symbol,
-                        timeframe,
+                        req_tf,
                         requested,
                         returned,
                         last_ts,
@@ -2088,7 +2132,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             and r.low is not None
                             and r.close is not None
                         ]
-                        if rate_bars_dt and hasattr(engine, "aggregator"):
+                        if req_tf != engine_tf:
+                            logger.info(
+                                "[MT5_CHART] event=RESEED_SKIPPED reason=TIMEFRAME_MISMATCH "
+                                "chart_tf=%s engine_tf=%s (foreign-timeframe bars never "
+                                "enter the engine aggregator)",
+                                req_tf,
+                                engine_tf,
+                            )
+                        elif rate_bars_dt and hasattr(engine, "aggregator"):
                             try:
                                 have = len(engine.aggregator.get_completed_bars())
                             except Exception:
@@ -2099,7 +2151,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                 seeded = [
                                     BarData(
                                         symbol=symbol,
-                                        timeframe=str(timeframe).upper(),
+                                        timeframe=req_tf,
                                         timestamp=r.time_utc,
                                         open=float(r.open),
                                         high=float(r.high),
@@ -2107,7 +2159,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                         close=float(r.close),
                                         tick_volume=int(r.tick_volume or 0),
                                         is_complete=not _is_current_rate_bar_forming(
-                                            r.time_utc, str(timeframe).upper()
+                                            r.time_utc, req_tf
                                         ),
                                     )
                                     for r in rate_bars_dt
@@ -2142,7 +2194,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 }
 
             # 2) Fallback: engine-synchronized bars (explicit provenance).
-            if not bars:
+            #    Engine state only holds the ENGINE's own timeframe - never
+            #    serve those bars under a foreign timeframe label.
+            if not bars and req_tf != engine_tf:
+                logger.info(
+                    "[MT5_CHART] event=FALLBACK_SKIPPED reason=TIMEFRAME_MISMATCH "
+                    "chart_tf=%s engine_tf=%s (no engine bars exist at the requested timeframe)",
+                    req_tf,
+                    engine_tf,
+                )
+            elif not bars:
                 try:
                     completed = engine.aggregator.get_completed_bars()
                     for b in completed[-requested:]:
@@ -2199,7 +2260,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "bars_available": bool(bars),
             "source": source,
             "symbol": symbol,
-            "timeframe": timeframe,
+            "timeframe": req_tf,
             "requested": requested,
             "returned": returned,
             "first_timestamp": first_ts,
