@@ -31,6 +31,7 @@
  */
 
 import { formatDateTime } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 
 /** Wiring contract (amended by the orchestrator at integration: the band
  *  shape now mirrors the REAL LiquidityZone.to_dict fields — see CONSUMES). */
@@ -122,10 +123,11 @@ function raw(v: number | string | null | undefined): string {
  * and render "—" with no marker (a missing price is never positioned).
  */
 function PoolLadder({ pools }: { pools: StructureVizProps["pools"] }) {
+  const t = useI18n((s) => s.t);
   if (pools.length === 0) {
     return (
       <p className="ixviz-empty">
-        No order pools in the payload — price ladder omitted. An empty backend list is reported as empty, never drawn as a chart.
+        {t("intelligence.viz.pools_empty", "No order pools in the payload — price ladder omitted. An empty backend list is reported as empty, never drawn as a chart.")}
       </p>
     );
   }
@@ -178,9 +180,9 @@ function PoolLadder({ pools }: { pools: StructureVizProps["pools"] }) {
       </ul>
       <div className="ixviz-scale">
         <span>
-          payload min/max scale: <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
+          {t("intelligence.viz.scale_label", "payload min/max scale:")} <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
         </span>
-        <span>marker = price placed on that scale (clamped); raw price printed per row</span>
+        <span>{t("intelligence.viz.marker_rows", "marker = price placed on that scale (clamped); raw price printed per row")}</span>
       </div>
     </div>
   );
@@ -227,10 +229,11 @@ const POINT_PX = 3;
  * raw values — they simply carry no marker (no coerced scale, no zero-fill).
  */
 function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
+  const t = useI18n((s) => s.t);
   if (bands.length === 0) {
     return (
       <p className="ixviz-empty">
-        No liquidity-map bands in the payload — band map omitted. An empty backend list is reported as empty, never drawn as a chart.
+        {t("intelligence.viz.bands_empty", "No liquidity-map bands in the payload — band map omitted. An empty backend list is reported as empty, never drawn as a chart.")}
       </p>
     );
   }
@@ -269,16 +272,16 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
               {/* raw payload fields — verbatim, no units, no rounding */}
               <span className="ixviz-band-meta">
                 <span>
-                  tests <b>{raw(b.number_of_tests)}</b>
+                  {t("intelligence.viz.tests", "tests")} <b>{raw(b.number_of_tests)}</b>
                 </span>
                 <span>
-                  strength <b>{raw(b.strength_score)}</b>
+                  {t("intelligence.th.strength", "strength")} <b>{raw(b.strength_score)}</b>
                 </span>
                 <span>
-                  prob <b>{raw(b.probability_as_target)}</b>
+                  {t("intelligence.viz.prob", "prob")} <b>{raw(b.probability_as_target)}</b>
                 </span>
                 <span className="ixviz-meta">
-                  {raw(b.timeframe)} · dist {raw(b.distance_from_price)}
+                  {raw(b.timeframe)} · {t("intelligence.viz.dist", "dist {v}", { v: raw(b.distance_from_price) })}
                 </span>
               </span>
             </li>
@@ -287,9 +290,9 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
       </ul>
       <div className="ixviz-scale">
         <span>
-          payload min/max scale: <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
+          {t("intelligence.viz.scale_label", "payload min/max scale:")} <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
         </span>
-        <span>zone price placed on that scale (clamped); raw price printed per band</span>
+        <span>{t("intelligence.viz.marker_bands", "zone price placed on that scale (clamped); raw price printed per band")}</span>
       </div>
     </div>
   );
@@ -306,9 +309,12 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
  * evidence is an honest empty note, never filled.
  */
 export function RegimeEvidence({ evidence }: { evidence: Record<string, unknown> | null | undefined }) {
+  const t = useI18n((s) => s.t);
   const entries = Object.entries(evidence ?? {});
   if (entries.length === 0) {
-    return <p className="ixviz-empty">No regime evidence in the payload — shown empty, never inferred.</p>;
+    return (
+      <p className="ixviz-empty">{t("intelligence.viz.regime_empty", "No regime evidence in the payload — shown empty, never inferred.")}</p>
+    );
   }
   return (
     <dl className="ixviz ixviz-evidence">
