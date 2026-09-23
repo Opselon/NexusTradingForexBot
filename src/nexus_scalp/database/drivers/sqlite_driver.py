@@ -26,7 +26,6 @@ from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 from nexus_scalp.database.drivers._sql_guard import (
-    _assert_single_statement,
     assert_safe_sql,
 )
 from nexus_scalp.database.drivers.base import DatabaseDriver
@@ -272,22 +271,21 @@ class SQLiteDriver(DatabaseDriver):
     def query_readonly(
         self, sql: str, args: Sequence[Any] = (), conn: Any = None
     ) -> list[dict[str, Any]]:
-        """Run a read-only query with the SQLite C-level authorizer enforced.
+        """Run a read-only query with BOTH guard layers enforced.
 
-        The authorizer — not the verb allow-list — is the authority on this
-        path: it denies every non-read action at the SQLite kernel boundary
-        and raises ``sqlite3.DatabaseError``. ``assert_safe_sql`` is skipped
-        here because its verb list deliberately omits ATTACH/VACUUM/REPLACE,
-        which this contract must reject as DatabaseError rather than the
-        driver's shape-check ValueError.  Stacked-statement and block-comment
-        protection is preserved by ``_assert_single_statement``.
+        Layer 1 is the driver's own verb allow-list (``assert_safe_sql``):
+        it rejects ``ATTACH``/``VACUUM``/``REPLACE`` as ``ValueError`` before
+        the statement ever reaches the kernel. Layer 2 is the SQLite C-level
+        read-only authorizer, which denies every non-read action at the
+        kernel boundary as ``sqlite3.DatabaseError``. Defense in depth — the
+        test contract pins both, and neither layer is allowed to be the only
+        thing standing between ``ATTACH`` and the database.
         """
         own = conn is None
         c = conn or self.connect()
         try:
             c.set_authorizer(self._readonly_authorizer)
-            _assert_single_statement(sql)
-            cur = c.execute(sql, tuple(args))
+            cur = c.execute(assert_safe_sql(sql), tuple(args))
             return [dict(r) for r in cur.fetchall()]
         finally:
             if own:

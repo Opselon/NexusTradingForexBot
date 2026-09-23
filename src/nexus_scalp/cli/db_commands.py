@@ -101,59 +101,17 @@ def _print_error(message: str) -> None:
 
 
 def _parse_connection_string(raw: str) -> dict[str, Any]:
-    """Parse a PostgreSQL connection string into a field dict.
+    """Delegate to the canonical connection_url contract (Phase 5 conflict resolution).
 
-    Accepts BOTH shapes a caller might supply:
-      * URL:  postgresql://user:password@host:port/database
-      * libpq key=value:  host=... port=... dbname=... user=... password=...
-
-    Normalises ``dbname``->``database`` and ``username``->``user`` so the rest
-    of the stack sees one vocabulary. Returns the fields WITHOUT the password
-    when the caller removes it (the secret belongs in the OS store only).
+    This function exists only to maintain the CLI's spec-evasive export surface.
+    All decision work is handled by nexus_scalp.database.connection_url.parse_pg_url.
     """
-    s = raw.strip()
-    if not s:
-        _print_error("empty connection string")
-    if "://" in s:
-        from urllib.parse import urlparse
+    from nexus_scalp.database.connection_url import is_parse_failure, parse_pg_url
 
-        p = urlparse(s)
-        if not p.hostname:
-            _print_error("connection string has no host")
-        out: dict[str, Any] = {
-            "provider": "postgresql",
-            "host": p.hostname,
-            "port": p.port or 5432,
-            "database": (p.path or "/").lstrip("/"),
-            "user": p.username or "",
-            "password": p.password or "",
-        }
-        return out
-    # libpq key=value form
-    import shlex
-
-    try:
-        tokens = shlex.split(s)
-    except ValueError:
-        tokens = s.split()
-    out = {"provider": "postgresql"}
-    for tok in tokens:
-        if "=" not in tok:
-            continue
-        key, _, val = tok.partition("=")
-        key = key.strip().lower()
-        if key == "dbname":
-            key = "database"
-        if key == "username":
-            key = "user"
-        out[key] = val
-    if not out.get("host"):
-        _print_error("connection string has no host")
-    out.setdefault("port", 5432)
-    out.setdefault("database", "")
-    out.setdefault("user", "")
-    out.setdefault("password", "")
-    return out
+    parsed = parse_pg_url(raw)
+    if is_parse_failure(parsed):
+        _print_error(str(parsed["reason"]))
+    return dict(parsed)
 
 
 def _build_dsn(fields: dict[str, Any], secret_store: Any) -> str:
@@ -165,8 +123,8 @@ def _build_dsn(fields: dict[str, Any], secret_store: Any) -> str:
     parts = [
         f"host={fields['host']}",
         f"port={fields.get('port', 5432)}",
-        f"dbname={fields.get('database') or fields.get('dbname') or ''}",
-        f"user={fields.get('user') or fields.get('username') or ''}",
+        f"dbname={fields.get('database') or ''}",
+        f"user={fields.get('username') or fields.get('user') or ''}",
     ]
     from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
 
@@ -265,9 +223,13 @@ def make_portability_app() -> typer.Typer:
 
         parsed = _parse_connection_string(connection_string)
         store = SecureSecretStore()
-        if parsed.get("password"):
-            store.set_secret(PG_PASSWORD_SECRET_KEY, parsed["password"])
-            parsed.pop("password")
+        # parse_pg_url never returns a password, so capture it from the raw
+        # string only to route the credential into the OS-backed secret store.
+        from urllib.parse import urlparse
+
+        _url_pw = urlparse(connection_string).password if "://" in connection_string else ""
+        if _url_pw:
+            store.set_secret(PG_PASSWORD_SECRET_KEY, _url_pw)
 
         svc = load_settings_service()
         svc.set_database_provider(DatabaseProvider.POSTGRESQL.value)
@@ -299,8 +261,8 @@ def make_portability_app() -> typer.Typer:
             "provider": DatabaseProvider.POSTGRESQL.value,
             "host": parsed.get("host", ""),
             "port": parsed.get("port", 5432),
-            "database": parsed.get("database", parsed.get("dbname", "")),
-            "user": parsed.get("user", parsed.get("username", "")),
+            "database": parsed.get("database", ""),
+            "user": parsed.get("username", ""),
             "password_stored": store.has_secret(PG_PASSWORD_SECRET_KEY),
             "provision": provision_summary,
             "restart_required": True,
