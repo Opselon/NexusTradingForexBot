@@ -16,6 +16,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { useDialogA11y } from "../../../components/useDialogA11y";
 import { useUiStore } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
 import { formatAgeMs } from "@/lib/format";
 import { Panel, EmptyState, ErrorState, Skeleton } from "@/components/primitives";
 
@@ -38,13 +39,14 @@ export function FreshnessCaption({
   note?: string;
   stale?: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   if (fetchedAtMs === null) {
-    return <span className="timestamp-note l3-fresh none">never fetched</span>;
+    return <span className="timestamp-note l3-fresh none">{t("config.kit.never_fetched", "never fetched")}</span>;
   }
   const age = Math.max(0, (nowMs ?? Date.now()) - fetchedAtMs);
   const words = [
-    `updated ${formatAgeMs(age)} ago`,
-    intervalMs ? `every ${Math.round(intervalMs / 1000)}s` : null,
+    t("config.kit.updated_ago", "updated {age} ago", { age: formatAgeMs(age) }),
+    intervalMs ? t("config.kit.every_s", "every {s}s", { s: Math.round(intervalMs / 1000) }) : null,
     note ?? null,
   ].filter(Boolean);
   return (
@@ -82,13 +84,16 @@ export function PollControl({
   intervalMs: number;
   busy?: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <span className="l3-poll">
       {busy && <span className="spinner l3-mini-spinner" aria-hidden="true" />}
       <button className="btn small ghost" onClick={onToggle} aria-pressed={!paused}>
-        {paused ? "Resume polling" : "Pause polling"}
+        {paused ? t("config.kit.resume_polling", "Resume polling") : t("config.kit.pause_polling", "Pause polling")}
       </button>
-      <span className="timestamp-note">{paused ? "manual refresh only" : `every ${Math.round(intervalMs / 1000)}s`}</span>
+      <span className="timestamp-note">
+        {paused ? t("config.kit.manual_refresh", "manual refresh only") : t("config.kit.every_s", "every {s}s", { s: Math.round(intervalMs / 1000) })}
+      </span>
     </span>
   );
 }
@@ -103,7 +108,7 @@ export function QuerySection<T>({
   right,
   query,
   skeletonRows = 3,
-  emptyMessage = "Backend returned no rows.",
+  emptyMessage,
   emptyHint,
   children,
   tight,
@@ -124,19 +129,20 @@ export function QuerySection<T>({
   children: (data: T) => ReactNode;
   tight?: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   const body = (() => {
     if (query.isPending) return <Skeleton count={skeletonRows} />;
     if (query.isError) {
       return (
         <ErrorState
-          message={query.error instanceof Error ? query.error.message : "Backend request failed."}
+          message={query.error instanceof Error ? query.error.message : t("config.kit.request_failed", "Backend request failed.")}
           requestId={(query.error as { requestId?: string } | null)?.requestId ?? null}
           onRetry={() => void query.refetch()}
         />
       );
     }
     if (query.data === undefined || query.data === null) {
-      return <EmptyState message={emptyMessage} hint={emptyHint} />;
+      return <EmptyState message={emptyMessage ?? t("config.kit.empty_rows", "Backend returned no rows.")} hint={emptyHint} />;
     }
     return children(query.data);
   })();
@@ -163,26 +169,27 @@ function preview(value: unknown): string {
  *  are never quoted away or reinterpreted. */
 export function JsonView({ value, name, depth = 0 }: { value: unknown; name?: string; depth?: number }) {
   const [open, setOpen] = useState(depth < 1);
+  const t = useI18n((s) => s.t);
   const pad = { paddingInlineStart: 10 + depth * 12 };
 
   if (Array.isArray(value)) {
     return (
       <div className="l3-json-node" style={pad}>
         <button className="l3-json-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-          {open ? "▾" : "▸"} <span className="l3-json-key">{name ?? "array"}</span>
+          {open ? "▾" : "▸"} <span className="l3-json-key">{name ?? t("config.kit.json_array", "array")}</span>
           <span className="l3-json-meta">[{value.length}]</span>
         </button>
         {open &&
           (value.length === 0 ? (
             <div className="l3-json-empty" style={{ paddingInlineStart: 12 }}>
-              empty
+              {t("config.kit.json_empty", "empty")}
             </div>
           ) : (
             value.slice(0, 200).map((v, i) => <JsonView key={i} value={v} name={`${i}`} depth={depth + 1} />)
           ))}
         {value.length > 200 && (
           <div className="l3-json-empty" style={{ paddingInlineStart: 12 }}>
-            … {value.length - 200} more (capped for rendering)
+            {t("config.kit.json_more", "… {n} more (capped for rendering)", { n: value.length - 200 })}
           </div>
         )}
       </div>
@@ -194,7 +201,7 @@ export function JsonView({ value, name, depth = 0 }: { value: unknown; name?: st
     return (
       <div className="l3-json-node" style={pad}>
         <button className="l3-json-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-          {open ? "▾" : "▸"} <span className="l3-json-key">{name ?? "object"}</span>
+          {open ? "▾" : "▸"} <span className="l3-json-key">{name ?? t("config.kit.json_object", "object")}</span>
           <span className="l3-json-meta">{`{${entries.length}}`}</span>
         </button>
         {open &&
@@ -214,7 +221,8 @@ export function JsonView({ value, name, depth = 0 }: { value: unknown; name?: st
 /** Definition list of scalar entries — used everywhere a backend object needs
  *  a readable, non-guessing table (unknown keys render too, in insertion order). */
 export function KeyValueList({ rows }: { rows: Array<[string, ReactNode]> }) {
-  if (rows.length === 0) return <EmptyState message="No fields in this payload." />;
+  const t = useI18n((s) => s.t);
+  if (rows.length === 0) return <EmptyState message={t("config.kit.no_fields", "No fields in this payload.")} />;
   return (
     <dl className="kv">
       {rows.map(([k, v], i) => (
@@ -251,11 +259,16 @@ export function FieldRow({
   mutability?: string | null;
   children: ReactNode;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className={`l3-field ${error ? "invalid" : ""}`}>
       <div className="l3-field-head">
         <span className="lab">{label}</span>
-        {dirty && <span className="l3-dirty" title="changed locally, not yet applied">edited</span>}
+        {dirty && (
+          <span className="l3-dirty" title={t("config.kit.edited_title", "changed locally, not yet applied")}>
+            {t("config.kit.edited", "edited")}
+          </span>
+        )}
         {mutability && <span className={`l3-mut ${mutabilityLevel(mutability)}`}>{mutability}</span>}
       </div>
       <div className="l3-field-control">{children}</div>
@@ -384,6 +397,7 @@ export function CheckField({
   onChange: (v: boolean) => void;
   label: string;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <button
       className="l3-check"
@@ -393,7 +407,7 @@ export function CheckField({
       title={label}
     >
       <span className={`switch ${checked ? "on" : ""}`} aria-hidden="true" />
-      <span className="l3-check-lab">{checked ? "ON" : "OFF"}</span>
+      <span className="l3-check-lab">{checked ? t("config.kit.on", "ON") : t("config.kit.off", "OFF")}</span>
     </button>
   );
 }
@@ -429,6 +443,7 @@ export function TypedConfirmModal({
   onConfirm: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  const t = useI18n((s) => s.t);
   const matches = typed.trim() === word;
   const boxRef = useRef<HTMLDivElement | null>(null);
   const typedInputRef = useRef<HTMLInputElement | null>(null);
@@ -446,7 +461,7 @@ export function TypedConfirmModal({
             <div className="note">{body}</div>
             <div className="row">
               <label className="l3-typed-label" htmlFor={`typed-${word}`}>
-                Type <span className="inline-mono">{word}</span> to confirm
+                {t("ux.confirm.type", "Type {w} to confirm", { w: word })}
               </label>
               <input
                 id={`typed-${word}`}
@@ -462,10 +477,10 @@ export function TypedConfirmModal({
         </div>
         <div className="modal-actions">
           <button className="btn" disabled={busy} onClick={onCancel}>
-            Cancel <kbd>esc</kbd>
+            {t("ux.confirm.cancel", "Cancel")} <kbd>esc</kbd>
           </button>
           <button className="btn danger" disabled={!matches || busy} onClick={onConfirm}>
-            {busy ? (busyLabel ?? "sending…") : confirmLabel}
+            {busy ? (busyLabel ?? t("config.kit.sending", "sending…")) : confirmLabel}
           </button>
         </div>
       </div>
@@ -482,12 +497,13 @@ export function ResultStrip({
 }: {
   result: { lastResult: boolean | null; lastMessage: string | null; running: boolean } | null;
 }) {
+  const t = useI18n((s) => s.t);
   if (!result || (result.lastResult === null && !result.running)) return null;
   const kind = result.running ? "run" : result.lastResult ? "ok" : "fail";
   return (
     <div className={`l3-result ${kind}`} role="status">
-      {result.running ? "⏳ sending…" : result.lastResult ? "✓" : "✕"}{" "}
-      <span>{result.lastMessage ?? "no message from backend"}</span>
+      {result.running ? `⏳ ${t("config.kit.sending", "sending…")}` : result.lastResult ? "✓" : "✕"}{" "}
+      <span>{result.lastMessage ?? t("config.kit.no_backend_message", "no message from backend")}</span>
     </div>
   );
 }
