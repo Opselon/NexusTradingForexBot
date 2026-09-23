@@ -29,6 +29,7 @@ import {
 } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
 import type { ShellPageProps } from "@/app/featureModule";
+import { useI18n } from "@/stores/i18nStore";
 import type { DebugState, CompareResult, DebugFeatures, DebugFreshness, DebugHealth, IpcTelemetry, SnapshotList } from "../api";
 import { debugApi } from "../api";
 import {
@@ -67,24 +68,12 @@ type TabId =
   | "trace"
   | "research";
 
-const TABS: Array<{ id: TabId; label: string }> = [
-  { id: "state", label: "State" },
-  { id: "health", label: "Health" },
-  { id: "features", label: "Features" },
-  { id: "freshness", label: "Freshness" },
-  { id: "ipc", label: "IPC" },
-  { id: "compare", label: "Compare" },
-  { id: "snapshots", label: "Snapshots" },
-  { id: "modeltest", label: "Model test" },
-  { id: "trace", label: "Trace" },
-  { id: "research", label: "Research" },
-];
-
 /* ------------------------------------------------------------------ */
 /* State viewer                                                        */
 /* ------------------------------------------------------------------ */
 
 function StateTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(20_000);
   const query = useDebugStateQuery(poll.paused);
   const [section, setSection] = useState<string>("runtime");
@@ -92,24 +81,32 @@ function StateTab() {
 
   return (
     <QuerySection<DebugState>
-      title="Canonical debug snapshot (/api/debug/state)"
+      title={t("debug.state.title", "Canonical debug snapshot (/api/debug/state)")}
       accent
       query={query}
       skeletonRows={6}
-      emptyMessage="Snapshot unavailable."
+      emptyMessage={t("debug.state.empty", "Snapshot unavailable.")}
       right={
         <>
           <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} nowMs={undefined} intervalMs={20_000} note={query.data?.snapshot_id ? `id ${query.data.snapshot_id}` : undefined} stale={poll.paused} />
           <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={20_000} busy={query.isFetching} />
-          <button className="btn small ghost" onClick={() => setRaw((r) => !r)}>{raw ? "typed view" : "raw JSON"}</button>
+          <button className="btn small ghost" onClick={() => setRaw((r) => !r)}>
+            {raw ? t("debug.state.typed_view", "typed view") : t("debug.state.raw_json", "raw JSON")}
+          </button>
         </>
       }
     >
       {(snap) => (
         <div>
-          {snap.available === false && <div className="l3-note bad">Snapshot flagged unavailable: {String(snap.reason ?? "UNKNOWN")} — the sections below are what the backend could still provide.</div>}
+          {snap.available === false && (
+            <div className="l3-note bad">
+              {t("debug.state.flagged", "Snapshot flagged unavailable: {reason} — the sections below are what the backend could still provide.", {
+                reason: String(snap.reason ?? "UNKNOWN"),
+              })}
+            </div>
+          )}
           <div className="l3-db-obj" style={{ marginBottom: 10 }}>
-            <button className={`l3-db-chip ${section === "__all" ? "active" : ""}`} onClick={() => setSection("__all")}>all</button>
+            <button className={`l3-db-chip ${section === "__all" ? "active" : ""}`} onClick={() => setSection("__all")}>{t("debug.state.all", "all")}</button>
             {DEBUG_SECTIONS.filter((s) => s in snap).map((s) => (
               <button key={s} className={`l3-db-chip ${section === s ? "active" : ""}`} onClick={() => setSection(s)}>
                 {s}
@@ -123,13 +120,18 @@ function StateTab() {
           ) : (
             (() => {
               const sec = (snap as Record<string, unknown>)[section];
-              if (!sec) return <EmptyState message={`Section "${section}" absent from this snapshot.`} />;
+              if (!sec) return <EmptyState message={t("debug.state.section_absent", "Section \"{section}\" absent from this snapshot.", { section })} />;
               const obj = sec as Record<string, unknown>;
               if (obj.available === false) {
                 return (
                   <div className="l3-note warn">
-                    {section}: UNAVAILABLE — {String(obj.reason ?? "no reason given")}
-                    {obj.correlation_id ? ` (correlation ${String(obj.correlation_id)})` : ""}
+                    {t("debug.state.section_unavailable", "{section}: UNAVAILABLE — {reason}", {
+                      section,
+                      reason: String(obj.reason ?? t("debug.state.no_reason", "no reason given")),
+                    })}
+                    {obj.correlation_id
+                      ? ` ${t("debug.state.correlation", "(correlation {id})", { id: String(obj.correlation_id) })}`
+                      : ""}
                   </div>
                 );
               }
@@ -155,15 +157,16 @@ function StateTab() {
 /* ------------------------------------------------------------------ */
 
 function HealthTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(15_000);
   const query = useDebugHealthQuery(poll.paused);
   return (
     <QuerySection<DebugHealth>
-      title="Debug subsystem health (/api/debug/health)"
+      title={t("debug.health.title", "Debug subsystem health (/api/debug/health)")}
       accent
       query={query}
       skeletonRows={4}
-      emptyMessage="No subsystem data returned."
+      emptyMessage={t("debug.health.empty", "No subsystem data returned.")}
       right={
         <>
           <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={15_000} stale={poll.paused} />
@@ -174,8 +177,8 @@ function HealthTab() {
       {(data) => (
         <div>
           <div className="l3-toolbar">
-            overall: <StatusBadge status={data.overall_status} />
-            <span className="timestamp-note">checked {data.checked_at}</span>
+            {t("debug.health.overall", "overall:")} <StatusBadge status={data.overall_status} />
+            <span className="timestamp-note">{t("debug.health.checked", "checked {at}", { at: data.checked_at })}</span>
           </div>
           <div className="l3-health-grid">
             {data.subsystems.map((sub) => (
@@ -210,22 +213,25 @@ function HealthTab() {
 /* ------------------------------------------------------------------ */
 
 function FeaturesTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(15_000);
   const query = useDebugFeaturesQuery(poll.paused);
   const [onlyAnomalies, setOnlyAnomalies] = useState(false);
 
   return (
     <QuerySection<DebugFeatures>
-      title="Feature contract (/api/debug/features)"
+      title={t("debug.features.title", "Feature contract (/api/debug/features)")}
       accent
       query={query}
       skeletonRows={6}
-      emptyMessage="Backend returned no feature rows."
+      emptyMessage={t("debug.features.empty", "Backend returned no feature rows.")}
       right={
         <>
-          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={15_000} note={query.data?.timestamp_utc ? `vector @ ${query.data.timestamp_utc}` : undefined} stale={poll.paused} />
+          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={15_000} note={query.data?.timestamp_utc ? t("debug.features.vector_at", "vector @ {at}", { at: query.data.timestamp_utc }) : undefined} stale={poll.paused} />
           <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={15_000} busy={query.isFetching} />
-          <button className="btn small ghost" onClick={() => setOnlyAnomalies((v) => !v)}>{onlyAnomalies ? "show all" : "anomalies only"}</button>
+          <button className="btn small ghost" onClick={() => setOnlyAnomalies((v) => !v)}>
+            {onlyAnomalies ? t("debug.features.show_all", "show all") : t("debug.features.anomalies_only", "anomalies only")}
+          </button>
         </>
       }
     >
@@ -234,17 +240,31 @@ function FeaturesTab() {
         return (
           <div>
             <div className="l3-toolbar">
-              <MetricCard label="engine" value={data.engine_online ? "ONLINE" : "OFFLINE"} tone={data.engine_online ? "pos" : "neg"} />
-              <MetricCard label="valid" value={`${data.features.length - data.anomaly_count}/${data.feature_count}`} tone={data.all_valid ? "pos" : "neg"} />
+              <MetricCard
+                label={t("debug.features.engine", "engine")}
+                value={data.engine_online ? t("debug.features.online", "ONLINE") : t("debug.features.offline", "OFFLINE")}
+                tone={data.engine_online ? "pos" : "neg"}
+              />
+              <MetricCard label={t("debug.features.valid", "valid")} value={`${data.features.length - data.anomaly_count}/${data.feature_count}`} tone={data.all_valid ? "pos" : "neg"} />
               <MetricCard label="NaN / Inf" value={`${data.nan_count} / ${data.inf_count}`} tone={data.anomaly_count ? "neg" : "dim"} />
               <MetricCard
-                label="vector age"
+                label={t("debug.features.vector_age", "vector age")}
                 value={data.age_seconds === null ? "—" : `${data.age_seconds.toFixed(1)}s`}
                 tone={data.is_stale ? "neg" : "pos"}
-                sub={data.is_stale ? `STALE (>${data.stale_threshold_seconds}s)` : "fresh"}
+                sub={
+                  data.is_stale
+                    ? t("debug.features.stale_sub", "STALE (>{n}s)", { n: data.stale_threshold_seconds })
+                    : t("debug.model.fresh", "fresh")
+                }
               />
             </div>
-            {data.is_stale && <div className="l3-note warn" style={{ marginBottom: 8 }}>The feature snapshot is older than {data.stale_threshold_seconds}s — the tick pipeline is not feeding the model right now.</div>}
+            {data.is_stale && (
+              <div className="l3-note warn" style={{ marginBottom: 8 }}>
+                {t("debug.features.stale_note", "The feature snapshot is older than {n}s — the tick pipeline is not feeding the model right now.", {
+                  n: data.stale_threshold_seconds,
+                })}
+              </div>
+            )}
             <div className="l3-grid-features">
               {cells.map((c) => (
                 <div key={c.index} className={`l3-feat ${c.status === "VALID" ? "" : c.level === "warn" ? "warn" : "bad"}`} title={`${c.key} · ${c.status}`}>
@@ -265,34 +285,42 @@ function FeaturesTab() {
 /* ------------------------------------------------------------------ */
 
 function FreshnessTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(60_000);
   const query = useDebugFreshnessQuery(poll.paused);
   return (
     <QuerySection<DebugFreshness>
-      title="Live-inference frozen-state diagnostic (/api/debug/freshness)"
+      title={t("debug.freshness.title", "Live-inference frozen-state diagnostic (/api/debug/freshness)")}
       accent
       query={query}
       skeletonRows={4}
-      emptyMessage="Freshness diagnostic unavailable."
+      emptyMessage={t("debug.freshness.empty", "Freshness diagnostic unavailable.")}
       right={
         <>
-          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={60_000} note="runs a live no-cache re-diagnosis server-side" stale={poll.paused} />
+          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={60_000} note={t("debug.freshness.note", "runs a live no-cache re-diagnosis server-side")} stale={poll.paused} />
           <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={60_000} busy={query.isFetching} />
         </>
       }
     >
       {(data) => {
         if (!data.available) {
-          return <div className="l3-note warn">available=false — reason: {String(data.reason ?? "UNKNOWN")} · frozen_at {String(data.frozen_at ?? "UNKNOWN")}</div>;
+          return (
+            <div className="l3-note warn">
+              {t("debug.freshness.unavailable", "available=false — reason: {reason} · frozen_at {at}", {
+                reason: String(data.reason ?? "UNKNOWN"),
+                at: String(data.frozen_at ?? "UNKNOWN"),
+              })}
+            </div>
+          );
         }
         return (
           <div className="l3-split">
             <div>
-              <div className="section-title">live freshness (engine view)</div>
+              <div className="section-title">{t("debug.freshness.live_section", "live freshness (engine view)")}</div>
               <JsonView value={data.live_freshness ?? null} name="live_freshness" />
             </div>
             <div>
-              <div className="section-title">no-cache diagnostic (frozen-at localization)</div>
+              <div className="section-title">{t("debug.freshness.diag_section", "no-cache diagnostic (frozen-at localization)")}</div>
               <div className="l3-scroll">
                 <JsonView value={data.diagnostic ?? null} name="diagnostic" />
               </div>
@@ -310,18 +338,26 @@ function FreshnessTab() {
 /* ------------------------------------------------------------------ */
 
 function IpcTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(20_000);
+  const HEADERS: Array<{ id: string; label: string }> = [
+    { id: "timestamp", label: t("debug.ipc.th_timestamp", "timestamp") },
+    { id: "event", label: t("debug.ipc.th_event", "event") },
+    { id: "state", label: t("debug.ipc.th_state", "state") },
+    { id: "reason", label: t("debug.ipc.th_reason", "reason / retcode") },
+    { id: "latency", label: t("debug.ipc.th_latency", "latency") },
+  ];
   const query = useIpcTelemetryQuery(poll.paused);
   return (
     <QuerySection<IpcTelemetry>
-      title="MT5 IPC telemetry (/api/debug/ipc-telemetry)"
+      title={t("debug.ipc.title", "MT5 IPC telemetry (/api/debug/ipc-telemetry)")}
       accent
       query={query}
       skeletonRows={5}
-      emptyMessage="No broker execution events recorded yet."
+      emptyMessage={t("debug.ipc.empty", "No broker execution events recorded yet.")}
       right={
         <>
-          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={20_000} note={`avg latency ${query.data?.avg_latency_ms ?? "—"} ms`} stale={poll.paused} />
+          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={20_000} note={t("debug.ipc.avg_note", "avg latency {v} ms", { v: String(query.data?.avg_latency_ms ?? "—") })} stale={poll.paused} />
           <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={20_000} busy={query.isFetching} />
         </>
       }
@@ -329,15 +365,19 @@ function IpcTab() {
       {(data) => (
         <div>
           <div className="l3-toolbar">
-            <MetricCard label="events" value={data.event_count} />
-            <MetricCard label="avg latency" value={`${data.avg_latency_ms} ms`} />
-            <MetricCard label="positions / pendings" value={`${data.exposure.positions} / ${data.exposure.pendings}`} sub={`cap ${data.max_total_exposure}`} />
+            <MetricCard label={t("debug.ipc.events", "events")} value={data.event_count} />
+            <MetricCard label={t("debug.ipc.avg_latency", "avg latency")} value={`${data.avg_latency_ms} ms`} />
+            <MetricCard
+              label={t("debug.ipc.positions", "positions / pendings")}
+              value={`${data.exposure.positions} / ${data.exposure.pendings}`}
+              sub={t("debug.ipc.cap", "cap {n}", { n: data.max_total_exposure })}
+            />
           </div>
           <div className="l3-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  {["timestamp", "event", "state", "reason / retcode", "latency"].map((h) => <th key={h}>{h}</th>)}
+                  {HEADERS.map((h) => <th key={h.id}>{h.label}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -360,7 +400,7 @@ function IpcTab() {
                 })}
               </tbody>
             </table>
-            {data.events.length === 0 && <EmptyState message="Event log empty for this window." />}
+            {data.events.length === 0 && <EmptyState message={t("debug.ipc.no_events", "Event log empty for this window.")} />}
           </div>
         </div>
       )}
@@ -373,6 +413,7 @@ function IpcTab() {
 /* ------------------------------------------------------------------ */
 
 function SnapshotsTab({ onSendToCompare }: { onSendToCompare: (id: string, slot: "a" | "b") => void }) {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(30_000);
   const query = useSnapshotsQuery(poll.paused);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -393,31 +434,43 @@ function SnapshotsTab({ onSendToCompare }: { onSendToCompare: (id: string, slot:
   return (
     <>
       <QuerySection<SnapshotList>
-        title="Snapshot ring (64 max, in-memory) (/api/debug/snapshots)"
+        title={t("debug.snap.title", "Snapshot ring (64 max, in-memory) (/api/debug/snapshots)")}
         accent
         query={query}
         skeletonRows={4}
-        emptyMessage="No snapshots stored yet — capture one (state poll also fills the ring)."
+        emptyMessage={t("debug.snap.empty", "No snapshots stored yet — capture one (state poll also fills the ring).")}
         right={
           <>
             <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={30_000} stale={poll.paused} />
             <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={30_000} busy={query.isFetching} />
-            <button className="btn small primary" onClick={() => void capture()}>Capture now</button>
+            <button className="btn small primary" onClick={() => void capture()}>
+              {t("debug.snap.capture", "Capture now")}
+            </button>
           </>
         }
       >
         {(data) => (
           <div>
-            {!data.available && <div className="l3-note warn">snapshot store not attached on this server process</div>}
+            {!data.available && (
+              <div className="l3-note warn">{t("debug.snap.not_attached", "snapshot store not attached on this server process")}</div>
+            )}
             <div className="l3-scroll sm">
-              <DataTable headers={[{ label: "SNAPSHOT ID" }, { label: "TIMESTAMP" }, { label: "ACTIONS" }]}>
+              <DataTable
+                headers={[
+                  { label: t("debug.snap.th_id", "SNAPSHOT ID") },
+                  { label: t("debug.snap.th_ts", "TIMESTAMP") },
+                  { label: t("debug.snap.th_actions", "ACTIONS") },
+                ]}
+              >
                 {(data.snapshots ?? []).slice().reverse().map((s) => (
                   <tr key={String(s.snapshot_id)}>
                     <td className="inline-mono">{String(s.snapshot_id ?? "—")}</td>
                     <td>{String(s.timestamp ?? "—")}</td>
                     <td>
                       <div className="l3-row-actions">
-                        <button className="btn small" onClick={() => setDetailId(String(s.snapshot_id))}>Detail</button>
+                        <button className="btn small" onClick={() => setDetailId(String(s.snapshot_id))}>
+                          {t("debug.snap.detail", "Detail")}
+                        </button>
                         <button className="btn small ghost" onClick={() => onSendToCompare(String(s.snapshot_id), "a")}>A=</button>
                         <button className="btn small ghost" onClick={() => onSendToCompare(String(s.snapshot_id), "b")}>B=</button>
                       </div>
@@ -430,11 +483,21 @@ function SnapshotsTab({ onSendToCompare }: { onSendToCompare: (id: string, slot:
         )}
       </QuerySection>
       {detailId && (
-        <Panel title={`Snapshot ${detailId}`} right={<button className="btn small ghost" onClick={() => setDetailId(null)}>close</button>}>
+        <Panel
+          title={t("debug.snap.detail_title", "Snapshot {id}", { id: detailId ?? "" })}
+          right={
+            <button className="btn small ghost" onClick={() => setDetailId(null)}>
+              {t("common.close", "close")}
+            </button>
+          }
+        >
           {detail.isPending ? (
             <Skeleton count={3} />
           ) : detail.isError ? (
-            <ErrorState message={detail.error instanceof Error ? detail.error.message : "snapshot read failed"} onRetry={() => void detail.refetch()} />
+            <ErrorState
+              message={detail.error instanceof Error ? detail.error.message : t("debug.snap.read_failed", "snapshot read failed")}
+              onRetry={() => void detail.refetch()}
+            />
           ) : (
             <div className="l3-scroll">
               <JsonView value={detail.data} name={detailId} />
@@ -451,6 +514,7 @@ function SnapshotsTab({ onSendToCompare }: { onSendToCompare: (id: string, slot:
 /* ------------------------------------------------------------------ */
 
 function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; setA: (v: string | null) => void; setB: (v: string | null) => void }) {
+  const t = useI18n((s) => s.t);
   const list = useSnapshotsQuery(true);
   const serverDiff = useCompareQuery(a, b);
   const snapA = useSnapshotDetail(a);
@@ -458,43 +522,50 @@ function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; 
   const [section, setSection] = useState<string>("features");
 
   const clientRows = useMemo(
-    () => diffSnapshotSections((snapA.data as DebugState | undefined) ?? null, (snapB.data as DebugState | undefined) ?? null, section),
-    [snapA.data, snapB.data, section],
+    () => diffSnapshotSections((snapA.data as DebugState | undefined) ?? null, (snapB.data as DebugState | undefined) ?? null, section, 300, t),
+    [snapA.data, snapB.data, section, t],
   );
   const counts = diffCounts(clientRows);
   const ids = (list.data?.snapshots ?? []).map((s) => String(s.snapshot_id ?? ""));
 
   return (
     <Panel
-      title="Snapshot compare"
+      title={t("debug.compare.title", "Snapshot compare")}
       accent
-      right={<span className="timestamp-note">server diff + key-level client diff</span>}
+      right={<span className="timestamp-note">{t("debug.compare.right", "server diff + key-level client diff")}</span>}
     >
       <div className="l3-toolbar">
         <span className="lab timestamp-note">A</span>
         <select className="select" value={a ?? ""} onChange={(e) => setA(e.target.value || null)}>
-          <option value="">— pick —</option>
+          <option value="">{t("debug.compare.pick", "— pick —")}</option>
           {ids.map((id) => <option key={id} value={id}>{id}</option>)}
         </select>
         <span className="lab timestamp-note">B</span>
         <select className="select" value={b ?? ""} onChange={(e) => setB(e.target.value || null)}>
-          <option value="">— pick —</option>
+          <option value="">{t("debug.compare.pick", "— pick —")}</option>
           {ids.map((id) => <option key={id} value={id}>{id}</option>)}
         </select>
       </div>
       {!a || !b ? (
-        <EmptyState message="Pick two snapshots (or use A=/B= in the Snapshots tab)." hint="Capture snapshots first — the ring fills as /api/debug/state is polled." />
+        <EmptyState
+          message={t("debug.compare.empty", "Pick two snapshots (or use A=/B= in the Snapshots tab).")}
+          hint={t("debug.compare.empty_hint", "Capture snapshots first — the ring fills as /api/debug/state is polled.")}
+        />
       ) : (
         <>
           {serverDiff.isPending ? (
             <Skeleton count={2} />
           ) : serverDiff.data && !serverDiff.data.available ? (
-            <div className="l3-note warn">server diff: {String((serverDiff.data as CompareResult).reason ?? "unavailable")}</div>
+            <div className="l3-note warn">
+              {t("debug.compare.server_diff", "server diff: {reason}", {
+                reason: String((serverDiff.data as CompareResult).reason ?? t("debug.compare.unavailable", "unavailable")),
+              })}
+            </div>
           ) : serverDiff.data ? (
             <CompareSummary diff={serverDiff.data} />
           ) : null}
           <div className="section-title" style={{ marginTop: 10 }}>
-            key-level diff · section{" "}
+            {t("debug.compare.section_label", "key-level diff · section")}{" "}
             <select className="select" style={{ display: "inline-block", marginInlineStart: 6 }} value={section} onChange={(e) => setSection(e.target.value)}>
               {Array.from(new Set([...snapshotSections((snapA.data as DebugState | undefined) ?? null), ...snapshotSections((snapB.data as DebugState | undefined) ?? null)])).map((s) => (
                 <option key={s} value={s}>{s}</option>
@@ -506,7 +577,7 @@ function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; 
           </div>
           <div className="l3-scroll">
             {clientRows.length === 0 ? (
-              <EmptyState message="No key differences in this section." />
+              <EmptyState message={t("debug.compare.no_keys", "No key differences in this section.")} />
             ) : (
               <div className="l3-diff">
                 {clientRows.slice(0, 200).map((r) => (
@@ -514,14 +585,27 @@ function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; 
                     <span className="l3-diff-key" title={r.path}>{r.path.split(".").slice(-2).join(".")}</span>
                     <span className="old l3-cell">{r.a}</span>
                     <span className="new l3-cell">{r.b}</span>
-                    <span><StatusBadge status={r.kind === "added" ? "ACTIVE" : r.kind === "removed" ? "STOPPED" : "STALE"} label={r.kind} /></span>
+                    <span>
+                      <StatusBadge
+                        status={r.kind === "added" ? "ACTIVE" : r.kind === "removed" ? "STOPPED" : "STALE"}
+                        label={
+                          r.kind === "added"
+                            ? t("debug.diff.added", "added")
+                            : r.kind === "removed"
+                              ? t("debug.diff.removed", "removed")
+                              : t("debug.diff.changed", "changed")
+                        }
+                      />
+                    </span>
                   </div>
                 ))}
               </div>
             )}
           </div>
           {(snapA.isError || snapB.isError) && (
-            <div className="l3-note bad">one of the snapshot reads failed — client diff shown only for what could be read.</div>
+            <div className="l3-note bad">
+              {t("debug.compare.read_fail", "one of the snapshot reads failed — client diff shown only for what could be read.")}
+            </div>
           )}
         </>
       )}
@@ -530,6 +614,7 @@ function CompareTab({ a, b, setA, setB }: { a: string | null; b: string | null; 
 }
 
 function CompareSummary({ diff }: { diff: CompareResult }) {
+  const t = useI18n((s) => s.t);
   const featureDiffs = diff.feature_diffs ?? [];
   const sections: Array<[string, Record<string, { t0: unknown; t1: unknown }> | undefined]> = [
     ["model", diff.model],
@@ -547,9 +632,17 @@ function CompareSummary({ diff }: { diff: CompareResult }) {
       </div>
       {featureDiffs.length > 0 && (
         <>
-          <div className="section-title">feature deltas ({featureDiffs.length})</div>
+          <div className="section-title">{t("debug.compare.deltas", "feature deltas ({n})", { n: featureDiffs.length })}</div>
           <div className="l3-scroll sm">
-            <DataTable headers={[{ label: "IDX" }, { label: "NAME" }, { label: "A", num: true }, { label: "B", num: true }, { label: "Δ", num: true }]}>
+            <DataTable
+              headers={[
+                { label: t("debug.compare.th_idx", "IDX") },
+                { label: t("debug.compare.th_name", "NAME") },
+                { label: "A", num: true },
+                { label: "B", num: true },
+                { label: "Δ", num: true },
+              ]}
+            >
               {featureDiffs.slice(0, 100).map((f) => (
                 <tr key={f.index}>
                   <td>{f.index}</td>
@@ -568,8 +661,8 @@ function CompareSummary({ diff }: { diff: CompareResult }) {
         if (entries.length === 0) return null;
         return (
           <div key={name} style={{ marginTop: 8 }}>
-            <div className="section-title">{name} changes</div>
-            <DataTable headers={[{ label: "KEY" }, { label: "A" }, { label: "B" }]}>
+            <div className="section-title">{t("debug.compare.changes", "{name} changes", { name })}</div>
+            <DataTable headers={[{ label: t("debug.compare.th_key", "KEY") }, { label: "A" }, { label: "B" }]}>
               {entries.map(([k, v]) => (
                 <tr key={k}>
                   <td className="inline-mono">{k}</td>
@@ -582,7 +675,7 @@ function CompareSummary({ diff }: { diff: CompareResult }) {
         );
       })}
       {featureDiffs.length === 0 && sections.every(([, b]) => !b || Object.keys(b).length === 0) && (
-        <EmptyState message="Server diff reports no material changes between the two snapshots." />
+        <EmptyState message={t("debug.compare.no_material", "Server diff reports no material changes between the two snapshots.")} />
       )}
     </div>
   );
@@ -593,6 +686,7 @@ function CompareSummary({ diff }: { diff: CompareResult }) {
 /* ------------------------------------------------------------------ */
 
 function ModelTestTab() {
+  const t = useI18n((s) => s.t);
   const featuresQuery = useDebugFeaturesQuery(true);
   const spec = vectorSpec(featuresQuery.data?.feature_count ?? null);
   const cells = useMemo(() => {
@@ -601,7 +695,7 @@ function ModelTestTab() {
   }, [featuresQuery.data]);
   const [useLive, setUseLive] = useState(true);
   const [localCells, setLocalCells] = useState<string[]>([]);
-  const run = useModelTest();
+  const run = useModelTest(t);
 
   const source = cells;
   const shown = useLive ? cells.map(() => "—") : localCells;
@@ -625,18 +719,35 @@ function ModelTestTab() {
 
   return (
     <Panel
-      title="Model instant test (/api/debug/model-test)"
+      title={t("debug.model.title", "Model instant test (/api/debug/model-test)")}
       accent
-      right={<span className="timestamp-note">{spec ? `contract: ${spec.dimension} values ∈ [${spec.min}, ${spec.max}]` : "contract not loaded — send blocked"}</span>}
+      right={
+        <span className="timestamp-note">
+          {spec
+            ? t("debug.model.contract", "contract: {n} values ∈ [{min}, {max}]", { n: spec.dimension, min: spec.min, max: spec.max })
+            : t("debug.model.contract_missing", "contract not loaded — send blocked")}
+        </span>
+      }
     >
       <div className="l3-toolbar">
-        <span className="timestamp-note">feature source</span>
+        <span className="timestamp-note">{t("debug.model.feature_source", "feature source")}</span>
         <span className="segmented">
-          <button className={useLive ? "active" : ""} onClick={() => setUseLive(true)}>live vector</button>
-          <button className={!useLive ? "active" : ""} onClick={startCustom}>custom vector</button>
+          <button className={useLive ? "active" : ""} onClick={() => setUseLive(true)}>
+            {t("debug.model.live_vector", "live vector")}
+          </button>
+          <button className={!useLive ? "active" : ""} onClick={startCustom}>
+            {t("debug.model.custom_vector", "custom vector")}
+          </button>
         </span>
-        <button className="btn small" onClick={() => void featuresQuery.refetch()} disabled={featuresQuery.isFetching}>reload contract</button>
-        <span className="timestamp-note">{featuresQuery.data ? `last vector @ ${featuresQuery.data.timestamp_utc ?? "—"} · ${featuresQuery.data.is_stale ? "STALE" : "fresh"}` : "no features read yet"}</span>
+        <button className="btn small" onClick={() => void featuresQuery.refetch()} disabled={featuresQuery.isFetching}>{t("debug.model.reload_contract", "reload contract")}</button>
+        <span className="timestamp-note">
+          {featuresQuery.data
+            ? t("debug.model.last_vector", "last vector @ {at} · {state}", {
+                at: featuresQuery.data.timestamp_utc ?? "—",
+                state: featuresQuery.data.is_stale ? t("debug.model.stale", "STALE") : t("debug.model.fresh", "fresh"),
+              })
+            : t("debug.model.no_features", "no features read yet")}
+        </span>
       </div>
       {!useLive && (
         <>
@@ -655,13 +766,21 @@ function ModelTestTab() {
                     })
                   }
                   inputMode="decimal"
-                  aria-label={`feature ${i}`}
+                  aria-label={t("debug.model.feature_aria", "feature {i}", { i })}
                 />
               </label>
             ))}
-            {shown.length === 0 && <div className="l3-note warn">custom mode needs the live contract first — press "reload contract".</div>}
+            {shown.length === 0 && (
+              <div className="l3-note warn">
+                {t("debug.model.needs_contract", "custom mode needs the live contract first — press \"reload contract\".")}
+              </div>
+            )}
           </div>
-          {badIdx.size > 0 && <div className="l3-note bad">{badIdx.size} cell(s) invalid — non-finite or out of bounds. The POST is blocked until they pass.</div>}
+          {badIdx.size > 0 && (
+            <div className="l3-note bad">
+              {t("debug.model.cells_invalid", "{n} cell(s) invalid — non-finite or out of bounds. The POST is blocked until they pass.", { n: badIdx.size })}
+            </div>
+          )}
         </>
       )}
       <div className="l3-toolbar" style={{ justifyContent: "flex-end" }}>
@@ -670,17 +789,41 @@ function ModelTestTab() {
           disabled={run.isPending || (!useLive && (!spec || localCells.length === 0 || badIdx.size > 0))}
           onClick={() => void submit()}
         >
-          {run.isPending ? "inferring…" : useLive ? "Run on LIVE vector" : "Run on custom vector"}
+          {run.isPending
+            ? t("debug.model.inferring", "inferring…")
+            : useLive
+              ? t("debug.model.run_live", "Run on LIVE vector")
+              : t("debug.model.run_custom", "Run on custom vector")}
         </button>
       </div>
       <ResultStrip result={run.isPending ? { running: true, lastResult: null, lastMessage: null } : run.data ? { running: false, lastResult: run.data.ok, lastMessage: run.data.message } : null} />
       {run.data?.ok && run.data.result && (
         <div style={{ marginTop: 10 }}>
           <div className="l3-verdict">
-            <MetricCard label="verdict" value={run.data.result.predicted_label ?? "—"} tone={run.data.result.predicted_label === "BUY_MARKET" ? "pos" : run.data.result.predicted_label === "SELL_MARKET" ? "neg" : "dim"} sub={`class ${run.data.result.predicted_class_index ?? "?"}`} />
-            <MetricCard label="confidence" value={((run.data.result.confidence ?? 0) * 100).toFixed(1) + "%"} sub={`argmax over ${(run.data.result.probabilities ?? []).length} heads`} />
-            <MetricCard label="e2e" value={`${run.data.result.latency_ms ?? "—"} ms`} sub={`model ${String(run.data.result.model_forward_ms ?? "—")} ms`} />
-            <MetricCard label="source" value={run.data.result.model_source ?? "—"} sub={`features: ${run.data.result.feature_source ?? "—"} · sanitized ${String(run.data.result.sanitized_inputs ?? 0)}`} />
+            <MetricCard
+              label={t("debug.model.verdict", "verdict")}
+              value={run.data.result.predicted_label ?? "—"}
+              tone={run.data.result.predicted_label === "BUY_MARKET" ? "pos" : run.data.result.predicted_label === "SELL_MARKET" ? "neg" : "dim"}
+              sub={t("debug.model.sub_class", "class {i}", { i: String(run.data.result.predicted_class_index ?? "?") })}
+            />
+            <MetricCard
+              label={t("debug.model.confidence", "confidence")}
+              value={((run.data.result.confidence ?? 0) * 100).toFixed(1) + "%"}
+              sub={t("debug.model.sub_argmax", "argmax over {n} heads", { n: (run.data.result.probabilities ?? []).length })}
+            />
+            <MetricCard
+              label={t("debug.model.e2e", "e2e")}
+              value={`${run.data.result.latency_ms ?? "—"} ms`}
+              sub={t("debug.model.sub_model", "model {ms} ms", { ms: String(run.data.result.model_forward_ms ?? "—") })}
+            />
+            <MetricCard
+              label={t("debug.model.source", "source")}
+              value={run.data.result.model_source ?? "—"}
+              sub={t("debug.model.sub_source", "features: {src} · sanitized {n}", {
+                src: String(run.data.result.feature_source ?? "—"),
+                n: String(run.data.result.sanitized_inputs ?? 0),
+              })}
+            />
           </div>
           <div style={{ marginTop: 8 }}>
             <div className="probbar">
@@ -702,7 +845,12 @@ function ModelTestTab() {
           </div>
           {run.data.result.latency_breakdown && (
             <div className="tiny faint" style={{ marginTop: 8 }}>
-              latency breakdown: {Object.entries(run.data.result.latency_breakdown).slice(0, 10).map(([k, v]) => `${k}=${String(v)}`).join(" · ")}
+              {t("debug.model.latency_breakdown", "latency breakdown: {pairs}", {
+                pairs: Object.entries(run.data.result.latency_breakdown)
+                  .slice(0, 10)
+                  .map(([k, v]) => `${k}=${String(v)}`)
+                  .join(" · "),
+              })}
             </div>
           )}
           <div className="tiny faint">evaluated_at {String(run.data.result.evaluated_at ?? "—")}</div>
@@ -717,13 +865,18 @@ function ModelTestTab() {
 /* ------------------------------------------------------------------ */
 
 function TraceTab() {
+  const t = useI18n((s) => s.t);
   const [id, setId] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
   const trace = useTraceQuery(submitted);
   const shapeOk = id.trim() === "" || /^[A-Za-z0-9_-]{4,}$/.test(id.trim());
 
   return (
-    <Panel title="Execution trace (/api/debug/trace/{execution_id})" accent right={<span className="timestamp-note">read-only join: audit_signals + audit_orders</span>}>
+    <Panel
+      title={t("debug.trace.title", "Execution trace ({path})", { path: "/api/debug/trace/{execution_id}" })}
+      accent
+      right={<span className="timestamp-note">{t("debug.trace.right", "read-only join: audit_signals + audit_orders")}</span>}
+    >
       <div className="l3-toolbar">
         <input
           className="input"
@@ -734,25 +887,34 @@ function TraceTab() {
           onChange={(e) => setId(e.target.value)}
         />
         <button className="btn primary" disabled={!shapeOk || id.trim() === ""} onClick={() => setSubmitted(id.trim())}>
-          Trace
+          {t("debug.trace.action", "Trace")}
         </button>
-        {!shapeOk && <span className="l3-field-error">id must be ≥4 chars of [A-Za-z0-9_-]</span>}
+        {!shapeOk && <span className="l3-field-error">{t("debug.trace.id_error", "id must be ≥4 chars of [A-Za-z0-9_-]")}</span>}
       </div>
       {!submitted ? (
-        <EmptyState message="No execution id submitted." hint="Find ids in audit/orders views or the legacy forensic console." />
+        <EmptyState
+          message={t("debug.trace.empty", "No execution id submitted.")}
+          hint={t("debug.trace.empty_hint", "Find ids in audit/orders views or the legacy forensic console.")}
+        />
       ) : trace.isPending ? (
         <Skeleton count={4} />
       ) : trace.isError ? (
-        <ErrorState message={trace.error instanceof Error ? trace.error.message : "trace failed"} onRetry={() => void trace.refetch()} />
+        <ErrorState message={trace.error instanceof Error ? trace.error.message : t("debug.trace.failed", "trace failed")} onRetry={() => void trace.refetch()} />
       ) : !trace.data?.available ? (
-        <div className="l3-note warn">trace unavailable: {String(trace.data?.reason ?? "UNKNOWN")}</div>
+        <div className="l3-note warn">
+          {t("debug.trace.unavailable", "trace unavailable: {reason}", { reason: String(trace.data?.reason ?? "UNKNOWN") })}
+        </div>
       ) : (
         <>
           <div className="timestamp-note" style={{ marginBottom: 6 }}>
-            {submitted} · {trace.data.signal?.length ?? 0} signal row(s) · {trace.data.orders?.length ?? 0} order row(s)
+            {t("debug.trace.summary", "{id} · {signal} signal row(s) · {order} order row(s)", {
+              id: submitted,
+              signal: trace.data.signal?.length ?? 0,
+              order: trace.data.orders?.length ?? 0,
+            })}
           </div>
           <div className="l3-timeline">
-            {traceTimeline(trace.data).map((row, i) => (
+            {traceTimeline(trace.data, t).map((row, i) => (
               <div className="l3-tl-row" key={i}>
                 <span className="t">{row.ts}</span>
                 <span>
@@ -761,7 +923,9 @@ function TraceTab() {
                 </span>
               </div>
             ))}
-            {traceTimeline(trace.data).length === 0 && <EmptyState message="Rows found but no timestamped stages to place on the timeline." />}
+            {traceTimeline(trace.data, t).length === 0 && (
+              <EmptyState message={t("debug.trace.no_stages", "Rows found but no timestamped stages to place on the timeline.")} />
+            )}
           </div>
         </>
       )}
@@ -774,7 +938,22 @@ function TraceTab() {
 /* ------------------------------------------------------------------ */
 
 function ResearchTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(30_000);
+  const kindLabel = (k: string) =>
+    k === "diagnostics"
+      ? t("debug.research.kind_diagnostics", "diagnostics")
+      : k === "events"
+        ? t("debug.research.kind_events", "events")
+        : k === "evidence"
+          ? t("debug.research.kind_evidence", "evidence")
+          : k === "gates"
+            ? t("debug.research.kind_gates", "gates")
+            : k === "history"
+              ? t("debug.research.kind_history", "history")
+              : k === "trace"
+                ? t("debug.research.kind_trace", "trace")
+                : k;
   const [kind, setKind] = useState<"diagnostics" | "events" | "evidence" | "gates" | "history" | "trace">("diagnostics");
   const [strategyId, setStrategyId] = useState("");
   const params: Record<string, string> = strategyId.trim() ? { strategy_id: strategyId.trim() } : {};
@@ -783,11 +962,11 @@ function ResearchTab() {
 
   return (
     <QuerySection<Record<string, unknown>>
-      title="Research forensics (read-only)"
+      title={t("debug.research.title", "Research forensics (read-only)")}
       accent
       query={read}
       skeletonRows={4}
-      emptyMessage="Research engine unavailable on this process."
+      emptyMessage={t("debug.research.empty", "Research engine unavailable on this process.")}
       right={
         <>
           <FreshnessCaption fetchedAtMs={read.dataUpdatedAt || null} intervalMs={30_000} stale={poll.paused} />
@@ -801,19 +980,30 @@ function ResearchTab() {
             <span className="segmented" role="tablist">
               {(["diagnostics", "events", "evidence", "gates", "history", "trace"] as const).map((k) => (
                 <button key={k} role="tab" aria-selected={kind === k} className={kind === k ? "active" : ""} onClick={() => setKind(k)}>
-                  {k}
+                  {kindLabel(k)}
                 </button>
               ))}
             </span>
-            <input className="input" placeholder="strategy_id (filters events/evidence/gates/trace)" value={strategyId} onChange={(e) => setStrategyId(e.target.value)} style={{ minWidth: 260 }} aria-label="strategy id" />
+            <input className="input" placeholder={t("debug.research.strategy_ph", "strategy_id (filters events/evidence/gates/trace)")}
+              value={strategyId}
+              onChange={(e) => setStrategyId(e.target.value)}
+              style={{ minWidth: 260 }}
+              aria-label={t("debug.research.strategy_aria", "strategy id")}
+            />
           </div>
-          {data.available === false && <div className="l3-note warn">available=false — research engine is not attached (engine offline or module absent).</div>}
+          {data.available === false && (
+            <div className="l3-note warn">
+              {t("debug.research.unavailable", "available=false — research engine is not attached (engine offline or module absent).")}
+            </div>
+          )}
           <div className="l3-scroll">
             <JsonView value={data} name={kind} />
           </div>
           <div className="tiny faint" style={{ marginTop: 6 }}>
-            read-only panels: mutations (discover/validate/promote/retry-gate/self-heal) stay in the Research feature
-            (lane 5) — nothing here can change research state.
+            {t(
+              "debug.research.footer",
+              "read-only panels: mutations (discover/validate/promote/retry-gate/self-heal) stay in the Research feature (lane 5) — nothing here can change research state.",
+            )}
           </div>
         </div>
       )}
@@ -827,6 +1017,19 @@ function ResearchTab() {
 
 export default function DebugPage(props: ShellPageProps) {
   void props;
+  const t = useI18n((s) => s.t);
+  const TABS: Array<{ id: TabId; label: string }> = [
+    { id: "state", label: t("debug.tab.state", "State") },
+    { id: "health", label: t("debug.tab.health", "Health") },
+    { id: "features", label: t("debug.tab.features", "Features") },
+    { id: "freshness", label: t("debug.tab.freshness", "Freshness") },
+    { id: "ipc", label: t("debug.tab.ipc", "IPC") },
+    { id: "compare", label: t("debug.tab.compare", "Compare") },
+    { id: "snapshots", label: t("debug.tab.snapshots", "Snapshots") },
+    { id: "modeltest", label: t("debug.tab.modeltest", "Model test") },
+    { id: "trace", label: t("debug.tab.trace", "Trace") },
+    { id: "research", label: t("debug.tab.research", "Research") },
+  ];
   const [tab, setTab] = useState<TabId>("state");
   const [cmpA, setCmpA] = useState<string | null>(null);
   const [cmpB, setCmpB] = useState<string | null>(null);
@@ -840,19 +1043,26 @@ export default function DebugPage(props: ShellPageProps) {
   return (
     <div className="l3-wrap">
       <div className="l3-head">
-        <h1>Debug hub</h1>
-        <span className="crumb">PLATFORM</span>
-        <span className="desc">canonical snapshot · subsystem health · feature contract · freshness · IPC · compare · snapshots · model test · traces · research (legacy tab-debug)</span>
+        <h1>{t("debug.head.title", "Debug hub")}</h1>
+        <span className="crumb">{t("debug.head.crumb", "PLATFORM")}</span>
+        <span className="desc">
+          {t(
+            "debug.head.desc",
+            "canonical snapshot · subsystem health · feature contract · freshness · IPC · compare · snapshots · model test · traces · research (legacy tab-debug)",
+          )}
+        </span>
       </div>
       <div className="l3-note">
-        Everything here is a read of backend truth (or an explicitly-confirmed inference probe). Pause polling per panel
-        when reading large payloads; UNAVAILABLE sections show their own reason + correlation id — never a blank lie.
+        {t(
+          "debug.head.intro",
+          "Everything here is a read of backend truth (or an explicitly-confirmed inference probe). Pause polling per panel when reading large payloads; UNAVAILABLE sections show their own reason + correlation id — never a blank lie.",
+        )}
       </div>
       <div className="l3-debug-tabs">
         <span className="segmented" role="tablist">
-          {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>
-              {t.label}
+          {TABS.map((entry) => (
+            <button key={entry.id} role="tab" aria-selected={tab === entry.id} className={tab === entry.id ? "active" : ""} onClick={() => setTab(entry.id)}>
+              {entry.label}
             </button>
           ))}
         </span>

@@ -9,7 +9,7 @@
 
 import { useMutation, useQuery, type QueryKey } from "@tanstack/react-query";
 import { debugApi, type DebugState, type ModelTestResult } from "./api";
-import { checkNumericVector } from "@/features/config/validation";
+import { checkNumericVector, identityT, type Translate } from "@/features/config/validation";
 import { parseVector, type VectorSpec } from "./model";
 
 export const DEBUG_STATE_KEY: QueryKey = ["debug", "state"];
@@ -112,27 +112,56 @@ export interface ModelTestOutcome {
  * contract; when the contract is not loaded yet the call is blocked, because
  * guessing a width would guarantee a 422.
  */
-export function useModelTest() {
+export function useModelTest(t: Translate = identityT) {
   return useMutation<ModelTestOutcome, Error, { spec: VectorSpec | null; cells: string[]; useLive: boolean }>({
     mutationFn: async ({ spec, cells, useLive }): Promise<ModelTestOutcome> => {
       if (useLive) {
         try {
           const r = await debugApi.modelTest({ use_live_features: true });
-          return { ok: r.success === true, message: r.success ? `Live-vector probe evaluated (${r.model_source ?? "?"}).` : "Backend refused the live probe.", requestId: null, result: r };
+          return {
+            ok: r.success === true,
+            message: r.success
+              ? t("debug.model.live_probe_ok", "Live-vector probe evaluated ({src}).", { src: r.model_source ?? "?" })
+              : t("debug.model.live_probe_refused", "Backend refused the live probe."),
+            requestId: null,
+            result: r,
+          };
         } catch (e) {
-          return { ok: false, message: e instanceof Error ? e.message : "Live probe failed.", requestId: (e as { requestId?: string } | null)?.requestId ?? null, result: null };
+          return {
+            ok: false,
+            message: e instanceof Error ? e.message : t("debug.model.live_probe_failed", "Live probe failed."),
+            requestId: (e as { requestId?: string } | null)?.requestId ?? null,
+            result: null,
+          };
         }
       }
       if (!spec) {
-        return { ok: false, message: "Feature contract not loaded yet — dimension unknown, refusing to send a guessed vector.", requestId: null, result: null };
+        return {
+          ok: false,
+          message: t("debug.model.no_contract", "Feature contract not loaded yet — dimension unknown, refusing to send a guessed vector."),
+          requestId: null,
+          result: null,
+        };
       }
       const parsed = parseVector(cells);
-      const check = checkNumericVector(parsed, { length: spec.dimension, min: spec.min, max: spec.max, label: "features" });
+      const check = checkNumericVector(parsed, {
+        length: spec.dimension,
+        min: spec.min,
+        max: spec.max,
+        label: t("debug.model.features_label", "features"),
+      });
       if (!check.ok) {
         const shown = check.errors.slice(0, 6).join(" · ");
         return {
           ok: false,
-          message: `Client validation blocked the POST (${check.errors.length} problem${check.errors.length === 1 ? "" : "s"}): ${shown}${check.errors.length > 6 ? " …" : ""}`,
+          message:
+            check.errors.length === 1
+              ? t("debug.model.client_blocked_one", "Client validation blocked the POST (1 problem): {shown}{more}", { shown, more: "" })
+              : t("debug.model.client_blocked", "Client validation blocked the POST ({n} problems): {shown}{more}", {
+                  n: String(check.errors.length),
+                  shown,
+                  more: check.errors.length > 6 ? " …" : "",
+                }),
           requestId: null,
           result: null,
         };
@@ -141,14 +170,19 @@ export function useModelTest() {
         const r = await debugApi.modelTest({ features: check.values, use_live_features: false });
         return {
           ok: r.success === true,
-          message: r.success ? `Inference on the ${r.model_source ?? "?"} model completed (${r.latency_ms ?? "?"} ms).` : "Backend refused the inference.",
+          message: r.success
+            ? t("debug.model.inference_ok", "Inference on the {src} model completed ({ms} ms).", {
+                src: r.model_source ?? "?",
+                ms: String(r.latency_ms ?? "?"),
+              })
+            : t("debug.model.inference_refused", "Backend refused the inference."),
           requestId: null,
           result: r,
         };
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : "Model test failed.",
+          message: e instanceof Error ? e.message : t("debug.model.test_failed", "Model test failed."),
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
           result: null,
         };
