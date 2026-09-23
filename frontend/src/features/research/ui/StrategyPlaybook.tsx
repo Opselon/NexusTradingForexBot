@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { getEntry, queryHandbook, type HandbookEntry } from "../handbook";
 
 type Props = {
@@ -23,6 +24,7 @@ type Props = {
 };
 
 export default function StrategyPlaybook({ focusId, compact }: Props) {
+  const t = useI18n((s) => s.t);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | undefined>(focusId);
   const nodeRefs = useRef(new Map<string, HTMLElement>());
@@ -58,11 +60,13 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
   return (
     <div className="rs-pb">
       {!compact && (
-        <aside className="rs-pb-toc" aria-label="Playbook sections">
-          <div className="rs-pb-toc-title">Playbook</div>
+        <aside className="rs-pb-toc" aria-label={t("research.pb.toc_aria", "Playbook sections")}>
+          <div className="rs-pb-toc-title">{t("research.pb.toc_title", "Playbook")}</div>
           <div className="rs-pb-docs-note">
-            Engineering documentation compiled from backend source. Static docs — live
-            numbers stay in the data tabs.
+            {t(
+              "research.pb.docs_note",
+              "Engineering documentation compiled from backend source. Static docs — live numbers stay in the data tabs.",
+            )}
           </div>
           {groups.map((g) => (
             <div className="rs-pb-group" key={g.key}>
@@ -90,18 +94,18 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search gates, states, thresholds… e.g. “purge”, “DSR”, “EVIDENCE_BUILDING”"
-            aria-label="Search the strategy playbook"
+            placeholder={t("research.pb.search_ph", 'Search gates, states, thresholds… e.g. “purge”, “DSR”, “EVIDENCE_BUILDING”')}
+            aria-label={t("research.pb.search_aria", "Search the strategy playbook")}
           />
           <span className="rs-pb-count">
-            {total} {total === 1 ? "entry" : "entries"}
+            {t("research.pb.count", "{n} {w}", { n: total, w: total === 1 ? t("research.pb.entry", "entry") : t("research.pb.entries", "entries") })}
           </span>
         </div>
 
         {total === 0 ? (
           <EmptyState
-            message={`No playbook entry matches “${query}”.`}
-            hint="Try a gate name (BACKTEST), a state (EVIDENCE_BUILDING), or a constant (0.25R, purge, DSR)."
+            message={t("research.pb.no_match", "No playbook entry matches “{q}”.", { q: query })}
+            hint={t("research.pb.no_match_hint", "Try a gate name (BACKTEST), a state (EVIDENCE_BUILDING), or a constant (0.25R, purge, DSR).")}
           />
         ) : (
           groups.map((g) => (
@@ -140,7 +144,8 @@ function EntryCard({
   onSeeAlso: (id: string) => void;
   bindRef: (node: HTMLElement | null) => void;
 }) {
-  const label = `${entry.kind}: ${entry.title}`;
+  const t = useI18n((s) => s.t);
+  const label = t("research.pb.aria_entry", "{kind}: {title}", { kind: entry.kind, title: entry.title });
   return (
     <article className={`rs-pb-entry ${open ? "open" : ""}`} ref={bindRef} id={`pb-${entry.id}`}>
       <button type="button" className="rs-pb-head" onClick={onToggle} aria-expanded={open} aria-label={label}>
@@ -177,14 +182,14 @@ function EntryCard({
 
             {entry.params && entry.params.length > 0 && (
               <>
-                <h4>Constants (verbatim from source)</h4>
+                <h4>{t("research.pb.params_h", "Constants (verbatim from source)")}</h4>
                 <table className="rs-params">
                   <thead>
                     <tr>
-                      <th>name</th>
-                      <th>value</th>
-                      <th>meaning</th>
-                      <th>ref</th>
+                      <th>{t("research.pb.th_name", "name")}</th>
+                      <th>{t("research.pb.th_value", "value")}</th>
+                      <th>{t("research.pb.th_meaning", "meaning")}</th>
+                      <th>{t("research.pb.th_ref", "ref")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -203,7 +208,7 @@ function EntryCard({
 
             {entry.faq && entry.faq.length > 0 && (
               <>
-                <h4>Operator FAQ</h4>
+                <h4>{t("research.pb.faq_h", "Operator FAQ")}</h4>
                 {entry.faq.map((f) => (
                   <div className="rs-faq" key={f.q}>
                     <div className="rs-faq-q">{f.q}</div>
@@ -213,17 +218,17 @@ function EntryCard({
               </>
             )}
 
-            <div className="rs-src" title="Backend source this entry was compiled from">
-              ◆ {entry.source}
+            <div className="rs-src" title={t("research.pb.src_title", "Backend source this entry was compiled from")}>
+              ◆ <span dir="ltr">{entry.source}</span>
             </div>
 
             {entry.seeAlso && entry.seeAlso.length > 0 && (
               <div className="rs-seealso">
                 <span className="tiny muted" style={{ alignSelf: "center" }}>
-                  see also →
+                  {t("research.pb.see_also", "see also →")}
                 </span>
                 {entry.seeAlso.map((id) => (
-                  <button type="button" key={id} className="rs-see" onClick={() => onSeeAlso(id)}>
+                  <button type="button" key={id} className="rs-see" onClick={() => onSeeAlso(id)} dir="ltr">
                     {id.replace(/^(gate|state|topic)\//, "")}
                   </button>
                 ))}
