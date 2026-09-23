@@ -297,12 +297,18 @@ _DSN_WITH_PASSWORD = "postgresql://nse_user:supersecret@db.example.com:5432/nse_
 
 
 def test_guard_dsn_password_never_leaks() -> None:
+    from urllib.parse import urlparse
+
     from nexus_scalp.database.config import mask_url_password
 
     masked = mask_url_password(_DSN_WITH_PASSWORD)
     assert "supersecret" not in masked
     assert "nse_user" in masked  # user is not secret
-    assert "db.example.com" in masked
+    # CodeQL py/incomplete-url-substring-sanitization: never assert a bare
+    # substring inside a URL string (it can match at an arbitrary position);
+    # parse the URL and compare the parsed host field instead.
+    parsed = urlparse(masked)
+    assert parsed.hostname == "db.example.com"
 
 
 def test_guard_pool_open_does_not_log_dsn(caplog: pytest.LogCaptureFixture) -> None:

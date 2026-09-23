@@ -43,10 +43,14 @@ PG_INFRA_MODULES = frozenset(
 )
 
 _PATTERNS = {
-    "sqlite3_import": re.compile(r"^\s*(?:import\s+sqlite3|from\s+sqlite3\s+import\s+.+)$", re.MULTILINE),
+    "sqlite3_import": re.compile(
+        r"^\s*(?:import\s+sqlite3|from\s+sqlite3\s+import\s+.+)$", re.MULTILINE
+    ),
     "sqlite3_connect": re.compile(r"sqlite3\.connect\s*\("),
     "pragma": re.compile(r"\bPRAGMA\b"),
-    "psycopg_import": re.compile(r"^\s*(?:import\s+psycopg|from\s+psycopg(?:\.\w+)*\s+import\s+.+)$", re.MULTILINE),
+    "psycopg_import": re.compile(
+        r"^\s*(?:import\s+psycopg|from\s+psycopg(?:\.\w+)*\s+import\s+.+)$", re.MULTILINE
+    ),
     "db_path_literal": re.compile(r"['\"][^'\"]*?\.db['\"]"),
 }
 
@@ -77,11 +81,15 @@ def main() -> int:
     ap.add_argument("--quiet", action="store_true", help="only print violations")
     args = ap.parse_args()
 
-    baseline: frozenset[str] = frozenset(
-        line.strip()
-        for line in args.baseline.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
-    ) if args.baseline.exists() else frozenset()
+    baseline: frozenset[str] = (
+        frozenset(
+            line.strip()
+            for line in args.baseline.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")
+        )
+        if args.baseline.exists()
+        else frozenset()
+    )
 
     violations: list[tuple[str, str, int, str]] = []  # check, file, line, text
     for p in _production_files():
@@ -92,8 +100,10 @@ def main() -> int:
 
         # 1 + 3: sqlite3 import / raw connect outside infrastructure
         if not is_infra:
-            for check, rx in (("sqlite3_import", _PATTERNS["sqlite3_import"]),
-                              ("sqlite3_connect", _PATTERNS["sqlite3_connect"])):
+            for check, rx in (
+                ("sqlite3_import", _PATTERNS["sqlite3_import"]),
+                ("sqlite3_connect", _PATTERNS["sqlite3_connect"]),
+            ):
                 for m in rx.finditer(text):
                     lineno = text.count("\n", 0, m.start()) + 1
                     line = lines[lineno - 1].strip()
