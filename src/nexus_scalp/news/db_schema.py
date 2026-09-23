@@ -264,6 +264,7 @@ _SCHEMA_SQL.extend(
 _INDEX_SQL: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_news_articles_published ON news_articles(published_at DESC);",
     "CREATE INDEX IF NOT EXISTS idx_news_articles_source ON news_articles(source_id, published_at DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_news_articles_source_url ON news_articles(source_id, canonical_url);",
     "CREATE INDEX IF NOT EXISTS idx_news_articles_dup ON news_articles(duplicate_of, is_duplicate);",
     "CREATE INDEX IF NOT EXISTS idx_news_versions_article ON news_article_versions(article_id, revision);",
     "CREATE INDEX IF NOT EXISTS idx_news_analysis_article ON news_analysis(article_id, analyzed_at DESC);",

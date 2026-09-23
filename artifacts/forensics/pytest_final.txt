@@ -1,0 +1,257 @@
+.................................F...................................... [ 28%]
+........................................................................ [ 57%]
+........................................................................ [ 86%]
+..................FFFFFFFFFFF.....                                       [100%]
+================================== FAILURES ===================================
+___ TestDeduplication.test_12_updated_article_creates_version_not_overwrite ___
+
+self = <tests.unit.test_news_phase12.TestDeduplication object at 0x000001E8E8AED050>
+seeded_db = <nexus_scalp.news.database.NewsDatabase object at 0x000001E8EC42E7D0>
+
+    def test_12_updated_article_creates_version_not_overwrite(self, seeded_db):
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        ts = datetime(2026, 8, 16, 10, 0, tzinfo=UTC)
+        item1 = {
+            "title": "CPI Report",
+            "url": "https://bls.gov/cpi",
+            "published_at": ts,
+            "summary": "inflation 3.1%",
+        }
+        item2 = {
+            "title": "CPI Report Updated",
+            "url": "https://bls.gov/cpi",
+            "published_at": ts,
+            "summary": "inflation revised 3.4%",
+        }
+        engine.ingestor.ingest_source_items(
+            {"source_id": "bls", "name": "BLS"},
+            __import__(
+                "nexus_scalp.news.sources.base", fromlist=["SourceFetchResult"]
+            ).SourceFetchResult(ok=True, items=[item1, item2]),
+        )
+        # two different identities (updated content) - both stored, no overwrite
+>       assert engine.db.count_articles() == 2
+E       assert 1 == 2
+E        +  where 1 = count_articles()
+E        +    where count_articles = <nexus_scalp.news.database.NewsDatabase object at 0x000001E8EC41A350>.count_articles
+E        +      where <nexus_scalp.news.database.NewsDatabase object at 0x000001E8EC41A350> = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EC41B6D0>.db
+
+tests\unit\test_news_phase12.py:282: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:32:40 [debug    ] [NEWS_ADMISSION_ADMIT] score=0.600 reasons=MARKET_MOVING;RELEVANT_MACRO_EVENT;STALE_CONTENT;HIGH_INFORMATION_VALUE title=CPI Report
+2026-09-23 20:32:40 [info     ] [NEWS] event=INGESTED canonical_id=news_1ae33c0af8f5 title=CPI Report
+2026-09-23 20:32:40 [info     ] [NEWS] event=DEDUPLICATED new=1 dup=1 merged=0 source=bls
+______________ TestNewsApiEndpoints.test_api_news_feed_real_data ______________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC393050>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EC805290>
+
+    def test_api_news_feed_real_data(self, news_engine):
+        _insert_sample_article(news_engine, "Fed Decision Moves Gold", "news_feed1")
+        _insert_sample_article(news_engine, "CPI Surprise, USD Rally", "news_feed2")
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:85: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:20 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+2026-09-23 20:36:27 [warning  ] [WEB-AUTH] generated new web auth token and persisted it to the secure secret store. The token value is intentionally NOT logged (the redaction pipeline scrubs credential values). Retrieve it from the secret store (secret name: web_auth_token) or set NSE_WEB_AUTH_TOKEN to control it explicitly.
+______________ TestNewsApiEndpoints.test_api_news_state_endpoint ______________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC392ED0>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EDEEF810>
+
+    def test_api_news_state_endpoint(self, news_engine):
+        _insert_sample_article(news_engine, "Gold Jumps on Safe Haven", "news_state1")
+        news_engine.analyze_article_id("news_state1")
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news/state")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:99: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:29 [info     ] [NEWS_ANALYSIS] event=LOCAL_COMPLETE article_id=news_state1 relevance=0.67 importance=0.53
+2026-09-23 20:36:29 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+___________ TestNewsApiEndpoints.test_api_news_health_no_synthetic ____________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC393F50>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EE48B850>
+
+    def test_api_news_health_no_synthetic(self, news_engine):
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news/health")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:115: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:30 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+_____________ TestNewsApiEndpoints.test_api_news_detail_endpoint ______________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC3A2F50>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EE8DDF10>
+
+    def test_api_news_detail_endpoint(self, news_engine):
+        _insert_sample_article(news_engine, "BoE Rate Decision", "news_detail1")
+        news_engine.analyze_article_id("news_detail1")
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news/news_detail1")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:127: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:32 [info     ] [NEWS_ANALYSIS] event=LOCAL_COMPLETE article_id=news_detail1 relevance=0.49 importance=0.67
+2026-09-23 20:36:32 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+______________ TestNewsApiEndpoints.test_api_news_analyze_async _______________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC393E10>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EEAE99D0>
+
+    def test_api_news_analyze_async(self, news_engine):
+        _insert_sample_article(news_engine, "Gold Oil Gas Energy", "news_ana1")
+        _, client = self._app_with_news(news_engine)
+        resp = client.post("/api/news/analyze/news_ana1")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:137: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:34 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+_____________ TestNewsApiEndpoints.test_api_news_refresh_bounded ______________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC390390>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EEDF32D0>
+
+    def test_api_news_refresh_bounded(self, news_engine):
+        _, client = self._app_with_news(news_engine)
+        resp = client.post("/api/news/refresh")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:147: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:40 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+________________ TestNewsApiEndpoints.test_api_news_self_heal _________________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC3915D0>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EF0EFF50>
+
+    def test_api_news_self_heal(self, news_engine):
+        _insert_sample_article(news_engine, "Gold Rally CPI", "news_heal1")
+        news_engine.analyze_article_id("news_heal1")
+        _, client = self._app_with_news(news_engine)
+        resp = client.post("/api/news/self-heal")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:158: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:42 [info     ] [NEWS_ANALYSIS] event=LOCAL_COMPLETE article_id=news_heal1 relevance=0.69 importance=0.71
+2026-09-23 20:36:42 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+_________________ TestNewsApiEndpoints.test_api_news_sources __________________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC390C10>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EE9C7F50>
+
+    def test_api_news_sources(self, news_engine):
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news/sources")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:166: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:43 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+____________ TestNewsApiEndpoints.test_api_news_keywords_endpoint _____________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC3908D0>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EF7B3850>
+
+    def test_api_news_keywords_endpoint(self, news_engine):
+        _insert_sample_article(
+            news_engine, "Fed cuts rates, gold surges on safe haven demand", "news_kw1"
+        )
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news/keywords")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:179: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:45 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+__________ TestNewsApiEndpoints.test_api_news_feed_has_keyword_hits ___________
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC3912D0>
+news_engine = <nexus_scalp.news.engine.NewsEngine object at 0x000001E8EF45E710>
+
+    def test_api_news_feed_has_keyword_hits(self, news_engine):
+        _insert_sample_article(
+            news_engine, "Bank of England hawkish, yields jump, gold falls", "news_kw2"
+        )
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news?limit=10")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\integration\test_news_api.py:214: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:50 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+_____ TestNewsApiEndpoints.test_api_news_disabled_returns_available_false _____
+
+self = <test_news_api.TestNewsApiEndpoints object at 0x000001E8EC391610>
+tmp_path = WindowsPath('C:/Users/Capsizer/AppData/Local/Temp/pytest-of-Capsizer/pytest-11234/test_api_news_disabled_returns0')
+
+    def test_api_news_disabled_returns_available_false(self, tmp_path: Path):
+        from fastapi.testclient import TestClient
+    
+        from nexus_scalp.web.server import create_app
+    
+        class _NoNewsEngine:
+            news_engine = None
+            news_worker = None
+    
+        app = create_app()
+        app.state.engine = _NoNewsEngine()
+        client = TestClient(app)
+        resp = client.get("/api/news")
+>       assert resp.json()["available"] is False  # honest, not synthetic
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'available'
+
+tests\integration\test_news_api.py:234: KeyError
+---------------------------- Captured stdout call -----------------------------
+2026-09-23 20:36:52 [info     ] [ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)
+============================== warnings summary ===============================
+tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_feed_real_data
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/unit/test_news_phase12.py::TestDeduplication::test_12_updated_article_creates_version_not_overwrite
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_feed_real_data
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_state_endpoint
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_health_no_synthetic
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_detail_endpoint
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_analyze_async
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_refresh_bounded
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_self_heal
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_sources
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_keywords_endpoint
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_feed_has_keyword_hits
+FAILED tests/integration/test_news_api.py::TestNewsApiEndpoints::test_api_news_disabled_returns_available_false
+12 failed, 238 passed, 1 warning in 294.52s (0:04:54)

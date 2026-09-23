@@ -77,6 +77,28 @@ class NewsBudgetConfig(BaseModel):
     daily_token_limit: int = Field(default=1_500_000, ge=0)
 
 
+class NewsAdmissionThresholds(BaseModel):
+    """Pre-DB admission gateway thresholds (news-admission-gate, §20).
+
+    One place to tune the admission funnel. Defaults are aligned with the
+    existing post-hoc auto-prune thresholds (importance 0.30 / xauusd
+    relevance 0.25) so the pre-DB gate and the prune never disagree about
+    what "low value" means.
+    """
+
+    admit_score: float = Field(default=0.35, ge=0.0, le=1.0)
+    review_score: float = Field(default=0.18, ge=0.0, le=1.0)
+    relevance_floor: float = Field(default=0.10, ge=0.0, le=1.0)
+    importance_floor: float = Field(default=0.10, ge=0.0, le=1.0)
+    source_quality_floor: float = Field(default=0.0, ge=0.0, le=1.0)  # low quality != reject
+    max_age_hours: float = Field(default=72.0, gt=0.0)
+    w_relevance: float = Field(default=0.45, ge=0.0, le=1.0)
+    w_impact: float = Field(default=0.30, ge=0.0, le=1.0)
+    w_source: float = Field(default=0.25, ge=0.0, le=1.0)
+    deterministic_admit_score: float = Field(default=0.60, ge=0.0, le=1.0)
+    enabled: bool = True
+
+
 class NewsConfig(BaseModel):
     """Complete News subsystem configuration."""
 
@@ -92,6 +114,7 @@ class NewsConfig(BaseModel):
     decay: NewsDecayConfig = Field(default_factory=NewsDecayConfig)
     bounds: NewsImpactBounds = Field(default_factory=NewsImpactBounds)
     budget: NewsBudgetConfig = Field(default_factory=NewsBudgetConfig)
+    admission: NewsAdmissionThresholds = Field(default_factory=NewsAdmissionThresholds)
 
     def resolve_db_path(self, repo_root: Path | None = None) -> Path:
         """Resolves the news DB path relative to the repository root.
