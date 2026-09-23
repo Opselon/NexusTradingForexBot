@@ -17,7 +17,7 @@
  *           backend word verbatim (WIN/LOSS/BREAKEVEN …) and its tone/border
  *           only restate that word — no verdict is computed here;
  *           realized-R color reuses the theme's pnl-pos/pnl-neg sign
- *           convention; '/api/autopsy' is static provenance text mandated by
+ *           convention; '/api/intelligence/autopsies' is the static provenance text — the
  *           the lane brief; the honest empty state is unchanged.
  * EXTEND:   extra verified fields go into the figures row; keep the states.
  */
@@ -91,7 +91,7 @@ export default function AutopsyFeed({ query }: { query: QueryLike<AutopsyPayload
           className="itl-epcap"
           title="static provenance — every figure below is loaded from this endpoint"
         >
-          /api/autopsy
+          /api/intelligence/autopsies
         </span>
       }
     >

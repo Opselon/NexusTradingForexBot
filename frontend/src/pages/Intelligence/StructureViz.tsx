@@ -4,12 +4,14 @@
  *           mSLIE band map over MslieStatus.liquidity_map, plus the named
  *           RegimeEvidence tone rows for the regime panel.
  * OWNER:    ui/w2-lane-b (future edits to this file belong to lane B)
- * CONSUMES: the frozen StructureVizProps slices of LiquidityState.pools
- *           {side,price,state,source,confirmed_at} and MslieStatus.liquidity_map
- *           {low,high,type|kind,touches,strength} (pages/_shared/contracts.ts;
- *           producers features/liquidity_runtime.py report() and mslie engine
- *           get_debug_status()), and RegimePayload.evidence
- *           (web/api_v1/market.py market_regime -> {regime, evidence, note}).
+ * CONSUMES: the StructureVizProps slices of LiquidityState.pools
+ *           {side,price,state,source,confirmed_at} (features/liquidity_runtime
+ *           report()) and MslieStatus.liquidity_map = LiquidityZone.to_dict()
+ *           {price,side,strength_score,timeframe,age_bars,number_of_tests,
+ *           distance_from_price,probability_as_target,rank,sources}
+ *           (mslie/models.py:149 via engine get_debug_status(); same mapping
+ *           the Liquidity page uses — features/liquidity/model.ts toZoneRow),
+ *           and RegimePayload.evidence ({regime, evidence, note}).
  * PROVIDES: default StructureViz (props frozen by the wave-2 lane contract;
  *           the orchestrator wires it — this file never edits the page) and
  *           the named RegimeEvidence; all styling lives in ./structureViz.css
@@ -30,7 +32,8 @@
 
 import { formatDateTime } from "@/lib/format";
 
-/** FROZEN wave-2 wiring contract — do not widen or rename (intel_wave2_contract.md). */
+/** Wiring contract (amended by the orchestrator at integration: the band
+ *  shape now mirrors the REAL LiquidityZone.to_dict fields — see CONSUMES). */
 export interface StructureVizProps {
   pools: Array<{
     side?: string | null;
@@ -40,12 +43,14 @@ export interface StructureVizProps {
     confirmed_at?: string | null;
   }>;
   bands: Array<{
-    low?: number | string | null;
-    high?: number | string | null;
-    type?: string | null;
-    kind?: string | null;
-    touches?: number | string | null;
-    strength?: number | string | null;
+    price?: number | string | null;
+    side?: string | null;
+    timeframe?: string | null;
+    strength_score?: number | string | null;
+    number_of_tests?: number | string | null;
+    distance_from_price?: number | string | null;
+    probability_as_target?: number | string | null;
+    rank?: string | null;
   }>;
 }
 
@@ -197,13 +202,16 @@ export function mslieBands(map: Array<Record<string, unknown>> | null | undefine
     const v = src[key];
     return typeof v === "string" || v === null ? v : undefined;
   };
+  // Narrow the REAL LiquidityZone.to_dict keys only (no any, no invented fields).
   return (map ?? []).map((b) => ({
-    low: pickNumStr(b, "low"),
-    high: pickNumStr(b, "high"),
-    type: pickStr(b, "type"),
-    kind: pickStr(b, "kind"),
-    touches: pickNumStr(b, "touches"),
-    strength: pickNumStr(b, "strength"),
+    price: pickNumStr(b, "price"),
+    side: pickStr(b, "side"),
+    timeframe: pickStr(b, "timeframe"),
+    strength_score: pickNumStr(b, "strength_score"),
+    number_of_tests: pickNumStr(b, "number_of_tests"),
+    distance_from_price: pickNumStr(b, "distance_from_price"),
+    probability_as_target: pickNumStr(b, "probability_as_target"),
+    rank: pickStr(b, "rank"),
   }));
 }
 
@@ -211,12 +219,12 @@ export function mslieBands(map: Array<Record<string, unknown>> | null | undefine
 const POINT_PX = 3;
 
 /**
- * variant="bands" — horizontal band map of the liquidity-map zones. Each band
- * segment is SCALED between the payload-derived min(low) and max(high) only;
- * the verbatim `low – high` range, `type|kind` word, `touches` and `strength`
- * raw values render beside every band. Rows whose endpoints are not numeric
- * still render their raw values — they simply carry no segment (no coerced
- * scale, no zero-fill).
+ * variant="bands" — band map of the liquidity-map zones. A zone is a single
+ * PRICE level, so each band renders as a POINT placed between the payload-
+ * derived min(price) and max(price) only; the verbatim price, side/rank
+ * words, number_of_tests/strength_score/probability_as_target raw values
+ * render beside every band. Zones without a numeric price still render their
+ * raw values — they simply carry no marker (no coerced scale, no zero-fill).
  */
 function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
   if (bands.length === 0) {
@@ -227,64 +235,50 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
     );
   }
 
-  const rows = bands.map((b) => ({ b, lo: scaleNum(b.low), hi: scaleNum(b.high) }));
+  // Scale endpoints come ONLY from the payload prices (no invented scale max).
+  const prices = bands.map((b) => scaleNum(b.price)).filter((n): n is number => n !== null);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
+  const span = minPrice !== null && maxPrice !== null ? maxPrice - minPrice : 0;
 
-  // Scale endpoints come ONLY from the payload (invariant: no invented scale max).
-  const lows = rows.map((r) => r.lo).filter((n): n is number => n !== null);
-  const highs = rows.map((r) => r.hi).filter((n): n is number => n !== null);
-  const minLow = lows.length > 0 ? Math.min(...lows) : null;
-  const maxHigh = highs.length > 0 ? Math.max(...highs) : null;
-  const span = minLow !== null && maxHigh !== null ? maxHigh - minLow : 0;
-
-  type Seg = { startPct: number; widthPct: number; point: boolean };
-  /** Display-only segment geometry on the payload min..max scale (clamped). */
-  const segment = (lo: number | null, hi: number | null): Seg | null => {
-    if (lo === null || hi === null || minLow === null || span <= 0) return null;
-    const a = Math.min(lo, hi);
-    const b = Math.max(lo, hi);
-    const start = Math.min(100, Math.max(0, ((a - minLow) / span) * 100));
-    const end = Math.min(100, Math.max(0, ((b - minLow) / span) * 100));
-    const width = Math.max(0, end - start);
-    return { startPct: start, widthPct: width, point: b - a === 0 };
+  /** Display-only point position on the payload min..max price scale. */
+  const markerPct = (price: number): number | null => {
+    if (minPrice === null || maxPrice === null) return null;
+    if (span <= 0) return 50; // all prices equal — centred, still not a verdict
+    return Math.min(100, Math.max(0, ((price - minPrice) / span) * 100));
   };
 
   return (
     <div className="ixviz ixviz-bands">
       <ul className="ixviz-rows">
-        {rows.map(({ b, lo, hi }, i) => {
-          const seg = segment(lo, hi);
-          const kindWord = b.type ?? b.kind;
+        {bands.map((b, i) => {
+          const price = scaleNum(b.price);
+          const pct = price !== null ? markerPct(price) : null;
           return (
             <li className="ixviz-band-row" key={i}>
-              {/* raw payload fields: liquidity_map[].low / .high / type|kind */}
+              {/* raw payload fields: liquidity_map[].price / .side / .rank */}
               <span className="ixviz-band-label">
-                <span className="ixviz-range">
-                  {raw(b.low)} – {raw(b.high)}
-                </span>
-                <span className="ixviz-chip is-unknown">{raw(kindWord)}</span>
+                <span className="ixviz-range">{raw(b.price)}</span>
+                <span className={`ixviz-chip is-${sideTone(b.side)}`}>{raw(b.side)}</span>
+                <span className="ixviz-chip is-unknown">{raw(b.rank)}</span>
               </span>
-              {/* segment = placement only; the raw range above is its value */}
+              {/* marker = placement only; the raw price above is its value */}
               <span className="ixviz-track" aria-hidden="true">
-                {seg &&
-                  (seg.point ? (
-                    <i
-                      className="ixviz-seg point"
-                      style={{ insetInlineStart: `calc(${seg.startPct}% - ${POINT_PX / 2}px)` }}
-                    />
-                  ) : (
-                    <i
-                      className="ixviz-seg"
-                      style={{ insetInlineStart: `${seg.startPct}%`, inlineSize: `${seg.widthPct}%` }}
-                    />
-                  ))}
+                {pct !== null && <i className="ixviz-seg point" style={{ insetInlineStart: `calc(${pct}% - ${POINT_PX / 2}px)` }} />}
               </span>
-              {/* raw payload fields: liquidity_map[].touches / .strength — no units, no rounding */}
+              {/* raw payload fields — verbatim, no units, no rounding */}
               <span className="ixviz-band-meta">
                 <span>
-                  touches <b>{raw(b.touches)}</b>
+                  tests <b>{raw(b.number_of_tests)}</b>
                 </span>
                 <span>
-                  strength <b>{raw(b.strength)}</b>
+                  strength <b>{raw(b.strength_score)}</b>
+                </span>
+                <span>
+                  prob <b>{raw(b.probability_as_target)}</b>
+                </span>
+                <span className="ixviz-meta">
+                  {raw(b.timeframe)} · dist {raw(b.distance_from_price)}
                 </span>
               </span>
             </li>
@@ -293,9 +287,9 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
       </ul>
       <div className="ixviz-scale">
         <span>
-          payload min/max scale: <b>{raw(minLow)}</b> – <b>{raw(maxHigh)}</b>
+          payload min/max scale: <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
         </span>
-        <span>band placed on that scale (clamped); raw low – high printed per band</span>
+        <span>zone price placed on that scale (clamped); raw price printed per band</span>
       </div>
     </div>
   );

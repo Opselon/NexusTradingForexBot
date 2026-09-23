@@ -40,13 +40,14 @@ import { useQuery } from "@tanstack/react-query";
 import { intelligenceApi } from "@/api/intelligenceApi";
 import { contextApi, marketApi2 } from "@/pages/_shared/edgeApi";
 import type { EngineSnapshot } from "@/types/domain";
-import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState, errorText, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
 import { InfoChip } from "@/pages/_shared/widgets";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import HeroHeader from "@/pages/Intelligence/HeroHeader";
 import KpiStrip from "@/pages/Intelligence/KpiStrip";
+import StructureViz, { RegimeEvidence, mslieBands } from "@/pages/Intelligence/StructureViz";
 import SignalFeed from "@/pages/Intelligence/SignalFeed";
 import AutopsyFeed from "@/pages/Intelligence/AutopsyFeed";
 import "@/pages/_shared/pages.css";
@@ -151,7 +152,7 @@ export default function IntelligencePage({ snapshot }: Props) {
         </div>
       )}
 
-      <KpiStrip ns={ns} pending={stateQuery.isPending} />
+      <KpiStrip ns={ns} pending={stateQuery.isPending} dataUpdatedAt={stateQuery.dataUpdatedAt} />
 
       {/* Structure context: liquidity governor + mSLIE (read-only here) */}
       <SectionLabel>Market structure</SectionLabel>
@@ -205,17 +206,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               {(liq.pools?.length ?? 0) > 0 && (
                 <>
                   <div className="section-title ix-gap">Liquidity pools</div>
-                  <DataTable headers={[{ label: "Side" }, { label: "Price", num: true }, { label: "State" }, { label: "Source" }, { label: "Confirmed" }]}>
-                    {liq.pools!.slice(0, 8).map((p, i) => (
-                      <tr key={i}>
-                        <td><span className={`l4-chip ${String(p.side ?? "").toUpperCase() === "BUY" ? "good" : "bad"}`}>{p.side ?? "—"}</span></td>
-                        <td className="num">{p.price === null || p.price === undefined ? "—" : formatNumber(p.price, 2)}</td>
-                        <td>{p.state ?? "—"}</td>
-                        <td className="small">{p.source ?? "—"}</td>
-                        <td className="small">{p.confirmed_at ? formatDateTime(p.confirmed_at) : "—"}</td>
-                      </tr>
-                    ))}
-                  </DataTable>
+                  <StructureViz variant="pools" pools={liq.pools ?? []} bands={[]} />
                 </>
               )}
               <div className="l4-note ix-readnote">
@@ -253,16 +244,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               {(ms.liquidity_map?.length ?? 0) > 0 && (
                 <>
                   <div className="section-title ix-gap">Liquidity map ({ms.liquidity_map!.length} bands)</div>
-                  <DataTable headers={[{ label: "Price range" }, { label: "Type" }, { label: "Touches", num: true }, { label: "Strength", num: true }]}>
-                    {ms.liquidity_map!.slice(0, 8).map((z, i) => (
-                      <tr key={i}>
-                        <td className="num">{String(z.low ?? "—")} – {String(z.high ?? "—")}</td>
-                        <td>{String(z.type ?? z.kind ?? "—")}</td>
-                        <td className="num">{String(z.touches ?? "—")}</td>
-                        <td className="num">{typeof z.strength === "number" ? z.strength.toFixed(2) : String(z.strength ?? "—")}</td>
-                      </tr>
-                    ))}
-                  </DataTable>
+                  <StructureViz variant="bands" pools={[]} bands={mslieBands(ms.liquidity_map)} />
                 </>
               )}
               {ms.last_sweep && (
@@ -310,6 +292,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               emptyWhen={(d) => d.regime === null || d.regime === undefined}
             >
               {(d) => (
+                <>
                 <dl className="kv">
                   {scalarRows(d.regime, 14).map(([k, v]) => (
                     <div key={k} style={{ display: "contents" }}>
@@ -318,6 +301,9 @@ export default function IntelligencePage({ snapshot }: Props) {
                     </div>
                   ))}
                 </dl>
+                <div className="section-title ix-gap">evidence</div>
+                <RegimeEvidence evidence={d.evidence} />
+                </>
               )}
             </SectionState>
           </div>
