@@ -383,6 +383,14 @@
   flex-direction: column;
   animation: drawerIn 0.16s ease-out;
 }
+/* Reduced motion: the drawer still opens (position/layout unchanged) — only
+   the entrance translation/fade is suppressed. */
+@media (prefers-reduced-motion: reduce) {
+  .l4-drawer-overlay,
+  .l4-drawer {
+    animation: none;
+  }
+}
 @keyframes drawerIn {
   from {
     transform: translateX(14px);

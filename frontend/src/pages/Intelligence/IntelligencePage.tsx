@@ -311,7 +311,11 @@ export default function IntelligencePage({ snapshot }: Props) {
           {mslieQuery.isPending && !mslieQuery.data ? (
             <Skeleton count={4} />
           ) : mslieQuery.isError ? (
-            <ErrorState message={errorText(mslieQuery.error, "mSLIE status endpoint failed.")} onRetry={() => void mslieQuery.refetch()} />
+            <ErrorState
+              message={errorText(mslieQuery.error, "mSLIE status endpoint failed.")}
+              requestId={mslieQuery.error instanceof ApiError ? mslieQuery.error.requestId : null}
+              onRetry={() => void mslieQuery.refetch()}
+            />
           ) : ms?.available === false ? (
             <EmptyState message="mSLIE has not produced a feature vector yet." hint={ms.reason ?? "status STANDBY — structure intelligence is computed from bars once the stream warms."} />
           ) : ms ? (
@@ -407,7 +411,11 @@ export default function IntelligencePage({ snapshot }: Props) {
           {healthQuery.isPending ? (
             <Skeleton count={4} />
           ) : healthQuery.isError ? (
-            <ErrorState message={errorText(healthQuery.error, "News health endpoint failed.")} onRetry={() => void healthQuery.refetch()} />
+            <ErrorState
+              message={errorText(healthQuery.error, "News health endpoint failed.")}
+              requestId={healthQuery.error instanceof ApiError ? healthQuery.error.requestId : null}
+              onRetry={() => void healthQuery.refetch()}
+            />
           ) : healthQuery.data?.available ? (
             <dl className="kv">
               <dt>enabled</dt>
@@ -447,7 +455,11 @@ export default function IntelligencePage({ snapshot }: Props) {
               )}
             </dl>
           ) : summaryQuery.isError ? (
-            <ErrorState message="Intelligence summary endpoint failed." onRetry={() => void summaryQuery.refetch()} />
+            <ErrorState
+              message="Intelligence summary endpoint failed."
+              requestId={summaryQuery.error instanceof ApiError ? summaryQuery.error.requestId : null}
+              onRetry={() => void summaryQuery.refetch()}
+            />
           ) : (
             <EmptyState message="Trade intelligence unavailable (engine offline)." hint="available:false — counts are not zero-filled." />
           )}

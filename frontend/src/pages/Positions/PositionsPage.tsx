@@ -67,6 +67,9 @@ interface ModifyDialog {
   tp: string;
 }
 
+/** Stable initial-sort object — memoized BlotterTable compares it by reference. */
+const POS_SORT: { key: string; dir: "asc" | "desc" } = { key: "time", dir: "desc" };
+
 function posKey(p: Position, i: number): string {
   return String(p.ticket ?? `${p.symbol}-${i}`);
 }
@@ -407,7 +410,7 @@ export default function PositionsPage({ snapshot }: Props) {
               rows={visiblePositions}
               totalCount={livePositions.length}
               rowKey={posKey}
-              initialSort={{ key: "time", dir: "desc" }}
+              initialSort={POS_SORT}
               query={posFilter}
               onQueryChange={setPosFilter}
               rowClassName={posRowClass}

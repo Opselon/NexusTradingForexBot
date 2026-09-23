@@ -15,7 +15,7 @@
  * EXTEND:   columns arrive from the caller's Column<T> array; row chrome goes
  *           through rowClassName — never hardcode a row's meaning in here.
  */
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { memo, useMemo, useState, type KeyboardEvent } from "react";
 import { type Column } from "@/pages/_shared/widgets";
 import type { Density } from "./density";
 
@@ -41,7 +41,7 @@ export interface BlotterTableProps<T> {
   density: Density;
 }
 
-export default function BlotterTable<T>({
+const BlotterTableImpl = function BlotterTable<T>({
   columns,
   rows,
   totalCount,
@@ -172,4 +172,12 @@ export default function BlotterTable<T>({
       </div>
     </div>
   );
-}
+};
+
+/**
+ * Memoized on props: with stable columns/rows/handlers the blotter skips the
+ * AppShell 1s re-render cascade; internal sort/focus state still re-renders
+ * it directly. The cast keeps the generic prop signature for callers intact
+ * (React.memo is applied at runtime only).
+ */
+export default memo(BlotterTableImpl) as unknown as typeof BlotterTableImpl;

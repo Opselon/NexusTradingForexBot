@@ -33,7 +33,7 @@ import {
   Skeleton,
   StatusBadge,
 } from "@/components/primitives";
-import { AgeNote, SectionState, errorText, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
+import { AgeNote, LiveAge, LiveAgeNote, SectionState, errorText, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
 import { InfoChip, SortableTable, type Column } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatNumber, formatPct } from "@/lib/format";
@@ -293,7 +293,7 @@ export default function MLPage({ snapshot }: Props) {
 
       {/* Feature pipeline + integrity dimensions */}
       <div className="grid cols-2">
-        <Panel title="Feature pipeline" right={<AgeNote label="age" ageSec={featuresQuery.dataUpdatedAt ? (Date.now() - featuresQuery.dataUpdatedAt) / 1000 : null} />}>
+        <Panel title="Feature pipeline" right={<LiveAgeNote label="age" atMs={featuresQuery.dataUpdatedAt || null} />}>
           <SectionState
             query={featuresQuery}
             emptyMessage="Feature status unavailable."
@@ -467,7 +467,10 @@ export default function MLPage({ snapshot }: Props) {
           title="70D drift & feature health (v1)"
           right={
             <>
-              <InfoChip k="generated" v={shadow70V1Query.data?.generated_at ? fmtAge((Date.now() - Date.parse(shadow70V1Query.data.generated_at)) / 1000) : "—"} />
+              <InfoChip
+                k="generated"
+                v={<LiveAge atMs={shadow70V1Query.data?.generated_at ? Date.parse(shadow70V1Query.data.generated_at) : null} />}
+              />
               <button aria-label="Refresh shadow 70D" className="btn small ghost" onClick={() => void shadow70V1Query.refetch()} disabled={shadow70V1Query.isFetching}>⟳</button>
             </>
           }
@@ -528,7 +531,11 @@ export default function MLPage({ snapshot }: Props) {
         {shadowStatusQuery.isPending && !shadowStatusQuery.data ? (
           <Skeleton count={3} />
         ) : shadowStatusQuery.isError ? (
-          <ErrorState message={errorText(shadowStatusQuery.error, "Shadow status endpoint failed.")} onRetry={() => void shadowStatusQuery.refetch()} />
+          <ErrorState
+              message={errorText(shadowStatusQuery.error, "Shadow status endpoint failed.")}
+              requestId={shadowStatusQuery.error instanceof ApiError ? shadowStatusQuery.error.requestId : null}
+              onRetry={() => void shadowStatusQuery.refetch()}
+            />
         ) : (
           <div className="grid cols-2">
             <div>

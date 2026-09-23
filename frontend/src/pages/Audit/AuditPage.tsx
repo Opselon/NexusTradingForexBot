@@ -29,7 +29,7 @@ import {
   Segmented,
   SeverityBadge,
 } from "@/components/primitives";
-import { AgeNote, errorText } from "@/pages/_shared/SectionState";
+import { LiveAgeNote, errorText } from "@/pages/_shared/SectionState";
 import { Drawer, InfoChip, JsonBlock } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
@@ -134,7 +134,7 @@ export default function AuditPage() {
             Access goes through the backend audit layer (bounded, read-only endpoints). No database paths, drivers or SQL ever reach the browser beyond the
             operator-visible filename the API itself publishes.
           </span>
-          <AgeNote label="metadata age" ageSec={dbStatusQuery.dataUpdatedAt ? (Date.now() - dbStatusQuery.dataUpdatedAt) / 1000 : null} />
+          <LiveAgeNote label="metadata age" atMs={dbStatusQuery.dataUpdatedAt || null} />
         </div>
       </Panel>
 
@@ -244,7 +244,7 @@ export default function AuditPage() {
           ) : (
             <DataTable headers={[{ label: "Ticket" }, { label: "Symbol" }, { label: "Dir" }, { label: "Volume", num: true }, { label: "Entry", num: true }, { label: "Status" }, { label: "PnL", num: true }, { label: "Time" }]}>
               {ledgerRows.map((row: AuditLedgerRow, i) => (
-                <tr key={`${row.ticket ?? "x"}-${i}`} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_ledger ticket ${row.ticket ?? "—"}`, body: row })}>
+                <tr key={row.ticket !== null && row.ticket !== undefined ? String(row.ticket) : `row-${i}`} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_ledger ticket ${row.ticket ?? "—"}`, body: row })}>
                   <td>{row.ticket ?? "—"}</td>
                   <td>{row.symbol ?? "—"}</td>
                   <td>{row.direction ?? "—"}</td>

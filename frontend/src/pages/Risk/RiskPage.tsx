@@ -134,7 +134,7 @@ function RiskMatrix({ checks }: { checks: RiskChecks }) {
   );
   return (
     <>
-      <SortableTable columns={cols} rows={rows} rowKey={(r) => r.name} emptyMessage="No gate rows." maxHeight={null} />
+      <SortableTable columns={cols} rows={rows} rowKey={gateRowKey} emptyMessage="No gate rows." maxHeight={null} />
       <div className="l4-note" style={{ padding: "6px 12px" }}>
         {ev.pass} pass · {ev.fail} fail · {ev.unknown} unknown — each PASS/FAIL is the arithmetic restatement of two
         backend-supplied numbers (value vs its own declared limit); an entry whose limit is absent is UNKNOWN, never FAIL.
@@ -142,6 +142,9 @@ function RiskMatrix({ checks }: { checks: RiskChecks }) {
     </>
   );
 }
+
+/** Stable row identity for the gate matrix — memoized table compares refs. */
+const gateRowKey = (r: GateRowVM): string => r.name;
 
 function GuardianBlock({ state }: { state: RuntimeRiskState | null }) {
   if (!state) return <EmptyState message="Runtime risk state unavailable (shown as UNKNOWN — never inferred)." hint="/api/debug/state risk section did not answer." />;

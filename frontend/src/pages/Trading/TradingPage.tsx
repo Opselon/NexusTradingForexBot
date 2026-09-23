@@ -71,6 +71,18 @@ type ReconRow = {
   state: "MATCHED" | "ENGINE_ONLY" | "BROKER_ONLY";
 };
 
+// ---- stable table props (module level): memoized tables compare these by
+// reference, so inline lambdas/arrays here would re-render them every 1s tick.
+const NO_ORDERS: OperatorOrderRow[] = [];
+const ORDER_SORT: { key: string; dir: "asc" | "desc" } = { key: "time", dir: "desc" };
+const orderRowKey = (r: OperatorOrderRow): string => String(r.id);
+const orderFilter = (r: OperatorOrderRow, q: string): boolean =>
+  String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q) || (r.action ?? "").toLowerCase().includes(q);
+const reconRowKey = (r: ReconRow): string => r.ticket;
+/** Numeric cell guard for overlay prices (pure, module-level: shared by cols). */
+const numOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const smcRowKey = (r: Record<string, unknown>, i: number): string => String(r.id ?? i);
+
 export default function TradingPage({ snapshot, nowMs }: Props) {
   const engineCmd = useMutationFeedback();
   const modeCmd = useMutationFeedback();
@@ -150,6 +162,84 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
       { key: "reason", label: "Reason", render: (r) => <span className="small muted" title={r.reason ?? undefined}>{r.reason?.slice(0, 42) ?? "—"}</span> },
     ],
     [snapshot?.price_digits],
+  );
+
+  // Reconciliation columns — pure render of ReconRow fields, built once.
+  const reconCols = useMemo<Array<Column<ReconRow>>>(
+    () => [
+      { key: "ticket", label: "Ticket", sortValue: (r) => r.ticket, render: (r) => r.ticket },
+      {
+        key: "engine",
+        label: "Engine ledger",
+        sortValue: (r) => r.engine?.symbol ?? null,
+        render: (r) =>
+          r.engine ? `${r.engine.symbol ?? "—"} ${r.engine.direction ?? "?"} ${formatNumber(r.engine.volume)}` : <span className="faint">absent</span>,
+      },
+      {
+        key: "broker",
+        label: "Broker position",
+        sortValue: (r) => r.broker?.symbol ?? null,
+        render: (r) =>
+          r.broker ? (
+            <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+              {r.broker.symbol ?? "—"} <PositionSideBadge type={r.broker.type} /> {formatNumber(r.broker.volume)} @ {formatPrice(r.broker.price_open)}
+            </span>
+          ) : (
+            <span className="faint">absent</span>
+          ),
+      },
+      {
+        key: "state",
+        label: "State",
+        sortValue: (r) => r.state,
+        render: (r) => (
+          <span className={`l4-chip ${r.state === "MATCHED" ? "good" : "warn"}`}>
+            {r.state === "MATCHED" ? "✓ ticket+symbol" : r.state === "ENGINE_ONLY" ? "ENGINE ONLY (not on broker)" : "BROKER ONLY (untracked)"}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
+  // SMC/ICT overlay readout — data + columns derived once per payload instead
+  // of an inline IIFE re-running the whole derivation on every render.
+  const smcDigits = snapshot?.price_digits ?? 2;
+  const smc = useMemo(() => {
+    const ov = snapshot?.visual_overlays as {
+      rectangles?: Array<Record<string, unknown>>;
+      bos_lines?: Array<Record<string, unknown>>;
+      midlines?: Array<Record<string, unknown>>;
+      liq_markers?: Array<Record<string, unknown>>;
+      order_lines?: Record<string, unknown> | null;
+    } | null;
+    const rects = ov?.rectangles ?? [];
+    const bos = ov?.bos_lines ?? [];
+    const mids = ov?.midlines ?? [];
+    const liq = ov?.liq_markers ?? [];
+    return { rects, bos, mids, liq, total: rects.length + bos.length + mids.length + liq.length };
+  }, [snapshot?.visual_overlays]);
+  const smcCols = useMemo<Array<Column<Record<string, unknown>>>>(
+    () => [
+      {
+        key: "type",
+        label: "Type",
+        sortValue: (r) => String(r.type ?? ""),
+        render: (r) => (
+          <span className={`l4-chip ${String(r.type ?? "").includes("BULL") ? "good" : String(r.type ?? "").includes("BEAR") ? "bad" : "warn"}`}>
+            {String(r.type ?? "—")}
+          </span>
+        ),
+      },
+      {
+        key: "range",
+        label: "Range",
+        num: true,
+        render: (r) => `${formatPrice(numOrNull(r.price_low), smcDigits)}–${formatPrice(numOrNull(r.price_high), smcDigits)}`,
+      },
+      { key: "time", label: "Since", render: (r) => (r.time ? formatTime(String(r.time)) : "—") },
+    ],
+    [smcDigits],
   );
 
   if (!snapshot) {
@@ -316,7 +406,11 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           ) : mt5Query.isPending ? (
             <div style={{ padding: 14 }}><Skeleton count={3} /></div>
           ) : mt5Query.isError ? (
-            <ErrorState message="Pending orders unavailable (MT5 status endpoint failed)." onRetry={() => void mt5Query.refetch()} />
+            <ErrorState
+              message="Pending orders unavailable (MT5 status endpoint failed)."
+              requestId={mt5Query.error instanceof ApiError ? mt5Query.error.requestId : null}
+              onRetry={() => void mt5Query.refetch()}
+            />
           ) : (
             <EmptyState message="No pending orders on the broker account." />
           )}
@@ -366,10 +460,10 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
             </div>
             <SortableTable
               columns={orderCols}
-              rows={ordersQuery.data?.rows ?? []}
-              rowKey={(r) => String(r.id)}
-              initialSort={{ key: "time", dir: "desc" }}
-              filter={(r, q) => String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q) || (r.action ?? "").toLowerCase().includes(q)}
+              rows={ordersQuery.data?.rows ?? NO_ORDERS}
+              rowKey={orderRowKey}
+              initialSort={ORDER_SORT}
+              filter={orderFilter}
               emptyMessage="No order-flow rows."
             />
           </>
@@ -403,41 +497,9 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           <EmptyState message="Nothing to reconcile — no open ledger rows and no broker positions." hint="A clean, consistent EMPTY. Not a hidden drift." />
         ) : (
           <SortableTable
-            columns={[
-              { key: "ticket", label: "Ticket", sortValue: (r) => r.ticket, render: (r) => r.ticket },
-              {
-                key: "engine",
-                label: "Engine ledger",
-                sortValue: (r) => r.engine?.symbol ?? null,
-                render: (r) =>
-                  r.engine ? `${r.engine.symbol ?? "—"} ${r.engine.direction ?? "?"} ${formatNumber(r.engine.volume)}` : <span className="faint">absent</span>,
-              },
-              {
-                key: "broker",
-                label: "Broker position",
-                sortValue: (r) => r.broker?.symbol ?? null,
-                render: (r) =>
-                  r.broker ? (
-                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                      {r.broker.symbol ?? "—"} <PositionSideBadge type={r.broker.type} /> {formatNumber(r.broker.volume)} @ {formatPrice(r.broker.price_open)}
-                    </span>
-                  ) : (
-                    <span className="faint">absent</span>
-                  ),
-              },
-              {
-                key: "state",
-                label: "State",
-                sortValue: (r) => r.state,
-                render: (r) => (
-                  <span className={`l4-chip ${r.state === "MATCHED" ? "good" : "warn"}`}>
-                    {r.state === "MATCHED" ? "✓ ticket+symbol" : r.state === "ENGINE_ONLY" ? "ENGINE ONLY (not on broker)" : "BROKER ONLY (untracked)"}
-                  </span>
-                ),
-              },
-            ]}
+            columns={reconCols}
             rows={recon}
-            rowKey={(r) => r.ticket}
+            rowKey={reconRowKey}
             emptyMessage="No rows."
             maxHeight={320}
           />
@@ -457,60 +519,36 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
         title="SMC / ICT readout (engine-computed overlays)"
         right={<span className="timestamp-note">snapshot v{snapshot.state_version} · computed by the engine, never the browser</span>}
       >
-        {(() => {
-          const ov = snapshot.visual_overlays as {
-            rectangles?: Array<Record<string, unknown>>;
-            bos_lines?: Array<Record<string, unknown>>;
-            midlines?: Array<Record<string, unknown>>;
-            liq_markers?: Array<Record<string, unknown>>;
-            order_lines?: Record<string, unknown> | null;
-          } | null;
-          const rects = ov?.rectangles ?? [];
-          const bos = ov?.bos_lines ?? [];
-          const mids = ov?.midlines ?? [];
-          const liq = ov?.liq_markers ?? [];
-          const total = rects.length + bos.length + mids.length + liq.length;
-          if (total === 0) {
-            return <EmptyState message="No active zones, BOS breaks, equilibrium lines or sweeps on the last computed window." hint="visual_overlays is empty — the engine saw no unmitigated structure, not a rendering failure." />;
-          }
-          const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-          const digits = snapshot.price_digits ?? 2;
-          return (
-            <div className="grid cols-2">
-              <div>
-                <div className="section-title">Zones (FVG / order blocks / stop-hunts)</div>
-                <SortableTable
-                  columns={[
-                    { key: "type", label: "Type", sortValue: (r) => String(r.type ?? ""), render: (r) => <span className={`l4-chip ${String(r.type ?? "").includes("BULL") ? "good" : String(r.type ?? "").includes("BEAR") ? "bad" : "warn"}`}>{String(r.type ?? "—")}</span> },
-                    { key: "range", label: "Range", num: true, render: (r) => `${formatPrice(num(r.price_low), digits)}–${formatPrice(num(r.price_high), digits)}` },
-                    { key: "time", label: "Since", render: (r) => (r.time ? formatTime(String(r.time)) : "—") },
-                  ]}
-                  rows={rects}
-                  rowKey={(r, i) => String(r.id ?? i)}
-                  emptyMessage="No zones."
-                  maxHeight={220}
-                />
-              </div>
-              <div>
-                <div className="section-title">Structure lines & sweeps</div>
-                <dl className="kv">
-                  <dt>BOS breaks</dt>
-                  <dd>{bos.length ? bos.slice(-6).map((l) => `${String(l.type ?? "BOS").split("_")[0]}@${formatPrice(num(l.price), digits)}`).join(" · ") : "—"}</dd>
-                  <dt>equilibrium</dt>
-                  <dd>{mids.length ? mids.map((m) => `${formatPrice(num(m.price), digits)} (${String(m.label ?? "50%")})`).join(" · ") : "—"}</dd>
-                  <dt>liquidity sweeps</dt>
-                  <dd>{liq.length ? liq.slice(-6).map((m) => `${String(m.type ?? "").includes("BUY") ? "BSL" : "SSL"}@${formatPrice(num(m.price), digits)}`).join(" · ") : "—"}</dd>
-                  <dt>algo config</dt>
-                  <dd className="small">
-                    SL buffer ×{snapshot.algo_config.atr_sl_buffer_multiplier} · min RR {snapshot.algo_config.min_risk_reward_ratio} · conf ≥{" "}
-                    {snapshot.algo_config.ai_zone_confidence_threshold} · FVG sens {snapshot.algo_config.fvg_mitigation_sensitivity} · OB lookback{" "}
-                    {snapshot.algo_config.order_block_lookback_bars} bars
-                  </dd>
-                </dl>
-              </div>
+        {smc.total === 0 ? (
+          <EmptyState
+            message="No active zones, BOS breaks, equilibrium lines or sweeps on the last computed window."
+            hint="visual_overlays is empty — the engine saw no unmitigated structure, not a rendering failure."
+          />
+        ) : (
+          <div className="grid cols-2">
+            <div>
+              <div className="section-title">Zones (FVG / order blocks / stop-hunts)</div>
+              <SortableTable columns={smcCols} rows={smc.rects} rowKey={smcRowKey} emptyMessage="No zones." maxHeight={220} />
             </div>
-          );
-        })()}
+            <div>
+              <div className="section-title">Structure lines & sweeps</div>
+              <dl className="kv">
+                <dt>BOS breaks</dt>
+                <dd>{smc.bos.length ? smc.bos.slice(-6).map((l) => `${String(l.type ?? "BOS").split("_")[0]}@${formatPrice(numOrNull(l.price), smcDigits)}`).join(" · ") : "—"}</dd>
+                <dt>equilibrium</dt>
+                <dd>{smc.mids.length ? smc.mids.map((m) => `${formatPrice(numOrNull(m.price), smcDigits)} (${String(m.label ?? "50%")})`).join(" · ") : "—"}</dd>
+                <dt>liquidity sweeps</dt>
+                <dd>{smc.liq.length ? smc.liq.slice(-6).map((m) => `${String(m.type ?? "").includes("BUY") ? "BSL" : "SSL"}@${formatPrice(numOrNull(m.price), smcDigits)}`).join(" · ") : "—"}</dd>
+                <dt>algo config</dt>
+                <dd className="small">
+                  SL buffer ×{snapshot.algo_config.atr_sl_buffer_multiplier} · min RR {snapshot.algo_config.min_risk_reward_ratio} · conf ≥{" "}
+                  {snapshot.algo_config.ai_zone_confidence_threshold} · FVG sens {snapshot.algo_config.fvg_mitigation_sensitivity} · OB lookback{" "}
+                  {snapshot.algo_config.order_block_lookback_bars} bars
+                </dd>
+              </dl>
+            </div>
+          </div>
+        )}
       </Panel>
 
       {/* Execution history (v1 audit_executions) */}

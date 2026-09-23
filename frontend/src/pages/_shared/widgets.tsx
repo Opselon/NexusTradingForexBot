@@ -9,7 +9,7 @@
  * `unknown` (hatched, never green): an unproven zero is not a satisfied gate.
  */
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDialogA11y } from "../../components/useDialogA11y";
 import { formatNumber } from "@/lib/format";
 import "@/pages/_shared/pages.css";
@@ -32,7 +32,7 @@ export interface Column<T> {
 /** Default sort value: the first non-null cell the column renders is not
  *  knowable here, so callers supply sortValue; without it sorting is disabled
  *  for that column (no string-compare surprises on objects). */
-export function SortableTable<T>({
+const SortableTableImpl = function SortableTable<T>({
   columns,
   rows,
   rowKey,
@@ -168,7 +168,16 @@ export function SortableTable<T>({
       </div>
     </div>
   );
-}
+};
+
+/**
+ * SortableTable — memoized on its props. With stable columns/rows/rowKey/
+ * filter references the table skips the AppShell 1s re-render cascade; its
+ * internal sort/filter state still re-renders it directly. Call sites that
+ * pass inline lambdas simply re-render as before (no behaviour change). The
+ * cast keeps the generic prop signature intact for every caller.
+ */
+export const SortableTable = memo(SortableTableImpl) as unknown as typeof SortableTableImpl;
 
 // ---------------------------------------------------------------------------
 // Meter (value vs backend limit) — exposure / utilization bars

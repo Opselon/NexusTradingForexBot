@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { positionsApi } from "@/api/positionsApi";
 import type { AuditLedgerRow, Position } from "@/types/domain";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
-import { AgeNote } from "@/pages/_shared/SectionState";
+import { LiveAgeNote } from "@/pages/_shared/SectionState";
 import { SortableTable, type Column } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime, formatNumber, formatPnl, formatPrice } from "@/lib/format";
@@ -31,6 +31,14 @@ import "@/pages/Positions/positions.css";
 function ledgerMatches(a: { ticket: number | null }, b: Position): boolean {
   return a.ticket !== null && a.ticket === b.ticket;
 }
+
+/** Stable table props — module level so the memoized table skips the 1s tick. */
+const LEDGER_SORT: { key: string; dir: "asc" | "desc" } = { key: "time", dir: "desc" };
+/** ticket is the ledger's identity; a row without one falls back to position. */
+const ledgerRowKey = (r: AuditLedgerRow, i: number): string =>
+  r.ticket !== null && r.ticket !== undefined ? String(r.ticket) : `noticket-${i}`;
+const ledgerFilter = (r: AuditLedgerRow, q: string): boolean =>
+  String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q);
 
 export default function LedgerPanel({ openPositions, density }: { openPositions: Position[]; density: Density }) {
   const [ledgerStatus, setLedgerStatus] = useState("");
@@ -62,6 +70,13 @@ export default function LedgerPanel({ openPositions, density }: { openPositions:
     [],
   );
 
+  /** Rows whose position is still open in the blotter — derived once per data
+   *  change (was a fresh filter chain on every render). */
+  const visibleLedger = useMemo(
+    () => (historyQuery.data ?? []).filter((r) => openPositions.every((p) => !ledgerMatches(r, p))),
+    [historyQuery.data, openPositions],
+  );
+
   return (
     <Panel
       title="Closed-trade ledger (broker-reconstructed)"
@@ -72,7 +87,7 @@ export default function LedgerPanel({ openPositions, density }: { openPositions:
             <option value="OPEN">OPEN</option>
             <option value="CLOSED">CLOSED</option>
           </select>
-          <AgeNote label="age" ageSec={historyQuery.dataUpdatedAt ? (Date.now() - historyQuery.dataUpdatedAt) / 1000 : null} />
+          <LiveAgeNote label="age" atMs={historyQuery.dataUpdatedAt || null} />
         </>
       }
       tight
@@ -109,10 +124,10 @@ export default function LedgerPanel({ openPositions, density }: { openPositions:
           </div>
           <SortableTable
             columns={ledgerCols}
-            rows={(historyQuery.data ?? []).filter((r) => openPositions.every((p) => !ledgerMatches(r, p)))}
-            rowKey={(r, i) => `${r.ticket ?? "x"}-${i}`}
-            initialSort={{ key: "time", dir: "desc" }}
-            filter={(r, q) => String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q)}
+            rows={visibleLedger}
+            rowKey={ledgerRowKey}
+            initialSort={LEDGER_SORT}
+            filter={ledgerFilter}
             emptyMessage="No ledger rows."
             dense={density === "compact"}
           />
