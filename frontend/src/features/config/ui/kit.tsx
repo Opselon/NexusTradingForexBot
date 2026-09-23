@@ -320,12 +320,15 @@ export function NumberField({
   error,
   step,
   placeholder,
+  spec,
 }: {
   value: string;
   onChange: (v: string) => void;
   error?: string | null;
   step?: string;
   placeholder?: string;
+  /** TASK-CFGUI-001: accessible name (screen readers get the field label). */
+  spec?: string;
 }) {
   return (
     <input
@@ -333,6 +336,7 @@ export function NumberField({
       type="number"
       value={value}
       step={step}
+      aria-label={spec ?? placeholder}
       aria-invalid={error ? true : undefined}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -408,6 +412,7 @@ export function TypedConfirmModal({
   word,
   confirmLabel,
   busy,
+  busyLabel,
   onCancel,
   onConfirm,
 }: {
@@ -416,6 +421,9 @@ export function TypedConfirmModal({
   word: string;
   confirmLabel: string;
   busy?: boolean;
+  /** TASK-CFGUI-001: busy button text (default "sending…" — the preview gate
+   *  passes "validating…" while the server matrix check is in flight). */
+  busyLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -458,7 +466,7 @@ export function TypedConfirmModal({
             Cancel <kbd>esc</kbd>
           </button>
           <button className="btn danger" disabled={!matches || busy} onClick={onConfirm}>
-            {busy ? "sending…" : confirmLabel}
+            {busy ? (busyLabel ?? "sending…") : confirmLabel}
           </button>
         </div>
       </div>
