@@ -16,8 +16,8 @@
  *    side before any POST.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { memo, useEffect, useMemo, useState } from "react";
+import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import {
   FieldRow,
   FreshnessCaption,
@@ -65,6 +65,36 @@ import type { DbStatus, DbHygiene, DbManageStatus, ConsoleDatabase } from "../ap
 /* ------------------------------------------------------------------ */
 /* Status + hygiene panel                                              */
 /* ------------------------------------------------------------------ */
+
+/** Memoized raw result grid (explorer rows, paged 100 + SQL results up to 500).
+ *  columns/rows keep their query-data identity, so typing in the SQL textarea
+ *  and the shell's 1s tick no longer re-render up to 500 x N cells. */
+const GridTable = memo(function GridTable({ columns, rows }: { columns: string[]; rows: Array<Record<string, unknown>> }) {
+  return (
+    <table className="data-table">
+      <thead>
+        <tr>
+          {columns.map((c) => (
+            <th scope="col" key={c}>
+              {c}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            {columns.map((c) => (
+              <td key={c} className="l3-cell" title={String(r[c] ?? "")}>
+                {r[c] === null || r[c] === undefined ? "—" : String(r[c])}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+});
 
 function StatusPanel() {
   const poll = usePolling(30_000);
@@ -430,14 +460,30 @@ function ExplorerPanel() {
               <div className="l3-split">
                 <div>
                   <div className="section-title">tables · {db ?? "pick a database above"}</div>
-                  {tables.isPending ? <Skeleton count={3} /> : tables.data && !tables.data.success ? <div className="l3-note warn">{String(tables.data.error)}</div> : null}
+                  {tables.isPending ? (
+                    db ? (
+                      <Skeleton count={3} />
+                    ) : (
+                      <EmptyState message="No database selected." hint="choose a database chip above to list its tables" />
+                    )
+                  ) : tables.isError ? (
+                    <ErrorState
+                      message={tables.error instanceof Error ? tables.error.message : "tables listing failed"}
+                      requestId={(tables.error as { requestId?: string } | null)?.requestId ?? null}
+                      onRetry={() => void tables.refetch()}
+                    />
+                  ) : tables.data && !tables.data.success ? (
+                    <ErrorState message={tables.data.error ?? "tables listing refused"} onRetry={() => void tables.refetch()} />
+                  ) : null}
                   <div className="l3-db-obj l3-scroll sm">
                     {(tables.data?.tables ?? []).map((t) => (
                       <button key={t.name} className={`l3-db-chip ${t.name === table ? "active" : ""}`} onClick={() => { setTable(t.name); setPage(0); }}>
                         {t.name} <span className="faint">{t.rows === null ? "?" : t.rows.toLocaleString("en-US")}</span>
                       </button>
                     ))}
-                    {tables.data?.tables?.length === 0 && <EmptyState message="No tables (unreachable database or empty schema)." />}
+                    {tables.data?.success && tables.data?.tables?.length === 0 && (
+                      <EmptyState message="No tables in this database." hint="unreachable database or empty schema — check the provider state tab" />
+                    )}
                   </div>
                   {table && (
                     <>
@@ -453,24 +499,19 @@ function ExplorerPanel() {
                       </div>
                       {rows.isPending ? (
                         <Skeleton count={4} />
+                      ) : rows.isError ? (
+                        <ErrorState
+                          message={rows.error instanceof Error ? rows.error.message : "row read failed"}
+                          requestId={(rows.error as { requestId?: string } | null)?.requestId ?? null}
+                          onRetry={() => void rows.refetch()}
+                        />
                       ) : rows.data && !rows.data.success ? (
-                        <div className="l3-note bad">{String(rows.data.error)}</div>
+                        <ErrorState message={rows.data.error ?? "row read refused"} onRetry={() => void rows.refetch()} />
+                      ) : (rows.data?.columns ?? []).length === 0 ? (
+                        <EmptyState message="No columns returned." hint="the table reported no columns for this page" />
                       ) : (
-                        <div tabIndex={0} className="l3-scroll">
-                          <table className="data-table">
-                            <thead>
-                              <tr>{(rows.data?.columns ?? []).map((c) => <th scope="col" key={c}>{c}</th>)}</tr>
-                            </thead>
-                            <tbody>
-                              {(rows.data?.rows ?? []).map((r, i) => (
-                                <tr key={i}>
-                                  {(rows.data?.columns ?? []).map((c) => (
-                                    <td key={c} className="l3-cell" title={String(r[c] ?? "")}>{r[c] === null || r[c] === undefined ? "—" : String(r[c])}</td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div tabIndex={0} className="l3-scroll" role="region" aria-label={`rows of ${table ?? "table"}`}>
+                          <GridTable columns={rows.data?.columns ?? []} rows={rows.data?.rows ?? []} />
                         </div>
                       )}
                     </>
@@ -489,14 +530,7 @@ function ExplorerPanel() {
                     <div style={{ marginTop: 8 }}>
                       <div className={`l3-note ${result.ok ? "good" : "bad"}`}>{result.note}{result.truncated ? " · truncated at 500" : ""}</div>
                       <div tabIndex={0} className="l3-scroll sm">
-                        <table className="data-table">
-                          <thead><tr>{result.columns.map((c) => <th scope="col" key={c}>{c}</th>)}</tr></thead>
-                          <tbody>
-                            {result.rows.map((r, i) => (
-                              <tr key={i}>{result.columns.map((c) => <td key={c} className="l3-cell" title={String(r[c] ?? "")}>{r[c] === null || r[c] === undefined ? "—" : String(r[c])}</td>)}</tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        <GridTable columns={result.columns} rows={result.rows} />
                       </div>
                     </div>
                   )}
