@@ -11,13 +11,15 @@ import type { MktEnableMode, MktRepair, MktScoreSnapshot, MktSeed, MktSeedDetail
 
 export const NOT_AVAILABLE = "NOT_AVAILABLE";
 
-/** Backend rule (api_v1/marketplace.py): 1 <= count <= 500, default 25. */
-export function validateInstallCount(raw: string): { value: number | null; error: string | null } {
+/** Backend rule (api_v1/marketplace.py): 1 <= count <= 500, default 25.
+ *  Returns an ERROR CODE (not UI copy) — PacksSection maps it through t(). */
+export type InstallCountError = "required" | "not_whole" | "range";
+export function validateInstallCount(raw: string): { value: number | null; error: InstallCountError | null } {
   const t = raw.trim();
-  if (t === "") return { value: null, error: "count is required (1–500)" };
-  if (!/^\d+$/.test(t)) return { value: null, error: "count must be a whole number" };
+  if (t === "") return { value: null, error: "required" };
+  if (!/^\d+$/.test(t)) return { value: null, error: "not_whole" };
   const n = Number(t);
-  if (n < 1 || n > 500) return { value: null, error: "count must be between 1 and 500 (backend VALIDATION_ERROR)" };
+  if (n < 1 || n > 500) return { value: null, error: "range" };
   return { value: n, error: null };
 }
 
@@ -103,15 +105,25 @@ export function repairOutcomeOf(r: MktRepair): Record<string, unknown> | null {
   return null;
 }
 
-/** Detail sections that exist on the payload drive the drawer — never placeholders. */
-export function detailSections(detail: MktSeedDetail): string[] {
-  const out: string[] = [];
-  if (detail.dsl) out.push("DSL");
-  if (detail.parameter_schema) out.push("parameter schema");
-  if (detail.default_parameters) out.push("default parameters");
-  if ((detail.lifecycle_events ?? []).length) out.push("lifecycle events");
+/** Detail sections that exist on the payload drive the drawer — never placeholders.
+ *  Returns stable ids; SeedDetailDrawer maps them through t() for display. */
+export type DetailSectionKey =
+  | "dsl"
+  | "parameter_schema"
+  | "default_parameters"
+  | "lifecycle_events"
+  | "enablement"
+  | "recent_scores"
+  | "recent_repairs";
+
+export function detailSections(detail: MktSeedDetail): DetailSectionKey[] {
+  const out: DetailSectionKey[] = [];
+  if (detail.dsl) out.push("dsl");
+  if (detail.parameter_schema) out.push("parameter_schema");
+  if (detail.default_parameters) out.push("default_parameters");
+  if ((detail.lifecycle_events ?? []).length) out.push("lifecycle_events");
   if ((detail.enablement ?? []).length) out.push("enablement");
-  if ((detail.recent_scores ?? []).length) out.push("recent scores");
-  if ((detail.recent_repairs ?? []).length) out.push("recent repairs");
+  if ((detail.recent_scores ?? []).length) out.push("recent_scores");
+  if ((detail.recent_repairs ?? []).length) out.push("recent_repairs");
   return out;
 }
