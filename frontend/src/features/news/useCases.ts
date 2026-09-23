@@ -8,6 +8,7 @@
 
 import { newsApi } from "./api";
 import {
+  NewsUnavailableError,
   requireDetail,
   requireFeed,
   requireKeywords,
@@ -28,7 +29,7 @@ export const newsQueries = {
 
   sources: (signal?: AbortSignal) =>
     newsApi.sources(false, signal).then((res) => {
-      if (!res.available) throw new Error("News source registry unavailable (news engine off).");
+      if (!res.available) throw new NewsUnavailableError("SOURCES_UNAVAILABLE");
       return (res.sources ?? []).map(toSourceVM);
     }),
 
@@ -42,7 +43,7 @@ export const newsQueries = {
 
   impact: (asset: string, limit: number, signal?: AbortSignal) =>
     newsApi.impact(asset, limit, signal).then((res) => {
-      if (!res.available) throw new Error("News impact records unavailable.");
+      if (!res.available) throw new NewsUnavailableError("IMPACT_UNAVAILABLE");
       return res.impacts ?? [];
     }),
 
@@ -60,13 +61,13 @@ export const newsQueries = {
 
   analysis: (articleId: string, signal?: AbortSignal) =>
     newsApi.analysis(articleId, signal).then((res) => {
-      if (!res.available) throw new Error("Article analysis unavailable.");
+      if (!res.available) throw new NewsUnavailableError("ANALYSIS_UNAVAILABLE");
       return res;
     }),
 
   tradeLinks: (tradeId: string | number, signal?: AbortSignal) =>
     newsApi.tradeLinks(tradeId, signal).then((res) => {
-      if (!res.available) throw new Error("News trade links unavailable.");
+      if (!res.available) throw new NewsUnavailableError("TRADELINKS_UNAVAILABLE");
       return res.links ?? [];
     }),
 

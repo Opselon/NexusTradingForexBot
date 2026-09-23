@@ -10,6 +10,9 @@
 
 export type Row = Record<string, unknown>;
 
+/** The t() signature from stores/i18nStore — verdict messages translate at render. */
+export type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
 export const str = (v: unknown): string | null => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : null);
 export const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 export const bool = (v: unknown): boolean | null => (typeof v === "boolean" ? v : null);
@@ -121,11 +124,19 @@ export function toGenerationVo(row: Row): GenerationVo {
   };
 }
 
-export function factoryVerdict(res: FactoryCommandDto): { ok: boolean; message: string } {
+export function factoryVerdict(res: FactoryCommandDto): { ok: boolean; message: (t: Translate) => string } {
   if (bool(res.available) === false) {
-    return { ok: false, message: str(res.reason) ?? "Backend refused: factory unavailable." };
+    return {
+      ok: false,
+      // A backend `reason` is data and passes through verbatim.
+      message: (t) => str(res.reason) ?? t("factory.verdict.refused", "Backend refused: factory unavailable."),
+    };
   }
   const err = obj(res.error);
-  if (err.code) return { ok: false, message: str(err.message) ?? str(err.code)! };
-  return { ok: true, message: str(res.status) ?? str(res.state) ?? "Backend accepted the command." };
+  // Backend error code/message pass through verbatim (never translated).
+  if (err.code) return { ok: false, message: () => str(err.message) ?? str(err.code)! };
+  return {
+    ok: true,
+    message: (t) => str(res.status) ?? str(res.state) ?? t("factory.verdict.accepted", "Backend accepted the command."),
+  };
 }

@@ -8,8 +8,9 @@
 import { useState } from "react";
 import { DataTable, EmptyState, ErrorState, Panel, Segmented } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { useNewsImpact, useNewsTimeline } from "../hooks";
-import { timelineWindow } from "../model";
+import { dirWord, timelineWindow } from "../model";
 import { NewsImpactCanvas } from "./NewsImpactCanvas";
 import { FreshnessNote, asErrorText } from "./shared";
 
@@ -23,6 +24,7 @@ const TF: Record<TfId, { bucket: number; hours: number; label: string }> = {
 };
 
 export function NewsTimelinePanel() {
+  const t = useI18n((s) => s.t);
   const [tf, setTf] = useState<TfId>("15m");
   const [asset, setAsset] = useState("XAUUSD");
   const [assetDraft, setAssetDraft] = useState("XAUUSD");
@@ -38,7 +40,7 @@ export function NewsTimelinePanel() {
 
   return (
     <Panel
-      title="Impact timeline"
+      title={t("news.timeline.title", "Impact timeline")}
       right={
         <>
           <Segmented options={(Object.keys(TF) as TfId[]).map((k) => ({ id: k, label: TF[k].label }))} value={tf} onChange={setTf} />
@@ -54,60 +56,96 @@ export function NewsTimelinePanel() {
               style={{ width: 96 }}
               value={assetDraft}
               onChange={(e) => setAssetDraft(e.target.value)}
-              aria-label="asset"
+              aria-label={t("news.timeline.asset_label", "asset")}
               aria-invalid={assetInvalid}
               placeholder="XAUUSD"
             />
             <button className="btn small" type="submit" disabled={assetInvalid}>
-              Apply
+              {t("news.timeline.apply", "Apply")}
             </button>
           </form>
         </>
       }
     >
-      {assetInvalid && assetDraft.trim() !== "" && <div className="news-field-error">asset: 1–16 chars, A–Z 0–9 . _ - only</div>}
+      {assetInvalid && assetDraft.trim() !== "" && (
+        <div className="news-field-error">
+          {t("news.timeline.field_error", "asset: 1–16 chars, A–Z 0–9 . _ - only")}
+        </div>
+      )}
       <div className="statline" style={{ marginBottom: 8 }}>
         <span>
-          {buckets.length} buckets · {win.articles} impact records in view
+          {t("news.timeline.stats", "{n} buckets · {records} impact records in view", {
+            n: buckets.length,
+            records: win.articles,
+          })}
         </span>
-        <span>{win.from ? `${formatDateTime(win.from)} → ${win.to ? formatDateTime(win.to) : ""}` : "window —"}</span>
-        <span>bucket {TF[tf].label} · lookback {hours}h · asset {asset}</span>
+        <span>
+          {win.from
+            ? t("news.timeline.window", "{from} → {to}", {
+                from: formatDateTime(win.from),
+                to: win.to ? formatDateTime(win.to) : "",
+              })
+            : t("news.timeline.window_none", "window —")}
+        </span>
+        <span>
+          {t("news.timeline.bucket_meta", "bucket {tf} · lookback {h}h · asset {asset}", {
+            tf: TF[tf].label,
+            h: hours,
+            asset,
+          })}
+        </span>
         <FreshnessNote updatedAtMs={timeline.dataUpdatedAt ?? null} label="timeline" staleAfterMs={300_000} />
       </div>
       {timeline.isPending ? (
-        <div className="viz-empty">loading buckets…</div>
+        <div className="viz-empty">{t("news.timeline.loading_buckets", "loading buckets…")}</div>
       ) : timeline.isError ? (
-        <ErrorState message={asErrorText(timeline.error)} onRetry={() => timeline.refetch()} />
+        <ErrorState message={asErrorText(timeline.error, t)} onRetry={() => timeline.refetch()} />
       ) : (
-        <NewsImpactCanvas buckets={buckets} bucketSec={bucket} hoursBack={hours} emptyHint={`No ${asset} impact buckets in the last ${hours}h — try a wider timeframe.`} />
+        <NewsImpactCanvas
+          buckets={buckets}
+          bucketSec={bucket}
+          hoursBack={hours}
+          emptyHint={t("news.timeline.empty_hint", "No {asset} impact buckets in the last {h}h — try a wider timeframe.", {
+            asset,
+            h: hours,
+          })}
+        />
       )}
 
       <div className="section-title" style={{ marginTop: 14 }}>
-        Recent impact records · {asset}
+        {t("news.timeline.recent_title", "Recent impact records · {asset}", { asset })}
       </div>
       {impact.isPending ? (
-        <div className="viz-empty">loading impacts…</div>
+        <div className="viz-empty">{t("news.timeline.loading_impacts", "loading impacts…")}</div>
       ) : impact.isError ? (
-        <ErrorState message={asErrorText(impact.error)} onRetry={() => impact.refetch()} />
+        <ErrorState message={asErrorText(impact.error, t)} onRetry={() => impact.refetch()} />
       ) : (impact.data ?? []).length === 0 ? (
-        <EmptyState message={`No stored impact rows for ${asset}.`} hint="Impacts are written by the analysis pass — analyze an article or enable auto-analysis." />
+        <EmptyState
+          message={t("news.timeline.empty_rows", "No stored impact rows for {asset}.", { asset })}
+          hint={t(
+            "news.timeline.empty_rows_hint",
+            "Impacts are written by the analysis pass — analyze an article or enable auto-analysis.",
+          )}
+        />
       ) : (
         <DataTable
           headers={[
-            { label: "evaluated" },
-            { label: "direction" },
-            { label: "strength", num: true },
-            { label: "relevance", num: true },
-            { label: "confidence", num: true },
-            { label: "horizon" },
-            { label: "article" },
+            { label: t("news.timeline.h_evaluated", "evaluated") },
+            { label: t("news.timeline.h_direction", "direction") },
+            { label: t("news.timeline.h_strength", "strength"), num: true },
+            { label: t("news.timeline.h_relevance", "relevance"), num: true },
+            { label: t("news.timeline.h_confidence", "confidence"), num: true },
+            { label: t("news.timeline.h_horizon", "horizon") },
+            { label: t("news.timeline.h_article", "article") },
           ]}
         >
           {(impact.data ?? []).map((im, i) => (
             <tr key={`${im.id ?? i}`}>
               <td>{im.evaluated_at ? formatDateTime(im.evaluated_at) : "—"}</td>
               <td>
-                <span className={`news-dir ${(im.direction ?? "NEUTRAL").toUpperCase()}`}>{im.direction ?? "—"}</span>
+                <span className={`news-dir ${(im.direction ?? "NEUTRAL").toUpperCase()}`}>
+                  {im.direction ? dirWord(t, im.direction) : "—"}
+                </span>
               </td>
               <td className="num">{formatNumber(im.strength, 3)}</td>
               <td className="num">{im.relevance != null ? formatPct(im.relevance * 100, 0) : "—"}</td>

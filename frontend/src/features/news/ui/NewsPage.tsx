@@ -11,6 +11,7 @@
  */
 
 import { Panel, Skeleton } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { useNewsAiStatus } from "../hooks";
 import { ArticleAiStatusLine } from "./AiStatusLine";
 import { NewsFeedSection } from "./NewsFeedSection";
@@ -24,14 +25,17 @@ import { FreshnessNote } from "./shared";
 import "./news.css";
 
 export default function NewsPage() {
+  const t = useI18n((s) => s.t);
   const aiStatus = useNewsAiStatus();
   return (
     <div>
       <div className="page-head">
-        <h1>News Intelligence</h1>
-        <span className="crumb">legacy tab-news</span>
-        <span className="desc">isolated news subsystem · bounded gate — news informs, never forces a trade</span>
-        <span style={{ marginLeft: "auto" }}>
+        <h1>{t("news.page.title", "News Intelligence")}</h1>
+        <span className="crumb">{t("news.page.crumb", "legacy tab-news")}</span>
+        <span className="desc">
+          {t("news.page.desc", "isolated news subsystem · bounded gate — news informs, never forces a trade")}
+        </span>
+        <span style={{ marginInlineStart: "auto" }}>
           <FreshnessNote updatedAtMs={aiStatus.dataUpdatedAt ?? null} label="ai-status" />
         </span>
       </div>
@@ -44,7 +48,10 @@ export default function NewsPage() {
       <NewsKeywordsPanel />
       <NewsTradesPanel />
 
-      <Panel title="AI readiness (secret-free)" right={<span className="timestamp-note">GET /api/news/ai-status</span>}>
+      <Panel
+        title={t("news.page.ai_ready", "AI readiness (secret-free)")}
+        right={<span className="timestamp-note">GET /api/news/ai-status</span>}
+      >
         {aiStatus.isPending ? (
           <Skeleton count={1} height={28} />
         ) : (

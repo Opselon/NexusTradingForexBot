@@ -30,6 +30,16 @@ import type {
   ProConsoleEntry,
 } from "./proTypes";
 
+/** The t() signature from stores/i18nStore — verdict closures translate at render. */
+export type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** A backend verdict: `ok` decides the tone, `message(t)` renders in the active language. */
+export interface Verdict {
+  ok: boolean;
+  /** Resolved during RENDER (never at event time) so language switches re-translate it. */
+  message: (t: Translate) => string;
+}
+
 /** Thrown when a legacy news route honestly reports the subsystem as off. */
 export class NewsUnavailableError extends Error {
   readonly reason: string;
@@ -95,6 +105,39 @@ export const NEWS_FILTERS: Array<{ id: NewsFilter; label: string }> = [
   { id: "ALL", label: "All" },
   { id: "IRRELEVANT", label: "Irrelevant" },
 ];
+
+/** Chip display label — key stays the raw NewsFilter, the label translates at render. */
+export function newsFilterLabel(t: Translate, id: NewsFilter): string {
+  switch (id) {
+    case "ACTIVE":
+      return t("news.filter.active", "Active");
+    case "ALL":
+      return t("news.filter.all", "All");
+    case "IRRELEVANT":
+      return t("news.filter.irrelevant", "Irrelevant");
+    default:
+      return id;
+  }
+}
+
+/**
+ * Direction/severity word shown to a human (badge/chip/kv text). Known words
+ * translate; any other backend value passes through verbatim (never a guess).
+ */
+export function dirWord(t: Translate, v: string): string {
+  switch (String(v).toUpperCase()) {
+    case "BULLISH":
+      return t("news.dir.bullish", "BULLISH");
+    case "BEARISH":
+      return t("news.dir.bearish", "BEARISH");
+    case "NEUTRAL":
+      return t("news.dir.neutral", "NEUTRAL");
+    case "PENDING":
+      return t("news.dir.pending", "PENDING");
+    default:
+      return v;
+  }
+}
 
 export function statusCount(counts: Record<string, number> | undefined, key: string): number | null {
   const v = counts?.[key];
@@ -174,23 +217,52 @@ export function newsStateTone(state: string | null | undefined): "good" | "warn"
 }
 
 /** Refresh verdict sentence — built from the backend's own numbers only. */
-export function refreshVerdict(res: NewsRefreshResult): { ok: boolean; message: string } {
-  if (!res.available) return { ok: false, message: "News engine unavailable (available=false) — nothing was fetched." };
+export function refreshVerdict(res: NewsRefreshResult): Verdict {
+  if (!res.available) {
+    return {
+      ok: false,
+      message: (t) => t("news.refresh.unavailable", "News engine unavailable (available=false) — nothing was fetched."),
+    };
+  }
   if (res.cooldown && res.cooldown > 0) {
-    return { ok: true, message: `Refresh skipped by the bandwidth guard: retry in ${res.cooldown}s (${res.skipped ?? "cooldown"}).` };
+    return {
+      ok: true,
+      message: (t) =>
+        t("news.refresh.cooldown", "Refresh skipped by the bandwidth guard: retry in {s}s ({reason}).", {
+          s: res.cooldown ?? 0,
+          reason: res.skipped ?? "cooldown",
+        }),
+    };
   }
   const ing = res.ingested ?? {};
   return {
     ok: true,
-    message: `Fetch complete — sources_polled ${ing.sources_polled ?? 0}, new ${ing.new ?? 0}, duplicate ${ing.duplicate ?? 0}, merged ${ing.merged ?? 0}, analyzed ${res.analyzed_count ?? 0}.`,
+    message: (t) =>
+      t("news.refresh.done", "Fetch complete — sources_polled {polled}, new {neu}, duplicate {dup}, merged {merged}, analyzed {analyzed}.", {
+        polled: ing.sources_polled ?? 0,
+        neu: ing.new ?? 0,
+        dup: ing.duplicate ?? 0,
+        merged: ing.merged ?? 0,
+        analyzed: res.analyzed_count ?? 0,
+      }),
   };
 }
 
-export function selfHealVerdict(res: NewsSelfHealResult): { ok: boolean; message: string } {
-  if (!res.available) return { ok: false, message: "News engine unavailable — nothing rebuilt." };
+export function selfHealVerdict(res: NewsSelfHealResult): Verdict {
+  if (!res.available) {
+    return { ok: false, message: (t) => t("news.selfheal.unavailable", "News engine unavailable — nothing rebuilt.") };
+  }
   const rebuilt = res.rebuilt ?? {};
   const parts = Object.entries(rebuilt).map(([k, v]) => `${k}=${v}`);
-  return { ok: res.status === "SUCCESS", message: `Self-heal ${res.status ?? "UNKNOWN"}${parts.length ? ` · ${parts.join(" · ")}` : ""}` };
+  const suffix = parts.length ? ` · ${parts.join(" · ")}` : "";
+  return {
+    ok: res.status === "SUCCESS",
+    message: (t) =>
+      t("news.selfheal.done", "Self-heal {status}{parts}", {
+        status: res.status ?? "UNKNOWN",
+        parts: suffix,
+      }),
+  };
 }
 
 /** Flatten either error shape (safe-envelope object or legacy string) to text. */
@@ -200,12 +272,27 @@ export function errorText(e: { code?: string; message?: string; request_id?: str
   return [e.code, e.message].filter(Boolean).join(" — ") || "unknown";
 }
 
-export function batchVerdict(res: BatchAnalyzeResult): { ok: boolean; message: string } {
-  if (res.error) return { ok: false, message: `Batch analysis refused: ${errorText(res.error)}` };
-  if (res.available === false) return { ok: false, message: "Batch analysis refused: news subsystem unavailable (available=false)." };
+export function batchVerdict(res: BatchAnalyzeResult): Verdict {
+  if (res.error) {
+    return {
+      ok: false,
+      message: (t) => t("news.batch.refused", "Batch analysis refused: {e}", { e: errorText(res.error) }),
+    };
+  }
+  if (res.available === false) {
+    return {
+      ok: false,
+      message: (t) => t("news.batch.unavailable", "Batch analysis refused: news subsystem unavailable (available=false)."),
+    };
+  }
   return {
     ok: true,
-    message: `Batch AI analysis — completed ${res.completed ?? 0}, failed ${res.failed ?? 0}, skipped ${res.skipped ?? 0}.`,
+    message: (t) =>
+      t("news.batch.done", "Batch AI analysis — completed {done}, failed {fail}, skipped {skip}.", {
+        done: res.completed ?? 0,
+        fail: res.failed ?? 0,
+        skip: res.skipped ?? 0,
+      }),
   };
 }
 
@@ -294,64 +381,123 @@ export function requireProAnswers(res: NewsProAnswersResponse): NonNullable<News
 }
 
 /** Purge / analyze-all result text — built ONLY from the backend's numbers. */
-export function purgeVerdict(res: NewsProPurgeResponse): { ok: boolean; message: string } {
+export function purgeVerdict(res: NewsProPurgeResponse): Verdict {
   if (!res || res.available === false) {
     const r = describeRefusal(res || {});
-    return { ok: false, message: `Purge refused: ${r.message}` };
+    return { ok: false, message: (t) => t("news.purge.refused", "Purge refused: {e}", { e: r.message }) };
   }
-  return res.hard_delete
-    ? { ok: true, message: `Hard purge: deleted ${res.deleted ?? 0} of ${res.candidates ?? 0} candidates (${res.total_irrelevant ?? 0} IRRELEVANT total).` }
-    : { ok: true, message: `IRRELEVANT: ${res.total_irrelevant ?? 0} total, ${res.candidates ?? 0} candidates in this limit window (soft count — nothing deleted).` };
+  if (res.hard_delete) {
+    return {
+      ok: true,
+      message: (t) =>
+        t("news.purge.hard", "Hard purge: deleted {deleted} of {candidates} candidates ({total} IRRELEVANT total).", {
+          deleted: res.deleted ?? 0,
+          candidates: res.candidates ?? 0,
+          total: res.total_irrelevant ?? 0,
+        }),
+    };
+  }
+  return {
+    ok: true,
+    message: (t) =>
+      t("news.purge.soft", "IRRELEVANT: {total} total, {candidates} candidates in this limit window (soft count — nothing deleted).", {
+        total: res.total_irrelevant ?? 0,
+        candidates: res.candidates ?? 0,
+      }),
+  };
 }
 
-export function analyzeAllVerdict(res: NewsProAnalyzeAllResponse): { ok: boolean; message: string } {
+export function analyzeAllVerdict(res: NewsProAnalyzeAllResponse): Verdict {
   if (!res || res.available === false) {
     const r = describeRefusal(res || {});
-    return { ok: false, message: `Analyze ALL refused: ${r.message}` };
+    return { ok: false, message: (t) => t("news.analyze_all.refused", "Analyze ALL refused: {e}", { e: r.message }) };
   }
   const s = res.summary ?? {};
   return {
     ok: true,
-    message: `PRO drain — pending ${s.total_pending ?? 0}, analyzed ${s.analyzed ?? 0}, skipped ${s.skipped ?? 0}, failed ${s.failed ?? 0} (llm ${s.via_llm ?? 0} / local ${s.via_local ?? 0}), junk marked ${s.junk?.marked_irrelevant ?? 0}, console seq ${s.console_seq ?? "—"}.`,
+    message: (t) =>
+      t(
+        "news.analyze_all.done",
+        "PRO drain — pending {pending}, analyzed {analyzed}, skipped {skipped}, failed {failed} (llm {llm} / local {local}), junk marked {marked}, console seq {seq}.",
+        {
+          pending: s.total_pending ?? 0,
+          analyzed: s.analyzed ?? 0,
+          skipped: s.skipped ?? 0,
+          failed: s.failed ?? 0,
+          llm: s.via_llm ?? 0,
+          local: s.via_local ?? 0,
+          marked: s.junk?.marked_irrelevant ?? 0,
+          seq: s.console_seq ?? "—",
+        },
+      ),
   };
 }
 
-export function autoPruneSafeVerdict(res: NewsAutoPruneResponse): { ok: boolean; message: string } {
+export function autoPruneSafeVerdict(res: NewsAutoPruneResponse): Verdict {
   if (!res || res.available === false) {
     const r = describeRefusal(res || {});
-    return { ok: false, message: `Auto-prune refused: ${r.message}` };
+    return { ok: false, message: (t) => t("news.auto_prune.refused", "Auto-prune refused: {e}", { e: r.message }) };
   }
   return {
     ok: true,
-    message: `Pruning complete — ${res.marked_irrelevant ?? 0} marked irrelevant, ${res.preserved ?? 0} preserved (${res.already_irrelevant ?? 0} already, ${res.failed ?? 0} failed, rule ${res.rule_version ?? "—"}).`,
+    message: (t) =>
+      t(
+        "news.auto_prune.done",
+        "Pruning complete — {marked} marked irrelevant, {preserved} preserved ({already}, {failed} failed, rule {rule}).",
+        {
+          marked: res.marked_irrelevant ?? 0,
+          preserved: res.preserved ?? 0,
+          already: res.already_irrelevant ?? 0,
+          failed: res.failed ?? 0,
+          rule: res.rule_version ?? "—",
+        },
+      ),
   };
 }
 
-/** Ring-kind -> console label (legacy _proKindLabel map, verbatim semantics). */
-const KIND_LABEL: Record<string, string> = {
-  cycle_start: "CYCLE",
-  cycle_done: "DONE",
-  analysis_ok: "ANALYSIS",
-  analysis_failed: "FAIL",
-  ai_ok: "LLM ANSWER",
-  ai_failed: "LLM FAIL",
-  ai_retry_ok: "LLM RETRY OK",
-  ai_persist_failed: "LLM PERSIST FAIL",
-  fallback: "FALLBACK",
-  skip: "SKIP",
-  error: "ERROR",
-  deterministic_skip: "DET SKIP",
-  budget_exhausted: "BUDGET",
-  junk_prune: "JUNK",
-  junk_failed: "JUNK FAIL",
-  llm_purge: "LLM PURGE",
-  llm_purge_failed: "LLM PURGE FAIL",
-  llm_mark_irrelevant: "LLM MARK",
-  purge: "PURGE",
-};
-
-export function proKindLabel(kind: string | undefined): string {
-  return (kind && KIND_LABEL[kind]) || String(kind ?? "log").toUpperCase();
+export function proKindLabel(t: Translate, kind: string | undefined): string {
+  switch (kind) {
+    case "cycle_start":
+      return t("news.pro.kind.cycle", "CYCLE");
+    case "cycle_done":
+      return t("news.pro.kind.done", "DONE");
+    case "analysis_ok":
+      return t("news.pro.kind.analysis", "ANALYSIS");
+    case "analysis_failed":
+      return t("news.pro.kind.fail", "FAIL");
+    case "ai_ok":
+      return t("news.pro.kind.llm_answer", "LLM ANSWER");
+    case "ai_failed":
+      return t("news.pro.kind.llm_fail", "LLM FAIL");
+    case "ai_retry_ok":
+      return t("news.pro.kind.llm_retry", "LLM RETRY OK");
+    case "ai_persist_failed":
+      return t("news.pro.kind.llm_persist", "LLM PERSIST FAIL");
+    case "fallback":
+      return t("news.pro.kind.fallback", "FALLBACK");
+    case "skip":
+      return t("news.pro.kind.skip", "SKIP");
+    case "error":
+      return t("news.pro.kind.error", "ERROR");
+    case "deterministic_skip":
+      return t("news.pro.kind.det_skip", "DET SKIP");
+    case "budget_exhausted":
+      return t("news.pro.kind.budget", "BUDGET");
+    case "junk_prune":
+      return t("news.pro.kind.junk", "JUNK");
+    case "junk_failed":
+      return t("news.pro.kind.junk_fail", "JUNK FAIL");
+    case "llm_purge":
+      return t("news.pro.kind.llm_purge", "LLM PURGE");
+    case "llm_purge_failed":
+      return t("news.pro.kind.llm_purge_fail", "LLM PURGE FAIL");
+    case "llm_mark_irrelevant":
+      return t("news.pro.kind.llm_mark", "LLM MARK");
+    case "purge":
+      return t("news.pro.kind.purge", "PURGE");
+    default:
+      return String(kind ?? "log").toUpperCase();
+  }
 }
 
 /** Row tone class from the kind ONLY (legacy color map translated to tokens). */

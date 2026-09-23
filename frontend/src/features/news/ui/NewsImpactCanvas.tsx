@@ -24,6 +24,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
+import type { Lang } from "@/lib/i18n";
 import type { NewsTimelineBucket } from "../types";
 
 interface Props {
@@ -40,6 +42,9 @@ interface Hover {
   y: number;
 }
 
+/** Locale for canvas-rendered dates — switches with the active app language. */
+const DATE_LOCALE: Record<Lang, string> = { en: "en-US", fa: "fa-IR", de: "de-DE", es: "es-ES", ar: "ar" };
+
 const PAD_L = 34;
 const PAD_R = 8;
 const PAD_T = 12;
@@ -52,6 +57,9 @@ function token(name: string, fallback: string): string {
 }
 
 export function NewsImpactCanvas({ buckets, bucketSec, hoursBack, height = 220, emptyHint }: Props) {
+  const t = useI18n((s) => s.t);
+  const lang = useI18n((s) => s.lang);
+  const locale = DATE_LOCALE[lang] ?? "en";
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -80,6 +88,9 @@ export function NewsImpactCanvas({ buckets, bucketSec, hoursBack, height = 220, 
       if (!canvas || !wrap) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      // Time axis stays LTR regardless of document direction (canvas text
+      // direction inherits from computed style — force legacy behavior).
+      ctx.direction = "ltr";
       const dpr = window.devicePixelRatio || 1;
       let rect = canvas.getBoundingClientRect();
       if ((rect.width | 0) < 10) rect = wrap.getBoundingClientRect();
@@ -184,11 +195,11 @@ export function NewsImpactCanvas({ buckets, bucketSec, hoursBack, height = 220, 
         ctx.fill();
         if (n <= 24 || i % Math.ceil(n / 12) === 0) {
           ctx.fillStyle = colors.axisText;
-          const t = new Date(b.bucket_start);
+          const d = new Date(b.bucket_start);
           const lbl =
             bucketSec >= 86_400
-              ? t.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-              : t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+              ? d.toLocaleDateString(locale, { month: "short", day: "numeric" })
+              : d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
           ctx.fillText(lbl, x, h - 4);
         }
       });
@@ -202,12 +213,14 @@ export function NewsImpactCanvas({ buckets, bucketSec, hoursBack, height = 220, 
     const ro = new ResizeObserver(schedule);
     if (wrapRef.current) ro.observe(wrapRef.current);
     window.addEventListener("resize", schedule);
+    document.addEventListener("nexus:lang-changed", schedule);
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener("resize", schedule);
+      document.removeEventListener("nexus:lang-changed", schedule);
     };
-  }, [buckets, bucketSec, colors, height]);
+  }, [buckets, bucketSec, colors, height, lang, locale]);
 
   /* Hover: nearest bucket within 22px of the cursor x (legacy hit()). */
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>): void => {
@@ -252,10 +265,12 @@ export function NewsImpactCanvas({ buckets, bucketSec, hoursBack, height = 220, 
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
         role="img"
-        aria-label={`news impact chart, ${buckets.length} buckets`}
+        aria-label={t("news.impact.aria", "news impact chart, {n} buckets", { n: buckets.length })}
       />
       {buckets.length < 1 && (
-        <div className="news-impact-empty">{emptyHint ?? "No news impact data in this window — try a wider timeframe."}</div>
+        <div className="news-impact-empty">
+          {emptyHint ?? t("news.impact.empty_default", "No news impact data in this window — try a wider timeframe.")}
+        </div>
       )}
       {hb && hover && (
         <div
@@ -265,12 +280,16 @@ export function NewsImpactCanvas({ buckets, bucketSec, hoursBack, height = 220, 
             insetBlockStart: Math.max(8, hover.y - 10),
           }}
         >
-          <b>{daily ? new Date(hb.bucket_start).toLocaleDateString() : new Date(hb.bucket_start).toLocaleString()}</b>
+          <b>
+            {daily
+              ? new Date(hb.bucket_start).toLocaleDateString(locale)
+              : new Date(hb.bucket_start).toLocaleString(locale)}
+          </b>
           <div>
             <span className="up">▲ {(hb.bullish || 0).toFixed(3)}</span> · <span className="down">▼ {(hb.bearish || 0).toFixed(3)}</span> ·{" "}
             <span className="neu">● {(hb.neutral || 0).toFixed(3)}</span>
           </div>
-          <div className="muted">{hb.article_count ?? 0} articles</div>
+          <div className="muted">{t("news.impact.articles", "{n} articles", { n: hb.article_count ?? 0 })}</div>
           {hb.top_title && <div className="tt">{hb.top_title}</div>}
         </div>
       )}
@@ -278,13 +297,22 @@ export function NewsImpactCanvas({ buckets, bucketSec, hoursBack, height = 220, 
         <span className="inline-mono">
           {buckets.length > 0
             ? daily
-              ? `${hoursBack}h window`
-              : `${hoursBack}h window / ${bucketSec / 60}m buckets`
+              ? t("news.impact.window_day", "{h}h window", { h: hoursBack })
+              : t("news.impact.window", "{h}h window / {m}m buckets", { h: hoursBack, m: bucketSec / 60 })
             : "—"}
         </span>
         <span className="top" title={top?.top_title ?? ""}>
           {top
-            ? `${top.top_title ? `Top: ${top.top_title.slice(0, 88)}` : `${top.article_count ?? 0} events`} · impact ${(Math.abs(top.bullish) + Math.abs(top.bearish) + Math.abs(top.neutral || 0)).toFixed(3)}`
+            ? t(
+                "news.impact.footer",
+                "{part} · impact {mag}",
+                {
+                  part: top.top_title
+                    ? t("news.impact.top", "Top: {title}", { title: top.top_title.slice(0, 88) })
+                    : t("news.impact.events", "{n} events", { n: top.article_count ?? 0 }),
+                  mag: (Math.abs(top.bullish) + Math.abs(top.bearish) + Math.abs(top.neutral || 0)).toFixed(3),
+                },
+              )
             : ""}
         </span>
       </div>

@@ -6,24 +6,69 @@
  */
 
 import { formatAgeMs } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { ApiError } from "@/types/api";
+import { NewsUnavailableError } from "../model";
 
-export function asErrorText(e: unknown): string {
+/** The t() signature from stores/i18nStore — lets non-component helpers translate. */
+export type TFunc = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * Flatten any thrown value to display text. `t` (when given) translates the
+ * client-owned parts — NewsUnavailableError reasons and the unknown-error
+ * fallback. Backend messages, ApiError text and request ids pass through
+ * verbatim (never translated).
+ */
+export function asErrorText(e: unknown, t?: TFunc): string {
+  if (e instanceof NewsUnavailableError) return newsUnavailableText(e.reason, t);
   if (e instanceof ApiError) return `${e.message}${e.requestId ? ` (request_id: ${e.requestId})` : ""}`;
   if (e instanceof Error) return e.message;
+  if (t) return t("news.err.unknown", "unknown error");
   return "unknown error";
+}
+
+/** Guard reason -> translated sentence; unknown/backend reasons use the generic line. */
+export function newsUnavailableText(reason: string, t?: TFunc): string {
+  if (!t) {
+    return reason === "ARTICLE_NOT_FOUND"
+      ? "Article not found in the news database."
+      : "News subsystem unavailable — the news engine is disabled or the backend reported available=false.";
+  }
+  switch (reason) {
+    case "ARTICLE_NOT_FOUND":
+      return t("news.err.article_not_found", "Article not found in the news database.");
+    case "SOURCES_UNAVAILABLE":
+      return t("news.err.sources_unavailable", "News source registry unavailable (news engine off).");
+    case "IMPACT_UNAVAILABLE":
+      return t("news.err.impact_unavailable", "News impact records unavailable.");
+    case "ANALYSIS_UNAVAILABLE":
+      return t("news.err.analysis_unavailable", "Article analysis unavailable.");
+    case "TRADELINKS_UNAVAILABLE":
+      return t("news.err.tradelinks_unavailable", "News trade links unavailable.");
+    default:
+      return t(
+        "news.err.unavailable",
+        "News subsystem unavailable — the news engine is disabled or the backend reported available=false.",
+      );
+  }
 }
 
 /** "state · 12.0s ago" — client-captured cache age, explicitly labeled. */
 export function FreshnessNote({ updatedAtMs, label, staleAfterMs }: { updatedAtMs: number | null; label: string; staleAfterMs?: number }) {
+  const t = useI18n((s) => s.t);
   if (!updatedAtMs) {
-    return <span className="timestamp-note">{label}: never loaded</span>;
+    return <span className="timestamp-note">{t("news.fresh.never", "{label}: never loaded", { label })}</span>;
   }
   const age = Date.now() - updatedAtMs;
   const bad = staleAfterMs !== undefined && age > staleAfterMs;
   return (
-    <span className="timestamp-note" style={bad ? { color: "var(--amber)" } : undefined} title={`cache age ${Math.round(age / 1000)}s`}>
-      {label} · {formatAgeMs(age)} ago{bad ? " ⚠" : ""}
+    <span
+      className="timestamp-note"
+      style={bad ? { color: "var(--amber)" } : undefined}
+      title={t("news.fresh.cache_age", "cache age {s}s", { s: Math.round(age / 1000) })}
+    >
+      {t("news.fresh.ago", "{label} · {age} ago", { label, age: formatAgeMs(age) })}
+      {bad ? " ⚠" : ""}
     </span>
   );
 }
