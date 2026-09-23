@@ -116,6 +116,62 @@ export default function AuditPage() {
   const ledgerRows = useMemo(() => ledgerQuery.data?.items ?? [], [ledgerQuery.data]);
   const incidentRows = useMemo(() => incidentsQuery.data?.items ?? [], [incidentsQuery.data]);
 
+  // perf: the three table row mappers (payload parse + per-cell formatting)
+  // build their <tr> elements ONCE per rows array instead of on every render
+  // of this tabbed page. Keys, cells, drawer payloads and handlers are
+  // byte-identical — setDrawer is a stable state setter.
+  const eventEls = useMemo(
+    () =>
+      eventRows.map((row: AuditEventRow) => {
+        const payload = parsePayload(row.payload);
+        return (
+          <tr key={String(row.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_event #${row.id} · ${row.event_type ?? ""}`, body: payload ?? row.payload })}>
+            <td>{String(row.id)}</td>
+            <td>{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
+            <td>{row.event_type ?? "—"}</td>
+            <td className="small" style={{ maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {payload ? Object.entries(payload).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 40)}`).join(" ") : "—"}
+            </td>
+            <td><span className="l4-chip accent">⤢</span></td>
+          </tr>
+        );
+      }),
+    [eventRows],
+  );
+
+  const ledgerEls = useMemo(
+    () =>
+      ledgerRows.map((row: AuditLedgerRow, i) => (
+        <tr key={`${row.ticket ?? "x"}-${i}`} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_ledger ticket ${row.ticket ?? "—"}`, body: row })}>
+          <td>{row.ticket ?? "—"}</td>
+          <td>{row.symbol ?? "—"}</td>
+          <td>{row.direction ?? "—"}</td>
+          <td className="num">{formatNumber(row.volume)}</td>
+          <td className="num">{row.entry_price === null ? "—" : row.entry_price.toFixed(2)}</td>
+          <td>{row.status ?? "—"}</td>
+          <td className={`num ${row.pnl !== null && row.pnl >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatMoney(row.pnl)}</td>
+          <td>{row.timestamp ? formatDateTime(row.timestamp) : "—"}</td>
+        </tr>
+      )),
+    [ledgerRows],
+  );
+
+  const incidentEls = useMemo(
+    () =>
+      incidentRows.map((row: IncidentRow) => (
+        <tr key={String(row.incident_id ?? row.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `incident ${String(row.incident_id ?? row.id ?? "—")}`, body: row })}>
+          <td>{String(row.incident_id ?? row.id ?? "—")}</td>
+          <td><SeverityBadge severity={row.severity} /></td>
+          <td>{row.status ?? "—"}</td>
+          <td>{row.category ?? "—"}</td>
+          <td>{row.component ?? "—"}</td>
+          <td style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.title}>{row.title ?? "—"}</td>
+          <td>{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
+        </tr>
+      )),
+    [incidentRows],
+  );
+
   return (
     <div>
       <Panel title="Audit database (backend-reported metadata)">
@@ -183,20 +239,7 @@ export default function AuditPage() {
             <EmptyState message={eventTypeFilter ? `No audit events match “${eventTypeFilter}”.` : "No audit events match."} hint="Adjust the event_type filter or wait for engine activity." />
           ) : (
             <DataTable headers={[{ label: "ID" }, { label: "Time" }, { label: "Type" }, { label: "Payload (summary)" }, { label: "" }]}>
-              {eventRows.map((row: AuditEventRow) => {
-                const payload = parsePayload(row.payload);
-                return (
-                  <tr key={String(row.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_event #${row.id} · ${row.event_type ?? ""}`, body: payload ?? row.payload })}>
-                    <td>{String(row.id)}</td>
-                    <td>{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
-                    <td>{row.event_type ?? "—"}</td>
-                    <td className="small" style={{ maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {payload ? Object.entries(payload).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 40)}`).join(" ") : "—"}
-                    </td>
-                    <td><span className="l4-chip accent">⤢</span></td>
-                  </tr>
-                );
-              })}
+              {eventEls}
             </DataTable>
           )}
           {eventRows.length > 0 && <div className="l4-note" style={{ padding: "6px 12px" }}>row click opens the raw payload drawer (backend text, unmodified).</div>}
@@ -243,18 +286,7 @@ export default function AuditPage() {
             <EmptyState message={statusFilter ? `No ledger rows match “${statusFilter}”.` : "No ledger rows match."} />
           ) : (
             <DataTable headers={[{ label: "Ticket" }, { label: "Symbol" }, { label: "Dir" }, { label: "Volume", num: true }, { label: "Entry", num: true }, { label: "Status" }, { label: "PnL", num: true }, { label: "Time" }]}>
-              {ledgerRows.map((row: AuditLedgerRow, i) => (
-                <tr key={`${row.ticket ?? "x"}-${i}`} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `audit_ledger ticket ${row.ticket ?? "—"}`, body: row })}>
-                  <td>{row.ticket ?? "—"}</td>
-                  <td>{row.symbol ?? "—"}</td>
-                  <td>{row.direction ?? "—"}</td>
-                  <td className="num">{formatNumber(row.volume)}</td>
-                  <td className="num">{row.entry_price === null ? "—" : row.entry_price.toFixed(2)}</td>
-                  <td>{row.status ?? "—"}</td>
-                  <td className={`num ${row.pnl !== null && row.pnl >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatMoney(row.pnl)}</td>
-                  <td>{row.timestamp ? formatDateTime(row.timestamp) : "—"}</td>
-                </tr>
-              ))}
+              {ledgerEls}
             </DataTable>
           )}
         </Panel>
@@ -299,17 +331,7 @@ export default function AuditPage() {
             <EmptyState message={severityFilter ? `No incidents match severity “${severityFilter}”.` : "No incidents match."} />
           ) : (
             <DataTable headers={[{ label: "ID" }, { label: "Severity" }, { label: "Status" }, { label: "Category" }, { label: "Component" }, { label: "Title" }, { label: "Created" }]}>
-              {incidentRows.map((row: IncidentRow) => (
-                <tr key={String(row.incident_id ?? row.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: `incident ${String(row.incident_id ?? row.id ?? "—")}`, body: row })}>
-                  <td>{String(row.incident_id ?? row.id ?? "—")}</td>
-                  <td><SeverityBadge severity={row.severity} /></td>
-                  <td>{row.status ?? "—"}</td>
-                  <td>{row.category ?? "—"}</td>
-                  <td>{row.component ?? "—"}</td>
-                  <td style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.title}>{row.title ?? "—"}</td>
-                  <td>{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
-                </tr>
-              ))}
+              {incidentEls}
             </DataTable>
           )}
         </Panel>

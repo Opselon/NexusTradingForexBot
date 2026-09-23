@@ -30,6 +30,7 @@
  *           .ixviz-* rules in ./structureViz.css.
  */
 
+import { useMemo } from "react";
 import { formatDateTime } from "@/lib/format";
 
 /** Wiring contract (amended by the orchestrator at integration: the band
@@ -306,13 +307,14 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
  * evidence is an honest empty note, never filled.
  */
 export function RegimeEvidence({ evidence }: { evidence: Record<string, unknown> | null | undefined }) {
-  const entries = Object.entries(evidence ?? {});
-  if (entries.length === 0) {
-    return <p className="ixviz-empty">No regime evidence in the payload — shown empty, never inferred.</p>;
-  }
-  return (
-    <dl className="ixviz ixviz-evidence">
-      {entries.map(([k, v]) => {
+  // perf: payload rows serialize once per evidence object identity — the raw
+  // JSON text (per-object JSON.stringify) and tone no longer recompute on
+  // every render of the regime panel. Deps = the exact object read; text and
+  // tone rules below are byte-identical.
+  const entries = useMemo(() => Object.entries(evidence ?? {}), [evidence]);
+  const rows = useMemo(
+    () =>
+      entries.map(([k, v]) => {
         const text =
           v === null || v === undefined
             ? "—" // missing field -> em dash, never zero-filled
@@ -322,14 +324,22 @@ export function RegimeEvidence({ evidence }: { evidence: Record<string, unknown>
                 ? "—"
                 : String(v); // scalars verbatim (no rounding, no units)
         const tone: Tone = typeof v === "string" ? wordTone(v) : "neutral";
-        return (
-          <div className={`ixviz-ev is-${tone}`} key={k}>
-            {/* verbatim payload key — cited, never renamed or judged */}
-            <dt className="ixviz-ev-k">{k}</dt>
-            <dd className="ixviz-ev-v">{text}</dd>
-          </div>
-        );
-      })}
+        return { k, text, tone };
+      }),
+    [entries],
+  );
+  if (rows.length === 0) {
+    return <p className="ixviz-empty">No regime evidence in the payload — shown empty, never inferred.</p>;
+  }
+  return (
+    <dl className="ixviz ixviz-evidence">
+      {rows.map(({ k, text, tone }) => (
+        <div className={`ixviz-ev is-${tone}`} key={k}>
+          {/* verbatim payload key — cited, never renamed or judged */}
+          <dt className="ixviz-ev-k">{k}</dt>
+          <dd className="ixviz-ev-v">{text}</dd>
+        </div>
+      ))}
     </dl>
   );
 }
