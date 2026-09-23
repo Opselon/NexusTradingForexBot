@@ -1,0 +1,183 @@
+/**
+ * Connection panel styles (URL field, discrete form, provider options).
+ *
+ * OWNER: Lane B (db-provider-pro) — this lane owns future edits.
+ * CONSUMES: theme tokens from styles/theme.css (no local colors).
+ * PROVIDES: .dbcp-* classes for ConnectionPanel / ConnectionUrlField / ProviderOptions.
+ * INVARIANTS: theme tokens only — zero hex/rgba literals; logical properties for RTL;
+ *   motion gated by prefers-reduced-motion; :focus-visible kept minimal.
+ * EXTEND: new rules go here with the dbcp- prefix; database.css stays frozen.
+ */
+/* -------------------------------------------------------------------------
+ * Database tab connection panel (.dbcp-*) — db-provider-pro (2026-09-23).
+ *
+ * NEW rules only: the feature's main stylesheet is ui/database.css (.dbc-*),
+ * which is frozen for this wave; every selector here is namespaced dbcp- so
+ * nothing else in the tab (or the app) can be affected.  Imported by
+ * ConnectionPanel.tsx, so these rules load with the panel that uses them.
+ *
+ * House style: theme tokens ONLY (styles/theme.css), no Tailwind utilities,
+ * no hardcoded colors.  Logical properties (margin-inline, padding-inline…)
+ * so the RTL switch (<html dir=fa>) mirrors; one :focus-visible rule for the
+ * panel's own controls; any animation is gated on reduced-motion preference.
+ * ---------------------------------------------------------------------- */
+
+.dbcp-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.dbcp-section-title {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 4px 0 2px;
+}
+
+/* -- connection string --------------------------------------------------- */
+
+.dbcp-url {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 10px;
+}
+
+.dbcp-url-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dbcp-url-mode {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.dbcp-url-input {
+  inline-size: 100%;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.dbcp-url-input::placeholder {
+  color: var(--text-faint);
+}
+
+.dbcp-url-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow-accent);
+}
+
+.dbcp-url-input[aria-invalid="true"] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px var(--glow-red);
+}
+
+/* Parse verdict line: the reason sentence is the only thing the operator sees
+ * for a malformed URL — it is never sent to the backend. */
+.dbcp-url-message {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.dbcp-url-message.bad {
+  color: var(--red);
+}
+
+.dbcp-url-echo {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+/* -- field grid ---------------------------------------------------------- */
+
+.dbcp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+/* -- advanced options ---------------------------------------------------- */
+
+.dbcp-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 10px;
+}
+
+.dbcp-options-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+}
+
+.dbcp-options-state {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.dbcp-options-state.live {
+  color: var(--green);
+}
+
+/* -- actions ------------------------------------------------------------- */
+
+.dbcp-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+.dbcp-mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+/* -- the single focus-visible rule for this stylesheet ------------------- */
+.dbcp-panel :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* The only motion in this stylesheet, gated on the reduced-motion preference. */
+@media (prefers-reduced-motion: no-preference) {
+  .dbcp-url-input {
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+}
+
+@media (max-width: 760px) {
+  .dbcp-grid,
+  .dbcp-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
