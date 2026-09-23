@@ -95,6 +95,12 @@ export default function GovernancePage(props: ShellPageProps) {
 
   const after = () => void qc.invalidateQueries({ queryKey: ["governance"] });
 
+  // ConfigPage house standard: while a mutation is in flight the toolbar is
+  // inert and each button names its own running operation (no new calls or
+  // payloads — busy mirrors cmd.state.running only).
+  const busy = cmd.state.running;
+  const busyLabel = (idle: string, running: string) => (busy ? running : idle);
+
   const ask = (title: string, danger: boolean, needsModel: boolean, label: string, run: PendingCommand["run"]) =>
     setPending({ title, danger, needsModel, label, run });
 
@@ -157,36 +163,39 @@ export default function GovernancePage(props: ShellPageProps) {
           <input id="gov-actor" className="input" style={{ width: 170 }} value={actor} onChange={(e) => setActor(e.target.value)} />
           <button
             className="btn small danger"
-            disabled={cmd.state.running || !status}
+            disabled={busy || !status}
+            title={busy ? "a command is already running" : undefined}
             onClick={() =>
               ask("Freeze promotions", true, false, "Freeze", (a) => governanceUseCases.freeze(a, "ui:lane5 emergency freeze"))
             }
           >
-            ❄ Freeze promotions
+            {busyLabel("❄ Freeze promotions", "❄ freezing…")}
           </button>
           <button
             className="btn small"
-            disabled={cmd.state.running || !frozen}
+            disabled={busy || !frozen}
+            title={busy ? "a command is already running" : undefined}
             onClick={() => ask("Unfreeze promotions", true, false, "Unfreeze", (a) => governanceUseCases.unfreeze(a, "ui:lane5 release freeze"))}
           >
-            ⚑ Unfreeze
+            {busyLabel("⚑ Unfreeze", "⚑ unfreezing…")}
           </button>
           <button
             className="btn small danger"
-            disabled={cmd.state.running || !candModel}
+            disabled={busy || !candModel}
+            title={busy ? "a command is already running" : undefined}
             onClick={() =>
               ask(`Disable candidate ${candModel}`, true, false, "Disable candidate", (a) =>
                 governanceUseCases.disableCandidate(a, candModel, "ui:lane5 operator disable"),
               )
             }
           >
-            ⛔ Disable candidate
+            {busyLabel("⛔ Disable candidate", "⛔ disabling…")}
           </button>
-          <button className="btn small" disabled={cmd.state.running} onClick={() => ask("Reconcile model registry", false, false, "Reconcile", () => governanceUseCases.reconcileRegistry())}>
-            Reconcile registry
+          <button className="btn small" disabled={busy} title={busy ? "a command is already running" : undefined} onClick={() => ask("Reconcile model registry", false, false, "Reconcile", () => governanceUseCases.reconcileRegistry())}>
+            {busyLabel("Reconcile registry", "reconciling…")}
           </button>
-          <button className="btn small danger" disabled={cmd.state.running} onClick={() => ask("Self-heal experience intelligence", true, false, "Rebuild", () => governanceUseCases.selfHealExperience())}>
-            Self-heal experience
+          <button className="btn small danger" disabled={busy} title={busy ? "a command is already running" : undefined} onClick={() => ask("Self-heal experience intelligence", true, false, "Rebuild", () => governanceUseCases.selfHealExperience())}>
+            {busyLabel("Self-heal experience", "self-healing…")}
           </button>
         </div>
         <div className="tiny muted">
