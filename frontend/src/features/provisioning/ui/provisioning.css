@@ -377,6 +377,258 @@
   word-break: break-word;
 }
 
+/* ------------------------------ Checklist & fact rows ------------------------------ */
+/* .pv-checks = the full environment checklist <dl>. Layout tolerates every
+   contracted row shape: direct dt/dd pairs (theme .kv pattern), div.kv-row
+   wrappers (display:contents via theme.css), full-width .pv-fact rows, or
+   plain div rows — see the > div rules below. */
+.pv-checks {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 16px;
+  margin-block-start: 10px;
+  font-size: 12px;
+}
+.pv-checks > div { grid-column: 1 / -1; }
+.pv-checks > div:not(.pv-fact, .kv-row) {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding-block: 3px;
+}
+.pv-checks dt {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.pv-checks dd {
+  margin: 0;
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* One slot fact row (contract §4): label / value / tone, fixed label column
+   so rows align; value wraps (paths/sha stay readable — page truncates with
+   title=), tone badge gets its own trailing column when it is a sibling. */
+.pv-fact {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding-block: 5px;
+  border-block-end: 1px solid var(--border);
+  font-size: 12px;
+}
+.pv-fact:last-child { border-block-end: none; }
+.pv-fact > :first-child {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.pv-fact > dt,
+.pv-fact > :nth-child(2) {
+  margin: 0;
+  min-inline-size: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------ Stepper ------------------------------ */
+/* Run lifecycle: environment → dataset → train. State is .is-done/.is-active/
+   .is-failed/.is-pending on the step; the page carries the status TEXT, the
+   colors only restate it (never color alone). */
+.pv-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block-start: 12px;
+}
+.pv-step {
+  --pv-c: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.pv-step-dot {
+  inline-size: 7px;
+  block-size: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--pv-c);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--pv-c) 70%, transparent);
+}
+.pv-step-label { font-weight: 600; letter-spacing: 0.02em; }
+.pv-step-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pv-step.is-done {
+  --pv-c: var(--green);
+  color: var(--text);
+  border-color: rgba(62, 207, 142, 0.35);
+  background: rgba(62, 207, 142, 0.07);
+}
+.pv-step.is-active {
+  --pv-c: var(--accent);
+  color: var(--text);
+  border-color: rgba(65, 166, 242, 0.5);
+  background: rgba(65, 166, 242, 0.10);
+}
+.pv-step.is-active .pv-step-dot { animation: blink 1s steps(2) infinite; }
+.pv-step.is-failed {
+  --pv-c: var(--red);
+  color: var(--text);
+  border-color: rgba(242, 86, 77, 0.5);
+  background: rgba(242, 86, 77, 0.10);
+}
+.pv-step.is-pending { opacity: 0.72; }
+
+/* ------------------------------ Meta & timer ------------------------------ */
+.pv-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.pv-meta b,
+.pv-meta strong { color: var(--text); font-weight: 600; }
+
+.pv-elapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.10);
+  border: 1px solid rgba(65, 166, 242, 0.35);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+/* ------------------------------ Inline validation ------------------------------ */
+/* aria-live="polite" in markup; the sentence itself carries the state, the
+   tone color only restates it (.is-warn amber / .is-bad red). */
+.pv-hint {
+  display: block;
+  inline-size: 100%;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+.pv-hint.is-warn { color: var(--amber); }
+.pv-hint.is-bad { color: var(--red); }
+
+/* ------------------------------ Dataset browser ------------------------------ */
+.pv-ds {
+  display: grid;
+  gap: 8px;
+  margin-block-start: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-inset);
+}
+.pv-ds-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.pv-ds-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-align: start;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.1s ease, color 0.1s ease, background 0.1s ease;
+}
+.pv-ds-item:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-panel-2);
+}
+.pv-ds-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--text);
+}
+.pv-ds-item.is-sel {
+  color: var(--text);
+  border-color: rgba(65, 166, 242, 0.5);
+  background: rgba(65, 166, 242, 0.10);
+}
+/* text marker so selection never reads by color alone */
+.pv-ds-item.is-sel::after {
+  content: "\2713";
+  color: var(--green);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.pv-ds-item > :first-child {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pv-ds-meta {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pv-ds-empty {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-style: italic;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+}
+
 /* ------------------------------ Responsive ------------------------------ */
 @media (max-width: 640px) {
   .pv-hero { padding: 14px 14px 13px; gap: 10px; }
