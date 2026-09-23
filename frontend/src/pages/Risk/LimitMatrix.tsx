@@ -36,7 +36,7 @@ export function LimitMatrix({ rows }: { rows: RiskLimitRow[] }) {
     return (
       <EmptyState
         message={t("risk.matrix.empty_rows", "No limit rows in the payload (no account, exposure or config numbers to compare).")}
-        hint={t("risk.matrix.empty_rows_hint", "The matrix appears as soon as the backend sends a comparable pair — an empty store is never rendered as 'within limit'.")}
+        hint={t("risk.matrix.empty_rows_hint", "The matrix appears as soon as the backend sends a comparable pair — an empty store is never rendered as \'within limit\'.")}
       />
     );
   }

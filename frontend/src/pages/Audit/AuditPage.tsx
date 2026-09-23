@@ -269,10 +269,10 @@ export default function AuditPage() {
             <>
               <select className="select" value={severityFilter} onChange={(e) => { setSeverityFilter(e.target.value); setIncidentPage(1); }} aria-label={t("audit.filter.severity_aria", "severity filter")}>
                 <option value="">{t("audit.filter.all_severities", "all severities")}</option>
-                <option value="CRITICAL">CRITICAL</option>
-                <option value="HIGH">HIGH</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="LOW">LOW</option>
+                <option value="CRITICAL">{t("ui.severity.critical", "CRITICAL")}</option>
+                <option value="HIGH">{t("ui.severity.high", "HIGH")}</option>
+                <option value="MEDIUM">{t("ui.severity.medium", "MEDIUM")}</option>
+                <option value="LOW">{t("ui.severity.low", "LOW")}</option>
               </select>
               {incidentRows.length > 0 && (
                 <button
