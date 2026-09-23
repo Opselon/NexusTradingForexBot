@@ -21,7 +21,7 @@
  * (.pv-* namespace, theme tokens only).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ShellPageProps } from "@/app/featureModule";
 import { EmptyState, ErrorState, LoadingState, Panel, Segmented } from "@/components/primitives";
@@ -36,7 +36,7 @@ import type {
   TrainSource,
 } from "../model";
 import { TRAIN_BACKENDS, TRAIN_SOURCES } from "../model";
-import { CANDLE_OPTIONS, classNames, codeOf, errText, fmtValue, isOkValue } from "./kit";
+import { CANDLE_OPTIONS, classNames, codeOf, errText, failLine, fmtValue, isOkValue, requestIdOf } from "./kit";
 import "./provisioning.css";
 
 const POLL_MS = 2000;
@@ -49,8 +49,9 @@ function failingChecks(report: EnvironmentReport | undefined | null): EnvCheck[]
   return Array.isArray(raw) ? raw.filter((c) => !c.ok) : [];
 }
 
-/** One line of the environment checklist. */
-function CheckRow({
+/** One line of the environment checklist (memoized: keystrokes in the train
+ *  form below no longer re-render the whole checklist). */
+const CheckRow = memo(function CheckRow({
   label,
   ok,
   note,
@@ -73,7 +74,7 @@ function CheckRow({
       </dd>
     </div>
   );
-}
+});
 
 export default function ProvisioningPage(_props: ShellPageProps) {
   const [status, setStatus] = useState<ProvisioningStatusResponse | null>(null);
@@ -91,30 +92,86 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   const [events, setEvents] = useState<ProgressEvent[]>([]);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string>("");
+  const [errorRid, setErrorRid] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>("");
+  // 4-state ladder for the two discovery reads: each keeps its own loading /
+  // error rung instead of funneling everything into one banner + eternal
+  // spinner.
+  const [statusLoading, setStatusLoading] = useState<boolean>(true);
+  const [statusError, setStatusError] = useState<string>("");
+  const [statusRid, setStatusRid] = useState<string | null>(null);
+  const [statusAt, setStatusAt] = useState<number>(0);
+  const [envLoading, setEnvLoading] = useState<boolean>(true);
+  const [envError, setEnvError] = useState<string>("");
+  const [envRid, setEnvRid] = useState<string | null>(null);
+  const [envAt, setEnvAt] = useState<number>(0);
   const seenSeq = useRef<number>(0);
+  const statusCtl = useRef<AbortController | null>(null);
+  const envCtl = useRef<AbortController | null>(null);
 
   const refreshStatus = useCallback(async () => {
+    // Abort any identical in-flight status load, then fetch with the signal
+    // so an unmount/re-run never leaves a zombie request writing state.
+    statusCtl.current?.abort();
+    const ac = new AbortController();
+    statusCtl.current = ac;
+    setStatusLoading(true);
+    setStatusError("");
+    setStatusRid(null);
     try {
-      const s = await provisioningApi.status();
-      setStatus(s);
+      const s = await provisioningApi.status(ac.signal);
+      if (ac.signal.aborted) return;
+      if (s.success === false) {
+        // In-band legacy failure — an honest error rung, verbatim code/message.
+        setStatusError(failLine(s));
+        setStatusRid(null);
+      } else {
+        setStatus(s);
+        setStatusAt(Date.now());
+      }
     } catch (err) {
-      setError(errText(err));
+      if (ac.signal.aborted) return;
+      setStatusError(errText(err));
+      setStatusRid(requestIdOf(err));
+    } finally {
+      if (!ac.signal.aborted) setStatusLoading(false);
     }
   }, []);
 
-  const refreshEnv = useCallback(
-    async (be: TrainBackend) => {
-      try {
-        const e = await provisioningApi.environment(be);
+  const refreshEnv = useCallback(async (be: TrainBackend) => {
+    envCtl.current?.abort();
+    const ac = new AbortController();
+    envCtl.current = ac;
+    setEnvLoading(true);
+    setEnvError("");
+    setEnvRid(null);
+    try {
+      const e = await provisioningApi.environment(be, ac.signal);
+      if (ac.signal.aborted) return;
+      if (e.success === false) {
+        setEnvError(failLine(e));
+        setEnvRid(null);
+      } else {
         setEnv(e);
+        setEnvAt(Date.now());
         setError("");
-      } catch (err) {
-        setError(errText(err));
+        setErrorRid(null);
       }
-    },
-    [],
-  );
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      setEnvError(errText(err));
+      setEnvRid(requestIdOf(err));
+    } finally {
+      if (!ac.signal.aborted) setEnvLoading(false);
+    }
+  }, []);
+
+  // Unmount cleanup: abort both discovery reads (the training-tail effect and
+  // the status background refresh below abort their own controllers).
+  useEffect(() => () => {
+    statusCtl.current?.abort();
+    envCtl.current?.abort();
+  }, []);
 
   // Initial loads.
   useEffect(() => {
@@ -128,9 +185,10 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   useEffect(() => {
     if (!training) return;
     let cancelled = false;
+    const ac = new AbortController();
     const tick = async () => {
       try {
-        const p = await provisioningApi.trainProgress(seenSeq.current);
+        const p = await provisioningApi.trainProgress(seenSeq.current, ac.signal);
         if (cancelled) return;
         if (Array.isArray(p.events) && p.events.length > 0) {
           setEvents((prev) => [...prev, ...p.events]);
@@ -145,20 +203,26 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           else setNotice("Run finished.");
         }
       } catch (err) {
-        if (!cancelled) setError(errText(err));
+        if (cancelled) return;
+        setError(errText(err));
+        setErrorRid(requestIdOf(err));
       }
     };
     void tick();
+    // Bounded poll: 2s only while a run is active; cleanup cancels the
+    // interval AND aborts the in-flight progress request on unmount/stop.
     const id = window.setInterval(tick, POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      ac.abort();
     };
   }, [training]);
 
   const onInstall = useCallback(async () => {
     setInstalling(true);
     setError("");
+    setErrorRid(null);
     setNotice("");
     try {
       const out = await provisioningApi.install({ backend });
@@ -170,6 +234,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       }
     } catch (err) {
       setError(errText(err));
+      setErrorRid(requestIdOf(err));
     } finally {
       setInstalling(false);
     }
@@ -178,6 +243,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   const onOfficial = useCallback(async () => {
     setOfficialBusy(true);
     setError("");
+    setErrorRid(null);
     setNotice("");
     try {
       const out = await provisioningApi.official({});
@@ -189,6 +255,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       }
     } catch (err) {
       setError(errText(err));
+      setErrorRid(requestIdOf(err));
     } finally {
       setOfficialBusy(false);
     }
@@ -196,6 +263,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
 
   const onTrain = useCallback(async () => {
     setError("");
+    setErrorRid(null);
     setNotice("");
     setEvents([]);
     setResult(null);
@@ -219,22 +287,31 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       setNotice("Training run started.");
     } catch (err) {
       setError(errText(err));
+      setErrorRid(requestIdOf(err));
     }
   }, [source, filePath, candles, folds, epochs, backend, prepareEnvironment]);
 
   const onCancel = useCallback(async () => {
     setError("");
+    setErrorRid(null);
     try {
       const out = await provisioningApi.trainCancel();
       setNotice(out.cancel === "REQUESTED" ? "Cancel requested — observed at the next epoch boundary." : "No active run to cancel.");
     } catch (err) {
       setError(errText(err));
+      setErrorRid(requestIdOf(err));
     }
   }, []);
 
   const busy = installing || officialBusy || training;
   const report = env?.report;
-  const failures = failingChecks(report);
+  const failures = useMemo(() => failingChecks(report), [report]);
+  // The progress <pre> re-joins every event on each keystroke below — memoize
+  // the join so train-form typing costs O(1) instead of O(events).
+  const eventsLog = useMemo(
+    () => events.map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`).join("\n"),
+    [events],
+  );
   const trainingReady = Boolean(report?.training_ready);
   const recommended = status?.recommended;
   const allowedRoots = status?.allowed_import_roots ?? [];
@@ -262,7 +339,16 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         ) : null}
       </Panel>
 
-      {error ? <ErrorState message={error} onRetry={() => setError("")} /> : null}
+      {error ? (
+        <ErrorState
+          message={error}
+          requestId={errorRid}
+          onRetry={() => {
+            setError("");
+            setErrorRid(null);
+          }}
+        />
+      ) : null}
       {notice ? (
         <div className="banner good pv-banner" role="status">
           {notice}
@@ -285,7 +371,15 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             Backend <span className="inline-mono">{backend}</span> — discovery only, nothing is installed by this check.
           </p>
 
-          {env ? (
+          {envLoading ? (
+            <LoadingState label="Resolving environment…" />
+          ) : envError ? (
+            <ErrorState
+              message={envError}
+              requestId={envRid}
+              onRetry={() => void refreshEnv(backend)}
+            />
+          ) : env && (env.environment || env.report) ? (
             <dl className="kv pv-list">
               <CheckRow
                 label="python"
@@ -305,7 +399,10 @@ export default function ProvisioningPage(_props: ShellPageProps) {
               <CheckRow label="training_ready" ok={trainingReady} note={trainingReady ? "can train now" : "blocked"} />
             </dl>
           ) : (
-            <LoadingState label="Resolving environment…" />
+            <EmptyState
+              message="No environment report returned."
+              hint={`GET /api/provisioning/environment?backend=${backend} answered successfully but carried no environment/report payload.`}
+            />
           )}
 
           {failures.length > 0 ? (
@@ -323,6 +420,11 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             </div>
           ) : null}
 
+          <div className="small muted">
+            last fetched {envAt ? new Date(envAt).toLocaleTimeString() : "—"} · GET
+            /api/provisioning/environment (legacy endpoint returns no freshness field — staleness is
+            not claimed)
+          </div>
           <div className="pv-toolbar">
             <button
               type="button"
@@ -345,15 +447,27 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             Download and verify the published model bundle. Nothing is installed unless every
             verification check passes.
           </p>
-          {status?.slot ? (
+          {statusLoading ? (
+            <LoadingState label="Resolving slot state…" />
+          ) : statusError ? (
+            <ErrorState message={statusError} requestId={statusRid} onRetry={() => void refreshStatus()} />
+          ) : status?.slot ? (
             <dl className="kv pv-list">
               {Object.entries(status.slot).slice(0, 6).map(([k, v]) => (
                 <CheckRow key={k} label={k} ok={isOkValue(v)} note={fmtValue(v)} />
               ))}
             </dl>
           ) : (
-            <EmptyState message="No slot state yet." hint="The recommended action appears in the header once known." />
+            <EmptyState
+              message="No slot state yet."
+              hint="GET /api/provisioning/status answered without a model slot — the recommended action appears in the header once the backend reports one."
+            />
           )}
+          <div className="small muted">
+            last fetched {statusAt ? new Date(statusAt).toLocaleTimeString() : "—"} · GET
+            /api/provisioning/status (legacy endpoint returns no freshness field — staleness is not
+            claimed)
+          </div>
           <div className="pv-toolbar">
             <button type="button" className="btn" disabled={busy} onClick={() => void onOfficial()}>
               {officialBusy ? "Downloading…" : "Download & verify official model"}
@@ -471,9 +585,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           <div className="pv-field">
             <div className="small faint uppercase font-bold">Progress</div>
             <pre tabIndex={0} className="pv-log" aria-live="polite">
-              {events
-                .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
-                .join("\n")}
+              {eventsLog}
             </pre>
           </div>
         ) : null}

@@ -33,6 +33,26 @@ export function codeOf(body: unknown): string {
   return String((nested?.code ?? b?.code ?? b?.message ?? "UNKNOWN_ERROR"));
 }
 
+/**
+ * Correlation id of a thrown transport error (ApiError.request_id) — carried
+ * into ErrorState's request_id line so an operator can grep the backend log.
+ * Returns null when the failure never had one (in-band legacy codes).
+ */
+export function requestIdOf(err: unknown): string | null {
+  const e = err as { requestId?: unknown; request_id?: unknown };
+  const rid = e?.requestId ?? e?.request_id;
+  return typeof rid === "string" && rid !== "" ? rid : null;
+}
+
+/** In-band legacy failure ({success:false, code, message?, remedy?}) -> one
+ *  verbatim line. Every fragment is a backend string; nothing is invented. */
+export function failLine(body: unknown): string {
+  const b = body as { code?: string; message?: string; remedy?: string | null };
+  return [codeOf(body), b?.message, b?.remedy ? `remedy: ${b.remedy}` : null]
+    .filter(Boolean)
+    .join(" — ");
+}
+
 /** Server slot value reads as OK (booleans / OK strings). */
 export function isOkValue(v: unknown): boolean {
   if (typeof v === "boolean") return v;
