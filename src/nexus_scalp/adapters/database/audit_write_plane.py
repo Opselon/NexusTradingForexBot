@@ -213,12 +213,21 @@ class AuditWritePlane:
         overflow_max_files: int = 5000,
         on_metrics: Any = None,
         owns_backend: bool = True,
+        overflow_sink: Callable[[str, tuple, BaseException | None], None] | None = None,
+        flush_interval_resolver: Callable[[], float] | None = None,
         queue: Any = None,
         queue_resolver: Callable[[], Any] | None = None,
     ) -> None:
         """``queue`` may be supplied by the owner (AuditRepository) so the ~30
         producers and the public ``flush()`` contract all post to the exact
-        object this plane drains.  Two queues = silent row loss."""
+        object this plane drains.  Two queues = silent row loss.
+
+        ``overflow_sink`` lets the owner keep owning the durable-overflow
+        write (its BUG-285 file cap, dead-letter routing and seq counter are
+        the authoritative implementation; a plane-local duplicate would
+        silently bypass an owner's monkeypatched seam).  When absent the plane
+        keeps its own implementation.
+        """
         self._backend_factory = backend_factory
         self._owns_backend = owns_backend
         self._dead_letter_store = dead_letter_store
@@ -229,6 +238,8 @@ class AuditWritePlane:
         self._overflow_recovery_batch = int(overflow_recovery_batch)
         self._overflow_max_files = int(overflow_max_files)
         self._on_metrics = on_metrics
+        self._overflow_sink = overflow_sink
+        self._flush_interval_resolver = flush_interval_resolver
 
         self._queue_resolver = queue_resolver
         self._queue = (
@@ -286,6 +297,22 @@ class AuditWritePlane:
             pass
         return self._queue
 
+    def _effective_flush_interval(self) -> float:
+        """The flush cadence the owner currently uses.
+
+        An owner may retune ``_flush_interval`` at runtime (perf-wave R1
+        probes do this); a value frozen at construction would keep applying
+        a stale blocking window on the tick path.
+        """
+        try:
+            if self._flush_interval_resolver is not None:
+                resolved = self._flush_interval_resolver()
+                if resolved is not None:
+                    return max(0.01, float(resolved))
+        except Exception:
+            pass
+        return self._flush_interval
+
     def _effective_overflow_dir(self) -> Path:
         """Overflow dir as the owner currently sees it.
 
@@ -342,7 +369,8 @@ class AuditWritePlane:
                 # this runs on the tick path and must never stall it beyond
                 # what the writer can absorb.
                 self._effective_queue().put(
-                    (query, args), timeout=min(self._flush_interval * 2.0, 0.1)
+                    (query, args),
+                    timeout=min(self._effective_flush_interval() * 2.0, 0.1),
                 )
                 backpressured = True
             else:
@@ -373,12 +401,15 @@ class AuditWritePlane:
         """Enqueue a NON-CRITICAL telemetry row: dropable, counted."""
         try:
             self._effective_queue().put_nowait((translate_sql(query), args))
+            self._report_metrics()
+            return
         except _stdlib_queue.Full:
             self.telemetry_dropped += 1
             logger.error(
                 "Audit telemetry queue full — counter dropped (telemetry_dropped=%d)",
                 self.telemetry_dropped,
             )
+        self._report_metrics()
 
     def flush(self, timeout_sec: float = 5.0) -> bool:
         """Boundedly drain the queue (read-after-write ordering)."""
@@ -477,6 +508,7 @@ class AuditWritePlane:
                     type(e).__name__,
                     str(e)[:400],
                 )
+                self._report_metrics()
                 e = None  # never leak a live exception reference across loop iters
                 for _ in batch:
                     q.task_done()
@@ -493,6 +525,13 @@ class AuditWritePlane:
         self, query: str, args: tuple, error: BaseException | None
     ) -> None:
         """Persist one financial event to the durable overflow directory."""
+        if self._overflow_sink is not None:
+            # The owner (AuditRepository) keeps the authoritative overflow
+            # implementation: its BUG-285 file cap, dead-letter routing and
+            # sequence counter. Delegating keeps that seam intact instead of
+            # running a plane-local duplicate that silently bypasses it.
+            self._overflow_sink(query, args, error)
+            return
         try:
             overflow_dir = self._effective_overflow_dir()
             overflow_dir.mkdir(parents=True, exist_ok=True)

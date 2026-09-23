@@ -394,8 +394,15 @@ class AuditRepository:
 
         self._flush_interval = flush_interval_sec
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
-        self._running = False
-        self._worker_thread: threading.Thread | None = None
+        # NOTE: ``_running`` is deliberately NOT set here. It is a property
+        # below delegating to the write plane: after DB-FABRIC-001 the worker
+        # lives in AuditWritePlane, and a stale constant False here broke
+        # BUG-297 connection caching in StrategyEvaluator (which gates
+        # handle reuse on ``audit_repo._running`` and was opening a fresh
+        # connect per call instead of reusing the cached one).
+        # ``_worker_thread`` is likewise a property below: callers/tests read
+        # ``repo._worker_thread`` to verify the consumer is bound and alive
+        # (BUG-288 handshake), and ``close()`` needs to join it.
         # The provider-agnostic write plane owns the queue/worker/overflow
         # machinery (see audit_write_plane). It is constructed here so this
         # repository keeps its exact public surface, but the persistence
@@ -488,6 +495,58 @@ class AuditRepository:
         # Under a pooled provider the plane is the sole consumer too.
         self._write_plane.start()
         self._legacy_worker_armed = True
+
+    @property
+    def _running(self) -> bool:
+        """Is the repository's background machinery live?
+
+        After DB-FABRIC-001 the queue/worker/overflow machinery moved into
+        :class:`AuditWritePlane`, so this delegates there. StrategyEvaluator
+        reads this flag to decide whether to cache its registry connection
+        (BUG-297: a stale ``False`` made it drop the cache and reconnect on
+        every pre-trade score lookup).
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None and getattr(plane, "_running", False):
+            return True
+        return False
+
+    @_running.setter
+    def _running(self, value: bool) -> None:
+        """Delegate the running flag to the write plane (the worker owner).
+
+        Preserves the pre-existing write sites (``_start_background_worker``,
+        ``close``) that set this attribute directly; the plane is the single
+        source of truth after DB-FABRIC-001.
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None:
+            plane._running = value
+
+    @property
+    def _worker_thread(self) -> threading.Thread | None:
+        """The background consumer thread (BUG-288 handshake: bound to the
+        queue at construction).
+
+        After DB-FABRIC-001 the worker lives in :class:`AuditWritePlane`;
+        delegating here keeps the historical surface (``close()`` joins it,
+        tests assert it is alive and cannot adopt a rebound queue).
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None:
+            return getattr(plane, "_worker_thread", None)
+        return None
+
+    @_worker_thread.setter
+    def _worker_thread(self, value: threading.Thread | None) -> None:
+        """Delegate the worker thread slot to the write plane.
+
+        ``_start_background_worker`` (legacy fallback) and ``close()`` still
+        write this attribute; the plane owns the authoritative slot.
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None:
+            plane._worker_thread = value
 
     def _setup_storage(self) -> None:
         """Initializes tables, indexes, and HFT performance pragmas."""
@@ -2331,6 +2390,14 @@ class AuditRepository:
             AuditWritePlane,
         )
 
+        def _get_flush_interval() -> float:
+            return float(self._flush_interval)
+
+        def _do_financial_overflow(
+            query: str, args: tuple, error: BaseException | None = None
+        ) -> None:
+            self._write_financial_overflow(query, args, error)
+
         flush_interval = float(self._flush_interval)
         if self._is_sqlite:
             return AuditWritePlane(
@@ -2342,7 +2409,9 @@ class AuditRepository:
                 dead_letter_store=self.dead_letter_store,
                 overflow_dir=self._overflow_dir(),
                 overflow_resolver=self._overflow_dir,
+                overflow_sink=_do_financial_overflow,
                 flush_interval=flush_interval,
+                flush_interval_resolver=_get_flush_interval,
                 on_metrics=self._apply_write_plane_metrics,
             )
 
@@ -2368,6 +2437,7 @@ class AuditRepository:
             overflow_dir=self._overflow_dir(),
             overflow_resolver=self._overflow_dir,
             flush_interval=flush_interval,
+            flush_interval_resolver=_get_flush_interval,
             on_metrics=self._apply_write_plane_metrics,
         )
 
@@ -2675,6 +2745,11 @@ class AuditRepository:
 
         Kept as the repository's entry point so the ~30 producers keep their
         call sites byte-identical; the plane owns the durability contract.
+
+        R1 (perf wave): the backpressure window the plane applies is
+        ``min(self._flush_interval * 2.0, 0.1)`` — bounded blocking put with
+        no hard 2-second floor, so a saturated queue can never wedge the tick
+        path for more than 100 ms while durable overflow still wins.
         """
         self._write_plane.enqueue_financial(query, args)
 
