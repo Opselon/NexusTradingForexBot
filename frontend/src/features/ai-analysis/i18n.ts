@@ -238,4 +238,22 @@ export const MESSAGES: FeatureMessages = {
   "ai-analysis.panel.loading": { fa: "در حال بارگذاری…", de: "wird geladen…", es: "cargando…", ar: "جارٍ التحميل…" },
   "ai-analysis.panel.history_page_rows": { fa: "صفحه تاریخچه فعلی · حداکثر {n} ردیف", de: "aktuelle Verlaufsseite · max. {n} Zeilen", es: "página de historial actual · máx. {n} filas", ar: "صفحة السجل الحالية · {n} صف كحد أقصى" },
   "ai-analysis.intel.coverage_note": { fa: "پوشش رفتار — tab-ai-analysis قدیمی همچنین مرکز هوش و گاه‌شمار پوزیشن را بارگذاری می‌کند (اجزای بی‌استفاده که اکنون متصل شده‌اند).", de: "Verhaltensabdeckung — der Legacy-Tab ai-analysis lädt zusätzlich Intelligence-Center und Positionstimeline (verwaiste Komponenten, jetzt verdrahtet).", es: "Cobertura de comportamiento — la pestaña legacy ai-analysis también carga el centro de inteligencia y la línea de tiempo de posiciones (componentes huérfanos, ahora conectados).", ar: "تغطية السلوك — يحمّل التبويب القديم ai-analysis أيضًا مركز الاستخبارات والجدول الزمني للمواقف (مكوّنات يتيمة، تم وصلها الآن)." },
+
+  // --- aaCharts (SVG/CSS chart annotations, aria, empty/error copy) ---
+  "ai-analysis.chart.no_by_action": { fa: "بک‌اند هیچ تعداد by_action برای این بازه برنگرداند", de: "Backend lieferte für dieses Fenster keine by_action-Zählungen", es: "el backend no devolvió conteos de by_action para esta ventana", ar: "لم يُرجع الخادم أي عدّادات by_action لهذه النافذة" },
+  "ai-analysis.chart.decision_mix_aria": { fa: "ترکیب تصمیم‌ها: {s}", de: "Entscheidungsmischung: {s}", es: "mezcla de decisiones: {s}", ar: "مزيج القرارات: {s}" },
+  "ai-analysis.chart.decisions_cap": { fa: "تصمیم‌ها", de: "Entscheidungen", es: "decisiones", ar: "القرارات" },
+  "ai-analysis.chart.no_history_rows": { fa: "هیچ ردیف تاریخچه‌ای با مهرزمان قابل‌تجزیه در این صفحه نیست", de: "keine Verlaufszeilen mit parsebarem Zeitstempel auf dieser Seite", es: "no hay filas de historial con una marca de tiempo analizable en esta página", ar: "لا توجد صفوف سجل بطابع زمني قابل للتحليل في هذه الصفحة" },
+  "ai-analysis.chart.tl_aria": { fa: "خط‌اطمینان در طول زمان، {n} نمونه از {a} تا {b}", de: "Konfidenz über die Zeit, {n} Samples von {a} bis {b}", es: "confianza a lo largo del tiempo, {n} muestras de {a} a {b}", ar: "الثقة عبر الزمن، {n} عيّنة من {a} إلى {b}" },
+  "ai-analysis.chart.tl_dropped": { fa: "{n} ردیف به دلیل مهرزمان غیرقابل‌تجزیه حذف شد", de: "{n} Zeilen wegen nicht parsebarer Zeitstempel verworfen", es: "{n} filas descartadas por marcas de tiempo no analizables", ar: "تم إسقاط {n} صف بسبب الطوابع الزمنية غير القابلة للتحليل" },
+  "ai-analysis.chart.tl_caption": { fa: "{n} نمونه · {m} برچسب اقدام {s} در نمایش", de: "{n} Samples · {m} Aktionslabel {s} in Ansicht", es: "{n} muestras · {m} etiquetas de acción {s} en vista", ar: "{n} عيّنة · {m} تصنيف إجراء {s} معروض" },
+  "ai-analysis.chart.tl_dropped_paren": { fa: "{n} ردیف {s} حذف شد (مهرزمان غیرقابل‌تجزیه)", de: "{n} Zeile{s} verworfen (nicht parsebarer Zeitstempel)", es: "{n} fila{s} descartada{s} (marca de tiempo no analizable)", ar: "تم إسقاط {n} صف{s} (طابع زمني غير قابل للتحليل)" },
+  "ai-analysis.chart.no_rows": { fa: "بک‌اند ردیفی برنگرداند", de: "Backend lieferte keine Zeilen", es: "el backend no devolvió filas", ar: "لم يُرجع الخادم أي صفوف" },
+  "ai-analysis.chart.bar_aria": { fa: "{l}: {c} ({p}%)", de: "{l}: {c} ({p}%)", es: "{l}: {c} ({p}%)", ar: "{l}: {c} ({p}%)" },
+  "ai-analysis.chart.bars_more": { fa: "{n} ردیف کوچک‌تر نمایش داده نشد", de: "{n} kleinere Zeilen nicht angezeigt", es: "{n} filas más pequeñas no mostradas", ar: "{n} صفًا أصغر غير معروض" },
+  "ai-analysis.chart.reward": { fa: "پاداش {v}", de: "Belohnung {v}", es: "recompensa {v}", ar: "مكافأة {v}" },
+  "ai-analysis.chart.risk": { fa: "ریسک {v}", de: "Risiko {v}", es: "riesgo {v}", ar: "مخاطرة {v}" },
+  "ai-analysis.chart.no_levels": { fa: "هیچ ورودی/SL/TP برای این تصمیم ثبت نشده است", de: "kein Entry/SL/TP für diese Entscheidung erfasst", es: "sin entry/SL/TP registrados para esta decisión", ar: "لا توجد entry/SL/TP مسجّلة لهذا القرار" },
+  "ai-analysis.chart.rr_missing": { fa: "ورودی · SL · TP کامل ثبت نشده‌اند", de: "Entry · SL · TP nicht vollständig erfasst", es: "entry · SL · TP no todos registrados", ar: "entry · SL · TP غير مسجّلة بالكامل" },
+  "ai-analysis.chart.conf_aria": { fa: "اطمینان {p}٪", de: "Konfidenz {p}%", es: "confianza {p}%", ar: "الثقة {p}%" },
 };

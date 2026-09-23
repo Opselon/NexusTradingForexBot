@@ -133,6 +133,8 @@ export const MESSAGES: FeatureMessages = {
   "research.pb.no_match": { fa: "هیچ ورودی کتاب راهبردی با «{q}» مطابقت ندارد.", de: "Kein Playbook-Eintrag stimmt mit „{q}“ überein.", es: "Ninguna entrada del manual coincide con “{q}”.", ar: "لا يطابق أي مدخل في الكتاب التوجيهي “{q}”." },
   "research.pb.no_match_hint": { fa: "یک نام گیت (BACKTEST)، یک وضعیت (EVIDENCE_BUILDING) یا یک ثابت (0.25R، purge، DSR) را امتحان کنید.", de: "Probieren Sie einen Gate-Namen (BACKTEST), einen Zustand (EVIDENCE_BUILDING) oder eine Konstante (0.25R, purge, DSR).", es: "Pruebe un nombre de gate (BACKTEST), un estado (EVIDENCE_BUILDING) o una constante (0.25R, purge, DSR).", ar: "جرّب اسم بوابة (BACKTEST)، أو حالة (EVIDENCE_BUILDING)، أو ثابتًا (0.25R، purge، DSR)." },
   "research.pb.aria_entry": { fa: "{kind}: {title}", de: "{kind}: {title}", es: "{kind}: {title}", ar: "{kind}: {title}" },
+  "research.pb.aria_kind": { fa: "نوع: {s}", de: "Art: {s}", es: "tipo: {s}", ar: "النوع: {s}" },
+  "research.pb.aria_title": { fa: "عنوان: {s}", de: "Titel: {s}", es: "título: {s}", ar: "العنوان: {s}" },
   "research.pb.params_h": { fa: "ثابت‌ها (دقیقاً از منبع)", de: "Konstanten (wortgleich aus dem Quelltext)", es: "Constantes (textuales del código)", ar: "الثوابت (حرفيًا من المصدر)" },
   "research.pb.th_name": { fa: "نام", de: "Name", es: "nombre", ar: "الاسم" },
   "research.pb.th_value": { fa: "مقدار", de: "Wert", es: "valor", ar: "القيمة" },

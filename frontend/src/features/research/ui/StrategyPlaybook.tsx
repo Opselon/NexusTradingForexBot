@@ -145,7 +145,10 @@ function EntryCard({
   bindRef: (node: HTMLElement | null) => void;
 }) {
   const t = useI18n((s) => s.t);
-  const label = t("research.pb.aria_entry", "{kind}: {title}", { kind: entry.kind, title: entry.title });
+  const label = t("research.pb.aria_entry", "{kind}: {title}", {
+    kind: t("research.pb.aria_kind", "kind: {s}", { s: entry.kind }),
+    title: t("research.pb.aria_title", "title: {s}", { s: entry.title }),
+  });
   return (
     <article className={`rs-pb-entry ${open ? "open" : ""}`} ref={bindRef} id={`pb-${entry.id}`}>
       <button type="button" className="rs-pb-head" onClick={onToggle} aria-expanded={open} aria-label={label}>
