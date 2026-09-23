@@ -31,6 +31,8 @@ export const MESSAGES: FeatureMessages = {
   "shell.loading_feature": { fa: "در حال بارگذاری {name}…", de: "Lade {name}…", es: "Cargando {name}…", ar: "جارٍ تحميل {name}…" },
   "shell.unreachable": { fa: "بک‌اند در دسترس نیست", de: "Backend nicht erreichbar", es: "Backend no disponible", ar: "الخادم غير متاح" },
   "shell.unknown_route": { fa: "مسیر ناشناخته", de: "Unbekannte Route", es: "Ruta desconocida", ar: "مسار غير معروف" },
+  "shell.loading_page": { fa: "در حال بارگذاری صفحه…", de: "Seite wird geladen…", es: "Cargando página…", ar: "جارٍ تحميل الصفحة…" },
+  "shell.route_label.fallback": { fa: "کنسول", de: "Konsole", es: "Consola", ar: "وحدة التحكم" },
   "shell.section.error_fallback": { fa: "نقطه پایانی در دسترس نیست.", de: "Endpunkt nicht verfügbar.", es: "Punto final no disponible.", ar: "نقطة النهاية غير متاحة." },
   "shell.tri.unknown": { fa: "نامعلوم", de: "UNBEKANNT", es: "DESCONOCIDO", ar: "غير معروف" },
   "ux.table.filter_ph": { fa: "فیلتر ردیف‌ها (تیکت / نماد / متن)…", de: "Zeilen filtern (Ticket / Symbol / Text)…", es: "filtrar filas (ticket / símbolo / texto)…", ar: "تصفية الصفوف (تذكرة / رمز / نص)…" },

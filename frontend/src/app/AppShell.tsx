@@ -114,7 +114,7 @@ function LangRow() {
         className="select lang-select"
         value={lang}
         onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
-        aria-label="Language"
+        aria-label={t("shell.lang.aria", "Language")}
       >
         {LANGUAGES.map((l) => (
           <option key={l.id} value={l.id}>
@@ -256,7 +256,7 @@ export function AppShell() {
           path={f.route}
           element={
             <ErrorBoundary label={f.label} resetKey={routePathname}>
-              <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
+              <Suspense fallback={<LoadingState label={t("shell.loading_feature", "Loading {name}…", { name: f.label })} />}>
                 <f.lazy snapshot={snapshot} nowMs={nowMs} />
               </Suspense>
             </ErrorBoundary>
@@ -270,8 +270,8 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">Skip to content</a>
-      <aside aria-label="Sidebar" className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+      <a className="skip-link" href="#main-content">{t("shell.skip_content", "Skip to content")}</a>
+      <aside aria-label={t("shell.sidebar.landmark", "Sidebar")} className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
           <div className="brand-logo">NSE</div>
           <div className="brand-text">
@@ -279,7 +279,7 @@ export function AppShell() {
             <span className="sub">PRO CONSOLE</span>
           </div>
         </div>
-        <nav className="nav" aria-label="Primary">
+        <nav className="nav" aria-label={t("shell.nav.primary", "Primary")}>
           {ALL_NAV_SECTIONS.map((sec) => (
             <div key={sec.section}>
               <div className="nav-section">{t(sec.sectionKey, sec.section)}</div>
@@ -305,8 +305,8 @@ export function AppShell() {
               className={`switch ${dense ? "on" : ""}`}
               role="switch"
               aria-checked={dense}
-              aria-label="Toggle dense layout"
-              title="Dense layout (visual only)"
+              aria-label={t("shell.dense.toggle", "Toggle dense layout")}
+              title={t("shell.dense.title", "Dense layout (visual only)")}
               onClick={toggleDense}
             />
           </div>
@@ -314,24 +314,24 @@ export function AppShell() {
           <div className="side-row" title={t("ux.shortcut.help", "Keyboard shortcuts")}>
             <span><kbd>alt</kbd> 1–9 · <kbd>ctrl</kbd>K</span>
           </div>
-          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)" aria-label="Toggle sidebar" aria-expanded={!collapsed}>
+          <button className="sidebar-toggle" onClick={toggleSidebar} title={t("shell.sidebar.toggle", "Toggle sidebar (Alt+B)")} aria-label={t("shell.sidebar.toggle_aria", "Toggle sidebar")} aria-expanded={!collapsed}>
             {collapsed ? "»" : "«"}
           </button>
         </div>
       </aside>
 
       <div className="main-col">
-        <header aria-label="Top bar" className="topbar">
-          <ModeIndicator snapshot={snapshot} />
-          <span className="conn-chip" title="Engine loop state (backend-authoritative)">
-            <span className={`conn-dot ${snapshot?.engine_running ? "connected" : snapshot ? "disconnected" : "reconnecting"}`} />
-            <span>ENGINE {snapshot ? (snapshot.engine_running ? "RUNNING" : "STOPPED") : "—"}</span>
-          </span>
-          <span className="conn-chip" title="Backend health.overall from /api/status">
-            {snapshot ? <StatusBadge status={snapshot.health.overall} /> : <span className="badge unknown">HEALTH —</span>}
-          </span>
-          {snapshot && (
-            <span className="conn-chip freshness-chip" title="Pipeline freshness stages (backend live_freshness)">
+        <header aria-label={t("shell.topbar.aria", "Top bar")} className="topbar">
+            <ModeIndicator snapshot={snapshot} />
+            <span className="conn-chip" title={t("shell.engine.title", "Engine loop state (backend-authoritative)")}>
+              <span className={`conn-dot ${snapshot?.engine_running ? "connected" : snapshot ? "disconnected" : "reconnecting"}`} />
+              <span>{t("shell.engine.label", "ENGINE")} {snapshot ? (snapshot.engine_running ? t("shell.engine.running", "RUNNING") : t("shell.engine.stopped", "STOPPED")) : "—"}</span>
+            </span>
+            <span className="conn-chip" title={t("shell.health.title", "Backend health.overall from /api/status")}>
+              {snapshot ? <StatusBadge status={snapshot.health.overall} /> : <span className="badge unknown">{t("shell.health.label", "HEALTH —")}</span>}
+            </span>
+            {snapshot && (
+              <span className="conn-chip freshness-chip" title={t("shell.fresh.title", "Pipeline freshness stages (backend live_freshness)")}>
               <FreshnessMeter label="MKT" state={lf?.market?.state} ageMs={lf?.market?.age_ms ?? ageSecToMs(snapshot.diagnostics.tick_age_sec)} />
               <FreshnessMeter label="FEAT" state={lf?.features?.state} ageMs={lf?.features?.age_ms ?? ageSecToMs(snapshot.diagnostics.features_age_sec)} />
               <FreshnessMeter label="INFR" state={lf?.inference?.state} ageMs={lf?.inference?.age_ms ?? ageSecToMs(snapshot.diagnostics.inference_age_sec)} />
@@ -340,7 +340,7 @@ export function AppShell() {
           )}
           {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
           <span className="spacer" />
-          <span className="timestamp-note" title="Local wall clock (visual aid)">
+          <span className="timestamp-note" title={t("shell.clock.title", "Local wall clock (visual aid)")}>
             {new Date(nowMs).toLocaleTimeString("en-GB", { hour12: false })} · v{snapshot?.state_version ?? "—"}
           </span>
           <ConnectionIndicator
@@ -371,16 +371,16 @@ export function AppShell() {
         <main className="page" id="main-content" tabIndex={-1}>
           <h1 className="sr-only">{routeLabel ?? "NSE Console"}</h1>
           {snapshotQuery.isPending ? (
-            <LoadingState label="Connecting to NSE backend…" />
+            <LoadingState label={t("shell.loading", "Connecting to NSE backend…")} />
           ) : snapshotQuery.isError && !snapshot ? (
             <ErrorState
-              message={snapshotQuery.error instanceof Error ? snapshotQuery.error.message : "Backend unreachable"}
+              message={snapshotQuery.error instanceof Error ? snapshotQuery.error.message : t("shell.unreachable", "Backend unreachable")}
               requestId={snapshotQuery.error instanceof ApiError ? snapshotQuery.error.requestId : null}
               onRetry={() => snapshotQuery.refetch()}
             />
           ) : (
-            <ErrorBoundary label={routeLabel ?? "Console"} resetKey={routePathname}>
-              <Suspense fallback={<LoadingState label="Loading page…" />}>
+            <ErrorBoundary label={routeLabel ?? t("shell.route_label.fallback", "Console")} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label={t("shell.loading_page", "Loading page…")} />}>
                 <Routes>
                   <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/trading" element={<TradingRoute snapshot={snapshot} nowMs={nowMs} />} />
@@ -390,7 +390,7 @@ export function AppShell() {
               <Route path="/intelligence" element={<IntelRoute snapshot={snapshot} />} />
               <Route path="/audit" element={<AuditRoute />} />
               {featureRoutes}
-                  <Route path="*" element={<ErrorState message="Unknown route" />} />
+                  <Route path="*" element={<ErrorState message={t("shell.unknown_route", "Unknown route")} />} />
                 </Routes>
               </Suspense>
             </ErrorBoundary>
