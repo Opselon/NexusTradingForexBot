@@ -682,6 +682,36 @@ def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_
             )
         )
 
+    # [5d] Duplicate task rows (ML-QA-006 / BUG-309): shared SSOT metadata
+    # tables must have at most one canonical row per task id. Companion
+    # to the merge-marker gate — catches rebase/merge duplicate rows.
+    # CI enforcement rides tests/unit/test_duplicate_task_rows.py.
+    t0_dt = time.perf_counter()
+    script_dt = REPO_ROOT / "scripts" / "ci" / "check_duplicate_task_rows.py"
+    if script_dt.exists():
+        r_dt = subprocess.run(
+            [sys.executable, str(script_dt)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=60,
+        )
+        results.append(
+            StageResult(
+                name="duplicate_task_rows",
+                command=[sys.executable, "scripts/ci/check_duplicate_task_rows.py"],
+                exit_code=r_dt.returncode,
+                status="passed" if r_dt.returncode == 0 else "failed",
+                duration_sec=time.perf_counter() - t0_dt,
+                detail=(r_dt.stdout or r_dt.stderr).strip().splitlines()[0][:200]
+                if (r_dt.stdout or r_dt.stderr)
+                else "",
+            )
+        )
+
     overall = "passed" if all(r.status in ("passed", "skipped") for r in results) else "failed"
 
     envelope: dict[str, Any] = {
