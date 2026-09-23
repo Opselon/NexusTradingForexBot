@@ -1,3 +1,13 @@
+/**
+ * Provider-switch modal styles (readiness plan + typed acknowledgement).
+ *
+ * OWNER: Lane C (db-provider-pro) — this lane owns future edits.
+ * CONSUMES: theme tokens from styles/theme.css (no local colors).
+ * PROVIDES: .dbcsw-* classes for SwitchProviderModal / ProviderSwitchPlan.
+ * INVARIANTS: theme tokens only — zero hex/rgba literals; logical properties for RTL;
+ *   motion gated by prefers-reduced-motion; :focus-visible kept minimal.
+ * EXTEND: new rules go here with the dbcsw- prefix; database.css stays frozen.
+ */
 /* ------------------------------------------------------------------------- *
  * Provider-switch modal (.dbcsw-*) — Lane C feature-scoped stylesheet.
  *

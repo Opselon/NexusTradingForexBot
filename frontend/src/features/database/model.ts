@@ -157,20 +157,15 @@ export interface DbOptionsState {
 export const OPTION_UNAVAILABLE = "UNAVAILABLE" as const;
 
 /**
- * The additive `/api/db/manage/status` fields Lane A reports (contract §3.3).
- * Typed HERE because `api.ts` (`DbManageStatus`) is frozen for lanes during
- * the wave — a request to fold these two fields into `DbManageStatus` is
- * logged in `nse-dbpro-wave/INTEGRATION_LOG.md` under `dbp-lane-b`.
+ * The additive `/api/db/manage/status` fields Lane A reports (contract §3.3)
+ * now live on `DbManageStatus` itself (api.ts) — folded in at harvest,
+ * replacing the wave-time local `ManageStatusExtras` shim (INTEGRATION_LOG
+ * dbp-lane-b item 1, ratified).
  * The `options` index signature reads the documented keys
  * {command_timeout_sec, connect_timeout_sec, migrate_on_startup,
  *  pooling_enabled, domain, database} with runtime narrowing below — an
  * untyped key is never rendered raw.
  */
-export type ManageStatusExtras = DbManageStatus & {
-  options?: { [key: string]: unknown } | null;
-  domain_db_names?: string[];
-};
-
 /**
  * Persistence domains the config is scoped to.  NOT a client guess — the UI
  * only offers what the backend reported.
@@ -186,8 +181,7 @@ export function domainOptions(manage: DbManageStatus | null | undefined): readon
   if (healthDomains && typeof healthDomains === "object") {
     for (const d of Object.keys(healthDomains)) out.push(d);
   }
-  const status: ManageStatusExtras | null | undefined = manage;
-  const listed = status.domain_db_names;
+  const listed = manage.domain_db_names;
   if (listed) {
     for (const d of listed) {
       if (typeof d === "string" && d.trim() !== "" && !out.includes(d)) out.push(d);
@@ -197,8 +191,7 @@ export function domainOptions(manage: DbManageStatus | null | undefined): readon
 }
 
 export function optionsFromStatus(manage: DbManageStatus | null | undefined): DbOptionsState {
-  const status: ManageStatusExtras | null | undefined = manage;
-  const opts = status?.options ?? null;
+  const opts = manage?.options ?? null;
   const num = (k: string): number | null => {
     const v = opts ? opts[k] : undefined;
     return typeof v === "number" && Number.isFinite(v) ? v : null;

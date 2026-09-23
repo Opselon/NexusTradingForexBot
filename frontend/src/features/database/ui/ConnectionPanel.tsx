@@ -88,6 +88,11 @@ export function ConnectionPanel(props: {
         })}
       </div>
 
+      <p className="dbc-note" style={{ marginTop: 6 }}>
+        a password typed for a test is held only for that probe (ephemeral key, removed right after) — a failed test
+        never overwrites the stored secret.
+      </p>
+
       <ProviderOptions manage={manage} values={values} set={set} errors={errors} />
     </div>
   );

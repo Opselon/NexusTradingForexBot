@@ -44,6 +44,7 @@ import {
 } from "../model";
 import { providerHints, psycopgState } from "../uiLogic";
 import { ConnectionPanel } from "./ConnectionPanel";
+import { SwitchProviderModal } from "./SwitchProviderModal";
 
 type StripResult = { ok: boolean; message: string; requestId: string | null };
 
@@ -68,6 +69,7 @@ export function ManageTab() {
   const form = values ?? baseline;
   const [migrating, setMigrating] = useState(false);
   const [guard, setGuard] = useState<null | "backup" | "migrate">(null);
+  const [switchTarget, setSwitchTarget] = useState<string | null>(null);
 
   const saveCfg = useSaveDbConfig();
   const testConn = useTestDbConnection();
@@ -89,6 +91,10 @@ export function ManageTab() {
   const pct = Math.round(Math.max(0, Math.min(1, progress.data?.progress ?? 0)) * 100);
   const jobDone = progress.data?.done === true;
   const hints = providerHints(manage.data);
+  // Last connection-test outcome, client-held for the switch modal: null means
+  // "never tested this session" — the readiness checklist scores it INFO, never pass.
+  const testResult =
+    testConn.data == null ? null : { connected: testConn.data.ok === true && testConn.data.body?.connected === true };
 
   const guardRun = async () => {
     if (!guard) return;
@@ -192,7 +198,7 @@ export function ManageTab() {
                 {(md.supported_providers ?? [])
                   .filter((p) => p !== md.provider)
                   .map((p) => (
-                    <button key={p} className="btn ghost" disabled={switchTo.isPending} onClick={() => void switchTo.mutateAsync(p)}>
+                    <button key={p} className="btn ghost" disabled={switchTo.isPending} onClick={() => setSwitchTarget(p)}>
                       switch → {p}
                     </button>
                   ))}
@@ -285,6 +291,21 @@ export function ManageTab() {
           </>
         )}
       </Panel>
+
+      <SwitchProviderModal
+        open={switchTarget !== null}
+        onClose={() => setSwitchTarget(null)}
+        manage={manage.data}
+        report={lastReport}
+        testResult={testResult}
+        targetProvider={switchTarget}
+        onConfirm={() => {
+          if (switchTarget === null) return;
+          const target = switchTarget;
+          setSwitchTarget(null);
+          void switchTo.mutateAsync(target).catch(() => undefined);
+        }}
+      />
 
       {guard && (
         <TypedConfirmModal
