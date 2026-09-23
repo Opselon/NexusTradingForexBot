@@ -6,7 +6,7 @@
  * `has_data:false` renders an explicit empty report instead of zeros.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, MetricCard, Panel, Segmented, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useAccountPerformance, useAccountPeriod } from "../hooks";
@@ -30,6 +30,12 @@ export function AccountSummarySection() {
   const dd = perf.data?.drawdown;
   const p = period.data?.period;
   const market = period.data?.market;
+
+  // perf: the worker envelope is serialized once per distinct payload and
+  // then truncated, instead of serialize+truncate on every render; the
+  // dep array is exactly the single field this line reads.
+  const worker = perf.data?.worker;
+  const workerLine = useMemo(() => (worker ? JSON.stringify(worker).slice(0, 220) : null), [worker]);
 
   return (
     <>
@@ -77,9 +83,9 @@ export function AccountSummarySection() {
             />
           </div>
         )}
-        {perf.data?.worker && (
+        {workerLine && (
           <div className="tiny faint inline-mono" style={{ marginTop: 8 }}>
-            worker: {JSON.stringify(perf.data.worker).slice(0, 220)}
+            worker: {workerLine}
           </div>
         )}
       </Panel>
