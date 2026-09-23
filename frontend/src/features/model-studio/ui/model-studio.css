@@ -132,7 +132,8 @@
   font-family: var(--mono);
   color: var(--text-dim);
   cursor: pointer;
-  transition: all 0.15s ease;
+  /* transition only the paint we animate (color/bg/shadow), not every property */
+  transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .ms-dim-btn:hover {
@@ -175,7 +176,8 @@
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.15s ease;
+  /* transition only the paint we animate (bg/border/color), not every property */
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   white-space: nowrap;
 }
 
@@ -415,7 +417,8 @@
   font-family: var(--mono);
   font-size: 12px;
   outline: none;
-  transition: all 0.15s ease;
+  /* focus repaint is border + box-shadow only */
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
   width: 100%;
 }
 
@@ -433,7 +436,8 @@
   font-family: var(--mono);
   font-size: 12px;
   outline: none;
-  transition: all 0.15s ease;
+  /* focus repaint is border + box-shadow only */
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
   width: 100%;
   cursor: pointer;
 }
@@ -501,7 +505,8 @@
   font-weight: 800;
   letter-spacing: 0.04em;
   cursor: pointer;
-  transition: all 0.15s ease;
+  /* hover/active transform + variant shadow/border/color are the only animations */
+  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   border: 1px solid transparent;
   font-family: var(--sans);
 }

@@ -30,26 +30,27 @@ import {
   StatusBadge,
 } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import { DistBars, FreshnessCaption, GateStepper, InfoRow, StatusPill } from "./lane5Kit";
 import { registryCounters, obj, str, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
-import { GATE_CHAIN } from "../handbook";
+import { GATE_CHAIN } from "../handbook/gateChain";
 import ResearchCommands from "./ResearchCommands";
 import StrategyDrawer from "./StrategyDrawer";
-import StrategyPlaybook from "./StrategyPlaybook";
+import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
 
 type Tab = "registry" | "queue" | "worker" | "analytics" | "history" | "datasets" | "playbook";
 
+const PAGE_SIZE_HINT = "bounded server-side (limit params enforced by the backend)";
+
 /** One-line role per chain node in the hero pipeline map (handbook text). */
-const GATE_META: Record<string, { en: string; key: string }> = {
-  STATIC_VALIDATION: { en: "schema + identity", key: "research.page.gm_static" },
-  BACKTEST: { en: "deterministic replay", key: "research.page.gm_backtest" },
-  WALK_FORWARD: { en: "purged folds", key: "research.page.gm_walkforward" },
-  OOS: { en: "holdout + bootstrap CI", key: "research.page.gm_oos" },
-  ROBUSTNESS: { en: "6 stress scenarios", key: "research.page.gm_robustness" },
-  SCORING: { en: "verdict + weights", key: "research.page.gm_scoring" },
+const GATE_META: Record<string, string> = {
+  STATIC_VALIDATION: "schema + identity",
+  BACKTEST: "deterministic replay",
+  WALK_FORWARD: "purged folds",
+  OOS: "holdout + bootstrap CI",
+  ROBUSTNESS: "6 stress scenarios",
+  SCORING: "verdict + weights",
 };
 
 /** Worker status -> live-dot tone (signal, not decoration). */
@@ -95,7 +96,6 @@ function AnimatedNumber({ value }: { value: number }) {
 
 export default function ResearchPage(props: ShellPageProps) {
   void props;
-  const t = useI18n((s) => s.t);
   const [tab, setTab] = useState<Tab>("registry");
   const [lifecycle, setLifecycle] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | null>(null);
@@ -159,26 +159,45 @@ export default function ResearchPage(props: ShellPageProps) {
     () => (registryQ.data?.available === true ? researchUseCases.registryList(registryQ.data.registry ?? []) : []),
     [registryQ.data],
   );
-  const queue = obj(queueQ.data?.queue);
-  const queued: Array<{ label: string; count: number }> = [];
-  for (const [gateType, statusMap] of Object.entries(obj(queue.queued))) {
-    for (const [status, count] of Object.entries(obj(statusMap))) {
-      if (status === "QUEUED" || status === "RUNNING") queued.push({ label: `${gateType} · ${status}`, count: Number(count) || 0 });
+  // perf: queued/running census derived only when the queue payload changes
+  // (deps: queueQ.data — the only reactive value read).
+  const queued = useMemo(() => {
+    const queueData = obj(queueQ.data?.queue);
+    const queuedMap = obj(queueData.queued);
+    const out: Array<{ label: string; count: number }> = [];
+    for (const [gateType, statusMap] of Object.entries(queuedMap)) {
+      for (const [status, count] of Object.entries(obj(statusMap))) {
+        if (status === "QUEUED" || status === "RUNNING") out.push({ label: `${gateType} · ${status}`, count: Number(count) || 0 });
+      }
     }
-  }
-  const heatmap = obj(analyticsQ.data?.heatmap);
-  const byGate = obj(heatmap.by_gate);
-  const rejectionReasons = obj(heatmap.rejection_reasons);
+    return out;
+  }, [queueQ.data]);
+  const queue = useMemo(() => obj(queueQ.data?.queue), [queueQ.data]);
+  // perf: heatmap slices derived only when the analytics payload changes
+  // (deps: analyticsQ.data — the only reactive value read).
+  const heatmap = useMemo(() => obj(analyticsQ.data?.heatmap), [analyticsQ.data]);
+  const byGate = useMemo(() => obj(heatmap.by_gate), [heatmap]);
+  const rejectionReasons = useMemo(() => obj(heatmap.rejection_reasons), [heatmap]);
 
-  const counters = registryCounters(summary);
-  const registryTotal = Math.max(1, Number(summary?.total ?? 0) || 1);
-  const workerStatus = str(obj(summary?.worker).status) ?? undefined;
+  // perf: lifecycle census counters + the derived rail totals are pure
+  // functions of the summary payload (the only reactive value read) —
+  // memoizing keeps the 1s/15s refetch ticks from re-deriving them per render.
+  const counters = useMemo(() => registryCounters(summary), [summary]);
+  const registryTotal = useMemo(() => Math.max(1, Number(summary?.total ?? 0) || 1), [summary]);
+  const workerStatus = useMemo(() => str(obj(summary?.worker).status) ?? undefined, [summary]);
+  // perf: rejection-reason bar rows derived only when that slice changes.
+  const rejectionRows = useMemo(
+    () => Object.entries(rejectionReasons).slice(0, 15).map(([k, v]) => ({ label: k, count: Number(v) || 0 })),
+    [rejectionReasons],
+  );
+  // perf: by-gate bar rows derived only when the byGate slice changes.
+  const byGateRows = useMemo(
+    () => Object.entries(byGate).map(([k, v]) => ({ label: k, count: Number(v) || 0 })),
+    [byGate],
+  );
   const unavailable = (data: { available?: boolean; reason?: string } | undefined) =>
     !data || data.available === false ? (
-      <EmptyState
-        message={t("research.page.unavailable", "Research subsystem unavailable")}
-        hint={data?.reason ?? t("research.page.no_availability", "backend answered without availability — nothing to show")}
-      />
+      <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
     ) : null;
 
   const summaryUnavailable = rows?.available === false;
@@ -186,26 +205,24 @@ export default function ResearchPage(props: ShellPageProps) {
   return (
     <div>
       {/* ---------------------------------------------------------- hero */}
-      <section className="rs-hero" aria-label={t("research.page.hero_aria", "Research pipeline overview")}>
+      <section className="rs-hero" aria-label="Research pipeline overview">
         <div className="rs-hero-top">
-          <h2>{t("nav.feature.research", "Research")}</h2>
-          <span className="rs-chip docs" title={t("research.page.playbook_chip_title", "Static documentation lives in the Playbook tab")}>
-            {t("research.page.playbook_chip", "playbook · {n} gates documented", { n: GATE_CHAIN.length })}
+          <h2>Research</h2>
+          <span className="rs-chip docs" title="Static documentation lives in the Playbook tab">
+            playbook · {GATE_CHAIN.length} gates documented
           </span>
           <button type="button" className="rs-chip accent" onClick={() => setTab("playbook")}>
-            {t("research.page.open_playbook", "open strategy handbook →")}
+            open strategy handbook →
           </button>
-          <span className="rs-chip" title={t("research.page.offline_chip_title", "Research runs offline/background and never blocks the tick path")}>
+          <span className="rs-chip" title="Research runs offline/background and never blocks the tick path">
             <span className={`rs-live-dot ${liveTone(workerStatus)}`} aria-hidden="true" />
-            {t("research.page.worker_label", "worker")} <strong>{workerStatus ?? t("research.page.worker_not_reported", "not reported")}</strong>
+            worker <strong>{workerStatus ?? "not reported"}</strong>
           </span>
         </div>
         <p className="rs-hero-sub">
-          {t(
-            "research.page.hero_sub",
-            "Candidate validation pipeline — dataset → discovery → {chain} → registry, promotion always operator-gated. Numbers below are backend responses; the playbook is documentation compiled from source (legacy tab-research parity).",
-            { chain: GATE_CHAIN.join(" → ") },
-          )}
+          Candidate validation pipeline — dataset → discovery → {GATE_CHAIN.join(" → ")} → registry,
+          promotion always operator-gated. Numbers below are backend responses; the playbook is
+          documentation compiled from source (legacy tab-research parity).
         </p>
         <FreshnessCaption
           timestamp={v1StatusQ.data?.generated_at ?? undefined}
@@ -214,7 +231,7 @@ export default function ResearchPage(props: ShellPageProps) {
           error={summaryQ.isError}
         />
 
-        <div className="rs-pipe" role="list" aria-label={t("research.page.chain_aria", "Gate chain order")}>
+        <div className="rs-pipe" role="list" aria-label="Gate chain order">
           {GATE_CHAIN.map((g, i) => (
             <div
               key={g}
@@ -222,9 +239,9 @@ export default function ResearchPage(props: ShellPageProps) {
               className="rs-pipe-node"
               style={{ animationDelay: `${0.06 * i}s`, ["--rs-delay" as string]: `${0.45 * i}s` } as CSSProperties}
             >
-              <span className="rs-pipe-idx" dir="ltr">{i + 1}/{GATE_CHAIN.length}</span>
-              <div className="rs-pipe-name" dir="ltr">{g}</div>
-              <div className="rs-pipe-meta">{GATE_META[g] ? t(GATE_META[g].key, GATE_META[g].en) : t("research.page.gate_fallback", "gate")}</div>
+              <span className="rs-pipe-idx">{i + 1}/{GATE_CHAIN.length}</span>
+              <div className="rs-pipe-name">{g}</div>
+              <div className="rs-pipe-meta">{GATE_META[g] ?? "gate"}</div>
             </div>
           ))}
         </div>
@@ -234,37 +251,37 @@ export default function ResearchPage(props: ShellPageProps) {
       <div className="grid cols-4 rs-stagger">
         <div className="rs-kpi">
           <MetricCard
-            label={t("research.page.kpi_total", "Registry total")}
+            label="Registry total"
             value={
-              summaryQ.isPending ? "…" : summaryUnavailable ? t("research.page.unavailable_short", "n/a") : <AnimatedNumber value={Number(summary?.total ?? 0)} />
+              summaryQ.isPending ? "…" : summaryUnavailable ? "n/a" : <AnimatedNumber value={Number(summary?.total ?? 0)} />
             }
-            sub={summaryUnavailable ? (rows?.reason ?? t("research.page.unavailable_short", "unavailable")) : "strategy_intelligence_registry"}
+            sub={summaryUnavailable ? (rows?.reason ?? "unavailable") : "strategy_intelligence_registry"}
           />
         </div>
         <div className="rs-kpi">
           <MetricCard
-            label={t("research.page.kpi_validated", "Validated")}
+            label="Validated"
             value={summaryQ.isPending ? "…" : <AnimatedNumber value={Number(summary?.by_lifecycle?.VALIDATED ?? 0)} />}
             tone={summary?.by_lifecycle?.VALIDATED ? "pos" : "dim"}
-            sub={t("research.page.kpi_validated_sub", "lifecycle census")}
+            sub="lifecycle census"
           />
         </div>
         <div className="rs-kpi">
           <MetricCard
-            label={t("research.page.kpi_active", "Active strategies")}
+            label="Active strategies"
             value={summaryQ.isPending ? "…" : <AnimatedNumber value={Number(summary?.by_lifecycle?.ACTIVE ?? 0)} />}
             tone={summary?.by_lifecycle?.ACTIVE ? "pos" : "dim"}
-            sub={t("research.page.kpi_active_sub", "backend lifecycle counts")}
+            sub="backend lifecycle counts"
           />
         </div>
         <div className="rs-kpi">
           <MetricCard
-            label={t("research.page.kpi_worker", "Research worker")}
+            label="Research worker"
             value={<StatusBadge status={workerStatus} />}
             sub={
               obj(summary?.outcome_quality).available
-                ? t("research.page.kpi_worker_closed", "closed outcomes: {n}", { n: String(obj(summary?.outcome_quality).closed_outcomes ?? 0) })
-                : t("research.page.kpi_worker_noquality", "outcome quality not reported")
+                ? `closed outcomes: ${String(obj(summary?.outcome_quality).closed_outcomes ?? 0)}`
+                : "outcome quality not reported"
             }
           />
         </div>
@@ -272,16 +289,16 @@ export default function ResearchPage(props: ShellPageProps) {
 
       {/* ----------------------------------------------- lifecycle rail */}
       <Panel
-        title={t("research.page.lifecycle_panel", "Lifecycle census (registry summary)")}
+        title="Lifecycle census (registry summary)"
         right={<FreshnessCaption timestamp={null} isFetching={summaryQ.isFetching} error={summaryQ.isError} />}
         tight
       >
         {summaryQ.isPending ? (
           <Skeleton count={2} />
         ) : (
-          <div className="rs-rail" role="group" aria-label={t("research.page.filter_by_lifecycle", "Filter registry by lifecycle state")}>
+          <div className="rs-rail" role="group" aria-label="Filter registry by lifecycle state">
             {counters.length === 0 ? (
-              <span className="muted small">{t("research.page.no_lifecycle_rows", "no lifecycle rows reported")}</span>
+              <span className="muted small">no lifecycle rows reported</span>
             ) : (
               counters.map((c) => {
                 const pct = Math.round((Number(c.value) / registryTotal) * 100);
@@ -292,15 +309,10 @@ export default function ResearchPage(props: ShellPageProps) {
                     className={`rs-rail-chip ${lifecycle === c.label ? "active" : ""}`}
                     style={{ ["--pct" as string]: `${pct}%` } as CSSProperties}
                     aria-pressed={lifecycle === c.label}
-                    dir="ltr"
                     title={
                       lifecycle === c.label
-                        ? t("research.page.filter_clear", "filter: clear")
-                        : t(
-                            "research.page.filter_by",
-                            "filter registry by {s} · {c} of {t} rows ({p}%)",
-                            { s: c.label, c: c.value, t: summary?.total ?? 0, p: pct },
-                          )
+                        ? "filter: clear"
+                        : `filter registry by ${c.label} · ${c.value} of ${summary?.total ?? 0} rows (${pct}%)`
                     }
                     onClick={() => {
                       setLifecycle(lifecycle === c.label ? undefined : c.label);
@@ -323,13 +335,13 @@ export default function ResearchPage(props: ShellPageProps) {
 
       <Segmented
         options={[
-          { id: "registry" as const, label: t("research.page.tab_registry", "Registry") },
-          { id: "queue" as const, label: t("research.page.tab_queue", "Gate queue") },
-          { id: "worker" as const, label: t("research.page.tab_worker", "Worker") },
-          { id: "analytics" as const, label: t("research.page.tab_analytics", "Analytics") },
-          { id: "history" as const, label: t("research.page.tab_history", "Retention") },
-          { id: "datasets" as const, label: t("research.page.tab_datasets", "Datasets (v1)") },
-          { id: "playbook" as const, label: t("research.page.tab_playbook", "Playbook") },
+          { id: "registry" as const, label: "Registry" },
+          { id: "queue" as const, label: "Gate queue" },
+          { id: "worker" as const, label: "Worker" },
+          { id: "analytics" as const, label: "Analytics" },
+          { id: "history" as const, label: "Retention" },
+          { id: "datasets" as const, label: "Datasets (v1)" },
+          { id: "playbook" as const, label: "Playbook" },
         ]}
         value={tab}
         onChange={setTab}
@@ -338,43 +350,40 @@ export default function ResearchPage(props: ShellPageProps) {
       {/* key={tab} re-mounts the pane so the entrance animation replays per tab */}
       <div className="rs-pane" key={tab} style={{ marginTop: 12, display: "grid", gap: 12 }}>
         {tab === "registry" && (
-          <Panel title={t("research.page.registry_list", "Registry list {l}", { l: lifecycle ? `· ${lifecycle}` : "" })} right={<span className="tiny muted">{t("research.page.size_hint", "bounded server-side (limit params enforced by the backend)")}</span>} tight>
+          <Panel title={`Registry list ${lifecycle ? `· ${lifecycle}` : ""}`} right={<span className="tiny muted">{PAGE_SIZE_HINT}</span>} tight>
             {registryQ.isPending ? (
               <Skeleton count={4} />
             ) : unavailable(registryQ.data) ?? (
               <>
                 {registry.length === 0 ? (
-                  <EmptyState
-                    message={t("research.page.registry_empty", "Registry is empty for this filter.")}
-                    hint={t("research.page.registry_empty_hint", "/api/research/health explains WHY (source trades, rejections, attempts).")}
-                  />
+                  <EmptyState message="Registry is empty for this filter." hint="/api/research/health explains WHY (source trades, rejections, attempts)." />
                 ) : (
                   <DataTable
                     headers={[
-                      { label: t("research.th.strategy", "strategy") },
-                      { label: t("research.th.lifecycle", "lifecycle") },
-                      { label: t("research.th.conf", "conf"), num: true },
-                      { label: t("research.th.samples", "samples"), num: true },
-                      { label: t("research.th.score", "score"), num: true },
-                      { label: t("research.th.updated", "updated") },
+                      { label: "strategy" },
+                      { label: "lifecycle" },
+                      { label: "conf", num: true },
+                      { label: "samples", num: true },
+                      { label: "score", num: true },
+                      { label: "updated" },
                       { label: "" },
                     ]}
                   >
                     {registry.map((s, i) => (
                       <tr key={`${s.strategyId}-${i}`}>
-                        <td className="inline-mono tiny" title={s.strategyId} dir="ltr">
+                        <td className="inline-mono tiny" title={s.strategyId}>
                           {s.strategyId.slice(0, 16)}…{s.version ? ` v${s.version}` : ""}
                         </td>
                         <td>
                           <StatusPill status={s.lifecycle} />
                         </td>
-                        <td className="num tiny" dir="ltr">{s.confidence === null ? "—" : formatNumber(s.confidence, 3)}</td>
-                        <td className="num tiny" dir="ltr">{s.sampleCount ?? "—"}</td>
-                        <td className="num tiny" dir="ltr">{s.score === null ? "—" : formatNumber(s.score, 2)}</td>
+                        <td className="num tiny">{s.confidence === null ? "—" : formatNumber(s.confidence, 3)}</td>
+                        <td className="num tiny">{s.sampleCount ?? "—"}</td>
+                        <td className="num tiny">{s.score === null ? "—" : formatNumber(s.score, 2)}</td>
                         <td className="tiny">{s.updatedAt ? formatDateTime(s.updatedAt) : "—"}</td>
                         <td>
                           <button className="btn small ghost" onClick={() => setSelected(s.strategyId)}>
-                            {t("research.page.trace_btn", "trace")}
+                            trace
                           </button>
                         </td>
                       </tr>
@@ -387,29 +396,23 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "queue" && (
-          <Panel title={t("research.page.queue_panel", "Gate queue census")} right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
+          <Panel title="Gate queue census" right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
             {queueQ.isPending ? (
               <Skeleton count={3} />
             ) : unavailable(queueQ.data) ?? (
               <div className="grid cols-2">
                 <div>
-                  <div className="section-title">{t("research.page.queue_by_gate", "queued / running by gate type")}</div>
+                  <div className="section-title">queued / running by gate type</div>
                   <DistBars rows={queued} tone="var(--amber)" />
                 </div>
                 <div>
-                  <div className="section-title">{t("research.page.running_now", "running now")}</div>
+                  <div className="section-title">running now</div>
                   {(queue.running as Row[] | undefined)?.length ? (
-                    <DataTable
-                      headers={[
-                        { label: t("research.th.gate", "gate") },
-                        { label: t("research.th.strategy", "strategy") },
-                        { label: t("research.th.status", "status") },
-                      ]}
-                    >
+                    <DataTable headers={[{ label: "gate" }, { label: "strategy" }, { label: "status" }]}>
                       {(queue.running as Row[]).map((r: Row, i: number) => (
                         <tr key={i}>
-                          <td className="tiny" dir="ltr">{str(r.gate_type) ?? "—"}</td>
-                          <td className="inline-mono tiny" dir="ltr">{str(r.strategy_id)?.slice(0, 14) ?? "—"}</td>
+                          <td className="tiny">{str(r.gate_type) ?? "—"}</td>
+                          <td className="inline-mono tiny">{str(r.strategy_id)?.slice(0, 14) ?? "—"}</td>
                           <td>
                             <StatusPill status={str(r.status)} />
                           </td>
@@ -417,7 +420,7 @@ export default function ResearchPage(props: ShellPageProps) {
                       ))}
                     </DataTable>
                   ) : (
-                    <EmptyState message={t("research.page.nothing_running", "Nothing running right now.")} />
+                    <EmptyState message="Nothing running right now." />
                   )}
                 </div>
               </div>
@@ -426,18 +429,18 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "worker" && (
-          <Panel title={t("research.page.worker_panel", "Worker heartbeat + diagnostics")} right={<FreshnessCaption timestamp={null} isFetching={workerQ.isFetching || !workerQ.isFetched} error={workerQ.isError} />} tight>
+          <Panel title="Worker heartbeat + diagnostics" right={<FreshnessCaption timestamp={null} isFetching={workerQ.isFetching || !workerQ.isFetched} error={workerQ.isError} />} tight>
             {workerQ.isPending ? (
               <Skeleton count={3} />
             ) : unavailable(workerQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <dl className="kv">
-                    <InfoRow label={t("research.page.w_health", "health")} value={<StatusPill status={str(obj(workerQ.data?.worker).health) ?? "UNKNOWN"} />} />
-                    <InfoRow label={t("research.page.w_lastbeat", "last beat")} value={formatDateTime(str(obj(obj(workerQ.data?.worker).heartbeat).last_beat_at))} />
-                    <InfoRow label={t("research.page.w_cycle", "cycle")} value={String(obj(obj(workerQ.data?.worker).runtime).cycle_count ?? "—")} />
-                    <InfoRow label={t("research.th.status", "status")} value={str(obj(obj(workerQ.data?.worker).runtime).status) ?? "—"} />
-                    <InfoRow label={t("research.page.w_lasterror", "last error")} value={str(obj(obj(workerQ.data?.worker).runtime).last_error) ?? t("research.page.w_no_error", "none reported")} />
+                    <InfoRow label="health" value={<StatusPill status={str(obj(workerQ.data?.worker).health) ?? "UNKNOWN"} />} />
+                    <InfoRow label="last beat" value={formatDateTime(str(obj(obj(workerQ.data?.worker).heartbeat).last_beat_at))} />
+                    <InfoRow label="cycle" value={String(obj(obj(workerQ.data?.worker).runtime).cycle_count ?? "—")} />
+                    <InfoRow label="status" value={str(obj(obj(workerQ.data?.worker).runtime).status) ?? "—"} />
+                    <InfoRow label="last error" value={str(obj(obj(workerQ.data?.worker).runtime).last_error) ?? "none reported"} />
                   </dl>
                 </div>
                 <ResearchDiagMini />
@@ -447,23 +450,18 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "analytics" && (
-          <Panel title={t("research.page.analytics_panel", "Failure heatmap + families")} right={<FreshnessCaption timestamp={null} isFetching={analyticsQ.isFetching} error={analyticsQ.isError} />} tight>
+          <Panel title="Failure heatmap + families" right={<FreshnessCaption timestamp={null} isFetching={analyticsQ.isFetching} error={analyticsQ.isError} />} tight>
             {analyticsQ.isPending ? (
               <Skeleton count={3} />
             ) : unavailable(analyticsQ.data) ?? (
               <div className="grid cols-2">
                 <div>
-                  <div className="section-title">{t("research.page.failed_gates", "failed gates (total: {n})", { n: String(heatmap.total_failures ?? 0) })}</div>
-                  <DistBars rows={Object.entries(byGate).map(([k, v]) => ({ label: k, count: Number(v) || 0 }))} tone="var(--red)" />
+                  <div className="section-title">failed gates (total: {String(heatmap.total_failures ?? 0)})</div>
+                  <DistBars rows={byGateRows} tone="var(--red)" />
                 </div>
                 <div>
-                  <div className="section-title">{t("research.page.rejection_reasons", "rejection reasons")}</div>
-                  <DistBars
-                    rows={Object.entries(rejectionReasons)
-                      .slice(0, 15)
-                      .map(([k, v]) => ({ label: k, count: Number(v) || 0 }))}
-                    tone="var(--amber)"
-                  />
+                  <div className="section-title">rejection reasons</div>
+                  <DistBars rows={rejectionRows} tone="var(--amber)" />
                 </div>
               </div>
             )}
@@ -471,7 +469,7 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "history" && (
-          <Panel title={t("research.page.retention_panel", "Retention (live vs archive — archive-only contract)")} tight>
+          <Panel title="Retention (live vs archive — archive-only contract)" tight>
             {historyQ.isPending ? (
               <Skeleton count={2} />
             ) : unavailable(historyQ.data) ?? (
@@ -485,21 +483,21 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "datasets" && (
-          <Panel title={t("research.page.datasets_panel", "v1 datasets (provenance from real runs)")} right={<span className="tiny muted">/api/v1/research/datasets</span>} tight>
+          <Panel title="v1 datasets (provenance from real runs)" right={<span className="tiny muted">/api/v1/research/datasets</span>} tight>
             {datasetsQ.isPending ? (
               <Skeleton count={3} />
             ) : datasetsQ.isError ? (
               <div className="small tx-bad">
-                {datasetsQ.error instanceof Error ? datasetsQ.error.message : t("research.page.request_failed", "request failed")}
+                {datasetsQ.error instanceof Error ? datasetsQ.error.message : "request failed"}
               </div>
             ) : (datasetsQ.data?.datasets ?? []).length === 0 ? (
-              <EmptyState message={t("research.page.no_datasets", "No datasets derived from runs yet.")} />
+              <EmptyState message="No datasets derived from runs yet." />
             ) : (
-              <DataTable headers={[{ label: "dataset_id" }, { label: t("research.th.runs", "runs"), num: true }]}>
+              <DataTable headers={[{ label: "dataset_id" }, { label: "runs", num: true }]}>
                 {(datasetsQ.data?.datasets ?? []).map((d, i) => (
                   <tr key={i}>
-                    <td className="inline-mono tiny" dir="ltr">{d.dataset_id ?? "—"}</td>
-                    <td className="num tiny" dir="ltr">{d.run_count ?? 0}</td>
+                    <td className="inline-mono tiny">{d.dataset_id ?? "—"}</td>
+                    <td className="num tiny">{d.run_count ?? 0}</td>
                   </tr>
                 ))}
               </DataTable>
@@ -509,11 +507,11 @@ export default function ResearchPage(props: ShellPageProps) {
 
         {tab === "playbook" && (
           <Panel
-            title={t("research.page.playbook_panel", "Strategy playbook — gates, lifecycle, scoring, economics")}
-            right={<span className="tiny muted">{t("research.page.playbook_panel_sub", "documentation · compiled from backend source")}</span>}
+            title="Strategy playbook — gates, lifecycle, scoring, economics"
+            right={<span className="tiny muted">documentation · compiled from backend source</span>}
             tight
           >
-            <StrategyPlaybook />
+            <StrategyPlaybookLazy />
           </Panel>
         )}
       </div>
@@ -525,28 +523,32 @@ export default function ResearchPage(props: ShellPageProps) {
 
 /** Compact diagnostics block inside the worker tab (blocked-gate census). */
 function ResearchDiagMini() {
-  const t = useI18n((s) => s.t);
   const diagQ = useQuery({
     queryKey: ["research", "diagnostics"],
     queryFn: ({ signal }) => researchQueries.diagnostics(signal),
     retry: false,
   });
   const blocked = diagQ.data?.blocked_gates ?? [];
+  // perf: stepper rows derived only when the diagnostics payload changes
+  // (deps: diagQ.data — the only reactive value read).
+  const gateRows = useMemo(
+    () =>
+      blocked.slice(0, 8).map((g) => ({
+        name: `${str(g.gate_type) ?? "gate"} · ${(str(g.strategy_id) ?? "").slice(0, 10)}`,
+        status: str(g.status) ?? "UNKNOWN",
+        reason: str(g.failure_reason),
+      })),
+    [blocked],
+  );
   return (
     <div>
-      <div className="section-title">{t("research.page.blocked_diag", "blocked / failed gates (diagnostics)")}</div>
+      <div className="section-title">blocked / failed gates (diagnostics)</div>
       {diagQ.isPending ? (
         <Skeleton count={2} />
-      ) : blocked.length === 0 ? (
-        <EmptyState message={t("research.page.no_blocked", "No blocked gates reported.")} />
+      ) : gateRows.length === 0 ? (
+        <EmptyState message="No blocked gates reported." />
       ) : (
-        <GateStepper
-          gates={blocked.slice(0, 8).map((g) => ({
-            name: `${str(g.gate_type) ?? t("research.page.gate_fallback", "gate")} · ${(str(g.strategy_id) ?? "").slice(0, 10)}`,
-            status: str(g.status) ?? "UNKNOWN",
-            reason: str(g.failure_reason),
-          }))}
-        />
+        <GateStepper gates={gateRows} />
       )}
     </div>
   );

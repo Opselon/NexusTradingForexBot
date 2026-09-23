@@ -7,8 +7,8 @@
  * a missing component renders as an explicit UNKNOWN step, never as zero.
  */
 
+import { useMemo } from "react";
 import { fmtCompact, scaleLinear } from "./geometry";
-import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface WaterfallStep {
@@ -27,20 +27,6 @@ export interface PnlWaterfallProps {
 }
 
 const W = 560;
-
-/** Localize the canonical step labels at the render site (buildTradeWaterfall stays pure). */
-function stepText(
-  t: (key: string, fallback: string, vars?: Record<string, string | number>) => string,
-  label: string,
-): string {
-  if (label === "gross") return t("ui.viz.step.gross", "gross");
-  if (label === "commission") return t("ui.viz.step.commission", "commission");
-  if (label === "commission?") return t("ui.viz.step.commission_q", "commission?");
-  if (label === "swap") return t("ui.viz.step.swap", "swap");
-  if (label === "swap?") return t("ui.viz.step.swap_q", "swap?");
-  if (label === "net") return t("ui.viz.step.net", "net");
-  return label;
-}
 
 export function buildTradeWaterfall(outcome: {
   gross_pnl?: number | null;
@@ -63,41 +49,47 @@ export function buildTradeWaterfall(outcome: {
   return steps;
 }
 
-export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: PnlWaterfallProps) {
-  const t = useI18n((s) => s.t);
-  const usable = steps.filter((s) => s.value !== null);
-  if (usable.length === 0)
-    return <div className="viz-empty">{emptyHint ?? t("ui.viz.pnl_empty", "no PnL decomposition reported")}</div>;
+export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint = "no PnL decomposition reported" }: PnlWaterfallProps) {
+  // Running levels + scale are a pure function of `steps` (memoized so an
+  // unchanged trade never re-derives them); the emitted SVG is byte-identical.
+  const geo = useMemo(() => {
+    const usable = steps.filter((s) => s.value !== null);
+    if (usable.length === 0) return null;
+
+    // Running levels: totals reset the level, deltas accumulate.
+    let level = 0;
+    const bars = steps.map((s) => {
+      if (s.value === null) return { s, from: null, to: null };
+      if (s.total) {
+        const from = 0;
+        const to = s.value;
+        level = s.value;
+        return { s, from, to };
+      }
+      const from = level;
+      level += s.value;
+      return { s, from, to: level };
+    });
+
+    const all = bars.flatMap((b) => (b.from === null || b.to === null ? [] : [b.from, b.to]));
+    const lo = Math.min(0, ...all);
+    const hi = Math.max(0, ...all);
+    const padT = 14;
+    const padB = 30;
+    const toY = scaleLinear(lo, hi, height - padB, padT);
+    const zeroY = toY(0);
+    const step = W / steps.length;
+    const barW = Math.max(10, Math.min(48, step * 0.55));
+    return { bars, toY, zeroY, step, barW };
+  }, [steps, height]);
+
+  if (geo === null) return <div className="viz-empty">{emptyHint}</div>;
+  const { bars, toY, zeroY, step, barW } = geo;
   const fmt = formatValue ?? ((v: number) => fmtCompact(v, 2));
-
-  // Running levels: totals reset the level, deltas accumulate.
-  let level = 0;
-  const bars = steps.map((s) => {
-    if (s.value === null) return { s, from: null, to: null };
-    if (s.total) {
-      const from = 0;
-      const to = s.value;
-      level = s.value;
-      return { s, from, to };
-    }
-    const from = level;
-    level += s.value;
-    return { s, from, to: level };
-  });
-
-  const all = bars.flatMap((b) => (b.from === null || b.to === null ? [] : [b.from, b.to]));
-  const lo = Math.min(0, ...all);
-  const hi = Math.max(0, ...all);
-  const padT = 14;
-  const padB = 30;
-  const toY = scaleLinear(lo, hi, height - padB, padT);
-  const zeroY = toY(0);
-  const step = W / steps.length;
-  const barW = Math.max(10, Math.min(48, step * 0.55));
 
   return (
     <div className="viz-frame">
-      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.pnl_aria", "PnL waterfall from backend-reported components")}>
+      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label="PnL waterfall from backend-reported components">
         <line className="viz-zero" x1={0} x2={W} y1={zeroY} y2={zeroY} />
         {bars.map((b, i) => {
           const x = i * step + (step - barW) / 2;
@@ -106,10 +98,10 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: Pn
               <g key={i}>
                 <rect x={x} y={zeroY - 3} width={barW} height={6} rx={2} fill="var(--bg-panel-2)" stroke="var(--border-strong)" />
                 <text className="viz-step-label" x={x + barW / 2} y={height - 16} textAnchor="middle">
-                  {stepText(t, b.s.label)}
+                  {b.s.label}
                 </text>
                 <text className="viz-step-value neu" x={x + barW / 2} y={height - 5} textAnchor="middle">
-                  {t("ui.word.unknown", "UNKNOWN")}
+                  UNKNOWN
                 </text>
               </g>
             );
@@ -131,7 +123,7 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: Pn
                 opacity={b.s.total ? 1 : 0.85}
               />
               <text className="viz-step-label" x={x + barW / 2} y={height - 16} textAnchor="middle">
-                {stepText(t, b.s.label)}
+                {b.s.label}
               </text>
               <text className={`viz-step-value ${cls}`} x={x + barW / 2} y={y0 - 4} textAnchor="middle">
                 {fmt(b.s.value ?? 0)}

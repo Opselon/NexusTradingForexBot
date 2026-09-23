@@ -30,8 +30,8 @@
  *           .ixviz-* rules in ./structureViz.css.
  */
 
+import { useMemo } from "react";
 import { formatDateTime } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 
 /** Wiring contract (amended by the orchestrator at integration: the band
  *  shape now mirrors the REAL LiquidityZone.to_dict fields — see CONSUMES). */
@@ -123,11 +123,10 @@ function raw(v: number | string | null | undefined): string {
  * and render "—" with no marker (a missing price is never positioned).
  */
 function PoolLadder({ pools }: { pools: StructureVizProps["pools"] }) {
-  const t = useI18n((s) => s.t);
   if (pools.length === 0) {
     return (
       <p className="ixviz-empty">
-        {t("intelligence.viz.pools_empty", "No order pools in the payload — price ladder omitted. An empty backend list is reported as empty, never drawn as a chart.")}
+        No order pools in the payload — price ladder omitted. An empty backend list is reported as empty, never drawn as a chart.
       </p>
     );
   }
@@ -180,9 +179,9 @@ function PoolLadder({ pools }: { pools: StructureVizProps["pools"] }) {
       </ul>
       <div className="ixviz-scale">
         <span>
-          {t("intelligence.viz.scale_label", "payload min/max scale:")} <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
+          payload min/max scale: <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
         </span>
-        <span>{t("intelligence.viz.marker_rows", "marker = price placed on that scale (clamped); raw price printed per row")}</span>
+        <span>marker = price placed on that scale (clamped); raw price printed per row</span>
       </div>
     </div>
   );
@@ -229,11 +228,10 @@ const POINT_PX = 3;
  * raw values — they simply carry no marker (no coerced scale, no zero-fill).
  */
 function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
-  const t = useI18n((s) => s.t);
   if (bands.length === 0) {
     return (
       <p className="ixviz-empty">
-        {t("intelligence.viz.bands_empty", "No liquidity-map bands in the payload — band map omitted. An empty backend list is reported as empty, never drawn as a chart.")}
+        No liquidity-map bands in the payload — band map omitted. An empty backend list is reported as empty, never drawn as a chart.
       </p>
     );
   }
@@ -272,16 +270,16 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
               {/* raw payload fields — verbatim, no units, no rounding */}
               <span className="ixviz-band-meta">
                 <span>
-                  {t("intelligence.viz.tests", "tests")} <b>{raw(b.number_of_tests)}</b>
+                  tests <b>{raw(b.number_of_tests)}</b>
                 </span>
                 <span>
-                  {t("intelligence.th.strength", "strength")} <b>{raw(b.strength_score)}</b>
+                  strength <b>{raw(b.strength_score)}</b>
                 </span>
                 <span>
-                  {t("intelligence.viz.prob", "prob")} <b>{raw(b.probability_as_target)}</b>
+                  prob <b>{raw(b.probability_as_target)}</b>
                 </span>
                 <span className="ixviz-meta">
-                  {raw(b.timeframe)} · {t("intelligence.viz.dist", "dist {v}", { v: raw(b.distance_from_price) })}
+                  {raw(b.timeframe)} · dist {raw(b.distance_from_price)}
                 </span>
               </span>
             </li>
@@ -290,9 +288,9 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
       </ul>
       <div className="ixviz-scale">
         <span>
-          {t("intelligence.viz.scale_label", "payload min/max scale:")} <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
+          payload min/max scale: <b>{raw(minPrice)}</b> – <b>{raw(maxPrice)}</b>
         </span>
-        <span>{t("intelligence.viz.marker_bands", "zone price placed on that scale (clamped); raw price printed per band")}</span>
+        <span>zone price placed on that scale (clamped); raw price printed per band</span>
       </div>
     </div>
   );
@@ -309,33 +307,38 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
  * evidence is an honest empty note, never filled.
  */
 export function RegimeEvidence({ evidence }: { evidence: Record<string, unknown> | null | undefined }) {
-  const t = useI18n((s) => s.t);
-  const entries = Object.entries(evidence ?? {});
-  if (entries.length === 0) {
-    return (
-      <p className="ixviz-empty">{t("intelligence.viz.regime_empty", "No regime evidence in the payload — shown empty, never inferred.")}</p>
-    );
-  }
-  return (
-    <dl className="ixviz ixviz-evidence">
-      {entries.map(([k, v]) => {
-        const text =
+  // One memo per payload (NOT inside the map — a hook in a loop would vary
+  // with entry count): the serialized text is computed only when the payload
+  // reference changes, byte-identical to the previous inline expression.
+  const rows = useMemo(
+    () =>
+      Object.entries(evidence ?? {}).map(([k, v]) => ({
+        k,
+        v,
+        tone: (typeof v === "string" ? wordTone(v) : "neutral") as Tone,
+        text:
           v === null || v === undefined
             ? "—" // missing field -> em dash, never zero-filled
             : typeof v === "object"
               ? (JSON.stringify(v) ?? "—") // raw payload serialization, no re-derivation
               : typeof v === "function" || typeof v === "symbol"
                 ? "—"
-                : String(v); // scalars verbatim (no rounding, no units)
-        const tone: Tone = typeof v === "string" ? wordTone(v) : "neutral";
-        return (
-          <div className={`ixviz-ev is-${tone}`} key={k}>
-            {/* verbatim payload key — cited, never renamed or judged */}
-            <dt className="ixviz-ev-k">{k}</dt>
-            <dd className="ixviz-ev-v">{text}</dd>
-          </div>
-        );
-      })}
+                : String(v), // scalars verbatim (no rounding, no units)
+      })),
+    [evidence],
+  );
+  if (rows.length === 0) {
+    return <p className="ixviz-empty">No regime evidence in the payload — shown empty, never inferred.</p>;
+  }
+  return (
+    <dl className="ixviz ixviz-evidence">
+      {rows.map(({ k, tone, text }) => (
+        <div className={`ixviz-ev is-${tone}`} key={k}>
+          {/* verbatim payload key — cited, never renamed or judged */}
+          <dt className="ixviz-ev-k">{k}</dt>
+          <dd className="ixviz-ev-v">{text}</dd>
+        </div>
+      ))}
     </dl>
   );
 }

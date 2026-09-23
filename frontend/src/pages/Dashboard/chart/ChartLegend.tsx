@@ -74,8 +74,28 @@ export function ChartLegend({ hovered, last, digits, timeframe, symbol }: ChartL
 
   useEffect(() => {
     if (boundary === null) return;
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
+    // perf: the 1s countdown tick derives from Date.now() only — nothing
+    // accumulates, so pausing it while the tab is hidden loses no playback
+    // state; on return the interval restarts AND one tick runs immediately, so
+    // the countdown refreshes at once instead of up to a tick late.
+    let t: number | null =
+      document.visibilityState === "hidden" ? null : window.setInterval(() => setNow(Date.now()), 1000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (t !== null) {
+          window.clearInterval(t);
+          t = null;
+        }
+      } else if (t === null) {
+        t = window.setInterval(() => setNow(Date.now()), 1000);
+        setNow(Date.now());
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (t !== null) window.clearInterval(t);
+    };
   }, [boundary]);
 
   if (!b) return null;

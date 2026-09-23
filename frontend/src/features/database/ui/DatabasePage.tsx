@@ -12,13 +12,12 @@
  * rendered from /api/db/manage/status only.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Segmented, StatusBadge } from "@/components/primitives";
 import { FreshnessCaption } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
 import "./database.css";
 import type { ShellPageProps } from "@/app/featureModule";
-import { useI18n } from "@/stores/i18nStore";
 import { formatBytes } from "../model";
 import { useDbManageStatus } from "../useCases";
 import { ageLabel, providerTruth, psycopgState } from "../uiLogic";
@@ -28,57 +27,41 @@ import { ConsoleTab } from "./ConsoleTab";
 
 type TabId = "status" | "manage" | "console";
 
-const TABS: Array<{ id: TabId }> = [{ id: "status" }, { id: "manage" }, { id: "console" }];
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: "status", label: "Status" },
+  { id: "manage", label: "Manage" },
+  { id: "console", label: "Console" },
+];
+
+const TAB_HINT: Record<TabId, string> = {
+  status: "provider, schema/migration state and the hygiene worker — read-only",
+  manage: "PostgreSQL connection, migration workflow and backups — type-confirmed operations only",
+  console: "databases → tables → rows, column schema, read-only SQL console and named API keys",
+};
 
 export default function DatabasePage(props: ShellPageProps) {
   void props;
-  const t = useI18n((s) => s.t);
   const [tab, setTab] = useState<TabId>("status");
   const manage = useDbManageStatus();
   const provider = manage.data?.provider;
-  const truth = providerTruth(manage.data, t);
-  const psycopg = psycopgState(manage.data?.postgresql_driver_available, t);
+  // Branchy derivation over the manage payload (provider_truth + domain
+  // walk) — memoized per response identity; same object, same verdict.
+  const truth = useMemo(() => providerTruth(manage.data), [manage.data]);
+  const psycopg = psycopgState(manage.data?.postgresql_driver_available);
   // mismatch = the 2026-09-23 complaint: badge says postgres, data is sqlite
   const mismatch = Boolean(truth?.mismatch);
   const providerLabel = mismatch && truth ? `${truth.configured} → ${truth.effective}` : provider ?? "…";
 
-  const options = TABS.map((o) => ({
-    id: o.id,
-    label:
-      o.id === "status"
-        ? t("database.tab.status", "Status")
-        : o.id === "manage"
-          ? t("database.tab.manage", "Manage")
-          : t("database.tab.console", "Console"),
-  }));
-  const hint =
-    tab === "status"
-      ? t("database.page.hint_status", "provider, schema/migration state and the hygiene worker — read-only")
-      : tab === "manage"
-        ? t(
-            "database.page.hint_manage",
-            "PostgreSQL connection, migration workflow and backups — type-confirmed operations only",
-          )
-        : t(
-            "database.page.hint_console",
-            "databases → tables → rows, column schema, read-only SQL console and named API keys",
-          );
-
   return (
     <div className="dbc-stack">
       <div className="dbc-head">
-        <h1>{t("nav.feature.database", "Database")}</h1>
-        <span className="crumb">{t("database.page.platform", "PLATFORM")}</span>
-        <span className="desc">
-          {t(
-            "database.page.desc2",
-            "persistence console — provider state, migration workflow, explorer, SQL, keys",
-          )}
-        </span>
+        <h1>Database</h1>
+        <span className="crumb">PLATFORM</span>
+        <span className="desc">persistence console — provider state, migration workflow, explorer, SQL, keys</span>
         <span className="dbc-head-actions">
           <span
             className="dbc-chip"
-            title={truth?.note || t("database.page.chip_title", "active persistence provider (db/manage/status)")}
+            title={truth?.note || "active persistence provider (db/manage/status)"}
             data-mismatch={mismatch ? "true" : undefined}
           >
             <span
@@ -86,19 +69,10 @@ export default function DatabasePage(props: ShellPageProps) {
               aria-hidden="true"
             />
             <span className="inline-mono">{providerLabel}</span>
-            {mismatch && (
-              <span className="sub">
-                {t("database.page.data_from", "data from {provider}", { provider: String(truth?.effective ?? "") })}
-              </span>
-            )}
-            {!mismatch && psycopg.tone === "bad" && (
-              <span className="sub">{t("database.page.psycopg_missing", "psycopg missing")}</span>
-            )}
+            {mismatch && <span className="sub">data from {truth?.effective}</span>}
+            {!mismatch && psycopg.tone === "bad" && <span className="sub">psycopg missing</span>}
           </span>
-          <StatusBadge
-            status={String(manage.data?.overall ?? "UNKNOWN")}
-            label={t("database.page.overall_health", "overall persistence health")}
-          />
+          <StatusBadge status={String(manage.data?.overall ?? "UNKNOWN")} label="overall persistence health" />
           <FreshnessCaption
             fetchedAtMs={manage.dataUpdatedAt || null}
             intervalMs={30_000}
@@ -108,25 +82,23 @@ export default function DatabasePage(props: ShellPageProps) {
         </span>
       </div>
 
-      <div className="dbc-note">{t("database.page.note", "Backups and migrations are operator-initiated and type-confirmed; nothing here can trade or mutate market logic. Secrets (PG password, API keys, telegram tokens) live in the OS SecretStore — the backend only ever reports status.")}</div>
+      <div className="dbc-note">
+        Backups and migrations are operator-initiated and type-confirmed; nothing here can trade or mutate market logic. Secrets (PG
+        password, API keys, telegram tokens) live in the OS SecretStore — the backend only ever reports status.
+      </div>
 
       {truth?.mismatch && (
-        <section className="dbc-band dbc-truth" aria-label={t("database.page.truth_aria", "configured vs effective provider")}>
+        <section className="dbc-band dbc-truth" aria-label="configured vs effective provider">
           <div className={`dbc-band-item ${truth.source === "backend" ? "bad" : "info"}`}>
             <strong>
-              {t("database.page.truth_band", "configured {configured} · effective {effective}", {
-                configured: String(truth.configured ?? ""),
-                effective: String(truth.effective ?? ""),
-              })}
+              configured {truth.configured} · effective {truth.effective}
             </strong>
             <span>{truth.note}</span>
             {truth.pgError && <span className="faint">{truth.pgError}</span>}
             {truth.source === "derived" && (
               <span className="faint">
-                {t(
-                  "database.page.derived_note",
-                  "derived client-side from domain connection counts — restart the engine to get the measured provider_truth payload (probe + file evidence)",
-                )}
+                derived client-side from domain connection counts — restart the engine to get the measured
+                provider_truth payload (probe + file evidence)
               </span>
             )}
           </div>
@@ -136,8 +108,8 @@ export default function DatabasePage(props: ShellPageProps) {
                 <li key={e.name} className={e.active ? "active" : ""}>
                   <span className="inline-mono">{e.file}</span>
                   <span>{formatBytes(e.bytes)}</span>
-                  <span>{t("database.page.evidence_written", "written {age}", { age: ageLabel(e.age_seconds, t) })}</span>
-                  {e.active && <span className="tiny dbc-evi-live">{t("database.page.evidence_live", "live")}</span>}
+                  <span>written {ageLabel(e.age_seconds)}</span>
+                  {e.active && <span className="tiny dbc-evi-live">live</span>}
                 </li>
               ))}
             </ul>
@@ -146,8 +118,8 @@ export default function DatabasePage(props: ShellPageProps) {
       )}
 
       <div className="dbc-tabs">
-        <Segmented<TabId> options={options} value={tab} onChange={setTab} />
-        <span className="dbc-tabmeta">{hint}</span>
+        <Segmented<TabId> options={TABS} value={tab} onChange={setTab} />
+        <span className="dbc-tabmeta">{TAB_HINT[tab]}</span>
       </div>
 
       {tab === "status" && <StatusTab />}

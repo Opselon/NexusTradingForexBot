@@ -13,6 +13,7 @@
  * which artifact the studio has not written yet.
  */
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
@@ -78,9 +79,14 @@ export function ArtifactLocationsPanel() {
   });
 
   const locations: Partial<Record<ArtifactLocationKey, ArtifactLocationEntry>> = q.data?.locations ?? {};
-  const present = ORDER.filter((k) => locations[k]?.exists).length;
-  const total = ORDER.filter((k) => locations[k]).length;
+  // ORDER.filter chains read only the payload map (+ the module-level ORDER):
+  // memo deps are exactly the locations object, so a re-render never re-filters.
+  const present = useMemo(() => ORDER.filter((k) => locations[k]?.exists).length, [locations]);
+  const total = useMemo(() => ORDER.filter((k) => locations[k]).length, [locations]);
   const allPresent = total > 0 && present === total;
+  // The rendered roots themselves — memoized so the locator only re-walks
+  // ORDER when the backend map changes.
+  const roots = useMemo(() => ORDER.filter((k) => locations[k]), [locations]);
 
   return (
     <Panel
@@ -121,7 +127,7 @@ export function ArtifactLocationsPanel() {
               <span dir="ltr">{displayPath({ absolute_path: q.data.repo_root })}</span>
             </div>
           )}
-          {ORDER.filter((k) => locations[k]).map((key) => {
+          {roots.map((key) => {
             const entry = locations[key]!;
             const meta = ARTIFACT_LOCATION_META[key];
             const ok = Boolean(entry.exists);

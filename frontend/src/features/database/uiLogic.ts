@@ -15,7 +15,14 @@
  *   web/diagnostics_state_routes.py — /api/db/hygiene (status/plans/runtime)
  */
 
-import type { ConsoleDatabase, DbHygiene, DbManageStatus, DbStatus, SqliteEvidence } from "./api";
+import type {
+  ConsoleDatabase,
+  DbHygiene,
+  DbManageStatus,
+  DbStatus,
+  MigrationReport,
+  SqliteEvidence,
+} from "./api";
 
 /** Translator contract — same shape as `t` from `@/stores/i18nStore`.
  *  This module is `require()`d verbatim by tests/js/database_console.test.js in
@@ -342,6 +349,168 @@ export function psycopgState(available: boolean | undefined | null, t: Translate
     tone: "neutral",
     sub: t("database.psycopg.not_reported_sub", "this backend build does not report driver presence"),
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Switch readiness — the guided provider-switch checklist (2026-09-23) */
+/* ------------------------------------------------------------------ */
+
+export type ReadinessState = "PASS" | "WARN" | "BLOCK" | "INFO";
+
+export interface ReadinessItem {
+  key: string;
+  label: string;
+  state: ReadinessState;
+}
+
+export interface SwitchReadiness {
+  checklist: ReadinessItem[];
+  /** true only when no BLOCK item remains. */
+  canSwitch: boolean;
+  /** true when a WARN blocks the default path and the operator must type an
+   *  acknowledgement to proceed (the existing TypedConfirmModal pattern). */
+  requiresAcknowledgement: boolean;
+}
+
+/**
+ * Provider-switch readiness, derived from backend fields ONLY.
+ *
+ * The frontend computes NO new health verdict: `canSwitch` is exactly "no
+ * BLOCK item", and every BLOCK is a negative signal the backend itself
+ * reported. Nothing here may turn a missing field into a pass — an absent
+ * input is rendered as INFO (UNAVAILABLE), never as PASS.
+ *
+ * Producers (cited per input):
+ *  - `manage.provider`            — /api/db/manage/status `provider`
+ *    (web/diagnostics_state_routes.py, `db_manage_status`: `ui["provider"]`)
+ *  - `manage.overall`             — /api/db/manage/status `overall`
+ *    (database/health.py `DatabaseHealthService.snapshot`, "Healthy"/"Warning"/"Error")
+ *  - `manage.password_set`        — /api/db/manage/status `password_set`
+ *    (load_ui_config: SecretStore.has_secret on the `password_secret` reference)
+ *  - `manage.postgresql_driver_available` — /api/db/manage/status
+ *    `postgresql_driver_available` (PostgreSQLDriver.available())
+ *  - `report.provider_switch_ready` — /api/db/manage/report
+ *    `provider_switch_ready` (database/migrate_engine.py:354 — set ONLY when
+ *    `status == "COMPLETE" and validation == "PASSED"`)
+ *  - `testResult.connected`       — the last POST /api/db/manage/test-connection
+ *    answer, client-held (`connected` in the action envelope)
+ */
+export function switchReadiness(
+  manage: DbManageStatus | null | undefined,
+  report: MigrationReport | null | undefined,
+  testResult: { connected: boolean } | null | undefined,
+): SwitchReadiness {
+  const target = String(manage?.provider ?? "").toLowerCase();
+  const targetingPostgres = target === "postgresql";
+
+  const checklist: ReadinessItem[] = [];
+
+  /* --- configured provider (the switch target the operator picked) ----- *
+   * Absent `provider` means /api/db/manage/status never answered with a
+   * selection — we cannot name the target, so we refuse to greenlight it. */
+  checklist.push({
+    key: "target-provider",
+    label: !manage?.provider
+      ? "switch target is UNAVAILABLE — /api/db/manage/status did not report a provider"
+      : `switch target is ${manage.provider}`,
+    state: manage?.provider ? "INFO" : "BLOCK",
+  });
+
+  /* --- driver: the only hard backend negative for postgresql ---------- *
+   * `postgresql_driver_available === false` is a measured absence; an
+   * undefined field means this build does not report driver presence, and we
+   * neither claim it is installed nor block on it (tri-state, like
+   * psycopgState above). */
+  const driverAvailable = manage?.postgresql_driver_available;
+  checklist.push({
+    key: "pg-driver",
+    label:
+      driverAvailable === undefined
+        ? "psycopg presence is UNAVAILABLE — this backend build does not report it"
+        : driverAvailable
+          ? "psycopg is installed — the postgresql driver is importable server-side"
+          : "psycopg is missing — postgresql queries fail until it is installed or the provider switches back",
+    state: targetingPostgres
+      ? driverAvailable === false
+        ? "BLOCK"
+        : driverAvailable === true
+          ? "PASS"
+          : "INFO"
+      : driverAvailable === true
+        ? "PASS"
+        : "INFO",
+  });
+
+  /* --- stored secret reference (required to authenticate to postgres) -- *
+   * `password_set === false` is the backend reporting no SecretStore
+   * reference; undefined is unreported. */
+  const passwordSet = manage?.password_set;
+  checklist.push({
+    key: "pg-password",
+    label:
+      passwordSet === undefined
+        ? "stored PostgreSQL password reference is UNAVAILABLE — not reported"
+        : passwordSet
+          ? "PostgreSQL password is stored — OS SecretStore (DPAPI) reference present"
+          : "PostgreSQL password is missing — run Test connection with a password first",
+    state: targetingPostgres
+      ? passwordSet === false
+        ? "BLOCK"
+        : passwordSet === true
+          ? "PASS"
+          : "INFO"
+        : passwordSet === true
+          ? "PASS"
+          : "INFO",
+  });
+
+  /* --- connection probe, client-held ------------------------------- *
+   * Not a backend field of /manage/status: the operator's last
+   * test-connection answer. Absent means no probe was run this session. */
+  checklist.push({
+    key: "connection-test",
+    label:
+      testResult === null || testResult === undefined
+        ? "connection not tested — run Test connection against the target"
+        : testResult.connected
+          ? "connection test passed — the target answered the probe"
+          : "connection test failed — the target did not answer the probe",
+    state:
+      testResult?.connected === true ? "PASS" : testResult === null || testResult === undefined ? "INFO" : "BLOCK",
+  });
+
+  /* --- migration validation ---------------------------------------- *
+   * `provider_switch_ready` is the backend's own gate
+   * (migrate_engine.py:354): true ONLY on status COMPLETE + validation
+   * PASSED. Missing/false/undefined is the WARN that asks for a typed
+   * acknowledgement — the operator may insist on switching without a
+   * validated migration, but the UI never silently lets them. */
+  const switchReady = report?.provider_switch_ready;
+  checklist.push({
+    key: "migration-validated",
+    label:
+      switchReady === undefined
+        ? "migration not validated — /api/db/manage/report is UNAVAILABLE"
+        : switchReady
+          ? "migration validated — report status COMPLETE and validation PASSED"
+          : `migration not validated — report status ${String(report?.status ?? "UNKNOWN")}`,
+    state: switchReady === true ? "PASS" : "WARN",
+  });
+
+  /* --- domain health word (context only, never a client verdict) ----- *
+   * `overall` is a backend word; the checklist restate it verbatim and it
+   * never contributes to canSwitch — the frontend computes no verdict. */
+  const overall = manage?.overall;
+  checklist.push({
+    key: "domain-health",
+    label: overall ? `domain health reported by the backend: ${overall}` : "domain health is UNAVAILABLE — not reported",
+    state: "INFO",
+  });
+
+  const canSwitch = !checklist.some((i) => i.state === "BLOCK");
+  const requiresAcknowledgement = checklist.some((i) => i.state === "WARN");
+
+  return { checklist, canSwitch, requiresAcknowledgement };
 }
 
 /** Human recency label for evidence rows ("just now", "47s ago", "3h ago"). */

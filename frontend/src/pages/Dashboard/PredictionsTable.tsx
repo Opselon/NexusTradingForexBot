@@ -16,24 +16,34 @@
  *    silence (rows come through in backend order).
  */
 
+import { memo } from "react";
 import type { PredictionRow } from "@/types/domain";
 import { EmptyState, Panel, ProbBar } from "@/components/primitives";
 import { formatPct } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import "./market-console.css";
 
-export function PredictionsTable({ predictions, limit = 12 }: { predictions: PredictionRow[]; limit?: number }) {
-  const t = useI18n((s) => s.t);
+/**
+ * React.memo: the 40-row ledger array is reference-stable between the 1s
+ * dashboard clock ticks (it only changes when the socket delivers a new
+ * snapshot), so the whole 12-row table skips re-render until the data does.
+ */
+export const PredictionsTable = memo(function PredictionsTable({
+  predictions,
+  limit = 12,
+}: {
+  predictions: PredictionRow[];
+  limit?: number;
+}) {
   return (
     <Panel
-      title={t("dash.preds.title", "Recent model decisions ({n})", { n: predictions.length })}
-      subtitle={t("dash.preds.subtitle", "real audit_signals rows from the ledger — never fabricated")}
-      right={<span className="timestamp-note">{t("dash.preds.order_note", "backend order, newest first")}</span>}
+      title={`Recent model decisions (${predictions.length})`}
+      subtitle="real audit_signals rows from the ledger — never fabricated"
+      right={<span className="timestamp-note">backend order, newest first</span>}
     >
       {predictions.length === 0 ? (
         <EmptyState
-          message={t("dash.preds.empty", "No AI predictions recorded yet.")}
-          hint={t("dash.preds.empty_hint", "audit_signals is empty — waiting for live engine decisions. Not rendered as zeros.")}
+          message="No AI predictions recorded yet."
+          hint="audit_signals is empty — waiting for live engine decisions. Not rendered as zeros."
         />
       ) : (
         <div className="mc-preds">
@@ -61,22 +71,22 @@ export function PredictionsTable({ predictions, limit = 12 }: { predictions: Pre
                     ]}
                   />
                 ) : (
-                  <div className="mc-pred__noprobs">{t("dash.preds.noprobs", "softmax probabilities not sent for this row — shown as unknown, not zeros")}</div>
+                  <div className="mc-pred__noprobs">softmax probabilities not sent for this row — shown as unknown, not zeros</div>
                 )}
               </div>
             );
           })}
           {predictions.length > limit && (
-            <div className="mc-pred__more muted">{t("dash.preds.more", "+{o} older rows on the snapshot (first {l} shown)", { o: predictions.length - limit, l: limit })}</div>
+            <div className="mc-pred__more muted">+{predictions.length - limit} older rows on the snapshot (first {limit} shown)</div>
           )}
           <div className="mc-pred__note">
-            {t("dash.preds.note", "Outcome accuracy is not evaluated in this payload (the legacy ledger carried literal 0/0) — no fake accuracy bar is rendered.")}
+            Outcome accuracy is not evaluated in this payload (the legacy ledger carried literal 0/0) — no fake accuracy bar is rendered.
           </div>
         </div>
       )}
     </Panel>
   );
-}
+});
 
 function pct0(v: number | null): string {
   return v === null ? "--" : (v * 100).toFixed(0);

@@ -9,7 +9,7 @@
  * filtered rows the page passes in. Pure presentational component.
  */
 
-import { type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useUiStore } from "@/stores/uiStore";
 import { useI18n } from "@/stores/i18nStore";
 import { catTone, type RuleSort, type RuleSortKey, type RuleVO } from "../model";
@@ -128,14 +128,19 @@ export function RuleTable({
 
   // Group into consecutive same-category runs (valid only when the page sorted
   // by category — sortRules keeps each category contiguous).
-  const groups: Array<{ cat: string; items: RuleVO[] }> = [];
-  if (grouped) {
+  // perf(7): the group runs + enabled counts are derived per (rows, grouped)
+  // identity — rebuilt only when the filtered set or the grouping changes.
+  const groups = useMemo(() => {
+    if (!grouped) return [];
+    const out: Array<{ cat: string; items: RuleVO[] }> = [];
     for (const r of rows) {
-      const last = groups[groups.length - 1];
+      const last = out[out.length - 1];
       if (last && last.cat === r.category) last.items.push(r);
-      else groups.push({ cat: r.category, items: [r] });
+      else out.push({ cat: r.category, items: [r] });
     }
-  }
+    return out;
+  }, [rows, grouped]);
+  const groupEnabled = useMemo(() => groups.map((g) => g.items.filter((r) => r.enabled).length), [groups]);
 
   const renderRow = (rule: RuleVO) => {
     const [pfx, ...rest] = rule.name.startsWith("RULE_")
@@ -227,8 +232,8 @@ export function RuleTable({
           </tr>
         </thead>
         {grouped ? (
-          groups.map(({ cat, items }) => {
-            const on = items.filter((r) => r.enabled).length;
+          groups.map(({ cat, items }, i) => {
+            const on = groupEnabled[i] ?? 0;
             return (
               <tbody key={cat}>
                 <tr className="rl-grp">

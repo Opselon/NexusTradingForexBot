@@ -20,6 +20,8 @@ import { useI18n } from "@/stores/i18nStore";
 import { paintVolume } from "./chart/volumeOverlay";
 import { paintAxisTags } from "./chart/axisCrosshair";
 import { paintSeries } from "./chart/renderers/seriesRender";
+import { niceTimeTicks } from "./chart/timeAxis";
+import { paintStaticLayers, type LayerCache } from "./chart/paintCache";
 
 export const PAD_TOP = 10;
 export const PAD_BOTTOM = 22;
@@ -43,6 +45,8 @@ export interface PlotGeom {
   volH: number;
   w: number;
   h: number;
+  /** Window-relative left edge (mirror of PainterScene.left — time-axis anchor). */
+  left: number;
 }
 
 export interface Palette {
@@ -138,6 +142,7 @@ export function paintChart(
   sc: PainterScene,
   pal: Palette,
   mono: string,
+  cache?: LayerCache,
 ): void {
   const { w, h } = size;
   if (w <= 0 || h <= 0 || sc.count <= 0 || sc.shown.length === 0) return;
@@ -155,7 +160,7 @@ export function paintChart(
   const bw = plotW / sc.count;
   const slotOf = (abs: number) => abs - sc.left;
   const y = (p: number) => PAD_TOP + ((hi - p) / (hi - lo)) * priceH;
-  const geom: PlotGeom = { x, y, bw, plotW, priceH, volY0: PAD_TOP + priceH, volH, w, h };
+  const geom: PlotGeom = { x, y, bw, plotW, priceH, volY0: PAD_TOP + priceH, volH, w, h, left: sc.left };
 
   // backdrop: flat inset + subtle top gradient (legacy #090d16, modernized)
   ctx.fillStyle = pal.bg;
@@ -193,6 +198,14 @@ export function paintChart(
   ctx.beginPath();
   ctx.rect(0, 0, w - AXIS_W, h - PAD_BOTTOM);
   ctx.clip();
+
+  // wave-3 perf guard: with an active static-layer cache, paintStaticLayers
+  // below paints (cold) or blits (warm) the entire static half first, so the
+  // backdrop->volume stages are skipped and only dynamic stages re-paint.
+  const layerActive = Boolean(cache);
+  const shownBars = sc.shown;
+  const kind: ChartKind = sc.kind ?? "candles";
+  if (!layerActive) {
 
   // SMC zones — ONLY from the backend overlay payload (verbatim prices)
   for (const z of sc.overlays?.rectangles ?? []) {
@@ -272,8 +285,6 @@ export function paintChart(
   }
 
   // candles — green/red per backend OHLC, forming bar dashed accent border
-  const shownBars = sc.shown;
-  const kind: ChartKind = sc.kind ?? "candles";
   for (let i = 0; kind === "candles" && i < shownBars.length; i++) {
     const c = shownBars[i];
     if (!c || c.open === null || c.close === null || c.high === null || c.low === null) continue; // honest gap
@@ -299,8 +310,13 @@ export function paintChart(
       ctx.setLineDash([]);
     }
   }
-  if (kind !== "candles") paintSeries(kind, ctx, sc, geom, pal, mono);
-  paintVolume(ctx, sc, geom, pal, mono);
+    if (kind !== "candles") paintSeries(kind, ctx, sc, geom, pal, mono);
+    paintVolume(ctx, sc, geom, pal, mono);
+  } // end static half (skipped when the cache layer delivers it)
+
+  // wave-3 static-layer cache: cold repaints the layer, warm blits it —
+  // identical pixels inside the clip; dynamic stages always re-paint.
+  if (cache) paintStaticLayers(ctx, sc, geom, pal, mono, cache);
 
   // live quote line (snapshot bid — never drawn when null)
   if (typeof sc.liveBid === "number" && Number.isFinite(sc.liveBid)) {
@@ -459,14 +475,16 @@ export function paintChart(
       ctx.textAlign = "left";
     }
   }
+  // wave-3 seam: TF-aware time ticks (Lane B fills niceTimeTicks; an empty
+  // set = no labels — scaffold behavior stays honest until the lane lands).
+  const tick0 = shownBars[0];
+  const tickEnd = shownBars[shownBars.length - 1];
   ctx.fillStyle = pal.axisText;
   ctx.font = `9px ${mono}`;
-  for (let i = 0; i < 4; i++) {
-    const idx = Math.floor(((shownBars.length - 1) * i) / 3);
-    const b = shownBars[idx];
-    if (!b) continue;
-    const lx = Math.min(Math.max(PAD_LEFT, x(idx)), w - AXIS_W - 58);
-    ctx.fillText(b.time.replace("T", " ").slice(5, 16), lx, h - 8);
+  for (const tick of niceTimeTicks(tick0 ? tick0.time : null, tickEnd ? tickEnd.time : null, bw)) {
+    if (tick.slot < 0 || tick.slot >= sc.count) continue;
+    const lx = Math.min(Math.max(PAD_LEFT, x(tick.slot)), w - AXIS_W - 58);
+    ctx.fillText(tick.label, lx, h - 8);
   }
 
   // wave-2 seam: crosshair axis tags (price on right axis, time on bottom)

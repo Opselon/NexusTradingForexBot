@@ -10,7 +10,7 @@
  * green truth). Failed reads fail their cell, never the page.
  */
 
-import { useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { Dot, FreshnessCaption, KeyValueList, MonoValue, PollControl, ResultStrip, usePolling } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
@@ -30,16 +30,11 @@ import {
   useVersion,
   useWorkers,
 } from "../useCases";
-import { useI18n } from "@/stores/i18nStore";
 import { cellFromCheck, cellFromSubsystem, cellFromWorker, cellTone, matrixSummary, type MatrixCell } from "../model";
 import "./health.css";
 
 function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
-  const t = useI18n((s) => s.t);
   const tone = cellTone(cell, nowMs);
-  const details: Record<string, string> = {
-    "attribute missing on engine": t("health.cell.attribute_missing", "attribute missing on engine"),
-  };
   return (
     <div className={`l3-health-cell hl-cell ${tone.level} ${tone.staleClass}`}>
       <div className="name">
@@ -48,11 +43,9 @@ function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
       </div>
       <div>
         <StatusBadge status={cell.status} />{" "}
-        <span className="timestamp-note">
-          {tone.ageMs === null ? t("health.cell.never_read", "never read") : formatAgeMs(tone.ageMs)}
-        </span>
+        <span className="timestamp-note">{tone.ageMs === null ? "never read" : formatAgeMs(tone.ageMs)}</span>
       </div>
-      {cell.detail && <div className="detail">{details[cell.detail] ?? cell.detail}</div>}
+      {cell.detail && <div className="detail">{cell.detail}</div>}
       {cell.metrics.length > 0 && (
         <div className="metrics">
           {cell.metrics.map(([k, v]) => (
@@ -67,21 +60,26 @@ function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
   );
 }
 
-function FailedCell({ name, error, onRetry }: { name: string; error: unknown; onRetry: () => void }) {
-  const t = useI18n((s) => s.t);
+/** One failing endpoint cell + its own retry. `busy` mirrors that query's
+ *  isFetching window so the retry cannot be spammed while the re-read is in
+ *  flight (ConfigPage house standard: disabled while pending + busy label). */
+function FailedCell({ name, error, onRetry, busy }: { name: string; error: unknown; onRetry: () => void; busy?: boolean }) {
   return (
     <div className="l3-health-cell bad hl-cell">
       <div className="name"><span>{name}</span><Dot status="ERROR" /></div>
       <StatusBadge status="ERROR" />
-      <div className="detail">{error instanceof Error ? error.message : t("health.cell.read_failed", "read failed")}</div>
-      <div><button className="btn small" onClick={onRetry}>{t("common.retry", "Retry")}</button></div>
+      <div className="detail">{error instanceof Error ? error.message : "read failed"}</div>
+      <div>
+        <button className="btn small" onClick={onRetry} disabled={busy} title={busy ? "re-read in progress" : undefined}>
+          {busy ? "retrying…" : "Retry"}
+        </button>
+      </div>
     </div>
   );
 }
 
 export default function HealthPage(props: ShellPageProps) {
   void props;
-  const t = useI18n((s) => s.t);
   const poll = usePolling(10_000);
   const [tab, setTab] = useState<"matrix" | "layers" | "workers" | "identity">("matrix");
   const nowMs = props.nowMs ?? Date.now();
@@ -99,62 +97,122 @@ export default function HealthPage(props: ShellPageProps) {
   const version = useVersion(poll.paused);
   const capabilities = useCapabilities(poll.paused);
 
-  const cells: MatrixCell[] = [];
-  if (debug.data) for (const sub of debug.data.subsystems) cells.push(cellFromSubsystem(sub, "debug/health", debug.dataUpdatedAt || null));
-  if (system.data) {
-    const sys = system.data;
-    for (const check of sys.checks) cells.push(cellFromCheck(check, "v1/system", system.dataUpdatedAt || null));
-  }
-  if (workers.data) for (const w of workers.data.workers) cells.push(cellFromWorker(w, workers.dataUpdatedAt || null));
-  if (mt5.data) {
-    cells.push({
-      id: "mt5:connection",
-      name: t("health.cell.mt5", "MT5 broker"),
-      status: mt5.data.available ? "CONNECTED" : "DISCONNECTED",
-      level: mt5.data.available ? "good" : "bad",
-      detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? t("health.cell.adapter_unavailable", "adapter unavailable")),
-      metrics: Object.entries(mt5.data.connection ?? {}).slice(0, 4),
-      fetchedAtMs: mt5.dataUpdatedAt || null,
-      source: "mt5",
-    });
-  }
-  if (news.data) {
-    cells.push({
-      id: "news:subsystem",
-      name: t("health.cell.news", "News intelligence"),
-      status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
-      level: news.data.available ? "good" : "neutral",
-      detail: news.data.available ? String(news.data.worker ?? "") : t("health.cell.news_detached", "news module not attached"),
-      metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
-      fetchedAtMs: news.dataUpdatedAt || null,
-      source: "news",
-    });
-  }
-  if (forensics.data) {
-    cells.push({
-      id: "forensics:matrix",
-      name: t("health.cell.forensics", "Forensic checks"),
-      status: forensics.data.available ? "ACTIVE" : "UNAVAILABLE",
-      level: forensics.data.available ? "good" : "neutral",
-      detail: String((forensics.data.error as { message?: string } | undefined)?.message ?? ""),
-      metrics: [],
-      fetchedAtMs: forensics.dataUpdatedAt || null,
-      source: "forensics",
-    });
-  }
-  const failed: Array<{ name: string; error: unknown; retry: () => void }> = [];
-  for (const [name, q] of [["debug/health", debug], ["v1 system health", system], ["readiness", readiness], ["workers", workers], ["mt5", mt5], ["news", news], ["forensics", forensics], ["probe /health", probe], ["runtime", runtime], ["status", status], ["version", version], ["capabilities", capabilities]] as const) {
-    if (q.isError) failed.push({ name, error: q.error, retry: () => void q.refetch() });
-  }
-  const summary = matrixSummary(cells);
+  // perf(7): the matrix is the DOT-chain hot path of this page — 12 polls,
+  // so memo deps are the exact payload identities (plus nowMs, which drives
+  // the per-cell age tone). Cells only rebuild when a payload or the clock
+  // tick moves; the summary/failures depend on cells alone.
+  const cells = useMemo(() => {
+    const out: MatrixCell[] = [];
+    if (debug.data) for (const sub of debug.data.subsystems) out.push(cellFromSubsystem(sub, "debug/health", debug.dataUpdatedAt || null));
+    if (system.data) {
+      const sys = system.data;
+      for (const check of sys.checks) out.push(cellFromCheck(check, "v1/system", system.dataUpdatedAt || null));
+    }
+    if (workers.data) for (const w of workers.data.workers) out.push(cellFromWorker(w, workers.dataUpdatedAt || null));
+    if (mt5.data) {
+      out.push({
+        id: "mt5:connection",
+        name: "MT5 broker",
+        status: mt5.data.available ? "CONNECTED" : "DISCONNECTED",
+        level: mt5.data.available ? "good" : "bad",
+        detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? "adapter unavailable"),
+        metrics: Object.entries(mt5.data.connection ?? {}).slice(0, 4),
+        fetchedAtMs: mt5.dataUpdatedAt || null,
+        source: "mt5",
+      });
+    }
+    if (news.data) {
+      out.push({
+        id: "news:subsystem",
+        name: "News intelligence",
+        status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
+        level: news.data.available ? "good" : "neutral",
+        detail: news.data.available ? String(news.data.worker ?? "") : "news module not attached",
+        metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
+        fetchedAtMs: news.dataUpdatedAt || null,
+        source: "news",
+      });
+    }
+    if (forensics.data) {
+      out.push({
+        id: "forensics:matrix",
+        name: "Forensic checks",
+        status: forensics.data.available ? "ACTIVE" : "UNAVAILABLE",
+        level: forensics.data.available ? "good" : "neutral",
+        detail: String((forensics.data.error as { message?: string } | undefined)?.message ?? ""),
+        metrics: [],
+        fetchedAtMs: forensics.dataUpdatedAt || null,
+        source: "forensics",
+      });
+    }
+    return out;
+    // nowMs is included so stale-recolor keeps tracking the wall clock.
+  }, [debug.data, system.data, workers.data, mt5.data, news.data, forensics.data, debug.dataUpdatedAt, system.dataUpdatedAt, workers.dataUpdatedAt, mt5.dataUpdatedAt, news.dataUpdatedAt, forensics.dataUpdatedAt, nowMs]);
+
+  const failed = useMemo(() => {
+    const out: Array<{ name: string; error: unknown; retry: () => void; busy: boolean }> = [];
+    for (const [name, q] of [["debug/health", debug], ["v1 system health", system], ["readiness", readiness], ["workers", workers], ["mt5", mt5], ["news", news], ["forensics", forensics], ["probe /health", probe], ["runtime", runtime], ["status", status], ["version", version], ["capabilities", capabilities]] as const) {
+      if (q.isError) out.push({ name, error: q.error, retry: () => void q.refetch(), busy: q.isFetching });
+    }
+    return out;
+    // Query observers are stable per hook; identity changes only on error state.
+  }, [debug.isError, system.isError, readiness.isError, workers.isError, mt5.isError, news.isError, forensics.isError, probe.isError, runtime.isError, status.isError, version.isError, capabilities.isError]);
+
+  const summary = useMemo(() => matrixSummary(cells), [cells]);
   const overall =
     summary.bad > 0 ? "DEGRADED-FAIL" : summary.warn > 0 ? "WARNING" : summary.good > 0 ? "HEALTHY" : "UNKNOWN";
-  const tabLabels: Record<string, string> = {
-    matrix: t("health.tab.matrix", "matrix"),
-    layers: t("health.tab.layers", "layers"),
-    workers: t("health.tab.workers", "workers"),
-    identity: t("health.tab.identity", "identity"),
-  };
+
+  // perf(7): tab-local payload chains — deps = the exact payload array the
+  // derivation reads (identity-tab entries/filter, readiness/worker maps).
+  const versionRows = useMemo(
+    () =>
+      Object.entries(version.data ?? {})
+        .filter(([, v]) => v !== null && v !== undefined)
+        .map(([k, v]): [string, ReactNode] => [k, <MonoValue key={k} value={v} />]),
+    [version.data],
+  );
+  const domainChips = useMemo(
+    () =>
+      Object.entries(capabilities.data?.domains ?? {}).map(([d, n]) => (
+        <span className="l3-param-chip" key={d}>
+          {d}=<b>{String(n)}</b>
+        </span>
+      )),
+    [capabilities.data],
+  );
+  const requiredLayerRows = useMemo(
+    () =>
+      (readiness.data?.required_layers ?? []).map((c) => (
+        <tr key={`r:${c.category}`}>
+          <td>{c.category}</td>
+          <td><StatusBadge status={c.verdict} /></td>
+          <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
+          <td className="l3-cell" title={c.suggestion}>{c.suggestion ?? "—"}</td>
+        </tr>
+      )),
+    [readiness.data],
+  );
+  const optionalLayerRows = useMemo(
+    () =>
+      (readiness.data?.optional_layers ?? []).map((c) => (
+        <tr key={`o:${c.category}`}>
+          <td>{c.category}</td>
+          <td><StatusBadge status={c.verdict} /></td>
+          <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
+        </tr>
+      )),
+    [readiness.data],
+  );
+  const workerRows = useMemo(
+    () =>
+      (workers.data?.workers ?? []).map((w) => (
+        <tr key={w.name}>
+          <td className="inline-mono">{w.name}</td>
+          <td><StatusBadge status={String(w.state ?? "UNKNOWN")} /></td>
+        </tr>
+      )),
+    [workers.data],
+  );
 
   return (
     <div className="l3-wrap hl-page">
@@ -162,48 +220,36 @@ export default function HealthPage(props: ShellPageProps) {
         <div className="hl-hero-main">
           <div className="hl-kicker">
             <span className="dot" aria-hidden="true" />
-            {t("ux.sidebar.features.safety", "SAFETY & GOVERNANCE")}
+            SAFETY &amp; GOVERNANCE
           </div>
           <h1 className="hl-title">
             <span className="hl-mark" aria-hidden="true">+</span>
-            <span className="word">{t("nav.feature.health", "Health")}</span>
+            <span className="word">Health</span>
           </h1>
-          <p className="hl-desc">{t("health.page.desc", "subsystem matrix from debug + v1 system + broker + news (legacy tab-health)")}</p>
+          <p className="hl-desc">
+            subsystem matrix from debug + v1 system + broker + news (legacy tab-health)
+          </p>
         </div>
-        <div className="hl-hero-side" role="group" aria-label={t("health.hero.prov_a11y", "Backend status and provenance")}>
-          <StatusBadge status={system.data?.verdict ?? probe.data?.status ?? overall} label={t("health.badge.v1_verdict", "v1 verdict")} />
+        <div className="hl-hero-side" role="group" aria-label="Backend status and provenance">
+          <StatusBadge status={system.data?.verdict ?? probe.data?.status ?? overall} label="v1 verdict" />
           <div className="hl-chips">
-            {readiness.data && (
-              <span className={`hl-chip ${readiness.data.ready ? "pos" : "neg"}`}>
-                {t("health.badge.readiness", "readiness")} {readiness.data.ready ? "READY" : "NOT READY"}
-              </span>
-            )}
-            {runtime.data && (
-              <span className={`hl-chip ${runtime.data.engine_running ? "pos" : "dim"}`}>
-                {t("health.badge.engine_loop", "engine")} {runtime.data.engine_running ? "RUNNING" : "STOPPED"}
-              </span>
-            )}
+            {readiness.data && <span className={`hl-chip ${readiness.data.ready ? "pos" : "neg"}`}>readiness {readiness.data.ready ? "READY" : "NOT READY"}</span>}
+            {runtime.data && <span className={`hl-chip ${runtime.data.engine_running ? "pos" : "dim"}`}>engine {runtime.data.engine_running ? "RUNNING" : "STOPPED"}</span>}
             {status.data && status.data.critical_failures.length > 0 && (
-              <span className="hl-chip neg">
-                {t("health.badge.critical", "critical: {list}", { list: status.data.critical_failures.join(", ") })}
-              </span>
+              <span className="hl-chip neg">critical: {status.data.critical_failures.join(", ")}</span>
             )}
-            <span className="hl-chip dim">
-              {t("health.metric.cells", "{n} cells", { n: cells.length })}
-            </span>
-            <span className="hl-chip dim">{t("health.hero.poll", "poll 10s")}</span>
+            <span className="hl-chip dim">{cells.length} cells</span>
+            <span className="hl-chip dim">poll 10s</span>
           </div>
         </div>
       </header>
       <div className="l3-note hl-note">
-        {t(
-          "health.page.note",
-          "Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only its cell. Verdict words are the backend's (HealthEngine contract); nothing here is inferred client-side.",
-        )}
+        Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only
+        its cell. Verdict words are the backend's (HealthEngine contract); nothing here is inferred client-side.
       </div>
 
       <Panel
-        title={t("health.panel.overview", "Overview")}
+        title="Overview"
         accent
         right={
           <>
@@ -214,31 +260,26 @@ export default function HealthPage(props: ShellPageProps) {
       >
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">{t("health.panel.overview", "Overview")}</span>
+            <span className="lbl">Overview</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/health</span>
               <span className="hl-chip dim">/health</span>
             </span>
           </div>
           <div className="hl-toolbar l3-toolbar">
-            <span className="hl-segmented segmented" role="tablist" aria-label={t("health.tabs.a11y", "Health views")}>
-              {(["matrix", "layers", "workers", "identity"] as const).map((t2) => (
-                <button key={t2} role="tab" aria-selected={tab === t2} className={tab === t2 ? "active" : ""} onClick={() => setTab(t2)}>
-                  {tabLabels[t2]}
+            <span className="hl-segmented segmented" role="tablist">
+              {(["matrix", "layers", "workers", "identity"] as const).map((t) => (
+                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+                  {t}
                 </button>
               ))}
             </span>
           </div>
           <div className="hl-metrics">
-            <MetricCard label={t("health.metric.cells_good", "cells good")} value={summary.good} tone="pos" />
-            <MetricCard label={t("health.metric.warn_stale", "warn / stale")} value={summary.warn} tone={summary.warn ? "neg" : "dim"} />
-            <MetricCard label={t("health.metric.failing", "failing")} value={summary.bad} tone={summary.bad ? "neg" : "dim"} />
-            <MetricCard
-              label={t("health.metric.idle", "idle / n-a")}
-              value={summary.neutral}
-              tone="dim"
-              sub={t("health.metric.total_sub", "{n} total", { n: cells.length })}
-            />
+            <MetricCard label="cells good" value={summary.good} tone="pos" />
+            <MetricCard label="warn / stale" value={summary.warn} tone={summary.warn ? "neg" : "dim"} />
+            <MetricCard label="failing" value={summary.bad} tone={summary.bad ? "neg" : "dim"} />
+            <MetricCard label="idle / n-a" value={summary.neutral} tone="dim" sub={`${cells.length} total`} />
           </div>
         </div>
       </Panel>
@@ -246,7 +287,7 @@ export default function HealthPage(props: ShellPageProps) {
       {tab === "matrix" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">{t("health.panel.matrix", "Subsystem matrix")}</span>
+            <span className="lbl">Subsystem matrix</span>
             <span className="src">
               <span className="hl-chip dim">/api/debug/health</span>
               <span className="hl-chip dim">/api/v1/system/health</span>
@@ -256,62 +297,44 @@ export default function HealthPage(props: ShellPageProps) {
               <span className="hl-chip dim">/api/forensics/health</span>
             </span>
           </div>
-          <Panel title={t("health.panel.matrix", "Subsystem matrix")} tight={cells.length === 0}>
+          <Panel title="Subsystem matrix" tight={cells.length === 0}>
             {cells.length === 0 && failed.length === 0 ? (
               <Skeleton count={4} />
             ) : (
               <div className="l3-health-grid">
                 {cells.map((c) => <MatrixCellView key={c.id} cell={c} nowMs={nowMs} />)}
-                {failed.map((f) => <FailedCell key={f.name} name={f.name} error={f.error} onRetry={f.retry} />)}
+                {failed.map((f) => <FailedCell key={f.name} name={f.name} error={f.error} onRetry={f.retry} busy={f.busy} />)}
               </div>
             )}
           </Panel>
-        </div>
-      )}
+        </div>      )}
 
       {tab === "layers" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">{t("health.section.layers", "Required vs optional layers")}</span>
+            <span className="lbl">Required vs optional layers</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/readiness</span>
             </span>
           </div>
-          <Panel title={t("health.panel.layers", "Required vs optional layers (/api/v1/system/readiness)")}>
+          <Panel title="Required vs optional layers (/api/v1/system/readiness)">
           {readiness.isPending ? (
             <Skeleton count={4} />
           ) : readiness.isError ? (
-            <ResultStrip result={{ running: false, lastResult: false, lastMessage: readiness.error instanceof Error ? readiness.error.message : t("health.empty.readiness_failed", "readiness failed") }} />
+            <ResultStrip result={{ running: false, lastResult: false, lastMessage: readiness.error instanceof Error ? readiness.error.message : "readiness failed" }} />
           ) : readiness.data ? (
             <>
-              <div className="hl-sublabel">
-                {t("health.section.required_layers", "required (must PASS for READY) · {n}", { n: readiness.data.required_layers.length })}
-              </div>
-              <DataTable headers={[{ label: t("health.th.category", "CATEGORY") }, { label: t("health.th.verdict", "VERDICT") }, { label: t("health.th.reason", "REASON") }, { label: t("health.th.suggestion", "SUGGESTION") }]}>
-                {readiness.data.required_layers.map((c) => (
-                  <tr key={`r:${c.category}`}>
-                    <td>{c.category}</td>
-                    <td><StatusBadge status={c.verdict} /></td>
-                    <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
-                    <td className="l3-cell" title={c.suggestion}>{c.suggestion ?? "—"}</td>
-                  </tr>
-                ))}
+              <div className="hl-sublabel">required (must PASS for READY) · {readiness.data.required_layers.length}</div>
+              <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }, { label: "SUGGESTION" }]}>
+                {requiredLayerRows}
               </DataTable>
-              <div className="hl-sublabel">
-                {t("health.section.optional_layers", "optional (may WARN without blocking) · {n}", { n: readiness.data.optional_layers.length })}
-              </div>
-              <DataTable headers={[{ label: t("health.th.category", "CATEGORY") }, { label: t("health.th.verdict", "VERDICT") }, { label: t("health.th.reason", "REASON") }]}>
-                {readiness.data.optional_layers.map((c) => (
-                  <tr key={`o:${c.category}`}>
-                    <td>{c.category}</td>
-                    <td><StatusBadge status={c.verdict} /></td>
-                    <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
-                  </tr>
-                ))}
+              <div className="hl-sublabel">optional (may WARN without blocking) · {readiness.data.optional_layers.length}</div>
+              <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }]}>
+                {optionalLayerRows}
               </DataTable>
             </>
           ) : (
-            <EmptyState message={t("health.empty.readiness_payload", "Readiness payload empty.")} />
+            <EmptyState message="Readiness payload empty." />
           )}
           </Panel>
         </div>
@@ -320,56 +343,34 @@ export default function HealthPage(props: ShellPageProps) {
       {tab === "workers" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">{t("health.section.workers_runtime", "Workers & runtime")}</span>
+            <span className="lbl">Workers &amp; runtime</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/workers</span>
               <span className="hl-chip dim">/api/v1/system/runtime</span>
             </span>
           </div>
-          <Panel
-            title={t("health.panel.workers", "Workers (/api/v1/system/workers)")}
-            right={
-              <span className="timestamp-note">
-                {t("health.workers.engine_attached", "engine_attached={v}", { v: String(workers.data?.engine_attached ?? "—") })}
-              </span>
-            }
-          >
+          <Panel title="Workers (/api/v1/system/workers)" right={<span className="timestamp-note">engine_attached={String(workers.data?.engine_attached ?? "—")}</span>}>
           {workers.isPending ? (
             <Skeleton count={3} />
           ) : workers.data && workers.data.workers.length === 0 ? (
-            <EmptyState
-              message={t("health.empty.no_workers", "No worker attributes attached to the engine object.")}
-              hint={t("health.empty.no_workers_hint", "NOT_ATTACHED is a state the backend reports — it is never hidden.")}
-            />
+            <EmptyState message="No worker attributes attached to the engine object." hint="NOT_ATTACHED is a state the backend reports — it is never hidden." />
           ) : workers.data ? (
-            <DataTable headers={[{ label: t("health.th.worker", "WORKER") }, { label: t("health.th.state", "STATE") }]}>
-              {workers.data.workers.map((w) => (
-                <tr key={w.name}>
-                  <td className="inline-mono">{w.name}</td>
-                  <td><StatusBadge status={String(w.state ?? "UNKNOWN")} /></td>
-                </tr>
-              ))}
+            <DataTable headers={[{ label: "WORKER" }, { label: "STATE" }]}>
+              {workerRows}
             </DataTable>
           ) : (
             <FailedCell name="workers" error={workers.error} onRetry={() => void workers.refetch()} />
           )}
-          <div className="hl-sublabel">{t("health.section.runtime", "runtime")}</div>
+          <div className="hl-sublabel">runtime</div>
           {runtime.data ? (
             <KeyValueList
               rows={[
-                [
-                  t("health.kv.engine", "engine"),
-                  runtime.data.engine_running ? (
-                    <span key="e" className="badge good">{t("health.status.running", "RUNNING")}</span>
-                  ) : (
-                    <span key="e" className="badge neutral">{t("health.status.stopped", "STOPPED")}</span>
-                  ),
-                ],
-                [t("health.kv.warmup", "warmup"), String(runtime.data.warmup_state ?? "—")],
-                [t("health.kv.inference_enabled", "inference_enabled"), String(runtime.data.inference_enabled)],
-                [t("health.kv.mode", "mode"), String(runtime.data.mode ?? "—")],
-                [t("health.kv.effective_mode", "effective_mode"), String(runtime.data.effective_mode ?? "—")],
-                [t("health.kv.freshness_overall", "freshness.overall"), String((runtime.data.freshness as { overall?: string } | null)?.overall ?? "—")],
+                ["engine", runtime.data.engine_running ? <span key="e" className="badge good">RUNNING</span> : <span key="e" className="badge neutral">STOPPED</span>],
+                ["warmup", String(runtime.data.warmup_state ?? "—")],
+                ["inference_enabled", String(runtime.data.inference_enabled)],
+                ["mode", String(runtime.data.mode ?? "—")],
+                ["effective_mode", String(runtime.data.effective_mode ?? "—")],
+                ["freshness.overall", String((runtime.data.freshness as { overall?: string } | null)?.overall ?? "—")],
               ]}
             />
           ) : (
@@ -382,26 +383,23 @@ export default function HealthPage(props: ShellPageProps) {
       {tab === "identity" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">{t("health.section.identity", "Identity & capabilities")}</span>
+            <span className="lbl">Identity &amp; capabilities</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/version</span>
               <span className="hl-chip dim">/api/v1/system/capabilities</span>
             </span>
           </div>
           <div className="l3-split">
-          <Panel title={t("health.panel.version", "Version / build (/api/v1/system/version)")}>
+          <Panel title="Version / build (/api/v1/system/version)">
             {version.isPending ? (
               <Skeleton count={3} />
             ) : version.isError ? (
               <FailedCell name="version" error={version.error} onRetry={() => void version.refetch()} />
             ) : version.data ? (
-              <KeyValueList rows={Object.entries(version.data).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, <MonoValue key={k} value={v} />])} />
+              <KeyValueList rows={versionRows} />
             ) : null}
           </Panel>
-          <Panel
-            title={t("health.panel.capabilities", "API capabilities (/api/v1/system/capabilities)")}
-            right={<span className="timestamp-note">{t("health.caps.interval", "every {n}s · route-table truth", { n: 60 })}</span>}
-          >
+          <Panel title="API capabilities (/api/v1/system/capabilities)" right={<span className="timestamp-note">every {60}s · route-table truth</span>}>
             {capabilities.isPending ? (
               <Skeleton count={3} />
             ) : capabilities.data ? (
@@ -409,15 +407,13 @@ export default function HealthPage(props: ShellPageProps) {
                 <KeyValueList
                   rows={[
                     ["api_version", capabilities.data.api_version],
-                    [t("health.caps.domains", "domains"), capabilities.data.domain_count],
-                    [t("health.caps.endpoints", "endpoints"), capabilities.data.endpoint_count],
-                    [t("health.caps.spec", "spec"), capabilities.data.spec],
+                    ["domains", capabilities.data.domain_count],
+                    ["endpoints", capabilities.data.endpoint_count],
+                    ["spec", capabilities.data.spec],
                   ]}
                 />
                 <div className="l3-rule-params">
-                  {Object.entries(capabilities.data.domains ?? {}).map(([d, n]) => (
-                    <span className="l3-param-chip" key={d}>{d}=<b>{String(n)}</b></span>
-                  ))}
+                  {domainChips}
                 </div>
               </>
             ) : (

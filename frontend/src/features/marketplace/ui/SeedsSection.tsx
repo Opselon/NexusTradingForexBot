@@ -1,19 +1,22 @@
 /**
- * Seeds table + lifecycle commands + seed detail drawer.
- *
- * Enablement goes through a mode picker with a confirm step; the backend can
- * answer OK / PENDING (202) / DENIED (403) — all three are shown verbatim and
- * the table refetches either way (the response, not the click, decides).
- * Disable and repair are destructive-ish and confirm-guarded. Run-research is
- * a queue request (202), not a synchronous result.
- *
- * i18n: command results are stored STRUCTURED (kind + backend payload/error),
- * never as a pre-rendered sentence, so the visible text is re-t()d each render
- * and follows language switches.
+ * PURPOSE:  Seeds storefront — table or card view, filter/sort chips derived
+ *           ONLY from loaded rows, lifecycle commands + detail drawer.
+ * OWNER:    uiux-w6-marketplace
+ * CONSUMES: ../hooks (useMktSeeds + command hooks), ../model (ENABLE_MODES,
+ *           lifecycleLevel), ./storeViewModel (facetCounts, seedCardMeta),
+ *           ./SeedDetailDrawer, ./shared, ./marketplace-store.css
+ * PROVIDES: SeedsSection, fmtScore
+ * INVARIANTS: enable/disable/repair/research keep their confirm step and the
+ *           backend response decides (OK / PENDING / DENIED verbatim); chips
+ *           only offer categories present in the loaded page (no hardcoded
+ *           vocabulary); client-side sort is display-only and labeled derived;
+ *           Skeleton/ErrorState/EmptyState keep their existing strings;
+ *           search, pagination and every row action keep working.
+ * EXTEND:   add a facet by reading MktSeed fields; keep localStorage under
+ *           the w6.marketplace.* prefix.
  */
 
-import { useState } from "react";
-import { useI18n } from "@/stores/i18nStore";
+import { useMemo, useState } from "react";
 import { ConfirmModal, DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useDisableSeed, useEnableSeed, useMktSeeds, useRepairSeed, useRunResearch } from "../hooks";
@@ -21,8 +24,10 @@ import { ENABLE_MODES, lifecycleLevel, type SeedVM } from "../model";
 import type { MktEnableMode } from "../types";
 import { SeedDetailDrawer } from "./SeedDetailDrawer";
 import { FreshnessNote, asErrorText } from "./shared";
-
-type CmdKind = "enable" | "disable" | "repair" | "research";
+import { facetCounts, seedCardMeta } from "./storeViewModel";
+import "./marketplace.css";
+import "./marketplace-store.css";
+import "./marketplace-store-detail.css";
 
 type PendingCmd =
   | { kind: "enable"; seed: string; mode: MktEnableMode }
@@ -31,10 +36,42 @@ type PendingCmd =
   | { kind: "research"; seed: string }
   | null;
 
-type SeedNote = { ok: boolean; kind: CmdKind; payload?: string; err?: unknown };
+/** Display-only sort of loaded rows — persisted, labeled derived in the UI. */
+type SortMode = "backend" | "name" | "lifecycle" | "updated";
+const SORTS: Array<{ id: SortMode; label: string }> = [
+  { id: "backend", label: "backend order" },
+  { id: "name", label: "name A→Z" },
+  { id: "lifecycle", label: "lifecycle" },
+  { id: "updated", label: "updated ↓" },
+];
+const LS_SORT = "w6.marketplace.sort";
+const LS_VIEW = "w6.marketplace.view";
+
+function lsGet(key: string, fallback: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function lsSet(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* display state only — a blocked localStorage never breaks the page */
+  }
+}
+
+function sortRows(rows: SeedVM[], mode: SortMode): SeedVM[] {
+  if (mode === "backend") return rows;
+  const out = [...rows];
+  if (mode === "name") out.sort((a, b) => a.label.localeCompare(b.label));
+  else if (mode === "lifecycle") out.sort((a, b) => a.lifecycle.localeCompare(b.lifecycle) || a.label.localeCompare(b.label));
+  else out.sort((a, b) => String(b.seed.updated_at ?? "").localeCompare(String(a.seed.updated_at ?? "")));
+  return out;
+}
 
 export function SeedsSection() {
-  const t = useI18n((s) => s.t);
   const [page, setPage] = useState(1);
   const [family, setFamily] = useState("");
   const [status, setStatus] = useState("");
@@ -42,7 +79,9 @@ export function SeedsSection() {
   const [appliedQ, setAppliedQ] = useState("");
   const [detail, setDetail] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingCmd>(null);
-  const [note, setNote] = useState<SeedNote | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sort, setSort] = useState<SortMode>(() => (lsGet(LS_SORT, "backend") as SortMode));
+  const [view, setView] = useState<"table" | "cards">(() => (lsGet(LS_VIEW, "table") === "cards" ? "cards" : "table"));
 
   const seeds = useMktSeeds({ page, family, status, q: appliedQ });
   const enable = useEnableSeed();
@@ -52,38 +91,44 @@ export function SeedsSection() {
 
   const rows: SeedVM[] = seeds.data?.seeds ?? [];
 
-  /** Render-time label map — keys are literals, values recompute with t. */
-  const modeLabels: Record<MktEnableMode, string> = {
-    RESEARCH: t("marketplace.seeds.research", "Research"),
-    PAPER: t("marketplace.mode.paper", "Paper"),
-    SHADOW: t("marketplace.mode.shadow", "Shadow"),
-    LIVE_REQUEST: t("marketplace.mode.live_request", "Live request"),
+  // Facets come ONLY from the rows this response actually delivered.
+  const familyFacets = useMemo(
+    () => facetCounts(rows.map((r) => r.seed), "family"),
+    [rows],
+  );
+  const lifecycleFacets = useMemo(
+    () => facetCounts(rows.map((r) => r.seed), "lifecycle"),
+    [rows],
+  );
+  const visibleRows = useMemo(() => sortRows(rows, sort), [rows, sort]);
+
+  const changeSort = (m: SortMode): void => {
+    setSort(m);
+    lsSet(LS_SORT, m);
   };
-  const modeHints: Record<MktEnableMode, string> = {
-    RESEARCH: t("marketplace.mode.research_hint", "run inside the research pipeline only"),
-    PAPER: t("marketplace.mode.paper_hint", "simulated execution (gates still enforced)"),
-    SHADOW: t("marketplace.mode.shadow_hint", "shadow signals, no orders"),
-    LIVE_REQUEST: t("marketplace.mode.live_request_hint", "PENDING until governance grants — never silent"),
+  const changeView = (v: "table" | "cards"): void => {
+    setView(v);
+    lsSet(LS_VIEW, v);
   };
-  const cmdLabel = (k: CmdKind): string =>
-    k === "enable"
-      ? t("common.enable", "enable")
-      : k === "disable"
-        ? t("common.disable", "disable")
-        : k === "repair"
-          ? t("marketplace.cmd.repair", "repair")
-          : t("marketplace.cmd.research", "research");
+
+  /** Reset the server query to a clean key (family/status chips share this). */
+  const clearFilters = (): void => {
+    setFamily("");
+    setStatus("");
+    setPage(1);
+    setAppliedQ("");
+    setQ("");
+  };
 
   const runCmd = (): void => {
     if (!pending) return;
-    const kind: CmdKind = pending.kind;
     const done = {
       onSuccess: (res: unknown) => {
-        setNote({ ok: true, kind, payload: JSON.stringify(res) });
+        setNote({ ok: true, text: `${pending.kind} accepted — backend: ${JSON.stringify(res)}` });
         setPending(null);
       },
       onError: (e: unknown) => {
-        setNote({ ok: false, kind, err: e });
+        setNote({ ok: false, text: `${pending.kind} refused: ${asErrorText(e)}` });
         setPending(null);
       },
     };
@@ -94,16 +139,47 @@ export function SeedsSection() {
   };
 
   const busy = enable.isPending || disable.isPending || repair.isPending || research.isPending;
+  const hasFilter = family !== "" || status !== "" || appliedQ !== "";
+
+  const rowActions = (s: SeedVM) => (
+    <div className="mkt-actions mkt-row-actions" style={{ justifyContent: "flex-end" }}>
+      <button className="btn small" onClick={() => setPending({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
+        {busy ? "running…" : "Research"}
+      </button>
+      <select
+        className="select"
+        style={{ padding: "2px 4px", fontSize: 10 }}
+        value=""
+        aria-label={`enable mode for ${s.seed.seed_id}`}
+        onChange={(e) => {
+          const mode = e.target.value as MktEnableMode;
+          if (mode) setPending({ kind: "enable", seed: s.seed.seed_id, mode });
+        }}
+      >
+        <option value="">enable…</option>
+        {ENABLE_MODES.map((m) => (
+          <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>
+        ))}
+      </select>
+      <span className="mkt-row-sep" aria-hidden="true" />
+      <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
+        {busy ? "running…" : "Disable"}
+      </button>
+      <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title="evolution-operator repair">
+        {busy ? "running…" : "Repair"}
+      </button>
+    </div>
+  );
 
   return (
     <Panel
-      title={t("marketplace.seeds.title", "Installed seeds ({n})", { n: `${rows.length}${seeds.data?.hasMore ? "+" : ""}` })}
+      title={`Installed seeds (${rows.length}${seeds.data?.hasMore ? "+" : ""})`}
       right={
         <>
           <input
             className="input"
             style={{ width: 150 }}
-            placeholder={t("marketplace.seeds.search_ph", "search id/name…")}
+            placeholder="search id/name…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -112,7 +188,7 @@ export function SeedsSection() {
                 setAppliedQ(q.trim());
               }
             }}
-            aria-label={t("marketplace.seeds.search_aria", "search seeds")}
+            aria-label="search seeds"
           />
           <button
             className="btn small ghost"
@@ -121,84 +197,146 @@ export function SeedsSection() {
               setAppliedQ(q.trim());
             }}
           >
-            {t("marketplace.seeds.search", "Search")}
+            Search
           </button>
-          <FreshnessNote updatedAtMs={seeds.dataUpdatedAt ?? null} label={t("marketplace.fresh.seeds", "seeds")} />
+          <div className="mkt-store-viewtoggle" role="group" aria-label="seeds view">
+            <button aria-pressed={view === "table"} onClick={() => changeView("table")}>table</button>
+            <button aria-pressed={view === "cards"} onClick={() => changeView("cards")}>cards</button>
+          </div>
+          <FreshnessNote updatedAtMs={seeds.dataUpdatedAt ?? null} label="seeds" />
         </>
       }
     >
+      {/* Facet chips — categories/count labels derived from the loaded page only */}
+      <div className="mkt-store-chips" style={{ marginBottom: 6 }} role="group" aria-label="family filter (loaded rows)">
+        <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>family</span>
+        {familyFacets.length === 0 ? (
+          <span className="tiny faint">no families in the loaded page</span>
+        ) : (
+          familyFacets.map((f) => (
+            <button
+              key={f.value}
+              className="mkt-store-chip"
+              aria-pressed={family === f.value}
+              onClick={() => {
+                setFamily(family === f.value ? "" : f.value);
+                setPage(1);
+              }}
+              title={`${f.value} — ${f.count} of ${rows.length} loaded rows`}
+            >
+              <span className="swatch" aria-hidden="true" />
+              {f.value}
+              <span className="cnt">{f.count}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="mkt-store-chips" style={{ marginBottom: 8 }} role="group" aria-label="lifecycle filter (loaded rows)">
+        <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>lifecycle</span>
+        {lifecycleFacets.length === 0 ? (
+          <span className="tiny faint">no lifecycles in the loaded page</span>
+        ) : (
+          lifecycleFacets.map((f) => (
+            <button
+              key={f.value}
+              className="mkt-store-chip"
+              aria-pressed={status === f.value}
+              onClick={() => {
+                setStatus(status === f.value ? "" : f.value);
+                setPage(1);
+              }}
+              title={`${f.value} — ${f.count} of ${rows.length} loaded rows`}
+            >
+              {f.value}
+              <span className="cnt">{f.count}</span>
+            </button>
+          ))
+        )}
+        {hasFilter && (
+          <button className="mkt-store-chip" aria-pressed={false} onClick={clearFilters} title="clear family/lifecycle/search filters">
+            ✕ clear filters
+          </button>
+        )}
+        <span className="spacer" style={{ flex: 1 }} />
+        <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>sort</span>
+        {SORTS.map((s) => (
+          <button
+            key={s.id}
+            className="mkt-store-chip"
+            aria-pressed={sort === s.id}
+            onClick={() => changeSort(s.id)}
+            title={s.id === "backend" ? "order served by the backend" : "client-side sort of loaded rows (derived display order)"}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sort !== "backend" && (
+        <div className="tiny faint" style={{ marginBottom: 8 }}>
+          client-side sort of the loaded page (derived display order — the backend ranking is untouched)
+        </div>
+      )}
+
       <div className="mkt-actions" style={{ marginBottom: 8 }}>
-        <select className="select" value={family} onChange={(e) => { setFamily(e.target.value); setPage(1); }} aria-label={t("marketplace.seeds.family_aria", "family filter")}>
-          <option value="">{t("marketplace.seeds.family_all", "all families")}</option>
-          {["PRICE_ACTION", "ICT", "ICHIMOKU", "BREAKOUT", "MEAN_REVERSION", "MOMENTUM", "HYBRID"].map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
-        </select>
-        <select className="select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} aria-label={t("marketplace.seeds.lifecycle_aria", "lifecycle filter")}>
-          <option value="">{t("marketplace.seeds.lifecycle_all", "all lifecycles")}</option>
-          {["INSTALLED", "RESEARCH_PENDING", "RESEARCH_RUNNING", "VALIDATED", "LIVE_CANDIDATE", "LIVE_ELIGIBLE", "REJECTED", "QUARANTINED", "DISABLED", "RETIRED"].map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
         <span className="spacer" style={{ flex: 1 }} />
         <button className="btn small ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || seeds.isFetching}>
-          {t("marketplace.seeds.prev", "← prev")}
+          ← prev
         </button>
-        <span className="timestamp-note">
-          {t("marketplace.seeds.page_note", "page {p}", { p: page })}
-          {seeds.data ? ` · ${t("marketplace.seeds.per_page", "{n}/page", { n: seeds.data.pageSize })}` : ""}
-        </span>
+        <span className="timestamp-note">page {page}{seeds.data ? ` · ${seeds.data.pageSize}/page` : ""}</span>
         <button className="btn small ghost" onClick={() => setPage((p) => p + 1)} disabled={!seeds.data?.hasMore || seeds.isFetching}>
-          {t("marketplace.seeds.next", "next →")}
+          next →
         </button>
       </div>
 
-      {note && (
-        <div className={`cmd-result ${note.ok ? "ok" : "fail"}`}>
-          {note.ok ? "✓" : "✕"}{" "}
-          {note.ok ? (
-            <>
-              {t("marketplace.seeds.note_ok_a", "{c} accepted — backend:", { c: cmdLabel(note.kind) })}{" "}
-              <span dir="ltr" className="inline-mono">
-                {note.payload}
-              </span>
-            </>
-          ) : (
-            <>
-              {t("marketplace.seeds.note_err_a", "{c} refused:", { c: cmdLabel(note.kind) })}{" "}
-              <span dir="ltr" className="inline-mono">
-                {asErrorText(note.err, t)}
-              </span>
-            </>
-          )}
-        </div>
-      )}
+      {note && <div className={`cmd-result ${note.ok ? "ok" : "fail"}`}>{note.ok ? "✓" : "✕"} {note.text}</div>}
 
       {seeds.isPending ? (
         <Skeleton count={6} height={22} />
       ) : seeds.isError ? (
-        <ErrorState message={asErrorText(seeds.error, t)} onRetry={() => seeds.refetch()} />
+        <ErrorState message={asErrorText(seeds.error)} onRetry={() => seeds.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState
-          message={t("marketplace.seeds.empty", "No seeds match this filter.")}
-          hint={t("marketplace.seeds.empty_hint", "Install a pack above — seeds appear here after the backend stores them.")}
-        />
+        <EmptyState message="No seeds match this filter." hint="Install a pack above — seeds appear here after the backend stores them." />
+      ) : view === "cards" ? (
+        <div className="mkt-store-seeds">
+          {visibleRows.map((s) => (
+            <div className="mkt-store-seed" key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
+              <div className="mkt-store-seed-head">
+                <div>
+                  <button className="btn small ghost nm" onClick={() => setDetail(s.seed.seed_id)} title="open detail drawer" style={{ padding: 0, border: "none", background: "none" }}>
+                    {s.seed.name || s.seed.seed_id}
+                  </button>
+                  <div className="id">{s.seed.seed_id}</div>
+                </div>
+                <span className={`badge ${lifecycleLevel(s.lifecycle)}`}>{s.lifecycle}</span>
+              </div>
+              <div className="mkt-store-seed-meta">
+                {seedCardMeta(s.seed).map((m) => (
+                  <span className="kv" key={`${m.label}:${m.text}`} title={m.label}>
+                    {m.label === "family" || m.label === "v" || m.label === "license" ? m.text : `${m.label} ${m.text}`}
+                  </span>
+                ))}
+              </div>
+              <div className="tiny faint">{s.seed.updated_at ? `updated ${formatDateTime(String(s.seed.updated_at))}` : "updated —"}</div>
+              <div className="mkt-store-seed-foot">{rowActions(s)}</div>
+            </div>
+          ))}
+        </div>
       ) : (
         <DataTable
           headers={[
-            { label: t("marketplace.th.seed", "seed") },
-            { label: t("marketplace.th.family", "family") },
-            { label: t("marketplace.th.lifecycle", "lifecycle") },
-            { label: t("marketplace.th.risk", "risk") },
-            { label: t("marketplace.th.pack", "pack") },
-            { label: t("marketplace.th.updated", "updated") },
-            { label: t("marketplace.th.actions", "actions") },
+            { label: "seed" },
+            { label: "family" },
+            { label: "lifecycle" },
+            { label: "risk" },
+            { label: "pack" },
+            { label: "updated" },
+            { label: "actions" },
           ]}
         >
-          {rows.map((s) => (
+          {visibleRows.map((s) => (
             <tr key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
               <td>
-                <button className="btn small ghost" onClick={() => setDetail(s.seed.seed_id)} title={t("marketplace.seeds.open_detail", "open detail drawer")}>
+                <button className="btn small ghost" onClick={() => setDetail(s.seed.seed_id)} title="open detail drawer">
                   {s.seed.name || s.seed.seed_id}
                 </button>
                 <div className="tiny faint inline-mono">{s.seed.seed_id} · v{String(s.seed.version ?? "—")}</div>
@@ -209,7 +347,7 @@ export function SeedsSection() {
               </td>
               <td>
                 {typeof s.seed.risk_profile === "string" && s.seed.risk_profile ? (
-                  <span className="mkt-family-tag" title={t("marketplace.seeds.risk_title", "risk profile")}>
+                  <span className="mkt-family-tag" title="risk profile">
                     <span className="swatch" aria-hidden="true" />
                     {s.seed.risk_profile}
                   </span>
@@ -219,35 +357,7 @@ export function SeedsSection() {
               </td>
               <td className="inline-mono tiny">{String(s.seed.pack_id ?? "—")}</td>
               <td>{s.seed.updated_at ? formatDateTime(String(s.seed.updated_at)) : "—"}</td>
-              <td>
-                <div className="mkt-actions mkt-row-actions" style={{ justifyContent: "flex-end" }}>
-                  <button className="btn small" onClick={() => setPending({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
-                    {t("marketplace.seeds.research", "Research")}
-                  </button>
-                  <select
-                    className="select"
-                    style={{ padding: "2px 4px", fontSize: 10 }}
-                    value=""
-                    aria-label={t("marketplace.seeds.enable_mode_aria", "enable mode for {s}", { s: s.seed.seed_id })}
-                    onChange={(e) => {
-                      const mode = e.target.value as MktEnableMode;
-                      if (mode) setPending({ kind: "enable", seed: s.seed.seed_id, mode });
-                    }}
-                  >
-                    <option value="">{t("common.enable", "enable…")}</option>
-                    {ENABLE_MODES.map((m) => (
-                      <option key={m.id} value={m.id} title={modeHints[m.id]}>{modeLabels[m.id]}</option>
-                    ))}
-                  </select>
-                  <span className="mkt-row-sep" aria-hidden="true" />
-                  <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
-                    {t("common.disable", "Disable")}
-                  </button>
-                  <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title={t("marketplace.seeds.repair_title", "evolution-operator repair")}>
-                    {t("marketplace.seeds.repair", "Repair")}
-                  </button>
-                </div>
-              </td>
+              <td>{rowActions(s)}</td>
             </tr>
           ))}
         </DataTable>
@@ -257,39 +367,31 @@ export function SeedsSection() {
         <ConfirmModal
           title={
             pending.kind === "enable"
-              ? t("marketplace.confirm.enable", "Enable {s} for {m}", { s: pending.seed, m: modeLabels[pending.mode] })
+              ? `Enable ${pending.seed} for ${pending.mode}`
               : pending.kind === "disable"
-                ? t("marketplace.confirm.disable", "Disable seed {s}", { s: pending.seed })
+                ? `Disable seed ${pending.seed}`
                 : pending.kind === "repair"
-                  ? t("marketplace.confirm.repair", "Trigger repair on {s}", { s: pending.seed })
-                  : t("marketplace.confirm.research", "Queue research run for {s}", { s: pending.seed })
+                  ? `Trigger repair on ${pending.seed}`
+                  : `Queue research run for ${pending.seed}`
           }
           danger={pending.kind === "disable" || pending.kind === "repair"}
-          confirmLabel={cmdLabel(pending.kind)}
+          confirmLabel={pending.kind}
           busy={busy}
           onConfirm={runCmd}
           onCancel={() => setPending(null)}
         >
           {pending.kind === "enable" && (
             <div>
-              {t("marketplace.confirm.enable_body1", "Gates are enforced server-side.")}{" "}
-              <b className="inline-mono">LIVE_REQUEST</b>{" "}
-              {t("marketplace.confirm.enable_body2", "answers PENDING (202) until governance grants — the console never grants silently. A DENIED answer (403) shows the backend reason verbatim.")}
+              Gates are enforced server-side. <b className="inline-mono">LIVE_REQUEST</b> answers PENDING (202) until governance grants — the console never grants silently. A DENIED answer (403) shows the backend reason verbatim.
             </div>
           )}
-          {pending.kind === "disable" && (
-            <div>{t("marketplace.confirm.disable_body", "Transition to DISABLED/RETIRED for this seed. A running-position guard may refuse (CONFLICT) — the response decides.")}</div>
-          )}
+          {pending.kind === "disable" && <div>Transition to DISABLED/RETIRED for this seed. A running-position guard may refuse (CONFLICT) — the response decides.</div>}
           {pending.kind === "repair" && (
             <div>
-              {t("marketplace.confirm.repair_body1", "Runs the mutation operator (trigger")}{" "}
-              <b className="inline-mono">MANUAL_TRIGGER</b>
-              {t("marketplace.confirm.repair_body2", ") and installs the child seed as a repair pack. The repair record is appended to the history as PENDING; the outcome is settled by later research.")}
+              Runs the mutation operator (trigger <b className="inline-mono">MANUAL_TRIGGER</b>) and installs the child seed as a repair pack. The repair record is appended to the history as PENDING; the outcome is settled by later research.
             </div>
           )}
-          {pending.kind === "research" && (
-            <div>{t("marketplace.confirm.research_body", "Queues the seed on the existing research pipeline (202 Accepted). Progress shows up in lifecycle events and score snapshots afterwards.")}</div>
-          )}
+          {pending.kind === "research" && <div>Queues the seed on the existing research pipeline (202 Accepted). Progress shows up in lifecycle events and score snapshots afterwards.</div>}
         </ConfirmModal>
       )}
 

@@ -273,14 +273,18 @@ export function Drawer({
   );
 }
 
-/** Raw-JSON block for payload drill-downs (never prettified into prose). */
+/** Raw-JSON block for payload drill-downs (never prettified into prose).
+ *  perf: serialized once per `value` identity (memo inside — signature and
+ *  output byte-identical: same JSON.stringify(value, null, 2), same
+ *  String(value) fallback on a serialization failure). */
 export function JsonBlock({ value, label }: { value: unknown; label?: string }) {
-  let text = "—";
-  try {
-    text = JSON.stringify(value, null, 2) ?? "—";
-  } catch {
-    text = String(value);
-  }
+  const text = useMemo(() => {
+    try {
+      return JSON.stringify(value, null, 2) ?? "—";
+    } catch {
+      return String(value);
+    }
+  }, [value]);
   return (
     <div>
       {label && <div className="section-title">{label}</div>}

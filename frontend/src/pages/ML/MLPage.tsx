@@ -38,7 +38,6 @@ import { InfoChip, SortableTable, type Column } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
-import { useI18n } from "@/stores/i18nStore";
 import "@/pages/_shared/pages.css";
 
 interface Props {
@@ -55,30 +54,43 @@ interface Props {
  * never happened.
  */
 function VerdictChip({ disagreement, valid }: { disagreement: string; valid?: boolean }) {
-  const t = useI18n((s) => s.t);
   const compared = valid !== false && disagreement && !disagreement.startsWith("SHADOW_") && disagreement !== "NOT_COMPARED";
   if (!disagreement) return <span className="tiny">—</span>;
   if (compared) return <span className="tiny">{disagreement}</span>;
   return (
-    <span className="tiny"  title={t("ml.verdict.tip", "No shadow inference ran for this tick — the shadow model was not attached or the 70D vector was rejected. This is not a trade decision.")}>
+    <span className="tiny"  title="No shadow inference ran for this tick — the shadow model was not attached or the 70D vector was rejected. This is not a trade decision.">
       {disagreement}
     </span>
   );
 }
 
+/** Column set for the recent-70D-observations table. perf: built ONCE at
+ *  module scope (9 sortValue/render closures) instead of re-allocated on every
+ *  render of a 15s-refreshed panel — keys, labels and cell output unchanged. */
+const OBSERVATION_COLUMNS: Array<Column<Record<string, any>>> = [
+  { key: "t", label: "Time", sortValue: (o) => o.timestamp, render: (o) => o.timestamp.slice(0, 19) },
+  { key: "c", label: "Champion", sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
+  { key: "s", label: "Shadow", sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
+  { key: "conf", label: "Conf C/S", num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
+  { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
+  { key: "rg", label: "Regime", sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
+  { key: "nw", label: "News", render: (o) => o.news_state || "—" },
+  { key: "liq", label: "Liquidity", render: (o) => o.liquidity_state || "—" },
+  { key: "out", label: "Outcome", sortValue: (o) => o.outcome, render: (o) => o.outcome },
+];
+
+/** Backend-word filter for the observations table (stable reference). */
+const OBSERVATION_FILTER = (o: Record<string, any>, q: string): boolean =>
+  o.champion_action.toLowerCase().includes(q) ||
+  o.shadow_action.toLowerCase().includes(q) ||
+  (o.regime ?? "").toLowerCase().includes(q);
+
 /** Canonical 70D family blocks (backend schema_contract / liquidity_runtime). */
 const FAMILY_BLOCKS = [
-  { id: "base", from: 0, to: 49 },
-  { id: "family", from: 50, to: 59 },
-  { id: "liquidity", from: 60, to: 69 },
+  { id: "base", label: "BASE 0–49 (scalp_v1 protected)", from: 0, to: 49 },
+  { id: "family", label: "FAMILY/NEWS 50–59", from: 50, to: 59 },
+  { id: "liquidity", label: "LIQUIDITY 60–69 (70D only)", from: 60, to: 69 },
 ] as const;
-
-/** Block captions are render copy — literal t() keys (dynamic keys are banned). */
-function blockLabelT(id: string, t: (key: string, fallback: string) => string): string {
-  if (id === "base") return t("ml.families.block_base", "BASE 0–49 (scalp_v1 protected)");
-  if (id === "liquidity") return t("ml.families.block_liquidity", "LIQUIDITY 60–69 (70D only)");
-  return "FAMILY/NEWS 50–59"; // backend layout id — stays verbatim in every language
-}
 
 function featureValue(v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "—";
@@ -97,12 +109,11 @@ function FeatureBlock({
   hint: string;
   features: EngineSnapshot["features"];
 }) {
-  const t = useI18n((s) => s.t);
   if (features.length === 0) {
     return (
       <div>
         <div className="section-title">{label}</div>
-        <EmptyState message={t("ml.feat.empty", "No features in this block.")} hint={hint} />
+        <EmptyState message="No features in this block." hint={hint} />
       </div>
     );
   }
@@ -112,7 +123,7 @@ function FeatureBlock({
   return (
     <div>
       <div className="section-title">
-        {label} <span className="faint" style={{ textTransform: "none", letterSpacing: 0 }}>{t("ml.feat.slots", " · {n} slots", { n: features.length })}</span>
+        {label} <span className="faint" style={{ textTransform: "none", letterSpacing: 0 }}>· {features.length} slots</span>
       </div>
       <div className="l4-chip-row" style={{ marginBlockEnd: 6 }}>
         <span className="l4-chip good">{valid} VALID</span>
@@ -133,7 +144,6 @@ function FeatureBlock({
 }
 
 export default function MLPage({ snapshot }: Props) {
-  const t = useI18n((s) => s.t);
   const [runsPage, setRunsPage] = useState(1);
 
   const integrityQuery = useQuery({
@@ -195,6 +205,12 @@ export default function MLPage({ snapshot }: Props) {
   const integrityLevel =
     integ?.state === "ACTIVE" ? "good" : integ?.state === "INCOMPATIBLE" || integ?.state === "INVALID" ? "bad" : integ?.state === "NO_CHAMPION" || integ?.state === "UNAVAILABLE" ? "warn" : "unknown";
   const s70 = shadow70Query.data;
+  // perf: the observations window (slice + sort/filter inputs for the shared
+  // table) derives once per shadow70 payload, not on every render.
+  const observations = useMemo(
+    () => (s70?.store?.recent_observations ?? []).slice(0, 25),
+    [s70?.store?.recent_observations],
+  );
   const features = snapshot?.features ?? [];
 
   const blocks = useMemo(
@@ -210,47 +226,47 @@ export default function MLPage({ snapshot }: Props) {
 
   const runCols = useMemo<Array<Column<Record<string, unknown>>>>(
     () => [
-      { key: "run", label: t("ml.th.run", "Run id"), sortValue: (r) => (typeof r.run_id === "string" ? r.run_id : null), render: (r) => <span className="small">{String(r.run_id ?? "—")}</span> },
-      { key: "status", label: t("ml.th.status", "Status"), sortValue: (r) => (typeof r.status === "string" ? r.status : null), render: (r) => <StatusBadge status={String(r.status ?? null)} /> },
-      { key: "champ", label: t("ml.th.champion", "Champion"), sortValue: (r) => (typeof r.champion_model === "string" ? r.champion_model : null), render: (r) => String(r.champion_model ?? "—") },
-      { key: "shadow", label: t("ml.th.shadow", "Shadow"), sortValue: (r) => (typeof r.shadow_model === "string" ? r.shadow_model : null), render: (r) => String(r.shadow_model ?? "—") },
-      { key: "started", label: t("ml.th.started", "Started"), sortValue: (r) => (typeof r.started_at === "string" ? r.started_at : null), render: (r) => String(r.started_at ?? "—") },
-      { key: "finished", label: t("ml.th.finished", "Finished"), sortValue: (r) => (typeof r.finished_at === "string" ? r.finished_at : null), render: (r) => String(r.finished_at ?? "—") },
+      { key: "run", label: "Run id", sortValue: (r) => (typeof r.run_id === "string" ? r.run_id : null), render: (r) => <span className="small">{String(r.run_id ?? "—")}</span> },
+      { key: "status", label: "Status", sortValue: (r) => (typeof r.status === "string" ? r.status : null), render: (r) => <StatusBadge status={String(r.status ?? null)} /> },
+      { key: "champ", label: "Champion", sortValue: (r) => (typeof r.champion_model === "string" ? r.champion_model : null), render: (r) => String(r.champion_model ?? "—") },
+      { key: "shadow", label: "Shadow", sortValue: (r) => (typeof r.shadow_model === "string" ? r.shadow_model : null), render: (r) => String(r.shadow_model ?? "—") },
+      { key: "started", label: "Started", sortValue: (r) => (typeof r.started_at === "string" ? r.started_at : null), render: (r) => String(r.started_at ?? "—") },
+      { key: "finished", label: "Finished", sortValue: (r) => (typeof r.finished_at === "string" ? r.finished_at : null), render: (r) => String(r.finished_at ?? "—") },
     ],
-    [t],
+    [],
   );
 
   return (
     <div>
       <div className="grid cols-4">
         <MetricCard
-          label={t("ml.kpi.integrity", "Model integrity (backend verdict)")}
-          value={integrityQuery.isPending ? "…" : integrityQuery.isError ? t("ml.st.error", "ERROR") : (integ?.state ?? t("risk.status.unknown", "UNKNOWN"))}
+          label="Model integrity (backend verdict)"
+          value={integrityQuery.isPending ? "…" : integrityQuery.isError ? "ERROR" : (integ?.state ?? "UNKNOWN")}
           tone={integrityLevel === "good" ? "pos" : integrityLevel === "bad" ? "neg" : "dim"}
-          sub={integ?.reason ?? (integ?.state === "ACTIVE" ? t("ml.kpi.integrity_ok", "champion valid + serving") : t("ml.kpi.integrity_fallback", "backend decides — not inferred from artifact presence"))}
+          sub={integ?.reason ?? (integ?.state === "ACTIVE" ? "champion valid + serving" : "backend decides — not inferred from artifact presence")}
         />
         <MetricCard
-          label={t("ml.kpi.serving", "Serving bundle")}
-          value={statusQuery.data ? (statusQuery.data.bundle_loaded ? t("ml.st.loaded", "LOADED") : t("ml.st.not_loaded", "NOT LOADED")) : "—"}
+          label="Serving bundle"
+          value={statusQuery.data ? (statusQuery.data.bundle_loaded ? "LOADED" : "NOT LOADED") : "—"}
           tone={statusQuery.data?.bundle_loaded ? "pos" : "dim"}
-          sub={t("ml.kpi.serving_sub", "inference {i} · warmup {w}", { i: statusQuery.data?.inference_enabled ? t("ml.st.enabled", "ENABLED") : t("ml.st.blocked", "BLOCKED"), w: statusQuery.data?.warmup_state ?? "—" })}
+          sub={`inference ${statusQuery.data?.inference_enabled ? "ENABLED" : "BLOCKED"} · warmup ${statusQuery.data?.warmup_state ?? "—"}`}
         />
         <MetricCard
-          label={t("ml.kpi.schema", "Effective schema")}
+          label="Effective schema"
           value={snapshot?.model.feature_schema_id ?? "—"}
           tone="dim"
-          sub={t("ml.kpi.schema_sub", "{d}D {family} · scaler {s}", { d: dim ?? "?", family: is70 ? t("ml.st.70d", "(70D liquidity)") : dim === 50 ? t("ml.st.50d", "(50D base)") : "", s: snapshot?.model.scaler_ready === null || snapshot?.model.scaler_ready === undefined ? "—" : snapshot.model.scaler_ready ? t("ml.st.ready", "READY") : t("ml.st.not_fitted", "NOT FITTED") })}
+          sub={`${dim ?? "?"}D ${is70 ? "(70D liquidity)" : dim === 50 ? "(50D base)" : ""} · scaler ${snapshot?.model.scaler_ready === null || snapshot?.model.scaler_ready === undefined ? "—" : snapshot.model.scaler_ready ? "READY" : "NOT FITTED"}`}
         />
         <MetricCard
-          label={t("ml.kpi.latency", "Inference latency")}
+          label="Inference latency"
           value={snapshot?.model.latency_ms === null || snapshot?.model.latency_ms === undefined ? "—" : `${snapshot.model.latency_ms.toFixed(1)} ms`}
           tone="dim"
-          sub={snapshot?.model.latency_breakdown ? t("ml.kpi.latency_sub", "forward {a} · feat {b} · e2e {c}", { a: snapshot.model.latency_breakdown.model_forward_ms ?? "—", b: snapshot.model.latency_breakdown.feature_ms ?? "—", c: snapshot.model.latency_breakdown.e2e_ms ?? "—" }) : t("ml.kpi.latency_fallback", "backend-measured only")}
+          sub={snapshot?.model.latency_breakdown ? `fwd ${snapshot.model.latency_breakdown.model_forward_ms ?? "—"} · feat ${snapshot.model.latency_breakdown.feature_ms ?? "—"} · e2e ${snapshot.model.latency_breakdown.e2e_ms ?? "—"}` : "backend-measured only"}
         />
       </div>
 
       <div className="grid cols-2" style={{ marginTop: 14 }}>
-        <Panel title={t("ml.panel.probs", "Live probabilities (engine)")} accent right={<AgeNote label={t("ml.age.inference", "inference age")} ageSec={snapshot?.diagnostics.inference_age_sec} />}>
+        <Panel title="Live probabilities (engine)" accent right={<AgeNote label="inference age" ageSec={snapshot?.diagnostics.inference_age_sec} />}>
           {snapshot?.probs.available ? (
             <ProbBar
               rows={[
@@ -260,27 +276,27 @@ export default function MLPage({ snapshot }: Props) {
               ]}
             />
           ) : (
-            <EmptyState message={t("ml.probs.empty", "No live inference yet (model warming up or engine stopped).")} hint={t("ml.probs.empty_hint", "probs.available=false — not rendered as zeros.")} />
+            <EmptyState message="No live inference yet (model warming up or engine stopped)." hint="probs.available=false — not rendered as zeros." />
           )}
           <dl className="kv" style={{ marginTop: 12 }}>
-            <dt>{t("ml.probs.decision", "decision")}</dt>
+            <dt>decision</dt>
             <dd>{snapshot?.ai_decision ?? "—"}</dd>
-            <dt>{t("ml.probs.confidence", "confidence")}</dt>
+            <dt>confidence</dt>
             <dd>{snapshot?.ai_confidence === null || snapshot?.ai_confidence === undefined ? "—" : formatPct(snapshot.ai_confidence * 100, 1)}</dd>
-            <dt>{t("ml.probs.feature_age", "feature age")}</dt>
+            <dt>feature age</dt>
             <dd>{fmtAge(snapshot?.diagnostics.features_age_sec)}</dd>
-            <dt>{t("ml.probs.inference_stamp", "inference stamp")}</dt>
+            <dt>inference stamp</dt>
             <dd className="small">{snapshot?.probs.inference_timestamp ?? "—"}</dd>
           </dl>
         </Panel>
 
-        <Panel title={t("ml.panel.identity", "Artifact identity (manifest)")} right={<span className="timestamp-note">/api/v1/model/identity</span>}>
+        <Panel title="Artifact identity (manifest)" right={<span className="timestamp-note">/api/v1/model/identity</span>}>
           {identityQuery.isPending ? (
             <Skeleton count={4} />
           ) : identityQuery.isError ? (
-            <ErrorState message={errorText(identityQuery.error, t("ml.err.identity", "Identity endpoint failed."))} requestId={identityQuery.error instanceof ApiError ? identityQuery.error.requestId : null} onRetry={() => void identityQuery.refetch()} />
+            <ErrorState message={errorText(identityQuery.error, "Identity endpoint failed.")} requestId={identityQuery.error instanceof ApiError ? identityQuery.error.requestId : null} onRetry={() => void identityQuery.refetch()} />
           ) : identityQuery.data?.available === false ? (
-            <EmptyState message={identityQuery.data.reason ?? t("ml.identity.empty", "No model bundle loaded.")} hint={t("ml.identity.empty_hint", "Identity is absent, not invalid — the backend said so.")} />
+            <EmptyState message={identityQuery.data.reason ?? "No model bundle loaded."} hint="Identity is absent, not invalid — the backend said so." />
           ) : identityQuery.data ? (
             <dl className="kv">
               <dt>model_id</dt>
@@ -289,13 +305,13 @@ export default function MLPage({ snapshot }: Props) {
               <dd className="small">{identityQuery.data.artifact_id ?? "—"}</dd>
               <dt>schema_id</dt>
               <dd>{identityQuery.data.schema_id ?? "—"}</dd>
-              <dt>{t("ml.identity.version", "version")}</dt>
+              <dt>version</dt>
               <dd>{identityQuery.data.version ?? "—"}</dd>
-              <dt>{t("ml.identity.created", "created")}</dt>
+              <dt>created</dt>
               <dd className="small">{identityQuery.data.created_at ?? "—"}</dd>
-              <dt>{t("ml.identity.schema_hash", "schema hash")}</dt>
+              <dt>schema hash</dt>
               <dd className="small">{identityQuery.data.feature_schema_hash ? `${identityQuery.data.feature_schema_hash.slice(0, 16)}…` : "—"}</dd>
-              <dt>{t("ml.identity.serving_champion", "serving champion")}</dt>
+              <dt>serving champion</dt>
               <dd>{snapshot?.model.model_id ?? "—"}</dd>
             </dl>
           ) : null}
@@ -304,25 +320,25 @@ export default function MLPage({ snapshot }: Props) {
 
       {/* Feature pipeline + integrity dimensions */}
       <div className="grid cols-2">
-        <Panel title={t("ml.panel.pipeline", "Feature pipeline")} right={<AgeNote label={t("ml.age.age", "age")} ageSec={featuresQuery.dataUpdatedAt ? (Date.now() - featuresQuery.dataUpdatedAt) / 1000 : null} />}>
+        <Panel title="Feature pipeline" right={<AgeNote label="age" ageSec={featuresQuery.dataUpdatedAt ? (Date.now() - featuresQuery.dataUpdatedAt) / 1000 : null} />}>
           <SectionState
             query={featuresQuery}
-            emptyMessage={t("ml.pipe.empty", "Feature status unavailable.")}
-            emptyHint={t("ml.pipe.empty_hint", "features/status endpoint returned nothing — warmup state unknown.")}
-            errorFallback={t("ml.err.feature_status", "Feature status endpoint failed.")}
+            emptyMessage="Feature status unavailable."
+            emptyHint="features/status endpoint returned nothing — warmup state unknown."
+            errorFallback="Feature status endpoint failed."
             emptyWhen={() => false}
           >
             {(fs) => (
               <dl className="kv">
-                <dt>{t("ml.pipe.warmup", "warmup")}</dt>
+                <dt>warmup</dt>
                 <dd><StatusBadge status={fs.warmup_state} /></dd>
-                <dt>{t("ml.pipe.inference", "inference")}</dt>
-                <dd><TriBadge value={fs.inference_enabled} on={t("ml.st.enabled", "ENABLED")} off={t("ml.st.blocked", "BLOCKED")} /></dd>
-                <dt>{t("ml.pipe.last_vector", "last vector")}</dt>
-                <dd><TriBadge value={fs.last_vector_available} on={t("ml.st.available", "AVAILABLE")} off={t("ml.st.none", "NONE")} /></dd>
-                <dt>{t("ml.pipe.missing", "missing features")}</dt>
+                <dt>inference</dt>
+                <dd><TriBadge value={fs.inference_enabled} on="ENABLED" off="BLOCKED" /></dd>
+                <dt>last vector</dt>
+                <dd><TriBadge value={fs.last_vector_available} on="AVAILABLE" off="NONE" /></dd>
+                <dt>missing features</dt>
                 <dd>{fs.missing_features.length === 0 ? "—" : <span className="pnl-neg">{fs.missing_features.join(", ")}</span>}</dd>
-                <dt>{t("ml.pipe.probed", "probed")}</dt>
+                <dt>probed</dt>
                 <dd className="small">{fs.probed_at}</dd>
               </dl>
             )}
@@ -330,21 +346,21 @@ export default function MLPage({ snapshot }: Props) {
           <div style={{ marginBlockStart: 10 }}>
             <SectionState
               query={integrityQuery}
-              emptyMessage={t("ml.integ.empty", "Integrity verdict unavailable.")}
-              errorFallback={t("ml.err.integrity", "Integrity endpoint failed.")}
+              emptyMessage="Integrity verdict unavailable."
+              errorFallback="Integrity endpoint failed."
               emptyWhen={() => false}
             >
               {(iv) => (
                 <dl className="kv">
-                  <dt>{t("ml.integ.declared_dim", "declared dim")}</dt>
+                  <dt>declared dim</dt>
                   <dd>{iv.feature_dimension ?? "—"}</dd>
-                  <dt>{t("ml.integ.actual_input", "actual input dim")}</dt>
+                  <dt>actual input dim</dt>
                   <dd className={(iv.actual_input_dimension !== null && iv.feature_dimension !== null && iv.actual_input_dimension !== iv.feature_dimension) ? "pnl-neg" : undefined}>{iv.actual_input_dimension ?? "—"}</dd>
-                  <dt>{t("ml.integ.actual_classes", "actual classes")}</dt>
+                  <dt>actual classes</dt>
                   <dd>{iv.actual_output_classes ?? "—"}</dd>
-                  <dt>{t("ml.integ.scaler_dim", "scaler dim")}</dt>
+                  <dt>scaler dim</dt>
                   <dd>{iv.scaler_dimension ?? "—"}</dd>
-                  <dt>{t("ml.integ.compatibility", "compatibility")}</dt>
+                  <dt>compatibility</dt>
                   <dd><StatusBadge status={iv.compatibility ?? null} /></dd>
                 </dl>
               )}
@@ -354,26 +370,26 @@ export default function MLPage({ snapshot }: Props) {
 
         {/* 50D vs 70D family panels */}
         <Panel
-          title={t("ml.panel.families", "Feature families ({d}D effective)", { d: dim ?? "?" })}
-          right={<span className="timestamp-note">{t("ml.families.layout", "BASE 0–49 · FAMILY 50–59 · LIQUIDITY 60–69 (backend layout)")}</span>}
+          title={`Feature families (${dim ?? "?"}D effective)`}
+          right={<span className="timestamp-note">BASE 0–49 · FAMILY 50–59 · LIQUIDITY 60–69 (backend layout)</span>}
         >
           {features.length === 0 ? (
-            <EmptyState message={t("ml.families.empty", "No feature vector published yet.")} hint={t("ml.families.empty_hint", "snapshot.features is empty — nothing to split by family.")} />
+            <EmptyState message="No feature vector published yet." hint="snapshot.features is empty — nothing to split by family." />
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               {blocks.map((b) => (
                 <FeatureBlock
                   key={b.id}
-                  label={blockLabelT(b.id, t)}
+                  label={b.label}
                   features={b.rows}
                   hint={
                     b.id === "liquidity"
                       ? is70
-                        ? t("ml.families.liquidity_present", "Present: the 70D bundle is serving and the liquidity block is populated.")
-                        : t("ml.families.liquidity_absent", "Absent by contract: the 50D runtime (scalp_v1) does not carry the liquidity block.")
+                        ? "Present: the 70D bundle is serving and the liquidity block is populated."
+                        : "Absent by contract: the 50D runtime (scalp_v1) does not carry the liquidity block."
                       : b.id === "family"
-                        ? t("ml.families.news_hint", "News/family indices — protected 50D core is untouched by the 70D extension.")
-                        : t("ml.families.core_hint", "The protected scalp_v1 core, identical in 50D and 70D.")
+                        ? "News/family indices — protected 50D core is untouched by the 70D extension."
+                        : "The protected scalp_v1 core, identical in 50D and 70D."
                   }
                 />
               ))}
@@ -384,61 +400,62 @@ export default function MLPage({ snapshot }: Props) {
 
       {/* Calibration evidence */}
       <Panel
-        title={t("ml.panel.calibration", "Calibration evidence (identity-bound)")}
+        title="Calibration evidence (identity-bound)"
         right={
           <>
             <span className="timestamp-note">/api/operator/calibration</span>
-            <button aria-label={t("ml.cal.refresh_aria", "Refresh calibration")} className="btn small ghost" onClick={() => void calibrationQuery.refetch()} disabled={calibrationQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh calibration" className="btn small ghost" onClick={() => void calibrationQuery.refetch()} disabled={calibrationQuery.isFetching}>⟳</button>
           </>
         }
       >
         {calibrationQuery.isPending && !calibrationQuery.data ? (
           <Skeleton count={4} />
         ) : calibrationQuery.isError ? (
-          <ErrorState message={errorText(calibrationQuery.error, t("ml.err.calibration", "Calibration endpoint failed."))} requestId={calibrationQuery.error instanceof ApiError ? calibrationQuery.error.requestId : null} onRetry={() => void calibrationQuery.refetch()} />
+          <ErrorState message={errorText(calibrationQuery.error, "Calibration endpoint failed.")} requestId={calibrationQuery.error instanceof ApiError ? calibrationQuery.error.requestId : null} onRetry={() => void calibrationQuery.refetch()} />
         ) : calibrationQuery.data?.available === false ? (
-          <EmptyState message={t("ml.cal.empty", "Calibration monitor unavailable.")} hint={t("ml.cal.empty_hint", "The backend reported available:false — no numbers are inferred.")} />
+          <EmptyState message="Calibration monitor unavailable." hint="The backend reported available:false — no numbers are inferred." />
         ) : calibrationQuery.data ? (
           <>
             <div className="grid cols-4">
-              <MetricCard label={t("ml.cal.status", "Calibration status")} value={calibrationQuery.data.calibration_status ?? "—"} tone={calibrationQuery.data.calibration_status === "CALIBRATED" ? "pos" : "dim"} sub={t("ml.cal.artifact_sub", "artifact {v}", { v: calibrationQuery.data.artifact_status ?? "—" })} />
+              <MetricCard label="Calibration status" value={calibrationQuery.data.calibration_status ?? "—"} tone={calibrationQuery.data.calibration_status === "CALIBRATED" ? "pos" : "dim"} sub={`artifact ${calibrationQuery.data.artifact_status ?? "—"}`} />
               <MetricCard
-                label={t("ml.cal.collector", "Collector")}
+                label="Collector"
                 value={calibrationQuery.data.collector_status ?? "—"}
                 tone={calibrationQuery.data.collector_status === "COLLECTED" ? "pos" : "dim"}
-                sub={t("ml.cal.needs_sub", "needs {v} per split", { v: calibrationQuery.data.required_per_split ?? "?" })}
+                sub={`needs ${calibrationQuery.data.required_per_split ?? "?"} per split`}
               />
               <MetricCard
-                label={t("ml.cal.ece", "ECE / Brier")}
+                label="ECE / Brier"
                 value={`${calibrationQuery.data.ece === null || calibrationQuery.data.ece === undefined ? "—" : Number(calibrationQuery.data.ece).toFixed(4)} / ${calibrationQuery.data.brier === null || calibrationQuery.data.brier === undefined ? "—" : Number(calibrationQuery.data.brier).toFixed(4)}`}
                 tone="dim"
-                sub={t("ml.cal.ece_sub", "expected calibration error / Brier score")}
+                sub="expected calibration error / Brier score"
               />
               <MetricCard
-                label={t("ml.cal.risk_multiplier", "Risk multiplier")}
+                label="Risk multiplier"
                 value={calibrationQuery.data.risk_multiplier === null || calibrationQuery.data.risk_multiplier === undefined ? "—" : formatNumber(calibrationQuery.data.risk_multiplier, 3)}
                 tone="dim"
-                sub={t("ml.cal.risk_sub", "floor {v} · the value the RiskEngine applies", { v: calibrationQuery.data.min_risk_multiplier_floor ?? "—" })}
+                sub={`floor ${calibrationQuery.data.min_risk_multiplier_floor ?? "—"} · the value the RiskEngine applies`}
               />
             </div>
             <dl className="kv" style={{ marginBlockStart: 10 }}>
-              <dt>{t("ml.cal.serving_fingerprint", "serving fingerprint")}</dt>
+              <dt>serving fingerprint</dt>
               <dd>{calibrationQuery.data.serving_fingerprint ?? "—"}</dd>
-              <dt>{t("ml.cal.artifact_mtime", "artifact mtime")}</dt>
+              <dt>artifact mtime</dt>
               <dd className="small">{calibrationQuery.data.serving_artifact_mtime ?? "—"}</dd>
-              <dt>{t("ml.cal.matches_serving", "matches serving")}</dt>
-              <dd><TriBadge value={calibrationQuery.data.matches_serving} on={t("ml.st.match", "MATCH")} off={t("ml.st.mismatch", "MISMATCH")} /></dd>
-              <dt>{t("ml.cal.split", "calibration / validation split")}</dt>
-              <dd>{t("ml.cal.split_line", "{a} / {b} (of {n} eligible)", { a: calibrationQuery.data.calibration_split ?? "—", b: calibrationQuery.data.validation_split ?? "—", n: calibrationQuery.data.total_eligible ?? "—" })}</dd>
-              <dt>{t("ml.cal.deficit", "deficit")}</dt>
+              <dt>matches serving</dt>
+              <dd><TriBadge value={calibrationQuery.data.matches_serving} on="MATCH" off="MISMATCH" /></dd>
+              <dt>calibration / validation split</dt>
+              <dd>{calibrationQuery.data.calibration_split ?? "—"} / {calibrationQuery.data.validation_split ?? "—"} (of {calibrationQuery.data.total_eligible ?? "—"} eligible)</dd>
+              <dt>deficit</dt>
               <dd>{Object.entries(calibrationQuery.data.deficit ?? {}).map(([k, v]) => `${k} ${v}`).join(" · ") || "—"}</dd>
-              <dt>{t("ml.cal.excluded", "excluded rows")}</dt>
+              <dt>excluded rows</dt>
               <dd className="small">{Object.entries(calibrationQuery.data.excluded ?? {}).map(([k, v]) => `${k}:${v}`).join(" · ") || "—"}</dd>
-              <dt>{t("ml.cal.oos", "OOS cutoff")}</dt>
+              <dt>OOS cutoff</dt>
               <dd className="small">{calibrationQuery.data.oos_cutoff ?? "—"}</dd>
             </dl>
             <div className="l4-note" style={{ marginTop: 6 }}>
-              {t("ml.cal.note", "Eligibility, fingerprint binding and the 60/40 chronological split are computed by the backend monitor; this panel only displays them. An INSUFFICIENT_EVIDENCE collector status is an honest gap, not a failure of the model.")}
+              Eligibility, fingerprint binding and the 60/40 chronological split are computed by the backend monitor; this panel only displays them. An
+              INSUFFICIENT_EVIDENCE collector status is an honest gap, not a failure of the model.
             </div>
           </>
         ) : null}
@@ -447,26 +464,26 @@ export default function MLPage({ snapshot }: Props) {
       {/* 70D shadow runtime */}
       <div className="grid cols-2">
         <Panel
-          title={t("ml.panel.shadow70", "70D shadow runtime")}
+          title="70D shadow runtime"
           right={s70?.runtime?.state ? <StatusBadge status={String(s70.runtime.state)} /> : <span className="l4-chip">/api/models/shadow70/summary</span>}
         >
           {shadow70Query.isPending ? (
             <Skeleton count={4} />
           ) : shadow70Query.isError ? (
-            <ErrorState message={errorText(shadow70Query.error, t("ml.err.shadow70", "Shadow70 endpoint failed."))} requestId={shadow70Query.error instanceof ApiError ? shadow70Query.error.requestId : null} onRetry={() => void shadow70Query.refetch()} />
+            <ErrorState message={errorText(shadow70Query.error, "Shadow70 endpoint failed.")} requestId={shadow70Query.error instanceof ApiError ? shadow70Query.error.requestId : null} onRetry={() => void shadow70Query.refetch()} />
           ) : !s70 || s70.available === false ? (
-            <EmptyState message={t("ml.s70.empty", "Shadow70 subsystem unavailable (worker not attached or engine offline).")} hint={t("ml.s70.empty_hint", "Rendered as UNKNOWN — the UI never claims the 70D model is healthy without backend evidence.")} />
+            <EmptyState message="Shadow70 subsystem unavailable (worker not attached or engine offline)." hint="Rendered as UNKNOWN — the UI never claims the 70D model is healthy without backend evidence." />
           ) : (
             <dl className="kv">
-              <dt>{t("ml.s70.runtime_state", "runtime state")}</dt>
+              <dt>runtime state</dt>
               <dd><StatusBadge status={String(s70.runtime?.state ?? null)} /></dd>
-              <dt>{t("ml.s70.load_result", "load result")}</dt>
+              <dt>load result</dt>
               <dd className="small">{String((s70.runtime?.load_result as { model_id?: string } | undefined)?.model_id ?? "—")}</dd>
-              <dt>{t("ml.s70.worker", "worker")}</dt>
+              <dt>worker</dt>
               <dd>{s70.worker ? String((s70.worker as { state?: string }).state ?? "—") : "—"}</dd>
-              <dt>{t("ml.s70.observations", "observations")}</dt>
-              <dd>{String((s70.store as { total_observations?: number } | undefined)?.total_observations ?? (s70.store ? t("ml.st.present", "present") : "—"))}</dd>
-              <dt>{t("ml.s70.disagreements", "disagreements")}</dt>
+              <dt>observations</dt>
+              <dd>{String((s70.store as { total_observations?: number } | undefined)?.total_observations ?? (s70.store ? "present" : "—"))}</dd>
+              <dt>disagreements</dt>
               <dd>{s70.store?.disagreement_counts ? Object.entries(s70.store.disagreement_counts).map(([k, v]) => `${k}:${v}`).join(" · ") || "—" : "—"}</dd>
             </dl>
           )}
@@ -474,26 +491,26 @@ export default function MLPage({ snapshot }: Props) {
 
         {/* v1 shadow70: drift alerts + feature health (audit-DB reads) */}
         <Panel
-          title={t("ml.panel.drift", "70D drift & feature health (v1)")}
+          title="70D drift & feature health (v1)"
           right={
             <>
-              <InfoChip k={t("ml.chip.generated", "generated")} v={shadow70V1Query.data?.generated_at ? fmtAge((Date.now() - Date.parse(shadow70V1Query.data.generated_at)) / 1000) : "—"} />
-              <button aria-label={t("ml.drift.refresh_aria", "Refresh shadow 70D")} className="btn small ghost" onClick={() => void shadow70V1Query.refetch()} disabled={shadow70V1Query.isFetching}>⟳</button>
+              <InfoChip k="generated" v={shadow70V1Query.data?.generated_at ? fmtAge((Date.now() - Date.parse(shadow70V1Query.data.generated_at)) / 1000) : "—"} />
+              <button aria-label="Refresh shadow 70D" className="btn small ghost" onClick={() => void shadow70V1Query.refetch()} disabled={shadow70V1Query.isFetching}>⟳</button>
             </>
           }
         >
           <SectionState
             query={shadow70V1Query}
-            emptyMessage={t("ml.drift.empty", "No drift alerts and no feature-health rows recorded.")}
-            emptyHint={t("ml.drift.empty_hint", "Shadow70Store answered with empty collections — an observed fact, not a failure.")}
-            errorFallback={t("ml.err.shadow70_v1", "v1 shadow70 endpoint failed.")}
+            emptyMessage="No drift alerts and no feature-health rows recorded."
+            emptyHint="Shadow70Store answered with empty collections — an observed fact, not a failure."
+            errorFallback="v1 shadow70 endpoint failed."
             emptyWhen={(d) => (d.drift_alerts?.length ?? 0) === 0 && (!d.feature_health || Object.keys(d.feature_health).length === 0)}
           >
             {(d) => (
               <div style={{ display: "grid", gap: 10 }}>
                 {d.feature_health && Object.keys(d.feature_health).length > 0 && (
                   <dl className="kv">
-                    <dt className="section-title" style={{ gridColumn: "1 / -1" }}>{t("ml.drift.feature_health", "feature health (latest)")}</dt>
+                    <dt className="section-title" style={{ gridColumn: "1 / -1" }}>feature health (latest)</dt>
                     {Object.entries(d.feature_health).slice(0, 12).map(([k, v]) => (
                       <div key={k} style={{ display: "contents" }}>
                         <dt className="small">{k}</dt>
@@ -504,8 +521,8 @@ export default function MLPage({ snapshot }: Props) {
                 )}
                 {(d.drift_alerts?.length ?? 0) > 0 ? (
                   <>
-                    <div className="section-title">{t("ml.drift.alerts_title", "drift alerts ({n})", { n: d.drift_alerts!.length })}</div>
-                    <DataTable headers={[{ label: t("ml.th.time", "Time") }, { label: t("ml.th.feature", "Feature") }, { label: t("ml.th.metric", "Metric"), num: true }, { label: t("ml.th.detail", "Detail") }]}>
+                    <div className="section-title">drift alerts ({d.drift_alerts!.length})</div>
+                    <DataTable headers={[{ label: "Time" }, { label: "Feature" }, { label: "Metric", num: true }, { label: "Detail" }]}>
                       {d.drift_alerts!.slice(0, 10).map((a, i) => (
                         <tr key={i}>
                           <td className="small">{String(a.timestamp ?? a.ts ?? "—")}</td>
@@ -517,7 +534,7 @@ export default function MLPage({ snapshot }: Props) {
                     </DataTable>
                   </>
                 ) : (
-                  <div className="l4-note">{t("ml.drift.none", "No drift alerts: the backend has not flagged the 70D feature distribution.")}</div>
+                  <div className="l4-note">No drift alerts: the backend has not flagged the 70D feature distribution.</div>
                 )}
               </div>
             )}
@@ -527,47 +544,47 @@ export default function MLPage({ snapshot }: Props) {
 
       {/* Shadow comparison (60D store) + run inventory */}
       <Panel
-        title={t("ml.panel.shadow_cmp", "Shadow comparison (challenger pipeline)")}
+        title="Shadow comparison (challenger pipeline)"
         right={
           <>
-            <InfoChip k="60d" v={shadowStatusQuery.data?.shadow_60d?.available ? t("ml.chip.decisions", "{n} decisions", { n: shadowStatusQuery.data.shadow_60d.decisions ?? 0 }) : shadowStatusQuery.data ? t("ml.st.store_empty", "STORE EMPTY") : "…"} tone={shadowStatusQuery.data?.shadow_60d?.available ? "good" : ""} />
-            <button aria-label={t("ml.shadow.refresh_aria", "Refresh shadow status")} className="btn small ghost" onClick={() => void shadowStatusQuery.refetch()} disabled={shadowStatusQuery.isFetching}>⟳</button>
+            <InfoChip k="60d" v={shadowStatusQuery.data?.shadow_60d?.available ? `${shadowStatusQuery.data.shadow_60d.decisions ?? 0} decisions` : shadowStatusQuery.data ? "STORE EMPTY" : "…"} tone={shadowStatusQuery.data?.shadow_60d?.available ? "good" : ""} />
+            <button aria-label="Refresh shadow status" className="btn small ghost" onClick={() => void shadowStatusQuery.refetch()} disabled={shadowStatusQuery.isFetching}>⟳</button>
           </>
         }
       >
         {shadowStatusQuery.isPending && !shadowStatusQuery.data ? (
           <Skeleton count={3} />
         ) : shadowStatusQuery.isError ? (
-          <ErrorState message={errorText(shadowStatusQuery.error, t("ml.err.shadow_status", "Shadow status endpoint failed."))} onRetry={() => void shadowStatusQuery.refetch()} />
+          <ErrorState message={errorText(shadowStatusQuery.error, "Shadow status endpoint failed.")} onRetry={() => void shadowStatusQuery.refetch()} />
         ) : (
           <div className="grid cols-2">
             <div>
-              <div className="section-title">{t("ml.shadow.store_title", "Shadow store (60D comparisons)")}</div>
+              <div className="section-title">Shadow store (60D comparisons)</div>
               {shadowStatusQuery.data?.shadow_60d ? (
                 <dl className="kv">
-                  <dt>{t("ml.shadow.available", "available")}</dt>
-                  <dd><TriBadge value={shadowStatusQuery.data.shadow_60d.available} on={t("ml.yes", "YES")} off={t("ml.no", "NO")} /></dd>
-                  <dt>{t("ml.shadow.decisions", "decisions")}</dt>
+                  <dt>available</dt>
+                  <dd><TriBadge value={shadowStatusQuery.data.shadow_60d.available} on="YES" off="NO" /></dd>
+                  <dt>decisions</dt>
                   <dd>{shadowStatusQuery.data.shadow_60d.decisions ?? "—"}</dd>
-                  <dt>{t("ml.shadow.promotions", "promotions")}</dt>
+                  <dt>promotions</dt>
                   <dd>{shadowStatusQuery.data.shadow_60d.promotions ?? "—"}</dd>
                   {Object.entries(shadowStatusQuery.data.shadow_60d.runs ?? {}).map(([k, v]) => (
                     <div key={k} style={{ display: "contents" }}>
-                      <dt>{t("ml.shadow.run_label", "run · {k}", { k })}</dt>
+                      <dt>run · {k}</dt>
                       <dd>{v}</dd>
                     </div>
                   ))}
                 </dl>
               ) : (
-                <EmptyState message={t("ml.shadow.empty", "Shadow store did not answer.")} hint={t("ml.shadow.empty_hint", "generated_at: — means the endpoint returned no block.")} />
+                <EmptyState message="Shadow store did not answer." hint="generated_at: — means the endpoint returned no block." />
               )}
               <div className="l4-note" style={{ marginTop: 6 }}>
-                {shadowStatusQuery.data?.generated_at ? t("ml.shadow.gen_line", "status generated {v}", { v: shadowStatusQuery.data.generated_at }) : t("ml.shadow.gen_none", "no generated_at in payload")}
+                {shadowStatusQuery.data?.generated_at ? `status generated ${shadowStatusQuery.data.generated_at}` : "no generated_at in payload"}
               </div>
             </div>
             <div>
               <div className="l4-toolbar" style={{ justifyContent: "space-between" }}>
-                <span className="section-title" style={{ margin: 0 }}>{t("ml.runs.title", "Run inventory (v1)")}</span>
+                <span className="section-title" style={{ margin: 0 }}>Run inventory (v1)</span>
                 <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                   {(shadowRunsQuery.data?.items.length ?? 0) > 0 && (
                     <button
@@ -580,19 +597,19 @@ export default function MLPage({ snapshot }: Props) {
                         })
                       }
                     >
-                      {t("ml.runs.csv", "⇩ CSV")}
+                      ⇩ CSV
                     </button>
                   )}
-                  <button aria-label={t("ml.runs.prev_aria", "Previous page")} className="btn small" disabled={runsPage <= 1} onClick={() => setRunsPage((p) => Math.max(1, p - 1))}>‹</button>
+                  <button aria-label="Previous page" className="btn small" disabled={runsPage <= 1} onClick={() => setRunsPage((p) => Math.max(1, p - 1))}>‹</button>
                   <span className="small faint inline-mono">p{runsPage}</span>
-                  <button aria-label={t("ml.runs.next_aria", "Next page")} className="btn small" disabled={!shadowRunsQuery.data?.has_more} onClick={() => setRunsPage((p) => p + 1)}>›</button>
+                  <button aria-label="Next page" className="btn small" disabled={!shadowRunsQuery.data?.has_more} onClick={() => setRunsPage((p) => p + 1)}>›</button>
                 </span>
               </div>
               <SectionState
                 query={shadowRunsQuery}
-                emptyMessage={t("ml.runs.empty", "No shadow runs recorded.")}
-                emptyHint={t("ml.runs.empty_hint", "The challenger pipeline has not run yet (empty store ≠ failure).")}
-                errorFallback={t("ml.err.runs", "Run inventory endpoint failed.")}
+                emptyMessage="No shadow runs recorded."
+                emptyHint="The challenger pipeline has not run yet (empty store ≠ failure)."
+                errorFallback="Run inventory endpoint failed."
                 emptyWhen={(d) => d.items.length === 0}
               >
                 {(d) => (
@@ -600,7 +617,7 @@ export default function MLPage({ snapshot }: Props) {
                     columns={runCols}
                     rows={d.items as Array<Record<string, unknown>>}
                     rowKey={(r, i) => String(r.run_id ?? i)}
-                    emptyMessage={t("ml.runs.no_runs", "No runs.")}
+                    emptyMessage="No runs."
                     maxHeight={260}
                   />
                 )}
@@ -611,24 +628,14 @@ export default function MLPage({ snapshot }: Props) {
       </Panel>
 
       {s70?.store?.recent_observations && s70.store.recent_observations.length > 0 && (
-        <Panel title={t("ml.panel.obs", "Recent 70D shadow observations")} tight right={<span className="timestamp-note">{t("ml.obs.note", "champion vs 70D, engine-recorded")}</span>}>
+        <Panel title="Recent 70D shadow observations" tight right={<span className="timestamp-note">champion vs 70D, engine-recorded</span>}>
           <SortableTable
-            columns={[
-              { key: "t", label: t("ml.th.time", "Time"), sortValue: (o) => o.timestamp, render: (o) => o.timestamp.slice(0, 19) },
-              { key: "c", label: t("ml.th.champion", "Champion"), sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
-              { key: "s", label: t("ml.th.shadow", "Shadow"), sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
-              { key: "conf", label: t("ml.th.conf_cs", "Conf C/S"), num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
-              { key: "dis", label: t("ml.th.disagreement", "Disagreement"), sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
-              { key: "rg", label: t("ml.th.regime", "Regime"), sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
-              { key: "nw", label: t("ml.th.news", "News"), render: (o) => o.news_state || "—" },
-              { key: "liq", label: t("ml.th.liquidity", "Liquidity"), render: (o) => o.liquidity_state || "—" },
-              { key: "out", label: t("ml.th.outcome", "Outcome"), sortValue: (o) => o.outcome, render: (o) => o.outcome },
-            ]}
-            rows={s70.store.recent_observations.slice(0, 25)}
+            columns={OBSERVATION_COLUMNS}
+            rows={observations}
             rowKey={(o) => o.observation_id}
             initialSort={{ key: "t", dir: "desc" }}
-            filter={(o, q) => o.champion_action.toLowerCase().includes(q) || o.shadow_action.toLowerCase().includes(q) || (o.regime ?? "").toLowerCase().includes(q)}
-            emptyMessage={t("ml.obs.empty", "No observations.")}
+            filter={OBSERVATION_FILTER}
+            emptyMessage="No observations."
           />
         </Panel>
       )}

@@ -9,6 +9,7 @@
  * depth across the fleet. Nothing is imputed; gaps render as gaps.
  */
 
+import { useMemo } from "react";
 import { EmptyState, ErrorState, Skeleton } from "@/components/primitives";
 import { DistBars } from "../../research/ui/lane5Kit";
 import { formatNumber } from "@/lib/format";
@@ -85,24 +86,38 @@ export function AnalysisSection({
     return <EmptyState message={t("command-center.empty.no_overview", "Backend returned no overview payload.")} hint="overview.available !== true" />;
   }
 
-  const funnel = pipelineFunnel(overview);
-  const gates = gateOutcomes(overview);
-  const life = lifecycleSegments(overview);
-  const elig = eligibilityCounts(fleet);
-  const conf = histogram(fleetConfidenceSamples(fleet), { lo: 0, hi: 1, bins: 10 });
-  const healthVals = fleetHealthSamples(fleet);
-  const healthKnown = healthVals.filter((v): v is number => v !== null);
-  const healthHi = healthKnown.length > 0 ? Math.max(1, Math.ceil(Math.max(...healthKnown) * 10) / 10) : 1;
-  const health = histogram(healthVals, { lo: 0, hi: healthHi, bins: 10 });
-  const rings = evidenceRings(fleet);
+  // perf: the 10 pure derivations in ../analysis are DOT-map/filter chains over
+  // the overview/fleet payloads — derived once per data identity instead of on
+  // every render of this section (both queries poll on 30s/60s intervals).
+  // Deps are the exact arguments the derivations read; the pure module
+  // functions are untouched and stay exportable.
+  const funnel = useMemo(() => pipelineFunnel(overview), [overview]);
+  const gates = useMemo(() => gateOutcomes(overview), [overview]);
+  const life = useMemo(() => lifecycleSegments(overview), [overview]);
+  const elig = useMemo(() => eligibilityCounts(fleet), [fleet]);
+  const conf = useMemo(
+    () => histogram(fleetConfidenceSamples(fleet), { lo: 0, hi: 1, bins: 10 }),
+    [fleet],
+  );
+  const health = useMemo(() => {
+    const healthVals = fleetHealthSamples(fleet);
+    const healthKnown = healthVals.filter((v): v is number => v !== null);
+    const healthHi = healthKnown.length > 0 ? Math.max(1, Math.ceil(Math.max(...healthKnown) * 10) / 10) : 1;
+    return histogram(healthVals, { lo: 0, hi: healthHi, bins: 10 });
+  }, [fleet]);
+  const rings = useMemo(() => evidenceRings(fleet), [fleet]);
 
-  const donutSegments = life.map((s) => ({
-    label: s.key,
-    count: s.count,
-    share: s.share,
-    terminal: s.terminal,
-    color: LIFECYCLE_COLOR[s.key] ?? "var(--accent)",
-  }));
+  const donutSegments = useMemo(
+    () =>
+      life.map((s) => ({
+        label: s.key,
+        count: s.count,
+        share: s.share,
+        terminal: s.terminal,
+        color: LIFECYCLE_COLOR[s.key] ?? "var(--accent)",
+      })),
+    [life],
+  );
 
   return (
     <div className="cc-analysis">

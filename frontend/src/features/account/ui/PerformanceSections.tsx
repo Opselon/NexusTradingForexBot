@@ -7,9 +7,23 @@
  * draws net_pnl per consecutive period straight from /performance/{kind}/series.
  * The intelligence panel echoes the structured PerformanceReport summary that
  * the Telegram daily report consumes — same object, so UI and report agree.
+ *
+ * Wave 6 (analytics studio): advanced metrics render in a studio distribution
+ * plate; the per-period series carries an emphasis strip scaled to the SAME
+ * net_pnl values the sparkline already draws. No metric is recomputed.
+ *
+ * OWNER:    uiux-w6-account
+ * CONSUMES: useAccountPerformance/useAccountIntelligence/useAccountSeries,
+ *           ADVANCED_ROWS (../model), shared formatters, studio-math-react
+ * PROVIDES: AdvancedMetricsSection, PeriodSeriesSection,
+ *           PerformanceIntelligenceSection
+ * INVARIANTS: missing stats render "—" — never 0 (BUG-020 lineage); emphasis
+ *           bars scale to on-screen values and are labeled "derived"; the
+ *           kind switch and report toggle keep working unchanged.
+ * EXTEND:   a new advanced stat needs an ADVANCED_ROWS entry, not new math.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { Sparkline } from "@/components/viz";
 import { formatDateTime } from "@/lib/format";
@@ -17,157 +31,146 @@ import { useAccountPerformance, useAccountIntelligence, useAccountSeries } from 
 import { ADVANCED_ROWS } from "../model";
 import type { PeriodKind } from "../types";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash } from "./shared";
-import { useI18n } from "@/stores/i18nStore";
-
-type Translator = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
-
-/** ADVANCED_ROWS display labels (metric names shown to humans). */
-function advLabelT(key: string, t: Translator): string {
-  switch (key) {
-    case "sharpe_ratio": return t("account.adv.sharpe", "Sharpe");
-    case "sortino_ratio": return t("account.adv.sortino", "Sortino");
-    case "calmar_ratio": return t("account.adv.calmar", "Calmar");
-    case "sqn": return t("account.adv.sqn", "SQN");
-    case "recovery_factor": return t("account.adv.recovery_factor", "Recovery factor");
-    case "payoff_ratio": return t("account.adv.payoff_ratio", "Payoff ratio");
-    case "profit_factor": return t("account.adv.profit_factor", "Profit factor");
-    case "average_win": return t("account.adv.average_win", "Average win");
-    case "average_loss": return t("account.adv.average_loss", "Average loss");
-    case "max_consecutive_wins": return t("account.adv.max_win_streak", "Max win streak");
-    case "max_consecutive_losses": return t("account.adv.max_loss_streak", "Max loss streak");
-    case "equity_volatility_pct": return t("account.adv.equity_volatility", "Equity volatility %");
-    case "stop_loss_share": return t("account.adv.stop_loss_share", "Stop-loss share");
-    case "avg_r_multiple": return t("account.adv.avg_win_r", "Avg win R");
-    case "avg_loss_r": return t("account.adv.avg_loss_r", "Avg loss R");
-    case "avg_mae_r": return t("account.adv.avg_mae", "Avg MAE");
-    case "avg_mfe_r": return t("account.adv.avg_mfe", "Avg MFE");
-    case "avg_hold_sec": return t("account.adv.avg_hold", "Avg hold");
-    case "avg_risk_usd": return t("account.adv.avg_risk", "Avg risk $");
-    case "r_coverage_ratio": return t("account.adv.r_coverage", "R coverage");
-    default: return key;
-  }
-}
-
-/** Period button captions (human words for the DAY/WEEK/MONTH/YEAR switch). */
-function periodBtnT(k: PeriodKind, t: Translator): string {
-  switch (k) {
-    case "DAY": return t("account.pbtn.day", "DAY");
-    case "WEEK": return t("account.pbtn.week", "WEEK");
-    case "MONTH": return t("account.pbtn.month", "MONTH");
-    case "YEAR": return t("account.pbtn.year", "YEAR");
-    default: return k;
-  }
-}
-
-/** Series panel title per period word. */
-function seriesTitleT(k: PeriodKind, t: Translator): string {
-  switch (k) {
-    case "DAY": return t("account.series.title_day", "Net PnL per day (last 30 consecutive periods)");
-    case "WEEK": return t("account.series.title_week", "Net PnL per week (last 30 consecutive periods)");
-    case "MONTH": return t("account.series.title_month", "Net PnL per month (last 30 consecutive periods)");
-    case "YEAR": return t("account.series.title_year", "Net PnL per year (last 30 consecutive periods)");
-    default: return k;
-  }
-}
+import { DistPanel, EmphBars } from "./studio-math-react";
 
 export function AdvancedMetricsSection() {
-  const t = useI18n((s) => s.t);
   const perf = useAccountPerformance();
   const a = perf.data?.advanced;
 
   return (
     <Panel
-      title={t("account.adv.title", "Risk-adjusted performance")}
-      right={<FreshnessNote updatedAtMs={perf.dataUpdatedAt ?? null} label={t("account.fresh.advanced", "advanced")} staleAfterMs={90_000} />}
+      title="Risk-adjusted performance"
+      right={<FreshnessNote updatedAtMs={perf.dataUpdatedAt ?? null} label="advanced" staleAfterMs={90_000} />}
     >
       {perf.isPending ? (
         <Skeleton count={4} height={38} />
       ) : perf.isError ? (
-        <ErrorState message={asErrorText(perf.error, t)} onRetry={() => perf.refetch()} />
+        <ErrorState message={asErrorText(perf.error)} onRetry={() => perf.refetch()} />
       ) : !a ? (
-        <EmptyState message={t("account.adv.empty", "No advanced metrics computed.")} hint={t("account.adv.empty_hint", "Needs closed trades in the accounting core.")} />
+        <EmptyState message="No advanced metrics computed." hint="Needs closed trades in the accounting core." />
       ) : (
-        <>
-          <div className="acct-grid-stats">
-            {ADVANCED_ROWS.map((row) => {
+        <DistPanel
+          title="Risk-adjusted performance"
+          scaleNote="bars scale within each unit family — $ rows against $, ratios against ratios, never mixed"
+          footer={`source: accounting core · ${a.sample_trades ?? 0} closed trades · sharpe/sortino/calmar/sqn computed over the same realized series the period reports use`}
+          rows={(() => {
+            // One shared scale would let avg_hold_sec (1800s) flatten Sharpe
+            // (1.4) to a zero-width bar — the screen must not imply "≈ 0".
+            // Each unit family gets its own magnitude ceiling instead.
+            // A count (12 wins) shares no unit with a ratio (Sharpe 1.4), and
+            // "%" and percentOfOne rows are both percentages — key them apart
+            // so no row's bar is flattened by an unrelated metric.
+            const family = (r: (typeof ADVANCED_ROWS)[number]) => {
+              if (r.money) return "$";
+              if (r.percentOfOne || r.suffix === "%") return "pct";
+              if (r.suffix === "R") return "R";
+              if (r.suffix === "s") return "s";
+              if (r.key.startsWith("max_consecutive")) return "count";
+              return "ratio";
+            };
+            const ceiling = new Map<string, number>();
+            for (const r of ADVANCED_ROWS) {
+              const raw = (a as Record<string, number | null | undefined>)[r.key];
+              if (raw === null || raw === undefined || !Number.isFinite(raw)) continue;
+              const f = family(r);
+              ceiling.set(f, Math.max(ceiling.get(f) ?? 0, Math.abs(raw)));
+            }
+            return ADVANCED_ROWS.map((row) => {
               const raw = (a as Record<string, number | null | undefined>)[row.key];
-              const shown =
-                raw === null || raw === undefined
-                  ? DASH
-                  : row.percentOfOne
-                    ? `${(raw * 100).toFixed(1)}%`
-                    : row.money
-                      ? moneyOrDash(raw)
-                      : `${raw.toFixed(row.digits)}${row.suffix ?? ""}`;
-              const tone = raw === null || raw === undefined ? "" : raw > 0 ? "pos" : raw < 0 ? "neg" : "";
-              return (
-                <div className="acct-stat" key={row.key} title={row.key}>
-                  <div className="k">{advLabelT(row.key, t)}</div>
-                  <div className={`v ${tone}`}>{shown}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="tiny faint" style={{ marginTop: 8 }}>
-            {t("account.adv.source_note", "source: accounting core · {trades} closed trades · sharpe/sortino/calmar/sqn computed over the same realized series the period reports use", { trades: String(a.sample_trades ?? 0) })}
-          </div>
-        </>
+              const known = raw !== null && raw !== undefined && Number.isFinite(raw);
+              const v = known ? (raw as number) : null;
+              const shown = v === null
+                ? DASH
+                : row.percentOfOne
+                  ? `${(v * 100).toFixed(1)}%`
+                  : row.money
+                    ? moneyOrDash(v, true)
+                    : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(row.digits)}${row.suffix ?? ""}`;
+              return {
+                label: row.label,
+                value: v,
+                text: shown,
+                full: ceiling.get(family(row)) || 1,
+                tone: v === null ? "dim" : v > 0 ? "pos" : v < 0 ? "neg" : "dim",
+                title: `${row.key} = ${shown}`,
+              };
+            });
+          })()}
+        />
       )}
     </Panel>
   );
 }
 
 export function PeriodSeriesSection() {
-  const t = useI18n((s) => s.t);
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const series = useAccountSeries(kind, 30);
 
+  // Backend series, memoized per response identity; the two derivations below
+  // read only it. `values` keeps its null gaps (Sparkline renders them as gaps).
+  const seriesData = series.data ?? [];
+  const seriesValues = useMemo(
+    () => seriesData.map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null)),
+    [seriesData],
+  );
+  const seriesRows = useMemo(
+    () =>
+      seriesData.map((p, i) => (
+        <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
+          <span>{p.key ?? `#${i}`}</span>
+          <span>{p.total_trades ?? 0} trades</span>
+          <span className={(p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad"}>{moneyOrDash(p.net_pnl, true)}</span>
+          <span className="faint">wr {p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%`}</span>
+        </div>
+      )),
+    [seriesData],
+  );
+
   return (
     <Panel
-      title={seriesTitleT(kind, t)}
+      title={`Net PnL per ${kind.toLowerCase()} (last 30 consecutive periods)`}
       right={
         <>
           <span className="acct-actions">
             {(["DAY", "WEEK", "MONTH", "YEAR"] as PeriodKind[]).map((k) => (
               <button key={k} className={`btn small ${kind === k ? "primary" : "ghost"}`} onClick={() => setKind(k)}>
-                {periodBtnT(k, t)}
+                {k}
               </button>
             ))}
           </span>
-          <FreshnessNote updatedAtMs={series.dataUpdatedAt ?? null} label={t("account.fresh.series", "series")} />
+          <FreshnessNote updatedAtMs={series.dataUpdatedAt ?? null} label="series" />
         </>
       }
     >
       {series.isPending ? (
         <Skeleton count={2} height={60} />
       ) : series.isError ? (
-        <ErrorState message={asErrorText(series.error, t)} onRetry={() => series.refetch()} />
+        <ErrorState message={asErrorText(series.error)} onRetry={() => series.refetch()} />
       ) : (series.data ?? []).length === 0 ? (
-        <EmptyState message={t("account.series.empty", "No periods returned.")} />
+        <EmptyState message="No periods returned." />
       ) : (
         <>
           <div className="spark-cell" style={{ gap: 14 }}>
             <Sparkline
-              values={(series.data ?? []).map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null))}
+              values={seriesValues}
               width={420}
               height={54}
-              label={t("account.series.spark_label", "net pnl per {period}", { period: periodBtnT(kind, t) })}
+              label={`net pnl per ${kind}`}
             />
             <div className="tiny muted">
-              {t("account.series.last", "{count} periods · last {last}", { count: String((series.data ?? []).length), last: moneyOrDash(series.data?.[0]?.net_pnl ?? null) })}
+              {(series.data ?? []).length} periods · last {moneyOrDash(series.data?.[0]?.net_pnl ?? null)}
+            </div>
+          </div>
+          <div style={{ marginTop: 4 }}>
+            <EmphBars bars={(series.data ?? []).map((pr) => ({ value: pr.net_pnl ?? null }))} minPct={10} />
+            <div className="tiny faint" style={{ marginBlockStart: 4 }}>
+              emphasis bars: per-period net PnL, scaled to the largest |net PnL| in view (derived from the values above)
             </div>
           </div>
           <div style={{ display: "grid", gap: 2, marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
-            {(series.data ?? []).map((p, i) => (
-              <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
-                <span>{p.key ?? `#${i}`}</span>
-                <span>{t("account.stat.trades", "{count} trades", { count: String(p.total_trades ?? 0) })}</span>
-                <span className={ (p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad" } >{moneyOrDash(p.net_pnl, true)}</span>
-                <span className="faint">{t("account.series.wr", "wr {wr}", { wr: p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%` })}</span>
-              </div>
-            ))}
+            {seriesRows}
           </div>
-          <div className="tiny faint" style={{ marginTop: 6 }}>{t("account.series.oldest_note", "oldest → newest; the accounting worker keeps consecutive-period rows server-side.")}</div>
+          <div className="tiny faint" style={{ marginTop: 6 }}>oldest → newest; the accounting worker keeps consecutive-period rows server-side.</div>
         </>
       )}
     </Panel>
@@ -175,27 +178,30 @@ export function PeriodSeriesSection() {
 }
 
 export function PerformanceIntelligenceSection() {
-  const t = useI18n((s) => s.t);
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const intel = useAccountIntelligence(kind);
   const [showReport, setShowReport] = useState(false);
 
   const i = intel.data?.intelligence;
 
+  // perf: pretty-print the backend report once per distinct payload
+  // instead of on every render; dep is the exact object serialized.
+  const report = intel.data?.report;
+  const reportText = useMemo(() => JSON.stringify(report ?? {}, null, 2), [report]);
   return (
     <Panel
-      title={t("account.intel.title", "Performance intelligence (report engine)")}
+      title="Performance intelligence (report engine)"
       right={
         <>
           <span className="acct-actions">
             {(["DAY", "WEEK", "MONTH", "YEAR"] as PeriodKind[]).map((k) => (
               <button key={k} className={`btn small ${kind === k ? "primary" : "ghost"}`} onClick={() => setKind(k)}>
-                {periodBtnT(k, t)}
+                {k}
               </button>
             ))}
           </span>
           <button className="btn small ghost" onClick={() => setShowReport((v) => !v)}>
-            {showReport ? t("account.intel.summary", "summary") : t("account.intel.full_report", "full report")}
+            {showReport ? "summary" : "full report"}
           </button>
         </>
       }
@@ -203,39 +209,39 @@ export function PerformanceIntelligenceSection() {
       {intel.isPending ? (
         <Skeleton count={2} height={44} />
       ) : intel.isError ? (
-        <ErrorState message={asErrorText(intel.error, t)} onRetry={() => intel.refetch()} />
+        <ErrorState message={asErrorText(intel.error)} onRetry={() => intel.refetch()} />
       ) : !intel.data ? (
-        <EmptyState message={t("account.intel.empty", "No intelligence report.")} />
+        <EmptyState message="No intelligence report." />
       ) : showReport ? (
         <pre tabIndex={0} style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, fontSize: 10.5, maxHeight: 420, overflow: "auto", fontFamily: "var(--mono)", margin: 0 }}>
-          {JSON.stringify(intel.data.report ?? {}, null, 2)}
+          {reportText}
         </pre>
       ) : (
         <div className="grid cols-2">
           <div>
             <dl className="kv">
-              <dt>{t("account.intel.anomaly_state", "anomaly state")}</dt>
+              <dt>anomaly state</dt>
               <dd>
                 <StatusBadge status={i?.status ?? "NO_DATA"} />
               </dd>
-              <dt>{t("account.intel.behavior_state", "behavior state")}</dt>
+              <dt>behavior state</dt>
               <dd>
                 <StatusBadge status={i?.behavior_state ?? "NO_DATA"} />
               </dd>
-              <dt>{t("account.intel.trades_analyzed", "trades analyzed")}</dt>
+              <dt>trades analyzed</dt>
               <dd>{i?.trades_analyzed ?? DASH}</dd>
-              <dt>{t("account.intel.evidence_coverage", "evidence coverage")}</dt>
+              <dt>evidence coverage</dt>
               <dd>{i?.evidence_coverage == null ? DASH : `${(i.evidence_coverage * 100).toFixed(0)}%`}</dd>
-              <dt>{t("account.intel.versions", "versions")}</dt>
+              <dt>versions</dt>
               <dd className="tiny">
-                {t("account.intel.versions_line", "behavior {behavior} · anomaly {anomaly}", { behavior: i?.analysis_version || DASH, anomaly: i?.anomaly_version || DASH })}
+                behavior {i?.analysis_version || DASH} · anomaly {i?.anomaly_version || DASH}
               </dd>
             </dl>
           </div>
           <div>
-            <div className="section-title">{t("account.intel.flags_title", "behavioral flags (backend counts)")}</div>
+            <div className="section-title">behavioral flags (backend counts)</div>
             {Object.keys(i?.behavioral_flags ?? {}).length === 0 ? (
-              <EmptyState message={t("account.intel.flags_empty", "No behavioral flags counted.")} />
+              <EmptyState message="No behavioral flags counted." />
             ) : (
               <div className="statline">
                 {Object.entries(i?.behavioral_flags ?? {}).map(([k, v]) => (
@@ -246,10 +252,10 @@ export function PerformanceIntelligenceSection() {
               </div>
             )}
             <div className="section-title" style={{ marginTop: 10 }}>
-              {t("account.intel.anomalies_title", "anomalies")}
+              anomalies
             </div>
             {Object.keys(i?.anomalies ?? {}).length === 0 ? (
-              <EmptyState message={t("account.intel.anomalies_empty", "No anomalies counted for this period.")} />
+              <EmptyState message="No anomalies counted for this period." />
             ) : (
               <div className="statline">
                 {Object.entries(i?.anomalies ?? {}).map(([k, v]) => (
@@ -263,9 +269,10 @@ export function PerformanceIntelligenceSection() {
         </div>
       )}
       <div className="tiny faint" style={{ marginTop: 8 }}>
-        {t("account.intel.note", "deterministic multi-stage enrichment over the accounting core — the same object the Telegram daily report consumes (read-only, never writes financial truth) · period {period}", { period: periodBtnT(kind, t) })}
+        deterministic multi-stage enrichment over the accounting core — the same object the Telegram daily report consumes (read-only, never writes
+        financial truth) · period {kind}
       </div>
-      <FreshnessNote updatedAtMs={intel.dataUpdatedAt ?? null} label={t("account.fresh.intelligence", "intelligence")} />
+      <FreshnessNote updatedAtMs={intel.dataUpdatedAt ?? null} label="intelligence" />
     </Panel>
   );
 }

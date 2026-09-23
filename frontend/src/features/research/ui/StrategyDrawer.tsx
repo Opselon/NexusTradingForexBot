@@ -11,15 +11,13 @@ import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Ske
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, Drawer, GateStepper, JsonBlock, StatusPill } from "./lane5Kit";
-import { GATE_CHAIN } from "../handbook";
-import StrategyPlaybook from "./StrategyPlaybook";
+import { GATE_CHAIN } from "../handbook/gateChain";
+import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
 import { commandVerdict, obj, str, toGateVo, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
-import { useI18n } from "@/stores/i18nStore";
 
 export default function StrategyDrawer({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
-  const t = useI18n((s) => s.t);
   const [tab, setTab] = useState<"trace" | "gates" | "events" | "evidence" | "raw" | "playbook">("trace");
   const [confirmGate, setConfirmGate] = useState<string | null>(null);
   const [confirmRun, setConfirmRun] = useState<string | null>(null);
@@ -73,31 +71,54 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
   /**
    * Compact chain rail (docs vocabulary from handbook GATE_CHAIN): class per
-   * step derives ONLY from the backend's own gate rows — passed/failed/running —
+   * step derives ONLY from the backend's own gate rows — passed/failed/running,
    * never inferred. Name match is case-insensitive; unknown steps rest neutral.
+   *
+   * perf: the chain-rail classes and the gate-ledger stepper rows are derived
+   * from `gates` (memoized VO list) + `cmd.state.running` — the only reactive
+   * values they read — so query/refetch ticks no longer rebuild them per render.
    */
-  const stepClass = (chainGate: string): string => {
-    const mine = gates.filter((g) => g.name.toUpperCase() === chainGate);
-    const last = mine.at(-1);
-    if (!last) return "";
-    const s = (last.status ?? "").toUpperCase();
-    if (s === "PASSED") return "passed";
-    if (s === "FAILED" || s === "ERROR" || s === "CANCELLED") return "failed";
-    if (s === "RUNNING" || s === "QUEUED") return "running";
-    return "";
-  };
+  const chainClass = useMemo(() => {
+    const byName = new Map<string, string>();
+    for (const g of gates) {
+      const key = g.name.toUpperCase();
+      const s = (g.status ?? "").toUpperCase();
+      let cls = "";
+      if (s === "PASSED") cls = "passed";
+      else if (s === "FAILED" || s === "ERROR" || s === "CANCELLED") cls = "failed";
+      else if (s === "RUNNING" || s === "QUEUED") cls = "running";
+      if (cls) byName.set(key, cls); // last occurrence wins (same as .at(-1) order)
+    }
+    return (chainGate: string): string => byName.get(chainGate) ?? "";
+  }, [gates]);
+
+  const stepperRows = useMemo(
+    () =>
+      gates.map((g) => ({
+        name: g.name + (g.gateId ? ` · ${g.gateId.slice(0, 8)}` : ""),
+        status: g.status,
+        reason: g.reason ?? (g.failureClass ? `class: ${g.failureClass}` : null),
+        detail:
+          g.gateId && (g.failureClass === "TECHNICAL" || g.failureClass === "DATA" || g.retryable) ? (
+            <button className="btn small ghost" disabled={cmd.state.running} onClick={() => setConfirmGate(g.gateId)}>
+              retry gate
+            </button>
+          ) : undefined,
+      })),
+    [gates, cmd.state.running],
+  );
 
   const tabs: Array<[typeof tab, string]> = [
-    ["trace", t("research.drawer.tab_trace", "Trace")],
-    ["gates", t("research.drawer.tab_gates", "Gates ({n})", { n: gates.length })],
-    ["events", t("research.drawer.tab_events", "Events ({n})", { n: events.length })],
-    ["evidence", t("research.drawer.tab_evidence", "Evidence ({n})", { n: evidence.length })],
-    ["raw", t("research.drawer.tab_raw", "Raw invariant")],
-    ["playbook", t("research.drawer.tab_playbook", "Playbook")],
+    ["trace", "Trace"],
+    ["gates", `Gates (${gates.length})`],
+    ["events", `Events (${events.length})`],
+    ["evidence", `Evidence (${evidence.length})`],
+    ["raw", "Raw invariant"],
+    ["playbook", "Playbook"],
   ];
 
   return (
-    <Drawer title={t("research.drawer.title", "Strategy trace — {s}", { s: strategyId })} onClose={onClose}>
+    <Drawer title={`Strategy trace — ${strategyId}`} onClose={onClose}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         {tabs.map(([id, label]) => (
           <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
@@ -112,73 +133,50 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
           <Skeleton count={4} />
         ) : detailQ.isError ? (
           <ErrorState
-            message={detailQ.error instanceof Error ? detailQ.error.message : t("research.drawer.detail_error", "detail request failed")}
-            onRetry={() => void detailQ.refetch()}
-          />
+                      message={detailQ.error instanceof Error ? detailQ.error.message : "detail request failed"}
+                      onRetry={() => void detailQ.refetch()}
+                    />
         ) : detailQ.data?.available === false ? (
-          <EmptyState
-            message={t("research.page.unavailable", "Research subsystem unavailable")}
-            hint={detailQ.data.reason ?? t("research.drawer.no_avail", "backend answered available:false")}
-          />
+          <EmptyState message="Research subsystem unavailable" hint={detailQ.data.reason ?? "backend answered available:false"} />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             <div className="grid cols-3">
-              <MetricCard label={t("research.drawer.kpi_lifecycle", "Lifecycle")} value={<StatusBadge status={str(trace?.lifecycle)} />} sub={str(trace?.blocked_reason) ?? undefined} />
-              <MetricCard label={t("research.drawer.kpi_gates", "Gate records")} value={String(gates.length)} tone="dim" sub={t("research.drawer.kpi_gates_sub", "from /api/research/gates")} />
+              <MetricCard label="Lifecycle" value={<StatusBadge status={str(trace?.lifecycle)} />} sub={str(trace?.blocked_reason) ?? undefined} />
+              <MetricCard label="Gate records" value={String(gates.length)} tone="dim" sub="from /api/research/gates" />
               <MetricCard
-                label={t("research.drawer.kpi_preflight", "Preflight")}
+                label="Preflight"
                 value={<StatusPill status={str(obj(preflightQ.data?.preflight).status)} />}
-                sub={(obj(preflightQ.data?.preflight).blockers as string[] | undefined)?.join(", ") ?? t("research.drawer.no_blockers", "no blockers reported")}
+                sub={(obj(preflightQ.data?.preflight).blockers as string[] | undefined)?.join(", ") ?? "no blockers reported"}
               />
             </div>
-            <div className="rs-rail-drawer" aria-label={t("research.drawer.chain_aria", "Gate chain position")}>
+            <div className="rs-rail-drawer" aria-label="Gate chain position">
               {GATE_CHAIN.map((g, i) => (
                 <span key={g} style={{ display: "contents" }}>
                   {i > 0 && <span className="rs-rail-arrow" aria-hidden="true">→</span>}
-                  <span className={`rs-step ${stepClass(g)}`} title={t("research.drawer.chain_step", "chain step {i}: {g}", { i: i + 1, g })}>
-                    <span dir="ltr">{i + 1}. {g}</span>
+                  <span className={`rs-step ${chainClass(g)}`} title={`chain step ${i + 1}: ${g}`}>
+                    {i + 1}. {g}
                   </span>
                 </span>
               ))}
             </div>
-            <Panel title={t("research.drawer.pipeline_panel", "Gate pipeline (backend verdicts)")} tight>
-              <GateStepper
-                gates={gates.map((g) => ({
-                  name: g.name + (g.gateId ? ` · ${g.gateId.slice(0, 8)}` : ""),
-                  status: g.status,
-                  reason: g.reason ?? (g.failureClass ? t("research.drawer.class_reason", "class: {c}", { c: g.failureClass }) : null),
-                  detail:
-                    g.gateId && (g.failureClass === "TECHNICAL" || g.failureClass === "DATA" || g.retryable) ? (
-                      <button className="btn small ghost" disabled={cmd.state.running} onClick={() => setConfirmGate(g.gateId)}>
-                        {t("research.drawer.retry_gate", "retry gate")}
-                      </button>
-                    ) : undefined,
-                }))}
-              />
+            <Panel title="Gate pipeline (backend verdicts)" tight>
+              <GateStepper gates={stepperRows} />
               {gates.length === 0 && gatesQ.isPending && <Skeleton count={3} />}
             </Panel>
-            <Panel title={t("research.drawer.runs_panel", "Validation runs (reproducibility lineage)")} tight>
+            <Panel title="Validation runs (reproducibility lineage)" tight>
               {runs.length === 0 ? (
-                runsQ.isPending ? <Skeleton /> : <EmptyState message={t("research.drawer.no_runs", "No research runs recorded for this strategy.")} />
+                runsQ.isPending ? <Skeleton /> : <EmptyState message="No research runs recorded for this strategy." />
               ) : (
-                <DataTable
-                  headers={[
-                    { label: t("research.th.run", "run") },
-                    { label: t("research.th.dataset", "dataset") },
-                    { label: t("research.th.executed", "executed") },
-                    { label: t("research.th.result", "result") },
-                    { label: "" },
-                  ]}
-                >
+                <DataTable headers={[{ label: "run" }, { label: "dataset" }, { label: "executed" }, { label: "result" }, { label: "" }]}>
                   {runs.slice(0, 12).map((r: Row, i: number) => (
                     <tr key={str(r.research_run_id) ?? i}>
-                      <td className="inline-mono tiny" dir="ltr">{str(r.research_run_id)?.slice(0, 12) ?? "—"}</td>
-                      <td className="inline-mono tiny" dir="ltr">{str(r.dataset_id) ?? "—"}</td>
+                      <td className="inline-mono tiny">{str(r.research_run_id)?.slice(0, 12) ?? "—"}</td>
+                      <td className="inline-mono tiny">{str(r.dataset_id) ?? "—"}</td>
                       <td className="tiny">{formatDateTime(str(r.executed_at))}</td>
-                      <td className="tiny" dir="ltr">{str(r.outcome) ?? str(r.result) ?? "—"}</td>
+                      <td className="tiny">{str(r.outcome) ?? str(r.result) ?? "—"}</td>
                       <td>
                         <button className="btn small ghost" onClick={() => setConfirmRun(str(r.research_run_id))}>
-                          {t("research.drawer.cancel_run", "cancel run")}
+                          cancel run
                         </button>
                       </td>
                     </tr>
@@ -190,35 +188,26 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
         ))}
 
       {tab === "gates" && (
-        <Panel title={t("research.drawer.gates_panel", "Gate ledger")} tight>
+        <Panel title="Gate ledger" tight>
           {gates.length === 0 ? (
-            gatesQ.isPending ? <Skeleton /> : <EmptyState message={t("research.drawer.no_gate_records", "No gate records returned.")} />
+            gatesQ.isPending ? <Skeleton /> : <EmptyState message="No gate records returned." />
           ) : (
-            <DataTable
-              headers={[
-                { label: t("research.th.gate", "gate") },
-                { label: t("research.th.status", "status") },
-                { label: t("research.th.class", "class") },
-                { label: t("research.th.reason", "reason") },
-                { label: "ms", num: true },
-                { label: "" },
-              ]}
-            >
+            <DataTable headers={[{ label: "gate" }, { label: "status" }, { label: "class" }, { label: "reason" }, { label: "ms", num: true }, { label: "" }]}>
               {gates.map((g, i) => (
                 <tr key={g.gateId ?? i}>
-                  <td className="small" dir="ltr">{g.name}</td>
+                  <td className="small">{g.name}</td>
                   <td>
                     <StatusPill status={g.status} />
                   </td>
-                  <td className="tiny muted" dir="ltr">{g.failureClass ?? "—"}</td>
+                  <td className="tiny muted">{g.failureClass ?? "—"}</td>
                   <td className="tiny" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={g.reason ?? ""}>
                     {g.reason ?? "—"}
                   </td>
-                  <td className="tiny num" dir="ltr">{g.durationMs === null ? "—" : formatNumber(g.durationMs, 0)}</td>
+                  <td className="tiny num">{g.durationMs === null ? "—" : formatNumber(g.durationMs, 0)}</td>
                   <td>
                     {g.retryable || g.failureClass === "TECHNICAL" || g.failureClass === "DATA" ? (
                       <button className="btn small ghost" disabled={cmd.state.running} onClick={() => setConfirmGate(g.gateId)}>
-                        {t("research.drawer.retry", "retry")}
+                        retry
                       </button>
                     ) : null}
                   </td>
@@ -230,15 +219,15 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       )}
 
       {tab === "events" && (
-        <Panel title={t("research.drawer.events_panel", "Persisted gate timeline")} tight>
+        <Panel title="Persisted gate timeline" tight>
           {events.length === 0 ? (
-            eventsQ.isPending ? <Skeleton /> : <EmptyState message={t("research.drawer.no_events", "No archived/live events for this strategy.")} />
+            eventsQ.isPending ? <Skeleton /> : <EmptyState message="No archived/live events for this strategy." />
           ) : (
-            <DataTable headers={[{ label: t("research.th.at", "at") }, { label: t("research.th.event", "event") }, { label: t("research.th.detail", "detail") }]}>
+            <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
               {events.slice(0, 100).map((e: Row, i: number) => (
                 <tr key={i}>
                   <td className="tiny">{formatDateTime(str(e.timestamp) ?? str(e.created_at))}</td>
-                  <td className="small" dir="ltr">{str(e.event_type) ?? "—"}</td>
+                  <td className="small">{str(e.event_type) ?? "—"}</td>
                   <td className="tiny muted">{str(e.message) ?? str(e.detail) ?? ""}</td>
                 </tr>
               ))}
@@ -248,15 +237,15 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       )}
 
       {tab === "evidence" && (
-        <Panel title={t("research.drawer.evidence_panel", "Immutable evidence vault")} tight>
+        <Panel title="Immutable evidence vault" tight>
           {evidence.length === 0 ? (
-            evidenceQ.isPending ? <Skeleton /> : <EmptyState message={t("research.drawer.no_evidence", "No evidence rows returned.")} />
+            evidenceQ.isPending ? <Skeleton /> : <EmptyState message="No evidence rows returned." />
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {evidence.slice(0, 25).map((e: Row, i: number) => (
                 <details key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px" }}>
                   <summary className="small">
-                    <span dir="ltr">{str(e.evidence_id)?.slice(0, 14) ?? t("research.drawer.evidence_fallback", "evidence")}</span> · {str(e.kind) ?? str(e.evidence_type) ?? "—"} ·{" "}
+                    {str(e.evidence_id)?.slice(0, 14) ?? "evidence"} · {str(e.kind) ?? str(e.evidence_type) ?? "—"} ·{" "}
                     <span className="muted">{formatDateTime(str(e.created_at))}</span>
                   </summary>
                   <div style={{ marginTop: 6 }}>
@@ -271,21 +260,21 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
       {tab === "playbook" && (
         <div className="rs-pane" key="playbook">
-          <StrategyPlaybook compact focusId="topic/gates" />
+          <StrategyPlaybookLazy compact focusId="topic/gates" />
         </div>
       )}
 
       {tab === "raw" && (
-        <Panel title={t("research.drawer.raw_panel", "Invariant check (backend)")} tight>
+        <Panel title="Invariant check (backend)" tight>
           <JsonBlock value={trace?.invariant ?? obj(trace)} />
         </Panel>
       )}
 
       {confirmGate && (
         <ConfirmModal
-          title={t("research.drawer.retry_title", "Retry gate")}
+          title="Retry gate"
           danger={false}
-          confirmLabel={t("research.drawer.retry_confirm", "Retry")}
+          confirmLabel="Retry"
           busy={cmd.state.running}
           onCancel={() => setConfirmGate(null)}
           onConfirm={async () => {
@@ -299,20 +288,17 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
           }}
         >
           <div className="small">
-            {t(
-              "research.drawer.retry_body_pre",
-              "Only TECHNICAL/DATA failures are retryable — a statistical RESEARCH failure is never retried by the backend. Gate ",
-            )}{" "}
-            <b className="inline-mono" dir="ltr">{confirmGate.slice(0, 12)}…</b>
+            Only TECHNICAL/DATA failures are retryable — a statistical RESEARCH failure is never retried by the backend. Gate{" "}
+            <b className="inline-mono">{confirmGate.slice(0, 12)}…</b>
           </div>
         </ConfirmModal>
       )}
 
       {confirmRun && (
         <ConfirmModal
-          title={t("research.drawer.cancel_title", "Cancel research run")}
+          title="Cancel research run"
           danger
-          confirmLabel={t("research.drawer.cancel_confirm", "Cancel run")}
+          confirmLabel="Cancel run"
           busy={cmd.state.running}
           onCancel={() => setConfirmRun(null)}
           onConfirm={async () => {
@@ -326,11 +312,8 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
           }}
         >
           <div className="small">
-            {t("research.drawer.cancel_pre", "Run ")}<b className="inline-mono" dir="ltr">{confirmRun?.slice(0, 12) ?? ""}…</b>{" "}
-            {t(
-              "research.drawer.cancel_post",
-              " becomes CANCELLED (never FAILED); completed gate results are preserved.",
-            )}
+            Run <b className="inline-mono">{confirmRun?.slice(0, 12) ?? ""}…</b> becomes CANCELLED
+            (never FAILED); completed gate results are preserved.
           </div>
         </ConfirmModal>
       )}

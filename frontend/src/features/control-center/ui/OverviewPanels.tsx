@@ -11,6 +11,7 @@
  *             never claim STOPPED for missing data; warnings render backend text.
  * EXTEND:   new panel/card = a direct field in model.ts first, then one JSX block.
  */
+import { useMemo } from "react";
 import { EmptyState, ErrorState, MetricCard, Panel, SeverityBadge, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatAgeMs, formatDateTime, formatPrice } from "@/lib/format";
 import { DistBars, InfoRow } from "../../research/ui/lane5Kit";
@@ -38,6 +39,13 @@ export function OverviewPanels({ summary, pending, error, errorMessage, onRetry 
   const subs = obj(health.subsystems);
   const engineField = bool(rt.engine_running);
   const engineStatus = engineField === null ? "UNKNOWN" : engineField ? "RUNNING" : "STOPPED";
+
+  // perf: ledger action census is a DOT-map over the summary payload — derive
+  // once per summary identity (15s poll) instead of every render.
+  const actionRows = useMemo(
+    () => Object.entries(obj(s?.ledger?.actions)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
+    [s?.ledger?.actions],
+  );
 
   return (
     <>
@@ -75,7 +83,7 @@ export function OverviewPanels({ summary, pending, error, errorMessage, onRetry 
                 <InfoRow label={t("control-center.label.scanned_rows", "scanned rows")} value={String(s?.ledger?.scanned_rows ?? "—")} />
                 <InfoRow label={t("control-center.label.latest_decision", "latest decision")} value={formatDateTime(s?.ledger?.latest_decision_at)} />
               </dl>
-              <DistBars rows={Object.entries(obj(s?.ledger?.actions)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))} />
+              <DistBars rows={actionRows} />
             </>
           )}
         </Panel>

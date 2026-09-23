@@ -22,14 +22,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { ConfirmModal } from "@/components/primitives";
 import { governanceApi } from "../api";
-import { useI18n } from "@/stores/i18nStore";
 import { useUiStore } from "@/stores/uiStore";
 import { obj, str } from "../model";
 
 const GATE_ORDER = ["oos", "robustness", "shadow", "drift", "liquidity"] as const;
 
 export function PromotionControls() {
-  const t = useI18n((s) => s.t);
   const queryClient = useQueryClient();
   const pushToast = useUiStore((s) => s.pushToast);
 
@@ -39,7 +37,6 @@ export function PromotionControls() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
-  const [commandBlocked, setCommandBlocked] = useState(false);
 
   const statusQ = useQuery({
     queryKey: ["governance", "status"],
@@ -54,7 +51,7 @@ export function PromotionControls() {
       setPreviewError(null);
       const res = await governanceApi.promotionPreview(candidate, "", signal);
       if (!res.available) {
-        throw new Error(res.reason || res.error ? String(res.error) : t("governance.preview.unavailable", "preview unavailable"));
+        throw new Error(res.reason || res.error ? String(res.error) : "preview unavailable");
       }
       return res;
     },
@@ -78,31 +75,23 @@ export function PromotionControls() {
     onSuccess: async (data) => {
       if (data.available) {
         const promoId = str(obj(data.transition).promotion_id) ?? str(obj(data.transition).id) ?? "?";
-        setCommandBlocked(false);
-        setCommandMessage(t("governance.promo.committed", "PROMOTION COMMITTED — audit record {id}", { id: promoId }));
-        pushToast("ok", t("governance.promo.committed_toast", "Promotion committed ({id}).", { id: promoId }));
+        setCommandMessage(`PROMOTION COMMITTED — audit record ${promoId}`);
+        pushToast("ok", `Promotion committed (${promoId}).`);
         setToken("");
         await invalidate();
       } else {
-        const refused = t("governance.promo.refused", "promotion refused");
         const msg = data.error
           ? typeof data.error === "string"
             ? data.error
-            : `${data.error.code ?? "BLOCKED"}: ${data.error.message ?? refused}`
-          : data.reason ?? t("governance.promo.gate_blocked", "promotion blocked by the governance gate");
-        setCommandBlocked(true);
-        setCommandMessage(t("governance.promo.blocked", "PROMOTION BLOCKED: {msg}", { msg }));
+            : `${data.error.code ?? "BLOCKED"}: ${data.error.message ?? "promotion refused"}`
+          : data.reason ?? "promotion blocked by the governance gate";
+        setCommandMessage(`PROMOTION BLOCKED: ${msg}`);
         pushToast("fail", msg);
       }
     },
     onError: (e: unknown) => {
-      setCommandBlocked(true);
-      setCommandMessage(
-        t("governance.promo.blocked", "PROMOTION BLOCKED: {msg}", {
-          msg: e instanceof Error ? e.message : t("governance.promo.request_failed", "request failed"),
-        }),
-      );
-      pushToast("fail", t("governance.promo.exec_failed", "Promotion execution failed."));
+      setCommandMessage(`PROMOTION BLOCKED: ${e instanceof Error ? e.message : "request failed"}`);
+      pushToast("fail", "Promotion execution failed.");
     },
   });
 
@@ -113,49 +102,44 @@ export function PromotionControls() {
         : governanceApi.unfreeze({ actor: actor.trim(), reason: "operator unfreeze from UI" }),
     onSuccess: async (data) => {
       if (data.available) {
-        const action = freezeMut.variables
-          ? t("governance.freeze.word_freeze", "freeze")
-          : t("governance.freeze.word_unfreeze", "unfreeze");
-        pushToast(
-          "ok",
-          actor.trim()
-            ? t("governance.freeze.recorded", "Emergency {action} recorded.", { action })
-            : t("governance.freeze.recorded_generic", "Emergency control recorded."),
-        );
+        pushToast("ok", actor.trim() ? `Emergency ${freezeMut.variables ? "freeze" : "unfreeze"} recorded.` : "Emergency control recorded.");
         await invalidate();
       } else {
-        pushToast("fail", String(data.reason ?? data.error ?? t("governance.freeze.refused", "command refused")));
+        pushToast("fail", String(data.reason ?? data.error ?? "command refused"));
       }
     },
-    onError: (e: unknown) => pushToast("fail", e instanceof Error ? e.message : t("governance.freeze.failed", "emergency control failed")),
+    onError: (e: unknown) => pushToast("fail", e instanceof Error ? e.message : "emergency control failed"),
   });
 
   const reconcileMut = useMutation({
     mutationFn: () => governanceApi.reconcileRegistry(),
     onSuccess: async (data) => {
       if (data.available) {
-        pushToast("ok", t("governance.reconcile.ok", "Registry reconciled against the on-disk artifact store."));
+        pushToast("ok", "Registry reconciled against the on-disk artifact store.");
         await invalidate();
       } else {
-        pushToast("fail", String(data.reason ?? data.error ?? t("governance.reconcile.refused", "reconcile refused")));
+        pushToast("fail", String(data.reason ?? data.error ?? "reconcile refused"));
       }
     },
-    onError: (e: unknown) => pushToast("fail", e instanceof Error ? e.message : t("governance.reconcile.failed", "reconcile failed")),
+    onError: (e: unknown) => pushToast("fail", e instanceof Error ? e.message : "reconcile failed"),
   });
 
   const promo = obj(statusQ.data?.promotion);
   const frozen = Boolean(promo.frozen);
   const canExecute = candidate.trim() !== "" && token.trim() !== "" && actor.trim() !== "" && !frozen;
+  // ConfigPage house standard: one mutation in flight disables the others
+  // (panel-level busy), while each button names its own running operation.
+  const busy = execMut.isPending || freezeMut.isPending || reconcileMut.isPending;
 
   return (
     <Panel
-      title={t("governance.promo.panel_title", "Promotion controls (70D)")}
+      title="Promotion controls (70D)"
       right={
         statusQ.isPending ? (
           <Skeleton count={1} height={16} />
         ) : statusQ.data && statusQ.data.available !== false ? (
           <span className={`badge ${frozen ? "bad" : "good"}`}>
-            {frozen ? t("governance.promo.frozen_badge", "promotion frozen") : t("governance.promo.enabled_badge", "promotions enabled")}
+            {frozen ? "promotion frozen" : "promotions enabled"}
           </span>
         ) : (
           <StatusBadge status="UNAVAILABLE" />
@@ -164,37 +148,35 @@ export function PromotionControls() {
       tight
     >
       <div className="small muted" style={{ marginBottom: 10 }}>
-        {t(
-          "governance.promo.blurb",
-          "Promotion is NEVER automatic. Preview reads fresh gates; execution requires an explicit approval token, an operator identity for the audit trail, and records an immutable audit event.",
-        )}
+        Promotion is NEVER automatic. Preview reads fresh gates; execution requires an explicit approval token, an
+        operator identity for the audit trail, and records an immutable audit event.
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
         <label className="tiny muted" style={{ display: "grid", gap: 4 }}>
-          {t("governance.promo.actor_label", "operator identity (audited)")}
+          operator identity (audited)
           <input
             className="input"
-            placeholder={t("governance.promo.actor_ph", "e.g. operator@desk")}
+            placeholder="e.g. operator@desk"
             value={actor}
             onChange={(e) => setActor(e.target.value)}
           />
         </label>
         <label className="tiny muted" style={{ display: "grid", gap: 4 }}>
-          {t("governance.promo.candidate_label", "candidate model_id")}
+          candidate model_id
           <input
             className="input inline-mono"
-            placeholder={t("governance.promo.candidate_label", "candidate model_id")}
+            placeholder="candidate model_id"
             value={candidate}
             onChange={(e) => setCandidate(e.target.value)}
           />
         </label>
         <label className="tiny muted" style={{ display: "grid", gap: 4 }}>
-          {t("governance.promo.token_label", "approval token (required to execute)")}
+          approval token (required to execute)
           <input
             className="input inline-mono"
             type="password"
-            placeholder={t("governance.promo.token_ph", "approval token")}
+            placeholder="approval token"
             value={token}
             onChange={(e) => setToken(e.target.value)}
           />
@@ -204,55 +186,59 @@ export function PromotionControls() {
       <div className="l3-toolbar" style={{ marginTop: 10, flexWrap: "wrap" }}>
         <button
           className="btn small"
-          disabled={!candidate.trim()}
+          disabled={!candidate.trim() || previewQ.isFetching}
+          title={previewQ.isFetching ? "preview read in flight" : undefined}
           onClick={() => {
             setPreviewError(null);
             setCommandMessage(null);
             void previewQ.refetch();
           }}
         >
-          {previewQ.isFetching ? t("governance.promo.previewing", "previewing…") : t("governance.promo.preview", "Preview")}
+          {previewQ.isFetching ? "previewing…" : "Preview"}
         </button>
         <button
           className="btn small primary"
-          disabled={!canExecute || execMut.isPending}
+          disabled={!canExecute || busy}
           onClick={() => setConfirmOpen(true)}
           title={
             frozen
-              ? t("governance.promo.title_frozen", "promotions are frozen — unfreeze first")
+              ? "promotions are frozen — unfreeze first"
               : !canExecute
-                ? t("governance.promo.title_incomplete", "candidate + approval token + operator identity are all required")
+                ? "candidate + approval token + operator identity are all required"
                 : "POST /api/models/promotion/execute"
           }
         >
-          {execMut.isPending ? t("governance.promo.promoting", "promoting…") : t("governance.promo.promote", "Promote")}
+          {execMut.isPending ? "promoting…" : "Promote"}
         </button>
         <button
           className="btn small"
-          disabled={freezeMut.isPending || !actor.trim()}
+          disabled={busy || !actor.trim()}
+          title={busy ? (freezeMut.isPending ? "emergency control in flight" : "another command is in flight") : undefined}
           onClick={() => void freezeMut.mutateAsync(true)}
         >
-          {t("governance.cmd.freeze_label", "Freeze")}
+          {freezeMut.isPending ? "freezing…" : "Freeze"}
         </button>
         <button
           className="btn small"
-          disabled={freezeMut.isPending || !actor.trim()}
+          disabled={busy || !actor.trim()}
+          title={busy ? (freezeMut.isPending ? "emergency control in flight" : "another command is in flight") : undefined}
           onClick={() => void freezeMut.mutateAsync(false)}
         >
-          {t("governance.cmd.unfreeze_label", "Unfreeze")}
+          {freezeMut.isPending ? "unfreezing…" : "Unfreeze"}
         </button>
         <button
           className="btn small"
-          disabled={reconcileMut.isPending}
+          disabled={busy}
+          title={busy ? (reconcileMut.isPending ? "reconcile in flight" : "another command is in flight") : undefined}
           onClick={() => void reconcileMut.mutateAsync()}
         >
-          {reconcileMut.isPending ? t("governance.promo.reconciling", "reconciling…") : t("governance.cmd.reconcile_btn", "Reconcile registry")}
+          {reconcileMut.isPending ? "reconciling…" : "Reconcile registry"}
         </button>
       </div>
 
       {commandMessage && (
         <div
-          className={`tiny ${commandBlocked ? "pnl-neg" : "muted"}`}
+          className={`tiny ${commandMessage.startsWith("PROMOTION BLOCKED") ? "pnl-neg" : "muted"}`}
           style={{ marginTop: 10, fontFamily: "var(--mono)" }}
         >
           {commandMessage}
@@ -267,7 +253,7 @@ export function PromotionControls() {
 
       {candidate.trim() !== "" && previewQ.isError && !previewError && (
         <ErrorState
-          message={previewQ.error instanceof Error ? previewQ.error.message : t("governance.empty.preview_failed", "preview failed")}
+          message={previewQ.error instanceof Error ? previewQ.error.message : "preview failed"}
           onRetry={() => { setPreviewError(null); void previewQ.refetch(); }}
         />
       )}
@@ -275,14 +261,14 @@ export function PromotionControls() {
       {previewQ.data?.preview ? <PreviewBody preview={previewQ.data.preview} /> : null}
 
       {candidate.trim() === "" && !commandMessage && (
-        <EmptyState message={t("governance.empty.no_preview", "No preview yet — enter a candidate and click Preview.")} />
+        <EmptyState message="No preview yet — enter a candidate and click Preview." />
       )}
 
       {confirmOpen && (
         <ConfirmModal
-          title={t("governance.promo.confirm_title", "Confirm — PROMOTE TO CHAMPION")}
+          title="Confirm — PROMOTE TO CHAMPION"
           danger
-          confirmLabel={t("governance.promo.confirm_label", "⚠ Promote (final)")}
+          confirmLabel="⚠ Promote (final)"
           busy={execMut.isPending}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={() => {
@@ -291,17 +277,11 @@ export function PromotionControls() {
           }}
         >
           <div>
-            <b>{t("governance.promo.impact_label", "Impact:")}</b>{" "}
-            {t(
-              "governance.promo.impact_body",
-              "promotion is final and audited. The candidate {model} becomes the serving champion immediately; the previous champion is retained for rollback.",
-              { model: candidate.trim() },
-            )}
+            <b>Impact:</b> promotion is final and audited. The candidate <span className="inline-mono">{candidate.trim()}</span>{" "}
+            becomes the serving champion immediately; the previous champion is retained for rollback.
             <div className="small muted" style={{ marginTop: 8 }}>
-              {t(
-                "governance.promo.impact_note",
-                "The backend re-verifies every gate at execution time — a stale preview does not entitle a promotion, and a frozen state refuses it outright.",
-              )}
+              The backend re-verifies every gate at execution time — a stale preview does not entitle a promotion, and a
+              frozen state refuses it outright.
             </div>
           </div>
         </ConfirmModal>
@@ -312,7 +292,6 @@ export function PromotionControls() {
 
 /** Read-only render of the preview payload (gates, verification, rollback). */
 function PreviewBody({ preview }: { preview: Record<string, unknown> }) {
-  const t = useI18n((s) => s.t);
   const p = obj(preview);
   const gates = obj(p.gates);
   const verification = obj(p.verification);
@@ -325,19 +304,19 @@ function PreviewBody({ preview }: { preview: Record<string, unknown> }) {
   return (
     <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
       <div className="small">
-        <strong>{t("governance.preview.heading", "PROMOTION PREVIEW (read-only)")}</strong>
+        <strong>PROMOTION PREVIEW (read-only)</strong>
       </div>
       <dl className="kv">
-        <dt>{t("governance.preview.champion", "champion")}</dt>
+        <dt>champion</dt>
         <dd className="inline-mono tiny">
           {str(champ.model_id) ?? "?"} @ {str(champ.version) ?? "?"} · hash{" "}
           {(str(champ.artifact_hash) ?? "?").slice(0, 12)}
         </dd>
-        <dt>{t("governance.preview.candidate", "candidate")}</dt>
+        <dt>candidate</dt>
         <dd className="inline-mono tiny">
           {str(cand.model_id) ?? "?"} @ {str(cand.version) ?? "?"} · schema {str(cand.schema) ?? "?"}
         </dd>
-        <dt>{t("governance.preview.schema", "schema")}</dt>
+        <dt>schema</dt>
         <dd className="tiny">
           champion={str(schema.champion) ?? "?"} candidate={str(schema.candidate) ?? "?"}
         </dd>
@@ -356,20 +335,16 @@ function PreviewBody({ preview }: { preview: Record<string, unknown> }) {
         })}
       </div>
       <dl className="kv">
-        <dt>{t("governance.preview.rollback", "rollback")}</dt>
-        <dd className="tiny">
-          {rollback.available
-            ? t("governance.preview.rollback_available", "AVAILABLE -> {target}", { target: str(rollback.target) ?? "" })
-            : t("governance.preview.rollback_none", "NONE")}
-        </dd>
-        <dt>{t("governance.preview.eligible", "eligible")}</dt>
+        <dt>rollback</dt>
+        <dd className="tiny">{rollback.available ? `AVAILABLE -> ${str(rollback.target) ?? ""}` : "NONE"}</dd>
+        <dt>eligible</dt>
         <dd>
-          <span className={`badge ${eligible ? "good" : "bad"}`}>{eligible ? t("governance.preview.yes", "YES") : t("governance.preview.no", "NO")}</span>
+          <span className={`badge ${eligible ? "good" : "bad"}`}>{eligible ? "YES" : "NO"}</span>
           {verification.reason ? <span className="tiny muted" style={{ marginInlineStart: 8 }}>{String(verification.reason)}</span> : null}
         </dd>
       </dl>
       {p.locked ? (
-        <div className="l3-note warn">{t("governance.preview.locked", "WAIT: another promotion is currently in progress (lock held).")}</div>
+        <div className="l3-note warn">WAIT: another promotion is currently in progress (lock held).</div>
       ) : null}
     </div>
   );
