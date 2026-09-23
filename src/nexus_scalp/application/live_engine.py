@@ -2233,8 +2233,17 @@ class LiveEngine:
     #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
     #: responsive. With wait_for, a hung kick is abandoned (the thread may
     #: linger but is detached from the loop) and the loop keeps ticking.
+    #:
+    #: LD-4 (2026-09-23): the default MUST stay above the slowest healthy
+    #: worker cycle, otherwise a merely-slow cycle is abandoned, re-run, and
+    #: logged as a hang. The RESEARCH worker's dataset pass was measured at
+    #: 125-150s per cycle (duration_ms 124953 / 132346 / 149451 in
+    #: [RESEARCH_WORKER] event=UPDATE), so 45s abandoned every healthy cycle.
+    #: 180s gives ~30s of headroom over that ceiling. NSE_WORKER_KICK_TIMEOUT
+    #: still overrides this when set. Do NOT lower it back to 45 — raise the
+    #: ceiling on the worker side instead (LD-4).
     WORKER_KICK_TIMEOUT_SEC: float = float(
-        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45")
+        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "180")
     )
 
     def _kick_worker(self, name: str, fn) -> None:

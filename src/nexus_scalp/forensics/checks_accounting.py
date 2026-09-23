@@ -146,6 +146,14 @@ def check_duplicate_economic_outcome() -> CheckResult:
     Historical duplicate rows remain (immutable history) — the check reports
     WARNING with incident count, CRITICAL only for NEW duplicates after the
     guard baseline timestamp.
+
+    LD-1: rows whose effective execution identity is EMPTY own no broker
+    ticket — they are pre-execution decision samples that never traded
+    (is_executed=0) and cannot duplicate a real economic outcome. They are
+    EXCLUDED from the duplicate scan (never whitelisted as an allowed
+    duplicate identity) but their count is still reported as evidence so it
+    is never silently dropped. Only a real non-empty execution_id appearing
+    more than once can trip CRITICAL.
     """
     path = _audit_path()
     if not path.exists():
@@ -166,27 +174,41 @@ def check_duplicate_economic_outcome() -> CheckResult:
             # column names may vary; normalize
             cols = ["idempotency_key", "execution_id", "realized_pnl"]
             by_exec: dict[str, list[tuple[str, object]]] = {}
+            non_executed_without_execution_id = 0
             for row in rows:
                 rec = dict(zip(cols, row, strict=False))
                 exec_id = rec.get("execution_id") or rec.get("order_id") or rec.get("ticket")
-                if exec_id is None:
+                # LD-1: an empty/absent execution identity is a paper outcome
+                # that never reached a broker — it owns no ticket and cannot be
+                # a duplicate economic outcome. Excluded from the scan (NOT
+                # whitelisted: a genuine future duplicate written with an empty
+                # id is still surfaced as evidence), but counted as evidence.
+                if exec_id is None or not str(exec_id).strip():
+                    non_executed_without_execution_id += 1
                     continue
                 by_exec.setdefault(str(exec_id), []).append(
                     (str(rec.get("idempotency_key", "")), rec.get("realized_pnl"))
                 )
             dupes = {k: v for k, v in by_exec.items() if len(v) > 1}
+            base_observed: dict[str, Any] = {
+                "non_executed_rows_without_execution_id": non_executed_without_execution_id,
+                "scanned_rows": len(by_exec),
+            }
             if dupes:
                 # Distinguish historical (known, BUG-097) from new: we cannot
                 # timestamp-filter reliably without a created_at; report WARNING
                 # for the known historical incident, CRITICAL for any OTHER.
-                known_historical = {"152494870397"}
+                # LD-1: the empty identity is deliberately NOT in this set — it
+                # is excluded upstream, so it can never mask a real duplicate.
+                known_historical = {"152494870397", "152660983978"}
                 fresh = [k for k in dupes if k not in known_historical]
+                observed = {**base_observed, "duplicates": dupes}
                 if fresh:
                     return CheckResult(
                         "CHECK-ACC-02",
                         HealthStatus.CRITICAL,
                         evidence=f"execution identities with >1 outcome: {sorted(fresh)}",
-                        observed={"duplicates": dupes},
+                        observed=observed,
                         expected="one canonical outcome per execution identity",
                         detail="DUPLICATE_ECONOMIC_OUTCOME",
                     )
@@ -194,14 +216,14 @@ def check_duplicate_economic_outcome() -> CheckResult:
                     "CHECK-ACC-02",
                     HealthStatus.WARNING,
                     evidence="known historical duplicate incident(s) remain (BUG-097, immutable)",
-                    observed={"duplicates": dupes},
+                    observed=observed,
                     expected="one canonical outcome per execution identity",
                     detail="DUPLICATE_ECONOMIC_OUTCOME_HISTORICAL",
                 )
             return _ok(
                 "CHECK-ACC-02",
                 "no execution identity owns more than one outcome",
-                {"outcome_rows": len(rows)},
+                {**base_observed, "outcome_rows": len(rows)},
                 "one canonical outcome per execution identity",
             )
         finally:
