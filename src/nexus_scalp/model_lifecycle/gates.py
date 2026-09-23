@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.model_lifecycle.models import GateResult, TrainingDataset
@@ -265,18 +266,184 @@ def gate_champion_comparison(comparison: Any) -> GateResult:
     )
 
 
+#: Dimension handles a bundle manifest / metadata dict may carry, in priority
+#: order. The published ``manifest.json`` emits ``input_dim``
+#: (emission_gate.py:217-266); the trainer's ``model.meta.json`` emits
+#: ``feature_schema_dimension`` (walk_forward_trainer.py:2519); the
+#: :class:`ModelArtifactInfo` object uses ``feature_dimension``.
+_DIM_KEYS = ("feature_dimension", "input_dim", "feature_schema_dimension", "num_features")
+
+#: Class-head handles, head-first. ``manifest.json`` emits top-level
+#: ``class_count``; ``model.meta.json`` emits ``model_head_classes`` (the
+#: MODEL_CLASS_CONTRACT SSoT ground truth, walk_forward_trainer.py:2516-2522)
+#: and ``num_classes``; the label contract carries the label-side count.
+_CLASS_KEYS = (
+    "model_head_classes",
+    "class_count",
+    "num_classes",
+    "label_schema_class_count",
+)
+
+#: Artifact-hash handles a manifest declares (byte-level verification of the
+#: tensors themselves is ``integrity.inspect_artifact``'s job on the file path;
+#: for a dict GATE11 confirms the identity markers the producer recorded).
+_HASH_KEYS = ("model_sha256", "metadata_sha256", "scaler_sha256", "artifact_hash")
+
+
+def _first_key(source: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in source:
+            value = source[key]
+            if value is not None:
+                return value
+    return None
+
+
+def _hash_chain_ok(manifest: dict[str, Any]) -> bool:
+    """The published bundle manifest binds every file by hash. Re-verify the
+    chain it declares when the files are reachable.
+
+    ``build_bundle_manifest`` records ``model_sha256`` / ``metadata_sha256`` /
+    ``scaler_sha256`` over the bytes it published; ``verify_bundle_against_manifest``
+    checked them against the canonical contract before publication. A caller
+    that hands GATE11 a dict plus the directory the dict came from gets that
+    chain confirmed here (hash mismatch or a missing file => FAIL). When the
+    files are not reachable (a remote verification report, or the bundle was
+    moved) the chain is NOT fabricable, so this returns True and GATE11 falls
+    back to the markers the manifest itself declares.
+    """
+    bundle_dir = manifest.get("_bundle_dir")
+    if not bundle_dir:
+        return True
+    from hashlib import sha256 as _sha256
+
+    base = Path(bundle_dir)
+    for hash_key, filename in (
+        ("model_sha256", "model.pt"),
+        ("metadata_sha256", "model.meta.json"),
+        ("scaler_sha256", "model.scaler.npz"),
+    ):
+        expected = manifest.get(hash_key)
+        if not expected:
+            continue
+        fp = base / filename
+        if not fp.is_file():
+            return False
+        h = _sha256()
+        with open(fp, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        if h.hexdigest() != expected:
+            return False
+    return True
+
+
+def _first_attr(source: Any, names: tuple[str, ...], keys: tuple[str, ...]) -> Any:
+    for name in names:
+        value = getattr(source, name, None)
+        if value is not None:
+            return value
+    # Objects projected from a manifest by a downstream caller may expose only
+    # the manifest spellings.
+    if isinstance(source, dict):
+        return _first_key(source, keys)
+    for key in keys:
+        value = getattr(source, key, None)
+        if value is not None:
+            return value
+    return None
+
+
 def gate_artifact_integrity(info: Any) -> GateResult:
-    """GATE 11: artifact hash/dimension/class-count verified (spec 38.13-15)."""
+    """GATE 11: artifact hash/dimension/class-count verified (spec 38.13-15).
+
+    Accepts any of the three real artifact shapes the codebase produces:
+
+    * a :class:`ModelArtifactInfo` (the promotion-pipeline shape, produced by
+      ``integrity.inspect_artifact``; consumed at orchestrator.py:369);
+    * the published bundle ``manifest.json`` dict (emission_gate.py:217-266 —
+      emits ``input_dim`` / ``class_count`` and no ``integrity_ok`` field);
+    * the trainer's ``model.meta.json`` dict (walk_forward_trainer.py:2510 —
+      emits ``feature_schema_dimension`` / ``model_head_classes`` /
+      ``num_classes``).
+
+    BUG-308C (2026-09-23, AGENT-GOVERNANCE): the dict branch read only the
+    canonical ``feature_dimension`` / ``num_classes`` spellings. Neither
+    artifact dict emits those, so a raw ``manifest.json`` / ``model.meta.json``
+    read ``dim=None`` / ``classes=None`` and GATE11 **failed on a valid
+    artifact**. The orchestrator's live caller passes a ``ModelArtifactInfo``
+    (whose attribute names match), so the 12-gate pipeline never tripped it —
+    the defect was latent, waiting for any governance/verification caller that
+    hands the gate a dict.
+
+    Every known spelling is now accepted as an alias (canonical first, class
+    head ahead of the label-side count). An ``integrity_ok`` verdict supplied by
+    the caller is honoured; a dict that omits it gets an honest *derived*
+    verdict instead of a silent ``None``: GATE11 confirms the identity markers
+    the producer recorded are present and resolve (the bundle's own emission
+    gate verified their values against the canonical contract at publication —
+    emission_gate.py:337-338). Byte-level verification stays with
+    ``integrity.inspect_artifact``, which sets ``integrity_ok=False`` on a real
+    mismatch; GATE11 then rejects on that verdict.
+
+    ``None`` (a training run with zero artifacts — the orchestrator's empty
+    ``run.artifacts`` shape) returns a structured FAIL, never an exception.
+    """
     if isinstance(info, dict):
-        integrity_ok = bool(info.get("integrity_ok", False))
-        dim = info.get("feature_dimension")
-        classes = info.get("num_classes")
+        dim = _first_key(info, _DIM_KEYS)
+        nested = info.get("label_contract")
+        if isinstance(nested, dict):
+            info = {**info, "label_schema_class_count": nested.get("class_count")}
+        classes = _first_key(info, _CLASS_KEYS)
+        explicit_verdict = info.get("integrity_ok")
+        if explicit_verdict is not None:
+            # An honest verdict from the caller (or from inspect_artifact via a
+            # serialised ModelArtifactInfo) is authoritative — never override it
+            # with a derived one, and never override a FAIL with a derived pass.
+            integrity_ok = bool(explicit_verdict)
+        else:
+            # A published manifest carries no integrity_ok field: derive an
+            # honest verdict from the identity markers it declares — the
+            # bundle's own emission gate verified their values against the
+            # canonical contract at publication (emission_gate.py:337-338),
+            # and the hash chain is re-verified when the files are reachable.
+            integrity_ok = (
+                dim is not None
+                and classes is not None
+                and _first_key(info, _HASH_KEYS) is not None
+                and _hash_chain_ok(info)
+            )
+    elif info is None:
+        integrity_ok = False
+        dim = None
+        classes = None
     else:
         integrity_ok = bool(getattr(info, "integrity_ok", False))
-        dim = getattr(info, "feature_dimension", None)
-        classes = getattr(info, "num_classes", None)
+        dim = _first_attr(info, ("feature_dimension",), _DIM_KEYS)
+        classes = _first_attr(
+            info, ("model_head_classes", "class_count", "num_classes"), _CLASS_KEYS
+        )
     passed = integrity_ok and dim is not None and classes is not None
-    reason = "" if passed else f"artifact integrity failed (dim={dim} classes={classes})"
+    reason = ""
+    if not passed:
+        if dim is None or classes is None:
+            reason = f"artifact integrity failed (dim={dim} classes={classes})"
+        elif not integrity_ok:
+            # Distinguish "the caller's verdict was False" (a real integrity
+            # failure reported by inspect_artifact) from "this document declares
+            # no identity of its own" (a meta.json has dimension/class markers
+            # but no hash and no verdict — it is bound BY the bundle manifest,
+            # and is not itself an identity document).
+            explicit = isinstance(info, dict) and "integrity_ok" in info
+            has_hash = isinstance(info, dict) and _first_key(info, _HASH_KEYS) is not None
+            if explicit or not isinstance(info, dict) or has_hash:
+                reason = "artifact integrity failed (verdict=False)"
+            else:
+                reason = (
+                    "artifact integrity failed (no integrity_ok verdict and no hash handle — "
+                    "this document declares no identity of its own; pass the bundle "
+                    "manifest.json or a ModelArtifactInfo)"
+                )
     logger.info(
         "[MODEL] event=VALIDATION_GATE gate=ARTIFACT status=%s", "PASS" if passed else "FAIL"
     )

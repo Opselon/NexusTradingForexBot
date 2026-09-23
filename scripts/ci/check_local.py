@@ -648,6 +648,40 @@ def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_
             )
         )
 
+    # [5c] Merge-marker residue (ML-QA-005): a failed conflict resolution
+    # (diff3 '|||||||' arm or leftover '<<<<<<<'/'>>>>>>>') must not reach
+    # git. CI enforcement rides the CRITICAL-SUITE test
+    # tests/unit/test_merge_marker_residue.py (Code Quality & Tests / Pytest
+    # required check), which invokes this exact gate over the committed tree;
+    # wired here as a direct stage so the local pre-push gate reports the
+    # residue line numbers before push, and the CHG-0049 gate-parity
+    # contract stays honest (no gate reachable only on one side).
+    t0_mm = time.perf_counter()
+    script_mm = REPO_ROOT / "scripts" / "ci" / "check_merge_marker_residue.py"
+    if script_mm.exists():
+        r_mm = subprocess.run(
+            [sys.executable, str(script_mm)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=60,
+        )
+        results.append(
+            StageResult(
+                name="merge_marker_residue",
+                command=[sys.executable, "scripts/ci/check_merge_marker_residue.py"],
+                exit_code=r_mm.returncode,
+                status="passed" if r_mm.returncode == 0 else "failed",
+                duration_sec=time.perf_counter() - t0_mm,
+                detail=(r_mm.stdout or r_mm.stderr).strip().splitlines()[0][:200]
+                if (r_mm.stdout or r_mm.stderr)
+                else "",
+            )
+        )
+
     overall = "passed" if all(r.status in ("passed", "skipped") for r in results) else "failed"
 
     envelope: dict[str, Any] = {

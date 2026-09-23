@@ -54,6 +54,27 @@ exclusive_locks:
     since: 2026-09-21
     task: ML-TRAIN-003
     expiry: 2026-09-21
+  - path: scripts/ci/check_merge_marker_residue.py
+    owner: AGENT-QA
+    exclusive: true
+    scope: ML-QA-005 diff3 merge-marker residue guard + duplicate task-row detection (new gate; RELEASED — task DONE, PR opened)
+    since: 2026-09-23
+    task: ML-QA-005
+    expiry: 2026-09-24
+  - path: agents/taskboard.md
+    owner: AGENT-QA
+    exclusive: true
+    scope: ML-QA-005 remove 3 diff3 marker lines (328/391/441) + duplicate ML-CI-002 row (RELEASED — task DONE, PR opened)
+    since: 2026-09-23
+    task: ML-QA-005
+    expiry: 2026-09-24
+  - path: docs/ml-system/06_TASK_LEDGER.md
+    owner: AGENT-QA
+    exclusive: true
+    scope: ML-QA-005 remove diff3 marker line 83 + 2 duplicate ML-CI-002 rows (RELEASED — task DONE, PR opened)
+    since: 2026-09-23
+    task: ML-QA-005
+    expiry: 2026-09-24
 # - src/nexus_scalp/models/attention.py + src/nexus_scalp/models/attention_ablation.py
 #   (ML-ARCH-003, AGENT-ML-ARCH) — released, PR opened
 # - src/nexus_scalp/model_generation/architectures.py + tests/unit/test_causal_conv_invariants.py
@@ -66,6 +87,10 @@ exclusive_locks:
 #   + tests/integration/test_walk_forward_pipeline_real.py (ML-CI-001, AGENT-QA)
 #   — released, PR opened
 
+# - src/nexus_scalp/model_lifecycle/gates.py
+#   + src/nexus_scalp/model_lifecycle/orchestrator.py
+#   + tests/unit/test_bug308c_gate11_artifact_integrity.py (BUG-308C, AGENT-GOVERNANCE)
+#   — released, PR #381 opened
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)
 # - src/nexus_scalp/execution/order_manager.py  (BUG-081 forensics in progress, snapshot 2026-08-18)
