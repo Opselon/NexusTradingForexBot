@@ -6,8 +6,8 @@
  *
  *   ┌──────────────────────────────────────┬──────────────────────┐
  *   │ STRATEGY METRICS TABLE               │ REGISTRY CONFIDENCE  │
- *   │ (sticky header, sort, search, copy)  │ (grid/list toggle)   │
- *   │                                      ├──────────────────────┤
+ *   │ (sticky header, sort, search, copy,  │ (grid/list toggle)   │
+ *   │  or the wave-6 cards view toggle)    ├──────────────────────┤
  *   │                                      │ LOSS RESPONSIBILITY  │
  *   └──────────────────────────────────────┴──────────────────────┘
  *
@@ -17,6 +17,10 @@
  *
  * All data comes from useAccountStrategies(); the UI never re-scores a
  * strategy (backend owns lifecycle/confidence).
+ *
+ * Wave 6: a cards/table view toggle (w6.account.strategyView, contract §3
+ * display state) renders <StrategyCards> — same rows, no re-scoring. The
+ * table keeps every existing control (sort, search, copy, column set).
  */
 
 import { useState } from "react";
@@ -26,8 +30,14 @@ import { useAccountStrategies } from "../hooks";
 import { useUiStore } from "@/stores/uiStore";
 import { FreshnessNote, asErrorText } from "./shared";
 import { StrategyMetricsTable } from "./StrategyMetricsTable";
+import { StrategyCards } from "./StrategyCards";
 import { LossDistributionPanel } from "./LossDistributionPanel";
+import { usePersistedState } from "./usePersistedState";
 import "./strategies-dashboard.css";
+import "./account-studio-grid.css";
+
+type StratView = "cards" | "table";
+const isStratView = (v: unknown): v is StratView => v === "cards" || v === "table";
 
 type ConfidenceView = "grid" | "list";
 
@@ -36,6 +46,9 @@ export function StrategiesDashboard() {
   const rows = strategies.data?.strategies ?? [];
   const pushToast = useUiStore((s) => s.pushToast);
   const [view, setView] = useState<ConfidenceView>("grid");
+  const [stratView, setStratView] = usePersistedState<StratView>("strategyView", "cards", {
+    isValid: isStratView,
+  });
 
   const confidenceRows = rows.slice(0, 12);
   const lossRows = rows.map((s) => ({
@@ -51,7 +64,27 @@ export function StrategiesDashboard() {
       <div className="sd-main">
         <Panel
           title={`Strategy contributions (${rows.length})`}
-          right={<FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label="strategies" />}
+          right={
+            <>
+              <div className="acc-toggle" role="group" aria-label="Contributions view">
+                <button
+                  className={stratView === "cards" ? "active" : ""}
+                  onClick={() => setStratView("cards")}
+                  aria-pressed={stratView === "cards"}
+                >
+                  cards
+                </button>
+                <button
+                  className={stratView === "table" ? "active" : ""}
+                  onClick={() => setStratView("table")}
+                  aria-pressed={stratView === "table"}
+                >
+                  table
+                </button>
+              </div>
+              <FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label="strategies" />
+            </>
+          }
         >
           {strategies.isPending ? (
             <div className="sd-loading">loading contributions…</div>
@@ -61,6 +94,13 @@ export function StrategiesDashboard() {
             <EmptyState
               message="NO STRATEGY EVIDENCE AVAILABLE"
               hint="Contributions need closed trades tagged with a strategy_id."
+            />
+          ) : stratView === "cards" ? (
+            <StrategyCards
+              rows={rows}
+              onCopy={(_id, ok) =>
+                pushToast(ok ? "ok" : "fail", ok ? "strategy id copied" : "copy failed — clipboard unavailable")
+              }
             />
           ) : (
             <StrategyMetricsTable

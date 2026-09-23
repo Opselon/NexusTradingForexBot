@@ -1,0 +1,270 @@
+/**
+ * PURPOSE:  analytics-studio tabular widgets — closed-trades heat table and
+ *           strategy contribution cards (wave 6 split sheet).
+ * OWNER:    uiux-w6-account  (future edits belong to this lane)
+ * CONSUMES: nothing (pure CSS; pairs with account-studio.css)
+ * PROVIDES: .acc-toggle, .acc-tt-*, .acc-scard-* classes
+ * INVARIANTS: theme tokens only — NO bare hex anywhere; tints come from
+ *           theme.css tokens or its own --green-dim/--red-dim/--amber-dim;
+ *           density changes padding only and never hides a column; heat tint
+ *           is decorative while the sign is always carried by the token text
+ *           color.
+ * EXTEND:   append a section; keep this file under 500 lines.
+ */
+
+/* ============================ 4. trades table ============================ */
+
+/* density toggle persists at w6.account.density; it changes PADDING ONLY —
+   no column is hidden, no value is dropped (contract §3 display state). */
+.acc-tt[data-density="compact"] td { padding-block: 3px; }
+.acc-tt[data-density="cozy"] td { padding-block: 6px; }
+.acc-tt[data-density="roomy"] td { padding-block: 11px; }
+
+.acc-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+.acc-toggle button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.acc-toggle button:hover { color: var(--text); background: var(--bg-panel-2); }
+.acc-toggle button.active { color: var(--accent); background: var(--paper-blue-bg); }
+
+.acc-tt-wrap {
+  overflow: auto;
+  max-block-size: min(60vh, 560px);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-inset);
+}
+.acc-tt {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.5px;
+}
+
+.acc-tt thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-block-end: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.acc-tt thead th.sortable { cursor: pointer; user-select: none; }
+.acc-tt thead th.sortable:hover { color: var(--text); }
+.acc-tt thead th[aria-sort="descending"], .acc-tt thead th[aria-sort="ascending"] { color: var(--accent); }
+.acc-tt thead th > button {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+  cursor: pointer;
+}
+.acc-tt-th-ico { font-size: 8px; opacity: 0.6; }
+.acc-tt thead th[aria-sort] .acc-tt-th-ico { opacity: 1; }
+
+/* P&L heat ramp: intensity is derived from the on-screen magnitudes of the
+   CURRENT page only (max abs net PnL), and the cell keeps its signed token
+   color, so a $2 loss never looks like a $2k loss. Background tint only. */
+/* scoped to .acc-tt so no other table on the page inherits this padding */
+.acc-tt td {
+  padding-block: 6px;
+  padding-inline: 10px;
+  border-block-end: 1px solid var(--elevate-hi);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+.acc-tt td.num { text-align: end; }
+.acc-tt td[data-heat] { position: relative; }
+.acc-tt td[data-heat]::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: var(--heat-w, 0%);
+  pointer-events: none;
+  opacity: 0.5;
+}
+.acc-tt td[data-heat="pos"]::after { background: linear-gradient(90deg, transparent, var(--green-dim)); }
+.acc-tt td[data-heat="neg"]::after { background: linear-gradient(90deg, transparent, var(--red-dim)); }
+
+.acc-tt tbody tr { transition: background-color 0.1s ease; }
+.acc-tt tbody tr:nth-child(even) td { background: var(--elevate-hi); }
+.acc-tt tbody tr:hover td { background: var(--bg-panel-2); }
+.acc-tt tbody tr:focus-visible td {
+  background: var(--bg-panel-2);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.acc-tt tbody tr[data-sel="1"] td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+.acc-tt-pos { color: var(--green); }
+.acc-tt-neg { color: var(--red); }
+.acc-tt-dim { color: var(--text-faint); }
+
+/* ticket button — opens the forensic drawer (behavior unchanged) */
+.acc-tt-ticket {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.acc-tt-ticket:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--paper-blue-bg); }
+.acc-tt-ticket.plain { color: var(--text-dim); cursor: default; }
+.acc-tt-ticket.plain:hover { border-color: transparent; background: none; }
+
+/* win/loss outcome micro-chip derived from the on-screen sign */
+.acc-tt-outc {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.acc-tt-outc.pos { color: var(--green); background: var(--green-dim); border-color: color-mix(in srgb, var(--green) 35%, transparent); }
+.acc-tt-outc.neg { color: var(--red); background: var(--red-dim); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.acc-tt-outc.dim { color: var(--text-faint); background: var(--bg-panel-2); border-color: var(--border); }
+/* =========================== 5. strategy cards =========================== */
+
+.acc-scard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(232px, 100%), 1fr));
+  gap: 10px;
+}
+.acc-scard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  box-shadow: var(--elev-1);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+}
+.acc-scard:hover { border-color: var(--border-strong); box-shadow: var(--elev-2); transform: translateY(-1px); }
+.acc-scard[data-pnl="neg"] { box-shadow: var(--elev-1), inset 3px 0 0 var(--red); }
+.acc-scard[data-pnl="pos"] { box-shadow: var(--elev-1), inset 3px 0 0 var(--green); }
+.acc-scard[data-pnl="dim"] { box-shadow: var(--elev-1), inset 3px 0 0 var(--border-strong); }
+
+.acc-scard-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-inline-size: 0;
+}
+.acc-scard-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acc-scard-copy {
+  margin-inline-start: auto;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-faint);
+  font-size: 11px;
+  padding: 1px 5px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.acc-scard-copy:hover { color: var(--accent); border-color: var(--border-strong); }
+
+.acc-scard-pnl {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.acc-scard-pnl.pos { color: var(--green); }
+.acc-scard-pnl.neg { color: var(--red); }
+.acc-scard-pnl.dim { color: var(--text-dim); }
+
+/* score / confidence bar — shows the RAW backend number next to the fill */
+.acc-scard-meter {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+.acc-scard-meter .lab {
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 9px;
+}
+.acc-scard-track {
+  block-size: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.acc-scard-fill {
+  block-size: 100%;
+  border-radius: 3px;
+  transition: inline-size 0.3s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+.acc-scard-fill.good { background: linear-gradient(90deg, var(--green-dim), var(--green)); }
+.acc-scard-fill.warn { background: linear-gradient(90deg, var(--amber-dim), var(--amber)); }
+.acc-scard-fill.bad { background: linear-gradient(90deg, var(--red-dim), var(--red)); }
+.acc-scard-fill.dim { background: var(--border-strong); }
+.acc-scard-meter .val { text-align: end; color: var(--text-dim); }
+
+.acc-scard-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.acc-scard-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 72px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 0 12px;
+  text-align: center;
+}
