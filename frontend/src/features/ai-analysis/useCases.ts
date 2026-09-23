@@ -11,8 +11,11 @@ import type { SignalDto } from "./model";
 
 export const aiAnalysisQueries = {
   signalLatest: (signal?: AbortSignal) => aiAnalysisApi.signalLatest(signal),
+  /** page_size 100: one fetch feeds BOTH the history table and the
+   *  confidence-timeline chart; the UI captions the response's own page_size
+   *  (the backend may clamp it lower — never assumed). */
   signalHistory: (page: number, hoursBack: number, signal?: AbortSignal) =>
-    aiAnalysisApi.signalHistory({ page, page_size: 25, hours_back: hoursBack }, signal),
+    aiAnalysisApi.signalHistory({ page, page_size: 100, hours_back: hoursBack }, signal),
   decisionStats: (hoursBack: number, signal?: AbortSignal) => aiAnalysisApi.decisionStats(hoursBack, signal),
   noTradeReasons: (signal?: AbortSignal) => aiAnalysisApi.noTradeReasons(signal),
   decisionDetail: (id: string, signal?: AbortSignal) => aiAnalysisApi.decisionDetail(id, signal),
