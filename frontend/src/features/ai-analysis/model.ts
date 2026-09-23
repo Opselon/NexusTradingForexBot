@@ -11,6 +11,8 @@
  * Values the backend never recorded stay null — the UI renders "—".
  */
 
+import { ApiError } from "@/types/api";
+
 export type Row = Record<string, unknown>;
 
 export const str = (v: unknown): string | null => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : null);
@@ -142,12 +144,20 @@ export type { IndicatorGauge, IndicatorPivots, IndicatorReading, IndicatorsSnaps
  *  verbatim; an unrecognized label is handled as unknown, never guessed. */
 export type GaugeVerdict = "strong sell" | "sell" | "neutral" | "buy" | "strong buy";
 
-/** Signal -> probability-bar tone for the action (backend action decides). */
+/** Signal -> probability-bar tone for the action (backend action decides).
+ *  Wave 2b (#34): prefix semantics, so BUY_LIMIT/SELL_LIMIT get the same
+ *  tone as their chips (actionTone and actionFamily can never disagree). */
 export function actionTone(action: string | null | undefined): "buy" | "sell" | "flat" {
   const a = (action ?? "").toUpperCase();
-  if (a === "BUY") return "buy";
-  if (a === "SELL") return "sell";
+  if (a.startsWith("BUY")) return "buy";
+  if (a.startsWith("SELL")) return "sell";
   return "flat";
+}
+
+/** One truth for the not-found honesty branch (page hero + decision drawer):
+ *  404 OR RESOURCE_NOT_FOUND code — the drawer previously only checked 404. */
+export function isNotFound(e: unknown): boolean {
+  return e instanceof ApiError && (e.status === 404 || e.code === "RESOURCE_NOT_FOUND");
 }
 
 /** Confidence may arrive 0..1 or 0..100 depending on ledger vintage —
