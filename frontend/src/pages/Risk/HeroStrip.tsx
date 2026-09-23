@@ -12,13 +12,23 @@
  *           pressure-based arithmetic; never hardcode a number.
  */
 
-import { pressureOf, SOFT_UTIL, HARD_UTIL, type RiskLimitRow } from "./riskThresholds";
+import { pressureOf, SOFT_UTIL, HARD_UTIL, type RiskLimitRow, type Translator } from "./riskThresholds";
+import { useI18n } from "@/stores/i18nStore";
 
 interface Bucket {
   id: string;
-  label: string;
   tone: "ok" | "warn" | "down" | "unknown";
   test: (p: number | null) => boolean;
+}
+
+/** Bucket captions are render copy — literal t() keys (parity gate). */
+function stripLabelT(id: string, t: Translator): string {
+  switch (id) {
+    case "down": return t("risk.strip.breaches", "breaches");
+    case "warn": return t("risk.strip.near_limit", "near limit");
+    case "ok": return t("risk.strip.ok", "ok");
+    default: return t("risk.strip.unknown", "unknown");
+  }
 }
 
 /**
@@ -29,13 +39,14 @@ interface Bucket {
  *  unknown — no comparable pair in the payload (p = null)
  */
 const COUNTS: Bucket[] = [
-  { id: "down", label: "breaches", tone: "down", test: (p) => p !== null && p > HARD_UTIL },
-  { id: "warn", label: "near limit", tone: "warn", test: (p) => p !== null && p > SOFT_UTIL && p <= HARD_UTIL },
-  { id: "ok", label: "ok", tone: "ok", test: (p) => p !== null && p <= SOFT_UTIL },
-  { id: "unknown", label: "unknown", tone: "unknown", test: (p) => p === null },
+  { id: "down", tone: "down", test: (p) => p !== null && p > HARD_UTIL },
+  { id: "warn", tone: "warn", test: (p) => p !== null && p > SOFT_UTIL && p <= HARD_UTIL },
+  { id: "ok", tone: "ok", test: (p) => p !== null && p <= SOFT_UTIL },
+  { id: "unknown", tone: "unknown", test: (p) => p === null },
 ];
 
 export function HeroStrip({ rows }: { rows: RiskLimitRow[] }) {
+  const t = useI18n((s) => s.t);
   if (rows.length === 0) return null;
   const pressures = rows.map((r) => pressureOf(r.value, r.limit, r.direction));
   const buckets = COUNTS.map((b) => ({ ...b, n: pressures.filter(b.test).length }));
@@ -43,16 +54,16 @@ export function HeroStrip({ rows }: { rows: RiskLimitRow[] }) {
   if (visible.length === 0) return null;
 
   return (
-    <div className="rsk-strip" role="status" aria-label="Derived limit summary">
-      <span className="rsk-strip__tag" title="Sums over the limit rows rendered on this page — client-side arithmetic, no backend verdict.">
-        derived
+    <div className="rsk-strip" role="status" aria-label={t("risk.strip.aria", "Derived limit summary")}>
+      <span className="rsk-strip__tag" title={t("risk.strip.title", "Sums over the limit rows rendered on this page — client-side arithmetic, no backend verdict.")}>
+        {t("risk.strip.derived", "derived")}
       </span>
       {buckets.map((b) => (
         <span key={b.id} className={`rsk-chip tone-${b.tone} ${b.n === 0 ? "zero" : ""}`}>
-          <b>{b.n}</b> {b.label}
+          <b>{b.n}</b> {stripLabelT(b.id, t)}
         </span>
       ))}
-      <span className="rsk-strip__src">sums over {rows.length} visible limit rows · value vs its own backend limit</span>
+      <span className="rsk-strip__src">{t("risk.strip.src", "sums over {n} visible limit rows · value vs its own backend limit", { n: rows.length })}</span>
     </div>
   );
 }

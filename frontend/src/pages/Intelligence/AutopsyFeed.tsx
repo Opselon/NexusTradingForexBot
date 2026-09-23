@@ -17,49 +17,52 @@
 import { Panel } from "@/components/primitives";
 import { SectionState, type QueryLike } from "@/pages/_shared/SectionState";
 import type { AutopsyRow } from "@/types/domain";
+import { useI18n } from "@/stores/i18nStore";
 
 type AutopsyPayload = { available: boolean; autopsies?: AutopsyRow[] };
 
 function AutopsyCard({ row }: { row: AutopsyRow }) {
+  const t = useI18n((s) => s.t);
   const r = typeof row.realized_r === "number" ? row.realized_r : null;
   return (
     <div className="itl-autopsy">
       <div className="itl-card__head">
-        <span className="itl-type">trade autopsy</span>
+        <span className="itl-type">{t("intelligence.card.autopsy", "trade autopsy")}</span>
         <span className="itl-ticket">#{String(row.ticket ?? "—")}</span>
       </div>
       <div className="itl-autopsy__figures">
         <span className="itl-fig">
-          <span className="k">strategy</span>
+          <span className="k">{t("intelligence.th.strategy", "strategy")}</span>
           <span className="v">{row.strategy_id ?? "—"}</span>
         </span>
         <span className="itl-fig">
-          <span className="k">outcome</span>
+          <span className="k">{t("intelligence.th.outcome", "outcome")}</span>
           <span className="v">{row.outcome ?? "—"}</span>
         </span>
         <span className="itl-fig">
-          <span className="k">realized r</span>
+          <span className="k">{t("intelligence.th.realized_r", "realized r")}</span>
           <span className={`v ${r === null ? "" : r >= 0 ? "pnl-pos" : "pnl-neg"}`}>
             {r === null ? "—" : r.toFixed(2)}
           </span>
         </span>
       </div>
       <div className="itl-autopsy__exit">
-        <span className="k">exit</span> {row.exit_reason ?? "—"}
+        <span className="k">{t("intelligence.autopsy.exit_label", "exit")}</span> {row.exit_reason ?? "—"}
       </div>
     </div>
   );
 }
 
 export default function AutopsyFeed({ query }: { query: QueryLike<AutopsyPayload> }) {
+  const t = useI18n((s) => s.t);
   return (
-    <Panel title="Recent trade autopsies (why trades won/lost)" tight>
+    <Panel title={t("intelligence.panel.autopsies", "Recent trade autopsies (why trades won/lost)")} tight>
       <SectionState
         query={query}
         skeletonRows={3}
         emptyWhen={(d) => !(d.available && (d.autopsies?.length ?? 0) > 0)}
-        emptyMessage="No autopsies recorded."
-        errorFallback="Autopsy endpoint failed."
+        emptyMessage={t("intelligence.autopsy.empty", "No autopsies recorded.")}
+        errorFallback={t("intelligence.error.autopsy", "Autopsy endpoint failed.")}
       >
         {(d) => (
           <div className="itl-autopsies">

@@ -14,6 +14,9 @@
 
 import { limitUtilization } from "@/lib/riskVizMath";
 
+/** Store translator shape (mirrors stores/i18nStore `t`) — passed into pure helpers. */
+export type Translator = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
 /** Lane token for any local storage key this page may add later. */
 export const RSK_LS_PREFIX = "w5.risk.";
 
@@ -130,9 +133,9 @@ export function freshnessTone(ageSec: number): RskTone {
  * "updated 2h ago". Returns null for a non-finite age so the caller renders
  * NO chip instead of an invented "0s ago" (an unproven zero reads as fresh).
  */
-export function ageWord(ageSec: number | null | undefined): string | null {
+export function ageWord(ageSec: number | null | undefined, t: Translator): string | null {
   if (ageSec === null || ageSec === undefined || !Number.isFinite(ageSec) || ageSec < 0) return null;
-  if (ageSec < 90) return `updated ${Math.floor(ageSec)}s ago`;
-  if (ageSec < 7200) return `updated ${Math.floor(ageSec / 60)}m ago`;
-  return `updated ${Math.floor(ageSec / 3600)}h ago`;
+  if (ageSec < 90) return t("risk.age.updated_s", "updated {n}s ago", { n: Math.floor(ageSec) });
+  if (ageSec < 7200) return t("risk.age.updated_m", "updated {n}m ago", { n: Math.floor(ageSec / 60) });
+  return t("risk.age.updated_h", "updated {n}h ago", { n: Math.floor(ageSec / 3600) });
 }
