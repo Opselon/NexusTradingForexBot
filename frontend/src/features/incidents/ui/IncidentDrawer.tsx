@@ -37,7 +37,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
 
   return (
     <Drawer title={`Incident ${incidentId}`} onClose={onClose}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+      <div className="inc-drawer-tabs">
         {(["detail", "timeline", "traces", "report"] as const).map((t) => (
           <button key={t} className={`btn small ${tab === t ? "primary" : "ghost"}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
             {t}
@@ -113,7 +113,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
                 {arr(inc.evidence)
                   .slice(0, 12)
                   .map((e, i) => (
-                    <details key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px" }}>
+                    <details key={i} className="inc-ev">
                       <summary className="tiny">
                         {str(e.kind) ?? str(e.label) ?? `evidence ${i + 1}`} · {formatDateTime(str(e.timestamp) ?? str(e.at))}
                       </summary>
@@ -164,7 +164,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {arr(inc.value_traces).map((t: Row, i: number) => (
-                <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px" }}>
+                <div key={i} className="inc-trace">
                   <div className="small">
                     <b>{str(t.field) ?? "field"}</b> · <span className="muted tiny">{str(t.source) ?? "—"}</span>
                   </div>
