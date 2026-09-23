@@ -123,10 +123,47 @@ export default function ModelStudioPage() {
 
   // Live training-progress poll handle (cleared on completion/unmount).
   const trainPollRef = useRef<number | null>(null);
+  const trainPollVisRef = useRef<(() => void) | null>(null);
   const stopTrainPolling = () => {
+    if (trainPollVisRef.current !== null) {
+      document.removeEventListener("visibilitychange", trainPollVisRef.current);
+      trainPollVisRef.current = null;
+    }
     if (trainPollRef.current !== null) {
       window.clearInterval(trainPollRef.current);
       trainPollRef.current = null;
+    }
+  };
+  /** perf: pause the redundant progress GET while the tab is hidden; on
+   *  visible, resume + one immediate run (final state still lands on POST
+   *  resolve, so pausing while unseen never loses the train result). */
+  const startTrainPolling = () => {
+    stopTrainPolling();
+    const poll = () => {
+      modelStudioApi
+        .trainProgress()
+        .then((r) => setTrainProgress(r.progress))
+        .catch(() => {
+          /* progress endpoint unavailable — final state still lands on POST resolve */
+        });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (trainPollRef.current !== null) {
+          window.clearInterval(trainPollRef.current);
+          trainPollRef.current = null;
+        }
+        return;
+      }
+      if (trainPollRef.current === null) {
+        trainPollRef.current = window.setInterval(poll, TRAIN_POLL_MS);
+      }
+      poll();
+    };
+    trainPollVisRef.current = onVisibility;
+    document.addEventListener("visibilitychange", onVisibility);
+    if (document.visibilityState !== "hidden") {
+      trainPollRef.current = window.setInterval(poll, TRAIN_POLL_MS);
     }
   };
   useEffect(() => stopTrainPolling, []);
@@ -255,16 +292,9 @@ export default function ModelStudioPage() {
     setTrainProgress(null);
     setTrainBusy(true);
     // Stream epoch progress from the existing GET /train/progress endpoint
-    // while the blocking POST /train is in flight (presentation only).
-    stopTrainPolling();
-    trainPollRef.current = window.setInterval(() => {
-      modelStudioApi
-        .trainProgress()
-        .then((r) => setTrainProgress(r.progress))
-        .catch(() => {
-          /* progress endpoint unavailable — final state still lands on POST resolve */
-        });
-    }, TRAIN_POLL_MS);
+    // while the blocking POST /train is in flight (presentation only;
+    // visibility-gated above — paused while the tab is hidden).
+    startTrainPolling();
     try {
       const d = await modelStudioApi.train({
         dataset_path: selectedDataset,

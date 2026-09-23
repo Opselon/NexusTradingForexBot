@@ -21,7 +21,7 @@
  * (.pv-* namespace, theme tokens only).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ShellPageProps } from "@/app/featureModule";
 import { EmptyState, ErrorState, LoadingState, Panel, Segmented } from "@/components/primitives";
@@ -125,9 +125,13 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   }, [backend, refreshEnv]);
 
   // Live event tail while a run is active.
+  // perf: pause the redundant progress GET while the tab is hidden; on
+  // visible, resume + one immediate tick so the tail is never staler than
+  // one tick on return (final result still lands via the same tick path).
   useEffect(() => {
     if (!training) return;
     let cancelled = false;
+    let timer: number | null = null;
     const tick = async () => {
       try {
         const p = await provisioningApi.trainProgress(seenSeq.current);
@@ -148,11 +152,32 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         if (!cancelled) setError(errText(err));
       }
     };
-    void tick();
-    const id = window.setInterval(tick, POLL_MS);
+    const startTimer = () => {
+      if (timer === null && !cancelled) timer = window.setInterval(tick, POLL_MS);
+    };
+    const stopTimer = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    const onVisibility = () => {
+      if (cancelled) return;
+      if (document.visibilityState === "hidden") stopTimer();
+      else {
+        startTimer();
+        void tick();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    if (document.visibilityState !== "hidden") {
+      void tick();
+      startTimer();
+    }
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+      stopTimer();
     };
   }, [training]);
 
@@ -234,10 +259,20 @@ export default function ProvisioningPage(_props: ShellPageProps) {
 
   const busy = installing || officialBusy || training;
   const report = env?.report;
-  const failures = failingChecks(report);
+  const failures = useMemo(() => failingChecks(report), [report]);
   const trainingReady = Boolean(report?.training_ready);
   const recommended = status?.recommended;
   const allowedRoots = status?.allowed_import_roots ?? [];
+  // perf: derived once per state change instead of every render — same JS
+  // values (deps: report / events / result — every reactive value read).
+  const progressText = useMemo(
+    () =>
+      events
+        .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
+        .join("\n"),
+    [events],
+  );
+  const resultJson = useMemo(() => (result === null ? "" : JSON.stringify(result, null, 2)), [result]);
 
   return (
     <div className="pv-page">
@@ -471,9 +506,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           <div className="pv-field">
             <div className="small faint uppercase font-bold">Progress</div>
             <pre tabIndex={0} className="pv-log" aria-live="polite">
-              {events
-                .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
-                .join("\n")}
+              {progressText}
             </pre>
           </div>
         ) : null}
@@ -481,7 +514,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         {result ? (
           <div className="pv-callout ok">
             <div className="head">Run result</div>
-            <pre tabIndex={0} className="pv-json">{JSON.stringify(result, null, 2)}</pre>
+            <pre tabIndex={0} className="pv-json">{resultJson}</pre>
           </div>
         ) : null}
       </Panel>
