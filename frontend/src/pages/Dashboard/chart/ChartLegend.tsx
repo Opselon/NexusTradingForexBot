@@ -3,6 +3,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { Bar } from "@/types/domain";
 import type { ChartHistoryResponse } from "@/pages/_shared/contracts";
 import { formatPrice } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import "./legend.css";
 
 export interface ChartLegendProps {
@@ -61,6 +62,7 @@ function medianBarSpacing(bars: Bar[]): number | null {
 export function ChartLegend({ hovered, last, digits, timeframe, symbol }: ChartLegendProps) {
   const qc = useQueryClient();
   const [now, setNow] = useState(() => Date.now());
+  const t = useI18n((s) => s.t);
 
   const b = hovered ?? last;
   // Countdown describes the LIVE forming bar (not the hovered one): next
@@ -83,13 +85,16 @@ export function ChartLegend({ hovered, last, digits, timeframe, symbol }: ChartL
   let countdown: string | null = null;
   if (boundary !== null) {
     const totalSec = Math.floor(Math.max(0, boundary - now) / 1000);
-    countdown = `closes in ${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, "0")}`;
+    countdown = t("dash.chart.closes_in", "closes in {m}:{s}", {
+      m: Math.floor(totalSec / 60),
+      s: String(totalSec % 60).padStart(2, "0"),
+    });
   }
   return (
     <div className="lg-legend" aria-hidden="false">
       <span className="lg-legend__sym">{symbol ?? "—"}</span>
       <span className="lg-legend__tf">{timeframe ?? "—"}</span>
-      {b.is_complete === false && <span className="lg-legend__forming">FORMING</span>}
+      {b.is_complete === false && <span className="lg-legend__forming">{t("dash.chart.forming", "FORMING")}</span>}
       <span className="lg-legend__vals">
         O <b>{formatPrice(b.open, digits)}</b> H <b>{formatPrice(b.high, digits)}</b> L{" "}
         <b>{formatPrice(b.low, digits)}</b>{" "}

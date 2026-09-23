@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import "./chartControls.css";
 
 /** Wave-2 LANE D slot: PNG snapshot of the chart canvas. Core export logic
@@ -7,6 +8,7 @@ import "./chartControls.css";
 export function SnapshotButton({ canvasRef }: { canvasRef: RefObject<HTMLCanvasElement | null> }) {
   const [saved, setSaved] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const t = useI18n((s) => s.t);
 
   useEffect(
     () => () => {
@@ -18,7 +20,7 @@ export function SnapshotButton({ canvasRef }: { canvasRef: RefObject<HTMLCanvasE
   return (
     <button
       className={saved ? "flash" : "btn small ghost"}
-      title="download chart snapshot (PNG)"
+      title={t("dash.tools.snapshot_title", "download chart snapshot (PNG)")}
       onClick={() => {
         const cv = canvasRef.current;
         if (!cv) return;
@@ -39,7 +41,7 @@ export function SnapshotButton({ canvasRef }: { canvasRef: RefObject<HTMLCanvasE
         }, "image/png");
       }}
     >
-      {saved ? "✓ saved" : "⤓ PNG"}
+      {saved ? t("dash.tools.snapshot_saved", "✓ saved") : t("dash.tools.snapshot_btn", "⤓ PNG")}
     </button>
   );
 }

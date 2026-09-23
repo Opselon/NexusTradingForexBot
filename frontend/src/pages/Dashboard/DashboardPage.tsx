@@ -380,7 +380,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           <div className="section-title" style={{ marginTop: 10 }}>{t("dash.engine.mode_title", "Execution mode")}</div>
           <div className="l4-transport">
             <select className="select" value={modeTarget} onChange={(e) => setModeTarget(e.target.value)} aria-label={t("dash.engine.mode_aria", "execution mode target")}>
-              <option value="">select mode…</option>
+              <option value="">{t("dash.engine.select_mode", "select mode…")}</option>
               <option value="PAPER">{t("dash.engine.paper", "PAPER (simulation adapter)")}</option>
               <option value="SHADOW">{t("dash.engine.shadow", "SHADOW (no execution)")}</option>
               <option value="LIVE">{t("dash.engine.live", "LIVE (real capital)")}</option>
