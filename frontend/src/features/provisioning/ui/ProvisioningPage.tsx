@@ -21,7 +21,7 @@
  * (.pv-* namespace, theme tokens only).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ShellPageProps } from "@/app/featureModule";
 import { EmptyState, ErrorState, LoadingState, Panel, Segmented } from "@/components/primitives";
@@ -37,9 +37,9 @@ import type {
 } from "../model";
 import { TRAIN_BACKENDS, TRAIN_SOURCES } from "../model";
 import { CANDLE_OPTIONS, classNames, codeOf, errText, fmtValue, isOkValue } from "./kit";
+import { useTrainPoll } from "./useTrainPoll";
 import "./provisioning.css";
 
-const POLL_MS = 2000;
 
 
 /** The ok===false subset of the report checklist (server `failing()`). */
@@ -124,37 +124,8 @@ export default function ProvisioningPage(_props: ShellPageProps) {
     void refreshEnv(backend);
   }, [backend, refreshEnv]);
 
-  // Live event tail while a run is active.
-  useEffect(() => {
-    if (!training) return;
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const p = await provisioningApi.trainProgress(seenSeq.current);
-        if (cancelled) return;
-        if (Array.isArray(p.events) && p.events.length > 0) {
-          setEvents((prev) => [...prev, ...p.events]);
-          const maxSeq = p.events.reduce((m, e) => Math.max(m, Number(e.seq ?? 0)), seenSeq.current);
-          seenSeq.current = maxSeq;
-        }
-        if (!p.active) {
-          setTraining(false);
-          setResult(p.result ?? null);
-          if (p.cancelled) setNotice("Run cancelled — observed at the epoch boundary.");
-          else if (!p.success) setError(codeOf(p));
-          else setNotice("Run finished.");
-        }
-      } catch (err) {
-        if (!cancelled) setError(errText(err));
-      }
-    };
-    void tick();
-    const id = window.setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [training]);
+  // Live event tail: extracted to useTrainPoll (same semantics, keeps this file <=500).
+  useTrainPoll(training, seenSeq, setEvents, setTraining, setResult, setNotice, setError);
 
   const onInstall = useCallback(async () => {
     setInstalling(true);
@@ -234,10 +205,20 @@ export default function ProvisioningPage(_props: ShellPageProps) {
 
   const busy = installing || officialBusy || training;
   const report = env?.report;
-  const failures = failingChecks(report);
+  const failures = useMemo(() => failingChecks(report), [report]);
   const trainingReady = Boolean(report?.training_ready);
   const recommended = status?.recommended;
   const allowedRoots = status?.allowed_import_roots ?? [];
+  // perf: derived once per state change instead of every render — same JS
+  // values (deps: report / events / result — every reactive value read).
+  const progressText = useMemo(
+    () =>
+      events
+        .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
+        .join("\n"),
+    [events],
+  );
+  const resultJson = useMemo(() => (result === null ? "" : JSON.stringify(result, null, 2)), [result]);
 
   return (
     <div className="pv-page">
@@ -471,9 +452,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           <div className="pv-field">
             <div className="small faint uppercase font-bold">Progress</div>
             <pre tabIndex={0} className="pv-log" aria-live="polite">
-              {events
-                .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
-                .join("\n")}
+              {progressText}
             </pre>
           </div>
         ) : null}
@@ -481,7 +460,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         {result ? (
           <div className="pv-callout ok">
             <div className="head">Run result</div>
-            <pre tabIndex={0} className="pv-json">{JSON.stringify(result, null, 2)}</pre>
+            <pre tabIndex={0} className="pv-json">{resultJson}</pre>
           </div>
         ) : null}
       </Panel>

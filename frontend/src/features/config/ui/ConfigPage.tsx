@@ -391,8 +391,14 @@ function RuntimeConfigForm() {
   const specs = useMemo(() => runtimeConfigSpecs(), []);
   const baseline = useMemo(() => (cfgQuery.data ? configBaseline(cfgQuery.data) : null), [cfgQuery.data]);
   const values = draft ?? baseline ?? {};
-  const errors = validateFields(specs, values);
-  const dirtyKeys = baseline ? changedKeys(baseline, values) : [];
+  // perf: validation / dirty-key / section grouping derived only when their
+  // inputs change (deps: specs, baseline, values — every reactive value read).
+  const errors = useMemo(() => validateFields(specs, values), [specs, values]);
+  const dirtyKeys = useMemo(() => (baseline ? changedKeys(baseline, values) : []), [baseline, values]);
+  const sectionGroups = useMemo(
+    () => specSections(specs).map((section) => ({ section, specs: specs.filter((s) => s.section === section) })),
+    [specs],
+  );
 
   const setValue = (key: string, v: FieldValue) => {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -474,11 +480,11 @@ function RuntimeConfigForm() {
               Telegram token arrives masked (<span className="inline-mono">{cfg.telegram.bot_token}</span>) — manage it in the Telegram panel; the form never re-submits a mask (BUG-080).
             </div>
           )}
-          {specSections(specs).map((section) => (
-            <div key={section} className="cfg-sec">
-              <div className="cfg-sec-title">{section}</div>
+          {sectionGroups.map((group) => (
+            <div key={group.section} className="cfg-sec">
+              <div className="cfg-sec-title">{group.section}</div>
               <div className="cfg-fields">
-                {specs.filter((s) => s.section === section).map(renderSpec)}
+                {group.specs.map(renderSpec)}
               </div>
             </div>
           ))}

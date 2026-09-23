@@ -8,6 +8,7 @@
  * Stateless presentation component; owned state lives in ModelStudioPage.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import {
   compareDatasetsByGranularity,
@@ -55,7 +56,8 @@ export function PositionDatasetPanel({
   posResult,
   posError,
 }: PositionDatasetPanelProps) {
-  const sortedDatasets = [...datasets].sort(compareDatasetsByGranularity);
+  // perf: dataset sort derived only when the datasets prop changes (dep: datasets).
+  const sortedDatasets = useMemo(() => [...datasets].sort(compareDatasetsByGranularity), [datasets]);
   const actions = posResult?.actions_distribution ?? {};
   const totalActions = Object.values(actions).reduce((a, b) => a + (b ?? 0), 0) || 1;
 

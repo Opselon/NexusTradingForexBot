@@ -58,7 +58,9 @@ function mintRequestId(): string {
 
 const requestIdMiddleware: Middleware = async (ctx, next) => {
   ctx.headers["X-Request-ID"] = ctx.requestId;
-  await next();
+  // perf: no post-next work in this layer — tail-return the chain promise
+  // (same execution order and error propagation, one fewer await resumption).
+  return next();
 };
 
 const authHeaderMiddleware: Middleware = async (ctx, next) => {
@@ -73,7 +75,9 @@ const timeoutMiddleware: Middleware = async (ctx, next) => {
   } else {
     ctx.meta["abort"] = timeout;
   }
-  await next();
+  // perf: no post-next work in this layer — tail-return the chain promise
+  // (same execution order and error propagation, one fewer await resumption).
+  return next();
 };
 
 /** Normalize any failure (bad status / network / timeout) into ApiError. */

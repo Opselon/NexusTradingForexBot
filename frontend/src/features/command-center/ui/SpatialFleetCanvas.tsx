@@ -128,8 +128,15 @@ export function SpatialFleetCanvas({
     return () => cancelAnimationFrame(raf);
   }, [selectedId, visible]);
 
-  const selNode: CcSpatialNodeDto | null =
-    selectedId && payload ? (payload.nodes ?? []).find((n) => str(n.strategy_id) === selectedId) ?? null : null;
+  // perf: selected-node lookup derived only when payload/selection change
+  // (deps: payload, selectedId — every reactive value read).
+  const selNode: CcSpatialNodeDto | null = useMemo(
+    () =>
+      selectedId && payload
+        ? (payload.nodes ?? []).find((n) => str(n.strategy_id) === selectedId) ?? null
+        : null,
+    [payload, selectedId],
+  );
 
   const status: ViewportStatus = spatialQ.isPending
     ? "loading"

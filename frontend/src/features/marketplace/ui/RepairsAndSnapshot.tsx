@@ -7,17 +7,32 @@
  * from the console, so no commands live here.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useMktRepairs, useMktSnapshot } from "../hooks";
 import { repairOutcomeOf } from "../model";
-import { FreshnessNote, asErrorText } from "./shared";
+import { FreshnessNote, asErrorText, jsonInline, jsonPretty } from "./shared";
 
 export function RepairsSection() {
   const [seed, setSeed] = useState("");
   const [applied, setApplied] = useState("");
   const repairs = useMktRepairs(applied);
+
+  // perf: serialize each repair outcome once per fetch — the count/JSON text
+  // no longer recomputed on every render of the history table.
+  const repairRows = useMemo(() => {
+    const data = repairs.data ?? [];
+    return data.map((r) => {
+      const out = repairOutcomeOf(r);
+      const outJson = out ? jsonInline(out) : null;
+      return {
+        r,
+        outTitle: outJson ?? undefined,
+        outText: outJson !== null ? outJson.slice(0, 90) : r.outcome ? String(r.outcome).slice(0, 90) : "—",
+      };
+    });
+  }, [repairs.data]);
 
   return (
     <Panel
@@ -48,24 +63,21 @@ export function RepairsSection() {
         <EmptyState message={applied ? `No repair records for ${applied}.` : "No repair runs recorded."} hint="Trigger a repair from the seeds table — records append as PENDING and settle after research." />
       ) : (
         <DataTable headers={[{ label: "created" }, { label: "parent → child" }, { label: "trigger" }, { label: "status" }, { label: "outcome" }]}>
-          {(repairs.data ?? []).map((r) => {
-            const out = repairOutcomeOf(r);
-            return (
-              <tr key={r.repair_id}>
-                <td>{r.created_at ? formatDateTime(String(r.created_at)) : "—"}</td>
-                <td className="inline-mono tiny">
-                  {String(r.parent_seed_id ?? "—")} → {String(r.seed_id ?? "—")}
-                </td>
-                <td>{String(r.trigger ?? "—")}</td>
-                <td>
-                  <StatusBadge status={String(r.status ?? "UNKNOWN")} />
-                </td>
-                <td className="tiny muted" title={out ? JSON.stringify(out) : undefined}>
-                  {out ? JSON.stringify(out).slice(0, 90) : r.outcome ? String(r.outcome).slice(0, 90) : "—"}
-                </td>
-              </tr>
-            );
-          })}
+          {repairRows.map(({ r, outTitle, outText }) => (
+            <tr key={r.repair_id}>
+              <td>{r.created_at ? formatDateTime(String(r.created_at)) : "—"}</td>
+              <td className="inline-mono tiny">
+                {String(r.parent_seed_id ?? "—")} → {String(r.seed_id ?? "—")}
+              </td>
+              <td>{String(r.trigger ?? "—")}</td>
+              <td>
+                <StatusBadge status={String(r.status ?? "UNKNOWN")} />
+              </td>
+              <td className="tiny muted" title={outTitle}>
+                {outText}
+              </td>
+            </tr>
+          ))}
         </DataTable>
       )}
     </Panel>
@@ -76,6 +88,9 @@ export function RuntimeSnapshotSection() {
   const snap = useMktSnapshot();
   const [showJson, setShowJson] = useState(false);
   const d = snap.data;
+
+  // perf: the raw snapshot <pre> serializes once per fetch, not per render.
+  const snapJson = useMemo(() => (d ? jsonPretty(d) : ""), [d]);
 
   return (
     <Panel
@@ -96,7 +111,7 @@ export function RuntimeSnapshotSection() {
       ) : !d ? (
         <EmptyState message="No runtime snapshot returned." />
       ) : showJson ? (
-        <pre tabIndex={0} className="mkt-json">{JSON.stringify(d, null, 2)}</pre>
+        <pre tabIndex={0} className="mkt-json">{snapJson}</pre>
       ) : (
         <div className="mkt-snapshot-grid">
           <div className="mkt-snapshot-tile">

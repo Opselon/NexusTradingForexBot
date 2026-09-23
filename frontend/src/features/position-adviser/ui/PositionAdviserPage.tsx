@@ -18,7 +18,7 @@
  * on the shared theme tokens — no CSS framework (BUG-047 lineage).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ShellPageProps } from "@/app/featureModule";
 
@@ -33,7 +33,7 @@ import type {
   AdviserStatusResponse,
   AdviserAdvisoryDto,
 } from "../model";
-import { ACTIVATION_HELP, ACTIVATION_LADDER } from "../model";
+import { ACTIVATION_HELP, ACTIVATION_LADDER, errorDetailText } from "../model";
 import "./position-adviser.css";
 
 const REFRESH_MS = 3000;
@@ -141,8 +141,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setError("");
     } catch (err) {
       // The backend stays the source of truth; show its message verbatim.
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errorDetailText(err));
     } finally {
       setLoading(false);
     }
@@ -150,8 +149,27 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(refresh, REFRESH_MS);
-    return () => window.clearInterval(id);
+    // perf: the 3s refetch loop is four network reads — pause it while the tab
+    // is hidden; on return the interval restarts AND one refresh runs
+    // immediately, so the panel is fresher (never staler) on switch-back.
+    let id: number | null =
+      document.visibilityState === "hidden" ? null : window.setInterval(refresh, REFRESH_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (id !== null) {
+          window.clearInterval(id);
+          id = null;
+        }
+      } else if (id === null) {
+        id = window.setInterval(refresh, REFRESH_MS);
+        void refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (id !== null) window.clearInterval(id);
+    };
   }, [refresh]);
 
   const runChecks = useCallback(async () => {
@@ -167,8 +185,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         setNotice("All prerequisite checks passed. LIVE activation is available.");
       }
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errorDetailText(err));
     } finally {
       setBusy(false);
     }
@@ -196,8 +213,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         setNotice(out.message || `activation set to ${target}`);
         await refresh();
       } catch (err) {
-        const detail = (err as { detail?: string })?.detail ?? String(err);
-        setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+        setError(errorDetailText(err));
       } finally {
         setBusy(false);
       }
@@ -214,8 +230,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setNotice(out.message || "adviser unloaded; activation reset to DISABLED");
       await refresh();
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errorDetailText(err));
     } finally {
       setBusy(false);
     }
@@ -237,8 +252,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setNotice(out.message || "training complete");
       await refresh();
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errorDetailText(err));
     } finally {
       setBusy(false);
     }
@@ -298,8 +312,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       );
       await refresh();
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errorDetailText(err));
     } finally {
       setBusy(false);
     }
@@ -323,8 +336,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         setNotice(out.message || "adviser loaded; activation is still DISABLED until you enable it");
         await refresh();
       } catch (err) {
-        const detail = (err as { detail?: string })?.detail ?? String(err);
-        setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+        setError(errorDetailText(err));
       } finally {
         setBusy(false);
       }
@@ -337,6 +349,25 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const curIdx = ladderIndex(activation);
   const tuneBaseline = tuneResult?.majority_baseline_accuracy ?? null;
   const baselineRef = tuneBaseline ?? MAJORITY_BASELINE_FALLBACK;
+
+  // perf: the two heavy per-row derivations (stacked distribution segments)
+  // run once per input change, not on every render of this 3s-refreshed page.
+  const modelCards = useMemo(
+    () =>
+      models.map((m) => ({
+        m,
+        isActive: m.model_id === activeModelId,
+        isBelow: belowBaseline(m, tuneBaseline),
+        segs: distSegments(m.oos_action_distribution || {}),
+      })),
+    [models, activeModelId, tuneBaseline],
+  );
+
+  const advisoryDists = useMemo(() => {
+    const byId = new Map<string, DistSeg[]>();
+    for (const a of advisories) byId.set(a.advisory_id, distSegments(a.probabilities || {}));
+    return byId;
+  }, [advisories]);
 
   return (
     <div className="pa-page">
@@ -756,10 +787,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
             </div>
           ) : (
             <div className="pa-models">
-              {models.map((m) => {
-                const isActive = m.model_id === activeModelId;
-                const isBelow = belowBaseline(m, tuneBaseline);
-                const segs = distSegments(m.oos_action_distribution || {});
+              {modelCards.map(({ m, isActive, isBelow, segs }) => {
                 return (
                   <div key={m.model_id} className={classNames("pa-model", isActive && "is-active")}>
                     <div className="pa-model-top">
@@ -849,7 +877,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           ) : (
             <div className="pa-feed">
               {advisories.map((a) => {
-                const dist = distSegments(a.probabilities || {});
+                const dist = advisoryDists.get(a.advisory_id) ?? [];
                 return (
                   <div key={a.advisory_id} className="pa-feed-item">
                     <div className="pa-feed-top">
