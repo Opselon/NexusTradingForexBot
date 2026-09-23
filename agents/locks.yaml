@@ -66,6 +66,10 @@ exclusive_locks:
 #   + tests/integration/test_walk_forward_pipeline_real.py (ML-CI-001, AGENT-QA)
 #   — released, PR opened
 
+# - src/nexus_scalp/model_lifecycle/gates.py
+#   + src/nexus_scalp/model_lifecycle/orchestrator.py
+#   + tests/unit/test_bug308c_gate11_artifact_integrity.py (BUG-308C, AGENT-GOVERNANCE)
+#   — released, PR #381 opened
 # Locked-by-convention paths (from bugs.md / skill.md activity):
 # - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)
 # - src/nexus_scalp/execution/order_manager.py  (BUG-081 forensics in progress, snapshot 2026-08-18)
