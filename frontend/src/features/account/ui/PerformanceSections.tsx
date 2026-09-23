@@ -9,7 +9,7 @@
  * the Telegram daily report consumes — same object, so UI and report agree.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { Sparkline } from "@/components/viz";
 import { formatDateTime } from "@/lib/format";
@@ -128,6 +128,10 @@ export function PerformanceIntelligenceSection() {
 
   const i = intel.data?.intelligence;
 
+  // Pretty-print the full report ONCE per payload identity instead of on
+  // every render — same bytes as the previous inline stringify.
+  const fullReport = useMemo(() => JSON.stringify(intel.data?.report ?? {}, null, 2), [intel.data]);
+
   return (
     <Panel
       title="Performance intelligence (report engine)"
@@ -154,7 +158,7 @@ export function PerformanceIntelligenceSection() {
         <EmptyState message="No intelligence report." />
       ) : showReport ? (
         <pre tabIndex={0} style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, fontSize: 10.5, maxHeight: 420, overflow: "auto", fontFamily: "var(--mono)", margin: 0 }}>
-          {JSON.stringify(intel.data.report ?? {}, null, 2)}
+          {fullReport}
         </pre>
       ) : (
         <div className="grid cols-2">
