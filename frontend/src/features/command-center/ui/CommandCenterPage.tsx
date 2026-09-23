@@ -163,7 +163,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
 
       {view === "fleet" && (
         <Panel
-          title={t("command-center.panel.fleet", "Fleet ({n} rows, risk-first order)", { n: String(fleetQ.data?.count ?? 0) })}
+          title={t("command-center.panel.fleet", "Fleet ({n} rows, risk-first order)", { rows: String(fleetQ.data?.count ?? 0) })}
           right={
             <div style={{ display: "flex", gap: 6 }}>
               <select aria-label={t("command-center.a11y.lifecycle_filter", "Lifecycle filter")} className="select" style={{ width: 150 }} value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
