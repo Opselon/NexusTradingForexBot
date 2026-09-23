@@ -116,6 +116,13 @@ export interface DbManageStatus {
   hints?: string[];
   /** Measured configured-vs-effective provider; see ProviderTruthPayload. */
   provider_truth?: ProviderTruthPayload;
+  /** Advanced knobs reported by GET /api/db/manage/status (wave
+   *  db-provider-pro, contract §3.3). Absent on older builds — the UI
+   *  renders UNAVAILABLE, never a fabricated default. */
+  options?: { [key: string]: unknown } | null;
+  /** DEFAULT_DB_FILES domain list (additive key; `domains` stays the
+   *  per-domain health snapshot dict). */
+  domain_db_names?: string[];
   error?: { code?: string; message?: string; request_id?: string };
 }
 
