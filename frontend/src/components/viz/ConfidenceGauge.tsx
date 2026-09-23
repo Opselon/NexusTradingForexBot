@@ -16,6 +16,7 @@
 
 import { useMemo } from "react";
 import { arcPath, clampRatio } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./confidence-gauge.css";
 
 export type ConfidenceTone = "pos" | "warn" | "bad" | "neu";
@@ -51,6 +52,17 @@ export function toneForRatio(ratio: number | null): ConfidenceTone {
   return "bad";
 }
 
+/** Localize the display tier word at the render site; tierFor stays pure. */
+export function tierText(
+  t: (key: string, fallback: string, vars?: Record<string, string | number>) => string,
+  tier: string,
+): string {
+  if (tier === "HIGH") return t("ui.viz.tier_high", "HIGH");
+  if (tier === "MID") return t("ui.viz.tier_mid", "MID");
+  if (tier === "LOW") return t("ui.viz.tier_low", "LOW");
+  return t("ui.word.unknown", "UNKNOWN");
+}
+
 export function ConfidenceGauge({
   value,
   label,
@@ -58,6 +70,7 @@ export function ConfidenceGauge({
   tone,
   compact = false,
 }: ConfidenceGaugeProps) {
+  const t = useI18n((s) => s.t);
   const ratio = clampRatio(value);
   const toneCls = tone ?? toneForRatio(ratio);
   const tier = tierFor(ratio);
@@ -76,7 +89,7 @@ export function ConfidenceGauge({
         className="cg-svg"
         viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
         role="img"
-        aria-label={label ? `${label}: ${readout}` : `confidence ${readout}`}
+        aria-label={label ? `${label}: ${readout}` : t("ui.viz.confidence_aria", "confidence {r}", { r: readout })}
       >
         {/* Track + value arc. vector-effect keeps the stroke crisp at any scale. */}
         <path
@@ -105,7 +118,7 @@ export function ConfidenceGauge({
               {readout}
             </text>
             <text className="cg-tier-text" x={cx} y={cy + 18} textAnchor="middle">
-              {tier}
+              {tierText(t, tier)}
             </text>
           </>
         )}

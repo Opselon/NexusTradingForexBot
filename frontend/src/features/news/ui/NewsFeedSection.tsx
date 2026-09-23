@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useAnalyzeArticle, useAutoPrune, useBatchAnalyze, useNewsAiStatus, useNewsFeed, useRestoreArticle } from "../hooks";
@@ -18,6 +19,7 @@ import { FreshnessNote, asErrorText } from "./shared";
 import "./news.css";
 
 export function NewsFeedSection() {
+  const t = useI18n((s) => s.t);
   const [filter, setFilter] = useState<NewsFilter>("ACTIVE");
   const [limit] = useState(50);
   const [selected, setSelected] = useState<string | null>(null);
@@ -64,7 +66,7 @@ export function NewsFeedSection() {
     batch.mutate(ids, {
       onSuccess: (res) => {
         const v = batchVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
       },
       onError: (e) => setNote({ err: true, text: `Batch failed: ${asErrorText(e)}` }),
     });

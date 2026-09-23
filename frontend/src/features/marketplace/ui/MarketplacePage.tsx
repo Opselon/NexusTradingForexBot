@@ -14,6 +14,7 @@
  * PENDING / DENIED / granted are distinct backend words.
  */
 
+import { useI18n } from "@/stores/i18nStore";
 import { useMktPacks, useMktSnapshot } from "../hooks";
 import { PacksSection } from "./PacksSection";
 import { RankingsSection } from "./RankingsSection";
@@ -21,20 +22,33 @@ import { RepairsSection, RuntimeSnapshotSection } from "./RepairsAndSnapshot";
 import { SeedsSection } from "./SeedsSection";
 import "./marketplace.css";
 
-const SECTIONS: Array<{ id: string; label: string; icon: string }> = [
-  { id: "mkt-packs", label: "Packs", icon: "▦" },
-  { id: "mkt-seeds", label: "Seeds", icon: "◈" },
-  { id: "mkt-rankings", label: "Rankings", icon: "Σ" },
-  { id: "mkt-repairs", label: "Repairs", icon: "⚒" },
-  { id: "mkt-snapshot", label: "Runtime", icon: "⬢" },
+/** Static ids/icons only — labels are t()d inside the render (never cached). */
+const SECTION_META: Array<{ id: string; icon: string }> = [
+  { id: "mkt-packs", icon: "▦" },
+  { id: "mkt-seeds", icon: "◈" },
+  { id: "mkt-rankings", icon: "Σ" },
+  { id: "mkt-repairs", icon: "⚒" },
+  { id: "mkt-snapshot", icon: "⬢" },
 ];
 
 export default function MarketplacePage() {
+  const t = useI18n((s) => s.t);
   const packs = useMktPacks();
   const snapshot = useMktSnapshot();
 
   const packList = packs.data?.packs ?? [];
   const installedPacks = packList.filter((p) => p.installed).length;
+
+  const sectionLabel = (id: string): string =>
+    id === "mkt-packs"
+      ? t("marketplace.nav.packs", "Packs")
+      : id === "mkt-seeds"
+        ? t("marketplace.nav.seeds", "Seeds")
+        : id === "mkt-rankings"
+          ? t("marketplace.nav.rankings", "Rankings")
+          : id === "mkt-repairs"
+            ? t("marketplace.nav.repairs", "Repairs")
+            : t("marketplace.nav.runtime", "Runtime");
 
   return (
     <div className="mkt-container">
@@ -45,11 +59,11 @@ export default function MarketplacePage() {
         enabledCount={(snapshot.data?.enabled_set ?? []).length}
         packsLoaded={packs.isSuccess}
       />
-      <nav className="mkt-nav" aria-label="Marketplace sections">
-        {SECTIONS.map((s) => (
+      <nav className="mkt-nav" aria-label={t("marketplace.nav.sections_aria", "Marketplace sections")}>
+        {SECTION_META.map((s) => (
           <a key={s.id} className="mkt-nav-item" href={`#${s.id}`}>
             <span className="ico">{s.icon}</span>
-            {s.label}
+            {sectionLabel(s.id)}
           </a>
         ))}
       </nav>
@@ -83,6 +97,7 @@ function MarketplaceHero({
   enabledCount: number;
   packsLoaded: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   const allInstalled = packsLoaded && packCount > 0 && installedPacks === packCount;
   return (
     <div className="mkt-page-hero">
@@ -92,40 +107,41 @@ function MarketplaceHero({
         </div>
         <div style={{ minWidth: 0 }}>
           <h1 className="mkt-hero-title">
-            MARKETPLACE
-            <span className="mkt-hero-badge">RESEARCH LAB</span>
+            {t("nav.feature.marketplace", "MARKETPLACE")}
+            <span className="mkt-hero-badge">{t("marketplace.hero.badge", "RESEARCH LAB")}</span>
           </h1>
           <div className="mkt-hero-sub">
-            Discover, install, validate, score, repair and govern strategy seeds across isolated
-            research persistence. Every state below is served by the v1 envelope API — the console
-            never grants enablement, never invents a score.
+            {t(
+              "marketplace.hero.sub",
+              "Discover, install, validate, score, repair and govern strategy seeds across isolated research persistence. Every state below is served by the v1 envelope API — the console never grants enablement, never invents a score.",
+            )}
           </div>
         </div>
       </div>
       <div className="mkt-hero-right">
-        <div className="mkt-ribbon" role="group" aria-label="Marketplace telemetry">
+        <div className="mkt-ribbon" role="group" aria-label={t("marketplace.hero.telemetry_aria", "Marketplace telemetry")}>
           <span
             className={`mkt-live-dot ${allInstalled ? "" : "off"}`}
             title={
               allInstalled
-                ? "all available packs installed"
-                : "pack catalog partially installed"
+                ? t("marketplace.hero.dot_all", "all available packs installed")
+                : t("marketplace.hero.dot_partial", "pack catalog partially installed")
             }
           />
           <span className="mkt-ribbon-item">
-            <span className="lab">Packs</span>
+            <span className="lab">{t("marketplace.nav.packs", "Packs")}</span>
             <span className="val">
               {installedPacks}/{packCount}
             </span>
           </span>
           <span className="mkt-ribbon-sep" />
           <span className="mkt-ribbon-item">
-            <span className="lab">Installed</span>
+            <span className="lab">{t("marketplace.hero.lab_installed", "Installed")}</span>
             <span className={`val ${enabledCount ? "pos" : "dim"}`}>{enabledCount}</span>
           </span>
           <span className="mkt-ribbon-sep" />
           <span className="mkt-ribbon-item">
-            <span className="lab">Snapshot</span>
+            <span className="lab">{t("marketplace.hero.lab_snapshot", "Snapshot")}</span>
             <span className={`val ${snapshotVersion === null ? "dim" : ""}`}>
               v{snapshotVersion ?? "—"}
             </span>

@@ -9,6 +9,7 @@
 
 import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import type { BenchmarkResponse, StressTestResultRow } from "../model";
 
 interface ModelStressBenchPanelProps {
@@ -30,6 +31,7 @@ export function ModelStressBenchPanel({
   benchStats,
   onRunBenchmark,
 }: ModelStressBenchPanelProps) {
+  const t = useI18n((s) => s.t);
   const passed = useMemo(() => stressResults.filter((r) => r.passed).length, [stressResults]);
   const allPassed = stressResults.length > 0 && passed === stressResults.length;
   // Latency percentile ladder + widths derive only from benchStats; deps are
@@ -84,9 +86,9 @@ export function ModelStressBenchPanel({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Adversarial Test</th>
+                    <th scope="col">{t("model-studio.stress.th_test", "Adversarial Test")}</th>
                     <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
-                    <th scope="col">Diagnostic Detail</th>
+                    <th scope="col">{t("model-studio.registry.th_diag", "Diagnostic Detail")}</th>
                   </tr>
                 </thead>
                 <tbody>

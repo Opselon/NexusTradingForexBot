@@ -24,6 +24,17 @@ import type {
   SqliteEvidence,
 } from "./api";
 
+/** Translator contract — same shape as `t` from `@/stores/i18nStore`.
+ *  This module is `require()`d verbatim by tests/js/database_console.test.js in
+ *  plain Node (only `import type` is allowed here), so helpers that render
+ *  English take `t` as a parameter with an identity default instead of
+ *  importing the store — see CONTRACT ("thread t as a parameter"). */
+export type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** English identity: interpolate the {vars} into the call-site fallback. */
+const identityT: Translate = (_key, fallback, vars) =>
+  vars ? fallback.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : fallback;
+
 /* ------------------------------------------------------------------ */
 /* Console explorer                                                    */
 /* ------------------------------------------------------------------ */
@@ -53,13 +64,18 @@ export function pickDefaultDatabase(list: ConsoleDatabase[] | undefined | null):
 /** Honest blocker for a database the console cannot read (null when reachable). */
 export function consoleBlocker(
   db: ConsoleDatabase | undefined | null,
+  t: Translate = identityT,
 ): { message: string; hint?: string } | null {
   if (!db) return null;
   if (isReachable(db)) return null;
   const where = db.path || (db.server ? `${db.server}/${db.database}` : db.name);
   const why = String(db.status ?? "UNKNOWN");
   return {
-    message: `'${db.name}' is ${why.replace(/_/g, " ").toLowerCase()} — ${where} could not be opened.`,
+    message: t("database.explorer.blocker_msg", "{name} is {status} — {where} could not be opened.", {
+      name: db.name,
+      status: why.replace(/_/g, " ").toLowerCase(),
+      where,
+    }),
     ...(db.hint ? { hint: String(db.hint) } : {}),
   };
 }
@@ -73,15 +89,17 @@ export function defaultSqlForProvider(provider: string | undefined | null): stri
 }
 
 /** "rows 1–100 · page 1" style caption, honest about an empty page. */
-export function pageCaption(offset: number, shown: number): string {
-  if (shown === 0) return `empty page (offset ${offset})`;
-  return `rows ${offset + 1}–${offset + shown}`;
+export function pageCaption(offset: number, shown: number, t: Translate = identityT): string {
+  if (shown === 0) return t("database.explorer.page_empty", "empty page (offset {offset})", { offset });
+  return t("database.explorer.page_range", "rows {from}–{to}", { from: offset + 1, to: offset + shown });
 }
 
 /** Truncation is a backend fact (`truncated` + `cap`); never re-inferred. */
-export function truncationNote(truncated: boolean | undefined, cap: number | undefined): string {
+export function truncationNote(truncated: boolean | undefined, cap: number | undefined, t: Translate = identityT): string {
   if (!truncated) return "";
-  return cap ? ` · truncated at the ${cap}-row cap` : " · truncated at the row cap";
+  return cap
+    ? t("database.explorer.trunc_cap", " · truncated at the {cap}-row cap", { cap })
+    : t("database.explorer.trunc_any", " · truncated at the row cap");
 }
 
 /* ------------------------------------------------------------------ */
@@ -244,7 +262,7 @@ export interface ProviderTruth {
  * payload proves: the configured provider and the connected-domain counts.
  * We never guess a file the client cannot see.
  */
-export function providerTruth(manage: DbManageStatus | undefined | null): ProviderTruth | null {
+export function providerTruth(manage: DbManageStatus | undefined | null, t: Translate = identityT): ProviderTruth | null {
   if (!manage) return null;
   const truth = manage.provider_truth;
   if (truth) {
@@ -280,7 +298,11 @@ export function providerTruth(manage: DbManageStatus | undefined | null): Provid
       ...base,
       effective: "sqlite",
       mismatch: true,
-      note: `0 of ${domains.length} domains are connected to postgresql — this tab's schema, storage and hygiene panels are fed by the local SQLite files.`,
+      note: t(
+        "database.page.truth_zero",
+        "{connected} of {total} domains are connected to postgresql — the schema, storage and hygiene panels here are fed by the local SQLite files.",
+        { connected, total: domains.length },
+      ),
     };
   }
   if (connected < domains.length) {
@@ -288,7 +310,11 @@ export function providerTruth(manage: DbManageStatus | undefined | null): Provid
       ...base,
       effective: "mixed",
       mismatch: true,
-      note: `only ${connected} of ${domains.length} domains answered on postgresql — the others still serve their local SQLite files.`,
+      note: t(
+        "database.page.truth_partial",
+        "only {connected} of {total} domains answered on postgresql — the others still serve their local SQLite files.",
+        { connected, total: domains.length },
+      ),
     };
   }
   return { ...base, effective: "postgresql", mismatch: false, note: "" };
@@ -296,25 +322,32 @@ export function providerTruth(manage: DbManageStatus | undefined | null): Provid
 
 /** Tri-state psycopg presence. `undefined` means the payload predates the
  *  field — the UI must say "not reported" instead of claiming "installed". */
-export function psycopgState(available: boolean | undefined | null): {
+export function psycopgState(available: boolean | undefined | null, t: Translate = identityT): {
   label: string;
   tone: "good" | "bad" | "neutral";
   sub: string;
 } {
   if (available === true) {
-    return { label: "installed", tone: "good", sub: "required while the provider is postgresql" };
+    return {
+      label: t("database.psycopg.installed", "installed"),
+      tone: "good",
+      sub: t("database.psycopg.required_sub", "required while the provider is postgresql"),
+    };
   }
   if (available === false) {
     return {
-      label: "missing",
+      label: t("database.psycopg.missing", "missing"),
       tone: "bad",
-      sub: "psycopg absent — postgres queries fail until installed or the provider switches back",
+      sub: t(
+        "database.psycopg.absent_sub",
+        "psycopg absent — postgres queries fail until installed or the provider switches back",
+      ),
     };
   }
   return {
-    label: "not reported",
+    label: t("database.psycopg.not_reported", "not reported"),
     tone: "neutral",
-    sub: "this backend build does not report driver presence",
+    sub: t("database.psycopg.not_reported_sub", "this backend build does not report driver presence"),
   };
 }
 
@@ -481,13 +514,15 @@ export function switchReadiness(
 }
 
 /** Human recency label for evidence rows ("just now", "47s ago", "3h ago"). */
-export function ageLabel(seconds: number | undefined | null): string {
-  if (typeof seconds !== "number" || !isFinite(seconds) || seconds < 0) return "age unknown";
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${Math.round(seconds)}s ago`;
+export function ageLabel(seconds: number | undefined | null, t: Translate = identityT): string {
+  if (typeof seconds !== "number" || !isFinite(seconds) || seconds < 0) {
+    return t("database.age.unknown", "age unknown");
+  }
+  if (seconds < 5) return t("database.age.just_now", "just now");
+  if (seconds < 60) return t("database.age.seconds", "{n}s ago", { n: Math.round(seconds) });
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t("database.age.minutes", "{n}m ago", { n: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 48) return t("database.age.hours", "{n}h ago", { n: hours });
+  return t("database.age.days", "{n}d ago", { n: Math.round(hours / 24) });
 }

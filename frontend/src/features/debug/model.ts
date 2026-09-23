@@ -14,6 +14,7 @@
  */
 
 import type { DebugFeatureRow, DebugState, DebugSubsystem } from "./api";
+import { identityT, type Translate } from "@/features/config/validation";
 
 /* ------------------------------------------------------------------ */
 /* Status semantics                                                    */
@@ -75,18 +76,18 @@ export interface DiffRow {
   b: string;
 }
 
-function flatten(obj: unknown, prefix: string, out: Map<string, string>, depth = 0): void {
+function flatten(obj: unknown, prefix: string, out: Map<string, string>, depth = 0, t: Translate = identityT): void {
   if (depth > 4 || out.size > 4000) return;
   if (Array.isArray(obj)) {
     if (obj.length === 0) out.set(prefix, "[]");
-    obj.slice(0, 50).forEach((v, i) => flatten(v, `${prefix}[${i}]`, out, depth + 1));
-    if (obj.length > 50) out.set(`${prefix}.…`, `${obj.length - 50} more`);
+    obj.slice(0, 50).forEach((v, i) => flatten(v, `${prefix}[${i}]`, out, depth + 1, t));
+    if (obj.length > 50) out.set(`${prefix}.…`, t("debug.diff.more", "{n} more", { n: obj.length - 50 }));
     return;
   }
   if (obj && typeof obj === "object") {
     const entries = Object.entries(obj as Record<string, unknown>);
     if (entries.length === 0) out.set(prefix, "{}");
-    for (const [k, v] of entries) flatten(v, prefix ? `${prefix}.${k}` : k, out, depth + 1);
+    for (const [k, v] of entries) flatten(v, prefix ? `${prefix}.${k}` : k, out, depth + 1, t);
     return;
   }
   out.set(prefix, obj === null || obj === undefined ? "—" : String(obj));
@@ -97,12 +98,12 @@ function flatten(obj: unknown, prefix: string, out: Map<string, string>, depth =
  * sections are expanded (the full snapshot is huge; the operator picks the
  * section). Stable output capped at `cap` rows.
  */
-export function diffSnapshotSections(a: DebugState | null, b: DebugState | null, section: string, cap = 300): DiffRow[] {
+export function diffSnapshotSections(a: DebugState | null, b: DebugState | null, section: string, cap = 300, t: Translate = identityT): DiffRow[] {
   if (!a || !b) return [];
   const fa = new Map<string, string>();
   const fb = new Map<string, string>();
-  flatten(a[section], section, fa);
-  flatten(b[section], section, fb);
+  flatten(a[section], section, fa, 0, t);
+  flatten(b[section], section, fb, 0, t);
   const keys = new Set([...fa.keys(), ...fb.keys()]);
   const rows: DiffRow[] = [];
   for (const key of Array.from(keys).sort()) {
@@ -187,12 +188,15 @@ function pick(row: Record<string, unknown>, keys: string[]): string {
 
 /** Merge signals+orders from the forensic trace into one chronological
  *  timeline (unknown timestamps sink to the bottom, never fabricated). */
-export function traceTimeline(trace: { signal: Array<Record<string, unknown>> | null; orders: Array<Record<string, unknown>> }): TimelineRow[] {
+export function traceTimeline(
+  trace: { signal: Array<Record<string, unknown>> | null; orders: Array<Record<string, unknown>> },
+  t: Translate = identityT,
+): TimelineRow[] {
   const rows: TimelineRow[] = [];
   for (const s of trace.signal ?? []) {
     rows.push({
       ts: pick(s, SIGNAL_TS_KEYS),
-      stage: `SIGNAL ${String(s.decision ?? s.action ?? s.signal ?? "")}`.trim(),
+      stage: `${t("debug.trace.signal_stage", "SIGNAL")} ${String(s.decision ?? s.action ?? s.signal ?? "")}`.trim(),
       detail: Object.entries(s)
         .filter(([k]) => !SIGNAL_TS_KEYS.includes(k))
         .slice(0, 8)
@@ -203,7 +207,7 @@ export function traceTimeline(trace: { signal: Array<Record<string, unknown>> | 
   for (const o of trace.orders ?? []) {
     rows.push({
       ts: pick(o, ORDER_TS_KEYS),
-      stage: `ORDER ${String(o.status ?? o.state ?? "")}`.trim(),
+      stage: `${t("debug.trace.order_stage", "ORDER")} ${String(o.status ?? o.state ?? "")}`.trim(),
       detail: Object.entries(o)
         .filter(([k]) => !ORDER_TS_KEYS.includes(k))
         .slice(0, 8)

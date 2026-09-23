@@ -15,6 +15,37 @@ const RTL: Partial<Record<Lang, boolean>> = { fa: true, ar: true };
 
 type Dict = Record<string, string>;
 
+/** One key's translations. The four non-English languages are REQUIRED at
+ *  compile time (en stays identity: its source string is the call-site
+ *  fallback of t()). An optional `en` entry is honored when present. */
+export interface MessageEntry {
+  fa: string;
+  de: string;
+  es: string;
+  ar: string;
+  en?: string;
+}
+
+/** A scope's message table (see <scope>/i18n.ts + lib/i18nMessages.ts). */
+export type FeatureMessages = Record<string, MessageEntry>;
+
+/** Runtime lookup filled by registerMessages() — scoped messages win over
+ *  the legacy chrome DICTS below. */
+const MAP: Record<string, Partial<Record<Lang, string>>> = {};
+
+/** Register one scope's messages (first registration wins; a duplicate key
+ *  warns and keeps the earlier entry so a later scope can never silently
+ *  shadow shared chrome keys). Called once per scope from i18nMessages.ts. */
+export function registerMessages(msgs: Record<string, Partial<Record<Lang, string>>>): void {
+  for (const [k, v] of Object.entries(msgs)) {
+    if (MAP[k] !== undefined) {
+      console.warn(`[i18n] duplicate key ignored: ${k}`);
+      continue;
+    }
+    MAP[k] = v;
+  }
+}
+
 const DICTS: Record<Lang, Dict | null> = {
   en: null, // English = source strings (identity)
   fa: {
@@ -32,6 +63,7 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.mode.title": "تغییر حالت اجرا: {from} ← {to}؟",
     "ux.mode.body": "این تغییر نحوه اجرای معاملات موتور را عوض می‌کند.",
     "ux.mode.impact_label": "چه چیزی تغییر می‌کند",
+    "ux.mode.danger_zone": "منطقه خطر",
     "ux.mode.live_warning": "پول واقعی در معرض ریسک است. این کار روی حساب زنده کارگزار شما اثر می‌گذارد.",
     "ux.mode.confirm_live": "فعال‌سازی اجرای زنده (LIVE)",
     "ux.stale": "قدیمی {s}ث",
@@ -117,7 +149,18 @@ const DICTS: Record<Lang, Dict | null> = {
     "common.disable": "غیرفعال‌سازی",
     "common.unavailable": "داده در دسترس نیست",
     "common.stale": "قدیمی",
+    "ux.palette.section.pages": "صفحات",
+    "ux.palette.group.recents": "اخیراً",
+    "ux.palette.hint.nav": "حرکت",
+    "ux.palette.hint.run": "اجرا",
+    "ux.palette.hint.close": "بستن",
+    "ux.settings.density": "تراکم ردیف",
+    "ux.settings.sidebar": "نوار کناری",
     "ux.lang.label": "زبان",
+    "nav.feature.model-studio": "استودیو عصبی",
+    "nav.feature.position-adviser": "مشاور پوزیشن",
+    "nav.feature.dependency": "وابستگی‌ها",
+    "nav.feature.provisioning": "راه‌اندازی مدل",
   },
   de: {
     "ux.conn.title": "VERBINDUNG VERLOREN",
@@ -134,6 +177,7 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.mode.title": "Ausführungsmodus wechseln: {from} → {to}?",
     "ux.mode.body": "Dies ändert, wie die Engine Aufträge ausführt.",
     "ux.mode.impact_label": "Was sich ändert",
+    "ux.mode.danger_zone": "Gefahrenzone",
     "ux.mode.live_warning": "Echtes Kapital ist gefährdet. Dies betrifft Ihr Live-Broker-Konto.",
     "ux.mode.confirm_live": "LIVE-Ausführung scharf schalten",
     "ux.stale": "VERALTET {s}s",
@@ -171,7 +215,65 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.sidebar.operate": "Täglicher Betrieb",
     "ux.sidebar.analyze": "Analyse & Forschung",
     "ux.sidebar.system": "System",
+    "ux.auth.banner": "⛔ Das Backend hat das Web-Auth-Anmeldetoken abgelehnt (WEB-AUTH-P0). Die Konsole startet sich selbst über den First-Party-Cookie (BUG-267) — besteht das Problem weiter, einmal neu laden oder öffnen als",
+    "ux.auth.banner.suffix": "(Token wird nur in sessionStorage gespeichert).",
+    "ux.auth.mode.cookie": "Modus: nur Cookie (kein Bearer-Token).",
+    "ux.shortcut.palette": "Befehlspalette",
+    "ux.shortcut.jump": "Zur Seite springen",
+    "ux.shortcut.sidebar": "Seitenleiste umschalten",
+    "ux.shortcut.refresh": "Daten aktualisieren (nicht beim Tippen)",
+    "ux.shortcut.esc": "Dialoge schließen",
+    "ux.palette.section.pages": "SEITEN",
+    "ux.palette.group.recents": "Zuletzt",
+    "ux.palette.hint.nav": "navigieren",
+    "ux.palette.hint.run": "ausführen",
+    "ux.palette.hint.close": "schließen",
+    "ux.settings.density": "Zeilendichte",
+    "ux.settings.sidebar": "Seitenleiste",
     "ux.lang.label": "Sprache",
+    "ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME": "KEIN TRADE — das Marktreregime gilt derzeit für Einstiege als unsicher (Guardian).",
+    "ux.reason.CONFIDENCE_GATE": "KEIN TRADE — die Modellkonfidenz hat die notwendige Schwelle nicht erreicht.",
+    "ux.reason.NO_CANDIDATE": "Keine handelbare Gelegenheit erkannt.",
+    "ux.sidebar.features.operations": "OPERATIONEN",
+    "ux.sidebar.features.market": "MARKT & FORSCHUNG",
+    "ux.sidebar.features.safety": "SICHERHEIT & GOVERNANCE",
+    "ux.sidebar.features.platform": "PLATTFORM",
+    "ux.density.label": "DICHTE",
+    "nav.page.dashboard": "Dashboard",
+    "nav.page.trading": "Trading",
+    "nav.page.positions": "Positionen",
+    "nav.page.risk": "Risiko",
+    "nav.page.ml": "ML / 70D",
+    "nav.page.intelligence": "Intelligenz",
+    "nav.page.audit": "Audit",
+    "nav.feature.news": "Nachrichten",
+    "nav.feature.ai-analysis": "KI-Analyse",
+    "nav.feature.research": "Forschung",
+    "nav.feature.marketplace": "Marktplatz",
+    "nav.feature.factory": "Fabrik",
+    "nav.feature.account": "Buchhaltung",
+    "nav.feature.health": "Systemgesundheit",
+    "nav.feature.rules": "Regeln",
+    "nav.feature.config": "Einstellungen",
+    "nav.feature.debug": "Debug",
+    "nav.feature.governance": "Governance",
+    "nav.feature.liquidity": "Liquidität",
+    "nav.feature.incidents": "Vorfälle",
+    "nav.feature.command-center": "Kommandozentrale",
+    "nav.feature.control-center": "Kontrollzentrum",
+    "nav.feature.database": "Datenbank",
+    "nav.feature.model-studio": "Neural Studio",
+    "nav.feature.position-adviser": "Positionsberater",
+    "nav.feature.dependency": "Abhängigkeiten",
+    "nav.feature.provisioning": "Modell-Setup",
+    "common.refresh": "Aktualisieren",
+    "common.retry": "Erneut versuchen",
+    "common.close": "Schließen",
+    "common.save": "Speichern",
+    "common.enable": "Aktivieren",
+    "common.disable": "Deaktivieren",
+    "common.unavailable": "Daten nicht verfügbar",
+    "common.stale": "VERALTET",
   },
   es: {
     "ux.conn.title": "CONEXIÓN PERDIDA",
@@ -188,6 +290,7 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.mode.title": "¿Cambiar modo de ejecución: {from} → {to}?",
     "ux.mode.body": "Esto cambia cómo la plataforma ejecuta órdenes.",
     "ux.mode.impact_label": "Qué cambia",
+    "ux.mode.danger_zone": "Zona de peligro",
     "ux.mode.live_warning": "Hay dinero real en riesgo. Esto afecta su cuenta real del bróker.",
     "ux.mode.confirm_live": "Activar ejecución EN VIVO",
     "ux.stale": "ANTIGUO {s}s",
@@ -225,7 +328,65 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.sidebar.operate": "Operación diaria",
     "ux.sidebar.analyze": "Análisis e investigación",
     "ux.sidebar.system": "Sistema",
+    "ux.auth.banner": "⛔ El backend rechazó la credencial web-auth (WEB-AUTH-P0). La consola se autoinicia mediante la cookie de primer origen (BUG-267) — si persista, recargue una vez o abra como",
+    "ux.auth.banner.suffix": "(el token se guarda solo en sessionStorage).",
+    "ux.auth.mode.cookie": "Modo: solo cookie (sin token bearer).",
+    "ux.shortcut.palette": "Paleta de comandos",
+    "ux.shortcut.jump": "Ir a una página",
+    "ux.shortcut.sidebar": "Mostrar/ocultar barra lateral",
+    "ux.shortcut.refresh": "Actualizar datos (no al escribir)",
+    "ux.shortcut.esc": "Cerrar diálogos",
+    "ux.palette.section.pages": "PÁGINAS",
+    "ux.palette.group.recents": "Recientes",
+    "ux.palette.hint.nav": "navegar",
+    "ux.palette.hint.run": "ejecutar",
+    "ux.palette.hint.close": "cerrar",
+    "ux.settings.density": "Densidad de filas",
+    "ux.settings.sidebar": "Barra lateral",
     "ux.lang.label": "Idioma",
+    "ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME": "SIN OPERACIÓN — el régimen de mercado se considera actualmente inseguro para entrar (Guardian).",
+    "ux.reason.CONFIDENCE_GATE": "SIN OPERACIÓN — la confianza del modelo no alcanzó el umbral necesario.",
+    "ux.reason.NO_CANDIDATE": "No se detectó ninguna oportunidad operable en este momento.",
+    "ux.sidebar.features.operations": "OPERACIONES",
+    "ux.sidebar.features.market": "MERCADO E INVESTIGACIÓN",
+    "ux.sidebar.features.safety": "SEGURIDAD Y GOBERNANZA",
+    "ux.sidebar.features.platform": "PLATAFORMA",
+    "ux.density.label": "DENSIDAD",
+    "nav.page.dashboard": "Panel",
+    "nav.page.trading": "Operativa",
+    "nav.page.positions": "Posiciones",
+    "nav.page.risk": "Riesgo",
+    "nav.page.ml": "ML / 70D",
+    "nav.page.intelligence": "Inteligencia",
+    "nav.page.audit": "Auditoría",
+    "nav.feature.news": "Noticias",
+    "nav.feature.ai-analysis": "Análisis de IA",
+    "nav.feature.research": "Investigación",
+    "nav.feature.marketplace": "Mercado",
+    "nav.feature.factory": "Fábrica",
+    "nav.feature.account": "Contabilidad",
+    "nav.feature.health": "Salud",
+    "nav.feature.rules": "Reglas",
+    "nav.feature.config": "Ajustes",
+    "nav.feature.debug": "Depuración",
+    "nav.feature.governance": "Gobernanza",
+    "nav.feature.liquidity": "Liquidez",
+    "nav.feature.incidents": "Incidentes",
+    "nav.feature.command-center": "Centro de mando",
+    "nav.feature.control-center": "Centro de control",
+    "nav.feature.database": "Base de datos",
+    "nav.feature.model-studio": "Estudio Neural",
+    "nav.feature.position-adviser": "Asesor de posiciones",
+    "nav.feature.dependency": "Dependencias",
+    "nav.feature.provisioning": "Preparación de modelos",
+    "common.refresh": "Actualizar",
+    "common.retry": "Reintentar",
+    "common.close": "Cerrar",
+    "common.save": "Guardar",
+    "common.enable": "Activar",
+    "common.disable": "Desactivar",
+    "common.unavailable": "Datos no disponibles",
+    "common.stale": "DESACTUALIZADO",
   },
   ar: {
     "ux.conn.title": "انقطاع الاتصال",
@@ -242,6 +403,7 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.mode.title": "تغيير وضع التنفيذ: {from} ← {to}؟",
     "ux.mode.body": "سيؤدي هذا إلى تغيير طريقة تنفيذ الأوامر.",
     "ux.mode.impact_label": "ما الذي يتغير",
+    "ux.mode.danger_zone": "منطقة الخطر",
     "ux.mode.live_warning": "أموال حقيقية معرضة للخطر. سيؤثر ذلك على حسابك الحقيقي لدى الوسيط.",
     "ux.mode.confirm_live": "تفعيل التنفيذ المباشر",
     "ux.stale": "قديم {s}ث",
@@ -279,7 +441,65 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.sidebar.operate": "التشغيل اليومي",
     "ux.sidebar.analyze": "التحليل والبحث",
     "ux.sidebar.system": "النظام",
+    "ux.auth.banner": "⛔ رفض الخادم بيانات اعتماد مصادقة الويب (WEB-AUTH-P0). تبدأ الكونسول ذاتيًا عبر ملف تعريف الارتباط من الأصل الأول (BUG-267) — إذا استمر هذا، أعد التحميل مرة واحدة أو افتح كـ",
+    "ux.auth.banner.suffix": "(يُحفظ الرمز المميز في sessionStorage فقط).",
+    "ux.auth.mode.cookie": "الوضع: ارتباط فقط (بدون رمز bearer).",
+    "ux.shortcut.palette": "لوحة الأوامر",
+    "ux.shortcut.jump": "الانتقال إلى صفحة",
+    "ux.shortcut.sidebar": "تبديل الشريط الجانبي",
+    "ux.shortcut.refresh": "تحديث البيانات (ليس أثناء الكتابة)",
+    "ux.shortcut.esc": "إغلاق النوافذ",
+    "ux.palette.section.pages": "الصفحات",
+    "ux.palette.group.recents": "الأحدث",
+    "ux.palette.hint.nav": "تنقل",
+    "ux.palette.hint.run": "تنفيذ",
+    "ux.palette.hint.close": "إغلاق",
+    "ux.settings.density": "كثافة الصفوف",
+    "ux.settings.sidebar": "الشريط الجانبي",
     "ux.lang.label": "اللغة",
+    "ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME": "بدون صفقة — يُعتبر نظام السوق الحالي غير آمن للدخول (Guardian).",
+    "ux.reason.CONFIDENCE_GATE": "بدون صفقة — لم تبلغ ثقة النموذج الحد المطلوب.",
+    "ux.reason.NO_CANDIDATE": "لم يُكتشف أي فرصة تداول مناسبة في هذا الوقت.",
+    "ux.sidebar.features.operations": "العمليات",
+    "ux.sidebar.features.market": "السوق والبحث",
+    "ux.sidebar.features.safety": "السلامة والحوكمة",
+    "ux.sidebar.features.platform": "المنصة",
+    "ux.density.label": "الكثافة",
+    "nav.page.dashboard": "لوحة المعلومات",
+    "nav.page.trading": "التداول",
+    "nav.page.positions": "المراكز",
+    "nav.page.risk": "المخاطر",
+    "nav.page.ml": "ML / 70D",
+    "nav.page.intelligence": "الذكاء",
+    "nav.page.audit": "التدقيق",
+    "nav.feature.news": "الأخبار",
+    "nav.feature.ai-analysis": "تحليل الذكاء الاصطناعي",
+    "nav.feature.research": "الأبحاث",
+    "nav.feature.marketplace": "المتجر",
+    "nav.feature.factory": "المصنع",
+    "nav.feature.account": "المحاسبة",
+    "nav.feature.health": "الصحة",
+    "nav.feature.rules": "القواعد",
+    "nav.feature.config": "الإعدادات",
+    "nav.feature.debug": "تصحيح الأخطاء",
+    "nav.feature.governance": "الحوكمة",
+    "nav.feature.liquidity": "السيولة",
+    "nav.feature.incidents": "الحوادث",
+    "nav.feature.command-center": "مركز القيادة",
+    "nav.feature.control-center": "مركز التحكم",
+    "nav.feature.database": "قاعدة البيانات",
+    "nav.feature.model-studio": "الاستوديو العصبي",
+    "nav.feature.position-adviser": "مستشار المراكز",
+    "nav.feature.dependency": "التبعيات",
+    "nav.feature.provisioning": "إعداد النموذج",
+    "common.refresh": "تحديث",
+    "common.retry": "إعادة المحاولة",
+    "common.close": "إغلاق",
+    "common.save": "حفظ",
+    "common.enable": "تفعيل",
+    "common.disable": "تعطيل",
+    "common.unavailable": "البيانات غير متاحة",
+    "common.stale": "قديم",
   },
 };
 
@@ -309,8 +529,9 @@ export function detectLang(): Lang {
 /** t(key, fallback, vars) — same contract as Web/ux_i18n.js: dictionary entry
  *  for the active language, else the English fallback, {var} interpolation. */
 export function translate(lang: Lang, key: string, fallback: string, vars?: Record<string, string | number>): string {
+  const entry = MAP[key];
   const dict = DICTS[lang];
-  let s = (dict && dict[key]) || fallback;
+  let s = (entry && (entry[lang] || entry.en)) || (dict && dict[key]) || fallback;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
   }

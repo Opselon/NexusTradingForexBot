@@ -18,6 +18,7 @@
  */
 
 import { formatDateTime } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 
 /** Badge tone classes provided by theme.css (good/warn/bad/neutral/unknown). */
 export type WordTone = "good" | "warn" | "bad" | "neutral" | "unknown";
@@ -29,16 +30,17 @@ export type WordTone = "good" | "warn" | "bad" | "neutral" | "unknown";
  * Far-future timestamps (clock skew) render absolutely rather than as "now".
  */
 export function relTime(iso: string | number | null | undefined): string | null {
+  const t = useI18n.getState().t;
   if (iso === null || iso === undefined || iso === "") return null;
-  const t = typeof iso === "number" ? (iso > 1e12 ? iso : iso * 1000) : Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  const diff = Date.now() - t;
+  const ts = typeof iso === "number" ? (iso > 1e12 ? iso : iso * 1000) : Date.parse(iso);
+  if (!Number.isFinite(ts)) return null;
+  const diff = Date.now() - ts;
   if (diff < -60_000) return formatDateTime(iso); // future → absolute, honestly
-  if (diff < 60_000) return "just now";
+  if (diff < 60_000) return t("intelligence.rel.now", "just now");
   const s = Math.floor(diff / 1000);
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
-  if (s < 86_400 * 30) return `${Math.floor(s / 86_400)}d ago`;
+  if (s < 3600) return t("intelligence.rel.minutes", "{n}m ago", { n: Math.floor(s / 60) });
+  if (s < 86_400) return t("intelligence.rel.hours", "{n}h ago", { n: Math.floor(s / 3600) });
+  if (s < 86_400 * 30) return t("intelligence.rel.days", "{n}d ago", { n: Math.floor(s / 86_400) });
   return formatDateTime(iso);
 }
 
@@ -89,12 +91,13 @@ export function WordBadge({
   tone: WordTone;
   title?: string;
 }) {
+  const t = useI18n((s) => s.t);
   const raw = word === null || word === undefined ? "" : String(word).trim();
   const text = raw ? raw : fallback;
   return (
     <span
       className={`badge ${tone} itl-word`}
-      title={title ?? (raw ? `backend value: ${raw}` : "backend sent no value")}
+      title={title ?? (raw ? t("intelligence.word.value", "backend value: {v}", { v: raw }) : t("intelligence.word.no_value", "backend sent no value"))}
     >
       {text}
     </span>
@@ -110,11 +113,12 @@ export function WordBadge({
  * "—" figure already states the absence; an empty track must not read as zero).
  */
 export function ScoreBar({ value, label }: { value: number | null | undefined; label: string }) {
+  const t = useI18n((s) => s.t);
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
   const pct = Math.max(0, Math.min(1, value)) * 100;
   const raw = String(value);
   return (
-    <span className="itl-score" title={`${label}: ${raw} — backend 0–1 score, bar clamped for display`}>
+    <span className="itl-score" title={t("intelligence.score.title", "{label}: {value} (backend 0–1 score)", { label, value: raw })}>
       <span className="itl-score__lab">{label}</span>
       <span className="itl-score__num">{raw}</span>
       <span className="itl-score__track" role="img" aria-label={`${label}: ${raw}`}>

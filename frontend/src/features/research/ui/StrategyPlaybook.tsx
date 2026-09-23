@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { getEntry, queryHandbook, type HandbookEntry } from "../handbook/content";
 
 type Props = {
@@ -23,6 +24,7 @@ type Props = {
 };
 
 export default function StrategyPlaybook({ focusId, compact }: Props) {
+  const t = useI18n((s) => s.t);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | undefined>(focusId);
   const nodeRefs = useRef(new Map<string, HTMLElement>());
@@ -31,9 +33,9 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
   // grouped entries) so a parent re-render with an unchanged query does not
   // re-filter the corpus — deps: [query], the only reactive value read.
   const { groups, total } = useMemo(() => {
-    const g = queryHandbook(query);
+    const g = queryHandbook(query, t);
     return { groups: g, total: g.reduce((n, grp) => n + grp.entries.length, 0) };
-  }, [query]);
+  }, [query, t]);
 
   // Deep-link: expand the focused entry and bring it into view.
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
           {groups.map((g) => (
             <div className="rs-pb-group" key={g.key}>
               <div className="rs-pb-group-label">
-                {g.label} · {g.entries.length}
+                {t(g.labelKey, g.label)} · {g.entries.length}
               </div>
               {g.entries.map((e) => (
                 <button
@@ -111,7 +113,7 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
         ) : (
           groups.map((g) => (
             <div key={g.key}>
-              <div className="rs-pb-section-label">{g.label}</div>
+              <div className="rs-pb-section-label">{t(g.labelKey, g.label)}</div>
               <div className="rs-stagger" style={{ display: "grid", gap: 0 }}>
                 {g.entries.map((e) => (
                   <EntryCard
@@ -145,6 +147,7 @@ function EntryCard({
   onSeeAlso: (id: string) => void;
   bindRef: (node: HTMLElement | null) => void;
 }) {
+  const t = useI18n((s) => s.t);
   const label = `${entry.kind}: ${entry.title}`;
   return (
     <article className={`rs-pb-entry ${open ? "open" : ""}`} ref={bindRef} id={`pb-${entry.id}`}>
@@ -208,7 +211,7 @@ function EntryCard({
 
             {entry.faq && entry.faq.length > 0 && (
               <>
-                <h4>Operator FAQ</h4>
+                <h4>{t("research.pb.faq_h", "Operator FAQ")}</h4>
                 {entry.faq.map((f) => (
                   <div className="rs-faq" key={f.q}>
                     <div className="rs-faq-q">{f.q}</div>

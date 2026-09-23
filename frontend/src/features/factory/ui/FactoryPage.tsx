@@ -29,12 +29,14 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, FreshnessCaption, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { arr, bool, num, obj, str, type FactoryCommandDto, type Row } from "../model";
 import { factoryQueries, factoryUseCases } from "../useCases";
+import { useI18n } from "@/stores/i18nStore";
 
 type Tab = "generations" | "candidates" | "benchmarks" | "failures" | "ranking" | "memory" | "console";
 
 const RANK_DIMS = ["OVERALL", "SHARPE", "EXPECTANCY", "STABILITY"];
 
 export default function FactoryPage(props: ShellPageProps) {
+  const t = useI18n((s) => s.t);
   void props;
   const [tab, setTab] = useState<Tab>("generations");
   const [genFilter, setGenFilter] = useState("");
@@ -208,7 +210,7 @@ export default function FactoryPage(props: ShellPageProps) {
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>Strategy Factory</h2>
+        <h2>{t("factory.page.hero_title", "Strategy Factory")}</h2>
         <span className="muted small">autonomous evolution control room — never touches the live path</span>
         <FreshnessCaption timestamp={null} source="factory store" isFetching={statusQ.isFetching} error={statusQ.isError} />
       </div>

@@ -4,26 +4,44 @@
  * Presentation only: verdict/action classification maps the backend's own
  * vocabulary (service.py gauge labels + ports.py actions) verbatim to CSS
  * classes; an unrecognized string renders as "unknown", never a guess.
+ * Rendered verdict WORDS are localized through the t() seam; an unrecognized
+ * backend label is still shown verbatim.
  */
 
 import type { GaugeVerdict } from "../model";
+import { useI18n } from "@/stores/i18nStore";
+
+/** t() signature (mirrors i18nStore) so plain helpers can take it as an arg. */
+export type TranslateFn = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** Recognized backend verdict -> localized display word (literal keys only). */
+export function verdictName(v: GaugeVerdict, t: TranslateFn): string {
+  if (v === "strong sell") return t("ai-analysis.verdict.strong_sell", "Strong sell");
+  if (v === "sell") return t("ai-analysis.verdict.sell", "Sell");
+  if (v === "neutral") return t("ai-analysis.verdict.neutral", "Neutral");
+  if (v === "buy") return t("ai-analysis.verdict.buy", "Buy");
+  return t("ai-analysis.verdict.strong_buy", "Strong buy");
+}
 
 /** Verdict pill — Buy green / Sell red / Neutral dim, Strong shades (verbatim label). */
 export function VerdictPill({ label, big = false }: { label: string | null; big?: boolean }) {
+  const t = useI18n((s) => s.t);
   const v = label ? verdictOfSafe(label) : null;
   const cls = v ? `ic-verdict is-${v === "neutral" ? "neutral" : verdictCss(v)}` : "ic-verdict is-unknown";
   return (
     <span className={`${cls} ${big ? "is-big" : ""}`}>
       {v ? <i aria-hidden="true">{verdictGlyph(v)}</i> : <i aria-hidden="true">◌</i>}
-      {label ?? "—"}
+      {v ? verdictName(v, t) : (label ?? "—")}
     </span>
   );
 }
 
 export function CountChip({ kind, value }: { kind: "sell" | "neutral" | "buy"; value: number | null }) {
+  const t = useI18n((s) => s.t);
+  const word = kind === "sell" ? verdictName("sell", t) : kind === "neutral" ? verdictName("neutral", t) : verdictName("buy", t);
   return (
     <div className={`ic-count is-${kind}`}>
-      <span className="ic-count-k">{kind === "sell" ? "Sell" : kind === "neutral" ? "Neutral" : "Buy"}</span>
+      <span className="ic-count-k">{word}</span>
       <span className="ic-count-v">{value === null || !Number.isFinite(value) ? "—" : value}</span>
     </div>
   );

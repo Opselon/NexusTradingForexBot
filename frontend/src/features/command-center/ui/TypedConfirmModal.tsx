@@ -18,14 +18,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useDialogA11y } from "../../../components/useDialogA11y";
 import type { ReactNode } from "react";
+import { useI18n } from "@/stores/i18nStore";
 
 export function TypedConfirmModal({
   title,
   body,
   impact,
   requireText = null,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   busy = false,
   onResolve,
 }: {
@@ -40,8 +41,11 @@ export function TypedConfirmModal({
   /** true = operator explicitly confirmed; false = aborted/never armed. */
   onResolve: (confirmed: boolean) => void;
 }) {
+  const t = useI18n((s) => s.t);
   const [typed, setTyped] = useState("");
   const armed = requireText === null || typed === requireText;
+  const cancelText = cancelLabel ?? t("ux.confirm.cancel", "Cancel");
+  const confirmText = confirmLabel ?? t("ux.confirm.ok", "Confirm");
   const inputRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const resolveRef = useRef(onResolve);
@@ -77,7 +81,9 @@ export function TypedConfirmModal({
           {requireText ? (
             <div className="tc-type-row">
               <label className="tiny" htmlFor="tc-token">
-                Type <span className="inline-mono tc-token-ref">{requireText}</span> to enable confirmation
+                {t("command-center.confirm.type_prefix", "Type")}{" "}
+                <span className="inline-mono tc-token-ref">{requireText}</span>{" "}
+                {t("command-center.confirm.type_suffix", "to enable confirmation")}
               </label>
               <div className="row">
                 <input
@@ -92,7 +98,7 @@ export function TypedConfirmModal({
                   aria-describedby="tc-hint"
                 />
                 <span id="tc-hint" className="tiny faint">
-                  exact match required — a LIVE switch is never confirmed by click alone
+                  {t("command-center.confirm.exact_hint", "exact match required — a LIVE switch is never confirmed by click alone")}
                 </span>
               </div>
             </div>
@@ -100,21 +106,27 @@ export function TypedConfirmModal({
         </div>
         <div className="modal-actions">
           <button className="btn" disabled={busy} onClick={() => resolveRef.current(false)}>
-            {cancelLabel} <kbd>esc</kbd>
+            {cancelText} <kbd>esc</kbd>
           </button>
           <button
             className={`btn ${requireText ? "danger" : "primary"}`}
             disabled={busy || !armed}
-            title={armed ? undefined : `type ${requireText} first`}
+            title={armed ? undefined : t("command-center.confirm.type_first", "type {w} first", { w: requireText ?? "" })}
             onClick={() => resolveRef.current(true)}
           >
-            {busy ? "sending…" : confirmLabel}
+            {busy ? t("command-center.confirm.sending", "sending…") : confirmText}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+/** Same contract as the store's `t` (see stores/i18nStore) — callers pass
+ *  `useI18n.getState().t` (or the render-time `t`) so the spec translates. */
+export type TranslateFn = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+/** Default when a caller has no translator at hand: English source stays. */
+const identityTranslate: TranslateFn = (_key, fallback) => fallback;
 
 /** What actually changes per target mode — copy parity with legacy MODE_IMPACT. */
 export const MODE_IMPACT: Record<string, string> = {
@@ -129,19 +141,31 @@ export const MODE_IMPACT: Record<string, string> = {
  * confirm with no typing. Never infers or mutates anything — the caller sends
  * the command ONLY when this resolves true, and the backend answer decides.
  */
-export function modeChangeSpec(fromMode: string, toMode: string) {
+export function modeChangeSpec(fromMode: string, toMode: string, t: TranslateFn = identityTranslate) {
   const to = (toMode || "").toUpperCase();
   const toLive = to === "LIVE";
+  const impact =
+    to === "PAPER"
+      ? t("command-center.mode.impact_paper", "Simulated fills only — no real orders reach the broker.")
+      : to === "SHADOW"
+        ? t("command-center.mode.impact_shadow", "Signals are computed but never dispatched as orders.")
+        : to === "LIVE"
+          ? t("command-center.mode.impact_live", "The engine will dispatch REAL orders to the connected broker account.")
+          : MODE_IMPACT[to] ?? to;
   return {
-    title: `Switch execution mode: ${fromMode} → ${to}?`,
-    body: "This changes how the engine executes orders.",
+    title: t("ux.mode.title", "Switch execution mode: {from} → {to}?", { from: fromMode, to }),
+    body: t("ux.mode.body", "This changes how the engine executes orders."),
     impact: (
       <>
-        <b>What changes</b>: {MODE_IMPACT[to] ?? to}
-        {toLive && <div className="tc-live-warn">Real money is at risk. This affects your live broker account.</div>}
+        <b>{t("ux.mode.impact_label", "What changes")}</b>: {impact}
+        {toLive && (
+          <div className="tc-live-warn">
+            {t("ux.mode.live_warning", "Real money is at risk. This affects your live broker account.")}
+          </div>
+        )}
       </>
     ),
     requireText: toLive ? "LIVE" : null,
-    confirmLabel: toLive ? "Arm LIVE execution" : "Confirm",
+    confirmLabel: toLive ? t("ux.mode.confirm_live", "Arm LIVE execution") : t("ux.confirm.ok", "Confirm"),
   } as const;
 }

@@ -294,7 +294,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
             <div tabIndex={0} className="table-wrap">
               <table className="data-table">
                 <thead>
-                  <tr><th scope="col">#</th><th scope="col">Order id</th><th scope="col">Symbol</th><th scope="col">Type</th><th scope="col">Volume</th><th scope="col">Price</th><th scope="col">Status</th><th scope="col">Executed</th></tr>
+                  <tr><th scope="col">#</th><th scope="col">{t("trading.th.order_id", "Order id")}</th><th scope="col">{t("trading.th.symbol", "Symbol")}</th><th scope="col">{t("trading.th.type", "Type")}</th><th scope="col">{t("trading.th.vol", "Volume")}</th><th scope="col">{t("trading.th.price", "Price")}</th><th scope="col">{t("trading.th.status", "Status")}</th><th scope="col">{t("trading.th.executed", "Executed")}</th></tr>
                 </thead>
                 <tbody>
                   {d.items.map((r, i) => (

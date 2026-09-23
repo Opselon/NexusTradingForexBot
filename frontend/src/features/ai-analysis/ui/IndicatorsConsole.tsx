@@ -23,6 +23,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { ApiError } from "@/types/api";
 import { formatPrice, formatTime } from "@/lib/format";
 import type {
@@ -66,6 +67,7 @@ const POLL_ERR_MS = 10_000;
 type FeedStatus = "loading" | "live" | "stale" | "error";
 
 export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf: string) => void }) {
+  const t = useI18n((s) => s.t);
   const snapshotQ = useQuery({
     queryKey: ["ai-analysis", "indicators", "snapshot", tf],
     queryFn: ({ signal }) => aiAnalysisQueries.indicatorsSnapshot(tf, signal),
@@ -122,7 +124,7 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
           </span>
         </div>
         <div className="ic-pricewrap">
-          <span className="ic-plabel">Last close</span>
+          <span className="ic-plabel">{t("ai-analysis.ind.last_close", "Last close")}</span>
           <span className="ic-price">{formatPrice(data?.last_close ?? null)}</span>
           <span className="ic-updated" title="When this browser last received a successful snapshot">
             {status === "loading" ? "updated —" : `updated ${formatTime(snapshotQ.dataUpdatedAt || null)}`}
@@ -189,7 +191,7 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
           {/* 4) DISTRIBUTION SIGNAL BAR — widths ARE the backend counts */}
           <section className="ic-card ic-signalbar" aria-label="Overall technical summary distribution">
             <div className="ic-signal-head">
-              <span className="ic-signal-name">Overall Technical Summary</span>
+              <span className="ic-signal-name">{t("ai-analysis.ind.signal_name", "Overall Technical Summary")}</span>
               <VerdictPill label={sum?.label ?? null} />
               <span className="ic-signal-meta">{sum ? `${sumTotal} votes counted by the backend` : "no summary gauge returned"}</span>
             </div>
@@ -379,6 +381,7 @@ function ReadingTable({
 /* ─────────────────────────── pivot matrix ─────────────────────────────── */
 
 function PivotMatrixPanel({ pivots, show }: { pivots: IndicatorPivots | undefined; show: boolean }) {
+  const t = useI18n((s) => s.t);
   const levels = pivots?.levels ?? [];
   const columns = pivots?.columns ?? [];
   const rowsMap = pivots?.rows ?? {};
@@ -388,7 +391,7 @@ function PivotMatrixPanel({ pivots, show }: { pivots: IndicatorPivots | undefine
   return (
     <section className="ic-card ic-table-panel ic-pivots" aria-label="Pivot levels">
       <div className="ic-panel-h">
-        <h3 className="ic-panel-t">Pivot Levels</h3>
+        <h3 className="ic-panel-t">{t("ai-analysis.ind.pivot_title", "Pivot Levels")}</h3>
         <span className="ic-panel-sub">{columns.length ? columns.join(" · ").toLowerCase() : "families as the backend sends them"}</span>
       </div>
       {empty ? (

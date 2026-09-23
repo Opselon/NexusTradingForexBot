@@ -6,11 +6,14 @@
  * are functions of the backend verdict label + `angle_deg` only. Neutral or
  * missing angle parks the needle at 90° exactly like the legacy default —
  * no value is ever invented.
+ * Arc labels are localized at render (t() seam); edge labels sit inset from
+ * the viewBox so longer translated words (de/es) cannot clip.
  */
 
 import { useId } from "react";
 import type { GaugeVerdict } from "../model";
-import { verdictCss } from "./indicatorKit";
+import { useI18n } from "@/stores/i18nStore";
+import { verdictCss, verdictName } from "./indicatorKit";
 
 const CX = 100;
 const CY = 100;
@@ -38,15 +41,17 @@ function bandFor(label: GaugeVerdict | null): { from: number; to: number; side: 
   return null;
 }
 
-const LABELS: Array<{ name: string; v: GaugeVerdict; x: number; y: number }> = [
-  { name: "Strong sell", v: "strong sell", x: 8, y: 108 },
-  { name: "Sell", v: "sell", x: 45, y: 34 },
-  { name: "Neutral", v: "neutral", x: 90, y: 8 },
-  { name: "Buy", v: "buy", x: 135, y: 34 },
-  { name: "Strong buy", v: "strong buy", x: 172, y: 108 },
+/** Geometry only — the visible word comes from verdictName() at render. */
+const LABELS: Array<{ v: GaugeVerdict; x: number; y: number }> = [
+  { v: "strong sell", x: 36, y: 108 },
+  { v: "sell", x: 45, y: 34 },
+  { v: "neutral", x: 90, y: 8 },
+  { v: "buy", x: 135, y: 34 },
+  { v: "strong buy", x: 164, y: 108 },
 ];
 
 export function IndicatorCycle({ label, angleDeg }: { label: GaugeVerdict | null; angleDeg: number | null }) {
+  const t = useI18n((s) => s.t);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const sellGrad = `ic-grad-sell-${uid}`;
   const buyGrad = `ic-grad-buy-${uid}`;
@@ -71,14 +76,14 @@ export function IndicatorCycle({ label, angleDeg }: { label: GaugeVerdict | null
       {b && <path d={arc(b.from, b.to)} fill="none" stroke={`url(#${b.side === "sell" ? sellGrad : buyGrad})`} strokeWidth={11} strokeLinecap="butt" />}
       {LABELS.map((l) => (
         <text
-          key={l.name}
+          key={l.v}
           className={`ic-arc-label ${label === l.v ? `is-active is-${l.v === "neutral" ? "neutral" : verdictCss(l.v)}` : ""}`}
           x={l.x}
           y={l.y}
           fontSize={8.5}
           textAnchor="middle"
         >
-          {l.name}
+          {verdictName(l.v, t)}
         </text>
       ))}
       <line className="ic-needle" x1={CX} y1={CY} x2={nx.toFixed(1)} y2={ny.toFixed(1)} strokeWidth={2.4} strokeLinecap="round" />

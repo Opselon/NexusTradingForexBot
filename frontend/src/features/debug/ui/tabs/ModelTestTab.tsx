@@ -9,11 +9,13 @@
 
 import { useMemo, useState } from "react";
 import { MetricCard, Panel } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { ResultStrip } from "@/features/config/ui/kit";
 import { useDebugFeaturesQuery, useModelTest } from "../../hooks";
 import { vectorSpec } from "../../model";
 
 export function ModelTestTab() {
+  const t = useI18n((s) => s.t);
   const featuresQuery = useDebugFeaturesQuery(true);
   const spec = vectorSpec(featuresQuery.data?.feature_count ?? null);
   const cells = useMemo(() => {
@@ -22,7 +24,7 @@ export function ModelTestTab() {
   }, [featuresQuery.data]);
   const [useLive, setUseLive] = useState(true);
   const [localCells, setLocalCells] = useState<string[]>([]);
-  const run = useModelTest();
+  const run = useModelTest(t);
 
   const source = cells;
   const shown = useLive ? cells.map(() => "—") : localCells;
@@ -46,26 +48,26 @@ export function ModelTestTab() {
 
   return (
     <Panel
-      title="Model instant test (/api/debug/model-test)"
+      title={t("debug.model.title", "Model instant test (/api/debug/model-test)")}
       accent
-      right={<span className="timestamp-note">{spec ? `contract: ${spec.dimension} values ∈ [${spec.min}, ${spec.max}]` : "contract not loaded — send blocked"}</span>}
+      right={<span className="timestamp-note">{spec ? t("debug.model.contract", "contract: {n} values ∈ [{min}, {max}]", { n: spec.dimension, min: spec.min, max: spec.max }) : t("debug.model.contract_missing", "contract not loaded — send blocked")}</span>}
     >
       <div className="dbg-sec">
         <div className="l3-toolbar">
-          <span className="timestamp-note">feature source</span>
+          <span className="timestamp-note">{t("debug.model.feature_source", "feature source")}</span>
           <span className="segmented">
             <button className={useLive ? "active" : ""} onClick={() => setUseLive(true)}>
-              live vector
+              {t("debug.model.live_vector", "live vector")}
             </button>
             <button className={!useLive ? "active" : ""} onClick={startCustom}>
-              custom vector
+              {t("debug.model.custom_vector", "custom vector")}
             </button>
           </span>
           <button className="btn small" onClick={() => void featuresQuery.refetch()} disabled={featuresQuery.isFetching}>
-            reload contract
+            {t("debug.model.reload_contract", "reload contract")}
           </button>
           <span className="timestamp-note">
-            {featuresQuery.data ? `last vector @ ${featuresQuery.data.timestamp_utc ?? "—"} · ${featuresQuery.data.is_stale ? "STALE" : "fresh"}` : "no features read yet"}
+            {featuresQuery.data ? t("debug.model.last_vector", "last vector @ {at} · {state}", { at: featuresQuery.data.timestamp_utc ?? "—", state: featuresQuery.data.is_stale ? t("debug.model.stale", "STALE") : t("debug.model.fresh", "fresh") }) : t("debug.model.no_features", "no features read yet")}
           </span>
         </div>
         {!useLive && (
@@ -78,12 +80,12 @@ export function ModelTestTab() {
                     const next = [...prev];
                     next[i] = e.target.value;
                     return next;
-                  })} inputMode="decimal" aria-label={`feature ${i}`} />
+                  })} inputMode="decimal" aria-label={t("debug.model.feature_aria", "feature {i}", { i })} />
                 </label>
               ))}
-              {shown.length === 0 && <div className="l3-note warn">custom mode needs the live contract first — press "reload contract".</div>}
+              {shown.length === 0 && <div className="l3-note warn">{t("debug.model.needs_contract", "custom mode needs the live contract first — press \"reload contract\".")}</div>}
             </div>
-            {badIdx.size > 0 && <div className="l3-note bad">{badIdx.size} cell(s) invalid — non-finite or out of bounds. The POST is blocked until they pass.</div>}
+            {badIdx.size > 0 && <div className="l3-note bad">{t("debug.model.cells_invalid", "{n} cell(s) invalid — non-finite or out of bounds. The POST is blocked until they pass.", { n: badIdx.size })}</div>}
           </>
         )}
         <div className="l3-toolbar" style={{ justifyContent: "flex-end" }}>
@@ -92,7 +94,7 @@ export function ModelTestTab() {
             disabled={run.isPending || (!useLive && (!spec || localCells.length === 0 || badIdx.size > 0))}
             onClick={() => void submit()}
           >
-            {run.isPending ? "inferring…" : useLive ? "Run on LIVE vector" : "Run on custom vector"}
+            {run.isPending ? t("debug.model.inferring", "inferring…") : useLive ? t("debug.model.run_live", "Run on LIVE vector") : t("debug.model.run_custom", "Run on custom vector")}
           </button>
         </div>
         <ResultStrip result={run.isPending ? { running: true, lastResult: null, lastMessage: null } : run.data ? { running: false, lastResult: run.data.ok, lastMessage: run.data.message } : null} />
@@ -100,14 +102,14 @@ export function ModelTestTab() {
           <div className="dbg-verdict-wrap">
             <div className="l3-verdict dbg-verdict">
               <MetricCard
-                label="verdict"
+                label={t("debug.model.verdict", "verdict")}
                 value={run.data.result.predicted_label ?? "—"}
                 tone={run.data.result.predicted_label === "BUY_MARKET" ? "pos" : run.data.result.predicted_label === "SELL_MARKET" ? "neg" : "dim"}
-                sub={`class ${run.data.result.predicted_class_index ?? "?"}`}
+                sub={t("debug.model.sub_class", "class {i}", { i: run.data.result.predicted_class_index ?? "?" })}
               />
-              <MetricCard label="confidence" value={((run.data.result.confidence ?? 0) * 100).toFixed(1) + "%"} sub={`argmax over ${(run.data.result.probabilities ?? []).length} heads`} />
-              <MetricCard label="e2e" value={`${run.data.result.latency_ms ?? "—"} ms`} sub={`model ${String(run.data.result.model_forward_ms ?? "—")} ms`} />
-              <MetricCard label="source" value={run.data.result.model_source ?? "—"} sub={`features: ${run.data.result.feature_source ?? "—"} · sanitized ${String(run.data.result.sanitized_inputs ?? 0)}`} />
+              <MetricCard label={t("debug.model.confidence", "confidence")} value={((run.data.result.confidence ?? 0) * 100).toFixed(1) + "%"} sub={t("debug.model.sub_argmax", "argmax over {n} heads", { n: (run.data.result.probabilities ?? []).length })} />
+              <MetricCard label={t("debug.model.e2e", "e2e")} value={`${run.data.result.latency_ms ?? "—"} ms`} sub={t("debug.model.sub_model", "model {ms} ms", { ms: String(run.data.result.model_forward_ms ?? "—") })} />
+              <MetricCard label={t("debug.model.source", "source")} value={run.data.result.model_source ?? "—"} sub={t("debug.model.sub_source", "features: {src} · sanitized {n}", { src: run.data.result.feature_source ?? "—", n: String(run.data.result.sanitized_inputs ?? 0) })} />
             </div>
             <div style={{ marginTop: 8 }}>
               <div className="probbar">
@@ -131,10 +133,10 @@ export function ModelTestTab() {
             </div>
             {run.data.result.latency_breakdown && (
               <div className="tiny faint" style={{ marginTop: 8 }}>
-                latency breakdown: {Object.entries(run.data.result.latency_breakdown).slice(0, 10).map(([k, v]) => `${k}=${String(v)}`).join(" · ")}
+                {t("debug.model.latency_breakdown_label", "latency breakdown:")} {Object.entries(run.data.result.latency_breakdown).slice(0, 10).map(([k, v]) => `${k}=${String(v)}`).join(" · ")}
               </div>
             )}
-            <div className="tiny faint">evaluated_at {String(run.data.result.evaluated_at ?? "—")}</div>
+            <div className="tiny faint">{t("debug.model.evaluated_at", "evaluated_at {at}", { at: String(run.data.result.evaluated_at ?? "—") })}</div>
           </div>
         )}
       </div>

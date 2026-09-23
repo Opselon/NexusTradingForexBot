@@ -10,12 +10,22 @@
 import type { LegacyMutationResult } from "@/types/api";
 import { controlCenterApi, type EngineModeDto, type EngineToggleDto } from "./api";
 import type { OperatorDecisionRow } from "./model";
+import { useI18n } from "@/stores/i18nStore";
 
 function toMutationToggle(res: EngineToggleDto, status = 200): LegacyMutationResult {
   return {
     ok: true,
     success: res.success !== false,
-    message: `engine ${res.engine_running ? "RUNNING" : "STOPPED"}${res.message ? ` — ${res.message}` : ""}`,
+    message: (() => {
+      const t = useI18n.getState().t;
+      const state = res.engine_running
+        ? t("control-center.engine.running", "RUNNING")
+        : t("control-center.engine.stopped", "STOPPED");
+      return t("control-center.engine.toggle_message", "engine {state}{detail}", {
+        state,
+        detail: res.message ? ` — ${res.message}` : "",
+      });
+    })(),
     status,
   };
 }
@@ -24,7 +34,14 @@ function toMutationMode(res: EngineModeDto, status = 200): LegacyMutationResult 
   return {
     ok: true,
     success: res.success !== false,
-    message: `mode ${res.mode ?? "?"} · runtime ${res.runtime_mode ?? "—"} · persisted ${res.persisted ? "yes" : "no"}`,
+    message: (() => {
+      const t = useI18n.getState().t;
+      return t("control-center.engine.mode_message", "mode {mode} · runtime {runtime} · persisted {persisted}", {
+        mode: res.mode ?? "?",
+        runtime: res.runtime_mode ?? "—",
+        persisted: res.persisted ? t("control-center.engine.yes", "yes") : t("control-center.engine.no", "no"),
+      });
+    })(),
     status,
   };
 }

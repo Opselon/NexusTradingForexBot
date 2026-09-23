@@ -14,7 +14,7 @@
  */
 
 import type { AccountState, V1RiskStatus, V1RiskSummary } from "@/types/domain";
-import type { RiskLimitRow } from "./riskThresholds";
+import type { RiskLimitRow, Translator } from "./riskThresholds";
 
 type RiskConfig = NonNullable<V1RiskStatus["risk_config"]>;
 
@@ -27,6 +27,8 @@ export interface LimitRowInputs {
   account: AccountState | undefined;
   /** Canonical snapshot live spread (points); null/undefined = not measured. */
   spread: number | null | undefined;
+  /** Language-bound translator — row labels/units are rendered copy (see risk.meter.*). */
+  t: Translator;
 }
 
 function finite(n: number | null | undefined): number | null {
@@ -54,7 +56,7 @@ export function marginUsagePct(exposure: LimitRowInputs["exposure"]): number | n
  * NO margin floor, so its row (and the MarginArc beside it) is indeterminate
  * by design — a missing budget is never drawn as headroom.
  */
-export function buildLimitRows({ cfg, exposure, account, spread }: LimitRowInputs): RiskLimitRow[] {
+export function buildLimitRows({ cfg, exposure, account, spread, t }: LimitRowInputs): RiskLimitRow[] {
   // Open positions: prefer the v1 summary count, fall back to the canonical
   // snapshot — the same two reads RiskPage already cross-checks for drift.
   const openPositions = exposure?.available
@@ -66,7 +68,7 @@ export function buildLimitRows({ cfg, exposure, account, spread }: LimitRowInput
   return [
     {
       id: "drawdown",
-      label: "Account drawdown",
+      label: t("risk.meter.drawdown", "Account drawdown"),
       field: "snapshot.account.drawdown vs risk_config.max_account_drawdown_pct",
       value: finite(account?.drawdown ?? null),
       limit: finite(cfg?.max_account_drawdown_pct ?? null),
@@ -76,17 +78,17 @@ export function buildLimitRows({ cfg, exposure, account, spread }: LimitRowInput
     },
     {
       id: "volume",
-      label: "Position volume",
+      label: t("risk.meter.volume", "Position volume"),
       field: "risk/summary.exposure.total_volume vs risk_config.max_allowed_lots",
       value: finite(exposure?.total_volume ?? null),
       limit: finite(cfg?.max_allowed_lots ?? null),
-      unit: " lots",
+      unit: t("risk.unit.lots", " lots"),
       digits: 2,
       direction: "le",
     },
     {
       id: "margin-usage",
-      label: "Margin usage",
+      label: t("risk.meter.margin", "Margin usage"),
       field: "exposure.account.margin ÷ equity × 100 vs risk_config.max_margin_usage_pct",
       value: marginUsagePct(exposure),
       limit: finite(cfg?.max_margin_usage_pct ?? null),
@@ -96,17 +98,17 @@ export function buildLimitRows({ cfg, exposure, account, spread }: LimitRowInput
     },
     {
       id: "spread",
-      label: "Spread",
+      label: t("risk.meter.spread", "Spread"),
       field: "snapshot.spread vs risk_config.max_spread_points",
       value: finite(spread ?? null),
       limit: finite(cfg?.max_spread_points ?? null),
-      unit: " pts",
+      unit: t("risk.unit.pts", " pts"),
       digits: 1,
       direction: "le",
     },
     {
       id: "positions",
-      label: "Open positions",
+      label: t("risk.meter.positions", "Open positions"),
       field: "exposure.open_positions (fallback snapshot.account.open_positions) vs risk_config.max_concurrent_positions",
       value: openPositions,
       limit: finite(cfg?.max_concurrent_positions ?? null),
@@ -116,7 +118,7 @@ export function buildLimitRows({ cfg, exposure, account, spread }: LimitRowInput
     },
     {
       id: "margin-level",
-      label: "Margin level",
+      label: t("risk.metric.margin_level", "Margin level"),
       field: "exposure.account.margin_level (broker %) — payload carries NO floor, limit stays null",
       value: marginLevel,
       limit: null,

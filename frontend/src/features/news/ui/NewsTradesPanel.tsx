@@ -8,25 +8,27 @@
 import { useState } from "react";
 import { DataTable, EmptyState, ErrorState, Panel } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { useNewsTradeLinks } from "../hooks";
-import { FreshnessNote, asErrorText } from "./shared";
+import { FreshnessNote, asErrorText, type TFunc } from "./shared";
 
-function ticketError(raw: string): string | null {
+function ticketError(raw: string, t: TFunc): string | null {
   const v = raw.trim();
-  if (v === "") return "ticket is required";
-  if (!/^\d{1,15}$/.test(v)) return "ticket must be digits (broker ticket)";
+  if (v === "") return t("news.trades.err_required", "ticket is required");
+  if (!/^\d{1,15}$/.test(v)) return t("news.trades.err_digits", "ticket must be digits (broker ticket)");
   return null;
 }
 
 export function NewsTradesPanel() {
+  const t = useI18n((s) => s.t);
   const [draft, setDraft] = useState("");
   const [ticket, setTicket] = useState<string | null>(null);
   const links = useNewsTradeLinks(ticket);
-  const err = ticketError(draft);
+  const err = ticketError(draft, t);
 
   return (
     <Panel
-      title="News ↔ trade linkage"
+      title={t("news.trades.title", "News ↔ trade linkage")}
       right={
         <>
           <form
@@ -38,20 +40,19 @@ export function NewsTradesPanel() {
           >
             <input
               className={`input ${draft !== "" && err ? "invalid" : ""}`}
-              style={{ width: 130 }}
-              placeholder="trade ticket…"
+              placeholder={t("news.trades.ticket_placeholder", "trade ticket…")}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              aria-label="trade ticket"
+              aria-label={t("news.trades.ticket_label", "trade ticket")}
               aria-invalid={draft !== "" && !!err}
             />
             <button className="btn small primary" type="submit" disabled={!!err}>
-              Lookup
+              {t("news.trades.lookup", "Lookup")}
             </button>
           </form>
           {ticket !== null && (
             <button className="btn small ghost" onClick={() => setTicket(null)}>
-              Clear
+              {t("news.trades.clear", "Clear")}
             </button>
           )}
         </>
@@ -59,16 +60,35 @@ export function NewsTradesPanel() {
     >
       {draft !== "" && err && <div className="news-field-error">{err}</div>}
       {ticket === null ? (
-        <EmptyState message="Enter a broker ticket to see which news articles were linked to that decision." hint="Links are recorded by the news gate when an article influenced a signal." />
+        <EmptyState
+          message={t(
+            "news.trades.empty",
+            "Enter a broker ticket to see which news articles were linked to that decision.",
+          )}
+          hint={t(
+            "news.trades.empty_hint",
+            "Links are recorded by the news gate when an article influenced a signal.",
+          )}
+        />
       ) : links.isPending ? (
-        <div className="viz-empty">querying trade links…</div>
+        <div className="viz-empty">{t("news.trades.loading", "querying trade links…")}</div>
       ) : links.isError ? (
-        <ErrorState message={asErrorText(links.error)} onRetry={() => links.refetch()} />
+        <ErrorState message={asErrorText(links.error, t)} onRetry={() => links.refetch()} />
       ) : (links.data ?? []).length === 0 ? (
-        <EmptyState message={`No news links recorded for trade #${ticket}.`} hint="The gate logged no news evidence for this ticket." />
+        <EmptyState
+          message={t("news.trades.no_links", "No news links recorded for trade #{n}.", { n: ticket })}
+          hint={t("news.trades.no_links_hint", "The gate logged no news evidence for this ticket.")}
+        />
       ) : (
         <>
-          <DataTable headers={[{ label: "article" }, { label: "strategy" }, { label: "linked at" }, { label: "detail" }]}>
+          <DataTable
+            headers={[
+              { label: t("news.trades.h_article", "article") },
+              { label: t("news.trades.h_strategy", "strategy") },
+              { label: t("news.trades.h_linked_at", "linked at") },
+              { label: t("news.trades.h_detail", "detail") },
+            ]}
+          >
             {(links.data ?? []).map((l, i) => (
               <tr key={i}>
                 <td className="inline-mono">{String(l.article_id ?? "—")}</td>
@@ -78,7 +98,7 @@ export function NewsTradesPanel() {
               </tr>
             ))}
           </DataTable>
-          <FreshnessNote updatedAtMs={links.dataUpdatedAt ?? null} label="links" />
+          <FreshnessNote updatedAtMs={links.dataUpdatedAt ?? null} label={t("news.fresh.links", "links")} />
         </>
       )}
     </Panel>

@@ -14,6 +14,7 @@
  */
 
 import { useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { useDialogA11y } from "../../../components/useDialogA11y";
 import { FieldRow, NumberField, TextField } from "@/features/config/ui/kit";
 import { firstError, type FieldErrors } from "@/features/config/validation";
@@ -44,6 +45,7 @@ export function RuleParamDialog({
   const boxRef = useRef<HTMLDivElement | null>(null);
   const errors: FieldErrors = validateParamEdits(rule, draft);
   const changed = rule.params.filter((p) => (draft[p.key] ?? "") !== p.value).length;
+  const t = useI18n((s) => s.t);
 
   // Focus-in / trap / restore + Esc — shared contract; Esc stays disabled
   // while `locked` (matches the previous stopPropagation semantics).
@@ -59,22 +61,22 @@ export function RuleParamDialog({
         className="rl-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`Parameters — ${rule.name}`}
+        aria-label={t("rules.params.title", "Parameters — {name}", { name: rule.name })}
         ref={boxRef}
         tabIndex={-1}
       >
         <div className="rl-dialog-head">
           <span className="ico" aria-hidden="true">§</span>
           <span className="t">
-            <b>Parameters</b>
+            <b>{t("rules.params.heading", "Parameters")}</b>
             <span className="who">{rule.name}</span>
           </span>
           <span className={`rl-tag rl-tone-${catTone(rule.category)}`} title={rule.category}>
             <span className="lbl">{rule.category}</span>
           </span>
           <span className="spacer" />
-          {changed > 0 && <span className="rl-dirty-tag">{changed} edited</span>}
-          <button className="rl-x" onClick={onClose} disabled={busy} aria-label="Close parameter editor">
+          {changed > 0 && <span className="rl-dirty-tag">{t("rules.params.edited", "{n} edited", { n: changed })}</span>}
+          <button className="rl-x" onClick={onClose} disabled={busy} aria-label={t("rules.params.close_a11y", "Close parameter editor")}>
             ✕
           </button>
         </div>
@@ -87,7 +89,7 @@ export function RuleParamDialog({
                 <FieldRow
                   key={p.key}
                   label={p.key}
-                  hint={p.threshold ? `${p.kind} · threshold` : p.kind}
+                  hint={p.threshold ? `${p.kind} · ${t("rules.params.threshold", "threshold")}` : p.kind}
                   error={err}
                 >
                   {p.kind === "number" ? (
@@ -110,20 +112,22 @@ export function RuleParamDialog({
             })}
           </div>
           <div className="rl-dialog-note">
-            numeric parameters must be ≥ 0 · kinds follow the stored backend value · an invalid
-            payload is rejected here and never sent
+            {t(
+              "rules.params.note",
+              "numeric parameters must be ≥ 0 · kinds follow the stored backend value · an invalid payload is rejected here and never sent",
+            )}
           </div>
         </div>
 
         <div className="rl-dialog-foot">
           <span className="hint">
-            saving re-confirms, then re-reads the table from the backend
+            {t("rules.params.foot_hint", "saving re-confirms, then re-reads the table from the backend")}
           </span>
           <button className="btn ghost" onClick={onClose} disabled={busy}>
-            Cancel <kbd>esc</kbd>
+            {t("rules.action.cancel", "Cancel")} <kbd>esc</kbd>
           </button>
           <button className="btn primary" onClick={onSave} disabled={busy}>
-            Save parameters…
+            {t("rules.action.save", "Save parameters…")}
           </button>
         </div>
       </div>
