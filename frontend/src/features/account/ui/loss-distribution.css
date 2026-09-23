@@ -111,3 +111,7 @@
   padding: 0 12px;
   text-align: center;
 }
+
+/* unscored / DISCOVERED strategies row — informational, not an error */
+.ld-unknown { border: 1px dashed var(--border-strong); opacity: 0.8; }
+.ld-unknown:hover { opacity: 1; }

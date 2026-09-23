@@ -5,17 +5,20 @@
  * Command flow for a settings change (validate-before-apply, hard rule):
  *   1. client validation (features/config/validation.ts) — invalid payloads
  *      are NEVER sent;
- *   2. POST /api/settings/validate {key} for every changed key — server-side
- *      mutability/validity truth (RESTART_REQUIRED / SECRET / READ_ONLY keys
- *      surface inline; a refusal blocks the apply);
- *   3. POST /api/runtime-config/apply with the surviving dotted updates — the
- *      engine's ConfigurationApplyReport decides success;
+ *   2. POST /api/settings/validate {key, value} for every changed key — the
+ *      server dry-runs the PROPOSED VALUE (real payload, not just a label)
+ *      and answers mutability truth (invalid / RESTART_REQUIRED / SECRET /
+ *      READ_ONLY keys surface inline; a refusal blocks the apply);
+ *   3. POST /api/runtime-config/apply with the surviving HOT updates —
+ *      RESTART_REQUIRED keys are excluded from the payload and named in the
+ *      report (never silently dropped), the engine's ConfigurationApplyReport
+ *      decides success;
  *   4. on any accepted/refused result the related queries are invalidated so
  *      the UI re-reads the backend (refetch-on-result, never assume).
  */
 
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
-import { configApi, type ConfigDto } from "./api";
+import { configApi, type ConfigDto, type ModePreviewV1 } from "./api";
 import {
   backendMessage,
   hasErrors,
@@ -155,9 +158,15 @@ export async function validateAndApplyChanges(
   const sendable: FieldValues = {};
   for (const key of Object.keys(changes)) {
     try {
-      const v = await configApi.validateSetting(key);
+      // TASK-CFGUI-001: send the PROPOSED VALUE so the backend dry-runs the
+      // real payload (it previously answered valid:true without ever seeing
+      // a value — a round-tripped lie the apply path then discovered late).
+      const v = await configApi.validateSetting(key, changes[key]);
       if (!v || v.valid === false) {
-        serverErrors[key] = [v?.error?.message ?? `backend marked "${key}" invalid`];
+        serverErrors[key] =
+          Array.isArray(v?.errors) && v.errors.length > 0
+            ? v.errors
+            : [v?.error?.message ?? `backend marked "${key}" invalid`];
         continue;
       }
       const mut = String(v.mutability ?? "").toUpperCase();
@@ -165,7 +174,14 @@ export async function validateAndApplyChanges(
         serverErrors[key] = ["backend mutability READ_ONLY — cannot be changed at runtime"];
         continue;
       }
-      if (mut === "RESTART_REQUIRED") restartRequired.push(key);
+      if (mut === "RESTART_REQUIRED") {
+        // TASK-CFGUI-001: restart-bound keys are EXCLUDED from the hot-apply
+        // payload (they stay local edits and are named in the report below) —
+        // never silently dropped, never shipped through a gate meant for
+        // hot-reloadable keys.
+        restartRequired.push(key);
+        continue;
+      }
       sendable[key] = changes[key];
     } catch (e) {
       serverErrors[key] = [e instanceof Error ? e.message : "server validate call failed"];
@@ -173,7 +189,7 @@ export async function validateAndApplyChanges(
   }
 
   const blocked = Object.keys(serverErrors).length > 0;
-  if (blocked || restartRequired.length > 0 || Object.keys(sendable).length === 0) {
+  if (blocked || Object.keys(sendable).length === 0) {
     return {
       clientErrors,
       serverErrors,
@@ -182,13 +198,21 @@ export async function validateAndApplyChanges(
       outcome: blocked
         ? { ok: false, message: "Server refused one or more keys — nothing was applied (atomic gate).", requestId: null }
         : restartRequired.length > 0
-          ? { ok: false, message: `Keys ${restartRequired.join(", ")} need a restart — apply blocked for the whole batch.`, requestId: null }
+          ? {
+              ok: false,
+              message: `Needs restart — not applied: ${restartRequired.join(", ")}. These stay as local edits; the hot apply gate never receives restart-bound keys.`,
+              requestId: null,
+            }
           : { ok: false, message: "No sendable changes after validation.", requestId: null },
     };
   }
 
   try {
     const report = await configApi.applyRuntime(sendable);
+    const restartNote =
+      restartRequired.length > 0
+        ? ` Not sent (restart required, still local edits): ${restartRequired.join(", ")}.`
+        : "";
     return {
       clientErrors,
       serverErrors,
@@ -196,9 +220,9 @@ export async function validateAndApplyChanges(
       sent: true,
       outcome: outcomeFrom(
         report,
-        report.runtime_applied
+        (report.runtime_applied
           ? `Applied at runtime — configuration v${report.configuration_version}${report.persisted ? " (persisted)" : ""}.`
-          : `Saved but NOT applied: ${report.reason || "engine offline"}.`,
+          : `Saved but NOT applied: ${report.reason || "engine offline"}.`) + restartNote,
         "Backend refused the apply.",
       ),
     };
@@ -239,6 +263,17 @@ export function useApplyRuntimeConfig() {
 /* ------------------------------------------------------------------ */
 /* Engine mode + model swap + telegram                                 */
 /* ------------------------------------------------------------------ */
+
+/**
+ * TASK-CFGUI-001: server-side preview for the mode-switch confirm modal —
+ * POST /api/v1/runtime/mode/preview (200 for valid AND invalid proposals;
+ * the verdict is the response data, never an HTTP guess).
+ */
+export function useModePreview() {
+  return useMutation({
+    mutationFn: (mode: string): Promise<ModePreviewV1> => configApi.previewModeTransition(mode),
+  });
+}
 
 export function useSetEngineMode() {
   const queryClient = useQueryClient();
@@ -337,5 +372,5 @@ export function useTestTelegram() {
   });
 }
 
-/** Re-export the raw DTO type for pages that need it. */
-export type { ConfigDto };
+/** Re-export DTO types for pages that need them. */
+export type { ConfigDto, ModePreviewV1 };

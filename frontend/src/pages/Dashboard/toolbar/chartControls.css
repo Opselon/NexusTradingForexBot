@@ -1,0 +1,73 @@
+/* Wave-2 LANE D — chart toolbar controls: the segmented chart-type switch
+   and the snapshot confirmation flash. Namespaced selectors ONLY (.seg /
+   .seg__btn / .flash) — nothing here leaks outside this lane's components.
+   Values come from styles/theme.css tokens, following market-console.css
+   conventions (accent/green rgba mixes are the established pattern there).
+   .flash carries its own .btn.small-equivalent metrics so the confirmation
+   never depends on cross-file cascade order. */
+
+.seg {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+.seg__btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.seg__btn:hover:not(:disabled):not(.is-active) {
+  background: var(--bg-panel-2);
+  color: var(--text);
+}
+
+/* Only the active segment gets the primary treatment (group has no gaps or
+   per-button borders — the outer .seg border is the only one). */
+.seg__btn.is-active,
+.seg__btn.is-active:hover:not(:disabled) {
+  background: rgba(65, 166, 242, 0.18);
+  color: var(--accent-strong);
+}
+
+.seg__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.seg__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* SnapshotButton confirmation — label flips to "✓ saved" for 1.2s. */
+.flash {
+  appearance: none;
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid rgba(62, 207, 142, 0.55);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+
+.flash:hover:not(:disabled) {
+  border-color: var(--green);
+}

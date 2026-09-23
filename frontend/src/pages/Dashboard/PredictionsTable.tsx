@@ -16,12 +16,24 @@
  *    silence (rows come through in backend order).
  */
 
+import { memo } from "react";
 import type { PredictionRow } from "@/types/domain";
 import { EmptyState, Panel, ProbBar } from "@/components/primitives";
 import { formatPct } from "@/lib/format";
 import "./market-console.css";
 
-export function PredictionsTable({ predictions, limit = 12 }: { predictions: PredictionRow[]; limit?: number }) {
+/**
+ * React.memo: the 40-row ledger array is reference-stable between the 1s
+ * dashboard clock ticks (it only changes when the socket delivers a new
+ * snapshot), so the whole 12-row table skips re-render until the data does.
+ */
+export const PredictionsTable = memo(function PredictionsTable({
+  predictions,
+  limit = 12,
+}: {
+  predictions: PredictionRow[];
+  limit?: number;
+}) {
   return (
     <Panel
       title={`Recent model decisions (${predictions.length})`}
@@ -74,7 +86,7 @@ export function PredictionsTable({ predictions, limit = 12 }: { predictions: Pre
       )}
     </Panel>
   );
-}
+});
 
 function pct0(v: number | null): string {
   return v === null ? "--" : (v * 100).toFixed(0);

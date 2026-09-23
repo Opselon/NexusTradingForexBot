@@ -1,40 +1,55 @@
 /**
- * Positions — live backend position state + close command.
+ * PURPOSE:  Positions — live backend position state + close / SL-TP commands,
+ *           upgraded to a trade-style blotter (side rails, magnitude-ramped
+ *           P&L, derived aggregate strip, density toggle, keyboard rows).
+ * OWNER:    uiux-wave5-positions  (future edits to this file belong to this lane)
+ * CONSUMES: positionsApi (v1 open positions; ledger history lives in
+ *           ./LedgerPanel), tradingApi
+ *           (close/modify via the OrderLifecycleManager), EngineSnapshot prop,
+ *           kit primitives, pages/_shared widgets, positions.css.
+ * PROVIDES: default PositionsPage (routed at /positions by AppShell), which
+ *           composes ./AggregateStrip, ./BlotterTable and ./LedgerPanel.
+ * INVARIANTS: honest empty/loading/error states, no fabricated data; the
+ *             backend response decides every command outcome (confirmation
+ *             dialogs only prevent mis-clicks); derived figures are labeled
+ *             "derived"; no user-visible control or string may stop working.
+ * EXTEND:   new columns go in the `columns` useMemo and must read fields that
+ *           exist on Position/AuditLedgerRow; new aggregates belong in
+ *           AggregateStrip with a proven flag; styles live in positions.css
+ *           under the pos- prefix (this file keeps the shared kit read-only).
  *
  * Data: canonical snapshot positions (engine-merged) cross-checked with the
- * v1 adapter endpoint. Close goes through the OrderLifecycleManager
- * (backend-authoritative); results are NEVER assumed — backend response
- * decides, and a confirmation dialog protects the destructive action.
- *
- * Table upgrade (parity bar): sortable columns, ticket/symbol filter, sticky
- * header (theme), a floating-PnL summary header derived by plain arithmetic
- * over backend per-position values only, and a broker-vs-adapter
- * cross-check count so a drift between the two reads is visible, not hidden.
- * The closed-trade ledger gained its own filter, pagination slice, and a
- * client-side CSV export of exactly the rows the backend returned.
+ * v1 adapter endpoint. The floating-PnL summary is plain arithmetic over
+ * backend per-position values only, and a broker-vs-adapter cross-check count
+ * keeps drift between the two reads visible, not hidden. The closed-trade
+ * ledger keeps its status filter, pagination slice, and a client-side CSV
+ * export of exactly the rows the backend returned.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { positionsApi } from "@/api/positionsApi";
 import { tradingApi } from "@/api/tradingApi";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
-import type { AuditLedgerRow, EngineSnapshot, Position } from "@/types/domain";
+import type { EngineSnapshot, Position } from "@/types/domain";
 import {
   ConfirmModal,
   EmptyState,
   ErrorState,
-  LoadingState,
   MetricCard,
   Panel,
   PositionSideBadge,
+  Skeleton,
 } from "@/components/primitives";
-import { AgeNote } from "@/pages/_shared/SectionState";
-import { SortableTable, type Column } from "@/pages/_shared/widgets";
-import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
-import { formatDateTime, formatNumber, formatPnl, formatPrice } from "@/lib/format";
+import { type Column } from "@/pages/_shared/widgets";
+import { formatDateTime, formatNumber, formatPnl, formatPrice, positionSide } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import BlotterTable from "./BlotterTable";
+import AggregateStrip from "./AggregateStrip";
+import LedgerPanel from "./LedgerPanel";
+import { readDensity, writeDensity, type Density } from "./density";
 import "@/pages/_shared/pages.css";
+import "@/pages/Positions/positions.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -56,8 +71,20 @@ function posKey(p: Position, i: number): string {
   return String(p.ticket ?? `${p.symbol}-${i}`);
 }
 
-function ledgerMatches(a: { ticket: number | null }, b: Position): boolean {
-  return a.ticket !== null && a.ticket === b.ticket;
+/** Row rail class — restates Position.type (0=BUY/long, 1=SELL/short). */
+function posRowClass(p: Position): string | undefined {
+  const side = positionSide(p.type);
+  return side === "BUY" ? "pos-row--long" : side === "SELL" ? "pos-row--short" : undefined;
+}
+
+/** Same predicate the table filter has always used — ticket / symbol / side
+ *  text; `q` arrives lower-cased exactly as before. */
+function matchPosFilter(p: Position, q: string): boolean {
+  return (
+    String(p.ticket ?? "").includes(q) ||
+    (p.symbol ?? "").toLowerCase().includes(q) ||
+    (p.type === 0 || String(p.type).toUpperCase().includes("BUY") ? "buy" : "sell").includes(q)
+  );
 }
 
 export default function PositionsPage({ snapshot }: Props) {
@@ -66,19 +93,19 @@ export default function PositionsPage({ snapshot }: Props) {
   const modifyCmd = useMutationFeedback();
   const [closeDialog, setCloseDialog] = useState<CloseDialog | null>(null);
   const [modifyDialog, setModifyDialog] = useState<ModifyDialog | null>(null);
-  const [ledgerStatus, setLedgerStatus] = useState("");
+  // Display-only preferences (client state, persisted under the lane key).
+  const [density, setDensity] = useState<Density>(readDensity);
+  const [posFilter, setPosFilter] = useState("");
+
+  const applyDensity = (d: Density): void => {
+    setDensity(d);
+    writeDensity(d);
+  };
 
   const positionsQuery = useQuery({
     queryKey: ["v1-positions"],
     queryFn: ({ signal }) => positionsApi.openPositions(signal),
     refetchInterval: 10_000,
-    retry: 1,
-  });
-
-  const historyQuery = useQuery({
-    queryKey: ["ledger-history", ledgerStatus],
-    queryFn: ({ signal }) => positionsApi.ledgerHistory({ limit: 200, status: ledgerStatus || undefined }, signal),
-    refetchInterval: 30_000,
     retry: 1,
   });
 
@@ -89,6 +116,23 @@ export default function PositionsPage({ snapshot }: Props) {
   const snapshotCount = snapshot?.positions?.length ?? null;
   const v1Count = positionsQuery.data?.positions.length ?? null;
   const crossMismatch = snapshotCount !== null && v1Count !== null && snapshotCount !== v1Count;
+
+  /** Rows currently visible in the blotter (page-level filter) — the strip
+   *  aggregates THESE rows, so it always matches what is on screen. */
+  const visiblePositions = useMemo(() => {
+    const q = posFilter.trim().toLowerCase();
+    return q ? livePositions.filter((p) => matchPosFilter(p, q)) : livePositions;
+  }, [livePositions, posFilter]);
+
+  /** Largest |profit| on screen — the P&L colour ramp keys its intensity to
+   *  it (derived display logic; no displayed value is changed by this). */
+  const maxAbsPnl = useMemo(() => {
+    let m = 0;
+    for (const p of visiblePositions) {
+      if (typeof p.profit === "number" && Number.isFinite(p.profit)) m = Math.max(m, Math.abs(p.profit));
+    }
+    return m;
+  }, [visiblePositions]);
 
   const totals = useMemo(() => {
     let floating = 0;
@@ -113,7 +157,24 @@ export default function PositionsPage({ snapshot }: Props) {
     () => [
       { key: "ticket", label: "Ticket", sortValue: (p) => p.ticket, render: (p) => p.ticket ?? "—" },
       { key: "symbol", label: "Symbol", sortValue: (p) => p.symbol, render: (p) => p.symbol ?? "—" },
-      { key: "side", label: "Side", sortValue: (p) => (Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "—"), render: (p) => <PositionSideBadge type={p.type} /> },
+      {
+        key: "side",
+        label: "Side",
+        sortValue: (p) => (Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "—"),
+        render: (p) => {
+          const side = positionSide(p.type);
+          const label = side === "BUY" ? "long" : side === "SELL" ? "short" : "—";
+          const dataSide = side === "BUY" ? "long" : side === "SELL" ? "short" : "unknown";
+          return (
+            <span className="pos-side-cell">
+              <PositionSideBadge type={p.type} />
+              <span className="pos-side-cell__sub" data-side={dataSide} title={`${label} — trade reading of the ${side} side field`}>
+                {label}
+              </span>
+            </span>
+          );
+        },
+      },
       { key: "volume", label: "Volume", num: true, sortValue: (p) => p.volume, render: (p) => formatNumber(p.volume) },
       { key: "entry", label: "Entry", num: true, sortValue: (p) => p.price_open, render: (p) => formatPrice(p.price_open, snapshot?.price_digits ?? 2) },
       { key: "current", label: "Current", num: true, sortValue: (p) => p.price_current, render: (p) => formatPrice(p.price_current, snapshot?.price_digits ?? 2) },
@@ -124,7 +185,29 @@ export default function PositionsPage({ snapshot }: Props) {
         label: "PnL",
         num: true,
         sortValue: (p) => p.profit,
-        render: (p) => <span className={(p.profit ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}>{formatPnl(p.profit)}</span>,
+        render: (p) => {
+          const v = p.profit;
+          if (v === null || v === undefined || !Number.isFinite(v)) {
+            return (
+              <span className="faint" title="no numeric profit value in the payload — nothing is rendered in its place">
+                —
+              </span>
+            );
+          }
+          // Signed ramp: hue from the sign, alpha from |value| vs the largest
+          // |P&L| currently on screen (55%..100% of the theme token).
+          const intensity = maxAbsPnl > 0 ? Math.sqrt(Math.abs(v) / maxAbsPnl) : 0;
+          const mix = Math.round((55 + 45 * intensity) * 100) / 100;
+          return (
+            <span
+              className={`pos-pnl ${v >= 0 ? "pos-pnl--up" : "pos-pnl--down"}${intensity >= 0.8 ? " pos-pnl--hot" : ""}`}
+              style={{ "--pos-pnl-mix": `${mix}%` } as CSSProperties}
+              title={`backend profit field — sign colours it, intensity ${Math.round(intensity * 100)}% of the largest |P&L| on screen (derived display)`}
+            >
+              {formatPnl(v)}
+            </span>
+          );
+        },
       },
       { key: "swap", label: "Swap", num: true, sortValue: (p) => p.swap, render: (p) => formatNumber(p.swap) },
       { key: "time", label: "Opened", sortValue: (p) => (typeof p.time === "number" ? p.time : p.time), render: (p) => formatDateTime(p.time) },
@@ -164,7 +247,7 @@ export default function PositionsPage({ snapshot }: Props) {
           ),
       },
     ],
-    [snapshot?.price_digits],
+    [snapshot?.price_digits, maxAbsPnl],
   );
 
   const confirmClose = async (): Promise<void> => {
@@ -194,26 +277,6 @@ export default function PositionsPage({ snapshot }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
     }
   };
-
-  const ledgerCols = useMemo<Array<Column<AuditLedgerRow>>>(
-    () => [
-      { key: "ticket", label: "Ticket", sortValue: (r) => r.ticket, render: (r) => r.ticket ?? "—" },
-      { key: "symbol", label: "Symbol", sortValue: (r) => r.symbol, render: (r) => r.symbol ?? "—" },
-      { key: "dir", label: "Dir", sortValue: (r) => r.direction, render: (r) => r.direction ?? "—" },
-      { key: "vol", label: "Volume", num: true, sortValue: (r) => r.volume, render: (r) => formatNumber(r.volume) },
-      { key: "entry", label: "Entry", num: true, sortValue: (r) => r.entry_price, render: (r) => formatPrice(r.entry_price) },
-      { key: "status", label: "Status", sortValue: (r) => r.status, render: (r) => r.status ?? "—" },
-      {
-        key: "pnl",
-        label: "PnL",
-        num: true,
-        sortValue: (r) => r.pnl,
-        render: (r) => <span className={(r.pnl ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}>{formatPnl(r.pnl)}</span>,
-      },
-      { key: "time", label: "Closed", sortValue: (r) => r.timestamp, render: (r) => formatDateTime(r.timestamp) },
-    ],
-    [],
-  );
 
   return (
     <div>
@@ -297,7 +360,25 @@ export default function PositionsPage({ snapshot }: Props) {
         right={
           <>
             <span className="timestamp-note">source: {adapterSource}{snapshot ? ` · snapshot v${snapshot.state_version}` : ""}</span>
-            <button className="btn small ghost" onClick={() => void positionsQuery.refetch()} disabled={positionsQuery.isFetching}>
+            <span className="pos-density" role="group" aria-label="row density">
+              <button
+                className="btn small ghost pos-density__btn"
+                aria-pressed={density === "comfortable"}
+                title="comfortable row padding (theme default)"
+                onClick={() => applyDensity("comfortable")}
+              >
+                Comfortable
+              </button>
+              <button
+                className="btn small ghost pos-density__btn"
+                aria-pressed={density === "compact"}
+                title="compact row padding — cells and columns are never hidden"
+                onClick={() => applyDensity("compact")}
+              >
+                Compact
+              </button>
+            </span>
+            <button aria-label="Refresh positions" className="btn small ghost" onClick={() => void positionsQuery.refetch()} disabled={positionsQuery.isFetching}>
               ⟳
             </button>
           </>
@@ -305,7 +386,10 @@ export default function PositionsPage({ snapshot }: Props) {
         tight
       >
         {positionsQuery.isPending && livePositions.length === 0 ? (
-          <LoadingState label="Reading broker adapter…" />
+          <div className="pos-loading">
+            <span className="pos-loading__label">Reading broker adapter…</span>
+            <Skeleton count={5} />
+          </div>
         ) : positionsQuery.isError && livePositions.length === 0 ? (
           <ErrorState
             message={positionsQuery.error instanceof ApiError ? positionsQuery.error.message : "Position endpoint unavailable"}
@@ -315,16 +399,22 @@ export default function PositionsPage({ snapshot }: Props) {
         ) : livePositions.length === 0 ? (
           <EmptyState message="No open positions." hint="Broker adapter snapshot is empty — nothing is hidden or estimated." />
         ) : (
-          <SortableTable
-            columns={columns}
-            rows={livePositions}
-            rowKey={posKey}
-            initialSort={{ key: "time", dir: "desc" }}
-            filter={(p, q) =>
-              String(p.ticket ?? "").includes(q) || (p.symbol ?? "").toLowerCase().includes(q) || (p.type === 0 || String(p.type).toUpperCase().includes("BUY") ? "buy" : "sell").includes(q)
-            }
-            emptyMessage="No open positions."
-          />
+          <>
+            {/* Derived strip over the rows currently on screen (hides itself at 0). */}
+            <AggregateStrip rows={visiblePositions} />
+            <BlotterTable
+              columns={columns}
+              rows={visiblePositions}
+              totalCount={livePositions.length}
+              rowKey={posKey}
+              initialSort={{ key: "time", dir: "desc" }}
+              query={posFilter}
+              onQueryChange={setPosFilter}
+              rowClassName={posRowClass}
+              density={density}
+              emptyMessage="No open positions."
+            />
+          </>
         )}
         {crossMismatch && (
           <div className="confirm-box" style={{ marginInline: 12, marginBlockEnd: 12, borderColor: "rgba(235,161,63,0.5)" }}>
@@ -336,61 +426,7 @@ export default function PositionsPage({ snapshot }: Props) {
         )}
       </Panel>
 
-      <Panel
-        title="Closed-trade ledger (broker-reconstructed)"
-        right={
-          <>
-            <select className="select" value={ledgerStatus} onChange={(e) => setLedgerStatus(e.target.value)} aria-label="ledger status filter">
-              <option value="">all statuses</option>
-              <option value="OPEN">OPEN</option>
-              <option value="CLOSED">CLOSED</option>
-            </select>
-            <AgeNote label="age" ageSec={historyQuery.dataUpdatedAt ? (Date.now() - historyQuery.dataUpdatedAt) / 1000 : null} />
-          </>
-        }
-        tight
-      >
-        {historyQuery.isPending ? (
-          <LoadingState label="Reading audit ledger…" />
-        ) : historyQuery.isError ? (
-          <ErrorState
-            message={historyQuery.error instanceof ApiError ? historyQuery.error.message : "Ledger unavailable"}
-            requestId={historyQuery.error instanceof ApiError ? historyQuery.error.requestId : null}
-            onRetry={() => void historyQuery.refetch()}
-          />
-        ) : (historyQuery.data?.length ?? 0) === 0 ? (
-          <EmptyState message="No closed trades in the ledger yet." hint="Rows appear once trades close and broker history (or the engine ledger fallback) is read." />
-        ) : (
-          <>
-            <div className="l4-toolbar" style={{ padding: "8px 12px", justifyContent: "flex-end" }}>
-              <button
-                className="btn small ghost"
-                onClick={() =>
-                  downloadCsv({
-                    filename: `nse-ledger-${stampForFilename()}.csv`,
-                    headers: ["ticket", "symbol", "direction", "volume", "entry_price", "status", "pnl", "timestamp"],
-                    rows: (historyQuery.data ?? []).map((r) => [r.ticket, r.symbol, r.direction, r.volume, r.entry_price, r.status, r.pnl, r.timestamp]),
-                  })
-                }
-                title="exports exactly the rows returned by /api/account/trades — no re-query, no added values"
-              >
-                ⇩ export CSV
-              </button>
-            </div>
-            <SortableTable
-              columns={ledgerCols}
-              rows={(historyQuery.data ?? []).filter((r) => livePositions.every((p) => !ledgerMatches(r, p)))}
-              rowKey={(r, i) => `${r.ticket ?? "x"}-${i}`}
-              initialSort={{ key: "time", dir: "desc" }}
-              filter={(r, q) => String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q)}
-              emptyMessage="No ledger rows."
-            />
-            <div className="l4-note" style={{ padding: "6px 12px" }}>
-              Ledger rows still present in the open-position table are hidden here (status filter aside) so a position is never counted twice on one screen.
-            </div>
-          </>
-        )}
-      </Panel>
+      <LedgerPanel openPositions={livePositions} density={density} />
     </div>
   );
 }

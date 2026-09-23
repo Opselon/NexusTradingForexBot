@@ -159,6 +159,40 @@ class TestVersion:
         assert rc == 0
         assert len(out) < 300, "version --plain should be a single small line"
 
+    # EU-RELEASE-001: `nexus --version` is the universal CLI convention.
+    # Before this fix it was a Typer usage error: exit 2 with
+    # "No such option: --version" — an ordinary user's first guess at
+    # checking the version failed. It must exit 0 and print the same
+    # identity line as `nexus version --plain`.
+    def test_version_flag_rc0(self):
+        rc, out, err, _ = run_cli("--version")
+        assert rc == 0, f"`nexus --version` must exit 0 (got {rc}): {err[:200]}"
+        assert "version" in out.lower(), f"--version printed no version line: {out!r}"
+
+    def test_version_flag_matches_plain_command(self):
+        """The flag form and `nexus version --plain` must agree."""
+        rc_flag, out_flag, _, _ = run_cli("--version")
+        rc_cmd, out_cmd, _, _ = run_cli("version", "--plain")
+        assert rc_flag == 0 and rc_cmd == 0
+        assert out_flag.strip() == out_cmd.strip(), (
+            f"--version ({out_flag!r}) != version --plain ({out_cmd!r})"
+        )
+
+    def test_version_flag_does_not_require_subcommand_or_cwd(self):
+        """`nexus --version` works from an unrelated directory (install-time
+        PATH use, not a source checkout)."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, out, _, _ = run_cli("--version", cwd=Path(tmp))
+        assert rc == 0
+        assert "version" in out.lower()
+
+    def test_version_flag_stays_exit2_for_unknown_option(self):
+        """Adding the flag must not mask genuine usage errors."""
+        rc, out, err, _ = run_cli("--definitely-not-a-real-option")
+        assert rc == 2
+
 
 class TestDoctorStatus:
     def test_doctor_json_valid_structure(self):

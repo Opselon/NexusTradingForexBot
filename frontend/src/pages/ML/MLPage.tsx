@@ -58,11 +58,32 @@ function VerdictChip({ disagreement, valid }: { disagreement: string; valid?: bo
   if (!disagreement) return <span className="tiny">—</span>;
   if (compared) return <span className="tiny">{disagreement}</span>;
   return (
-    <span className="tiny" style={{ color: "var(--rose)" }} title="No shadow inference ran for this tick — the shadow model was not attached or the 70D vector was rejected. This is not a trade decision.">
+    <span className="tiny"  title="No shadow inference ran for this tick — the shadow model was not attached or the 70D vector was rejected. This is not a trade decision.">
       {disagreement}
     </span>
   );
 }
+
+/** Column set for the recent-70D-observations table. perf: built ONCE at
+ *  module scope (9 sortValue/render closures) instead of re-allocated on every
+ *  render of a 15s-refreshed panel — keys, labels and cell output unchanged. */
+const OBSERVATION_COLUMNS: Array<Column<Record<string, any>>> = [
+  { key: "t", label: "Time", sortValue: (o) => o.timestamp, render: (o) => o.timestamp.slice(0, 19) },
+  { key: "c", label: "Champion", sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
+  { key: "s", label: "Shadow", sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
+  { key: "conf", label: "Conf C/S", num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
+  { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
+  { key: "rg", label: "Regime", sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
+  { key: "nw", label: "News", render: (o) => o.news_state || "—" },
+  { key: "liq", label: "Liquidity", render: (o) => o.liquidity_state || "—" },
+  { key: "out", label: "Outcome", sortValue: (o) => o.outcome, render: (o) => o.outcome },
+];
+
+/** Backend-word filter for the observations table (stable reference). */
+const OBSERVATION_FILTER = (o: Record<string, any>, q: string): boolean =>
+  o.champion_action.toLowerCase().includes(q) ||
+  o.shadow_action.toLowerCase().includes(q) ||
+  (o.regime ?? "").toLowerCase().includes(q);
 
 /** Canonical 70D family blocks (backend schema_contract / liquidity_runtime). */
 const FAMILY_BLOCKS = [
@@ -109,7 +130,7 @@ function FeatureBlock({
         <span className={`l4-chip ${nan ? "warn" : ""}`}>{nan} NAN</span>
         <span className={`l4-chip ${unavail ? "" : ""}`}>{unavail} UNAVAILABLE</span>
       </div>
-      <div className="l4-features" style={{ maxBlockSize: 210 }}>
+      <div tabIndex={0} className="l4-features" style={{ maxBlockSize: 210 }}>
         {features.map((f) => (
           <div key={`${f.index}-${f.name}`} className={`l4-feature ${(f.status ?? "").toUpperCase() === "VALID" ? "" : (f.status ?? "").toUpperCase() === "NAN" ? "nan" : "unavailable"}`} title={`${f.name} · ${f.status}`}>
             <div className="n">{f.index} {f.name}</div>
@@ -184,6 +205,12 @@ export default function MLPage({ snapshot }: Props) {
   const integrityLevel =
     integ?.state === "ACTIVE" ? "good" : integ?.state === "INCOMPATIBLE" || integ?.state === "INVALID" ? "bad" : integ?.state === "NO_CHAMPION" || integ?.state === "UNAVAILABLE" ? "warn" : "unknown";
   const s70 = shadow70Query.data;
+  // perf: the observations window (slice + sort/filter inputs for the shared
+  // table) derives once per shadow70 payload, not on every render.
+  const observations = useMemo(
+    () => (s70?.store?.recent_observations ?? []).slice(0, 25),
+    [s70?.store?.recent_observations],
+  );
   const features = snapshot?.features ?? [];
 
   const blocks = useMemo(
@@ -377,7 +404,7 @@ export default function MLPage({ snapshot }: Props) {
         right={
           <>
             <span className="timestamp-note">/api/operator/calibration</span>
-            <button className="btn small ghost" onClick={() => void calibrationQuery.refetch()} disabled={calibrationQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh calibration" className="btn small ghost" onClick={() => void calibrationQuery.refetch()} disabled={calibrationQuery.isFetching}>⟳</button>
           </>
         }
       >
@@ -468,7 +495,7 @@ export default function MLPage({ snapshot }: Props) {
           right={
             <>
               <InfoChip k="generated" v={shadow70V1Query.data?.generated_at ? fmtAge((Date.now() - Date.parse(shadow70V1Query.data.generated_at)) / 1000) : "—"} />
-              <button className="btn small ghost" onClick={() => void shadow70V1Query.refetch()} disabled={shadow70V1Query.isFetching}>⟳</button>
+              <button aria-label="Refresh shadow 70D" className="btn small ghost" onClick={() => void shadow70V1Query.refetch()} disabled={shadow70V1Query.isFetching}>⟳</button>
             </>
           }
         >
@@ -521,7 +548,7 @@ export default function MLPage({ snapshot }: Props) {
         right={
           <>
             <InfoChip k="60d" v={shadowStatusQuery.data?.shadow_60d?.available ? `${shadowStatusQuery.data.shadow_60d.decisions ?? 0} decisions` : shadowStatusQuery.data ? "STORE EMPTY" : "…"} tone={shadowStatusQuery.data?.shadow_60d?.available ? "good" : ""} />
-            <button className="btn small ghost" onClick={() => void shadowStatusQuery.refetch()} disabled={shadowStatusQuery.isFetching}>⟳</button>
+            <button aria-label="Refresh shadow status" className="btn small ghost" onClick={() => void shadowStatusQuery.refetch()} disabled={shadowStatusQuery.isFetching}>⟳</button>
           </>
         }
       >
@@ -573,9 +600,9 @@ export default function MLPage({ snapshot }: Props) {
                       ⇩ CSV
                     </button>
                   )}
-                  <button className="btn small" disabled={runsPage <= 1} onClick={() => setRunsPage((p) => Math.max(1, p - 1))}>‹</button>
+                  <button aria-label="Previous page" className="btn small" disabled={runsPage <= 1} onClick={() => setRunsPage((p) => Math.max(1, p - 1))}>‹</button>
                   <span className="small faint inline-mono">p{runsPage}</span>
-                  <button className="btn small" disabled={!shadowRunsQuery.data?.has_more} onClick={() => setRunsPage((p) => p + 1)}>›</button>
+                  <button aria-label="Next page" className="btn small" disabled={!shadowRunsQuery.data?.has_more} onClick={() => setRunsPage((p) => p + 1)}>›</button>
                 </span>
               </div>
               <SectionState
@@ -603,21 +630,11 @@ export default function MLPage({ snapshot }: Props) {
       {s70?.store?.recent_observations && s70.store.recent_observations.length > 0 && (
         <Panel title="Recent 70D shadow observations" tight right={<span className="timestamp-note">champion vs 70D, engine-recorded</span>}>
           <SortableTable
-            columns={[
-              { key: "t", label: "Time", sortValue: (o) => o.timestamp, render: (o) => o.timestamp.slice(0, 19) },
-              { key: "c", label: "Champion", sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
-              { key: "s", label: "Shadow", sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
-              { key: "conf", label: "Conf C/S", num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
-              { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
-              { key: "rg", label: "Regime", sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
-              { key: "nw", label: "News", render: (o) => o.news_state || "—" },
-              { key: "liq", label: "Liquidity", render: (o) => o.liquidity_state || "—" },
-              { key: "out", label: "Outcome", sortValue: (o) => o.outcome, render: (o) => o.outcome },
-            ]}
-            rows={s70.store.recent_observations.slice(0, 25)}
+            columns={OBSERVATION_COLUMNS}
+            rows={observations}
             rowKey={(o) => o.observation_id}
             initialSort={{ key: "t", dir: "desc" }}
-            filter={(o, q) => o.champion_action.toLowerCase().includes(q) || o.shadow_action.toLowerCase().includes(q) || (o.regime ?? "").toLowerCase().includes(q)}
+            filter={OBSERVATION_FILTER}
             emptyMessage="No observations."
           />
         </Panel>

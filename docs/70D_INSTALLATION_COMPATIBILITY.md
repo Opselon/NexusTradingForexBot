@@ -17,7 +17,7 @@ release safely inherits — and what the migration chain does for each.
 | :--- | :--- | :--- |
 | v9.0.0 (portable) | `nexus update` (GitHub Releases → verify → backup → migrate → install → health) | TASK-9 real Windows experiment (v9.0.0 → v9.1.0 via local GitHub stub), TEST-UP-01..35 |
 | v9.1.0 | `nexus update` — no-op / newer | TASK-9 + this task's version block |
-| Any older source/dev checkout | `git pull` + reinstall; DB migrated at startup gate | TASK-10 startup gate |
+| Any older source/dev checkout | `git fetch origin && git switch main && git merge --ff-only origin/main` + reinstall; DB migrated at startup gate (see `agents/git_governance.md` §4 — never a blind `git pull`) | TASK-10 startup gate |
 
 Downgrade is blocked (`DB_DOWNGRADE_BLOCKED`) when the DB schema is newer
 than the app expects (TASK-10 §23).

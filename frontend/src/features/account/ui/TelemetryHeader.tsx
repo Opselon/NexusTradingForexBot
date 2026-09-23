@@ -46,9 +46,29 @@ export function TelemetryHeader() {
   const [stale, setStale] = useState(false);
 
   // Clock — the only client-side value here (the wall clock is not market data).
+  // While the tab is hidden the NOW-UTC string cannot be seen, so the 1s tick
+  // and the re-render it causes are pure waste: pause the interval, and on
+  // return restart it with ONE immediate tick so the clock is never a tick
+  // stale. Visible cadence stays exactly 1000ms (frozen constant).
   useEffect(() => {
-    const id = window.setInterval(() => setUtc(nowUtc()), 1000);
-    return () => window.clearInterval(id);
+    let t: number | null =
+      document.visibilityState === "hidden" ? null : window.setInterval(() => setUtc(nowUtc()), 1000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (t !== null) {
+          window.clearInterval(t);
+          t = null;
+        }
+      } else if (t === null) {
+        t = window.setInterval(() => setUtc(nowUtc()), 1000);
+        setUtc(nowUtc());
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (t !== null) window.clearInterval(t);
+    };
   }, []);
 
   // Stale-data detection: if the accounting core has not refreshed inside the
@@ -64,7 +84,7 @@ export function TelemetryHeader() {
   const latencyMs = tickAge === null ? null : Math.round(tickAge * 1000);
 
   return (
-    <header className="th-root" role="banner">
+    <header className="th-root" role="banner" aria-label="Telemetry status">
       <div className="th-left">
         <span className={`th-pill ${online ? "th-live" : "th-down"}`} title={source ?? "adapter unavailable"}>
           <span className="th-dot" aria-hidden="true" />

@@ -5,6 +5,7 @@
  * Stateless presentation component; owned state lives in ModelStudioPage.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import {
   compareDatasetsByGranularity,
@@ -88,7 +89,8 @@ export function DatasetPipelinePanel({
   trainError,
   onTrain,
 }: DatasetPipelinePanelProps) {
-  const sortedDatasets = [...datasets].sort(compareDatasetsByGranularity);
+  // perf: dataset sort derived only when the datasets prop changes (dep: datasets).
+  const sortedDatasets = useMemo(() => [...datasets].sort(compareDatasetsByGranularity), [datasets]);
   const pct =
     trainProgress && trainProgress.epochs > 0
       ? Math.min(100, Math.round((trainProgress.epoch / trainProgress.epochs) * 100))
@@ -269,7 +271,7 @@ export function DatasetPipelinePanel({
             {(trainBusy || trainProgress) && trainProgress && (
               <div className="ms-progress-wrap">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="tiny" style={{ color: "var(--text-dim)" }}>
+                  <span className="tiny tx-dim" >
                     Epoch {trainProgress.epoch} / {trainProgress.epochs}
                     {trainProgress.stage ? ` · ${trainProgress.stage}` : ""}
                   </span>
@@ -281,13 +283,13 @@ export function DatasetPipelinePanel({
                   <div className="ms-progress-fill" style={{ width: `${pct}%` }} />
                 </div>
                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  <span className="inline-mono tiny" style={{ color: "var(--green)" }}>
+                  <span className="inline-mono tiny tx-good" >
                     loss {trainProgress.loss.toFixed(4)}
                   </span>
-                  <span className="inline-mono tiny" style={{ color: "var(--amber)" }}>
+                  <span className="inline-mono tiny tx-warn" >
                     val {trainProgress.val_loss.toFixed(4)}
                   </span>
-                  <span className="inline-mono tiny" style={{ color: "var(--text-faint)" }}>
+                  <span className="inline-mono tiny tx-faint" >
                     run {trainProgress.run_id.substring(0, 8)}
                   </span>
                 </div>
@@ -320,8 +322,8 @@ export function DatasetPipelinePanel({
             <button
               onClick={onInspect}
               disabled={inspectBusy || !selectedDataset}
-              className="ms-btn-action ms-btn-ghost"
-              style={{ color: "var(--accent-strong)" }}
+              className="ms-btn-action ms-btn-ghost tx-accent"
+              
             >
               {inspectBusy ? "⏳ Computing Statistics…" : "🔍 Inspect Features"}
             </button>
@@ -371,36 +373,36 @@ export function DatasetPipelinePanel({
                 ))}
               </div>
 
-              <div className="table-wrap" style={{ maxHeight: 420 }}>
+              <div tabIndex={0} className="table-wrap" style={{ maxHeight: 420 }}>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Feature</th>
-                      <th>Family</th>
-                      <th className="num">Raw Min</th>
-                      <th className="num">Raw Max</th>
-                      <th className="num">μ</th>
-                      <th className="num">σ</th>
-                      <th className="num">Z-Sample</th>
-                      <th style={{ textAlign: "center" }}>Status</th>
+                      <th scope="col">#</th>
+                      <th scope="col">Feature</th>
+                      <th scope="col">Family</th>
+                      <th scope="col" className="num">Raw Min</th>
+                      <th scope="col" className="num">Raw Max</th>
+                      <th scope="col" className="num">μ</th>
+                      <th scope="col" className="num">σ</th>
+                      <th scope="col" className="num">Z-Sample</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {inspectResult.features.map((f) => (
                       <tr key={f.index}>
-                        <td className="inline-mono" style={{ color: "var(--text-faint)" }}>{f.index}</td>
-                        <td className="inline-mono" style={{ color: "#fff", fontWeight: 600 }}>{f.name}</td>
+                        <td className="inline-mono tx-faint" >{f.index}</td>
+                        <td className="inline-mono" style={{ color: "var(--text)", fontWeight: 600 }}>{f.name}</td>
                         <td>
                           <span className={`ms-slot-family ${(f.family || "").toLowerCase()}`}>
                             {f.family}
                           </span>
                         </td>
-                        <td className="num" style={{ color: "var(--text-dim)" }}>{f.raw_min.toFixed(3)}</td>
-                        <td className="num" style={{ color: "var(--text-dim)" }}>{f.raw_max.toFixed(3)}</td>
-                        <td className="num" style={{ color: "var(--green)" }}>{f.raw_mean.toFixed(3)}</td>
-                        <td className="num" style={{ color: "var(--accent-strong)" }}>{f.raw_std.toFixed(3)}</td>
-                        <td className="num" style={{ color: f.zero_variance ? "var(--red)" : "var(--text)" }}>
+                        <td className="num tx-dim" >{f.raw_min.toFixed(3)}</td>
+                        <td className="num tx-dim" >{f.raw_max.toFixed(3)}</td>
+                        <td className="num tx-good" >{f.raw_mean.toFixed(3)}</td>
+                        <td className="num tx-accent" >{f.raw_std.toFixed(3)}</td>
+                        <td className="num" >
                           {f.normalized_sample.toFixed(3)}
                         </td>
                         <td style={{ textAlign: "center" }}>

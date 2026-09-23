@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import type {
   ActiveModelResponse,
@@ -31,7 +32,7 @@ function StatCell({ label, value, color, mono }: StatCellProps) {
         className={`small mt-1 font-bold ${mono ? "inline-mono" : ""}`}
         title={value}
         style={{
-          color: color ?? "#fff",
+          color: color ?? "var(--text)",
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -86,6 +87,17 @@ export function ModelRegistryPanel({
   scalerResult,
   onInspectScaler,
 }: ModelRegistryPanelProps) {
+  // One derivation: the catalog's model option labels (accessor chains over
+  // the models array). Memo deps are exactly that array, so an unrelated
+  // parent re-render (slider drag, hot-load busy flip) never rebuilds it.
+  const options = useMemo(
+    () =>
+      models.map((m) => ({
+        id: m.id,
+        label: `${m.is_active ? "★ " : ""}${m.id} [${m.dimension}D] ${m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} (loss: ${m.final_loss?.toFixed(4) || "0.0000"})`,
+      })),
+    [models],
+  );
   return (
     <Panel
       title="AI HUB: MODEL REGISTRY & RUNTIME HOT-LOADER"
@@ -155,9 +167,9 @@ export function ModelRegistryPanel({
               className="ms-select-styled"
             >
               {models.length === 0 && <option value="">No registered models found</option>}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.is_active ? "★ " : ""}{m.id} [{m.dimension}D] {m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} (loss: {m.final_loss?.toFixed(4) || "0.0000"})
+              {options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
                 </option>
               ))}
             </select>
@@ -210,16 +222,16 @@ export function ModelRegistryPanel({
           <button
             onClick={onRollback}
             disabled={rollbackBusy}
-            className="ms-btn-action ms-btn-ghost"
-            style={{ color: "var(--amber)" }}
+            className="ms-btn-action ms-btn-ghost tx-warn"
+            
           >
             {rollbackBusy ? "⏳ Rolling back…" : "↺ Rollback to Previous Champion"}
           </button>
           <button
             onClick={onInspectScaler}
             disabled={!selectedModelId}
-            className="ms-btn-action ms-btn-ghost"
-            style={{ color: "var(--accent-strong)" }}
+            className="ms-btn-action ms-btn-ghost tx-accent"
+            
           >
             📊 Inspect Scaler Vectors
           </button>
@@ -252,32 +264,32 @@ export function ModelRegistryPanel({
         {verifyResult && (
           <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span className="small font-bold" style={{ color: "var(--accent-strong)" }}>
+              <span className="small font-bold tx-accent" >
                 Pre-Load Checkpoint Verification Results ({verifyResult.model_id})
               </span>
               <span className={`badge ${verifyResult.all_passed ? "good" : "warn"}`}>
                 {verifyResult.all_passed ? "ALL PASSED" : "WARNINGS DETECTED"}
               </span>
             </div>
-            <div className="table-wrap">
+            <div tabIndex={0} className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Check Name</th>
-                    <th style={{ textAlign: "center" }}>Verdict</th>
-                    <th>Diagnostic Detail</th>
+                    <th scope="col">Check Name</th>
+                    <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
+                    <th scope="col">Diagnostic Detail</th>
                   </tr>
                 </thead>
                 <tbody>
                   {verifyResult.checks.map((c, i) => (
                     <tr key={i}>
-                      <td style={{ fontWeight: 600, color: "#fff" }}>{c.name}</td>
+                      <td style={{ fontWeight: 600, color: "var(--text)" }}>{c.name}</td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`badge ${c.passed ? "good" : "bad"}`}>
                           {c.passed ? "PASS" : "FAIL"}
                         </span>
                       </td>
-                      <td style={{ color: "var(--text-dim)" }}>{c.detail}</td>
+                      <td className="tx-dim" >{c.detail}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -290,7 +302,7 @@ export function ModelRegistryPanel({
         {scalerResult && (
           <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span className="small font-bold" style={{ color: "var(--accent-strong)" }}>
+              <span className="small font-bold tx-accent" >
                 Attached Scaler Normalization Vectors ({scalerResult.dimension}D)
               </span>
               <span className="badge neutral">{scalerResult.features_count} Features Calibrated</span>
@@ -300,23 +312,23 @@ export function ModelRegistryPanel({
                 {scalerResult.message || "No scaler vectors cataloged."}
               </div>
             ) : (
-              <div className="table-wrap" style={{ maxHeight: 220 }}>
+              <div tabIndex={0} className="table-wrap" style={{ maxHeight: 220 }}>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th># Index</th>
-                      <th className="num">Mean (μ)</th>
-                      <th className="num">Std Dev (σ)</th>
-                      <th style={{ textAlign: "center" }}>Clamping</th>
-                      <th style={{ textAlign: "center" }}>Zero Variance</th>
+                      <th scope="col"># Index</th>
+                      <th scope="col" className="num">Mean (μ)</th>
+                      <th scope="col" className="num">Std Dev (σ)</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Clamping</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Zero Variance</th>
                     </tr>
                   </thead>
                   <tbody>
                     {scalerResult.features.map((f) => (
                       <tr key={f.index}>
-                        <td className="inline-mono" style={{ color: "var(--text-faint)" }}>feat_{f.index}</td>
-                        <td className="num" style={{ color: "var(--green)" }}>{f.mean.toFixed(4)}</td>
-                        <td className="num" style={{ color: "var(--accent-strong)" }}>{f.std.toFixed(4)}</td>
+                        <td className="inline-mono tx-faint" >feat_{f.index}</td>
+                        <td className="num tx-good" >{f.mean.toFixed(4)}</td>
+                        <td className="num tx-accent" >{f.std.toFixed(4)}</td>
                         <td style={{ textAlign: "center", color: "var(--text-dim)" }}>[{f.clamp_min}, {f.clamp_max}]</td>
                         <td style={{ textAlign: "center" }}>
                           <span className={`badge ${f.zero_variance ? "warn" : "good"}`}>

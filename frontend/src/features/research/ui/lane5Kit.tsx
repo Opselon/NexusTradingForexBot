@@ -8,9 +8,10 @@
  * core/transport directly (commands go through ../model -> ../api -> @/api/client).
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, memo, useRef, useState, type ReactNode } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
+import "./lane5.css";
 
 /** "updated HH:MM:SS · source" caption — freshness must always be visible. */
 export function FreshnessCaption({
@@ -25,9 +26,9 @@ export function FreshnessCaption({
   error?: boolean;
 }) {
   return (
-    <span className="timestamp-note tiny muted" style={{ marginInlineStart: "auto" }}>
+    <span className="timestamp-note tiny muted" role="status" style={{ marginInlineStart: "auto" }}>
       {error ? (
-        <span style={{ color: "var(--red)" }}>stale — backend error</span>
+        <span className="tx-bad">stale — backend error</span>
       ) : (
         <>
           {timestamp ? `updated ${formatDateTime(timestamp)}` : "no timestamp returned"}
@@ -49,8 +50,10 @@ export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** Bounded pretty-printer for backend JSON blobs — never throws. */
-export function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars?: number }) {
+/** Bounded pretty-printer for backend JSON blobs — never throws.
+ *  perf: memoized so the JSON.stringify only re-runs when value/maxChars
+ *  change, not on every parent render (output identical). */
+export const JsonBlock = memo(function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars?: number }) {
   if (value === null || value === undefined) {
     return <EmptyState message="Backend returned no payload for this block." />;
   }
@@ -62,11 +65,11 @@ export function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars
   }
   const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}\n… (${text.length} chars, truncated)` : text;
   return (
-    <pre className="inline-mono small" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: 320, overflow: "auto" }}>
+    <pre tabIndex={0} className="inline-mono small" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: 320, overflow: "auto" }}>
       {clipped}
     </pre>
   );
-}
+});
 
 /** Query-state -> skeleton/loading/error mapping used by every lane-5 section. */
 export function SectionState<T>({
@@ -115,9 +118,40 @@ export function Drawer({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
+  // Focus enters the drawer on open and returns to the trigger on close.
+  useEffect(() => {
+    prevFocusRef.current = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus({ preventScroll: true });
+    return () => prevFocusRef.current?.focus?.();
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      const root = panelRef.current;
+      // A stacked dialog (confirm modal) owns the keyboard while it holds
+      // focus — only react when focus is inside this drawer.
+      if (!root || !root.contains(document.activeElement)) return;
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        const focusables = Array.from(
+          root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+        ).filter((el) => !el.hasAttribute("disabled"));
+        if (focusables.length === 0) return;
+        const first = focusables[0] as HTMLElement;
+        const last = focusables[focusables.length - 1] as HTMLElement;
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !root.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -128,6 +162,8 @@ export function Drawer({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -144,12 +180,12 @@ export function Drawer({
         }}
       >
         <div className="panel-header" style={{ flex: "0 0 auto" }}>
-          <span>{title}</span>
+          <h2>{title}</h2>
           <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={onClose}>
             close <kbd>esc</kbd>
           </button>
         </div>
-        <div className="panel-body" style={{ flex: "1 1 auto", overflow: "auto" }}>
+        <div tabIndex={0} className="panel-body" style={{ flex: "1 1 auto", overflow: "auto" }}>
           {children}
         </div>
         {footer && <div className="panel-body tight" style={{ flex: "0 0 auto", borderTop: "1px solid var(--border)" }}>{footer}</div>}
@@ -188,12 +224,43 @@ export function GuardButton({
   );
 }
 
-/** Local wall-clock tick for age displays without re-fetching. */
+/**
+ * Local wall-clock tick for age displays without re-fetching.
+ *
+ * perf: pause while the tab is hidden — `now` is Date.now()-derived (nothing
+ * accumulates, so pausing cannot corrupt it). On resume the interval restarts
+ * AND one immediate tick runs, so no displayed age is ever stale by a whole
+ * interval (visible cadence unchanged; same values, same freshness timing).
+ */
 export function useNow(intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(id);
+    let timer: number | null = null;
+    const tick = (): void => setNow(Date.now());
+    // (re)start the interval; `fresh` runs one immediate tick first so a
+    // resume can never leave a displayed age stale by a whole interval.
+    const start = (fresh: boolean): void => {
+      if (timer !== null) return; // already ticking
+      if (fresh) tick();
+      timer = window.setInterval(tick, intervalMs);
+    };
+    const stop = (): void => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    // mount: no immediate tick — `now` was already seeded with Date.now().
+    if (document.visibilityState !== "hidden") start(false);
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") stop();
+      else start(true); // resume: one immediate tick, then the interval
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
+    };
   }, [intervalMs]);
   return now;
 }
@@ -206,7 +273,7 @@ export function GateStepper({
 }) {
   if (gates.length === 0) return <EmptyState message="No gates recorded by the backend for this item." />;
   return (
-    <ol className="gate-stepper" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+    <ol className="gate-stepper">
       {gates.map((g, i) => {
         const s = (g.status ?? "").toUpperCase();
         const passed = ["PASS", "PASSED", "OK", "COMPLETED", "YES"].includes(s);

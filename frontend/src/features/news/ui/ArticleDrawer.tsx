@@ -4,7 +4,8 @@
  * shows each block only when the backend provided it (no placeholder rows).
  */
 
-import { useEffect, useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { HeatBar } from "@/components/viz";
@@ -54,27 +55,34 @@ export function ArticleDrawer({
     return rows.find((r) => r.article_id === articleId) ?? null;
   }, [proAnswers.data, articleId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const boxRef = useRef<HTMLElement | null>(null);
+  useDialogA11y(boxRef, onClose);
 
   const art = detail.data?.article ?? null;
   const ana = detail.data?.analysis ?? analysis.data?.analysis ?? null;
   const ai = fallback?.ai_analysis ?? aiFromAnswers ?? null;
+  // perf: key_facts / uncertainties arrive as JSON array strings from the
+  // backend (db_analysis json.dumps) — decode once per analysis payload
+  // instead of parsing + re-parsing inside the render body.
+  const keyFacts = useMemo(() => decodeStringList(ai?.key_facts), [ai?.key_facts]);
+  const uncertainties = useMemo(() => decodeStringList(ai?.uncertainties), [ai?.uncertainties]);
   const impacts = detail.data?.impacts ?? [];
   const consensus = detail.data?.consensus ?? fallback?.consensus ?? null;
   const tradeLinks = detail.data?.trade_links ?? [];
   const related = detail.data?.related ?? [];
   const postEvents = detail.data?.post_event_validation ?? [];
 
+  // perf: pretty-printed block serialized once per payload identity instead of
+  // on every drawer render (the article/analysis queries refetch on focus).
+  const postEventsText = useMemo(
+    () => (postEvents.length > 0 ? JSON.stringify(postEvents, null, 2) : null),
+    [postEvents],
+  );
+
   return (
     <div className="news-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="news-drawer" role="dialog" aria-modal="true" aria-label="News article detail">
-        <header>
+      <aside ref={boxRef} className="news-drawer" role="dialog" aria-modal="true" aria-label="News article detail">
+        <header aria-label="Article">
           <span>Article detail</span>
           <span className="inline-mono tiny faint">#{articleId.slice(0, 10)}</span>
           <button className="btn small close" onClick={onClose}>
@@ -111,10 +119,10 @@ export function ArticleDrawer({
                     {busy ? "analyzing…" : "Analyze with AI"}
                   </button>
                   <button className="btn small" onClick={() => onAnalyze(true)} disabled={busy}>
-                    Force re-analyze
+                    {busy ? "analyzing…" : "Force re-analyze"}
                   </button>
-                  <button className="btn small ghost" onClick={() => detail.refetch()}>
-                    Reload detail
+                  <button className="btn small ghost" onClick={() => detail.refetch()} disabled={detail.isFetching}>
+                    {detail.isFetching ? "loading…" : "Reload detail"}
                   </button>
                 </div>
                 {analyzeNote && <div className="news-status-line" style={{ marginTop: 6 }}>{analyzeNote}</div>}
@@ -202,15 +210,15 @@ export function ArticleDrawer({
                       <div className="tiny" style={{ color: "var(--red)", marginTop: 4 }}>{ai.error_detail}</div>
                     )}
                     {ai.insufficient_evidence && <div className="badge warn" style={{ marginTop: 4 }}>INSUFFICIENT EVIDENCE</div>}
-                    {decodeStringList(ai.key_facts).length > 0 && (
+                    {keyFacts.length > 0 && (
                       <div style={{ marginTop: 4 }}>
-                        {decodeStringList(ai.key_facts).map((f) => (
+                        {keyFacts.map((f) => (
                           <span className="fact" key={f}>{f}</span>
                         ))}
                       </div>
                     )}
-                    {decodeStringList(ai.uncertainties).length > 0 && (
-                      <div className="unc">uncertainties: {decodeStringList(ai.uncertainties).join("; ")}</div>
+                    {uncertainties.length > 0 && (
+                      <div className="unc">uncertainties: {uncertainties.join("; ")}</div>
                     )}
                   </div>
                   {proAnswers.isPending && !fallback?.ai_analysis && (
@@ -296,11 +304,11 @@ export function ArticleDrawer({
                 </section>
               )}
 
-              {postEvents.length > 0 && (
+              {postEventsText && (
                 <section>
                   <div className="section-title">Post-event validation</div>
-                  <pre className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
-                    {JSON.stringify(postEvents, null, 2)}
+                  <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
+                    {postEventsText}
                   </pre>
                 </section>
               )}

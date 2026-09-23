@@ -11,6 +11,7 @@
 
 import { getLegacy, send } from "@/api/client";
 import type {
+  DatasetListResponse,
   InstallRequest,
   InstallResponse,
   OfficialRequest,
@@ -57,6 +58,15 @@ export const provisioningApi = {
     signal?: AbortSignal,
   ): Promise<ProvisioningEnvironmentResponse> =>
     getLegacy<ProvisioningEnvironmentResponse>(`${BASE}/environment?backend=${backend}`, signal),
+
+  /**
+   * GET /api/provisioning/datasets — dataset files under the allowed import
+   * roots (browser aid for the train form). Additive endpoint: a server that
+   * has not restarted yet answers 404 → callers keep the manual path input
+   * and show an honest "endpoint pending" empty state, never a fabricated list.
+   */
+  datasets: (signal?: AbortSignal): Promise<DatasetListResponse> =>
+    getLegacy<DatasetListResponse>(`${BASE}/datasets`, signal),
 
   // ---- actions --------------------------------------------------------------
   /** POST /api/provisioning/environment/install — explicit opt-in stack install. */

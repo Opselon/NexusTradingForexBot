@@ -13,16 +13,22 @@
  * never by ad-hoc token probing.
  */
 
-import { Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import DashboardPage from "@/pages/Dashboard/DashboardPage";
-import TradingPage from "@/pages/Trading/TradingPage";
-import PositionsPage from "@/pages/Positions/PositionsPage";
-import RiskPage from "@/pages/Risk/RiskPage";
-import MLPage from "@/pages/ML/MLPage";
-import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
-import AuditPage from "@/pages/Audit/AuditPage";
+// Wave 6 (perf): the seven legacy routes are code-split like the feature
+// registry — the entry chunk no longer carries every page up front. Same
+// modules, same default exports, same props/URLs; React.lazy defers only the
+// fetch. The Suspense+ErrorBoundary wrapper below mirrors the per-feature
+// route contract (legacy routes previously had neither — a render error was
+// uncaught).
+const DashboardPage = lazy(() => import("@/pages/Dashboard/DashboardPage"));
+const TradingPage = lazy(() => import("@/pages/Trading/TradingPage"));
+const PositionsPage = lazy(() => import("@/pages/Positions/PositionsPage"));
+const RiskPage = lazy(() => import("@/pages/Risk/RiskPage"));
+const MLPage = lazy(() => import("@/pages/ML/MLPage"));
+const IntelligencePage = lazy(() => import("@/pages/Intelligence/IntelligencePage"));
+const AuditPage = lazy(() => import("@/pages/Audit/AuditPage"));
 import type { EngineSnapshot } from "@/types/domain";
 import { engineApi } from "@/api/engineApi";
 import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
@@ -31,7 +37,7 @@ import { ModeIndicator } from "@/components/ModeIndicator";
 import { AttentionStrip } from "@/components/AttentionStrip";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { ConfirmModal, ToastHost, ErrorState, LoadingState } from "@/components/primitives";
+import { ConfirmModal, ToastHost, ErrorState, LoadingState, StatusBadge } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
 import { useI18n } from "@/stores/i18nStore";
 import { LANGUAGES } from "@/lib/i18n";
@@ -105,8 +111,7 @@ function LangRow() {
     <div className="side-row">
       <span>{t("ux.lang.label", "LANGUAGE")}</span>
       <select
-        className="select"
-        style={{ padding: "2px 4px", fontSize: 11 }}
+        className="select lang-select"
         value={lang}
         onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
         aria-label="Language"
@@ -134,22 +139,45 @@ export function AppShell() {
   // Route path drives the ErrorBoundary reset key: navigating away from (or
   // back to) a crashed page re-arms the boundary instead of wedging the tree.
   const routePathname = useLocation().pathname;
+  // Active-route label (render-time): drives the tab title AND the single
+    // visually-hidden <h1> per route, so every page announces exactly one h1.
+    const navHit = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.to === routePathname);
+    const featHit = FEATURE_SECTIONS.flatMap((s) => s.items).find((f) => f.route === routePathname);
+    const routeLabel = navHit
+      ? t(navHit.labelKey, navHit.label)
+      : featHit
+        ? t(featureLabelKey(featHit.route), featHit.label)
+        : null;
 
   // Auth state (core/auth is the source of truth; bus keeps the banner live).
   const [authExpiredAt, setAuthExpiredAt] = useState<number | null>(() => getAuthState().lastUnauthorizedAt);
   useEffect(() => onCore("auth:expired", ({ at }) => setAuthExpiredAt(at)), []);
   useEffect(() => onCore("auth:changed", () => setAuthExpiredAt(getAuthState().lastUnauthorizedAt)), []);
 
-  // 1s ticker for data-age display (visual only).
-  useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, []);
-
   // Density class on <body> — CSS custom properties cascade from there.
   useEffect(() => {
     document.body.classList.toggle("dense", dense);
   }, [dense]);
+
+  // Browser-tab title follows the active route (presentation only).
+  useEffect(() => {
+    document.title = routeLabel ? `${routeLabel} · NSE Console` : "NSE Console";
+  }, [routeLabel]);
+
+  // SPA navigation: return the scroll container to the top and move focus to
+  // <main> so keyboard/SR users land on the new page, not the old scroll
+  // position. Skipped on first mount — the landing page keeps its place.
+  const bootedRef = useRef(false);
+  useEffect(() => {
+    if (!bootedRef.current) {
+      bootedRef.current = true;
+      return;
+    }
+    const main = document.getElementById("main-content");
+    main?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+    main?.focus({ preventScroll: true });
+  }, [routePathname]);
 
   // Alt+1..9 route jump, Alt+B sidebar, R = refresh (skipped while typing).
   useEffect(() => {
@@ -188,6 +216,39 @@ export function AppShell() {
 
   const { snapshot, realtimeStatus } = useRealtimeSnapshot(snapshotQuery.data);
 
+  // 1s ticker for data-age display (visual only).
+  // perf: pause while the tab is hidden — nowMs is Date.now()-derived (nothing
+  // accumulates, so pausing cannot corrupt it); on return run one immediate
+  // tick so no displayed age is ever stale by a whole interval. Visible
+  // cadence unchanged (OUTPUT-IDENTICAL: same values, same freshness timing).
+  useEffect(() => {
+    if (document.visibilityState === "hidden") return;
+    let alive = true;
+    let timer: number | null = window.setInterval(tickNow, 1000);
+    function tickNow(): void {
+      if (alive) setNowMs(Date.now());
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== null) {
+          window.clearInterval(timer);
+          timer = null;
+        }
+        return;
+      }
+      if (timer === null && alive) {
+        tickNow();
+        timer = window.setInterval(tickNow, 1000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, []);
+
   const authError =
     snapshotQuery.error instanceof ApiError && snapshotQuery.error.isAuthError
       ? (snapshotQuery.error as ApiError)
@@ -195,9 +256,49 @@ export function AppShell() {
   const showAuthBanner = authError !== null || authExpiredAt !== null;
   const lf = snapshot?.live_freshness ?? null;
 
+  /**
+   * Perf wave 7 (route memoization): the feature `<Route>` elements used to be
+   * built inline in JSX, so EVERY render allocated 20 fresh `element` objects.
+   * React Router reconciles `<Route>` by `element` identity: a new object for
+   * the ACTIVE route makes it REMOUNT the whole page — unmounting the live
+   * page, destroying its DOM + internal state, and re-running its effects
+   * (queries re-mount, charts re-initialize) on every single tick. At the
+   * backend's 5 Hz telemetry cadence that is 5 full page teardown+rebuild
+   * cycles per second, sustained 24/7 — the single biggest runtime cost on the
+   * console and the direct cause of the "the page flashes/redraws constantly"
+   * symptom under load.
+   *
+   * `useMemo` keyed on `[snapshot, nowMs, routePathname]` keeps each route's
+   * element identity stable across renders that only change unrelated state
+   * (palette/help/density toggles), so React Router reuses the existing tree.
+   * The snapshot+nowMs deps are intentional: when the live data changes, the
+   * page must re-render with it — but re-render ≠ remount, which is the whole
+   * distinction this preserves.
+   */
+  const featureRoutes = useMemo(
+    () =>
+      FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
+        <Route
+          key={f.route}
+          path={f.route}
+          element={
+            <ErrorBoundary label={f.label} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
+                <f.lazy snapshot={snapshot} nowMs={nowMs} />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
+      )),
+    [snapshot, nowMs, routePathname],
+  );
+
+
+
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <aside aria-label="Sidebar" className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
           <div className="brand-logo">NSE</div>
           <div className="brand-text">
@@ -240,24 +341,24 @@ export function AppShell() {
           <div className="side-row" title={t("ux.shortcut.help", "Keyboard shortcuts")}>
             <span><kbd>alt</kbd> 1–9 · <kbd>ctrl</kbd>K</span>
           </div>
-          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)">
+          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)" aria-label="Toggle sidebar" aria-expanded={!collapsed}>
             {collapsed ? "»" : "«"}
           </button>
         </div>
       </aside>
 
       <div className="main-col">
-        <header className="topbar">
+        <header aria-label="Top bar" className="topbar">
           <ModeIndicator snapshot={snapshot} />
           <span className="conn-chip" title="Engine loop state (backend-authoritative)">
             <span className={`conn-dot ${snapshot?.engine_running ? "connected" : snapshot ? "disconnected" : "reconnecting"}`} />
             <span>ENGINE {snapshot ? (snapshot.engine_running ? "RUNNING" : "STOPPED") : "—"}</span>
           </span>
           <span className="conn-chip" title="Backend health.overall from /api/status">
-            {snapshot ? <span className={`badge ${snapshot.health.overall === "READY" ? "good" : snapshot.health.overall === "STALE" || snapshot.health.overall === "WARMING_UP" ? "warn" : "bad"}`}>{snapshot.health.overall}</span> : <span className="badge unknown">HEALTH —</span>}
+            {snapshot ? <StatusBadge status={snapshot.health.overall} /> : <span className="badge unknown">HEALTH —</span>}
           </span>
           {snapshot && (
-            <span className="conn-chip" style={{ gap: 10 }} title="Pipeline freshness stages (backend live_freshness)">
+            <span className="conn-chip freshness-chip" title="Pipeline freshness stages (backend live_freshness)">
               <FreshnessMeter label="MKT" state={lf?.market?.state} ageMs={lf?.market?.age_ms ?? ageSecToMs(snapshot.diagnostics.tick_age_sec)} />
               <FreshnessMeter label="FEAT" state={lf?.features?.state} ageMs={lf?.features?.age_ms ?? ageSecToMs(snapshot.diagnostics.features_age_sec)} />
               <FreshnessMeter label="INFR" state={lf?.inference?.state} ageMs={lf?.inference?.age_ms ?? ageSecToMs(snapshot.diagnostics.inference_age_sec)} />
@@ -286,7 +387,7 @@ export function AppShell() {
               <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span>
               {t("ux.auth.banner.suffix", "(token kept in sessionStorage only).")}
               {!hasAccessToken() && (
-                <span className="muted" style={{ marginInlineStart: 8 }}>
+                <span className="muted start-8">
                   {t("ux.auth.mode.cookie", "Mode: cookie-only (no bearer token).")}
                 </span>
               )}
@@ -294,7 +395,8 @@ export function AppShell() {
           </div>
         )}
 
-        <main className="page">
+        <main className="page" id="main-content" tabIndex={-1}>
+          <h1 className="sr-only">{routeLabel ?? "NSE Console"}</h1>
           {snapshotQuery.isPending ? (
             <LoadingState label="Connecting to NSE backend…" />
           ) : snapshotQuery.isError && !snapshot ? (
@@ -304,29 +406,21 @@ export function AppShell() {
               onRetry={() => snapshotQuery.refetch()}
             />
           ) : (
-            <Routes>
-              <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
+            <ErrorBoundary label={routeLabel ?? "Console"} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label="Loading page…" />}>
+                <Routes>
+                  <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/trading" element={<TradingRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/positions" element={<PositionsRoute snapshot={snapshot} />} />
               <Route path="/risk" element={<RiskRoute snapshot={snapshot} />} />
               <Route path="/ml" element={<MlRoute snapshot={snapshot} />} />
               <Route path="/intelligence" element={<IntelRoute snapshot={snapshot} />} />
               <Route path="/audit" element={<AuditRoute />} />
-              {FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
-                <Route
-                  key={f.route}
-                  path={f.route}
-                  element={
-                    <ErrorBoundary label={f.label} resetKey={routePathname}>
-                      <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
-                        <f.lazy snapshot={snapshot} nowMs={nowMs} />
-                      </Suspense>
-                    </ErrorBoundary>
-                  }
-                />
-              ))}
-              <Route path="*" element={<ErrorState message="Unknown route" />} />
-            </Routes>
+              {featureRoutes}
+                  <Route path="*" element={<ErrorState message="Unknown route" />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           )}
         </main>
       </div>
@@ -340,12 +434,12 @@ export function AppShell() {
           onCancel={() => setHelpOpen(false)}
           onConfirm={() => setHelpOpen(false)}
         >
-          <div className="kv" style={{ gridTemplateColumns: "max-content 1fr", fontSize: 12 }}>
-            <dt>Ctrl / Cmd + K</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.palette", "Command palette")}</dd>
-            <dt>Alt + 1–9</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.jump", "Jump to page")}</dd>
-            <dt>Alt + B</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.sidebar", "Toggle sidebar")}</dd>
-            <dt>R</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.refresh", "Refresh data (not while typing)")}</dd>
-            <dt>Esc</dt><dd style={{ textAlign: "left" }}>{t("ux.shortcut.esc", "Close dialogs")}</dd>
+          <div className="kv left">
+            <dt>Ctrl / Cmd + K</dt><dd>{t("ux.shortcut.palette", "Command palette")}</dd>
+            <dt>Alt + 1–9</dt><dd>{t("ux.shortcut.jump", "Jump to page")}</dd>
+            <dt>Alt + B</dt><dd>{t("ux.shortcut.sidebar", "Toggle sidebar")}</dd>
+            <dt>R</dt><dd>{t("ux.shortcut.refresh", "Refresh data (not while typing)")}</dd>
+            <dt>Esc</dt><dd>{t("ux.shortcut.esc", "Close dialogs")}</dd>
           </div>
         </ConfirmModal>
       )}

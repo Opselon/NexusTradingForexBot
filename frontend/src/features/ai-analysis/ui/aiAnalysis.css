@@ -1,0 +1,366 @@
+/* ==========================================================================
+   AI-Analysis page (aa-*) — hero signal card, KPI/chart helpers, table cells.
+   Scoped to this feature: every selector starts .aa- and is imported by
+   AiAnalysisPage.tsx. Theme tokens only; family colors travel through the
+   single --aa-fam custom property (.aa-fam-*) so the donut stroke, legend
+   dot, chip text and timeline dot can never disagree about a color.
+
+   Honesty styling: .aa-empty is a dashed "nothing here" block (never a
+   fake zero), null values render the glyph "—" via the components.
+   ========================================================================== */
+
+/* ── action families (buy/sell/none/close/unknown) ─────────────────────── */
+.aa-fam-buy    { --aa-fam: var(--green); }
+.aa-fam-sell   { --aa-fam: var(--red); }
+.aa-fam-none   { --aa-fam: var(--amber); }
+.aa-fam-close  { --aa-fam: var(--violet); }
+.aa-fam-unknown { --aa-fam: var(--text-faint); }
+
+.aa-empty {
+  padding: 22px 12px;
+  text-align: center;
+  font-size: 11.5px;
+  font-family: var(--mono);
+  color: var(--text-faint);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+}
+
+/* ── hero live-signal card ─────────────────────────────────────────────── */
+.aa-hero {
+  display: grid;
+  grid-template-columns: 176px 156px minmax(240px, 1fr) 212px;
+  gap: 16px;
+  align-items: start;
+}
+.aa-hero-act { display: grid; gap: 6px; justify-items: start; }
+.aa-hero-act .aa-big {
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  color: var(--aa-fam);
+  text-shadow: 0 0 20px color-mix(in srgb, var(--aa-fam) 35%, transparent);
+}
+.aa-when { font-size: 10px; font-family: var(--mono); color: var(--text-dim); }
+.aa-hero-act .btn { margin-top: 4px; }
+
+.aa-gauge { width: 100%; max-inline-size: 156px; justify-self: center; }
+
+.aa-details { display: grid; gap: 8px; min-width: 0; }
+/* ── wave 2b (#32): .aa-segbar is used on the page but had no rules — the
+ *   stats toolbar relied on accidental inline layout. */
+.aa-segbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.aa-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.aa-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--aa-fam);
+  background: color-mix(in srgb, var(--aa-fam) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aa-fam) 45%, transparent);
+}
+.aa-reason-line {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aa-reason-line b { color: var(--text-faint); font-weight: 600; }
+
+.aa-hero-ladder { min-width: 0; }
+
+@media (max-width: 1180px) {
+  .aa-hero { grid-template-columns: 176px 156px minmax(220px, 1fr); }
+  .aa-hero-ladder { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .aa-hero { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── action donut + legend ─────────────────────────────────────────────── */
+.aa-donut-wrap {
+  display: grid;
+  grid-template-columns: minmax(132px, 176px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.aa-donut { display: block; width: 100%; height: auto; overflow: visible; }
+.aa-donut-track { fill: none; stroke: var(--bg-inset); stroke-width: 14; }
+.aa-donut-seg {
+  fill: none;
+  stroke: var(--aa-fam);
+  stroke-width: 14;
+  transition: opacity 0.15s ease;
+}
+.aa-donut-seg:hover { opacity: 0.75; }
+
+/* ── reduced motion (wave 2 a11y): the page polls every 15-60s, so chart
+ *   transitions are decorative — honor the OS preference and drop them. */
+@media (prefers-reduced-motion: reduce) {
+  .aa-donut-seg,
+  .aa-bar-track i,
+  .aa-conf-track i {
+    transition: none !important;
+  }
+  /* the indicators live dot keeps keyframing (animation, not transition) —
+   * kill it too: a permanently-pulsing dot is not information. */
+  .ic-live-live .ic-live-dot {
+    animation: none !important;
+  }
+}
+
+/* ── hero skeleton (wave 2): reserve the 4-cell grid so the card does not
+ *   jump height/layout when the latest signal lands. */
+.aa-hero-skel {
+  grid-template-columns: 176px 156px minmax(240px, 1fr) 212px;
+}
+.aa-skel-cell { min-height: 88px; }
+.aa-metric-skel {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+}
+.aa-donut-total {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.aa-donut-cap {
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  fill: var(--text-faint);
+}
+.aa-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.aa-legend li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 52px;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+}
+.aa-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--aa-fam);
+}
+.aa-legend-k {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aa-legend-v {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+.aa-legend-p {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-faint);
+}
+@media (max-width: 900px) {
+  .aa-donut-wrap { grid-template-columns: 1fr; }
+}
+
+/* ── confidence timeline ───────────────────────────────────────────────── */
+.aa-tl { display: grid; gap: 6px; }
+.aa-tl-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.aa-tl-grid { stroke: var(--border); stroke-width: 1; }
+.aa-tl-axis {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.aa-tl-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.aa-tl-dot {
+  fill: var(--aa-fam);
+  stroke: var(--bg-panel);
+  stroke-width: 1;
+}
+.aa-tl-cap {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ── count bars (stage / reason distributions) ─────────────────────────── */
+.aa-bars { display: grid; gap: 5px; }
+.aa-bar-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 30%) minmax(0, 1fr) auto 48px;
+  gap: 10px;
+  align-items: center;
+}
+.aa-bar-k {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aa-bar-track {
+  height: 9px;
+  border-radius: 5px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.aa-bar-track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.aa-bar-v {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+.aa-bar-p {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-faint);
+}
+.aa-bars-more {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--text-faint);
+  padding-inline-start: 2px;
+}
+
+/* ── price ladder ──────────────────────────────────────────────────────── */
+.aa-ladder { display: grid; gap: 10px; }
+.aa-ladder-axis { display: grid; gap: 6px; }
+.aa-ladder-axis.positioned { display: block; position: relative; height: 152px; }
+.aa-lvl {
+  display: grid;
+  grid-template-columns: auto minmax(14px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.aa-ladder-axis.positioned .aa-lvl {
+  position: absolute;
+  inset-inline: 0;
+  transform: translateY(-50%);
+}
+.aa-lvl-k {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  min-width: 38px;
+}
+.aa-lvl-line { height: 1px; background: var(--border-strong); }
+.aa-lvl-v {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.aa-lvl-d {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  min-width: 76px;
+  text-align: right;
+}
+.aa-lvl-tp .aa-lvl-k, .aa-lvl-tp .aa-lvl-v { color: var(--green); }
+.aa-lvl-tp .aa-lvl-line { background: color-mix(in srgb, var(--green) 55%, transparent); }
+.aa-lvl-sl .aa-lvl-k, .aa-lvl-sl .aa-lvl-v { color: var(--red); }
+.aa-lvl-sl .aa-lvl-line { background: color-mix(in srgb, var(--red) 55%, transparent); }
+.aa-lvl-entry .aa-lvl-k, .aa-lvl-entry .aa-lvl-v { color: var(--accent-strong); }
+.aa-lvl-entry .aa-lvl-line { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.aa-lvl-entry .aa-lvl-v { font-size: 14px; }
+.aa-rr {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+}
+.aa-rr-k { font-size: 9.5px; letter-spacing: 0.12em; color: var(--text-faint); }
+.aa-rr b { font-size: 14px; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
+.aa-rr-note { font-size: 9.5px; color: var(--text-faint); }
+
+/* ── history table cells ───────────────────────────────────────────────── */
+.aa-conf-cell { display: inline-flex; align-items: center; gap: 6px; min-width: 92px; }
+.aa-conf-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.aa-conf-track i { display: block; height: 100%; }
+.aa-conf-track i.buy { background: linear-gradient(90deg, rgba(62, 207, 142, 0.5), var(--green)); }
+.aa-conf-track i.sell { background: linear-gradient(90deg, rgba(242, 86, 77, 0.5), var(--red)); }
+.aa-conf-track i.flat { background: linear-gradient(90deg, rgba(131, 152, 173, 0.4), var(--text-dim)); }
+.aa-conf-v {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  min-width: 40px;
+  text-align: right;
+}
+td.aa-reason {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* panels in this page sit inside grid rows — neutralise the stacked margin
+   (descendant selector: shadow/intel stacks nest Panels one level deeper) */
+.aa-stack .panel { margin-bottom: 0; }
+.aa-stack { display: grid; gap: var(--panel-gap); }
+
+/* drawer gate-trace summary chips */
+.aa-gate-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px 8px; }
+.aa-gate-sum .badge.good { border-color: var(--green); color: var(--green); }
+.aa-gate-sum .badge.bad { border-color: var(--red); color: var(--red); }
+.aa-firstfail { color: var(--red); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60ch; }
+
+body.dense .aa-hero { gap: 12px; }
+body.dense .aa-hero-act .aa-big { font-size: 26px; }
+body.dense .aa-ladder-axis.positioned { height: 130px; }

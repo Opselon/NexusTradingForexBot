@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Skeleton } from "@/components/primitives";
 import { formatNumber } from "@/lib/format";
-import { commandCenterQueries } from "../useCases";
+import { ccRetry, ccRetryDelay, commandCenterQueries } from "../useCases";
 import { num, spatialEmptyFacts, str, type CcSpatialDto, type CcSpatialNodeDto } from "../model";
 import { SpatialFleetEngine } from "./spatialEngine";
 import "./spatial.css";
@@ -48,7 +48,8 @@ export function SpatialFleetCanvas({
     queryKey: ["command-center", "spatial"],
     queryFn: ({ signal }) => commandCenterQueries.spatial(signal),
     refetchInterval: 30_000,
-    retry: false,
+    retry: ccRetry,
+    retryDelay: ccRetryDelay,
   });
 
   const payload = spatialQ.data?.available === true ? spatialQ.data : null;
@@ -127,8 +128,15 @@ export function SpatialFleetCanvas({
     return () => cancelAnimationFrame(raf);
   }, [selectedId, visible]);
 
-  const selNode: CcSpatialNodeDto | null =
-    selectedId && payload ? (payload.nodes ?? []).find((n) => str(n.strategy_id) === selectedId) ?? null : null;
+  // perf: selected-node lookup derived only when payload/selection change
+  // (deps: payload, selectedId — every reactive value read).
+  const selNode: CcSpatialNodeDto | null = useMemo(
+    () =>
+      selectedId && payload
+        ? (payload.nodes ?? []).find((n) => str(n.strategy_id) === selectedId) ?? null
+        : null,
+    [payload, selectedId],
+  );
 
   const status: ViewportStatus = spatialQ.isPending
     ? "loading"
@@ -148,7 +156,7 @@ export function SpatialFleetCanvas({
 
   return (
     <div className="spatial-wrap" ref={wrapRef}>
-      <canvas ref={canvasRef} className="spatial-canvas" aria-label="Spatial fleet map (2.5D)" />
+      <canvas ref={canvasRef} className="spatial-canvas" role="img" aria-label="Spatial fleet map (2.5D)" />
 
       {/* camera toolbar (legacy scc-fit-all / reset / focus set) */}
       <div className="spatial-tools">
@@ -174,10 +182,10 @@ export function SpatialFleetCanvas({
         <button className="btn small ghost" onClick={() => engineRef.current?.focusActive()}>focus live</button>
         <button className="btn small ghost" onClick={() => engineRef.current?.focusBlocked()}>focus terminal</button>
         <span className="spatial-legend" aria-hidden="true">
-          <i style={{ background: "#10b981" }} /> live
-          <i style={{ background: "#eab308" }} /> shadow
-          <i style={{ background: "#84cc16" }} /> validated
-          <i style={{ background: "#f43f5e" }} /> terminal
+          <i className="sl-live" /> live
+          <i className="sl-shadow" /> shadow
+          <i className="sl-validated" /> validated
+          <i className="sl-terminal" /> terminal
         </span>
       </div>
 

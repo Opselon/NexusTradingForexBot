@@ -46,7 +46,7 @@ export interface ModeCheck {
   warnings: string[];
 }
 
-/** Pure client-side transition verdict (mirrors v1 /mode/validate semantics). */
+/** Pure client-side transition verdict (mirrors v1 /mode/preview semantics). */
 export function checkModeTransition(current: string | null | undefined, proposed: string): ModeCheck {
   const errors: string[] = [];
   const warnings: string[] = [];

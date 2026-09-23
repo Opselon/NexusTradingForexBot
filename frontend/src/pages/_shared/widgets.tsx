@@ -9,7 +9,8 @@
  * `unknown` (hatched, never green): an unproven zero is not a satisfied gate.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useDialogA11y } from "../../components/useDialogA11y";
 import { formatNumber } from "@/lib/format";
 import "@/pages/_shared/pages.css";
 
@@ -105,7 +106,7 @@ export function SortableTable<T>({
               {columns.map((c) => {
                 const active = sort?.key === c.key;
                 return (
-                  <th
+                  <th scope="col"
                     key={c.key}
                     className={c.num ? "num" : undefined}
                     style={c.width ? { inlineSize: c.width } : undefined}
@@ -136,6 +137,17 @@ export function SortableTable<T>({
                 key={rowKey(row, i)}
                 className={onRowClick ? "l4-clickable" : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onKeyDown={
+                                  onRowClick
+                                    ? (e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                          e.preventDefault();
+                                          e.currentTarget.click();
+                                        }
+                                      }
+                                    : undefined
+                                }
               >
                 {columns.map((c) => (
                   <td key={c.key} className={c.num ? "num" : undefined} style={dense ? { paddingBlock: 2 } : undefined}>
@@ -235,44 +247,42 @@ export function Drawer({
   children: ReactNode;
   footer?: ReactNode;
 }) {
-  // Esc closes (same rule as ConfirmModal).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const boxRef = useRef<HTMLElement | null>(null);
+  useDialogA11y(boxRef, onClose);
 
   return (
     <>
       <div className="l4-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()} />
-      <aside className="l4-drawer" role="dialog" aria-modal="true" aria-label={title}>
+      <aside ref={boxRef} className="l4-drawer" role="dialog" aria-modal="true" aria-label={title}>
         <div className="l4-drawer__head">
           <span>{title}</span>
           <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={onClose} aria-label="Close panel">
             esc ✕
           </button>
         </div>
-        <div className="l4-drawer__body">{children}</div>
+        <div tabIndex={0} className="l4-drawer__body">{children}</div>
         {footer && <div className="l4-drawer__foot">{footer}</div>}
       </aside>
     </>
   );
 }
 
-/** Raw-JSON block for payload drill-downs (never prettified into prose). */
+/** Raw-JSON block for payload drill-downs (never prettified into prose).
+ *  perf: serialized once per `value` identity (memo inside — signature and
+ *  output byte-identical: same JSON.stringify(value, null, 2), same
+ *  String(value) fallback on a serialization failure). */
 export function JsonBlock({ value, label }: { value: unknown; label?: string }) {
-  let text = "—";
-  try {
-    text = JSON.stringify(value, null, 2) ?? "—";
-  } catch {
-    text = String(value);
-  }
+  const text = useMemo(() => {
+    try {
+      return JSON.stringify(value, null, 2) ?? "—";
+    } catch {
+      return String(value);
+    }
+  }, [value]);
   return (
     <div>
       {label && <div className="section-title">{label}</div>}
-      <pre className="l4-json">{text}</pre>
+      <pre tabIndex={0} className="l4-json">{text}</pre>
     </div>
   );
 }

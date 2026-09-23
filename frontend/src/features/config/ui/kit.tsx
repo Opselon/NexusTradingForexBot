@@ -13,7 +13,8 @@
  * the RTL switch (`<html dir=fa>`) mirrors correctly.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { useUiStore } from "@/stores/uiStore";
 import { formatAgeMs } from "@/lib/format";
 import { Panel, EmptyState, ErrorState, Skeleton } from "@/components/primitives";
@@ -226,9 +227,25 @@ export function KeyValueList({ rows }: { rows: Array<[string, ReactNode]> }) {
   );
 }
 
+/**
+ * Rows built from a payload object are cached per OBJECT IDENTITY (WeakMap):
+ * `scalarRows` runs in the render path (StateTab feeds KeyValueList from it),
+ * and a nested object value would otherwise be JSON.stringify'd on every
+ * render of a polling panel. React Query hands back a stable object identity
+ * until the next fetch lands, so one serialization per distinct payload is
+ * enough. INVARIANT: the returned array and its elements are treated as
+ * read-only (callers may `.filter()` — which allocates — but never mutate);
+ * the rendered bytes are exactly `preview(v) || JSON.stringify(v)` either way.
+ */
+const scalarRowsByIdentity = new WeakMap<Record<string, unknown>, Array<[string, ReactNode]>>();
+
 export function scalarRows(obj: Record<string, unknown> | null | undefined): Array<[string, ReactNode]> {
   if (!obj) return [];
-  return Object.entries(obj).map(([k, v]) => [k, <span key={k}>{preview(v) || JSON.stringify(v)}</span>] as [string, ReactNode]);
+  const cached = scalarRowsByIdentity.get(obj);
+  if (cached) return cached;
+  const rows = Object.entries(obj).map(([k, v]) => [k, <span key={k}>{preview(v) || JSON.stringify(v)}</span>] as [string, ReactNode]);
+  scalarRowsByIdentity.set(obj, rows);
+  return rows;
 }
 
 /* ------------------------------------------------------------------ */
@@ -320,12 +337,15 @@ export function NumberField({
   error,
   step,
   placeholder,
+  spec,
 }: {
   value: string;
   onChange: (v: string) => void;
   error?: string | null;
   step?: string;
   placeholder?: string;
+  /** TASK-CFGUI-001: accessible name (screen readers get the field label). */
+  spec?: string;
 }) {
   return (
     <input
@@ -333,6 +353,7 @@ export function NumberField({
       type="number"
       value={value}
       step={step}
+      aria-label={spec ?? placeholder}
       aria-invalid={error ? true : undefined}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -408,6 +429,7 @@ export function TypedConfirmModal({
   word,
   confirmLabel,
   busy,
+  busyLabel,
   onCancel,
   onConfirm,
 }: {
@@ -416,24 +438,24 @@ export function TypedConfirmModal({
   word: string;
   confirmLabel: string;
   busy?: boolean;
+  /** TASK-CFGUI-001: busy button text (default "sending…" — the preview gate
+   *  passes "validating…" while the server matrix check is in flight). */
+  busyLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const [typed, setTyped] = useState("");
   const matches = typed.trim() === word;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const typedInputRef = useRef<HTMLInputElement | null>(null);
+  // Typed confirm: land focus in the token input so typing works immediately.
+  useDialogA11y(boxRef, onCancel, { initialFocusRef: typedInputRef });
   return (
     <div
       className="modal-overlay"
       onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}
     >
-      <div className="modal danger" role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={boxRef} className="modal danger" role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-header">{title}</div>
         <div className="modal-body">
           <div className="confirm-box">
@@ -444,6 +466,7 @@ export function TypedConfirmModal({
               </label>
               <input
                 id={`typed-${word}`}
+                ref={typedInputRef}
                 className="input l3-input"
                 value={typed}
                 autoComplete="off"
@@ -458,7 +481,7 @@ export function TypedConfirmModal({
             Cancel <kbd>esc</kbd>
           </button>
           <button className="btn danger" disabled={!matches || busy} onClick={onConfirm}>
-            {busy ? "sending…" : confirmLabel}
+            {busy ? (busyLabel ?? "sending…") : confirmLabel}
           </button>
         </div>
       </div>

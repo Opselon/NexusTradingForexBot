@@ -109,11 +109,30 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
   }, []);
 
   // Poll cursor state while a session exists (cheap, cursor-bounded payload).
+  // perf: the 2s cursor poll is a network read — pause it while the tab is
+  // hidden; on return the interval restarts AND one refresh runs immediately,
+  // so the cursor strip is never staler than one tick on resume.
   useEffect(() => {
     if (!replayId) return;
     void refreshState();
-    const t = window.setInterval(() => void refreshState(), 2_000);
-    return () => window.clearInterval(t);
+    let t: number | null =
+      document.visibilityState === "hidden" ? null : window.setInterval(() => void refreshState(), 2_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (t !== null) {
+          window.clearInterval(t);
+          t = null;
+        }
+      } else if (t === null) {
+        t = window.setInterval(() => void refreshState(), 2_000);
+        void refreshState();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (t !== null) window.clearInterval(t);
+    };
   }, [replayId, refreshState]);
 
   /** One command runner: reply decides the wording, payloads handled inline. */
@@ -243,6 +262,19 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
     const u = st?.unknown_events ?? 0;
     return k + u > 0 ? k / (k + u) : null;
   }, [st?.known_events, st?.unknown_events]);
+
+  /** Decision drill-down strings — derived once per inspected decision
+   *  instead of on every transport/state render (the 2s replay clock makes
+   *  those frequent while a decision stays open). Same expressions, same
+   *  output; deps read only `decision`. */
+  const decisionText = useMemo(() => {
+    if (!decision) return null;
+    const row = decision.row;
+    return {
+      prices: [row.entry, row.stop_loss, row.take_profit].map((v) => (typeof v === "number" ? v.toFixed(2) : "—")).join(" / "),
+      probs: row.probs?.map((p) => p.toFixed(3)).join(" | ") ?? "—",
+    };
+  }, [decision]);
 
   return (
     <Panel
@@ -398,11 +430,11 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
             <dt>stage / regime</dt>
             <dd>{decision.row.decision_stage ?? "—"} · {decision.row.regime ?? "—"}</dd>
             <dt>entry / SL / TP</dt>
-            <dd>{[decision.row.entry, decision.row.stop_loss, decision.row.take_profit].map((v) => (typeof v === "number" ? v.toFixed(2) : "—")).join(" / ")}</dd>
+            <dd>{decisionText?.prices}</dd>
             <dt>risk accepted</dt>
             <dd>{decision.row.risk_accepted === null || decision.row.risk_accepted === undefined ? "—" : String(decision.row.risk_accepted)}</dd>
             <dt>probs (N/B/S/W)</dt>
-            <dd>{decision.row.probs?.map((p) => p.toFixed(3)).join(" | ") ?? "—"}</dd>
+            <dd>{decisionText?.probs}</dd>
           </dl>
         )}
         {report && (

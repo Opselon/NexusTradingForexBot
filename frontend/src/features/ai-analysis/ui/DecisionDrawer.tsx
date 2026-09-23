@@ -4,11 +4,10 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { EmptyState, MetricCard, Panel, ProbBar, Skeleton } from "@/components/primitives";
-import { ApiError } from "@/types/api";
+import { EmptyState, ErrorState, MetricCard, Panel, ProbBar, Skeleton } from "@/components/primitives";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { Drawer, GateStepper, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
-import { confidence01, str } from "../model";
+import { confidence01, isNotFound, str, actionTone } from "../model";
 import { aiAnalysisQueries } from "../useCases";
 
 export default function DecisionDrawer({ decisionId, onClose }: { decisionId: string; onClose: () => void }) {
@@ -33,13 +32,13 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
     retry: false,
   });
 
-  const notFound = (e: unknown) => e instanceof ApiError && e.status === 404;
+  const notFound = isNotFound;
   const d = detailQ.data;
 
   return (
     <Drawer title={`Decision ${decisionId.slice(0, 16)}…`} onClose={onClose}>
       <div className="grid cols-3" style={{ marginBottom: 12 }}>
-        <MetricCard label="Action" value={d?.action ?? "—"} tone={d?.action === "BUY" ? "pos" : d?.action === "SELL" ? "neg" : "dim"} />
+        <MetricCard label="Action" value={d?.action ?? "—"} tone={actionTone(d?.action) === "buy" ? "pos" : actionTone(d?.action) === "sell" ? "neg" : "dim"} />
         <MetricCard label="Stage / blocked_by" value={d?.decision_stage ?? "—"} sub={d?.blocked_by ? `blocked by ${d.blocked_by}` : undefined} />
         <MetricCard label="Generated" value={<span className="tiny">{formatDateTime(d?.generated_at)}</span>} sub={`reason ${d?.reason_code ?? "—"}`} />
       </div>
@@ -57,7 +56,7 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
           </dl>
           <ProbBar
             rows={[
-              { label: "P (confidence)", value: confidence01(d.confidence), tone: d.action === "BUY" ? "buy" : d.action === "SELL" ? "sell" : "flat" },
+              { label: "P (confidence)", value: confidence01(d.confidence), tone: actionTone(d.action) },
               { label: "before filters", value: confidence01(d.confidence_before_filters), tone: "flat" },
               { label: "after filters", value: confidence01(d.confidence_after_filters), tone: "flat" },
             ]}
@@ -66,7 +65,10 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
       ) : notFound(detailQ.error) ? (
         <EmptyState message="Decision not found in the ledger window." />
       ) : (
-        <EmptyState message={detailQ.error instanceof Error ? detailQ.error.message : "detail unavailable"} />
+        <ErrorState
+          message={detailQ.error instanceof Error ? detailQ.error.message : "detail unavailable"}
+          onRetry={() => void detailQ.refetch()}
+        />
       )}
 
       <div style={{ height: 12 }} />
@@ -74,15 +76,38 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
         {gatesQ.isPending ? (
           <Skeleton count={2} />
         ) : gatesQ.isError ? (
-          <EmptyState message={gatesQ.error instanceof Error ? gatesQ.error.message : "gates unavailable"} />
-        ) : (
-          <GateStepper
-            gates={(gatesQ.data?.gates ?? []).map((g) => ({
-              name: g.gate,
-              status: g.passed ? "PASS" : "FAIL",
-              reason: str(g.value) ?? "no value recorded",
-            }))}
+          <ErrorState
+            message={gatesQ.error instanceof Error ? gatesQ.error.message : "gates unavailable"}
+            onRetry={() => void gatesQ.refetch()}
           />
+        ) : (
+          (() => {
+            const gates = gatesQ.data?.gates ?? [];
+            if (gates.length === 0) return <EmptyState message="No gate trace recorded for this decision." />;
+            const pass = gates.filter((g) => g.passed).length;
+            const fail = gates.length - pass;
+            const firstFail = gates.find((g) => !g.passed);
+            return (
+              <>
+                <div className="aa-gate-sum">
+                  <span className="badge good">✓ {pass} pass</span>
+                  <span className={`badge ${fail > 0 ? "bad" : ""}`}>✕ {fail} fail</span>
+                  {firstFail && (
+                    <span className="tiny aa-firstfail" title={str(firstFail.value) ?? ""}>
+                      first failure: {firstFail.gate}
+                    </span>
+                  )}
+                </div>
+                <GateStepper
+                  gates={gates.map((g) => ({
+                    name: g.gate,
+                    status: g.passed ? "PASS" : "FAIL",
+                    reason: str(g.value) ?? "no value recorded",
+                  }))}
+                />
+              </>
+            );
+          })()
         )}
       </Panel>
 
@@ -91,7 +116,10 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
         {explainQ.isPending ? (
           <Skeleton />
         ) : explainQ.isError ? (
-          <EmptyState message="explanation endpoint failed" />
+          <ErrorState
+            message={explainQ.error instanceof Error ? explainQ.error.message : "explanation endpoint failed"}
+            onRetry={() => void explainQ.refetch()}
+          />
         ) : (
           <div className="small">{explainQ.data?.explanation ?? "—"}</div>
         )}
@@ -102,7 +130,10 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
         {evidenceQ.isPending ? (
           <Skeleton count={3} />
         ) : evidenceQ.isError ? (
-          <EmptyState message="evidence endpoint failed" />
+          <ErrorState
+            message={evidenceQ.error instanceof Error ? evidenceQ.error.message : "evidence endpoint failed"}
+            onRetry={() => void evidenceQ.refetch()}
+          />
         ) : (
           <JsonBlock value={evidenceQ.data?.evidence} maxChars={6000} />
         )}

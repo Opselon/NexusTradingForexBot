@@ -12,6 +12,7 @@
  * Missing numeric fields render "--" exactly as the legacy panel did.
  */
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -36,6 +37,14 @@ export function Shadow70DeepPanel() {
     refetchInterval: 30_000,
     retry: false,
   });
+
+  // The persisted-alert table shows the first 12 of the backend's list: slice
+  // chain memoized on exactly the array it reads (re-runs only on a payload
+  // change). Hooks stay above the early return below (rules of hooks).
+  const persistedAlerts = useMemo(
+    () => (healthQ.data?.persisted_alerts ?? []).slice(0, 12),
+    [healthQ.data?.persisted_alerts],
+  );
 
   if (healthQ.data && healthQ.data.available === false) {
     return (
@@ -122,7 +131,7 @@ export function Shadow70DeepPanel() {
                 <td className="tiny">{formatDateTime((r.timestamp ?? "").slice(0, 19))}</td>
                 <td className="tiny">{r.champion_action || "—"}</td>
                 <td className="tiny">{r.shadow_action || "—"}</td>
-                <td className="tiny" style={{ color: "var(--amber)" }}>
+                <td className="tiny tx-warn" >
                   {r.disagreement || "—"}
                 </td>
                 <td className="tiny">{r.outcome || "PENDING"}</td>
@@ -135,7 +144,7 @@ export function Shadow70DeepPanel() {
       {healthQ.data?.persisted_alerts && healthQ.data.persisted_alerts.length > 0 ? (
         <Panel title="Persisted drift alerts (latest 25)" tight>
           <DataTable headers={[{ label: "feature" }, { label: "kind" }, { label: "value", num: true }, { label: "at" }]}>
-            {healthQ.data.persisted_alerts.slice(0, 12).map((a, i) => (
+            {persistedAlerts.map((a, i) => (
               <tr key={i}>
                 <td className="tiny">{a.feature ?? a.kind ?? "—"}</td>
                 <td className="tiny">{a.kind ?? a.alert_type ?? "—"}</td>

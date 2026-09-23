@@ -8,6 +8,7 @@
  * Stateless presentation component; owned state lives in ModelStudioPage.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import {
   compareDatasetsByGranularity,
@@ -55,9 +56,12 @@ export function PositionDatasetPanel({
   posResult,
   posError,
 }: PositionDatasetPanelProps) {
-  const sortedDatasets = [...datasets].sort(compareDatasetsByGranularity);
+  // perf: dataset sort derived only when the datasets prop changes (dep: datasets).
+  const sortedDatasets = useMemo(() => [...datasets].sort(compareDatasetsByGranularity), [datasets]);
   const actions = posResult?.actions_distribution ?? {};
-  const totalActions = Object.values(actions).reduce((a, b) => a + (b ?? 0), 0) || 1;
+  // perf: action-distribution total derived only when the payload changes
+  // (reduce chain over the backend map; dep is the projection it reads).
+  const totalActions = useMemo(() => Object.values(actions).reduce((a, b) => a + (b ?? 0), 0) || 1, [actions]);
 
   return (
     <div className="ms-grid-dual">
@@ -183,7 +187,7 @@ export function PositionDatasetPanel({
                   <div key={act} className="ms-prob-row">
                     <div className="ms-prob-meta">
                       <span style={{ color: ACTION_COLORS[act] }}>{act}</span>
-                      <span style={{ color: "var(--text-dim)" }}>
+                      <span className="tx-dim" >
                         {count.toLocaleString()} · {pctv.toFixed(1)}%
                       </span>
                     </div>
@@ -254,7 +258,7 @@ export function PositionDatasetPanel({
                       border: "1px solid var(--border)",
                     }}
                   >
-                    <span className="inline-mono tiny" style={{ color: "var(--text-dim)" }}>{name}</span>
+                    <span className="inline-mono tiny tx-dim" >{name}</span>
                     <span className="inline-mono small" style={{ color: "var(--green)", fontWeight: 700 }}>
                       {count.toLocaleString()} samples
                     </span>

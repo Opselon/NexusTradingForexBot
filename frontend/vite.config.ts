@@ -84,6 +84,36 @@ export default defineConfig({
     outDir: "dist",
     sourcemap: false,
     chunkSizeWarningLimit: 1200,
+    // Wave 6 (perf): stable vendor chunk — React/Router/Query change far less
+    // often than app code, so app deploys re-fetch only the small app entry
+    // while the vendor bundle stays cached; it also parallelizes first-load
+    // fetches. Same bytes total, fewer re-downloads, no behavior change.
+    rollupOptions: {
+      output: {
+        // Function form: this repo builds on rolldown-vite, which rejects the
+        // object shorthand ("Expected Function but received Object").
+        manualChunks(id: string) {
+          const norm = id.replace(/\\/g, "/");
+          if (norm.includes("node_modules/@tanstack/")) return "query-vendor";
+          for (const pkg of ["react/", "react-dom/", "scheduler/", "react-router/", "react-router-dom/", "@remix-run/"]) {
+            if (norm.includes(`node_modules/${pkg}`)) return "react-vendor";
+          }
+          // Wave 3 (lane C): chart engine split — the canvas painter + its
+          // chart/* helpers churn every wave while the rest of the Dashboard
+          // page stays put, so a chart-only edit re-downloads this chunk alone
+          // instead of the whole Dashboard bundle. Same bytes on first load,
+          // far fewer re-fetched bytes across chart iterations.
+          if (norm.includes("/pages/Dashboard/chart/")) return "chart-engine";
+          if (norm.includes("/pages/Dashboard/chartPainter.ts")) return "chart-engine";
+          // Wave 3 (lane C): every other third-party module lands in one
+          // stable `vendor` chunk (checked last — the two named vendor splits
+          // above still win), so app-code deploys never re-download vendor
+          // bytes out of whichever page chunk imported them first.
+          if (norm.includes("node_modules/")) return "vendor";
+          return undefined;
+        },
+      },
+    },
   },
   resolve: {
     alias: {

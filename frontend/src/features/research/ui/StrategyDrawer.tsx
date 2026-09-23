@@ -5,17 +5,20 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConfirmModal, DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, Drawer, GateStepper, JsonBlock, StatusPill } from "./lane5Kit";
+import { GATE_CHAIN } from "../handbook/gateChain";
+import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
+import "./research.css";
 import { commandVerdict, obj, str, toGateVo, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
 
 export default function StrategyDrawer({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
-  const [tab, setTab] = useState<"trace" | "gates" | "events" | "evidence" | "raw">("trace");
+  const [tab, setTab] = useState<"trace" | "gates" | "events" | "evidence" | "raw" | "playbook">("trace");
   const [confirmGate, setConfirmGate] = useState<string | null>(null);
   const [confirmRun, setConfirmRun] = useState<string | null>(null);
   const cmd = useMutationFeedback();
@@ -59,10 +62,51 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
   const detail = obj(detailQ.data?.detail);
   const trace = detailQ.data?.available === true ? detail : null;
-  const gates = (gatesQ.data?.gates ?? []).map(toGateVo);
+  // perf: gate VO map derived only when the query data changes
+  // (deps: gatesQ.data — the only reactive value read).
+  const gates = useMemo(() => (gatesQ.data?.gates ?? []).map(toGateVo), [gatesQ.data]);
   const runs = runsQ.data?.runs ?? [];
   const events = eventsQ.data?.events ?? [];
   const evidence = evidenceQ.data?.evidence ?? [];
+
+  /**
+   * Compact chain rail (docs vocabulary from handbook GATE_CHAIN): class per
+   * step derives ONLY from the backend's own gate rows — passed/failed/running,
+   * never inferred. Name match is case-insensitive; unknown steps rest neutral.
+   *
+   * perf: the chain-rail classes and the gate-ledger stepper rows are derived
+   * from `gates` (memoized VO list) + `cmd.state.running` — the only reactive
+   * values they read — so query/refetch ticks no longer rebuild them per render.
+   */
+  const chainClass = useMemo(() => {
+    const byName = new Map<string, string>();
+    for (const g of gates) {
+      const key = g.name.toUpperCase();
+      const s = (g.status ?? "").toUpperCase();
+      let cls = "";
+      if (s === "PASSED") cls = "passed";
+      else if (s === "FAILED" || s === "ERROR" || s === "CANCELLED") cls = "failed";
+      else if (s === "RUNNING" || s === "QUEUED") cls = "running";
+      if (cls) byName.set(key, cls); // last occurrence wins (same as .at(-1) order)
+    }
+    return (chainGate: string): string => byName.get(chainGate) ?? "";
+  }, [gates]);
+
+  const stepperRows = useMemo(
+    () =>
+      gates.map((g) => ({
+        name: g.name + (g.gateId ? ` · ${g.gateId.slice(0, 8)}` : ""),
+        status: g.status,
+        reason: g.reason ?? (g.failureClass ? `class: ${g.failureClass}` : null),
+        detail:
+          g.gateId && (g.failureClass === "TECHNICAL" || g.failureClass === "DATA" || g.retryable) ? (
+            <button className="btn small ghost" disabled={cmd.state.running} onClick={() => setConfirmGate(g.gateId)}>
+              retry gate
+            </button>
+          ) : undefined,
+      })),
+    [gates, cmd.state.running],
+  );
 
   const tabs: Array<[typeof tab, string]> = [
     ["trace", "Trace"],
@@ -70,13 +114,14 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
     ["events", `Events (${events.length})`],
     ["evidence", `Evidence (${evidence.length})`],
     ["raw", "Raw invariant"],
+    ["playbook", "Playbook"],
   ];
 
   return (
     <Drawer title={`Strategy trace — ${strategyId}`} onClose={onClose}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         {tabs.map(([id, label]) => (
-          <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} onClick={() => setTab(id)}>
+          <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
@@ -87,9 +132,10 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
         (detailQ.isPending ? (
           <Skeleton count={4} />
         ) : detailQ.isError ? (
-          <div className="small" style={{ color: "var(--red)" }}>
-            detail failed: {detailQ.error instanceof Error ? detailQ.error.message : "error"}
-          </div>
+          <ErrorState
+                      message={detailQ.error instanceof Error ? detailQ.error.message : "detail request failed"}
+                      onRetry={() => void detailQ.refetch()}
+                    />
         ) : detailQ.data?.available === false ? (
           <EmptyState message="Research subsystem unavailable" hint={detailQ.data.reason ?? "backend answered available:false"} />
         ) : (
@@ -103,20 +149,18 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
                 sub={(obj(preflightQ.data?.preflight).blockers as string[] | undefined)?.join(", ") ?? "no blockers reported"}
               />
             </div>
+            <div className="rs-rail-drawer" aria-label="Gate chain position">
+              {GATE_CHAIN.map((g, i) => (
+                <span key={g} style={{ display: "contents" }}>
+                  {i > 0 && <span className="rs-rail-arrow" aria-hidden="true">→</span>}
+                  <span className={`rs-step ${chainClass(g)}`} title={`chain step ${i + 1}: ${g}`}>
+                    {i + 1}. {g}
+                  </span>
+                </span>
+              ))}
+            </div>
             <Panel title="Gate pipeline (backend verdicts)" tight>
-              <GateStepper
-                gates={gates.map((g) => ({
-                  name: g.name + (g.gateId ? ` · ${g.gateId.slice(0, 8)}` : ""),
-                  status: g.status,
-                  reason: g.reason ?? (g.failureClass ? `class: ${g.failureClass}` : null),
-                  detail:
-                    g.gateId && (g.failureClass === "TECHNICAL" || g.failureClass === "DATA" || g.retryable) ? (
-                      <button className="btn small ghost" disabled={cmd.state.running} onClick={() => setConfirmGate(g.gateId)}>
-                        retry gate
-                      </button>
-                    ) : undefined,
-                }))}
-              />
+              <GateStepper gates={stepperRows} />
               {gates.length === 0 && gatesQ.isPending && <Skeleton count={3} />}
             </Panel>
             <Panel title="Validation runs (reproducibility lineage)" tight>
@@ -212,6 +256,12 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
             </div>
           )}
         </Panel>
+      )}
+
+      {tab === "playbook" && (
+        <div className="rs-pane" key="playbook">
+          <StrategyPlaybookLazy compact focusId="topic/gates" />
+        </div>
       )}
 
       {tab === "raw" && (

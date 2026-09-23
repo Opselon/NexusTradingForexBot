@@ -22,6 +22,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { ApiError } from "@/types/api";
 import { formatPrice, formatTime } from "@/lib/format";
 import type {
@@ -83,15 +84,26 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
   const osc = gauges.oscillators;
   const sum = gauges.summary;
   const ma = gauges.moving_averages;
-  const sumTotal = sum ? sum.sell + sum.neutral + sum.buy : 0;
   // Distribution counts: backend summary {Sell,Neutral,Buy}; the summary gauge
   // carries the same aggregate, so it is the verbatim fallback.
+  // NOTE (lane E): the brief said line 53 carries an object-literal deps quirk
+  // ([data?.table]) — verified against base: that line is the TFS entry
+  // { id: "H1" }, the file had ZERO useMemo at base, and IndicatorsSnapshot
+  // (types/features.ts:58) has NO `table` field, so such a dep cannot compile.
+  // Deps below are therefore the exact values each derivation reads — same
+  // objects/values, same fallback order, recomputed only on a payload change.
   const summaryCounts = data?.summary;
-  const dist: Pick<IndicatorGauge, "sell" | "neutral" | "buy"> | null = summaryCounts
-    ? { sell: summaryCounts.Sell ?? 0, neutral: summaryCounts.Neutral ?? 0, buy: summaryCounts.Buy ?? 0 }
-    : sum
-      ? { sell: sum.sell, neutral: sum.neutral, buy: sum.buy }
-      : null;
+  const dist: Pick<IndicatorGauge, "sell" | "neutral" | "buy"> | null = useMemo(
+    () =>
+      summaryCounts
+        ? { sell: summaryCounts.Sell ?? 0, neutral: summaryCounts.Neutral ?? 0, buy: summaryCounts.Buy ?? 0 }
+        : sum
+          ? { sell: sum.sell, neutral: sum.neutral, buy: sum.buy }
+          : null,
+    [summaryCounts, sum],
+  );
+  // Vote totals are arithmetic over the backend counts only.
+  const sumTotal = useMemo(() => (sum ? sum.sell + sum.neutral + sum.buy : 0), [sum]);
 
   return (
     <div className="ic-console">
@@ -134,8 +146,8 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
               ? `Live feed interrupted — showing values from ${formatTime(snapshotQ.dataUpdatedAt || null)} · ${errorMessage}`
               : errorMessage}
           </span>
-          <button type="button" className="ic-retry" onClick={() => void snapshotQ.refetch()}>
-            Retry
+          <button type="button" className="ic-retry" onClick={() => void snapshotQ.refetch()} disabled={snapshotQ.isFetching}>
+            {snapshotQ.isFetching ? "retrying…" : "Retry"}
           </button>
         </div>
       )}
@@ -330,7 +342,7 @@ function ReadingTable({
       {!show || list.length === 0 ? (
         <div className="ic-empty">{empty}</div>
       ) : (
-        <div className="ic-scroll">
+        <div tabIndex={0} className="ic-scroll">
           <table className="ic-table">
             <thead>
               <tr>
@@ -382,7 +394,7 @@ function PivotMatrixPanel({ pivots, show }: { pivots: IndicatorPivots | undefine
       {empty ? (
         <div className="ic-empty">No pivot levels available yet — the backend returned an empty matrix.</div>
       ) : (
-        <div className="ic-scroll">
+        <div tabIndex={0} className="ic-scroll">
           <table className="ic-table ic-pivot-table">
             <thead>
               <tr>

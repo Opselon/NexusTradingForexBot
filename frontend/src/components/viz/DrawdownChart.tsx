@@ -6,6 +6,7 @@
  * samples are gaps.
  */
 
+import { useMemo } from "react";
 import { extent, fmtCompact, linePath, niceTicks, scaleLinear, type Pt } from "./geometry";
 import "./viz.css";
 
@@ -25,22 +26,31 @@ export interface DrawdownChartProps {
 const W = 640;
 
 export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint = "no drawdown samples from the backend" }: DrawdownChartProps) {
-  const values = points.map((p) => p.drawdown_pct ?? null);
-  const real = values.filter((v): v is number => v !== null && !Number.isNaN(v));
-  if (real.length < 2) return <div className="viz-empty">{emptyHint}</div>;
-  const padT = 10;
-  const padB = 18;
-  const lo = Math.min(...real, 0);
-  const hi = Math.max(...real, 0);
-  const ext: [number, number] = extent([lo, hi]) ?? [0, 0];
-  const toY = scaleLinear(ext[0], ext[1], height - padB, padT);
-  const step = W / Math.max(1, points.length - 1);
-  const pts: Array<Pt | null> = values.map((v, i) => (v === null ? null : { x: i * step, y: toY(v) }));
-  const zeroY = toY(0);
-  const line = linePath(pts);
-  const area = `${line} L${((points.length - 1) * step).toFixed(2)},${zeroY.toFixed(2)} L0,${zeroY.toFixed(2)} Z`;
-  const worst = Math.min(...real);
-  const ticks = niceTicks(ext[0], ext[1], 3);
+  // The geometry is a pure function of `points` (identity changes only when a
+  // fetch lands). Memoizing keeps an unchanged series from being re-walked on
+  // every parent render; the emitted SVG is byte-identical.
+  const geo = useMemo(() => {
+    const values = points.map((p) => p.drawdown_pct ?? null);
+    const real = values.filter((v): v is number => v !== null && !Number.isNaN(v));
+    if (real.length < 2) return null;
+    const padT = 10;
+    const padB = 18;
+    const lo = Math.min(...real, 0);
+    const hi = Math.max(...real, 0);
+    const ext: [number, number] = extent([lo, hi]) ?? [0, 0];
+    const toY = scaleLinear(ext[0], ext[1], height - padB, padT);
+    const step = W / Math.max(1, points.length - 1);
+    const pts: Array<Pt | null> = values.map((v, i) => (v === null ? null : { x: i * step, y: toY(v) }));
+    const zeroY = toY(0);
+    const line = linePath(pts);
+    const area = `${line} L${((points.length - 1) * step).toFixed(2)},${zeroY.toFixed(2)} L0,${zeroY.toFixed(2)} Z`;
+    const worst = Math.min(...real);
+    const ticks = niceTicks(ext[0], ext[1], 3);
+    return { toY, ticks, line, area, zeroY, worst, ext };
+  }, [points, height]);
+
+  if (geo === null) return <div className="viz-empty">{emptyHint}</div>;
+  const { toY, ticks, line, area, zeroY, worst, ext } = geo;
   return (
     <div className="viz-frame">
       <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`drawdown, worst ${worst.toFixed(2)}%`}>

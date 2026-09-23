@@ -146,13 +146,14 @@ export function NewsFeedSection() {
           hint={filter === "IRRELEVANT" ? "Nothing was pruned — the auto-prune pass marks unrelated stories here." : 'Use "Fetch news" above, or wait for the ingestion worker.'}
         />
       ) : (
-        <div className="news-list">
+        <div tabIndex={0} className="news-list">
           {articles.map((a) => (
             <ArticleRow
               key={a.article_id}
               article={a}
               selected={selected === a.article_id}
               busy={analyze.isPending}
+              restoreBusy={restore.isPending}
               onSelect={() => setSelected(a.article_id)}
               onAnalyze={(force) => runAnalyze(a.article_id, force)}
               onRestore={() => runRestore(a.article_id)}
@@ -202,6 +203,7 @@ export function ArticleRow({
   article: a,
   selected,
   busy,
+  restoreBusy,
   onSelect,
   onAnalyze,
   onRestore,
@@ -209,6 +211,7 @@ export function ArticleRow({
   article: NewsFeedArticle;
   selected: boolean;
   busy: boolean;
+  restoreBusy: boolean;
   onSelect: () => void;
   onAnalyze: (force: boolean) => void;
   onRestore: () => void;
@@ -229,7 +232,7 @@ export function ArticleRow({
       <div className="metarow">
         <span>{a.source_name || a.source_id || "—"}</span>
         <span className={impClass(imp)}>{imp === null ? "imp —" : `imp ${imp}`}</span>
-        <span style={{ color: "var(--amber)" }}>XAU {rel === null ? "—" : `${rel}%`}</span>
+        <span className="tx-warn" >XAU {rel === null ? "—" : `${rel}%`}</span>
         {a.importance ? <span>{String(a.importance)}</span> : null}
         <span>{a.published_at ? formatDateTime(a.published_at) : "—"}</span>
         {status !== "ACTIVE" && <StatusBadge status={status} />}
@@ -247,16 +250,16 @@ export function ArticleRow({
       )}
       <div className="news-actions" onClick={(e) => e.stopPropagation()}>
         {status === "IRRELEVANT" && (
-          <button className="btn small" onClick={onRestore} disabled={busy}>
-            Restore
+          <button className="btn small" onClick={onRestore} disabled={busy || restoreBusy}>
+            {restoreBusy ? "restoring…" : "Restore"}
           </button>
         )}
         {aiDone ? (
-          <button className="btn small primary" onClick={() => onAnalyze(true)} disabled={busy}>
+          <button className="btn small primary" onClick={() => onAnalyze(true)} disabled={busy || restoreBusy}>
             {busy ? "analyzing…" : "Re-analyze (force)"}
           </button>
         ) : (
-          <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy}>
+          <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy || restoreBusy}>
             {busy ? "analyzing…" : "Analyze with AI"}
           </button>
         )}

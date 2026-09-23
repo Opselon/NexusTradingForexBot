@@ -29,6 +29,9 @@ import commandCenterMeta from "@/features/command-center";
 import controlCenterMeta from "@/features/control-center";
 import factoryMeta from "@/features/factory";
 import modelStudioMeta from "@/features/model-studio";
+import positionAdviserMeta from "@/features/position-adviser";
+import dependencyMeta from "@/features/dependency";
+import provisioningMeta from "@/features/provisioning";
 
 export type FeatureSectionName = "OPERATIONS" | "MARKET & RESEARCH" | "SAFETY & GOVERNANCE" | "PLATFORM";
 
@@ -85,6 +88,11 @@ const FEATURES: RegisteredFeature[] = [
   commandCenterMeta,
   controlCenterMeta,
   databaseMeta,
+  // Registered 2026-09-22 (pro-UIUX wave): three complete defineFeature
+  // modules were built but never wired, leaving their screens unreachable.
+  positionAdviserMeta,
+  dependencyMeta,
+  provisioningMeta,
 ].map(toFeature);
 
 export const FEATURE_REGISTRY: RegisteredFeature[] = FEATURES;

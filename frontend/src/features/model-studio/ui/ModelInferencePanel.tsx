@@ -6,6 +6,7 @@
  * orchestrator (ModelStudioPage) and passed down.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import type { Fetch70dResponse, PredictResponse } from "../model";
 
@@ -60,10 +61,17 @@ export function ModelInferencePanel({
   onFetch70d,
 }: ModelInferencePanelProps) {
   const probs = predictData?.probabilities;
-  const familyCounts = components70.reduce<Record<string, number>>((acc, s) => {
-    acc[s.family] = (acc[s.family] ?? 0) + 1;
-    return acc;
-  }, {});
+  // Slot family histogram: a reduce over the 70D slots array; deps are exactly
+  // the array the derivation reads (re-runs only when the fetched slots change).
+  const familyCounts = useMemo(
+    () =>
+      components70.reduce<Record<string, number>>((acc, s) => {
+        acc[s.family] = (acc[s.family] ?? 0) + 1;
+        return acc;
+      }, {}),
+    [components70],
+  );
+  const familyEntries = useMemo(() => Object.entries(familyCounts), [familyCounts]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -218,31 +226,31 @@ export function ModelInferencePanel({
                 Layer Activation Inspection (Forward Hooks)
               </div>
               {predictData.layer_inspection && predictData.layer_inspection.length > 0 ? (
-                <div className="table-wrap" style={{ maxHeight: 260 }}>
+                <div tabIndex={0} className="table-wrap" style={{ maxHeight: 260 }}>
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Layer</th>
-                        <th>Type</th>
-                        <th>Shape</th>
-                        <th className="num">L2 Norm</th>
-                        <th className="num">Mean</th>
-                        <th className="num">Std</th>
-                        <th style={{ textAlign: "center" }}>Zero %</th>
+                        <th scope="col">Layer</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Shape</th>
+                        <th scope="col" className="num">L2 Norm</th>
+                        <th scope="col" className="num">Mean</th>
+                        <th scope="col" className="num">Std</th>
+                        <th scope="col" style={{ textAlign: "center" }}>Zero %</th>
                       </tr>
                     </thead>
                     <tbody>
                       {predictData.layer_inspection.map((l) => (
                         <tr key={l.layer}>
-                          <td className="inline-mono" style={{ color: "#fff", fontWeight: 600 }}>{l.layer}</td>
-                          <td className="tiny" style={{ color: "var(--text-dim)" }}>{l.type}</td>
-                          <td className="inline-mono tiny" style={{ color: "var(--text-faint)" }}>
+                          <td className="inline-mono" style={{ color: "var(--text)", fontWeight: 600 }}>{l.layer}</td>
+                          <td className="tiny tx-dim" >{l.type}</td>
+                          <td className="inline-mono tiny tx-faint" >
                             [{l.shape.join("×")}]
                           </td>
-                          <td className="num" style={{ color: "var(--accent-strong)" }}>
+                          <td className="num tx-accent" >
                             {l.l2_norm.toFixed(4)}
                           </td>
-                          <td className="num" style={{ color: "var(--green)" }}>{l.mean.toFixed(4)}</td>
+                          <td className="num tx-good" >{l.mean.toFixed(4)}</td>
                           <td className="num">{l.std.toFixed(4)}</td>
                           <td style={{ textAlign: "center" }}>
                             <span className={`badge ${l.zero_fraction > 0.5 ? "warn" : "neutral"}`}>
@@ -286,7 +294,7 @@ export function ModelInferencePanel({
             </button>
             {components70.length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {Object.entries(familyCounts).map(([fam, n]) => (
+                {familyEntries.map(([fam, n]) => (
                   <span key={fam} className={`ms-slot-family ${FAMILY_CLASS[fam] ?? ""}`} style={{ padding: "3px 8px" }}>
                     {fam}: {n}
                   </span>
@@ -301,7 +309,7 @@ export function ModelInferencePanel({
               No 70D component snapshot loaded — fetch live slots to audit the assembled tensor.
             </div>
           ) : (
-            <div className="ms-slots-grid">
+            <div tabIndex={0} className="ms-slots-grid">
               {components70.map((s) => (
                 <div key={s.index} className="ms-slot-card">
                   <span className="ms-slot-idx">{String(s.index).padStart(2, "0")}</span>
@@ -332,11 +340,11 @@ function ProbRow({
   return (
     <div className="ms-prob-row">
       <div className="ms-prob-meta">
-        <span style={{ color: dominant ? "#fff" : "var(--text-dim)" }}>
+        <span className={ dominant ? "tx-text" : "tx-dim" } >
           {dominant ? "◆ " : ""}
           {label}
         </span>
-        <span style={{ color: dominant ? "var(--accent-strong)" : "var(--text-dim)" }}>
+        <span className={ dominant ? "tx-accent" : "tx-dim" } >
           {(value * 100).toFixed(2)}%
         </span>
       </div>
@@ -360,10 +368,12 @@ function SaliencyRow({
   sign: "pos" | "neg";
 }) {
   if (drivers.length === 0) return null;
-  const maxAbs = Math.max(...drivers.map((d) => Math.abs(d.gradient)), 1e-9);
+  // Per-salience-row normalization: memo deps are exactly the driver array the
+  // maxAbs derivation reads, so a parent re-render never re-scans the gradients.
+  const maxAbs = useMemo(() => Math.max(...drivers.map((d) => Math.abs(d.gradient)), 1e-9), [drivers]);
   return (
     <div className="ms-saliency-block" style={{ borderTop: "none", paddingTop: 0 }}>
-      <div className="tiny" style={{ color: sign === "pos" ? "var(--green)" : "#ff938c", fontWeight: 700 }}>
+      <div className="tiny" style={{ color: sign === "pos" ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
         {title}
       </div>
       <div className="ms-driver-row">

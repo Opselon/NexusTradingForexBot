@@ -25,7 +25,7 @@
   /* text */
   --text: #dbe4ee;
   --text-dim: #8398ad;
-  --text-faint: #56697d;
+  --text-faint: #708699;
 
   /* accents */
   --accent: #41a6f2;
@@ -260,6 +260,14 @@ body {
 .panel-header .dot-accent { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px rgba(65, 166, 242, 0.8); flex-shrink: 0; }
 .panel-body { padding: 12px 14px; }
 .panel-body.tight { padding: 0; }
+/* sentence-case subtitle under the uppercase panel header */
+.panel-subtitle {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
 
 .grid { display: grid; gap: 12px; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -294,11 +302,13 @@ body {
 .metric .v.dim { color: var(--text-dim); }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 16px; font-size: 12px; }
+/* row wrapper inside .kv — dissolves so dt/dd become the grid's own items */
+.kv-row { display: contents; }
 .kv dt { color: var(--text-dim); }
 .kv dd { margin: 0; font-family: var(--mono); text-align: right; }
 
 /* ------------------------------ Tables ------------------------------ */
-.table-wrap { overflow-x: auto; overflow-y: auto; max-height: none; }
+.table-wrap { overflow-x: auto; overflow-y: auto; max-height: min(64vh, 620px); }
 .data-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
 .data-table th {
   text-align: left; padding: 8px 12px;
@@ -362,6 +372,10 @@ body {
   gap: 8px; padding: 36px 16px; color: var(--text-dim); text-align: center;
 }
 .state-block .glyph { font-size: 20px; opacity: 0.7; font-family: var(--mono); }
+/* ErrorBoundary fallback: left-aligned card layout over the centered block */
+.eb-card { display: grid; gap: 8px; justify-items: start; padding: 16px; text-align: start; }
+.eb-card .hint { white-space: pre-wrap; max-width: 720px; text-align: start; }
+.eb-actions { display: flex; gap: 8px; }
 .state-block.error .glyph, .state-block.error { color: var(--red); }
 .state-block .hint { font-size: 11px; color: var(--text-faint); max-width: 460px; }
 
@@ -395,6 +409,8 @@ body {
 .banner.down { background: var(--red-dim); color: #ff9a94; border-color: rgba(242, 86, 77, 0.4); }
 .banner.auth { background: var(--red-dim); color: #ff9a94; border-color: rgba(242, 86, 77, 0.4); }
 .banner.calm { background: rgba(62, 207, 142, 0.06); color: var(--green); border-color: rgba(62, 207, 142, 0.2); }
+.banner.info { background: rgba(65, 166, 242, 0.10); color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.35); }
+.banner.good { background: rgba(62, 207, 142, 0.10); color: var(--green); border-color: rgba(62, 207, 142, 0.35); }
 .banner .retry-btn {
   margin-left: auto; background: transparent; color: inherit;
   border: 1px solid currentColor; border-radius: 6px;
@@ -545,6 +561,19 @@ kbd {
 .faint { color: var(--text-faint); }
 .small { font-size: 11px; }
 .tiny { font-size: 10px; }
+/* shared text utilities (used by model-studio / provisioning / news panels) */
+.uppercase { text-transform: uppercase; }
+.font-bold { font-weight: 700; }
+.mt-1 { margin-top: 4px; }
+/* dim mono meta group wrapping count badges */
+.inline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
 .section-title {
   font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--text-dim); margin: 4px 0 8px;
@@ -586,4 +615,55 @@ kbd {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+
+/* ==========================================================================
+   Wave 3 — shell polish + global table cap (additive; consumed by AppShell,
+   Trading raw tables, and every .table-wrap user).
+   ========================================================================== */
+.lang-select { padding: 2px 4px; font-size: 11px; }
+.freshness-chip { gap: 10px; }
+.start-8 { margin-inline-start: 8px; }
+/* help-modal key/value list: descriptions read left-aligned */
+.kv.left dd { text-align: left; }
+/* keyboard skip link — first tab stop, hidden until focused */
+.skip-link {
+  position: fixed; top: -48px; inset-inline-start: 8px; z-index: 200;
+  background: var(--bg-panel-2); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 6px;
+  padding: 8px 14px; font-size: 12px; text-decoration: none;
+  transition: top 0.12s ease;
+}
+.skip-link:focus { top: 8px; }
+
+/* ——— wave 3 (deep pro pass): semantics, naming, responsive shell, micro-polish ——— */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+/* Panel/Drawer titles render as real headings with pixel-identical inherited
+   typography (uppercase 11px/700 comes from .panel-header itself). */
+.panel-header :is(h2, h3) { font: inherit; margin: 0; letter-spacing: inherit; }
+.panel-tools { margin-inline-start: auto; display: flex; gap: 8px; align-items: center; }
+/* long ids/paths/hashes in kv grids wrap instead of stretching the row */
+.kv dd { overflow-wrap: anywhere; }
+/* semantic tone utilities — exact token mappings, styling-law replacements
+   for inline color styles (tx- prefix: .tone-bad/.tone-warn belong to
+   pro-risk.css and mean different things there). */
+.tx-good { color: var(--green); }
+.tx-bad { color: var(--red); }
+.tx-warn { color: var(--amber); }
+.tx-accent { color: var(--accent-strong); }
+.tx-blue { color: var(--accent); }
+.tx-dim { color: var(--text-dim); }
+.tx-faint { color: var(--text-faint); }
+.tx-text { color: var(--text); }
+.tx-violet { color: var(--violet); }
+.btn.primary:focus-visible { box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.35); }
+/* mobile: the sidebar already collapses to an icon rail (shell.css 760px);
+   harden the status strip + content padding at the same breakpoint. */
+@media (max-width: 760px) {
+  .topbar { overflow-x: auto; overflow-y: hidden; }
+  .page { padding: 12px 12px 32px; }
 }

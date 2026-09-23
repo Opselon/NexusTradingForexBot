@@ -14,6 +14,7 @@
  * docs/audit/wave_20260914/09_indicators_ui.md §5).
  */
 
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { Panel } from "@/components/primitives";
 import { formatTime } from "@/lib/format";
@@ -85,7 +86,10 @@ function directionOf(best: RadarSetup | null | undefined): "BUY" | "SELL" | null
 const dash = (v: ReactNode | null | undefined): ReactNode => (v === null || v === undefined || v === "" ? "—" : v);
 
 export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: number }) {
-  const r = parseRadar(radar);
+  // Parsed once per radar payload: parseRadar allocates fresh objects/arrays,
+  // so re-running it on every 1s clock tick would defeat every memo below.
+  // Pure function of `radar` — output identical, deps complete over that read.
+  const r = useMemo(() => parseRadar(radar), [radar]);
   // legacy default: a present radar object without a state string is NO_SETUP;
   // an absent radar is the explicit waiting badge NO RADAR DATA.
   const state = r ? r.state || "NO_SETUP" : "NO_RADAR_DATA";
@@ -103,6 +107,19 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
   const compat = best?.compatible_strategies ?? [];
   const news = r?.news_state ?? null;
   const newsTone = news === "HIGH_IMPACT" ? "bad" : news === "MEDIUM_IMPACT" ? "warn" : news === "LOW_IMPACT" || news === "CALM" ? "good" : "idle";
+
+  // The quality reads are part of the visible payload text, so the two
+  // formatted strings are derived here once per radar payload instead of
+  // rebuilt per render (`nowMs` ticks every second; the payload does not).
+  // Identical expressions and values, deps complete over the reads above.
+  const qualityPct = useMemo(
+    () => (typeof best?.quality === "number" ? `${(best.quality * 100).toFixed(1)}%` : "—"),
+    [best?.quality],
+  );
+  const setupPct = useMemo(() => {
+    if (!r?.setups) return [] as string[];
+    return r.setups.map((s) => (typeof s.quality === "number" ? `${(s.quality * 100).toFixed(1)}%` : "—"));
+  }, [r?.setups]);
 
   return (
     <Panel
@@ -137,7 +154,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
             <div>
               <div className="mc-radar__k">Quality</div>
               <div className="mc-radar__v mc-radar__v--gold">
-                {typeof best?.quality === "number" ? `${(best.quality * 100).toFixed(1)}%` : "—"}
+                {qualityPct}
               </div>
             </div>
           </div>
@@ -174,7 +191,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
 
         {/* Ranked setups (radar.setups = backend's ranked top-5 list, verbatim) */}
         {r && r.setups && r.setups.length > 0 && (
-          <div className="mc-radar__setups">
+          <div tabIndex={0} className="mc-radar__setups">
             <span className="mc-radar__k">Ranked setups (backend order)</span>
             <ul>
               {r.setups.map((s, i) => {
@@ -184,7 +201,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
                     <span className="rank">{i + 1}</span>
                     <span className="type">{dash(s.setup_type)}</span>
                     {sd && <span className={`mc-radar__dir mc-radar__dir--sm mc-radar__dir--${sd.toLowerCase()}`}>{sd}</span>}
-                    <span className="q">{typeof s.quality === "number" ? `${(s.quality * 100).toFixed(1)}%` : "—"}</span>
+                    <span className="q">{setupPct[i] ?? "—"}</span>
                   </li>
                 );
               })}

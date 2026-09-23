@@ -20,8 +20,8 @@
  * render "—" (UNKNOWN). Command outcomes come from the backend reply only.
  */
 
-import { useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { riskApi } from "@/api/riskApi";
 import { chartApi, replayApi, runtimeApi } from "@/pages/_shared/edgeApi";
@@ -42,6 +42,7 @@ import { AgeNote, SectionState, fmtAge, TriBadge } from "@/pages/_shared/Section
 import { InfoChip } from "@/pages/_shared/widgets";
 import { ReplayPanel } from "./ReplayPanel";
 import { PriceChart } from "./PriceChart";
+import { chartHistoryKey, chartStaleMs } from "./chart/queryPerf";
 import { MarketRadarPanel } from "./MarketRadarPanel";
 import { FeaturesGrid } from "./FeaturesGrid";
 import { PredictionsTable } from "./PredictionsTable";
@@ -69,6 +70,9 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayCmd, setReplayCmd] = useState<{ busy: boolean; msg: string | null; ok: boolean | null }>({ busy: false, msg: null, ok: null });
   const [replayCursor, setReplayCursor] = useState<string | null>(null);
+  // Chart timeframe switcher (null = the engine's own execution timeframe).
+  const [tfParam, setTfParam] = useState<string | null>(null);
+  const engineTfRef = useRef<string | null>(null);
 
   const mt5Query = useQuery({
     queryKey: ["mt5-status"],
@@ -83,13 +87,32 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
     retry: false,
   });
 
+  // 3000-bar window for deep pan/zoom (backend caps 5000); the key carries
+  // the timeframe so each TF caches separately, and keepPreviousData holds
+  // the old bars while the new TF loads (TradingView-like continuity).
+  // Lane C (wave 3): staleTime + the query-key/staleness helpers live in
+  // chart/queryPerf — the painter reacts to hover/zoom/crosshair with renders
+  // that re-read query options, and staleTime:0 turns each of those into a
+  // background refetch of the whole 3000-bar window. Live ticks already
+  // arrive over SSE; the 60s refetchInterval stays as the dead-stream safety
+  // net, so caching the window between beats costs nothing in accuracy and
+  // removes the fetch storm.
   const chartQuery = useQuery({
-    queryKey: ["chart-history", snapshot?.symbol ?? ""],
-    queryFn: ({ signal }) => chartApi.history(900, signal),
+    queryKey: chartHistoryKey(snapshot?.symbol ?? "", tfParam),
+    queryFn: ({ signal }) => chartApi.history(3000, tfParam, signal),
     refetchInterval: 60_000,
+    staleTime: chartStaleMs(),
     retry: 1,
     enabled: Boolean(snapshot),
+    placeholderData: keepPreviousData,
   });
+  // Engine-native timeframe = what a no-param response echoes (the backend
+  // reports the tf the engine trades on). Captured for the overlay
+  // disclosure chip whenever a foreign timeframe is served.
+  if (chartQuery.data && tfParam === null) engineTfRef.current = chartQuery.data.timeframe;
+  const activeTf = chartQuery.isFetching
+    ? (tfParam ?? engineTfRef.current ?? "M1")
+    : (chartQuery.data?.timeframe ?? engineTfRef.current ?? "M1");
 
   const runtimeModeQuery = useQuery({
     queryKey: ["runtime-mode"],
@@ -122,6 +145,12 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   // provenance); fall back to snapshot bars while it loads. Nulls stay null.
   const useServerBars = Boolean(chartQuery.data?.bars?.length);
   const chartBars = useServerBars ? chartQuery.data!.bars : snapshot.bars ?? [];
+  // perf: the forming-bar count (filter over the chart bar array) derives once
+  // per bar array instead of on every render of this SSE-driven page.
+  const formingCount = useMemo(
+    () => chartBars.filter((b) => b.is_complete === false).length,
+    [chartBars],
+  );
   const chartSource = useServerBars ? chartQuery.data!.source : snapshot.bars?.length ? "SNAPSHOT" : null;
   const chartBusy = chartQuery.isPending && !chartQuery.data && !snapshot.bars?.length;
   const chartErr = !useServerBars && chartQuery.isError && !snapshot.bars?.length
@@ -232,7 +261,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           right={
             <>
               <span className="timestamp-note">
-                {chartBars.length ? `${chartBars.filter((b) => b.is_complete === false).length} forming · ${chartBars.length} bars` : "no bars"}
+                {chartBars.length ? `${formingCount} forming · ${chartBars.length} bars` : "no bars"}
                 {chartQuery.data?.generated_at ? ` · history ${formatTime(chartQuery.data.generated_at)}` : ""}
               </span>
               <button className="btn small ghost" onClick={() => void chartQuery.refetch()} disabled={chartQuery.isFetching}>
@@ -249,6 +278,9 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
               source={chartSource ?? (chartBars.length ? "UNKNOWN" : "UNAVAILABLE")}
               symbol={chartQuery.data?.symbol ?? snapshot.symbol}
               timeframe={chartQuery.data?.timeframe ?? "M1"}
+              activeTf={activeTf}
+              onTfChange={setTfParam}
+              engineTimeframe={engineTfRef.current}
               overlays={chartQuery.data?.visual_overlays ?? (snapshot.visual_overlays as VisualOverlays)}
               liveBid={snapshot.bid}
               cursorIso={replayCursor}
@@ -386,7 +418,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
                 <input
                   className="input"
                   style={{ width: 200 }}
-                  placeholder="Type LIVE to arm confirmation"
+                  aria-label="LIVE confirmation phrase" placeholder="Type LIVE to arm confirmation"
                   value={liveConfirm}
                   onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
                 />

@@ -22,6 +22,7 @@ import {
   SPATIAL_LIVE_ZONES,
   SPATIAL_TERMINAL_ZONES,
   type CcSpatialDto,
+  type CcSpatialEvaluationDto,
   type CcSpatialNodeDto,
 } from "../model";
 
@@ -91,6 +92,14 @@ interface CamAnim {
 const easeInOutCubic = (t: number): number =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
+/** perf: zone -> rank map for a zone order (pure; rebuilt only when the
+ *  payload's zone order changes, never per frame). */
+const zoneRankOf = (zones: string[]): Record<string, number> => {
+  const rank: Record<string, number> = {};
+  zones.forEach((z, i) => { rank[z] = i; });
+  return rank;
+};
+
 const hexToRgb = (hex: string): [number, number, number] => {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -98,6 +107,22 @@ const hexToRgb = (hex: string): [number, number, number] => {
 const rgba = (hex: string, a: number): string => {
   const [r, g, b] = hexToRgb(hex);
   return `rgba(${r}, ${g}, ${b}, ${a})`;
+};
+
+/** perf: evaluation signature memoized per evaluation-OBJECT identity — the
+ *  spatial poll's structural sharing keeps identities stable when a node's
+ *  evaluation did not change, so update() compares cached strings instead of
+ *  re-running JSON.stringify twice per node on every 30s poll. The signature
+ *  string is byte-identical to the previous inline form (same array, same
+ *  fields), so flash triggering compares exactly what it did before. */
+const evalSigCache = new WeakMap<CcSpatialEvaluationDto, string>();
+const evalSig = (ev: CcSpatialNodeDto["evaluation"]): string | null => {
+  if (!ev) return null;
+  const hit = evalSigCache.get(ev);
+  if (hit !== undefined) return hit;
+  const sig = JSON.stringify([ev.current_stage, ev.gates, ev.progress]);
+  evalSigCache.set(ev, sig);
+  return sig;
 };
 
 export interface SpatialEngineOptions {
@@ -111,6 +136,10 @@ export class SpatialFleetEngine {
 
   private nodes: RenderNode[] = [];
   private zoneOrder: string[] = ALL_ZONES;
+  // perf: pure derivations of (nodes, zoneOrder) — recomputed in update()
+  // only, so draw() never rebuilds them per RAF frame (values identical).
+  private zoneRank: Record<string, number> = zoneRankOf(ALL_ZONES);
+  private zoneCounts: Record<string, number> = {};
   private anims: Record<string, { fx: number; fy: number; tx: number; ty: number; t0: number; dur: number }> = {};
   private trails: Record<string, Array<{ x: number; y: number; t: number }>> = {};
   private flashes: Record<string, { t0: number; dur: number }> = {};
@@ -172,6 +201,8 @@ export class SpatialFleetEngine {
     this.lastPayload = payload;
     this.zoneOrder = (payload.zones ?? []).map((z) => z.zone ?? "").filter(Boolean);
     if (!this.zoneOrder.length) this.zoneOrder = ALL_ZONES;
+    // perf: rank derives only from zoneOrder — refresh it with the order.
+    this.zoneRank = zoneRankOf(this.zoneOrder);
     const incoming = payload.nodes;
 
     const rank: Record<string, number> = {};
@@ -243,14 +274,16 @@ export class SpatialFleetEngine {
 
       // Evaluation-progress flash: telemetry advanced but lifecycle zone did
       // NOT — brighten the internal ring, never relocate the node.
-      const sig = (ev: CcSpatialNodeDto["evaluation"]) =>
-        ev ? JSON.stringify([ev.current_stage, ev.gates, ev.progress]) : null;
-      if (prev && sig(prev.evaluation) !== sig(model.evaluation) && model.evaluation) {
+      if (prev && evalSig(prev.evaluation) !== evalSig(model.evaluation) && model.evaluation) {
         this.flashes[sid] = { t0: performance.now(), dur: 1100 };
       }
       next.push(model);
     }
     this.nodes = next;
+    // perf: counts derive only from nodes — refresh them with the node set.
+    const counts: Record<string, number> = {};
+    for (const n of this.nodes) counts[n.zone] = (counts[n.zone] || 0) + 1;
+    this.zoneCounts = counts;
   }
 
   /* -------------------------------- camera ------------------------------- */
@@ -438,9 +471,8 @@ export class SpatialFleetEngine {
   }
 
   private countForZone(zone: string): number {
-    let c = 0;
-    for (const n of this.nodes) if (n.zone === zone) c++;
-    return c;
+    // perf: memoized in update() — nodes/zone never mutate between payloads.
+    return this.zoneCounts[zone] || 0;
   }
 
   private draw(now: number): void {
@@ -457,8 +489,9 @@ export class SpatialFleetEngine {
     ctx.translate(-this.camera.x, -this.camera.y);
 
     const zoneRowH = 130;
-    const rank: Record<string, number> = {};
-    this.zoneOrder.forEach((z, i) => { rank[z] = i; });
+    // perf: rank is a pure derivation of zoneOrder — memoized in update(),
+    // which is the only place zoneOrder changes (values identical).
+    const rank = this.zoneRank;
 
     // Perspective floor grid — vertical depth rails + fading horizontal struts.
     const gridBottom = this.zoneOrder.length * zoneRowH + 600;
