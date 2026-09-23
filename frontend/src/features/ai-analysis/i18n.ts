@@ -61,6 +61,7 @@ export const MESSAGES: FeatureMessages = {
   "ai-analysis.shadow.summary": { fa: "خلاصه", de: "Zusammenfassung", es: "Resumen", ar: "الملخص" },
   "ai-analysis.shadow.disagreement_counts": { fa: "شمارش اختلاف‌ها", de: "Abweichungszähler", es: "Recuentos de desacuerdos", ar: "عدادات الاختلاف" },
   "ai-analysis.shadow.drift_alerts": { fa: "هشدارهای رانش (25 اخیر)", de: "Drift-Warnungen (letzte 25)", es: "Alertas de deriva (últimas 25)", ar: "تنبيهات الانجراف (آخر 25)" },
+  "ai-analysis.shadow.drift_alerts_shown": { fa: "هشدارهای رانش ({t} ثبت‌شده · نمایش {n} مورد اول)", de: "Drift-Warnungen ({t} erfasst · erste {n} angezeigt)", es: "alertas de deriva ({t} registradas · se muestran las primeras {n})", ar: "تنبيهات الانجراف ({t} مسجّلة · عرض أول {n})" },
   "ai-analysis.empty.no_drift": { fa: "هشدار رانشی ثبت نشده است.", de: "Keine Drift-Warnungen erfasst.", es: "No se registraron alertas de deriva.", ar: "لم تُسجَّل أي تنبيهات انجراف." },
   // ---- DecisionDrawer ----
   "ai-analysis.decision.title": { fa: "تصمیم {id}…", de: "Entscheidung {id}…", es: "Decisión {id}…", ar: "القرار {id}…" },
