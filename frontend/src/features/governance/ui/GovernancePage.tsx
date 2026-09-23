@@ -7,7 +7,7 @@
  * the backend refuses without one, and the refusal is rendered verbatim.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -99,10 +99,118 @@ export default function GovernancePage(props: ShellPageProps) {
     setPending({ title, danger, needsModel, label, run });
 
   const status = statusQ.data?.available === true ? statusQ.data : null;
-  const ladder = status ? governanceUseCases.ladder(status) : [];
+  // perf(7): every payload-array chain below (ladder steps, ledger VOs, table
+  // rows) memoizes with deps = the exact payload it reads — row sets and gate
+  // objects keep identity across unrelated re-renders (actor typing, toasts).
+  const ladder = useMemo(() => (status ? governanceUseCases.ladder(status) : []), [status]);
+  const gateRows = useMemo(
+    () =>
+      status
+        ? Object.entries(obj(status.gates)).map(([k, v]) => (
+            <tr key={k}>
+              <td className="small">{k}</td>
+              <td>
+                <StatusPill status={str(v)} />
+              </td>
+            </tr>
+          ))
+        : [],
+    [status],
+  );
+  const gates = useMemo(
+    () =>
+      ladder.map((s) => ({
+        name: s.label,
+        status: s.active ? (s.id === "promotion" ? s.state : "PASS") : s.state === "NONE" ? "NOT_RUN" : s.state,
+        reason: s.state,
+      })),
+    [ladder],
+  );
   const candModel = status?.candidate?.model_id ?? "";
   const frozen = bool(status?.promotion?.frozen) ?? false;
-  const events = governanceUseCases.ledgerRows(arr(eventsQ.data?.events));
+  const events = useMemo(
+    () => governanceUseCases.ledgerRows(arr(eventsQ.data?.events)),
+    [eventsQ.data],
+  );
+  const eventRows = useMemo(
+    () =>
+      events.slice(0, 100).map((r, i) => (
+        <tr key={i}>
+          <td className="tiny">{formatDateTime(r.at)}</td>
+          <td>
+            <StatusPill status={r.event} />
+          </td>
+          <td className="inline-mono tiny">{r.modelId ?? "—"}</td>
+          <td className="tiny">{r.actor ?? "—"}</td>
+          <td className="tiny muted" title={r.reason ?? ""}>
+            {r.reason?.slice(0, 60) ?? "—"}
+          </td>
+        </tr>
+      )),
+    [events],
+  );
+  const auditRows = useMemo(
+    () =>
+      arr(auditsQ.data?.audits)
+        .slice(0, 40)
+        .map((a: Row, i: number) => (
+          <tr key={i}>
+            <td className="tiny">{formatDateTime(str(a.created_at) ?? str(a.at))}</td>
+            <td className="small">{str(a.action) ?? str(a.kind) ?? "—"}</td>
+            <td className="inline-mono tiny">{str(a.model_id) ?? "—"}</td>
+            <td className="tiny">{str(a.actor) ?? "—"}</td>
+          </tr>
+        )),
+    [auditsQ.data],
+  );
+  const lifecycleRows = useMemo(
+    () =>
+      Object.entries(obj(expSummaryQ.data?.lifecycle_counts)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
+    [expSummaryQ.data],
+  );
+  const expModelRows = useMemo(
+    () =>
+      arr(expModelsQ.data)
+        .slice(0, 25)
+        .map((m: Row, i: number) => (
+          <tr key={i}>
+            <td className="inline-mono tiny">{str(m.model_id) ?? str(m.id) ?? "—"}</td>
+            <td className="tiny">{str(m.feature_schema_id) ?? "—"}</td>
+            <td className="num tiny">{num(m.feature_dimension) ?? "—"}</td>
+            <td className="tiny">{formatDateTime(str(m.created_at))}</td>
+          </tr>
+        )),
+    [expModelsQ.data],
+  );
+  const expStrategyRows = useMemo(
+    () =>
+      arr(expStrategiesQ.data)
+        .slice(0, 25)
+        .map((s: Row, i: number) => (
+          <tr key={i}>
+            <td className="inline-mono tiny" title={str(s.strategy_id) ?? ""}>
+              {(str(s.strategy_id) ?? "—").slice(0, 16)}
+            </td>
+            <td>
+              <StatusPill status={str(s.lifecycle_state) ?? str(s.state)} />
+            </td>
+            <td className="num tiny">{num(s.score) === null ? "—" : formatNumber(num(s.score)!, 3)}</td>
+            <td className="tiny">{formatDateTime(str(s.updated_at))}</td>
+          </tr>
+        )),
+    [expStrategiesQ.data],
+  );
+  const bucketRows = useMemo(
+    () =>
+      (reviewQ.data?.calibration?.buckets ?? []).map((b: Row, i: number) => (
+        <tr key={i}>
+          <td className="tiny">{str(b.bucket) ?? str(b.label) ?? `#${i}`}</td>
+          <td className="num tiny">{num(b.count) ?? num(b.n) ?? "—"}</td>
+          <td className="num tiny">{formatNumber(num(b.accuracy) ?? NaN, 3)}</td>
+        </tr>
+      )),
+    [reviewQ.data],
+  );
 
   return (
     <div>
@@ -139,13 +247,7 @@ export default function GovernancePage(props: ShellPageProps) {
         ) : !status ? (
           <EmptyState message="Model governance engine unavailable" hint="/api/models/governance/status answered available:false — no ladder to draw." />
         ) : (
-          <GateStepper
-            gates={ladder.map((s) => ({
-              name: s.label,
-              status: s.active ? (s.id === "promotion" ? s.state : "PASS") : s.state === "NONE" ? "NOT_RUN" : s.state,
-              reason: s.state,
-            }))}
-          />
+          <GateStepper gates={gates} />
         )}
       </Panel>
 
@@ -211,16 +313,7 @@ export default function GovernancePage(props: ShellPageProps) {
         {tab === "ladder" && (
           <Panel title="Gate matrix (governance/status.gates)" tight>
             {status ? (
-              <DataTable headers={[{ label: "gate" }, { label: "verdict" }]}>
-                {Object.entries(obj(status.gates)).map(([k, v]) => (
-                  <tr key={k}>
-                    <td className="small">{k}</td>
-                    <td>
-                      <StatusPill status={str(v)} />
-                    </td>
-                  </tr>
-                ))}
-              </DataTable>
+              <DataTable headers={[{ label: "gate" }, { label: "verdict" }]}>{gateRows}</DataTable>
             ) : (
               <EmptyState message="no governance status" />
             )}
@@ -255,19 +348,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <EmptyState message="No governance events recorded." />
               ) : (
                 <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "model" }, { label: "actor" }, { label: "reason" }]}>
-                  {events.slice(0, 100).map((r, i) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(r.at)}</td>
-                      <td>
-                        <StatusPill status={r.event} />
-                      </td>
-                      <td className="inline-mono tiny">{r.modelId ?? "—"}</td>
-                      <td className="tiny">{r.actor ?? "—"}</td>
-                      <td className="tiny muted" title={r.reason ?? ""}>
-                        {r.reason?.slice(0, 60) ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {eventRows}
                 </DataTable>
               )}
             </Panel>
@@ -275,18 +356,7 @@ export default function GovernancePage(props: ShellPageProps) {
               {auditsQ.isPending ? (
                 <Skeleton count={2} />
               ) : (arr(auditsQ.data?.audits).length === 0 ? <EmptyState message="No audit rows." /> : (
-                <DataTable headers={[{ label: "at" }, { label: "action" }, { label: "model" }, { label: "actor" }]}>
-                  {arr(auditsQ.data?.audits)
-                    .slice(0, 40)
-                    .map((a: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="tiny">{formatDateTime(str(a.created_at) ?? str(a.at))}</td>
-                        <td className="small">{str(a.action) ?? str(a.kind) ?? "—"}</td>
-                        <td className="inline-mono tiny">{str(a.model_id) ?? "—"}</td>
-                        <td className="tiny">{str(a.actor) ?? "—"}</td>
-                      </tr>
-                    ))}
-                </DataTable>
+                <DataTable headers={[{ label: "at" }, { label: "action" }, { label: "model" }, { label: "actor" }]}>{auditRows}</DataTable>
               ))}
             </Panel>
           </>
@@ -309,10 +379,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <InfoRow label="recorded" value={formatNumber(expSummaryQ.data?.recorded_experiences ?? 0, 0)} />
                 <InfoRow label="retired strategies" value={String(expSummaryQ.data?.retired_strategies ?? 0)} />
               </dl>
-              <DistBars
-                rows={Object.entries(obj(expSummaryQ.data?.lifecycle_counts)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
-                tone="var(--green)"
-              />
+              <DistBars rows={lifecycleRows} tone="var(--green)" />
             </Panel>
             <Panel title={`Model provenance (${arr(expModelsQ.data).length})`} tight>
               {expModelsQ.isPending ? (
@@ -321,16 +388,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <EmptyState message="No registered model provenance rows." />
               ) : (
                 <DataTable headers={[{ label: "model" }, { label: "schema" }, { label: "dim", num: true }, { label: "created" }]}>
-                  {arr(expModelsQ.data)
-                    .slice(0, 25)
-                    .map((m: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="inline-mono tiny">{str(m.model_id) ?? str(m.id) ?? "—"}</td>
-                        <td className="tiny">{str(m.feature_schema_id) ?? "—"}</td>
-                        <td className="num tiny">{num(m.feature_dimension) ?? "—"}</td>
-                        <td className="tiny">{formatDateTime(str(m.created_at))}</td>
-                      </tr>
-                    ))}
+                  {expModelRows}
                 </DataTable>
               )}
             </Panel>
@@ -341,20 +399,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <EmptyState message="No derived intelligence rows — run experience self-heal if the ledger is non-empty." />
               ) : (
                 <DataTable headers={[{ label: "strategy" }, { label: "state" }, { label: "score", num: true }, { label: "updated" }]}>
-                  {arr(expStrategiesQ.data)
-                    .slice(0, 25)
-                    .map((s: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="inline-mono tiny" title={str(s.strategy_id) ?? ""}>
-                          {(str(s.strategy_id) ?? "—").slice(0, 16)}
-                        </td>
-                        <td>
-                          <StatusPill status={str(s.lifecycle_state) ?? str(s.state)} />
-                        </td>
-                        <td className="num tiny">{num(s.score) === null ? "—" : formatNumber(num(s.score)!, 3)}</td>
-                        <td className="tiny">{formatDateTime(str(s.updated_at))}</td>
-                      </tr>
-                    ))}
+                  {expStrategyRows}
                 </DataTable>
               )}
             </Panel>
@@ -379,13 +424,7 @@ export default function GovernancePage(props: ShellPageProps) {
                     calibration buckets
                   </div>
                   <DataTable headers={[{ label: "bucket" }, { label: "n", num: true }, { label: "acc", num: true }]}>
-                    {(reviewQ.data?.calibration?.buckets ?? []).map((b: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="tiny">{str(b.bucket) ?? str(b.label) ?? `#${i}`}</td>
-                        <td className="num tiny">{num(b.count) ?? num(b.n) ?? "—"}</td>
-                        <td className="num tiny">{formatNumber(num(b.accuracy) ?? NaN, 3)}</td>
-                      </tr>
-                    ))}
+                    {bucketRows}
                   </DataTable>
                 </div>
                 <div>
@@ -446,12 +485,12 @@ function RegistryInline() {
     queryFn: ({ signal }) => governanceQueries.registry(signal),
     retry: false,
   });
-  if (regQ.isPending) return <Skeleton count={2} />;
-  if (regQ.data?.available !== true) return <EmptyState message={regQ.data?.reason ?? "registry snapshot unavailable"} />;
-  const cats = obj(obj(regQ.data.registry).categories);
-  return (
-    <div style={{ display: "grid", gap: 8 }}>
-      {Object.entries(cats).map(([k, v]) => {
+  // perf(7): memos run unconditionally BEFORE the early returns (hook order);
+  // deps = the registry payload — category cards only rebuild on a new payload.
+  const cats = useMemo(() => obj(obj(regQ.data?.registry).categories), [regQ.data]);
+  const catRows = useMemo(
+    () =>
+      Object.entries(cats).map(([k, v]) => {
         const o = obj(v);
         return (
           <div key={k} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px" }}>
@@ -463,7 +502,14 @@ function RegistryInline() {
             </div>
           </div>
         );
-      })}
+      }),
+    [cats],
+  );
+  if (regQ.isPending) return <Skeleton count={2} />;
+  if (regQ.data?.available !== true) return <EmptyState message={regQ.data?.reason ?? "registry snapshot unavailable"} />;
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {catRows}
       {Object.keys(cats).length === 0 && <JsonBlock value={regQ.data.registry} maxChars={1500} />}
     </div>
   );
