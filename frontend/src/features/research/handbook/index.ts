@@ -13,7 +13,7 @@ import type { HandbookEntry } from "./types";
 import { chainOverviewEntry, pipelineEntries } from "./gates";
 import { lifecycleEntries } from "./lifecycle";
 import { discoveryEntry } from "./discovery";
-import { scoringEntry } from "./scoring";
+import { scoringEntry, scoringEntryTranslated, type ScoringTranslate } from "./scoring";
 import { economicsEntry } from "./economics";
 import { evidenceEntry } from "./evidence";
 import { operationsEntry, pipelineEntry } from "./operations";
@@ -37,11 +37,11 @@ export {
   DEFAULT_EMBARGO_SECONDS,
 } from "./economics";
 
-/** Ordered display groups for the playbook TOC. */
+/** Ordered display groups for the playbook TOC. labelKey feeds t() at render. */
 export const HANDBOOK_GROUPS = [
-  { key: "topic", label: "Big picture" },
-  { key: "gate", label: "Gate chain" },
-  { key: "state", label: "Lifecycle states" },
+  { key: "topic", label: "Big picture", labelKey: "research.hb.group.topic" },
+  { key: "gate", label: "Gate chain", labelKey: "research.hb.group.gate" },
+  { key: "state", label: "Lifecycle states", labelKey: "research.hb.group.state" },
 ] as const;
 
 const topicEntries: HandbookEntry[] = [
@@ -99,14 +99,35 @@ export function matchesQuery(entry: HandbookEntry, rawQuery: string): boolean {
   return q.split(" ").every((term) => haystack.includes(term));
 }
 
-/** Filter + group for the playbook view (groups keep TOC order). */
+/**
+ * Translator-aware overlay: builders returning the SAME entry ids with
+ * translated prose. Lane modules register here as they land; ids absent
+ * from the overlay fall back to the static English entry (static pool
+ * still feeds search-count tests and the cross-link maps).
+ */
+function translatedEntries(t: ScoringTranslate): HandbookEntry[] {
+  return [
+    scoringEntryTranslated(t),
+    // V5 slots — gates/*
+    // V5 slots — lifecycle, operations, glossary
+    // V5 slots — uiguide, health, evidence, discovery
+    // V5 slots — economics, faq, experiments, registry
+  ];
+}
+
+/** Filter + group for the playbook view (groups keep TOC order).
+ *  Pass the store's t() to translate entry prose AND search in that language. */
 export function queryHandbook(
   rawQuery: string,
-): Array<{ key: string; label: string; entries: HandbookEntry[] }> {
+  t?: ScoringTranslate,
+): Array<{ key: string; label: string; labelKey: string; entries: HandbookEntry[] }> {
+  const overlay = t ? new Map(translatedEntries(t).map((e) => [e.id, e])) : null;
+  const pick = (e: HandbookEntry): HandbookEntry => overlay?.get(e.id) ?? e;
   return HANDBOOK_GROUPS.map((group) => ({
     key: group.key,
     label: group.label,
-    entries: HANDBOOK_ENTRIES.filter((e) => e.kind === group.key && matchesQuery(e, rawQuery)),
+    labelKey: group.labelKey,
+    entries: HANDBOOK_ENTRIES.map(pick).filter((e) => e.kind === group.key && matchesQuery(e, rawQuery)),
   })).filter((g) => g.entries.length > 0);
 }
 

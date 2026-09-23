@@ -29,7 +29,7 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
   const [openId, setOpenId] = useState<string | undefined>(focusId);
   const nodeRefs = useRef(new Map<string, HTMLElement>());
 
-  const groups = useMemo(() => queryHandbook(query), [query]);
+  const groups = useMemo(() => queryHandbook(query, t), [query, t]);
   const total = groups.reduce((n, g) => n + g.entries.length, 0);
 
   // Deep-link: expand the focused entry and bring it into view.
@@ -71,7 +71,7 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
           {groups.map((g) => (
             <div className="rs-pb-group" key={g.key}>
               <div className="rs-pb-group-label">
-                {g.label} · {g.entries.length}
+                {t(g.labelKey, g.label)} · {g.entries.length}
               </div>
               {g.entries.map((e) => (
                 <button
@@ -110,7 +110,7 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
         ) : (
           groups.map((g) => (
             <div key={g.key}>
-              <div className="rs-pb-section-label">{g.label}</div>
+              <div className="rs-pb-section-label">{t(g.labelKey, g.label)}</div>
               <div className="rs-stagger" style={{ display: "grid", gap: 0 }}>
                 {g.entries.map((e) => (
                   <EntryCard
