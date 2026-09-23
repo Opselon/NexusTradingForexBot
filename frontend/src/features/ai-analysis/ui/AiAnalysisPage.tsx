@@ -12,7 +12,28 @@
  * backend rows, backend-supplied levels; dropped rows are captioned, never hidden.
  */
 
-import { useMemo, useState } from "react";
+// Wave-2 latency: the five heavyweight sections (indicators console 19KB,
+// decision drawer, shadow-deep, two intel panels) load ONLY when their tab or
+// the drawer opens. Verified page-local: no importer outside this feature, so
+// lazy() is a pure payload win for the default "Decisions & history" view.
+const IndicatorsConsole = lazy(() => import("./IndicatorsConsole"));
+const DecisionDrawer = lazy(() => import("./DecisionDrawer"));
+const Shadow70DeepPanel = lazy(() =>
+  import("./Shadow70DeepPanel").then((m) => ({ default: m.Shadow70DeepPanel })),
+);
+const IntelligenceTelemetryPanel = lazy(() =>
+  import("./IntelligenceTelemetryPanel").then((m) => ({ default: m.IntelligenceTelemetryPanel })),
+);
+const PositionTimelineLookup = lazy(() =>
+  import("./PositionTimelineLookup").then((m) => ({ default: m.PositionTimelineLookup })),
+);
+
+/** Uniform skeleton while a lazy section chunk loads (once per session). */
+function TabFallback() {
+  return <Skeleton count={4} />;
+}
+
+import { lazy, memo, Suspense, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, ProbBar, Segmented, Skeleton } from "@/components/primitives";
 import { ConfidenceGauge } from "@/components/viz";
@@ -22,13 +43,15 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { FreshnessCaption, GateStepper, InfoRow } from "../../research/ui/lane5Kit";
 import { actionTone, confidence01, obj, str, type SignalDto } from "../model";
 import { aiAnalysisQueries, orderHistory } from "../useCases";
-import { actionFamily, actionKpi, countRows, topEntry } from "./vizMath";
-import { AaActionChip, ActionDonut, BarList, ConfidenceTimeline, ConfCell, PriceLadder, historyTimeline } from "./aaCharts";
-import DecisionDrawer from "./DecisionDrawer";
-import IndicatorsConsole from "./IndicatorsConsole";
-import { IntelligenceTelemetryPanel } from "./IntelligenceTelemetryPanel";
-import { PositionTimelineLookup } from "./PositionTimelineLookup";
-import { Shadow70DeepPanel } from "./Shadow70DeepPanel";
+import { actionFamily, actionKpi, countRows, timelineSeries, topEntry } from "./vizMath";
+import {
+  AaActionChip,
+  ActionDonut,
+  BarList,
+  ConfidenceTimeline,
+  ConfCell,
+  PriceLadder,
+} from "./aaCharts";
 import "./aiAnalysis.css";
 
 type Tab = "signals" | "indicators" | "shadow" | "intel";
@@ -40,6 +63,10 @@ export default function AiAnalysisPage(props: ShellPageProps) {
   const [page, setPage] = useState(1);
   const [tf, setTf] = useState("M1");
   const [openDecision, setOpenDecision] = useState<string | null>(null);
+  // Wave 2: stable identities so the 15s latest-poll re-render can bail out of
+  // the memoized drawer/rows instead of re-creating handlers each pass.
+  const inspectDecision = useCallback((id: string) => setOpenDecision(id), []);
+  const closeDecision = useCallback(() => setOpenDecision(null), []);
 
   const latestQ = useQuery({
     queryKey: ["ai-analysis", "signal-latest"],
@@ -60,6 +87,10 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     queryFn: ({ signal }) => aiAnalysisQueries.decisionStats(hoursBack, signal),
     retry: false,
     enabled: tab === "signals",
+    // Wave 2 (perceived latency): keep the previous window on screen while the
+    // new window loads — the sub-labels print the response's own window_hours,
+    // so the placeholder is never mislabeled as the newly selected window.
+    placeholderData: (prev) => prev,
     refetchInterval: 60_000,
   });
   const reasonsQ = useQuery({
@@ -74,6 +105,9 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     queryFn: ({ signal }) => aiAnalysisQueries.shadow70d(signal),
     retry: false,
     enabled: tab === "shadow",
+    // Wave 2: while the tab is open the envelope stays as fresh as the deep
+    // panel's 30s polls instead of freezing at first mount.
+    refetchInterval: 60_000,
   });
 
   const isNotFound = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.code === "RESOURCE_NOT_FOUND");
@@ -83,7 +117,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
   // Timeline series: page rows → normalized confidence (model rule) → sorted.
   const timeline = useMemo(
     () =>
-      historyTimeline(
+      timelineSeries(
         (historyQ.data?.items ?? []).map((s) => ({
           generated_at: s.generated_at,
           action: s.action,
@@ -92,6 +126,13 @@ export default function AiAnalysisPage(props: ShellPageProps) {
       ),
     [historyQ.data?.items],
   );
+
+  // Wave 2 (render perf): derived chart/table inputs computed once per data
+  // change — inline countRows()/orderHistory() used to allocate fresh arrays
+  // on every 15s poll, defeating memo and re-sorting 100 rows per render.
+  const stageRows = useMemo(() => countRows(statsQ.data?.by_stage), [statsQ.data]);
+  const reasonRows = useMemo(() => countRows(reasonsQ.data?.reasons), [reasonsQ.data]);
+  const historyRows = useMemo(() => orderHistory(historyQ.data?.items ?? []), [historyQ.data?.items]);
 
   return (
     <div>
@@ -229,9 +270,9 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                         <ActionDonut byAction={st?.by_action} />
                       </div>
                     </Panel>
-                    <Panel title="NO_TRADE reasons" right={<span className="tiny faint">{(reasonsQ.data?.total ?? 0).toLocaleString()} in ledger</span>} tight>
+                    <Panel title="NO_TRADE reasons" right={<span className="tiny faint">{reasonsQ.isPending ? "loading…" : `${(reasonsQ.data?.total ?? 0).toLocaleString()} in ledger`}</span>} tight>
                       <div className="panel-body">
-                        <BarList rows={countRows(reasonsQ.data?.reasons)} tone="var(--amber)" max={8} />
+                        <BarList rows={reasonRows} tone="var(--amber)" max={8} />
                       </div>
                     </Panel>
                   </div>
@@ -239,7 +280,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                   <div className="grid cols-2">
                     <Panel title="Decision stage distribution" right={<span className="tiny faint">sorted by count — backend returns no stage order</span>} tight>
                       <div className="panel-body">
-                        <BarList rows={countRows(st?.by_stage)} tone="var(--violet)" max={20} />
+                        <BarList rows={stageRows} tone="var(--violet)" max={20} />
                       </div>
                     </Panel>
                     <Panel
@@ -278,27 +319,8 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                     { label: "" },
                   ]}
                 >
-                  {orderHistory(historyQ.data?.items ?? []).map((s: SignalDto, i: number) => (
-                    <tr key={s.request_id ?? i}>
-                      <td className="inline-mono tiny">{str(s.request_id)?.slice(0, 10) ?? "—"}</td>
-                      <td className="small">{s.symbol}</td>
-                      <td>
-                        <AaActionChip action={s.action} />
-                      </td>
-                      <td className="num">
-                        <ConfCell value={confidence01(s.confidence)} action={s.action} />
-                      </td>
-                      <td className="tiny">{s.decision_stage ?? "—"}</td>
-                      <td className="tiny muted aa-reason" title={s.reason_code ?? ""}>
-                        {s.blocked_by ? `blocked:${s.blocked_by}` : (s.reason_code ?? "—")}
-                      </td>
-                      <td className="tiny">{formatDateTime(s.generated_at)}</td>
-                      <td>
-                        <button className="btn small ghost" onClick={() => setOpenDecision(String(s.request_id ?? ""))}>
-                          drilldown
-                        </button>
-                      </td>
-                    </tr>
+                  {historyRows.map((s: SignalDto) => (
+                    <HistoryRow key={s.request_id ?? s.generated_at} s={s} onInspect={inspectDecision} />
                   ))}
                 </DataTable>
                 <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
@@ -319,7 +341,11 @@ export default function AiAnalysisPage(props: ShellPageProps) {
         </div>
       )}
 
-      {tab === "indicators" && <IndicatorsConsole tf={tf} onTf={setTf} />}
+      {tab === "indicators" && (
+        <Suspense fallback={<TabFallback />}>
+          <IndicatorsConsole tf={tf} onTf={setTf} />
+        </Suspense>
+      )}
 
       {tab === "shadow" && (
         <div className="aa-stack">
@@ -370,19 +396,64 @@ export default function AiAnalysisPage(props: ShellPageProps) {
           </Panel>
 
           {/* v1 deep panel: legacy envelope above + health/disagreements/alerts below. */}
-          <Shadow70DeepPanel />
+          <Suspense fallback={<TabFallback />}>
+            <Shadow70DeepPanel />
+          </Suspense>
         </div>
       )}
 
       {tab === "intel" && (
         <div className="aa-stack">
           <div className="tiny faint">behaviour coverage — legacy tab-ai-analysis also loads intelligence centre + position timeline (orphaned components, now wired).</div>
-          <IntelligenceTelemetryPanel />
-          <PositionTimelineLookup />
+          <Suspense fallback={<TabFallback />}>
+            <IntelligenceTelemetryPanel />
+          </Suspense>
+          <Suspense fallback={<TabFallback />}>
+            <PositionTimelineLookup />
+          </Suspense>
         </div>
       )}
 
-      {openDecision && <DecisionDrawer decisionId={openDecision} onClose={() => setOpenDecision(null)} />}
+      {openDecision && (
+        <Suspense fallback={null}>
+          <DecisionDrawer decisionId={openDecision} onClose={closeDecision} />
+        </Suspense>
+      )}
     </div>
   );
 }
+
+/* ────────────── wave 2: memoized history row (100 rows x 15s poll) ──────────────
+ * The page re-renders on every latest-signal poll; extracting the row lets
+ * React bail out of all but the changed rows instead of re-creating 100 rows
+ * (each with a chip, a confidence cell and a closure) every 15 seconds. */
+const HistoryRow = memo(function HistoryRow({
+  s,
+  onInspect,
+}: {
+  s: SignalDto;
+  onInspect: (id: string) => void;
+}) {
+  return (
+    <tr>
+      <td className="inline-mono tiny">{str(s.request_id)?.slice(0, 10) ?? "—"}</td>
+      <td className="small">{s.symbol}</td>
+      <td>
+        <AaActionChip action={s.action} />
+      </td>
+      <td className="num">
+        <ConfCell value={confidence01(s.confidence)} action={s.action} />
+      </td>
+      <td className="tiny">{s.decision_stage ?? "—"}</td>
+      <td className="tiny muted aa-reason" title={s.reason_code ?? ""}>
+        {s.blocked_by ? `blocked:${s.blocked_by}` : (s.reason_code ?? "—")}
+      </td>
+      <td className="tiny">{formatDateTime(s.generated_at)}</td>
+      <td>
+        <button className="btn small ghost" onClick={() => onInspect(String(s.request_id ?? ""))}>
+          drilldown
+        </button>
+      </td>
+    </tr>
+  );
+});

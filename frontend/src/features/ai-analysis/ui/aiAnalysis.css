@@ -99,6 +99,16 @@
   transition: opacity 0.15s ease;
 }
 .aa-donut-seg:hover { opacity: 0.75; }
+
+/* ── reduced motion (wave 2 a11y): the page polls every 15-60s, so chart
+ *   transitions are decorative — honor the OS preference and drop them. */
+@media (prefers-reduced-motion: reduce) {
+  .aa-donut-seg,
+  .aa-bar-track i,
+  .aa-conf-track i {
+    transition: none !important;
+  }
+}
 .aa-donut-total {
   font-family: var(--mono);
   font-size: 15px;
