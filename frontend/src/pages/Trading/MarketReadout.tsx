@@ -239,7 +239,11 @@ export default function MarketReadout(props: MarketReadoutProps) {
         title="SMC / ICT overlays"
         subtitle="engine-computed zones and structure — visualised, never fabricated"
         accent
-        right={<span className="tr-readout-count">{zones.length} zones</span>}
+        right={
+          <span className="tr-readout-count">
+            {zones.length} zones · snapshot v{snapshot.state_version} · SL buffer ×{snapshot.algo_config.atr_sl_buffer_multiplier} · min RR {snapshot.algo_config.min_risk_reward_ratio} · conf ≥ {snapshot.algo_config.ai_zone_confidence_threshold} · FVG sens {snapshot.algo_config.fvg_mitigation_sensitivity} · OB lookback {snapshot.algo_config.order_block_lookback_bars} bars
+          </span>
+        }
       >
         {zones.length === 0 && bosLines.length === 0 && midlines.length === 0 && liqMarkers.length === 0 ? (
           <EmptyState

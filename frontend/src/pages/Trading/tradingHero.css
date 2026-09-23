@@ -1,90 +1,99 @@
 /*
- * tradingHero.css — lane-owned styles for tr-hero, tr-kpi (see lane contract). Theme
-   tokens only, logical properties (RTL-safe), namespace tr-hero / tr-kpi, hover lift scoped,
-   reduced-motion respected. Shared baseline lives in ./trading.css (read-only).
+ * PURPOSE:  Trading hero + KPI strip styles for /alt/trading (lane A).
+ * OWNER:    ui/tr-a  (future edits belong to this lane)
+ * CONSUMES: theme.css tokens; classes consumed by ./TradingHero.
+ * PROVIDES: styling for the hero header (.tr-hero-pro*) and the two KPI
+ *           strips (.tr-kpi-strip / .tr-kpi-card*) and their chips.
+ * INVARIANTS: theme tokens only (theme.css :root vars — never a literal
+ *           colour), logical properties (RTL-safe), lane-prefixed additive
+ *           selectors only — never a global primitive restyle; every colour
+ *           is a token or an rgba()/color-mix() of one; reduced-motion
+ *           honored for every animation.
+ * EXTEND:   new hero/KPI visuals = new `.tr-hero-pro*`/`.tr-kpi*` rules here.
  *
- * OWNER: trading-wave lane A (frontend/src/pages/Trading).
- * INVARIANTS: theme tokens only (theme.css :root), logical properties
- * (margin-block-end / inset-inline-start / text-align:end …) so RTL is safe,
- * lane-prefixed additive selectors only — never a global primitive restyle
- * (the grid cols-4 + metric primitives in trading.css/theme.css stay
- * untouched), every colour is a token or an rgba()/color-mix() of one,
- * reduced-motion honored.
- *
- * Cascade note: TradingPage imports trading.css AFTER this file, so every
- * selector shared with that read-only baseline (.tr-hero, .tr-hero-head,
- * .tr-kicker, .tr-sub, .tr-fact, .tr-kpis, .tr-kpi*) is written as
- * `section.tr-hero …` — element-qualified = higher specificity, so these
- * refinements supersede the baseline in either import order. Responsive
- * breakpoints the baseline answers (900px KPI shrink) are restated here for
- * the same reason: a qualified base rule would otherwise outrank an
- * unqualified media rule no matter where it sits.
+ * Cascade note: trading.css (READ-ONLY) ships wave-1 baselines for
+ * `.tr-hero`/`.tr-kicker`/`.tr-sub`/`.tr-refresh`/`.tr-kpi-cap` and is
+ * imported by TradingPage.tsx. Every rule below is therefore rooted at the
+ * `.tr-hero-pro` scope marker (specificity 0-2-0, order-independent), so the
+ * baseline survives untouched while this lane's look always wins.
  */
 
 /* ============================ Hero surface ============================ */
 
-section.tr-hero {
+.tr-hero.tr-hero-pro {
   position: relative;
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   margin-block-end: 16px;
-  padding: 20px 22px 18px;
+  padding: 22px 24px 20px;
   border: 1px solid var(--border-strong);
   border-radius: 16px;
-  /* layered surface: corner glows + top sheen over a translucent panel */
+  overflow: hidden;
+  /* layered translucent surface: corner glows + sheen over a frosted panel */
   background:
-    radial-gradient(520px 220px at 3% -60%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
-    radial-gradient(440px 210px at 97% -40%, color-mix(in srgb, var(--violet) 15%, transparent), transparent 68%),
+    radial-gradient(560px 250px at 2% -70%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 72%),
+    radial-gradient(500px 230px at 98% -50%, color-mix(in srgb, var(--violet) 16%, transparent), transparent 70%),
     linear-gradient(180deg, var(--elevate-hi), transparent 46%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 90%, transparent), color-mix(in srgb, var(--bg-panel) 97%, transparent));
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 88%, transparent), color-mix(in srgb, var(--bg-panel) 96%, transparent));
   box-shadow: var(--elev-2), inset 0 1px 0 var(--elevate-hi);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
 }
 
-/* fine grid texture clipped to the hero — decoration only, never data */
-.tr-hero-mesh {
+/* Fine grid texture clipped to the hero — decoration only, never data. */
+.tr-hero-pro .tr-hero-mesh {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
   pointer-events: none;
   opacity: 0.4;
   background-image:
-    repeating-linear-gradient(0deg, color-mix(in srgb, var(--border-strong) 45%, transparent) 0 1px, transparent 1px 30px),
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--border-strong) 45%, transparent) 0 1px, transparent 1px 30px);
-  -webkit-mask-image: radial-gradient(120% 130% at 88% -20%, var(--bg) 0%, transparent 66%);
-  mask-image: radial-gradient(120% 130% at 88% -20%, var(--bg) 0%, transparent 66%);
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--border-strong) 42%, transparent) 0 1px, transparent 1px 30px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--border-strong) 42%, transparent) 0 1px, transparent 1px 30px);
+  -webkit-mask-image: radial-gradient(120% 130% at 12% -20%, var(--bg) 0%, transparent 68%);
+  mask-image: radial-gradient(120% 130% at 12% -20%, var(--bg) 0%, transparent 68%);
 }
 
-section.tr-hero .tr-hero-head {
+.tr-hero-pro .tr-hero-head {
   position: relative;
   z-index: 1;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 18px;
   flex-wrap: wrap;
-  gap: 16px;
-  /* restated from the baseline rule so this file is self-sufficient */
 }
-section.tr-hero .tr-hero-title {
+.tr-hero-pro .tr-hero-title {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  min-inline-size: 0;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  min-inline-size: 240px;
+}
+.tr-hero-pro .tr-hero-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
-/* ------------------------ Kicker / title / sub / facts ------------------------ */
+/* ------------------------- Kicker hairline / title ------------------------- */
 
-section.tr-hero .tr-kicker {
-  display: inline-flex;
+.tr-hero-pro .tr-kicker {
+  display: flex;
   align-items: center;
   gap: 9px;
   font-size: 10.5px;
+  font-weight: 700;
   letter-spacing: 0.22em;
-  text-transform: uppercase;
   color: var(--text-faint);
+  text-transform: uppercase;
 }
-.tr-kicker-dot {
+.tr-hero-pro .tr-kicker-dot {
   inline-size: 5px;
   block-size: 5px;
   flex-shrink: 0;
@@ -93,82 +102,222 @@ section.tr-hero .tr-kicker {
   box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 /* symmetric fade so the rule reads the same in RTL */
-.tr-kicker-rule {
+.tr-hero-pro .tr-kicker-rule {
   flex: 1;
-  min-inline-size: 48px;
+  min-inline-size: 56px;
   block-size: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-strong) 22%, var(--border-strong) 78%, transparent);
+  background: linear-gradient(90deg, transparent, var(--border-strong) 18%, var(--border-strong) 82%, transparent);
 }
-section.tr-hero h1 {
-  margin: 9px 0 6px;
-  font-size: 27px;
+
+.tr-hero-pro .tr-h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 2px 0 0;
+  font-size: 28px;
   font-weight: 800;
-  letter-spacing: -0.015em;
-  line-height: 1.1;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
 }
-section.tr-hero .tr-sub {
-  max-inline-size: 74ch;
+.tr-hero-pro .tr-h1-glyph {
+  display: inline-grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 11px;
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.tr-hero-pro .tr-h1-word {
+  background: linear-gradient(92deg, var(--text) 26%, color-mix(in srgb, var(--accent-strong) 72%, var(--text)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tr-hero-pro .tr-sub {
+  margin: 0;
   font-size: 12.5px;
   line-height: 1.6;
+  max-inline-size: 74ch;
   color: var(--text-dim);
 }
-section.tr-hero .tr-fact {
-  display: inline-block;
-  padding: 1px 8px;
+
+/* ------------------------- Status chips row ------------------------- */
+
+.tr-hero-pro .tr-chiprow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-block-start: 4px;
+}
+
+.tr-hero-pro .tr-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-inset) 78%, transparent);
+  color: var(--text-dim);
+  cursor: help;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+.tr-hero-pro .tr-chip:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-inset));
+}
+.tr-hero-pro .tr-chip.tone-good { color: var(--green); border-color: color-mix(in srgb, var(--green) 42%, transparent); background: color-mix(in srgb, var(--green) 9%, transparent); }
+.tr-hero-pro .tr-chip.tone-bad  { color: #ff938c; border-color: color-mix(in srgb, var(--red) 45%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.tr-hero-pro .tr-chip.tone-warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 42%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent); }
+.tr-hero-pro .tr-chip.tone-accent { color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tr-hero-pro .tr-chip.tone-dim { color: var(--text-faint); }
+
+/* CSS tooltip (progressive enhancement of the native title) */
+.tr-hero-pro .tr-chip-tip {
+  position: absolute;
+  inset-block-end: calc(100% + 8px);
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  inline-size: max-content;
+  max-inline-size: min(280px, 84vw);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+  text-align: start;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-panel) 97%, transparent);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--elev-3);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s;
+  z-index: 30;
+}
+.tr-hero-pro .tr-chip:hover .tr-chip-tip,
+.tr-hero-pro .tr-chip:focus-visible .tr-chip-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* --------------------- Availability-pulsed engine pill --------------------- */
+
+.tr-hero-pro .tr-engine-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 14px;
   font-family: var(--mono);
   font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--text-faint);
-  background: color-mix(in srgb, var(--bg-inset) 80%, transparent);
-  border: 1px solid var(--border);
+  font-weight: 700;
+  letter-spacing: 0.09em;
   border-radius: 999px;
-  vertical-align: middle;
+  border: 1px solid;
+  box-shadow: inset 0 1px 0 var(--elevate-hi);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: help;
+}
+.tr-hero-pro .tr-engine-pill .tr-engine-state { font-weight: 800; }
+.tr-hero-pro .tr-engine-pill .tr-engine-meta {
+  padding-inline-start: 9px;
+  margin-inline-start: 2px;
+  border-inline-start: 1px solid currentColor;
+  color: inherit;
+  opacity: 0.72;
+}
+/* RUNNING only: live tone + pulse. STOPPED reads dim and static — an idle
+   engine must never read as "live". Tone restates snapshot.engine_running. */
+.tr-hero-pro .tr-engine-pill.is-on {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 50%, transparent);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+.tr-hero-pro .tr-engine-pill.is-off {
+  color: var(--text-faint);
+  border-color: color-mix(in srgb, var(--border-strong) 85%, transparent);
+  background: color-mix(in srgb, var(--bg-inset) 70%, transparent);
+}
+.tr-hero-pro .tr-engine-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+.tr-hero-pro .tr-engine-pill.is-on .tr-engine-dot {
+  animation: tr-hero-enginePulse 2.4s ease-in-out infinite;
+}
+.tr-hero-pro .tr-engine-pill.is-off .tr-engine-dot { opacity: 0.5; }
+@keyframes tr-hero-enginePulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 50%, transparent), 0 0 8px color-mix(in srgb, var(--green) 70%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--green) 0%, transparent), 0 0 8px color-mix(in srgb, var(--green) 70%, transparent); }
 }
 
-/* ------------------------------ Provenance chips ------------------------------ */
+/* ------------------------- Endpoint provenance chips ------------------------- */
 
-.tr-hero-endpoints {
+.tr-hero-pro .tr-provenance {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 7px;
-  margin-block-start: 13px;
+  flex-wrap: wrap;
+  margin-block-start: 6px;
 }
-.tr-ep {
+.tr-hero-pro .tr-src {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
   font-family: var(--mono);
   font-size: 10px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 75%, transparent);
+  letter-spacing: 0.03em;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-inset) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-inset) 70%, transparent);
   color: var(--text-faint);
+  cursor: help;
   transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
 }
-.tr-ep::before {
-  content: "";
-  flex-shrink: 0;
-  inline-size: 4px;
-  block-size: 4px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 75%, transparent);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
-}
-.tr-ep:hover {
+.tr-hero-pro .tr-src:hover {
   color: var(--text-dim);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 7%, var(--bg-inset));
 }
+.tr-hero-pro .tr-src-dot {
+  inline-size: 4px;
+  block-size: 4px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 75%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
 
-/* ------------------------------ Refresh button ------------------------------ */
+/* ------------------------- Refresh button ------------------------- */
 
-section.tr-hero .tr-hero-refresh {
+.tr-hero-pro .tr-refresh {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 15px;
-  font: inherit;
+  padding: 8px 16px;
+  font-family: var(--sans);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -180,29 +329,22 @@ section.tr-hero .tr-hero-refresh {
   box-shadow: var(--elev-1), inset 0 1px 0 var(--elevate-hi);
   transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.08s ease;
 }
-section.tr-hero .tr-hero-refresh:hover:not(:disabled) {
+.tr-hero-pro .tr-refresh:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent), var(--elev-2);
-  transform: translateY(-1px);
 }
-section.tr-hero .tr-hero-refresh:active:not(:disabled) {
-  transform: translateY(1px);
-}
-section.tr-hero .tr-hero-refresh:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-.tr-hero-refresh-ico {
+.tr-hero-pro .tr-refresh:active:not(:disabled) { transform: translateY(1px); }
+.tr-hero-pro .tr-refresh:disabled { opacity: 0.6; cursor: progress; }
+.tr-hero-pro .tr-refresh-ico {
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1;
   transition: transform 0.45s ease;
 }
-.tr-hero-refresh:hover:not(:disabled) .tr-hero-refresh-ico {
-  transform: rotate(-360deg);
-}
-/* loading state: dedicated ring while any query is refetching */
-.tr-hero-spin {
+.tr-hero-pro .tr-refresh:hover:not(:disabled) .tr-refresh-ico { transform: rotate(-360deg); }
+/* loading ring while any query is refetching */
+.tr-hero-pro .tr-refresh-spin {
+  display: inline-block;
   inline-size: 13px;
   block-size: 13px;
   flex-shrink: 0;
@@ -211,74 +353,68 @@ section.tr-hero .tr-hero-refresh:disabled {
   border-block-start-color: var(--accent-strong);
   animation: tr-hero-spin 0.7s linear infinite;
 }
-@keyframes tr-hero-spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes tr-hero-spin { to { transform: rotate(360deg); } }
 
-/* ------------------- Hero fact cards (the four original facts) ------------------- */
+/* ============================ KPI strips ============================ */
 
-.tr-hero-grid {
+.tr-hero-pro .tr-kpi-strip {
   position: relative;
   z-index: 1;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
-.tr-hero-card {
+
+.tr-hero-pro .tr-kpi-card {
   position: relative;
   display: grid;
-  gap: 7px;
-  padding: 13px 15px 12px;
+  grid-template-rows: auto auto 1fr;
+  gap: 9px;
+  padding: 14px 16px 13px;
+  padding-inline-start: 19px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  overflow: hidden;
+  overflow: visible;
   background:
     linear-gradient(180deg, var(--elevate-hi), transparent 45%),
-    var(--bg-panel);
+    color-mix(in srgb, var(--bg-panel) 92%, transparent);
   box-shadow: var(--elev-1);
   transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
-.tr-hero-card:hover {
+.tr-hero-pro .tr-kpi-card:hover {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   box-shadow: var(--elev-2);
   transform: translateY(-2px);
 }
-/* consistent accent rail + top hairline on every card (decoration only) */
-.tr-hero-card::before {
+/* accent rail (inline-start so RTL flips it) + top hairline — kept clear of
+   the 12px corner arcs so no corner clipping is needed (tooltips may escape) */
+.tr-hero-pro .tr-kpi-card::before {
   content: "";
   position: absolute;
-  inset-block: 0;
+  inset-block: 10px;
   inset-inline-start: 0;
   inline-size: 3px;
+  border-radius: 0 3px 3px 0;
   background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--violet) 70%, transparent));
   opacity: 0.85;
 }
-.tr-hero-card::after {
+.tr-hero-pro .tr-kpi-card::after {
   content: "";
   position: absolute;
-  inset-inline: 0;
+  inset-inline: 13px;
   top: 0;
   block-size: 1px;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent), transparent);
   opacity: 0.6;
 }
-/* LIVE edge tone — a restatement of the backend's LIVE mode word only */
-.tr-hero-card.is-live {
-  border-color: color-mix(in srgb, var(--red) 50%, var(--border));
-}
-.tr-hero-card.is-live::before {
-  background: linear-gradient(180deg, var(--red), color-mix(in srgb, var(--amber) 60%, transparent));
-}
-.tr-hero-card.is-live::after {
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--red) 45%, transparent), transparent);
-}
 
-.tr-hero-card-head {
+/* head: icon + label */
+.tr-hero-pro .tr-kpi-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.tr-hero-ico {
+.tr-hero-pro .tr-kpi-ico {
   inline-size: 22px;
   block-size: 22px;
   flex-shrink: 0;
@@ -286,13 +422,13 @@ section.tr-hero .tr-hero-refresh:disabled {
   place-items: center;
   border-radius: 7px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   color: var(--accent-strong);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
-.tr-hero-lab {
+.tr-hero-pro .tr-kpi-lab {
   flex: 1;
   min-inline-size: 0;
   font-size: 10px;
@@ -305,134 +441,126 @@ section.tr-hero .tr-hero-refresh:disabled {
   white-space: nowrap;
 }
 
-.tr-hero-val {
+/* value: tabular mono so live values never jitter */
+.tr-hero-pro .tr-kpi-val {
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+/* tones restate backend words only: RUNNING/ALLOWED (good), RESTRICTED/
+   LIVE (bad), drifted or pending counts (warn), missing -> dim em dash */
+.tr-hero-pro .tr-kpi-val.tone-good { color: var(--green); }
+.tr-hero-pro .tr-kpi-val.tone-bad { color: var(--red); }
+.tr-hero-pro .tr-kpi-val.tone-warn { color: var(--amber); }
+.tr-hero-pro .tr-kpi-val.tone-accent { color: var(--accent-strong); }
+.tr-hero-pro .tr-kpi-val.tone-dim { color: var(--text-dim); }
+
+.tr-hero-pro .tr-kpi-sub {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.tr-hero-pro .tr-kpi-subline {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
+  gap: 6px;
+  flex-wrap: wrap;
 }
-.tr-hero-val-dot {
-  inline-size: 7px;
-  block-size: 7px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 7px currentColor;
-}
-/* dot pulses only while the engine runs (STOPPED must not read as live) */
-.tr-hero-card--engine .tr-hero-val.is-pos .tr-hero-val-dot {
-  animation: tr-hero-livePulse 2.6s ease-in-out infinite;
-}
-@keyframes tr-hero-livePulse {
-  0%, 100% { box-shadow: 0 0 0 0 currentColor, 0 0 7px currentColor; }
-  55% { box-shadow: 0 0 0 5px transparent, 0 0 7px currentColor; }
-}
-/* baseline tone mapping: pos = green, neg = red, dim = muted id */
-.tr-hero-val.is-pos { color: var(--green); }
-.tr-hero-val.is-neg { color: var(--red); }
-.tr-hero-val.is-dim { color: var(--text-dim); }
-
-.tr-hero-sub {
+.tr-hero-pro .tr-kpi-cap {
   font-family: var(--mono);
   font-size: 9.5px;
-  line-height: 1.45;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
   color: var(--text-faint);
-  min-inline-size: 0;
 }
 
-/* ------------------------------ KPI strip ------------------------------ */
-
-section.tr-hero .tr-kpis {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-section.tr-hero .tr-kpi {
-  display: grid;
-  gap: 3px;
+/* compact (secondary) strip: smaller values, chips inline */
+.tr-hero-pro .tr-kpi-strip--compact { gap: 10px; }
+.tr-hero-pro .tr-kpi-strip--compact .tr-kpi-card {
   padding: 11px 14px 10px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--bg-inset) 80%, transparent);
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+  padding-inline-start: 17px;
+  gap: 7px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--elevate-hi) 70%, transparent), transparent 50%),
+    color-mix(in srgb, var(--bg-inset) 72%, transparent);
+  box-shadow: none;
 }
-section.tr-hero .tr-kpi:hover {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-  box-shadow: var(--elev-2);
-  transform: translateY(-2px);
-}
-section.tr-hero .tr-kpi-label {
+.tr-hero-pro .tr-kpi-strip--compact .tr-kpi-card:hover { box-shadow: var(--elev-1); }
+.tr-hero-pro .tr-kpi-strip--compact .tr-kpi-val { font-size: 17px; }
+.tr-hero-pro .tr-kpi-strip--compact .tr-kpi-ico {
+  inline-size: 19px;
+  block-size: 19px;
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  border-radius: 6px;
 }
-section.tr-hero .tr-kpi-value {
-  font-family: var(--mono);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-/* recon tint restates the drift prop; pos = clean match, warn = drift rows */
-section.tr-hero .tr-kpi-value.is-pos { color: var(--green); }
-section.tr-hero .tr-kpi-value.is-warn { color: var(--amber); }
-section.tr-hero .tr-kpi-cap {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.03em;
-  color: var(--text-faint);
+.tr-hero-pro .tr-kpi-strip--compact .tr-kpi-card::before {
+  inline-size: 2px;
+  opacity: 0.6;
 }
 
-/* ------------------------------ Responsive ------------------------------ */
+/* small chips reused inside card sub-lines */
+.tr-hero-pro .tr-facts {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.tr-hero-pro .tr-facts .tr-chip {
+  padding: 2px 8px;
+  font-size: 9.5px;
+  border-radius: 6px;
+}
+.tr-hero-pro .tr-facts .tr-chip-tip {
+  inset-block-end: calc(100% + 6px);
+  font-size: 10px;
+}
+
+/* ------------------------- Responsive ------------------------- */
 
 @media (max-width: 1100px) {
-  .tr-hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tr-hero-pro .tr-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
-  /* restated with the qualified selector so it outranks the baseline rule */
-  section.tr-hero .tr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tr-hero-pro .tr-h1 { font-size: 24px; }
+  .tr-hero-pro .tr-hero-side { align-items: stretch; }
 }
-@media (max-width: 640px) {
-  section.tr-hero { padding: 16px 14px 14px; }
-  section.tr-hero h1 { font-size: 22px; }
-  .tr-hero-grid,
-  section.tr-hero .tr-kpis { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 720px) {
+  .tr-hero-pro .tr-kpi-strip { grid-template-columns: 1fr; }
+  .tr-hero.tr-hero-pro { padding: 18px 16px 16px; }
+  .tr-hero-pro .tr-h1 { font-size: 21px; }
+  .tr-hero-pro .tr-sub { max-inline-size: none; }
+}
+@media (max-width: 480px) {
+  .tr-hero-pro .tr-engine-pill .tr-engine-meta { display: none; }
 }
 
-/* ------------------------------ Motion ------------------------------ */
+/* ------------------------- Reduced motion ------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .tr-hero-spin,
-  .tr-hero-refresh-ico,
-  .tr-hero-card--engine .tr-hero-val.is-pos .tr-hero-val-dot {
-    animation: none;
-  }
-  section.tr-hero .tr-hero-refresh,
-  section.tr-hero .tr-kpi,
-  .tr-hero-card,
-  .tr-ep {
+  .tr-hero-pro .tr-kpi-card,
+  .tr-hero-pro .tr-refresh,
+  .tr-hero-pro .tr-refresh-ico,
+  .tr-hero-pro .tr-chip,
+  .tr-hero-pro .tr-src,
+  .tr-hero-pro .tr-chip-tip {
     transition: none;
   }
-  section.tr-hero .tr-hero-refresh:hover:not(:disabled),
-  section.tr-hero .tr-hero-refresh:active:not(:disabled),
-  section.tr-hero .tr-kpi:hover,
-  .tr-hero-card:hover,
-  .tr-hero-refresh:hover:not(:disabled) .tr-hero-refresh-ico {
+  .tr-hero-pro .tr-kpi-card:hover,
+  .tr-hero-pro .tr-refresh:active:not(:disabled) {
     transform: none;
   }
-  /* static ring still communicates the loading state (label says Refreshing) */
-  .tr-hero-spin {
-    border-block-start-color: var(--accent-strong);
+  .tr-hero-pro .tr-engine-pill.is-on .tr-engine-dot,
+  .tr-hero-pro .tr-refresh-spin {
+    animation: none;
   }
+  /* static ring still communicates the loading state (label says Refreshing) */
+  .tr-hero-pro .tr-refresh-spin { border-block-start-color: var(--accent-strong); }
 }
