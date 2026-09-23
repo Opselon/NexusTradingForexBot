@@ -153,6 +153,7 @@ export function NewsFeedSection() {
               article={a}
               selected={selected === a.article_id}
               busy={analyze.isPending}
+              restoreBusy={restore.isPending}
               onSelect={() => setSelected(a.article_id)}
               onAnalyze={(force) => runAnalyze(a.article_id, force)}
               onRestore={() => runRestore(a.article_id)}
@@ -202,6 +203,7 @@ export function ArticleRow({
   article: a,
   selected,
   busy,
+  restoreBusy,
   onSelect,
   onAnalyze,
   onRestore,
@@ -209,6 +211,7 @@ export function ArticleRow({
   article: NewsFeedArticle;
   selected: boolean;
   busy: boolean;
+  restoreBusy: boolean;
   onSelect: () => void;
   onAnalyze: (force: boolean) => void;
   onRestore: () => void;
@@ -247,16 +250,16 @@ export function ArticleRow({
       )}
       <div className="news-actions" onClick={(e) => e.stopPropagation()}>
         {status === "IRRELEVANT" && (
-          <button className="btn small" onClick={onRestore} disabled={busy}>
-            Restore
+          <button className="btn small" onClick={onRestore} disabled={busy || restoreBusy}>
+            {restoreBusy ? "restoring…" : "Restore"}
           </button>
         )}
         {aiDone ? (
-          <button className="btn small primary" onClick={() => onAnalyze(true)} disabled={busy}>
+          <button className="btn small primary" onClick={() => onAnalyze(true)} disabled={busy || restoreBusy}>
             {busy ? "analyzing…" : "Re-analyze (force)"}
           </button>
         ) : (
-          <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy}>
+          <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy || restoreBusy}>
             {busy ? "analyzing…" : "Analyze with AI"}
           </button>
         )}
