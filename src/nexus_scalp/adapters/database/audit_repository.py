@@ -195,17 +195,39 @@ def resolve_audit_db_url(db_url: str = _DEFAULT_AUDIT_DB_URL, config: Any = None
     """Resolves the database URL for AuditRepository (BUG-223 isolation contract).
 
     Precedence order:
-      1. Explicit `config` (DatabaseConfig): derives connect URL from config.
+      1. Explicit `config` (DatabaseConfig): derives connect URL from config —
+         honouring the config's PROVIDER (previously this branch hardcoded a
+         SQLite URL, so a PostgreSQL config was silently downgraded).
       2. Implicit default (`db_url == _DEFAULT_AUDIT_DB_URL`): honors `NEXUS_AUDIT_DB`
-         environment override if present (BUG-223 isolation seam);
+         environment override if present (BUG-223 isolation seam), then the
+         persisted provider setting (the app-level switch).
       3. Explicit `db_url` parameter: caller keeps full authority.
     """
     if config is not None:
+        provider = getattr(getattr(config, "provider", None), "value", "sqlite")
+        if str(provider).lower() in ("postgresql", "postgres", "pg"):
+            from nexus_scalp.database.config import build_postgres_url
+
+            return build_postgres_url(config)
         return f"sqlite:///{config.sqlite_connect_path}"
     if db_url == _DEFAULT_AUDIT_DB_URL:
         env_db = os.environ.get("NEXUS_AUDIT_DB", "").strip()
         if env_db:
             return f"sqlite:///{Path(env_db).as_posix()}"
+        # No explicit URL and no test seam: consult the persisted provider so a
+        # `nexus db-portability connect/switch` binds EVERY AuditRepository(), not
+        # only the ones that already pass a config. Placed strictly AFTER the
+        # NEXUS_AUDIT_DB seam so test isolation (BUG-223) keeps winning.
+        try:
+            from nexus_scalp.database.config import load_database_config
+
+            persisted = load_database_config("audit")
+            if getattr(persisted, "is_postgresql", False):
+                from nexus_scalp.database.config import build_postgres_url
+
+                return build_postgres_url(persisted)
+        except Exception:  # pragma: no cover - settings DB unavailable
+            pass
     return db_url
 
 
@@ -2352,14 +2374,28 @@ class AuditRepository:
     def _build_pooled_write_backend(self) -> Any:
         """Resolves the fabric's pooled write backend for the audit domain.
 
-        Returns ``None`` when the domain is not provisioned for a pooled
-        provider; the caller decides how to surface that (loudly).
+        Auto-provisions the domain the first time a process touches a pooled
+        provider: without this, a bare ``AuditRepository()`` on a PostgreSQL
+        default would raise "no pooled write backend" on the very first boot,
+        since nothing else had registered the domain yet. Falls back to
+        ``None`` (loud, not silent) when provisioning itself fails.
         """
         try:
-            from nexus_scalp.database.fabric import get_domain_backend
+            from nexus_scalp.database.fabric import get_domain_backend, provision_domain
 
-            return get_domain_backend("audit", readonly=False)
-        except Exception:
+            backend = get_domain_backend("audit", readonly=False)
+            if backend is not None:
+                return backend
+            # Not provisioned in this process — bootstrap it from the resolved
+            # DSN (includes the secret, injected by resolve_audit_db_url).
+            if not self._db_url or self._is_sqlite:
+                return None
+            return provision_domain("audit", self._db_url, min_size=1, max_size=4)
+        except Exception as exc:
+            logger.error(
+                "[DB-FABRIC] audit domain provisioning failed: %s",
+                exc,
+            )
             return None
 
     def _dead_letter_write_sink(self) -> Any:
