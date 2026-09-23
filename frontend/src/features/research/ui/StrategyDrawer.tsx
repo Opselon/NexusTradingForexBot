@@ -11,8 +11,8 @@ import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Ske
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, Drawer, GateStepper, JsonBlock, StatusPill } from "./lane5Kit";
-import { GATE_CHAIN } from "../handbook";
-import StrategyPlaybook from "./StrategyPlaybook";
+import { GATE_CHAIN } from "../handbook/gateChain";
+import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
 import { commandVerdict, obj, str, toGateVo, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
@@ -71,19 +71,42 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
   /**
    * Compact chain rail (docs vocabulary from handbook GATE_CHAIN): class per
-   * step derives ONLY from the backend's own gate rows — passed/failed/running —
+   * step derives ONLY from the backend's own gate rows — passed/failed/running,
    * never inferred. Name match is case-insensitive; unknown steps rest neutral.
+   *
+   * perf: the chain-rail classes and the gate-ledger stepper rows are derived
+   * from `gates` (memoized VO list) + `cmd.state.running` — the only reactive
+   * values they read — so query/refetch ticks no longer rebuild them per render.
    */
-  const stepClass = (chainGate: string): string => {
-    const mine = gates.filter((g) => g.name.toUpperCase() === chainGate);
-    const last = mine.at(-1);
-    if (!last) return "";
-    const s = (last.status ?? "").toUpperCase();
-    if (s === "PASSED") return "passed";
-    if (s === "FAILED" || s === "ERROR" || s === "CANCELLED") return "failed";
-    if (s === "RUNNING" || s === "QUEUED") return "running";
-    return "";
-  };
+  const chainClass = useMemo(() => {
+    const byName = new Map<string, string>();
+    for (const g of gates) {
+      const key = g.name.toUpperCase();
+      const s = (g.status ?? "").toUpperCase();
+      let cls = "";
+      if (s === "PASSED") cls = "passed";
+      else if (s === "FAILED" || s === "ERROR" || s === "CANCELLED") cls = "failed";
+      else if (s === "RUNNING" || s === "QUEUED") cls = "running";
+      if (cls) byName.set(key, cls); // last occurrence wins (same as .at(-1) order)
+    }
+    return (chainGate: string): string => byName.get(chainGate) ?? "";
+  }, [gates]);
+
+  const stepperRows = useMemo(
+    () =>
+      gates.map((g) => ({
+        name: g.name + (g.gateId ? ` · ${g.gateId.slice(0, 8)}` : ""),
+        status: g.status,
+        reason: g.reason ?? (g.failureClass ? `class: ${g.failureClass}` : null),
+        detail:
+          g.gateId && (g.failureClass === "TECHNICAL" || g.failureClass === "DATA" || g.retryable) ? (
+            <button className="btn small ghost" disabled={cmd.state.running} onClick={() => setConfirmGate(g.gateId)}>
+              retry gate
+            </button>
+          ) : undefined,
+      })),
+    [gates, cmd.state.running],
+  );
 
   const tabs: Array<[typeof tab, string]> = [
     ["trace", "Trace"],
@@ -130,26 +153,14 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
               {GATE_CHAIN.map((g, i) => (
                 <span key={g} style={{ display: "contents" }}>
                   {i > 0 && <span className="rs-rail-arrow" aria-hidden="true">→</span>}
-                  <span className={`rs-step ${stepClass(g)}`} title={`chain step ${i + 1}: ${g}`}>
+                  <span className={`rs-step ${chainClass(g)}`} title={`chain step ${i + 1}: ${g}`}>
                     {i + 1}. {g}
                   </span>
                 </span>
               ))}
             </div>
             <Panel title="Gate pipeline (backend verdicts)" tight>
-              <GateStepper
-                gates={gates.map((g) => ({
-                  name: g.name + (g.gateId ? ` · ${g.gateId.slice(0, 8)}` : ""),
-                  status: g.status,
-                  reason: g.reason ?? (g.failureClass ? `class: ${g.failureClass}` : null),
-                  detail:
-                    g.gateId && (g.failureClass === "TECHNICAL" || g.failureClass === "DATA" || g.retryable) ? (
-                      <button className="btn small ghost" disabled={cmd.state.running} onClick={() => setConfirmGate(g.gateId)}>
-                        retry gate
-                      </button>
-                    ) : undefined,
-                }))}
-              />
+              <GateStepper gates={stepperRows} />
               {gates.length === 0 && gatesQ.isPending && <Skeleton count={3} />}
             </Panel>
             <Panel title="Validation runs (reproducibility lineage)" tight>
@@ -249,7 +260,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
       {tab === "playbook" && (
         <div className="rs-pane" key="playbook">
-          <StrategyPlaybook compact focusId="topic/gates" />
+          <StrategyPlaybookLazy compact focusId="topic/gates" />
         </div>
       )}
 
