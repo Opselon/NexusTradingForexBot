@@ -362,7 +362,7 @@ export function StatusTab() {
                 {md.password_set
                   ? t("database.status.pw_set_store", "SET (OS SecretStore)")
                   : t("database.status.pw_missing", "MISSING")}
-                {md.postgresql_driver_available === false && t("database.status.psycope_absent", " · psycopg absent")}
+                {md.postgresql_driver_available === false && t("database.status.psycopg_absent", " · psycopg absent")}
               </span>
             </div>
             <div className="dbc-section-title">{t("database.status.domain_health", "domain health")}</div>

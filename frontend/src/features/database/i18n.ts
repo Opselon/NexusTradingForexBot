@@ -243,7 +243,7 @@ export const MESSAGES: FeatureMessages = {
   "database.status.chip_active_sub": { fa: "فعال", de: "aktiv", es: "activo", ar: "نشط" },
   "database.status.pg_password_label": { fa: "رمز pg", de: "PG-Passwort", es: "contraseña pg", ar: "كلمة مرور pg" },
   "database.status.pw_set_store": { fa: "تنظیم شده (SecretStore سیستم‌عامل)", de: "GESPEICHERT (OS-SecretStore)", es: "DEFINIDA (SecretStore del SO)", ar: "مضبوطة (SecretStore بالنظام)" },
-  "database.status.psycope_absent": { fa: " · psycopg موجود نیست", de: " · psycopg fehlt", es: " · psycopg ausente", ar: " · psycopg مفقود" },
+  "database.status.psycopg_absent": { fa: " · psycopg موجود نیست", de: " · psycopg fehlt", es: " · psycopg ausente", ar: " · psycopg مفقود" },
   "database.status.raw_domains": { fa: "بار خام سلامت دامنه‌ها", de: "Roh-Payload der Domain-Gesundheit", es: "payload sin procesar de la salud de dominios", ar: "الحِمل الخام لصحة النطاقات" },
   "database.status.raw_hygiene": { fa: "بار خام بهداشت", de: "Roh-Payload der Hygiene", es: "payload sin procesar de la higiene", ar: "الحِمل الخام للنظافة" },
   "database.status.restart_sub": { fa: "در راه‌اندازی بعدی اعمال می‌شود", de: "gilt beim nächsten Neustart", es: "se aplica en el próximo reinicio", ar: "يُطبَّق عند إعادة التشغيل التالية" },
