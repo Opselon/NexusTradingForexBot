@@ -369,11 +369,19 @@ def register_diagnostics_state_routes(
     from nexus_scalp.release.runtime_snapshot import (
         build_runtime_snapshot,  # CHG-0043: canonical feature/model truth
     )
+
+    # db-provider-pro (2026-09-23, Lane A): self-contained router for
+    # POST /api/db/manage/parse-url + GET|POST /api/db/manage/options.
+    # Mounted INSIDE this registration function (contract §4) so server.py
+    # keeps its single mount site.
+    from nexus_scalp.web.db_provider_routes import router as db_provider_router
     from nexus_scalp.web.server import (  # late import: cycle-safe
         _default_audit_config,
         _liquidity_state_section,
         db_path_for_audit,
     )
+
+    app.include_router(db_provider_router)
 
     # REST APIs: System status
     @app.get("/api/status")
@@ -1466,23 +1474,46 @@ def register_diagnostics_state_routes(
                         "PostgreSQL is configured but the server did not answer "
                         "its health probe — check that it is running."
                     )
-            return serialize_enums(
-                {
-                    "success": True,
-                    "provider": ui["provider"],
-                    "supported_providers": health["supported_providers"],
-                    "overall": health["overall"],
-                    "domains": health["domains"],
-                    "postgres": ui["postgres"],
-                    "password_set": ui["password_set"],
-                    "postgresql_driver_available": pg_available,
-                    "hints": hints,
-                    "provider_truth": _provider_truth(ui),
-                }
-            )
+            status_payload: dict[str, Any] = {
+                "success": True,
+                "provider": ui["provider"],
+                "supported_providers": health["supported_providers"],
+                "overall": health["overall"],
+                "domains": health["domains"],
+                "postgres": ui["postgres"],
+                "password_set": ui["password_set"],
+                "postgresql_driver_available": pg_available,
+                "hints": hints,
+                "provider_truth": _provider_truth(ui),
+            }
+            # db-provider-pro (2026-09-23): advanced knob values + the known
+            # domain db-name list.  Additive only — every key above keeps its
+            # name and shape.  `domains` above stays the health-service's
+            # per-domain snapshot; the new list is reported under a distinct
+            # name so the UI never confuses the two.
+            db_options = _db_options_snapshot()
+            if db_options:
+                status_payload["options"] = db_options.get("options", {})
+                status_payload["domain_db_names"] = db_options.get("domains", [])
+            return serialize_enums(status_payload)
         except Exception as e:
             log_web_error(logger, "/api/db/manage/status", None, e)
             return _err("DB_MANAGE_STATUS_FAILED")
+
+    def _db_options_snapshot() -> dict[str, Any]:
+        """Advanced knobs + known domain db names for the status payload.
+
+        Best-effort and additive: a failure here must never break the status
+        endpoint — the two new keys are omitted and the existing keys keep
+        their names and shapes (contract §3.3).
+        """
+        try:
+            from nexus_scalp.settings.provider_options import options_status_snapshot
+
+            return options_status_snapshot("audit")
+        except Exception as exc:  # pragma: no cover - defensive on a read path
+            logger.debug("[DB_MANAGE_STATUS] options block unavailable: %s", exc)
+            return {}
 
     @app.post("/api/db/manage/config")
     def db_manage_config(payload: dict[str, Any]) -> dict[str, Any]:
