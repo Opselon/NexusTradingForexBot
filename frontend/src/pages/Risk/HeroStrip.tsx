@@ -1,0 +1,58 @@
+/**
+ * PURPOSE:  Hero summary strip — derived breach/ok counts summed over the
+ *           visible limit rows, shown as a labelled chip row at the top of
+ *           the Risk page; hidden when there are no rows to count.
+ * OWNER:    uiux-wave5-risk  (future edits to this file belong to this lane)
+ * CONSUMES: ./riskThresholds (RiskLimitRow, pressureOf, SOFT/HARD thresholds)
+ * PROVIDES: <HeroStrip rows={…} />
+ * INVARIANTS: every count is a sum over the rows actually rendered below —
+ *             stamped "derived"; zero rows ⇒ nothing is rendered (an empty
+ *             strip must never read as "0 breaches = safe").
+ * EXTEND:   new buckets belong in the COUNTS array with the same
+ *           pressure-based arithmetic; never hardcode a number.
+ */
+
+import { pressureOf, SOFT_UTIL, HARD_UTIL, type RiskLimitRow } from "./riskThresholds";
+
+interface Bucket {
+  id: string;
+  label: string;
+  tone: "ok" | "warn" | "down" | "unknown";
+  test: (p: number | null) => boolean;
+}
+
+/**
+ * Bucket definitions over `pressureOf` (1.00 = exactly at the backend limit):
+ *  down    — past the backend limit (p > HARD_UTIL)
+ *  warn    — inside the limit but past the soft threshold (SOFT < p ≤ HARD)
+ *  ok      — at/below the soft threshold (p ≤ SOFT)
+ *  unknown — no comparable pair in the payload (p = null)
+ */
+const COUNTS: Bucket[] = [
+  { id: "down", label: "breaches", tone: "down", test: (p) => p !== null && p > HARD_UTIL },
+  { id: "warn", label: "near limit", tone: "warn", test: (p) => p !== null && p > SOFT_UTIL && p <= HARD_UTIL },
+  { id: "ok", label: "ok", tone: "ok", test: (p) => p !== null && p <= SOFT_UTIL },
+  { id: "unknown", label: "unknown", tone: "unknown", test: (p) => p === null },
+];
+
+export function HeroStrip({ rows }: { rows: RiskLimitRow[] }) {
+  if (rows.length === 0) return null;
+  const pressures = rows.map((r) => pressureOf(r.value, r.limit, r.direction));
+  const buckets = COUNTS.map((b) => ({ ...b, n: pressures.filter(b.test).length }));
+  const visible = buckets.filter((b) => b.n > 0);
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="rsk-strip" role="status" aria-label="Derived limit summary">
+      <span className="rsk-strip__tag" title="Sums over the limit rows rendered on this page — client-side arithmetic, no backend verdict.">
+        derived
+      </span>
+      {buckets.map((b) => (
+        <span key={b.id} className={`rsk-chip tone-${b.tone} ${b.n === 0 ? "zero" : ""}`}>
+          <b>{b.n}</b> {b.label}
+        </span>
+      ))}
+      <span className="rsk-strip__src">sums over {rows.length} visible limit rows · value vs its own backend limit</span>
+    </div>
+  );
+}

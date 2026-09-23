@@ -1,0 +1,593 @@
+/**
+ * Settings tab (cfg-*) — TASK-CFGUI-001 visual layer.
+ *
+ * Scoped: only selectors under .cfg-page (plus its own cfg-* elements) may
+ * override lane-3 primitives, so rules/debug/health/database keep their look.
+ * Tokens only — every color comes from theme.css :root; logical properties
+ * (margin-inline-*, inset-inline-*, text-align: start) keep the RTL console
+ * mirrored. Loaded after kit.css from ConfigPage.tsx.
+ */
+
+.cfg-page {
+  gap: var(--panel-gap);
+}
+
+/* ------------------------------ hero ------------------------------ */
+
+.cfg-hero {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-inset) 160%);
+  overflow: hidden;
+}
+
+/* accent hairline across the top edge */
+.cfg-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(65, 166, 242, 0.75) 25%,
+    rgba(167, 139, 250, 0.6) 60%,
+    transparent 100%
+  );
+}
+
+.cfg-hero-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cfg-hero-top h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.cfg-page .cfg-hero-top .crumb {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cfg-page .cfg-hero-top .desc {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* live status tiles */
+
+.cfg-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.cfg-stat {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg-inset);
+}
+
+.cfg-stat .k {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cfg-stat .v {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  min-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cfg-stat .v .skeleton,
+.cfg-stat .v .sk {
+  min-height: 14px;
+}
+
+.cfg-stat .m {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cfg-stat.good { border-color: rgba(62, 207, 142, 0.35); }
+.cfg-stat.warn { border-color: rgba(235, 161, 63, 0.4); }
+.cfg-stat.bad  { border-color: rgba(242, 86, 77, 0.45); }
+
+.cfg-stat.good .v { color: var(--green); }
+.cfg-stat.warn .m { color: var(--amber); }
+.cfg-stat.bad .m  { color: #ff938c; }
+
+.cfg-mode-live {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.cfg-mode-live.tone-good    { color: #86c8fa; }
+.cfg-mode-live.tone-bad     { color: #ff938c; text-shadow: 0 0 16px rgba(242, 86, 77, 0.45); }
+.cfg-mode-live.tone-warn    { color: var(--amber); }
+.cfg-mode-live.tone-neutral { color: var(--text-dim); }
+
+/* pipeline promise note */
+
+.cfg-page .cfg-promise {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--accent);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+/* ------------------------------ columns ------------------------------ */
+
+.cfg-col {
+  display: grid;
+  gap: var(--panel-gap);
+  align-content: start;
+  min-width: 0;
+}
+
+/* ------------------------------ panels ------------------------------ */
+
+.cfg-page .panel {
+  border-radius: 14px;
+}
+
+.cfg-page .panel-header {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.cfg-page .l3-note {
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--border-strong);
+}
+
+.cfg-page .l3-note.warn { border-inline-start-color: var(--amber); }
+.cfg-page .l3-note.bad  { border-inline-start-color: var(--red); }
+.cfg-page .l3-note.good { border-inline-start-color: var(--green); }
+
+/* ------------------------------ sections ------------------------------ */
+
+.cfg-sec + .cfg-sec {
+  margin-block-start: 14px;
+}
+
+.cfg-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block: 4px 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.cfg-sec-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+
+.cfg-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 10px 14px;
+}
+
+/* ------------------------------ form controls ------------------------------ */
+
+.cfg-page .l3-field {
+  gap: 5px;
+}
+
+.cfg-page .l3-field-head .lab {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.cfg-page .l3-input,
+.cfg-page .input,
+.cfg-page .select {
+  border-radius: 9px;
+  background: var(--bg-panel);
+  border-color: var(--border-strong);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cfg-page .l3-input:hover,
+.cfg-page .input:hover,
+.cfg-page .select:hover {
+  border-color: var(--accent);
+}
+
+.cfg-page .l3-input:focus,
+.cfg-page .input:focus,
+.cfg-page .select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.16);
+}
+
+.cfg-page .l3-field-hint {
+  font-size: 10px;
+}
+
+.cfg-page .l3-field-error {
+  font-size: 10.5px;
+}
+
+/* buttons: lift + glow (motion only when the user allows it) */
+
+@media (prefers-reduced-motion: no-preference) {
+  .cfg-page .btn {
+    transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+  }
+}
+
+.cfg-page .btn {
+  border-radius: 9px;
+}
+
+.cfg-page .btn.primary {
+  font-weight: 700;
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--accent), #4f8fe8);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 6px 16px -8px rgba(65, 166, 242, 0.55);
+}
+
+.cfg-page .btn.danger {
+  font-weight: 700;
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(180deg, #ff6b61, #e04b41);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 6px 16px -8px rgba(242, 86, 77, 0.6);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cfg-page .btn.primary:hover:not(:disabled),
+  .cfg-page .btn.danger:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.07);
+  }
+  .cfg-page .btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+}
+
+.cfg-page .btn:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+/* ------------------------------ action toolbar ------------------------------ */
+
+.cfg-page .cfg-actions {
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-block-start: 12px;
+  padding-block-start: 11px;
+  border-block-start: 1px dashed var(--border);
+}
+
+.cfg-dirtycount {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  border: 1px solid rgba(65, 166, 242, 0.5);
+  background: rgba(65, 166, 242, 0.08);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.cfg-page .cfg-pipeline {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
+/* restart-bound report */
+
+.cfg-restart {
+  margin-block-start: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cfg-restart-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--amber);
+  border: 1px solid rgba(235, 161, 63, 0.5);
+  background: var(--amber-dim);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/* ------------------------------ engine mode ------------------------------ */
+
+.cfg-mode-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cfg-mode-facts {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-inset);
+}
+
+.cfg-page .l3-mode-badge {
+  font-size: 21px;
+  letter-spacing: 0.1em;
+}
+
+.cfg-page .l3-mode-badge.live {
+  text-shadow: 0 0 20px rgba(242, 86, 77, 0.45);
+}
+
+.cfg-page .l3-mode-badge.paper {
+  text-shadow: 0 0 20px rgba(65, 166, 242, 0.4);
+}
+
+.cfg-page .l3-mode-badge.shadow {
+  text-shadow: 0 0 20px rgba(235, 161, 63, 0.4);
+}
+
+.cfg-rail-hint {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.cfg-rail {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cfg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.cfg-chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cfg-chip:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+}
+
+.cfg-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cfg-chip:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.cfg-chip.is-current {
+  border-color: var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.cfg-chip.is-target {
+  border-color: var(--accent);
+  background: rgba(65, 166, 242, 0.12);
+  color: var(--text);
+  box-shadow: 0 0 0 1px rgba(65, 166, 242, 0.35), 0 4px 14px -8px rgba(65, 166, 242, 0.6);
+}
+
+.cfg-chip.is-live {
+  border-color: rgba(242, 86, 77, 0.5);
+  color: #ff938c;
+}
+
+.cfg-chip.is-live.is-target {
+  background: rgba(242, 86, 77, 0.14);
+  box-shadow: 0 0 0 1px rgba(242, 86, 77, 0.4), 0 4px 14px -8px rgba(242, 86, 77, 0.6);
+}
+
+.cfg-chip.mode-paper.is-current  { border-color: rgba(65, 166, 242, 0.55); }
+.cfg-chip.mode-shadow.is-current { border-color: rgba(235, 161, 63, 0.55); }
+.cfg-chip.mode-replay.is-current { border-color: rgba(167, 139, 250, 0.55); }
+.cfg-chip.mode-backtest.is-current { border-color: rgba(62, 207, 142, 0.5); }
+.cfg-chip.mode-live.is-current   { border-color: rgba(242, 86, 77, 0.6); }
+
+.cfg-chip-now {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.cfg-switch-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* server preview inside the confirm modal */
+
+.cfg-preview {
+  display: grid;
+  gap: 6px;
+  margin-block-start: 8px;
+  text-align: start;
+}
+
+.cfg-impact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.cfg-impact .k {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cfg-impact-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent-strong);
+  border: 1px solid rgba(65, 166, 242, 0.4);
+  background: rgba(65, 166, 242, 0.08);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/* ------------------------------ provenance / telegram ------------------------------ */
+
+.cfg-page .l3-runtime-ver {
+  gap: 8px;
+  font-size: 10.5px;
+}
+
+.cfg-page .l3-runtime-ver > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 3px 9px;
+}
+
+.cfg-page .l3-runtime-ver > span.mismatch {
+  border-color: rgba(235, 161, 63, 0.5);
+  color: var(--amber);
+}
+
+.cfg-page .l3-scroll .data-table {
+  font-size: 11.5px;
+}
+
+.cfg-page .l3-scroll .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-inset);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+}
+
+.cfg-page .l3-scroll .data-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.cfg-page .l3-scroll .data-table tbody tr:hover {
+  background: rgba(65, 166, 242, 0.06);
+}
+
+.cfg-page .l3-scroll .data-table td.num,
+.cfg-page .l3-scroll .data-table th.num {
+  text-align: end;
+}
+
+.cfg-page .l3-mask {
+  color: var(--text-dim);
+  border-style: solid;
+  letter-spacing: 0.1em;
+}
+
+/* result strips: rounded + accent edge (verdict text stays verbatim) */
+
+.cfg-page .l3-result {
+  border-radius: 10px;
+  border-inline-start-width: 3px;
+  margin-block-start: 10px;
+}
+
+.cfg-page .l3-result.ok  { border-inline-start-color: var(--green); }
+.cfg-page .l3-result.fail { border-inline-start-color: var(--red); }
+.cfg-page .l3-result.run { border-inline-start-color: var(--accent); }
+
+/* confirm modal polish (scoped to this page's dialogs) */
+
+.cfg-page .modal {
+  border-radius: 16px;
+}
+
+.cfg-page .modal .confirm-box .note {
+  line-height: 1.6;
+}

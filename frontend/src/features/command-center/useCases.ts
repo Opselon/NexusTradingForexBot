@@ -7,8 +7,26 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { ApiError } from "@/types/api";
 import { commandCenterApi } from "./api";
 import { riskOrder, type CcFleetRowDto } from "./model";
+
+/**
+ * Data-delivery policy for EVERY command-center query ("data must send for
+ * sure"): retry only what a retry can fix — transport timeouts, network
+ * failures, 429/5xx (ApiError.retryable or status 0/5xx) — up to 3 attempts
+ * with exponential backoff (1s/2s/4s, capped 8s). A 4xx logic error is never
+ * retried (it would just fail again).
+ */
+export function ccRetry(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 3) return false;
+  if (error instanceof ApiError) return error.retryable || error.status === 0 || error.status >= 500;
+  // Caller aborts (query cancelled/unmounted) must not retry.
+  if (error instanceof DOMException && error.name === "AbortError") return false;
+  return true;
+}
+
+export const ccRetryDelay = (attempt: number): number => Math.min(1000 * 2 ** attempt, 8000);
 
 export const commandCenterQueries = {
   overview: (signal?: AbortSignal) => commandCenterApi.overview(signal),
@@ -38,6 +56,7 @@ export function useTimeMachineFrame(debouncedAt: string | null, delayGuardMs = 0
     enabled: Boolean(debouncedAt),
     placeholderData: (prev) => prev,
     staleTime: 60_000,
-    retry: false,
+    retry: ccRetry,
+    retryDelay: ccRetryDelay,
   });
 }
