@@ -4,16 +4,37 @@
  * First-Run Model Preparation — layout & callout styles for ProvisioningPage.
  * Namespace: .pv-* (styling law: feature-scoped, consumes theme.css tokens
  * only — no hardcoded colors, logical properties for RTL correctness).
+ *
+ * Provisioning UI/UX wave extension: house hero header (.pv-hero family —
+ * structure mirrors the rules feature's .rl-hero), environment checklist
+ * (.pv-checks), slot fact rows (.pv-fact), run lifecycle (.pv-stepper +
+ * .pv-step states, .pv-elapsed, .pv-meta), inline validation (.pv-hint),
+ * dismissible banners (.pv-dismiss), dataset browser (.pv-ds family) and
+ * in-panel sub-section headings (.pv-section).
+ *
+ * INVARIANTS: selectors stay inside the wave-frozen class inventory — the
+ * contracted .pv-* classes, their descendants (.dot/.d/.word and the title's
+ * glyph slot per contract §5), shared tone modifiers (.good/.warn/.bad/.ok/
+ * .head/.is-*) and shared primitives (.panel .banner .btn .input .kv .badge
+ * .inline-mono). No Tailwind utilities. Colors: theme.css tokens or
+ * token-equivalent rgba()/color-mix() tints only — zero new hex.
+ * Responsive collapse: 1100px (grid → 1col), 640px (hero side hidden,
+ * paddings tightened). prefers-reduced-motion honored.
+ *
+ * EXTEND: a new .pv-* class must be added to the wave contract's frozen
+ * inventory (lane1-page + lane2-css together) before it is styled here.
  */
 
+/* ------------------------------ Page & grid ------------------------------ */
 .pv-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--panel-gap);
 }
 
 /* Grid rows own their rhythm — drop the stack's .panel margin inside. */
-.pv-grid .panel { margin-bottom: 0; }
+.pv-page .panel,
+.pv-grid .panel { margin-block-end: 0; }
 
 /* Two-column card grid (environment / official model). */
 .pv-grid {
@@ -25,36 +46,248 @@
   .pv-grid { grid-template-columns: 1fr; }
 }
 
+/* ------------------------------ Hero ------------------------------ */
+/* House hero pattern (contract §5): copy of the rules feature's .rl-hero —
+   kicker/title/desc/chips on the main side, truth shield on the side. */
+.pv-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(460px 190px at 6% -40%, rgba(65, 166, 242, 0.17), transparent 70%),
+    radial-gradient(380px 170px at 94% -30%, rgba(157, 123, 240, 0.14), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+/* hairline spectrum along the top edge */
+.pv-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.55), rgba(157, 123, 240, 0.45), transparent);
+}
+.pv-hero-main { min-inline-size: 0; }
+
+.pv-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.pv-kicker .dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.85);
+}
+
+.pv-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 8px 0 5px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+/* title glyph/mark slot (contract §5: "glyph/mark + .word" — canonical
+   reference .rl-title .glyph; styles apply only if the page emits one) */
+.pv-title .glyph,
+.pv-title .mark {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.10);
+  border: 1px solid rgba(65, 166, 242, 0.45);
+  border-radius: 9px;
+  padding: 4px 9px;
+  box-shadow: 0 0 14px rgba(65, 166, 242, 0.18);
+}
+.pv-title .word { color: var(--text); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .pv-title .word {
+    background: linear-gradient(115deg, var(--text) 35%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.pv-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  max-inline-size: 78ch;
+}
+
+/* endpoint provenance chips (contract §4) — also reused for allowed-roots */
+.pv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-block-start: 11px;
+}
+.pv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* truth badge side — tone comes from a shared modifier (.good/.warn/.bad)
+   or from a .badge nested inside (inferred via :has); default is neutral so
+   the pill never contradicts its own text. */
+.pv-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.pv-shield {
+  --pv-c: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-inline-size: 100%;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pv-c);
+  background: color-mix(in srgb, var(--pv-c) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pv-c) 35%, transparent);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+.pv-shield.good,
+.pv-shield:has(.badge.good) { --pv-c: var(--green); }
+.pv-shield.warn,
+.pv-shield:has(.badge.warn) { --pv-c: var(--amber); }
+.pv-shield.bad,
+.pv-shield:has(.badge.bad) { --pv-c: var(--red); }
+.pv-shield .d {
+  inline-size: 6px;
+  block-size: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--pv-c);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--pv-c) 85%, transparent);
+}
+/* a .badge nested in the shield keeps its tone color but drops the second
+   pill so the shield stays one honest chip */
+.pv-shield .badge {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+  letter-spacing: inherit;
+  font-size: inherit;
+}
+
+/* ------------------------------ Banners ------------------------------ */
 /* In-panel banners (the .banner strip sits edge-to-edge in the shell; inside
-   a panel body it needs its own rounded border). */
+   a panel body it needs its own rounded border). Tone modifiers complete the
+   look even when the shared .banner tone class alone would leave it flat. */
 .pv-banner {
-  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-start: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
   border: 1px solid rgba(65, 166, 242, 0.35);
   border-radius: 8px;
 }
+.pv-page > .pv-banner { margin-block-start: 0; }
+.pv-banner.info {
+  background: rgba(65, 166, 242, 0.10);
+  color: var(--accent-strong);
+  border-color: rgba(65, 166, 242, 0.35);
+}
 .pv-banner.good {
-  border-color: rgba(62, 207, 142, 0.3);
+  background: rgba(62, 207, 142, 0.10);
+  color: var(--green);
+  border-color: rgba(62, 207, 142, 0.35);
+}
+.pv-banner.warn {
+  background: rgba(235, 161, 63, 0.10);
+  color: var(--amber);
+  border-color: rgba(235, 161, 63, 0.4);
+}
+.pv-banner.bad {
+  background: rgba(242, 86, 77, 0.10);
+  color: var(--red);
+  border-color: rgba(242, 86, 77, 0.45);
 }
 
+/* banner close control (always carries aria-label in markup) */
+.pv-dismiss {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 7px;
+  opacity: 0.75;
+  transition: opacity 0.1s ease, background 0.1s ease;
+}
+.pv-dismiss:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+.pv-dismiss:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ------------------------------ Forms & toolbars ------------------------------ */
 /* Stacked rows inside a panel body. */
-.pv-list { margin-top: 10px; }
+.pv-list { margin-block-start: 10px; }
 .pv-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 12px;
+  margin-block-start: 12px;
 }
 .pv-toolbar.end { align-items: flex-end; }
 /* number inputs sit under their <label> text inside toolbar labels */
-.pv-toolbar .input { display: block; margin-top: 4px; }
+.pv-toolbar .input { display: block; margin-block-start: 4px; }
 .pv-field {
   display: grid;
   gap: 5px;
-  margin-top: 12px;
+  margin-block-start: 12px;
 }
-.pv-file { width: 100%; }
-.pv-num { width: 96px; }
+.pv-file { inline-size: 100%; }
+.pv-num { inline-size: 96px; }
 .pv-consent {
   display: flex;
   align-items: center;
@@ -63,9 +296,30 @@
   color: var(--text-dim);
 }
 
+/* ------------------------------ Sub-section heading ------------------------------ */
+.pv-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block: 16px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.pv-section:first-child { margin-block-start: 0; }
+.pv-section::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+/* ------------------------------ Callouts ------------------------------ */
 /* Callouts: blocking checks (bad) and run result (ok). */
 .pv-callout {
-  margin-top: 12px;
+  margin-block-start: 12px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -93,11 +347,13 @@
 .pv-callout.ok { border-color: rgba(62, 207, 142, 0.35); }
 .pv-callout.ok .head { color: var(--green); }
 
+/* ------------------------------ Training tail ------------------------------ */
 /* Training event tail + result JSON. */
 .pv-log {
   margin: 0;
   max-height: 260px;
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-inset);
@@ -119,4 +375,24 @@
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ------------------------------ Responsive ------------------------------ */
+@media (max-width: 640px) {
+  .pv-hero { padding: 14px 14px 13px; gap: 10px; }
+  .pv-hero-side { display: none; }
+  .pv-title { font-size: 20px; margin: 6px 0 4px; }
+  .pv-page { gap: 10px; }
+  .pv-toolbar { gap: 8px; }
+  .pv-ds { padding: 8px 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pv-hero,
+  .pv-step-dot,
+  .pv-ds-item,
+  .pv-dismiss {
+    animation: none !important;
+    transition: none !important;
+  }
 }
