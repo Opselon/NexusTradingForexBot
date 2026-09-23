@@ -51,7 +51,7 @@ export function PromotionControls() {
       setPreviewError(null);
       const res = await governanceApi.promotionPreview(candidate, "", signal);
       if (!res.available) {
-        throw new Error(res.reason || res.error ? String(res.error) : "preview unavailable");
+        throw new Error(res.reason || (res.error ? String(res.error) : null) || "preview unavailable");
       }
       return res;
     },

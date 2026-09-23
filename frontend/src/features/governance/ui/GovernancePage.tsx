@@ -7,13 +7,14 @@
  * the backend refuses without one, and the refusal is rendered verbatim.
  */
 
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
   ConfirmModal,
   DataTable,
   EmptyState,
+  ErrorState,
   MetricCard,
   Panel,
   Segmented,
@@ -22,11 +23,16 @@ import {
 } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { useDebouncedValue } from "@/features/config/ui/kit";
 import { CommandResultLine, DistBars, FreshnessCaption, GateStepper, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { arr, bool, commandVerdict, num, obj, str, type Row } from "../model";
 import { governanceQueries, governanceUseCases } from "../useCases";
 
 type Tab = "ladder" | "ledger" | "experience" | "review";
+
+/** Safe-envelope request id (error may be an object at HTTP 200 — never truthy-tested). */
+const errRequestId = (e: unknown): string | null => (e as { requestId?: string } | null)?.requestId ?? null;
+const errMessage = (e: unknown, fallback: string): string => (e instanceof Error ? e.message : fallback);
 
 interface PendingCommand {
   title: string;
@@ -36,6 +42,49 @@ interface PendingCommand {
   label: string;
 }
 
+/** Memoized decision-ledger row (up to 100 rows). The shell re-renders every
+ *  second (nowMs tick) — leaf rows take primitive props only so they bail out
+ *  of that tick instead of re-rendering 5 cells x 100 rows. */
+const LedgerRow = memo(function LedgerRow({
+  at,
+  event,
+  modelId,
+  actor,
+  reason,
+}: {
+  at: string | null;
+  event: string | null;
+  modelId: string | null;
+  actor: string | null;
+  reason: string | null;
+}) {
+  return (
+    <tr>
+      <td className="tiny">{formatDateTime(at)}</td>
+      <td>
+        <StatusPill status={event} />
+      </td>
+      <td className="inline-mono tiny">{modelId ?? "—"}</td>
+      <td className="tiny">{actor ?? "—"}</td>
+      <td className="tiny muted" title={reason ?? ""}>
+        {reason?.slice(0, 60) ?? "—"}
+      </td>
+    </tr>
+  );
+});
+
+/** Memoized immutable-audit row (up to 40 rows) — same bailout rule as LedgerRow. */
+const AuditRow = memo(function AuditRow({ at, action, modelId, actor }: { at: string | null; action: string | null; modelId: string | null; actor: string | null }) {
+  return (
+    <tr>
+      <td className="tiny">{formatDateTime(at)}</td>
+      <td className="small">{action ?? "—"}</td>
+      <td className="inline-mono tiny">{modelId ?? "—"}</td>
+      <td className="tiny">{actor ?? "—"}</td>
+    </tr>
+  );
+});
+
 export default function GovernancePage(props: ShellPageProps) {
   void props;
   const [tab, setTab] = useState<Tab>("ladder");
@@ -44,6 +93,9 @@ export default function GovernancePage(props: ShellPageProps) {
   const [pending, setPending] = useState<PendingCommand | null>(null);
   const cmd = useMutationFeedback();
   const qc = useQueryClient();
+  // Keystrokes settle before they become a query key — one request per
+  // settled filter instead of one per keystroke (input stays instant).
+  const settledFilter = useDebouncedValue(eventFilter, 300);
 
   const statusQ = useQuery({
     queryKey: ["governance", "status"],
@@ -52,8 +104,8 @@ export default function GovernancePage(props: ShellPageProps) {
     retry: false,
   });
   const eventsQ = useQuery({
-    queryKey: ["governance", "events", eventFilter],
-    queryFn: ({ signal }) => governanceQueries.events(eventFilter || undefined, signal),
+    queryKey: ["governance", "events", settledFilter],
+    queryFn: ({ signal }) => governanceQueries.events(settledFilter || undefined, signal),
     retry: false,
     enabled: tab === "ledger",
   });
@@ -93,16 +145,22 @@ export default function GovernancePage(props: ShellPageProps) {
     enabled: tab === "ledger",
   });
 
-  const after = () => void qc.invalidateQueries({ queryKey: ["governance"] });
+  const after = useCallback(() => void qc.invalidateQueries({ queryKey: ["governance"] }), [qc]);
 
-  const ask = (title: string, danger: boolean, needsModel: boolean, label: string, run: PendingCommand["run"]) =>
-    setPending({ title, danger, needsModel, label, run });
+  const ask = useCallback(
+    (title: string, danger: boolean, needsModel: boolean, label: string, run: PendingCommand["run"]) => setPending({ title, danger, needsModel, label, run }),
+    [],
+  );
 
   const status = statusQ.data?.available === true ? statusQ.data : null;
-  const ladder = status ? governanceUseCases.ladder(status) : [];
+  // Derived tables are memoized: the shell re-renders every second (nowMs tick)
+  // and re-mapping 100 ledger rows per tick is pure waste.
+  const ladder = useMemo(() => (status ? governanceUseCases.ladder(status) : []), [status]);
   const candModel = status?.candidate?.model_id ?? "";
   const frozen = bool(status?.promotion?.frozen) ?? false;
-  const events = governanceUseCases.ledgerRows(arr(eventsQ.data?.events));
+  const events = useMemo(() => governanceUseCases.ledgerRows(arr(eventsQ.data?.events)), [eventsQ.data]);
+  const gateRows = useMemo(() => (status ? Object.entries(obj(status.gates)) : []), [status]);
+  const audits = useMemo(() => arr(auditsQ.data?.audits), [auditsQ.data]);
 
   return (
     <div>
@@ -210,9 +268,17 @@ export default function GovernancePage(props: ShellPageProps) {
       <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
         {tab === "ladder" && (
           <Panel title="Gate matrix (governance/status.gates)" tight>
-            {status ? (
+            {statusQ.isPending ? (
+              <Skeleton count={4} />
+            ) : statusQ.isError ? (
+              <ErrorState
+                message={errMessage(statusQ.error, "governance status request failed")}
+                requestId={errRequestId(statusQ.error)}
+                onRetry={() => void statusQ.refetch()}
+              />
+            ) : status ? (
               <DataTable headers={[{ label: "gate" }, { label: "verdict" }]}>
-                {Object.entries(obj(status.gates)).map(([k, v]) => (
+                {gateRows.map(([k, v]) => (
                   <tr key={k}>
                     <td className="small">{k}</td>
                     <td>
@@ -222,7 +288,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 ))}
               </DataTable>
             ) : (
-              <EmptyState message="no governance status" />
+              <EmptyState message="governance/status reports available:false" hint="the backend disables promotion control until its registry is reconciled" />
             )}
             <div style={{ marginTop: 10 }}>
               <Panel title="Registry reconciliation snapshot" tight>
@@ -250,23 +316,27 @@ export default function GovernancePage(props: ShellPageProps) {
               {eventsQ.isPending ? (
                 <Skeleton count={4} />
               ) : eventsQ.isError ? (
-                <EmptyState message="events endpoint failed" />
+                <ErrorState
+                  message={errMessage(eventsQ.error, "governance event ledger request failed")}
+                  requestId={errRequestId(eventsQ.error)}
+                  onRetry={() => void eventsQ.refetch()}
+                />
               ) : events.length === 0 ? (
-                <EmptyState message="No governance events recorded." />
+                <EmptyState
+                  message={settledFilter ? `No governance events of type "${settledFilter}".` : "No governance events recorded."}
+                  hint={settledFilter ? "clear the event-type filter to see the full ledger" : "the append-only ledger records every gate transition here"}
+                />
               ) : (
                 <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "model" }, { label: "actor" }, { label: "reason" }]}>
                   {events.slice(0, 100).map((r, i) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(r.at)}</td>
-                      <td>
-                        <StatusPill status={r.event} />
-                      </td>
-                      <td className="inline-mono tiny">{r.modelId ?? "—"}</td>
-                      <td className="tiny">{r.actor ?? "—"}</td>
-                      <td className="tiny muted" title={r.reason ?? ""}>
-                        {r.reason?.slice(0, 60) ?? "—"}
-                      </td>
-                    </tr>
+                    <LedgerRow
+                      key={`${r.at ?? ""}|${r.event ?? ""}|${r.modelId ?? ""}|${i}`}
+                      at={r.at}
+                      event={r.event}
+                      modelId={r.modelId}
+                      actor={r.actor}
+                      reason={r.reason}
+                    />
                   ))}
                 </DataTable>
               )}
@@ -274,20 +344,27 @@ export default function GovernancePage(props: ShellPageProps) {
             <Panel title="Immutable promotion/rollback audits" tight>
               {auditsQ.isPending ? (
                 <Skeleton count={2} />
-              ) : (arr(auditsQ.data?.audits).length === 0 ? <EmptyState message="No audit rows." /> : (
+              ) : auditsQ.isError ? (
+                <ErrorState
+                  message={errMessage(auditsQ.error, "immutable audit request failed")}
+                  requestId={errRequestId(auditsQ.error)}
+                  onRetry={() => void auditsQ.refetch()}
+                />
+              ) : audits.length === 0 ? (
+                <EmptyState message="No immutable audit rows." hint="/api/v1/governance/audit returned an empty list" />
+              ) : (
                 <DataTable headers={[{ label: "at" }, { label: "action" }, { label: "model" }, { label: "actor" }]}>
-                  {arr(auditsQ.data?.audits)
-                    .slice(0, 40)
-                    .map((a: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="tiny">{formatDateTime(str(a.created_at) ?? str(a.at))}</td>
-                        <td className="small">{str(a.action) ?? str(a.kind) ?? "—"}</td>
-                        <td className="inline-mono tiny">{str(a.model_id) ?? "—"}</td>
-                        <td className="tiny">{str(a.actor) ?? "—"}</td>
-                      </tr>
-                    ))}
+                  {audits.slice(0, 40).map((a: Row, i: number) => (
+                    <AuditRow
+                      key={`${str(a.created_at) ?? str(a.at) ?? ""}|${str(a.action) ?? str(a.kind) ?? ""}|${i}`}
+                      at={str(a.created_at) ?? str(a.at)}
+                      action={str(a.action) ?? str(a.kind)}
+                      modelId={str(a.model_id)}
+                      actor={str(a.actor)}
+                    />
+                  ))}
                 </DataTable>
-              ))}
+              )}
             </Panel>
           </>
         )}
@@ -297,6 +374,12 @@ export default function GovernancePage(props: ShellPageProps) {
             <Panel title="Last pre-trade experience verdict" tight>
               {expDecisionQ.isPending ? (
                 <Skeleton count={2} />
+              ) : expDecisionQ.isError ? (
+                <ErrorState
+                  message={errMessage(expDecisionQ.error, "experience decision request failed")}
+                  requestId={errRequestId(expDecisionQ.error)}
+                  onRetry={() => void expDecisionQ.refetch()}
+                />
               ) : expDecisionQ.data?.available === false || !expDecisionQ.data?.decision ? (
                 <EmptyState message="No experience decision recorded yet." hint="engine answers {available:false} until the first pre-trade evaluation" />
               ) : (
@@ -317,6 +400,12 @@ export default function GovernancePage(props: ShellPageProps) {
             <Panel title={`Model provenance (${arr(expModelsQ.data).length})`} tight>
               {expModelsQ.isPending ? (
                 <Skeleton count={2} />
+              ) : expModelsQ.isError ? (
+                <ErrorState
+                  message={errMessage(expModelsQ.error, "model provenance request failed")}
+                  requestId={errRequestId(expModelsQ.error)}
+                  onRetry={() => void expModelsQ.refetch()}
+                />
               ) : arr(expModelsQ.data).length === 0 ? (
                 <EmptyState message="No registered model provenance rows." />
               ) : (
@@ -337,6 +426,12 @@ export default function GovernancePage(props: ShellPageProps) {
             <Panel title={`Derived strategy scores (${arr(expStrategiesQ.data).length})`} tight>
               {expStrategiesQ.isPending ? (
                 <Skeleton count={2} />
+              ) : expStrategiesQ.isError ? (
+                <ErrorState
+                  message={errMessage(expStrategiesQ.error, "derived strategy scores request failed")}
+                  requestId={errRequestId(expStrategiesQ.error)}
+                  onRetry={() => void expStrategiesQ.refetch()}
+                />
               ) : arr(expStrategiesQ.data).length === 0 ? (
                 <EmptyState message="No derived intelligence rows — run experience self-heal if the ledger is non-empty." />
               ) : (
@@ -365,8 +460,14 @@ export default function GovernancePage(props: ShellPageProps) {
           <Panel title="Calibration + drift review (governance evidence)" right={<span className="tiny muted">/api/models/governance/review</span>} tight>
             {reviewQ.isPending ? (
               <Skeleton count={3} />
-            ) : reviewQ.isError || reviewQ.data?.available === false ? (
-              <EmptyState message="governance engine unavailable" />
+            ) : reviewQ.isError ? (
+              <ErrorState
+                message={errMessage(reviewQ.error, "governance review request failed")}
+                requestId={errRequestId(reviewQ.error)}
+                onRetry={() => void reviewQ.refetch()}
+              />
+            ) : reviewQ.data?.available === false ? (
+              <EmptyState message="governance engine reports available:false" hint="/api/models/governance/review disables itself until the engine warms up" />
             ) : (
               <div className="grid cols-2">
                 <div>
@@ -447,6 +548,14 @@ function RegistryInline() {
     retry: false,
   });
   if (regQ.isPending) return <Skeleton count={2} />;
+  if (regQ.isError)
+    return (
+      <ErrorState
+        message={errMessage(regQ.error, "registry snapshot request failed")}
+        requestId={errRequestId(regQ.error)}
+        onRetry={() => void regQ.refetch()}
+      />
+    );
   if (regQ.data?.available !== true) return <EmptyState message={regQ.data?.reason ?? "registry snapshot unavailable"} />;
   const cats = obj(obj(regQ.data.registry).categories);
   return (
