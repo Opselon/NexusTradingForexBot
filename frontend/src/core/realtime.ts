@@ -130,6 +130,23 @@ export class NseRealtimeClient {
   private connectedAt: number | null = null;
   /** Names of the sections carried by the most recent accepted tick frame. */
   private lastTickSections: string[] = [];
+  /**
+   * Perf wave 7 — coalesced notification. The backend emits a frame every
+   * 200 ms (web/server.py `await asyncio.sleep(0.2)`), and every accepted
+   * frame synchronously invokes every listener, so a snapshot arriving in a
+   * burst renders the whole subscribed tree once per frame even when several
+   * frames land inside one animation frame. The browser only paints once per
+   * frame anyway, so the intermediate renders are pure dropped work.
+   *
+   * `scheduled` marks a pending microtask; the LAST snapshot wins, which is
+   * the correct behavior — the snapshot is the merged truth, and a later
+   * version always supersedes an earlier one (the out-of-order guard above
+   * already guarantees monotonicity within a stream). Status listeners are
+   * NOT deferred: they carry liveness (lastMessageAt/lastVersion) that the
+   * connection chip must reflect immediately.
+   */
+  private notifyScheduled = false;
+  private pendingNotify: EngineSnapshot | null = null;
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -310,7 +327,22 @@ export class NseRealtimeClient {
     }
     const snap = this.snapshot;
     if (snap) {
-      for (const l of this.listeners) l(snap);
+      // Perf wave 7: coalesce listener notification to one delivery per
+      // microtask (see notifyScheduled). coreEvents.publish is kept immediate
+      // — non-React consumers (probe scripts, tests) expect the event to
+      // reflect the frame they just received, and it is not a render path.
+      this.pendingNotify = snap;
+      if (!this.notifyScheduled) {
+        this.notifyScheduled = true;
+        queueMicrotask(() => {
+          this.notifyScheduled = false;
+          const latest = this.pendingNotify;
+          this.pendingNotify = null;
+          if (latest) {
+            for (const l of this.listeners) l(latest);
+          }
+        });
+      }
       coreEvents.publish("realtime:snapshot", snap);
     }
     // setStatus, NOT setState: once connected, the state does not change on
