@@ -298,6 +298,45 @@ function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
   );
 }
 
+/**
+ * Named regime-evidence component for the regime panel — the orchestrator may
+ * wire `<RegimeEvidence evidence={regime?.evidence} />`. `evidence` is
+ * RegimePayload.evidence (Record<string, unknown> | null, web/api_v1/market.py
+ * market_regime): every payload entry renders RAW (scalars verbatim, objects
+ * and arrays as the backend's own JSON); the row tone only restates a
+ * whitelisted backend WORD in a string value — numbers, booleans and
+ * unrecognised words stay untinted (never a frontend verdict). Null/empty
+ * evidence is an honest empty note, never filled.
+ */
+export function RegimeEvidence({ evidence }: { evidence: Record<string, unknown> | null | undefined }) {
+  const entries = Object.entries(evidence ?? {});
+  if (entries.length === 0) {
+    return <p className="ixviz-empty">No regime evidence in the payload — shown empty, never inferred.</p>;
+  }
+  return (
+    <dl className="ixviz ixviz-evidence">
+      {entries.map(([k, v]) => {
+        const text =
+          v === null || v === undefined
+            ? "—" // missing field -> em dash, never zero-filled
+            : typeof v === "object"
+              ? (JSON.stringify(v) ?? "—") // raw payload serialization, no re-derivation
+              : typeof v === "function" || typeof v === "symbol"
+                ? "—"
+                : String(v); // scalars verbatim (no rounding, no units)
+        const tone: Tone = typeof v === "string" ? wordTone(v) : "neutral";
+        return (
+          <div className={`ixviz-ev is-${tone}`} key={k}>
+            {/* verbatim payload key — cited, never renamed or judged */}
+            <dt className="ixviz-ev-k">{k}</dt>
+            <dd className="ixviz-ev-v">{text}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
 export default function StructureViz(props: StructureVizProps & { variant: "pools" | "bands" }) {
   if (props.variant === "pools") return <PoolLadder pools={props.pools} />;
   return <BandMap bands={props.bands} />;

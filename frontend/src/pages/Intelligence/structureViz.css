@@ -290,6 +290,64 @@
   }
 }
 
+/* ------------------------------ regime evidence ------------------------------ */
+
+/* tone-coded key/value rows — the VALUE text is always the raw payload
+   entry; the tone class only restates a whitelisted backend word in it */
+.ixviz-evidence {
+  gap: 2px;
+  margin: 0;
+}
+.ixviz-ev {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border-block-end: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  animation: ixvizIn 0.25s ease-out both;
+}
+.ixviz-ev:last-child {
+  border-block-end: 0;
+}
+.ixviz-ev:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.ixviz-ev-k {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.ixviz-ev-v {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+.ixviz-ev.is-good {
+  background: color-mix(in srgb, var(--green) 7%, transparent);
+}
+.ixviz-ev.is-good .ixviz-ev-v {
+  color: var(--green);
+}
+.ixviz-ev.is-warn {
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+.ixviz-ev.is-warn .ixviz-ev-v {
+  color: var(--amber);
+}
+.ixviz-ev.is-bad {
+  background: color-mix(in srgb, var(--red) 7%, transparent);
+}
+.ixviz-ev.is-bad .ixviz-ev-v {
+  color: var(--red);
+}
+
 @keyframes ixvizIn {
   from {
     opacity: 0;
