@@ -12,6 +12,7 @@
  */
 
 import { formatDateTime } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 
 /**
  * Relative time for a backend timestamp ("just now", "5m ago", "3h ago"…).
@@ -19,17 +20,18 @@ import { formatDateTime } from "@/lib/format";
  * to the absolute backend timestamp (never an invented age).
  * Far-future timestamps (clock skew) render absolutely rather than as "now".
  */
-export function relTime(iso: string | number | null | undefined): string | null {
+export function useRelTime(iso: string | number | null | undefined): string | null {
+  const t = useI18n((s) => s.t);
   if (iso === null || iso === undefined || iso === "") return null;
-  const t = typeof iso === "number" ? (iso > 1e12 ? iso : iso * 1000) : Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  const diff = Date.now() - t;
+  const ts = typeof iso === "number" ? (iso > 1e12 ? iso : iso * 1000) : Date.parse(iso);
+  if (!Number.isFinite(ts)) return null;
+  const diff = Date.now() - ts;
   if (diff < -60_000) return formatDateTime(iso); // future → absolute, honestly
-  if (diff < 60_000) return "just now";
+  if (diff < 60_000) return t("intelligence.rel.now", "just now");
   const s = Math.floor(diff / 1000);
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
-  if (s < 86_400 * 30) return `${Math.floor(s / 86_400)}d ago`;
+  if (s < 3600) return t("intelligence.rel.minutes", "{n}m ago", { n: Math.floor(s / 60) });
+  if (s < 86_400) return t("intelligence.rel.hours", "{n}h ago", { n: Math.floor(s / 3600) });
+  if (s < 86_400 * 30) return t("intelligence.rel.days", "{n}d ago", { n: Math.floor(s / 86_400) });
   return formatDateTime(iso);
 }
 
@@ -41,10 +43,11 @@ export function relTime(iso: string | number | null | undefined): string | null 
  * states the absence; an empty track must not read as a zero score).
  */
 export function ScoreBar({ value, label }: { value: number | null | undefined; label: string }) {
+  const t = useI18n((s) => s.t);
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
-    <span className="itl-score" title={`${label}: ${value} (backend 0–1 score)`}>
+    <span className="itl-score" title={t("intelligence.score.title", "{label}: {value} (backend 0–1 score)", { label, value: String(value) })}>
       <span className="itl-score__lab">{label}</span>
       <span className="itl-score__num">{value.toFixed(3)}</span>
       <span className="itl-score__track" role="img" aria-label={`${label}: ${value}`}>
