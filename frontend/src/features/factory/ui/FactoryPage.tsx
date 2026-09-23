@@ -10,7 +10,7 @@
  * UI renders that verbatim per section (never a fabricated board).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -102,7 +102,98 @@ export default function FactoryPage(props: ShellPageProps) {
   const loop = obj(statusQ.data?.loop);
   const provider = obj(statusQ.data?.provider);
   const usage = obj(provider.usage);
-  const gens = factoryUseCases.generationList(arr(generationsQ.data?.generations));
+  // perf(7): candidates/benchmarks/failures/ranking/events row chains are
+  // memoized with deps = the payload each reads; only a new payload rebuilds
+  // the rows (loop-status polls no longer re-map every table).
+  const gens = useMemo(
+    () => factoryUseCases.generationList(arr(generationsQ.data?.generations)),
+    [generationsQ.data],
+  );
+  const candidateRows = useMemo(
+    () =>
+      arr(candidatesQ.data?.candidates)
+        .slice(0, 100)
+        .map((c: Row, i: number) => {
+          const cid = str(c.candidate_id) ?? str(c.id) ?? "";
+          return (
+            <tr key={`${cid}-${i}`}>
+              <td className="inline-mono tiny">{cid.slice(0, 16) || "—"}</td>
+              <td className="inline-mono tiny">{str(c.generation_id)?.slice(0, 10) ?? "—"}</td>
+              <td>
+                <StatusPill status={str(c.lifecycle) ?? str(c.status)} />
+              </td>
+              <td className="num tiny">{num(c.score) === null ? "—" : formatNumber(num(c.score)!, 3)}</td>
+              <td>
+                <button className="btn small ghost" disabled={cmd.state.running || !cid} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
+                  {cmd.state.running ? "sending…" : "evaluate"}
+                </button>
+              </td>
+            </tr>
+          );
+        }),
+    [candidatesQ.data, cmd.state.running],
+  );
+  const benchmarkRows = useMemo(
+    () =>
+      arr(benchmarksQ.data?.benchmarks)
+        .slice(0, 60)
+        .map((b: Row, i: number) => (
+          <tr key={i}>
+            <td className="inline-mono tiny">{str(b.candidate_id)?.slice(0, 14) ?? "—"}</td>
+            <td className="num tiny">{num(b.coverage) === null ? "—" : `${formatNumber(num(b.coverage)!, 1)}%`}</td>
+            <td>
+              <StatusPill status={str(b.decision_label) ?? str(b.decision)} />
+            </td>
+            <td className="tiny">{str(b.oos_status) ?? "—"}</td>
+            <td className="tiny">{str(b.robustness_status) ?? "—"}</td>
+          </tr>
+        )),
+    [benchmarksQ.data],
+  );
+  const failureRows = useMemo(
+    () =>
+      arr(failuresQ.data?.failures)
+        .slice(0, 80)
+        .map((f: Row, i: number) => (
+          <tr key={i}>
+            <td className="tiny">{formatDateTime(str(f.created_at) ?? str(f.at))}</td>
+            <td className="tiny">{str(f.stage) ?? str(f.kind) ?? "—"}</td>
+            <td className="tiny muted" title={str(f.reason) ?? ""}>
+              {(str(f.reason) ?? "—").slice(0, 60)}
+            </td>
+          </tr>
+        )),
+    [failuresQ.data],
+  );
+  const rankingRows = useMemo(
+    () =>
+      arr(rankingQ.data?.ranked).map((r: Row, i: number) => (
+        <tr key={i}>
+          <td className="num tiny">{i + 1}</td>
+          <td className="inline-mono tiny">{str(r.strategy_id)?.slice(0, 16) ?? "—"}</td>
+          <td>
+            <StatusPill status={str(r.lifecycle)} />
+          </td>
+          <td className="num tiny">{formatNumber(num(r.score) ?? num(r.value) ?? NaN, 3)}</td>
+        </tr>
+      )),
+    [rankingQ.data],
+  );
+  const eventRows = useMemo(
+    () =>
+      arr(eventsQ.data?.events)
+        .slice(0, 100)
+        .map((e: Row, i: number) => (
+          <tr key={i}>
+            <td className="tiny">{formatDateTime(str(e.created_at) ?? str(e.at))}</td>
+            <td className="small">{str(e.event_type) ?? str(e.kind) ?? "—"}</td>
+            <td className="tiny muted" title={str(e.payload) ?? str(e.detail) ?? ""}>
+              {(str(e.detail) ?? str(e.message) ?? "").slice(0, 80)}
+            </td>
+          </tr>
+        )),
+    [eventsQ.data],
+  );
 
   const runCmd = async (label: string, fn: () => Promise<FactoryCommandDto>) => {
     await cmd.run(async () => {
@@ -257,26 +348,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No candidates for this selection." />
             ) : (
               <DataTable headers={[{ label: "candidate" }, { label: "generation" }, { label: "lifecycle" }, { label: "score", num: true }, { label: "" }]}>
-                {arr(candidatesQ.data?.candidates)
-                  .slice(0, 100)
-                  .map((c: Row, i: number) => {
-                    const cid = str(c.candidate_id) ?? str(c.id) ?? "";
-                    return (
-                      <tr key={`${cid}-${i}`}>
-                        <td className="inline-mono tiny">{cid.slice(0, 16) || "—"}</td>
-                        <td className="inline-mono tiny">{str(c.generation_id)?.slice(0, 10) ?? "—"}</td>
-                        <td>
-                          <StatusPill status={str(c.lifecycle) ?? str(c.status)} />
-                        </td>
-                        <td className="num tiny">{num(c.score) === null ? "—" : formatNumber(num(c.score)!, 3)}</td>
-                        <td>
-                          <button className="btn small ghost" disabled={cmd.state.running || !cid} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
-                            {cmd.state.running ? "sending…" : "evaluate"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                {candidateRows}
               </DataTable>
             )}
           </Panel>
@@ -292,19 +364,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No benchmark rows for this selection." />
             ) : (
               <DataTable headers={[{ label: "candidate" }, { label: "coverage", num: true }, { label: "decision" }, { label: "oos" }, { label: "robust" }]}>
-                {arr(benchmarksQ.data?.benchmarks)
-                  .slice(0, 60)
-                  .map((b: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="inline-mono tiny">{str(b.candidate_id)?.slice(0, 14) ?? "—"}</td>
-                      <td className="num tiny">{num(b.coverage) === null ? "—" : `${formatNumber(num(b.coverage)!, 1)}%`}</td>
-                      <td>
-                        <StatusPill status={str(b.decision_label) ?? str(b.decision)} />
-                      </td>
-                      <td className="tiny">{str(b.oos_status) ?? "—"}</td>
-                      <td className="tiny">{str(b.robustness_status) ?? "—"}</td>
-                    </tr>
-                  ))}
+                {benchmarkRows}
               </DataTable>
             )}
           </Panel>
@@ -320,17 +380,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No recorded failures." />
             ) : (
               <DataTable headers={[{ label: "at" }, { label: "stage" }, { label: "reason" }]}>
-                {arr(failuresQ.data?.failures)
-                  .slice(0, 80)
-                  .map((f: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(str(f.created_at) ?? str(f.at))}</td>
-                      <td className="tiny">{str(f.stage) ?? str(f.kind) ?? "—"}</td>
-                      <td className="tiny muted" title={str(f.reason) ?? ""}>
-                        {(str(f.reason) ?? "—").slice(0, 60)}
-                      </td>
-                    </tr>
-                  ))}
+                {failureRows}
               </DataTable>
             )}
           </Panel>
@@ -356,16 +406,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="Factory not mounted" hint={rankingQ.data.reason ?? ""} />
             ) : (
               <DataTable headers={[{ label: "#" }, { label: "strategy" }, { label: "lifecycle" }, { label: "value", num: true }]}>
-                {arr(rankingQ.data?.ranked).map((r: Row, i: number) => (
-                  <tr key={i}>
-                    <td className="num tiny">{i + 1}</td>
-                    <td className="inline-mono tiny">{str(r.strategy_id)?.slice(0, 16) ?? "—"}</td>
-                    <td>
-                      <StatusPill status={str(r.lifecycle)} />
-                    </td>
-                    <td className="num tiny">{formatNumber(num(r.score) ?? num(r.value) ?? NaN, 3)}</td>
-                  </tr>
-                ))}
+                {rankingRows}
               </DataTable>
             )}
           </Panel>
@@ -393,17 +434,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No events." />
             ) : (
               <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
-                {arr(eventsQ.data?.events)
-                  .slice(0, 100)
-                  .map((e: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(str(e.created_at) ?? str(e.at))}</td>
-                      <td className="small">{str(e.event_type) ?? str(e.kind) ?? "—"}</td>
-                      <td className="tiny muted" title={str(e.payload) ?? str(e.detail) ?? ""}>
-                        {(str(e.detail) ?? str(e.message) ?? "").slice(0, 80)}
-                      </td>
-                    </tr>
-                  ))}
+                {eventRows}
               </DataTable>
             )}
           </Panel>

@@ -8,6 +8,7 @@
  * verdict it could get wrong.
  */
 
+import { useMemo } from "react";
 import { DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { FreshnessCaption, JsonView, PollControl, QuerySection, usePolling } from "@/features/config/ui/kit";
 import { useDbHygiene, useDbManageStatus, useDbStatus } from "../useCases";
@@ -36,14 +37,16 @@ function KpiStrip({
   status: DbStatus | undefined | null;
   hygiene: DbHygiene | undefined | null;
 }) {
-  const pend = pendingSchema(status);
-  const domains = status?.databases ? Object.keys(status.databases) : [];
+  // Each derivation is a pure function of one payload; memoizing per response
+  // identity stops every parent render from re-walking the payload objects.
+  const pend = useMemo(() => pendingSchema(status), [status]);
+  const domains = useMemo(() => (status?.databases ? Object.keys(status.databases) : []), [status]);
+  const truth = useMemo(() => providerTruth(manage), [manage]);
+  const storage = useMemo(() => totalStorageBytes(hygiene), [hygiene]);
   const provider = manage?.provider ?? "—";
-  const truth = providerTruth(manage);
   const mismatch = Boolean(truth?.mismatch);
   const driverMissing = provider === "postgresql" && manage?.postgresql_driver_available === false;
   const overall = String(manage?.overall ?? "UNKNOWN");
-  const storage = totalStorageBytes(hygiene);
   return (
     <div className="dbc-kpis">
       <MetricCard
@@ -98,12 +101,12 @@ function KpiStrip({
 /* ------------------------------------------------------------------ */
 
 function DomainTable({ status }: { status: DbStatus | undefined }) {
+  const rows = useMemo(() => (status ? domainRows(status.databases) : []), [status]);
   if (!status) return <Skeleton count={3} />;
   if (status.available === false) {
     const msg = typeof status.error === "object" ? status.error?.message ?? "no state published" : String(status.error ?? "no state published");
     return <div className="dbc-note bad">Schema state unavailable: {msg}</div>;
   }
-  const rows = domainRows(status.databases);
   if (rows.length === 0) {
     return <EmptyState message="No database domains reported." hint="The backend has not published schema/migration state for any domain." />;
   }
@@ -144,9 +147,10 @@ function DomainTable({ status }: { status: DbStatus | undefined }) {
 /* ------------------------------------------------------------------ */
 
 function HygieneBody({ hygiene }: { hygiene: DbHygiene }) {
-  const worker = hygieneWorker(hygiene);
-  const storage = hygieneStorage(hygiene);
-  const plans = hygienePlanRows(hygiene);
+  // Pure derivations over the one hygiene payload; memoized per identity.
+  const worker = useMemo(() => hygieneWorker(hygiene), [hygiene]);
+  const storage = useMemo(() => hygieneStorage(hygiene), [hygiene]);
+  const plans = useMemo(() => hygienePlanRows(hygiene), [hygiene]);
   if (!worker && storage.length === 0 && plans.length === 0) {
     return <EmptyState message="Hygiene worker reported no status, plans or storage." hint="Raw payload is below." />;
   }
@@ -239,7 +243,7 @@ export function StatusTab() {
   // "Cannot read properties of null (reading 'supported_providers')") —
   // narrow on the VALUE, not on isPending/isError.
   const md = manage.data ?? null;
-  const hints = providerHints(manage.data);
+  const hints = useMemo(() => providerHints(manage.data), [manage.data]);
 
   return (
     <div className="dbc-stack">

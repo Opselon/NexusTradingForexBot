@@ -19,7 +19,7 @@
  *            (queries + section composition) so it stays under 500 lines.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import { ConfirmModal, DataTable, EmptyState, MetricCard, Panel, Segmented, SeverityBadge, Skeleton, StatusBadge } from "@/components/primitives";
@@ -98,11 +98,25 @@ export default function IncidentsPage(props: ShellPageProps) {
     enabled: tab === "forensics",
   });
 
-  const incidents = incidentsUseCases.voList(listQ.data?.incidents ?? []);
+  // perf(7): derivation reads exactly these payloads — memo deps mirror the
+  // data each VO reads, so re-mapping only happens on a real payload change.
+  const incidents = useMemo(
+    () => incidentsUseCases.voList(listQ.data?.incidents ?? []),
+    [listQ.data],
+  );
+  const searchIncidents = useMemo(
+    () => incidentsUseCases.voList(searchQ.data?.incidents ?? []),
+    [searchQ.data],
+  );
   const counts = healthQ.data?.counts ?? listQ.data?.counts;
   const worker = obj(healthQ.data?.worker);
-  const recurring = arr(healthQ.data?.recurring);
   const workerStatus = str(worker.display_state) ?? str(worker.state) ?? "DISABLED";
+
+  // perf(7): health strip derivations — each memo dep is the exact payload the
+  // derivation reads, so mapping only re-runs on a payload change. (The
+  // by-component bars moved into <ListSection> with the main UI rework; the
+  // memo lives there now — see ListSection.tsx.)
+  const recurring = useMemo(() => arr(healthQ.data?.recurring), [healthQ.data]);
   const recurringCount = recurring.length;
 
   return (
@@ -241,11 +255,11 @@ export default function IncidentsPage(props: ShellPageProps) {
                   <EmptyState message="Type a query — the backend answers {available:true, incidents:[]} for empty queries." />
                 ) : searchQ.isFetching ? (
                   <Skeleton count={2} />
-                ) : incidentsUseCases.voList(searchQ.data?.incidents ?? []).length === 0 ? (
+                ) : searchIncidents.length === 0 ? (
                   <EmptyState message="No incidents matched." />
                 ) : (
                   <DataTable headers={[{ label: "incident" }, { label: "sev" }, { label: "status" }, { label: "" }]}>
-                    {incidentsUseCases.voList(searchQ.data?.incidents ?? []).map((i) => (
+                    {searchIncidents.map((i) => (
                       <tr key={i.id}>
                         <td className="inline-mono tiny">{i.id.slice(0, 14)}</td>
                         <td>

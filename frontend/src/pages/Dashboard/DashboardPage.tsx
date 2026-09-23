@@ -20,7 +20,7 @@
  * render "—" (UNKNOWN). Command outcomes come from the backend reply only.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { riskApi } from "@/api/riskApi";
@@ -136,6 +136,12 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   // provenance); fall back to snapshot bars while it loads. Nulls stay null.
   const useServerBars = Boolean(chartQuery.data?.bars?.length);
   const chartBars = useServerBars ? chartQuery.data!.bars : snapshot.bars ?? [];
+  // perf: the forming-bar count (filter over the chart bar array) derives once
+  // per bar array instead of on every render of this SSE-driven page.
+  const formingCount = useMemo(
+    () => chartBars.filter((b) => b.is_complete === false).length,
+    [chartBars],
+  );
   const chartSource = useServerBars ? chartQuery.data!.source : snapshot.bars?.length ? "SNAPSHOT" : null;
   const chartBusy = chartQuery.isPending && !chartQuery.data && !snapshot.bars?.length;
   const chartErr = !useServerBars && chartQuery.isError && !snapshot.bars?.length
@@ -246,7 +252,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           right={
             <>
               <span className="timestamp-note">
-                {chartBars.length ? `${chartBars.filter((b) => b.is_complete === false).length} forming · ${chartBars.length} bars` : "no bars"}
+                {chartBars.length ? `${formingCount} forming · ${chartBars.length} bars` : "no bars"}
                 {chartQuery.data?.generated_at ? ` · history ${formatTime(chartQuery.data.generated_at)}` : ""}
               </span>
               <button className="btn small ghost" onClick={() => void chartQuery.refetch()} disabled={chartQuery.isFetching}>

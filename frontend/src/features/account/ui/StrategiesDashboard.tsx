@@ -23,7 +23,7 @@
  * table keeps every existing control (sort, search, copy, column set).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel } from "@/components/primitives";
 import { ConfidenceGauge, ConfidenceMeter } from "@/components/viz";
 import { useAccountStrategies } from "../hooks";
@@ -43,21 +43,28 @@ type ConfidenceView = "grid" | "list";
 
 export function StrategiesDashboard() {
   const strategies = useAccountStrategies();
-  const rows = strategies.data?.strategies ?? [];
+  // Derived row arrays are computed once per response identity
+  // (`strategies.data` only changes when a fetch lands) — deps are exactly
+  // the payload each derivation reads.
+  const rows = useMemo(() => strategies.data?.strategies ?? [], [strategies.data]);
   const pushToast = useUiStore((s) => s.pushToast);
   const [view, setView] = useState<ConfidenceView>("grid");
   const [stratView, setStratView] = usePersistedState<StratView>("strategyView", "cards", {
     isValid: isStratView,
   });
 
-  const confidenceRows = rows.slice(0, 12);
-  const lossRows = rows.map((s) => ({
-    strategy_id: s.strategy_id,
-    loss_share: s.loss_share,
-    gross_loss: s.gross_loss,
-    trade_count: s.trade_count,
-    net_pnl: s.net_pnl,
-  }));
+  const confidenceRows = useMemo(() => rows.slice(0, 12), [rows]);
+  const lossRows = useMemo(
+    () =>
+      rows.map((s) => ({
+        strategy_id: s.strategy_id,
+        loss_share: s.loss_share,
+        gross_loss: s.gross_loss,
+        trade_count: s.trade_count,
+        net_pnl: s.net_pnl,
+      })),
+    [rows],
+  );
 
   return (
     <div className="sd-root">

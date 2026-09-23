@@ -227,9 +227,25 @@ export function KeyValueList({ rows }: { rows: Array<[string, ReactNode]> }) {
   );
 }
 
+/**
+ * Rows built from a payload object are cached per OBJECT IDENTITY (WeakMap):
+ * `scalarRows` runs in the render path (StateTab feeds KeyValueList from it),
+ * and a nested object value would otherwise be JSON.stringify'd on every
+ * render of a polling panel. React Query hands back a stable object identity
+ * until the next fetch lands, so one serialization per distinct payload is
+ * enough. INVARIANT: the returned array and its elements are treated as
+ * read-only (callers may `.filter()` — which allocates — but never mutate);
+ * the rendered bytes are exactly `preview(v) || JSON.stringify(v)` either way.
+ */
+const scalarRowsByIdentity = new WeakMap<Record<string, unknown>, Array<[string, ReactNode]>>();
+
 export function scalarRows(obj: Record<string, unknown> | null | undefined): Array<[string, ReactNode]> {
   if (!obj) return [];
-  return Object.entries(obj).map(([k, v]) => [k, <span key={k}>{preview(v) || JSON.stringify(v)}</span>] as [string, ReactNode]);
+  const cached = scalarRowsByIdentity.get(obj);
+  if (cached) return cached;
+  const rows = Object.entries(obj).map(([k, v]) => [k, <span key={k}>{preview(v) || JSON.stringify(v)}</span>] as [string, ReactNode]);
+  scalarRowsByIdentity.set(obj, rows);
+  return rows;
 }
 
 /* ------------------------------------------------------------------ */

@@ -7,7 +7,7 @@
  * derived tables, so it goes through a confirm modal first.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ConfirmModal, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
@@ -38,6 +38,13 @@ export function NewsStatePanel() {
   const ns = stateQuery.data;
   const enabled = toggleQuery.data?.enabled ?? ns?.available ?? false;
   const autoEnabled = autoQuery.data?.enabled ?? false;
+
+  // perf: the banner visibility derivation (backend state word → tone) is a
+  // pure model fn over the polled state payload; memo once per identity.
+  const highImpact = useMemo(
+    () => newsStateTone(ns?.state) === "bad",
+    [ns?.state],
+  );
 
   const runRefresh = (): void => {
     refreshMut.mutate(undefined, {
@@ -134,7 +141,7 @@ export function NewsStatePanel() {
             <MetricCard
               label="State (backend)"
               value={<StatusBadge status={ns?.state ?? "UNKNOWN"} />}
-              tone={newsStateTone(ns?.state) === "bad" ? "neg" : "dim"}
+              tone={highImpact ? "neg" : "dim"}
               sub={ns?.stale ? "⚠ context marked STALE by backend" : `freshness ${ns?.freshness !== null && ns?.freshness !== undefined ? formatPct(ns.freshness * 100, 0) : "—"}`}
             />
             <MetricCard
@@ -156,7 +163,7 @@ export function NewsStatePanel() {
               sub={`context ${ns?.timestamp ? formatDateTime(ns.timestamp) : "—"}`}
             />
           </div>
-          {ns?.state === "BREAKING" || ns?.state === "HIGH_IMPACT" ? (
+          {highImpact && ns?.state ? (
             <div className="banner down" style={{ marginTop: 10 }}>
               Backend news state is {ns.state} — high-impact evidence is live; the bounded gate may veto entries.
             </div>

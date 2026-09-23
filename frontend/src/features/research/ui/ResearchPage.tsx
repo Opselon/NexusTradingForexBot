@@ -33,10 +33,10 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { DistBars, FreshnessCaption, GateStepper, InfoRow, StatusPill } from "./lane5Kit";
 import { registryCounters, obj, str, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
-import { GATE_CHAIN } from "../handbook";
+import { GATE_CHAIN } from "../handbook/gateChain";
 import ResearchCommands from "./ResearchCommands";
 import StrategyDrawer from "./StrategyDrawer";
-import StrategyPlaybook from "./StrategyPlaybook";
+import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
 
 type Tab = "registry" | "queue" | "worker" | "analytics" | "history" | "datasets" | "playbook";
@@ -159,20 +159,42 @@ export default function ResearchPage(props: ShellPageProps) {
     () => (registryQ.data?.available === true ? researchUseCases.registryList(registryQ.data.registry ?? []) : []),
     [registryQ.data],
   );
-  const queue = obj(queueQ.data?.queue);
-  const queued: Array<{ label: string; count: number }> = [];
-  for (const [gateType, statusMap] of Object.entries(obj(queue.queued))) {
-    for (const [status, count] of Object.entries(obj(statusMap))) {
-      if (status === "QUEUED" || status === "RUNNING") queued.push({ label: `${gateType} · ${status}`, count: Number(count) || 0 });
+  // perf: queued/running census derived only when the queue payload changes
+  // (deps: queueQ.data — the only reactive value read).
+  const queued = useMemo(() => {
+    const queueData = obj(queueQ.data?.queue);
+    const queuedMap = obj(queueData.queued);
+    const out: Array<{ label: string; count: number }> = [];
+    for (const [gateType, statusMap] of Object.entries(queuedMap)) {
+      for (const [status, count] of Object.entries(obj(statusMap))) {
+        if (status === "QUEUED" || status === "RUNNING") out.push({ label: `${gateType} · ${status}`, count: Number(count) || 0 });
+      }
     }
-  }
-  const heatmap = obj(analyticsQ.data?.heatmap);
-  const byGate = obj(heatmap.by_gate);
-  const rejectionReasons = obj(heatmap.rejection_reasons);
+    return out;
+  }, [queueQ.data]);
+  const queue = useMemo(() => obj(queueQ.data?.queue), [queueQ.data]);
+  // perf: heatmap slices derived only when the analytics payload changes
+  // (deps: analyticsQ.data — the only reactive value read).
+  const heatmap = useMemo(() => obj(analyticsQ.data?.heatmap), [analyticsQ.data]);
+  const byGate = useMemo(() => obj(heatmap.by_gate), [heatmap]);
+  const rejectionReasons = useMemo(() => obj(heatmap.rejection_reasons), [heatmap]);
 
-  const counters = registryCounters(summary);
-  const registryTotal = Math.max(1, Number(summary?.total ?? 0) || 1);
-  const workerStatus = str(obj(summary?.worker).status) ?? undefined;
+  // perf: lifecycle census counters + the derived rail totals are pure
+  // functions of the summary payload (the only reactive value read) —
+  // memoizing keeps the 1s/15s refetch ticks from re-deriving them per render.
+  const counters = useMemo(() => registryCounters(summary), [summary]);
+  const registryTotal = useMemo(() => Math.max(1, Number(summary?.total ?? 0) || 1), [summary]);
+  const workerStatus = useMemo(() => str(obj(summary?.worker).status) ?? undefined, [summary]);
+  // perf: rejection-reason bar rows derived only when that slice changes.
+  const rejectionRows = useMemo(
+    () => Object.entries(rejectionReasons).slice(0, 15).map(([k, v]) => ({ label: k, count: Number(v) || 0 })),
+    [rejectionReasons],
+  );
+  // perf: by-gate bar rows derived only when the byGate slice changes.
+  const byGateRows = useMemo(
+    () => Object.entries(byGate).map(([k, v]) => ({ label: k, count: Number(v) || 0 })),
+    [byGate],
+  );
   const unavailable = (data: { available?: boolean; reason?: string } | undefined) =>
     !data || data.available === false ? (
       <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
@@ -435,16 +457,11 @@ export default function ResearchPage(props: ShellPageProps) {
               <div className="grid cols-2">
                 <div>
                   <div className="section-title">failed gates (total: {String(heatmap.total_failures ?? 0)})</div>
-                  <DistBars rows={Object.entries(byGate).map(([k, v]) => ({ label: k, count: Number(v) || 0 }))} tone="var(--red)" />
+                  <DistBars rows={byGateRows} tone="var(--red)" />
                 </div>
                 <div>
                   <div className="section-title">rejection reasons</div>
-                  <DistBars
-                    rows={Object.entries(rejectionReasons)
-                      .slice(0, 15)
-                      .map(([k, v]) => ({ label: k, count: Number(v) || 0 }))}
-                    tone="var(--amber)"
-                  />
+                  <DistBars rows={rejectionRows} tone="var(--amber)" />
                 </div>
               </div>
             )}
@@ -494,7 +511,7 @@ export default function ResearchPage(props: ShellPageProps) {
             right={<span className="tiny muted">documentation · compiled from backend source</span>}
             tight
           >
-            <StrategyPlaybook />
+            <StrategyPlaybookLazy />
           </Panel>
         )}
       </div>
@@ -512,21 +529,26 @@ function ResearchDiagMini() {
     retry: false,
   });
   const blocked = diagQ.data?.blocked_gates ?? [];
+  // perf: stepper rows derived only when the diagnostics payload changes
+  // (deps: diagQ.data — the only reactive value read).
+  const gateRows = useMemo(
+    () =>
+      blocked.slice(0, 8).map((g) => ({
+        name: `${str(g.gate_type) ?? "gate"} · ${(str(g.strategy_id) ?? "").slice(0, 10)}`,
+        status: str(g.status) ?? "UNKNOWN",
+        reason: str(g.failure_reason),
+      })),
+    [blocked],
+  );
   return (
     <div>
       <div className="section-title">blocked / failed gates (diagnostics)</div>
       {diagQ.isPending ? (
         <Skeleton count={2} />
-      ) : blocked.length === 0 ? (
+      ) : gateRows.length === 0 ? (
         <EmptyState message="No blocked gates reported." />
       ) : (
-        <GateStepper
-          gates={blocked.slice(0, 8).map((g) => ({
-            name: `${str(g.gate_type) ?? "gate"} · ${(str(g.strategy_id) ?? "").slice(0, 10)}`,
-            status: str(g.status) ?? "UNKNOWN",
-            reason: str(g.failure_reason),
-          }))}
-        />
+        <GateStepper gates={gateRows} />
       )}
     </div>
   );

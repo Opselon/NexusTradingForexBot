@@ -6,6 +6,7 @@
  * orchestrator (ModelStudioPage) and passed down.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import type { Fetch70dResponse, PredictResponse } from "../model";
 
@@ -60,10 +61,17 @@ export function ModelInferencePanel({
   onFetch70d,
 }: ModelInferencePanelProps) {
   const probs = predictData?.probabilities;
-  const familyCounts = components70.reduce<Record<string, number>>((acc, s) => {
-    acc[s.family] = (acc[s.family] ?? 0) + 1;
-    return acc;
-  }, {});
+  // Slot family histogram: a reduce over the 70D slots array; deps are exactly
+  // the array the derivation reads (re-runs only when the fetched slots change).
+  const familyCounts = useMemo(
+    () =>
+      components70.reduce<Record<string, number>>((acc, s) => {
+        acc[s.family] = (acc[s.family] ?? 0) + 1;
+        return acc;
+      }, {}),
+    [components70],
+  );
+  const familyEntries = useMemo(() => Object.entries(familyCounts), [familyCounts]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -286,7 +294,7 @@ export function ModelInferencePanel({
             </button>
             {components70.length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {Object.entries(familyCounts).map(([fam, n]) => (
+                {familyEntries.map(([fam, n]) => (
                   <span key={fam} className={`ms-slot-family ${FAMILY_CLASS[fam] ?? ""}`} style={{ padding: "3px 8px" }}>
                     {fam}: {n}
                   </span>
@@ -360,7 +368,9 @@ function SaliencyRow({
   sign: "pos" | "neg";
 }) {
   if (drivers.length === 0) return null;
-  const maxAbs = Math.max(...drivers.map((d) => Math.abs(d.gradient)), 1e-9);
+  // Per-salience-row normalization: memo deps are exactly the driver array the
+  // maxAbs derivation reads, so a parent re-render never re-scans the gradients.
+  const maxAbs = useMemo(() => Math.max(...drivers.map((d) => Math.abs(d.gradient)), 1e-9), [drivers]);
   return (
     <div className="ms-saliency-block" style={{ borderTop: "none", paddingTop: 0 }}>
       <div className="tiny" style={{ color: sign === "pos" ? "var(--green)" : "var(--red)", fontWeight: 700 }}>

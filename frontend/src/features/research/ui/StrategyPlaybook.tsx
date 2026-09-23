@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/primitives";
-import { getEntry, queryHandbook, type HandbookEntry } from "../handbook";
+import { getEntry, queryHandbook, type HandbookEntry } from "../handbook/content";
 
 type Props = {
   /** Entry id to expand + scroll to on mount (cross-links, drawer deep-links). */
@@ -27,8 +27,13 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
   const [openId, setOpenId] = useState<string | undefined>(focusId);
   const nodeRefs = useRef(new Map<string, HTMLElement>());
 
-  const groups = useMemo(() => queryHandbook(query), [query]);
-  const total = groups.reduce((n, g) => n + g.entries.length, 0);
+  // perf: group + total derived together (the count is a reduce over the
+  // grouped entries) so a parent re-render with an unchanged query does not
+  // re-filter the corpus — deps: [query], the only reactive value read.
+  const { groups, total } = useMemo(() => {
+    const g = queryHandbook(query);
+    return { groups: g, total: g.reduce((n, grp) => n + grp.entries.length, 0) };
+  }, [query]);
 
   // Deep-link: expand the focused entry and bring it into view.
   useEffect(() => {
