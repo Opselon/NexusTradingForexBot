@@ -27,6 +27,7 @@ resolve inside an allowed root (``DATASETS_ROOT_REJECTED`` otherwise).
 
 from __future__ import annotations
 
+import re as _re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -120,16 +121,47 @@ def _allowed_import_roots() -> list[Path]:
     return roots
 
 
+def _validate_import_path_shape(s: str) -> None:
+    """SEC (py/path-injection #1098): reject a raw import path that can carry a
+    path component, BEFORE it is resolved.
+
+    The ``..`` / null-byte checks already ran, so this is the shape barrier:
+    every component must be an identifier segment, which admits legitimate
+    nested imports (``data/raw/xauusd_M1.csv.parquet``) and refuses separators
+    used for traversal, drive letters, UNC prefixes and shell metacharacters.
+    The message never echoes the payload.
+    """
+    if not _IMPORT_PATH_SHAPE.fullmatch(s):
+        raise ValueError("import path has characters outside the safe set")
+
+
+#: A relative or absolute filename whose every component is an identifier
+#: segment. Anchored and bounded so no traversal, drive letter or UNC prefix can
+#: survive; ``\\`` and ``/`` are both admitted as separators only BETWEEN safe
+#: segments. ``re`` is imported at module scope (``import re as _re`` below) so
+#: this pattern compiles exactly once.
+_IMPORT_PATH_SHAPE = _re.compile(
+    r"(?:[A-Za-z]:[\\/]{1,2})?"  # optional Windows drive (operator-chosen abs path)
+    r"(?:[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}[\\/])*"  # safe nested dirs (spaces permitted)
+    r"[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,191}"  # final file name (incl. extension dots and spaces)
+)
+
+
 def _allowed_import_path(raw: str) -> Path:
     """Confine the user-supplied training-file path to the import roots.
 
     Defense layers (closes the CodeQL py/path-injection taint + a real
     prefix-bypass class a naive str.startswith check carries — "data/rawx"
     starts-with "data/raw"):
-      1. reject null bytes and any ``..`` traversal segment BEFORE resolving;
-      2. resolve to an absolute real path (symlinks followed);
-      3. containment via Path.is_relative_to (not string prefix);
-      4. the pipeline then only ever READS the file (training input).
+      1. reject null bytes, empty values and any ``..`` traversal segment
+         BEFORE any path is constructed or resolved;
+      2. reduce the raw string to a whitelist-only relative-or-absolute form so
+         it cannot carry a path component at all (this is what lets the resolve
+         below run on a value that is already untainted, rather than relying on
+         a suppression at the sink);
+      3. resolve to an absolute real path (symlinks followed);
+      4. containment via Path.is_relative_to (not string prefix);
+      5. the pipeline then only ever READS the file (training input).
     """
     import os
 
@@ -139,10 +171,11 @@ def _allowed_import_path(raw: str) -> Path:
     parts = Path(s).parts
     if any(part == ".." for part in parts) or (os.altsep and ".." in s.split(os.altsep)):
         raise ValueError("path traversal segments are refused")
-    p = Path(s).expanduser().resolve()  # codeql[py/path-injection] traversal segments
-    # rejected above; the containment loop below admits ONLY paths under an
-    # operator-configured import root (path containment, not string prefix), and
-    # the pipeline reads the file — never writes, never executes it.
+    # The string must be a plain name under an import root or an absolute path
+    # the operator chose; either way every component must be a safe identifier
+    # segment, so separators can smuggle no traversal.
+    _validate_import_path_shape(s)
+    p = Path(s).expanduser().resolve()
     if p.suffix.lower() not in (".csv", ".parquet"):
         raise ValueError("unsupported file type (accepted: .csv, .parquet)")
     roots = _allowed_import_roots()

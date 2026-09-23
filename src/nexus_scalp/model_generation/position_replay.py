@@ -424,6 +424,112 @@ def _compute_order_hash(columns: list[str] | tuple[str, ...]) -> str:
     return hashlib.sha256(raw).hexdigest()[:16]
 
 
+#: Roots a checkpoint/scaler path is allowed to resolve under. Derived from the
+#: package location and the canonical artifact layout only — never from request
+#: input — so the roots are untainted by construction. ``resolve()`` is applied
+#: to every candidate so symlinks are followed before the containment check.
+#: The system tempdir is included because operator tooling and tests legitimately
+#: build bundles there (a bundle is a directory chosen by the operator, not by a
+#: remote request); every path is still resolved and re-checked at the sink.
+def _trusted_checkpoint_roots() -> list[Path]:
+    import tempfile
+
+    return [
+        (REPO_ROOT / "artifacts").resolve(),
+        (REPO_ROOT / "artifacts" / "model_generation").resolve(),
+        (REPO_ROOT / "artifacts" / "models").resolve(),
+        (REPO_ROOT / "models").resolve(),
+        REPO_ROOT.resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+
+
+def _is_under_trusted_root(path: Path) -> bool:
+    """True only when ``path`` (symlinks resolved) sits under a trusted root."""
+    try:
+        resolved = Path(path).resolve()
+    except (OSError, ValueError):
+        return False
+    return any(resolved.is_relative_to(root) for root in _trusted_checkpoint_roots())
+
+
+def _resolve_checkpoint_path(raw: Path | str | None, *, label: str) -> Path | None:
+    """SEC (py/path-injection #1110/#1111/#1112 + py/unsafe-deserialization
+    #1113): reduce a caller-supplied checkpoint/scaler location to an ABSOLUTE
+    path provably inside a trusted artifact root, or raise.
+
+    Why containment rather than ``basename``-stripping: the legitimate callers
+    name checkpoints with a real directory structure
+    (``artifacts/models/scalp/XAUUSD/<model_id>/model.pt``), and a
+    ``basename``-only rule would silently break every nested case. Containment
+    keeps nested paths and rejects ``..``, absolute escapes, UNC/drive paths,
+    null bytes and symlink escapes (``resolve()`` follows the link before the
+    boundary check).
+
+    Rejects (fail-closed, never echoes the payload in the exception text):
+      * empty / null-byte / non-string values;
+      * any ``..`` segment, in either separator form;
+      * a resolved path outside every trusted root.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or "\x00" in s:
+        raise ValueError(f"{label} is empty or malformed")
+    parts = Path(s).parts
+    if any(part == ".." for part in parts):
+        raise ValueError(f"{label} must not contain a parent-directory reference")
+    candidate = Path(s).expanduser()
+    if not candidate.is_absolute():
+        candidate = REPO_ROOT / candidate
+    try:
+        resolved = candidate.resolve()
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{label} could not be resolved") from exc
+    if not _is_under_trusted_root(resolved):
+        raise ValueError(f"{label} must stay inside the artifact root")
+    return resolved
+
+
+def _load_state_dict(path: Path) -> dict[str, torch.Tensor]:
+    """SEC (py/unsafe-deserialization #1113): load a checkpoint and constrain
+    it to the exact contract ``ScalpNet.load_state_dict`` consumes.
+
+    ``torch.load(..., weights_only=True)`` already prevents arbitrary object
+    construction; this adds the typed schema check on top so a payload that
+    deserializes cleanly but is not a state mapping is rejected loudly instead
+    of producing a confusing downstream failure. ``map_location="cpu"`` keeps
+    deserialization off any CUDA path.
+    """
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    if not isinstance(state, dict):
+        raise ValueError("checkpoint is not a model state mapping")
+    for key, value in state.items():
+        if not isinstance(key, str) or not torch.is_tensor(value):
+            raise ValueError("checkpoint contains a non-tensor state entry")
+    return state
+
+
+def _validate_scaler_archive(data: Any, path: Path) -> None:
+    """SEC (sibling sink of #1113): constrain the numpy scaler sidecar.
+
+    ``np.load`` of an untrusted archive can raise crafted exceptions or yield
+    unexpected dtypes. The scaler contract is exactly two finite float vectors
+    of matching shape; anything else is rejected before the arrays are used.
+    """
+    required = ("mean", "std")
+    if not all(k in data for k in required):
+        raise ValueError(f"scaler {path.name} is missing required arrays")
+    arrays = [np.asarray(data[k]) for k in required]
+    for name, arr in zip(required, arrays, strict=True):
+        if arr.dtype.kind not in "fiu" or arr.ndim != 1:
+            raise ValueError(f"scaler {path.name} has an invalid '{name}' array")
+        if not np.all(np.isfinite(arr)):
+            raise ValueError(f"scaler {path.name} has non-finite '{name}'")
+    if arrays[0].shape != arrays[1].shape:
+        raise ValueError(f"scaler {path.name} mean/std shape mismatch")
+
+
 def resolve_primary_model_bundle(
     model_path: Path | str | None = None,
     dimension: int = 50,
@@ -437,9 +543,9 @@ def resolve_primary_model_bundle(
     """
     p_model: Path | None = None
     if model_path:
-        p_model = Path(model_path)
-        if not p_model.is_absolute():
-            p_model = REPO_ROOT / p_model
+        p_model = _resolve_checkpoint_path(model_path, label="model_path")
+        if p_model is None or not p_model.is_absolute():
+            p_model = None
 
     # Check model registry if not explicitly provided
     if p_model is None or not p_model.exists():
@@ -463,16 +569,31 @@ def resolve_primary_model_bundle(
     # Load actual checkpoint if resolved
     if p_model and p_model.exists():
         model_hash_str = sha256_file(p_model)[:32]
-        # Resolve scaler sidecar
-        p_scaler = Path(scaler_path) if scaler_path else p_model.with_suffix(".scaler.npz")
-        if p_scaler.exists():
+        # Resolve scaler sidecar. The sidecar must resolve under the SAME trusted
+        # root as the checkpoint (SEC: a request-supplied ``scaler_path`` is not
+        # allowed to redirect the numpy load outside that root).
+        p_scaler: Path | None = None
+        if scaler_path:
+            p_scaler = _resolve_checkpoint_path(scaler_path, label="scaler_path")
+        else:
+            sidecar = p_model.with_suffix(".scaler.npz")
+            p_scaler = sidecar if _is_under_trusted_root(sidecar) else None
+        if p_scaler is not None and p_scaler.exists():
             resolved_scaler_path = str(p_scaler)
             scaler_hash_str = sha256_file(p_scaler)[:32]
             data = np.load(p_scaler)
+            _validate_scaler_archive(data, p_scaler)
             scaler_mean = np.asarray(data["mean"], dtype=np.float64)
             scaler_std = np.asarray(data["std"], dtype=np.float64)
 
-        state = torch.load(p_model, map_location="cpu", weights_only=True)
+        # SEC (py/unsafe-deserialization #1113): ``weights_only=True`` already
+        # forbids arbitrary object construction, and the path is now confined to
+        # a trusted root by ``_resolve_checkpoint_path``. The loaded object is
+        # additionally constrained to the exact state-dict contract the model
+        # consumes (mapping[str, torch.Tensor]) before anything is handed to
+        # ``load_state_dict`` — an unknown shape raises loudly rather than
+        # being coerced.
+        state = _load_state_dict(p_model)
         w = state.get("input_projection.weight")
         in_features = int(w.shape[1]) if w is not None and hasattr(w, "shape") else dimension
         cls_w = state.get("classifier.weight")

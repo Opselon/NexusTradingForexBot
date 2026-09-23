@@ -38,6 +38,11 @@ from nexus_scalp.features.schema import active_dimension, active_schema
 from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.web.errors import (
+    log_web_error,
+    new_request_id,
+    safe_error_payload,
+)
 
 logger = get_logger("nexus_scalp.web.model_studio_routes")
 
@@ -2196,7 +2201,17 @@ def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
             }
         )
     except Exception as exc:
-        checks.append({"name": "SAFE_DESERIALIZATION", "passed": False, "detail": str(exc)})
+        # SEC (py/stack-trace-exposure): the check detail is returned to the
+        # client, so the raw exception (which may name paths or internals) must
+        # not be echoed. The failure is still fully diagnosable server-side.
+        logger.warning("[MODEL_STUDIO] event=VERIFY_LOAD_FAILED err=%s", exc)
+        checks.append(
+            {
+                "name": "SAFE_DESERIALIZATION",
+                "passed": False,
+                "detail": "checkpoint deserialization rejected (see server logs)",
+            }
+        )
         return {"status": "FAILED", "all_passed": False, "checks": checks}
 
     all_finite = True
@@ -2651,6 +2666,32 @@ def execute_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
 def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Registers Deep Learning / Model Studio REST endpoints on the FastAPI app."""
 
+    def _fail_closed(
+        endpoint: str,
+        exc: BaseException,
+        *,
+        resource: str | None = None,
+        status_code: int = 500,
+        code: str = "OPERATION_FAILED",
+    ) -> HTTPException:
+        """SEC: exception details to logs only, a stable code to the client.
+
+        Family E (CodeQL py/stack-trace-exposure #1102/#1103/#1104/#1108): an
+        unhandled ``execute_*`` exception previously formatted its ``str(exc)``
+        straight into the HTTP body, which can carry filesystem paths, internal
+        service names and source locations. The full record (endpoint,
+        request_id, exception type, traceback) goes to the structured logger
+        here; the client receives only the stable ``error.code`` from
+        ``web/errors.py``. Mirrors the established pattern in
+        ``position_adviser_routes.py`` and the ``hot-load`` route below.
+        """
+        rid = new_request_id()
+        log_web_error(logger, endpoint, rid, exc, resource=resource)
+        return HTTPException(
+            status_code=status_code,
+            detail=safe_error_payload(code=code, request_id=rid, success=False)["error"]["message"],
+        )
+
     @app.get("/api/model-studio/overview")
     def route_overview() -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
@@ -2666,8 +2707,15 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         engine = getattr(app.state, "engine", None)
         try:
             return execute_predict(req, engine)
+        except HTTPException:
+            raise
         except ValueError as err:
+            # Client-input validation (dimension/feature shape): the message is
+            # derived from the request, not from internals, so it is safe to
+            # surface; it must stay 422 to preserve the client contract.
             raise HTTPException(status_code=422, detail=str(err)) from err
+        except Exception as exc:
+            raise _fail_closed("model-studio/predict", exc, resource="predict") from exc
 
     @app.get("/api/model-studio/datasets")
     def route_datasets() -> dict[str, Any]:
@@ -2701,12 +2749,22 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.post("/api/model-studio/stress-test")
     def route_stress_test(req: ModelStudioStressRequest) -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
-        return execute_stress_test(req, engine)
+        try:
+            return execute_stress_test(req, engine)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _fail_closed("model-studio/stress-test", exc, resource="stress-test") from exc
 
     @app.post("/api/model-studio/benchmark")
     def route_benchmark(req: ModelStudioBenchmarkRequest) -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
-        return execute_benchmark(req, engine)
+        try:
+            return execute_benchmark(req, engine)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _fail_closed("model-studio/benchmark", exc, resource="benchmark") from exc
 
     # -------------------------------------------------------------------------
     # AI Hub / Model Registry & Hot-Load Endpoints (15 API-First Capabilities)
@@ -2725,11 +2783,8 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
             raise
         except Exception as exc:
             logger.exception("model-studio hot-load failed")
-            _log_err(f"hot-load failed: {exc}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Hot-load failed: {exc}",
-            ) from exc
+            _log_err("hot-load failed")
+            raise _fail_closed("model-studio/models/hot-load", exc, resource="hot-load") from exc
 
     @app.get("/api/model-studio/models/active")
     def route_active_model() -> dict[str, Any]:
@@ -2746,7 +2801,12 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     @app.post("/api/model-studio/models/verify")
     def route_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
-        return execute_verify(req)
+        try:
+            return execute_verify(req)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _fail_closed("model-studio/models/verify", exc, resource="verify") from exc
 
     @app.post("/api/model-studio/models/register")
     def route_register_model(req: ModelStudioRegisterRequest) -> dict[str, Any]:
