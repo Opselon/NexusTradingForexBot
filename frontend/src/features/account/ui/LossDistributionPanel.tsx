@@ -12,6 +12,7 @@
 
 import { useMemo } from "react";
 import { clampRatio } from "@/components/viz/geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./loss-distribution.css";
 
 /** One backend strategy contribution, reduced to what this panel needs. */
@@ -62,8 +63,9 @@ export function LossDistributionPanel({
   rows,
   concentratedAbove = 0.25,
   maxRows = 8,
-  emptyHint = "no strategy carries recorded loss",
+  emptyHint,
 }: LossDistributionPanelProps) {
+  const t = useI18n((s) => s.t);
   // perf: filter + rank once per (rows, maxRows), not on every parent render.
   const { sorted, unknown, maxShare, totalShare, shown, hidden } = useMemo(() => {
     const withShare = rows.filter((r) => r.loss_share !== null && r.loss_share !== undefined);
@@ -83,7 +85,7 @@ export function LossDistributionPanel({
   }, [rows, maxRows]);
 
   if (sorted.length === 0 && unknown.length === 0) {
-    return <div className="ld-empty">{emptyHint}</div>;
+    return <div className="ld-empty">{emptyHint ?? t("account.strat.no_loss", "no strategy carries recorded loss")}</div>;
   }
 
   return (
@@ -94,10 +96,10 @@ export function LossDistributionPanel({
           const tone = shareTone(share, concentratedAbove);
           const tip = [
             `${r.strategy_id}${r.alias ? ` · ${r.alias}` : ""}`,
-            `loss share ${(share * 100).toFixed(1)}%`,
-            `gross loss ${moneySigned(r.gross_loss)}`,
-            `trades ${r.trade_count ?? "—"}`,
-            `net ${moneySigned(r.net_pnl)}`,
+            t("account.ld.tip_share", "loss share {share}", { share: `${(share * 100).toFixed(1)}%` }),
+            t("account.ld.tip_gross", "gross loss {gross}", { gross: moneySigned(r.gross_loss) }),
+            t("account.ld.tip_trades", "trades {trades}", { trades: String(r.trade_count ?? "—") }),
+            t("account.ld.tip_net", "net {net}", { net: moneySigned(r.net_pnl) }),
           ].join("\n");
           return (
             <div
@@ -110,7 +112,7 @@ export function LossDistributionPanel({
               <div className="ld-id-cell">
                 <span className="ld-id">{r.alias ?? r.strategy_id}</span>
                 <span className="ld-sub">
-                  {(share * 100).toFixed(1)}% · {moneySigned(r.gross_loss)} · {r.trade_count ?? "—"} trd
+                  {t("account.ld.sub", "{share} · {gross} · {trades} trd", { share: `${(share * 100).toFixed(1)}%`, gross: moneySigned(r.gross_loss), trades: String(r.trade_count ?? "—") })}
                 </span>
               </div>
               <div className="ld-bar">
@@ -125,25 +127,25 @@ export function LossDistributionPanel({
         })}
 
         {hidden > 0 && (
-          <div className="ld-more" title={`${hidden} further contributors below the cutoff`}>
-            +{hidden} more · {((totalShare - shown.reduce((a, r) => a + (r.loss_share ?? 0), 0)) * 100).toFixed(1)}% combined
+          <div className="ld-more" title={t("account.ld.more_title", "{hidden} further contributors below the cutoff", { hidden: String(hidden) })}>
+            {t("account.ld.more", "+{hidden} more · {pct}% combined", { hidden: String(hidden), pct: ((totalShare - shown.reduce((a, r) => a + (r.loss_share ?? 0), 0)) * 100).toFixed(1) })}
           </div>
         )}
 
         {unknown.length > 0 && (
           <div
             className="ld-row ld-unknown"
-            title={`${unknown.length} strategies report no loss share (unscored / DISCOVERED). Informational, not an error.`}
+            title={t("account.ld.unknown_title", "{n} strategies report no loss share (unscored / DISCOVERED). Informational, not an error.", { n: String(unknown.length) })}
           >
             <span className="ld-rank">?</span>
             <div className="ld-id-cell">
-              <span className="ld-id">{unknown.length} unscored</span>
-              <span className="ld-sub">no loss attribution yet</span>
+              <span className="ld-id">{t("account.ld.unscored", "{n} unscored", { n: String(unknown.length) })}</span>
+              <span className="ld-sub">{t("account.ld.no_attribution", "no loss attribution yet")}</span>
             </div>
             <div className="ld-bar">
               <div className="ld-heat ld-heat-unknown" />
             </div>
-            <span className="ld-share dim">UNKNOWN</span>
+            <span className="ld-share dim">{t("account.ld.unknown", "UNKNOWN")}</span>
           </div>
         )}
       </div>
