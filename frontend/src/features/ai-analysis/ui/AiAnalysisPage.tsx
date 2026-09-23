@@ -56,6 +56,11 @@ import "./aiAnalysis.css";
 
 type Tab = "signals" | "indicators" | "shadow" | "intel";
 
+/** Wave 2: explicit caps instead of inline magic numbers, so the caption
+ *  ("showing first N") and the slice stay in lockstep. */
+const DRIFT_SHOW = 12;
+const SUMMARY_ROWS = 14;
+
 export default function AiAnalysisPage(props: ShellPageProps) {
   void props;
   const [tab, setTab] = useState<Tab>("signals");
@@ -144,7 +149,13 @@ export default function AiAnalysisPage(props: ShellPageProps) {
 
       <Panel title="Latest signal (live card)" accent tight>
         {latestQ.isPending ? (
-          <Skeleton count={2} />
+          <div className="aa-hero aa-hero-skel">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="aa-skel-cell">
+                <Skeleton count={1} />
+              </div>
+            ))}
+          </div>
         ) : isNotFound(latestQ.error) ? (
           <EmptyState
             message="No signals recorded yet."
@@ -241,7 +252,11 @@ export default function AiAnalysisPage(props: ShellPageProps) {
 
           {statsQ.isPending ? (
             <div className="grid cols-4">
-              <Skeleton count={4} />
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="aa-metric-skel">
+                  <Skeleton count={2} />
+                </div>
+              ))}
             </div>
           ) : statsQ.isError ? (
             <EmptyState message={statsQ.error instanceof Error ? statsQ.error.message : "stats unavailable"} />
@@ -327,7 +342,10 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                   <button className="btn small" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                     ← newer
                   </button>
-                  <span className="tiny muted">page {page}</span>
+                  <span className="tiny muted" aria-live="polite">
+                    page {page}
+                    {historyQ.isFetching && " · loading…"}
+                  </span>
                   <button className="btn small" disabled={!historyQ.data?.has_more} onClick={() => setPage((p) => p + 1)}>
                     older →
                   </button>
@@ -364,7 +382,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                   <div className="section-title">summary</div>
                   <dl className="kv">
                     {Object.entries(obj(shadowQ.data?.summary))
-                      .slice(0, 14)
+                      .slice(0, SUMMARY_ROWS)
                       .map(([k, v]) => (
                         <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
                       ))}
@@ -375,12 +393,14 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                   <GateStepper gates={Object.entries(obj(shadowQ.data?.disagreement_counts)).map(([k, v]) => ({ name: k, status: "INFO", reason: String(v) }))} />
                 </div>
                 <div>
-                  <div className="section-title">drift alerts (latest 25)</div>
+                  <div className="section-title">
+                    drift alerts ({(shadowQ.data?.drift_alerts ?? []).length} recorded, showing first {Math.min(DRIFT_SHOW, (shadowQ.data?.drift_alerts ?? []).length)})
+                  </div>
                   {(shadowQ.data?.drift_alerts ?? []).length === 0 ? (
                     <EmptyState message="No drift alerts recorded." />
                   ) : (
                     <DataTable headers={[{ label: "feature" }, { label: "kind" }, { label: "value", num: true }, { label: "at" }]}>
-                      {(shadowQ.data?.drift_alerts ?? []).slice(0, 12).map((a, i) => (
+                      {(shadowQ.data?.drift_alerts ?? []).slice(0, DRIFT_SHOW).map((a, i) => (
                         <tr key={i}>
                           <td className="tiny">{str(a.feature) ?? str(a.name) ?? "—"}</td>
                           <td className="tiny">{str(a.kind) ?? str(a.alert_type) ?? "—"}</td>

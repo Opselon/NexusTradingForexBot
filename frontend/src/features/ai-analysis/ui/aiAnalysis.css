@@ -108,6 +108,24 @@
   .aa-conf-track i {
     transition: none !important;
   }
+  /* the indicators live dot keeps keyframing (animation, not transition) —
+   * kill it too: a permanently-pulsing dot is not information. */
+  .ic-live-live .ic-live-dot {
+    animation: none !important;
+  }
+}
+
+/* ── hero skeleton (wave 2): reserve the 4-cell grid so the card does not
+ *   jump height/layout when the latest signal lands. */
+.aa-hero-skel {
+  grid-template-columns: 176px 156px minmax(240px, 1fr) 212px;
+}
+.aa-skel-cell { min-height: 88px; }
+.aa-metric-skel {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
 }
 .aa-donut-total {
   font-family: var(--mono);
