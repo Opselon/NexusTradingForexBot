@@ -58,7 +58,7 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-LABEL-002` | C: Labeling | P1 | Sample Uniqueness & Overlap Anti-Leakage | **DONE** | `AGENT-LABEL` | NO | `ML-LABEL-001` | `PARALLEL_SAFE` |
 | `ML-ARCH-001` | D: Architecture | P0 | ScalpNet Dual-Path & 3-Class Head Sunset | **EVIDENCE-COMPLETE** (DEC-0010; awaiting operator A/B/C) | `AGENT-ML-ARCH` | **YES** | None | `SERIAL_ONLY` |
 | `ML-ARCH-002` | D: Architecture | P2 | Causal TCN Dilation & Receptive Field | **DONE** (2026-09-22) | `AGENT-ML-ARCH` | NO | `ML-ARCH-001`, `ML-DATA-001` | `PARALLEL_SAFE` |
-| `ML-ARCH-003` | D: Architecture | P2 | Temporal Attention vs Positional Encoding | **BLOCKED** | `AGENT-ML-ARCH` | NO | `ML-ARCH-002` | `PARALLEL_SAFE` |
+| `ML-ARCH-003` | D: Architecture | P2 | Temporal Attention vs Positional Encoding | **DONE** (2026-09-22) | `AGENT-ML-ARCH` | NO | `ML-ARCH-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-001` | E: Training | P1 | Deterministic Training, Seeds & AMP Precision | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-ARCH-001`, `ML-DATA-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-002` | E: Training | P2 | Loss Functions: Focal Loss vs Label Smoothing | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001`, `ML-LABEL-002` | `PARALLEL_SAFE` |
 | `ML-TRAIN-003` | E: Training | P2 | Optimizers & Schedulers (AdamW + Cosine) | **DONE** | `AGENT-ML-TRAIN` | NO | `ML-TRAIN-001` | `PARALLEL_SAFE` |
@@ -80,12 +80,12 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-OBS-002` | L: Observability | P3 | Online Fine-Tuning Safe Sandbox | **BLOCKED** | `AGENT-OBSERVABILITY` | **YES** | `ML-GOV-001`, `ML-GOV-003` | `SERIAL_ONLY` |
 | `ML-CI-001` | L: CI/CD | P2 | CI Model Training Validation Gap | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-DATA-001`, `ML-VAL-001` | `PARALLEL_SAFE` |
 | `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **DONE** (PR #346, `70682f4e`) | `AGENT-QA` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
-||||||| eb73440a
-| `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **BLOCKED** | `AGENT-QA` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
-| `ML-CI-002` | L: CI/CD | P3 | ML Contract Drift Prevention CI Gate | **DONE** | `AGENT-GIT` | NO | `ML-ARCH-001`, `ML-PLAT-002` | `PARALLEL_SAFE` |
 | `ML-UI-001` | L: UX & Integration | P1 | End-to-End Model UX & CLI Verification (Train/Predict/Trust) | **DONE** | `AGENT-UI` | NO | None | `PARALLEL_SAFE` |
 | `ML-UI-002` | L: UX & Integration | P1 | Model Studio Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Dataset Pipeline | **DONE** | `AGENT-UI` | NO | `ML-UI-001`, `ML-DATA-001` | `PARALLEL_SAFE` |
 | `ML-UI-003` | L: UX & Integration | P1 | AI Hub: Model Registry, SQLite Catalog & Live Runtime Hot-Loader | **DONE** | `AGENT-UI` | NO | `ML-UI-001`, `ML-UI-002` | `PARALLEL_SAFE` |
+| `ML-QA-003` | L: CI/CD | P2 | Test Determinism Census & Push-Gate Exposure Roster | **DONE** (PR #402) | `AGENT-QA` | NO | `ML-CI-002` | `PARALLEL_SAFE` |
+| `ML-QA-004` | L: CI/CD | P2 | Push-Gate Timing Determinism Remediation (injected clock + CPU-time budgets) | **DONE** (PR #402) | `AGENT-QA` | NO | `ML-QA-003` | `PARALLEL_SAFE` |
+| `ML-QA-005` | L: CI/CD | P2 | Merge-Marker Residue Guard (diff3 arm leak class) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
 
 ---
 
