@@ -38,7 +38,8 @@ fabric.open()
 try:
     # READ — read-only by construction
     row = fabric.read.with_method("has_ledger_opened").query_one(
-        "SELECT * FROM audit_ledger WHERE ticket = ?", (12345,),
+        "SELECT * FROM audit_ledger WHERE ticket = ?",
+        (12345,),
         consistency=ConsistencyClass.STRONG,
     )
 
@@ -50,7 +51,7 @@ try:
             financial=True,
         )
 finally:
-    fabric.close()   # drains the writer, closes every pool
+    fabric.close()  # drains the writer, closes every pool
 ```
 
 No driver, connection, pool, provider branch, `sqlite3` symbol or `psycopg`
