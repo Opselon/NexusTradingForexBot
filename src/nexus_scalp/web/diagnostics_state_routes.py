@@ -362,6 +362,7 @@ def register_diagnostics_state_routes(
     get_system_state: Any,
 ) -> None:
     """Attach diagnostics/state/dbmanage/config routes (closures over app)."""
+    from nexus_scalp.database.config import PG_CONFIG_SETTING_KEY
     from nexus_scalp.domain.enums import ExecutionMode, OrderType
     from nexus_scalp.observability.telegram_notifier import (
         TelegramNotifier,
@@ -1432,6 +1433,70 @@ def register_diagnostics_state_routes(
             svc = load_settings_service()
         return svc
 
+    def _stored_pg_config() -> dict[str, Any]:
+        """The persisted PG config row ({} when absent/unreadable).
+
+        Lane D hardening: ``/api/db/manage/config`` merges the incoming form
+        over this row so a save from the discrete form never drops keys
+        another writer persisted (advanced knobs, the ``password_secret``
+        reference).  Never raises — a fresh environment has no row yet.
+        """
+        db = None
+        try:
+            from nexus_scalp.settings.service import SettingsDatabase
+
+            db = SettingsDatabase()
+            row = db.get(PG_CONFIG_SETTING_KEY)
+            value = row.value if row is not None else None
+            if isinstance(value, str):
+                import json
+
+                value = json.loads(value)
+            return dict(value) if isinstance(value, dict) else {}
+        except Exception as exc:  # pragma: no cover - best-effort read
+            logger.debug("[DB_MANAGE_CONFIG] stored config row unreadable: %s", exc)
+            return {}
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+    def _repair_pg_truth(ui: dict[str, Any]) -> None:
+        """Honest `postgres` + `password_set` for the status payload (Lane D).
+
+        `health.load_ui_config` runs ``json.loads()`` on the PG config row
+        value even though ``SettingsDatabase.get()`` already decodes
+        ``value_type="json"`` rows to a dict: the resulting TypeError is
+        swallowed and BOTH fields come back false-negatives on every load
+        (``postgres`` null while a valid row exists, ``password_set`` false
+        while the secret sits in the OS store — the tab would claim "no
+        configuration is stored" forever, and readiness checks would claim the
+        password is missing while it is present).
+
+        Re-reads the row through ``_stored_pg_config()`` and reports
+        SecretStore truth, stripping any ``password`` / ``confirm_password``
+        value a foreign writer may have left in the row: the secret law says
+        no password material is echoed, whatever the database holds.  Never
+        raises — on failure the fields keep whatever ``load_ui_config``
+        produced and the detail goes to the server log only.
+        """
+        try:
+            from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+            from nexus_scalp.settings.secret_store import SecureSecretStore
+
+            row = _stored_pg_config()
+            if row:
+                clean = {k: v for k, v in row.items() if k not in ("password", "confirm_password")}
+                ui["postgres"] = clean
+                secret_ref = str(clean.get("password_secret") or PG_PASSWORD_SECRET_KEY)
+            else:
+                secret_ref = PG_PASSWORD_SECRET_KEY
+            ui["password_set"] = bool(SecureSecretStore().has_secret(secret_ref))
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/status", None, e)
+
     @app.get("/api/db/manage/status")
     def db_manage_status() -> dict[str, Any]:
         """Active provider + per-domain health (DATABASE MANAGEMENT panel).
@@ -1448,6 +1513,7 @@ def register_diagnostics_state_routes(
 
             health = health_snapshot()
             ui = load_ui_config()
+            _repair_pg_truth(ui)
             pg_available = PostgreSQLDriver.available()
             hints: list[str] = []
             if ui["provider"] == "postgresql":
@@ -1523,9 +1589,33 @@ def register_diagnostics_state_routes(
         DB only ever holds a secret-key reference.  `password` and
         `confirm_password` are consumed here and NEVER stored in the config
         row or echoed back.
+
+        Hardened (Lane D): the body is an ALLOWLIST — every key must be a real
+        :class:`~nexus_scalp.database.config.DatabaseConfig` / PG config name,
+        otherwise the request is refused with `DB_CONFIG_UNKNOWN_KEYS` instead
+        of persisting an unknown (or typo'd) key into the settings JSON.  The
+        write is ADDITIVE: the incoming keys are merged over the stored row, so
+        keys another writer put there (the advanced knobs, the `password_secret`
+        reference) survive a save from this form.
         """
+        # Real DatabaseConfig/pg config keys this endpoint may persist, plus
+        # the two password fields consumed above (never stored).
+        allowed = {
+            "provider",
+            "domain",
+            "host",
+            "port",
+            "database",
+            "username",
+            "ssl_mode",
+            "command_timeout_sec",
+            "connect_timeout_sec",
+            "migrate_on_startup",
+            "pooling_enabled",
+            "sqlite_path",
+            "sqlite_uri",
+        }
         try:
-            svc = _settings_service()
             incoming = dict(payload)
             password = incoming.get("password") or ""
             confirm = incoming.get("confirm_password") or ""
@@ -1533,7 +1623,35 @@ def register_diagnostics_state_routes(
                 return _err("PASSWORD_MISMATCH")
             for k in ("password", "confirm_password"):
                 incoming.pop(k, None)
-            svc.set_postgres_config(incoming)
+            unknown = sorted(k for k in incoming if k not in allowed)
+            if unknown:
+                return _err(
+                    "DB_CONFIG_UNKNOWN_KEYS",
+                    message=(
+                        f"Unknown configuration key(s): {', '.join(unknown)}. "
+                        f"Allowed keys: {', '.join(sorted(allowed))}."
+                    ),
+                )
+            svc = _settings_service()
+            # Additive merge: never drop keys the caller did not send.
+            row: dict[str, Any] = dict(_stored_pg_config())
+            row.update(incoming)
+            row.setdefault("provider", "postgresql")
+            row.setdefault("domain", "audit")
+            if password:
+                from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+
+                svc.secrets.set_secret(PG_PASSWORD_SECRET_KEY, str(password))
+                row["password_secret"] = PG_PASSWORD_SECRET_KEY
+            # Persisted directly with actor="web" (contract §4): the settings DB
+            # keeps the secret-KEY reference alongside the non-secret config.
+            svc.db.set(
+                PG_CONFIG_SETTING_KEY,
+                row,
+                value_type="json",
+                source="USER_SETTINGS",
+                actor="web",
+            )
             return {
                 "success": True,
                 "password_set": bool(password) or svc.postgres_password_set(),
@@ -1567,14 +1685,35 @@ def register_diagnostics_state_routes(
 
     @app.post("/api/db/manage/test-connection")
     def db_manage_test_connection(payload: dict[str, Any]) -> dict[str, Any]:
-        """Test the PostgreSQL connection BEFORE migration (never persists)."""
+        """Test the PostgreSQL connection BEFORE migration (non-destructive).
+
+        Hardened (Lane D): the driver resolves its password from the OS
+        SecretStore, so a probe CAN authenticate only when the supplied
+        password is handed to the store first.  The probe therefore writes the
+        supplied password — but under an EPHEMERAL key derived from the real
+        one, and it deletes that key in a ``finally`` block.  The operator's
+        stored secret under the canonical ``PG_PASSWORD_SECRET_KEY`` is never
+        touched: a probe with a WRONG password can no longer clobber a good
+        stored secret (it failed to connect, and nothing is persisted).  A
+        blank password on the wire means "use the stored secret".
+        """
         try:
+            from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY, DatabaseConfig
             from nexus_scalp.database.drivers import get_driver
+            from nexus_scalp.settings.secret_store import SecureSecretStore
 
             raw = dict(payload)
             password = raw.pop("password", None)
-            from nexus_scalp.database.config import DatabaseConfig
-
+            probe_key = f"{PG_PASSWORD_SECRET_KEY}.probe"
+            store = SecureSecretStore()
+            if password:
+                # Ephemeral: removed again in the finally block below so the
+                # probe never leaves residue in the OS keystore.
+                store.set_secret(probe_key, str(password))
+                secret_ref = probe_key
+            else:
+                # Blank on the wire = keep the stored secret (contract §1).
+                secret_ref = PG_PASSWORD_SECRET_KEY
             cfg = DatabaseConfig.for_postgres(
                 domain="audit",
                 host=str(raw.get("host") or "localhost"),
@@ -1582,12 +1721,8 @@ def register_diagnostics_state_routes(
                 database=str(raw.get("database") or "nse_audit"),
                 username=str(raw.get("username") or "nse_user"),
                 ssl_mode=str(raw.get("ssl_mode") or ""),
+                password_secret=secret_ref,
             )
-            if password:
-                from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
-                from nexus_scalp.settings.secret_store import SecureSecretStore
-
-                SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, str(password))
             driver = get_driver(cfg)
             try:
                 ok = driver.ping()
@@ -1603,6 +1738,20 @@ def register_diagnostics_state_routes(
         except Exception as e:
             log_web_error(logger, "/api/db/manage/test-connection", None, e)
             return _err("DB_TEST_CONNECTION_FAILED")
+        finally:
+            # Never leave the probe secret in the OS keystore, and never let a
+            # failed probe (wrong password) disturb the stored default secret.
+            # Self-contained: rebind everything locally so this block cannot
+            # raise (a cleanup failure must never mutate the response).
+            try:
+                raw_password = dict(payload).get("password")
+                if raw_password:
+                    from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+                    from nexus_scalp.settings.secret_store import SecureSecretStore
+
+                    SecureSecretStore().delete_secret(f"{PG_PASSWORD_SECRET_KEY}.probe")
+            except Exception:
+                pass
 
     @app.post("/api/db/manage/preview")
     def db_manage_preview(payload: dict[str, Any]) -> dict[str, Any]:
