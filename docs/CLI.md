@@ -17,11 +17,12 @@ release management. Those boundaries never mix.
 1. iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1)
 2. Open a NEW PowerShell (PATH refresh)
 3. nexus help            # discover the command surface
-4. nexus version         # build identity
-5. nexus doctor          # full system diagnostics (read-only)
-6. nexus status          # health + environment + version
-7. nexus config          # inspect the active configuration
-8. nexus start           # PAPER mode by default, never LIVE silently
+4. nexus --version       # one-line build identity (same as `nexus version --plain`)
+5. nexus version         # full build identity (+ --json for tooling)
+6. nexus doctor          # full system diagnostics (read-only)
+7. nexus status          # health + environment + version
+8. nexus config          # inspect the active configuration
+9. nexus start           # PAPER mode by default, never LIVE silently
 ```
 
 ## First-setup model and local training
@@ -69,6 +70,7 @@ asserts the golden list; run `nexus help` on your install for the live list).
 | Command | Purpose | Side effects | JSON | Notes |
 |---|---|---|---|---|
 | `nexus help [cmd]` | Show the command reference (same as `--help`) | none | n/a | RC 0; unknown topic RC 2 |
+| `nexus --version` | One-line build identity (short convention) | none | n/a | RC 0; mirrors `nexus version --plain` byte-for-byte |
 | `nexus version` | Canonical version + build identity | none | `--json`, `--plain` | fast, no model/MT5/DB work |
 | `nexus doctor` | Full system doctor (SYSTEM..ACCOUNTING) | none by default | `--json` | `--fix` mutates derived state only |
 | `nexus health` | Quick READY / DEGRADED / NOT READY summary | none | `--json` | |
