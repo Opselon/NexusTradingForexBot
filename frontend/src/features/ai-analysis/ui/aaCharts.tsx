@@ -14,8 +14,13 @@
  *   unknown action labels render the "unknown" family (neutral), never a
  *   guessed color; chart elements carry role="img" + a text alternative.
  * EXTEND: new charts go through vizMath first (testable math), then here.
+ * PERF (wave 2): every component is memo()ed at the bottom of this file —
+ *   the page re-renders every 15s on the latest-signal poll, and chart props
+ *   are reference-stable (stats data, useMemo'd series), so React skips the
+ *   whole SVG subtree between polls.
  */
 
+import { memo } from "react";
 import { formatTime } from "@/lib/format";
 import { actionTone } from "../model";
 import {
@@ -25,7 +30,6 @@ import {
   donutSegments,
   familyTotals,
   rrRatio,
-  timelineSeries,
   type CountRow,
   type TimelineSeries,
 } from "./vizMath";
@@ -36,7 +40,7 @@ const FAM_CLASS = (f: ReturnType<typeof actionFamily>): string => `aa-fam-${f}`;
 
 /** Donut of /api/v1/decisions/stats by_action collapsed to display families,
  *  with the real backend labels as a legend (counts + share of the map). */
-export function ActionDonut({ byAction }: { byAction: Record<string, number> | undefined }) {
+function ActionDonutBase({ byAction }: { byAction: Record<string, number> | undefined }) {
   const legend: CountRow[] = countRows(byAction);
   const kpi = actionKpi(byAction);
   const R = 44;
@@ -93,7 +97,7 @@ export function ActionDonut({ byAction }: { byAction: Record<string, number> | u
 
 /** Confidence (0..1) over time from the CURRENT history page's rows. Gaps
  *  where the backend recorded no confidence; dropped rows are captioned. */
-export function ConfidenceTimeline({ series }: { series: TimelineSeries }) {
+function ConfidenceTimelineBase({ series }: { series: TimelineSeries }) {
   const { points, dropped, from, to } = series;
   const plottable = points.filter((p) => p.v !== null);
   if (points.length === 0) {
@@ -172,17 +176,10 @@ export function ConfidenceTimeline({ series }: { series: TimelineSeries }) {
   );
 }
 
-/** Build a timeline from history rows using the shared derivation. */
-export function historyTimeline(
-  items: Array<{ generated_at?: string | null; action?: string | null; conf01?: number | null }> | undefined,
-): TimelineSeries {
-  return timelineSeries(items);
-}
-
 /* ───────────────────────────── count bars ─────────────────────────────── */
 
 /** Sorted count bars with share-of-total (stage / reason distributions). */
-export function BarList({
+function BarListBase({
   rows,
   tone = "var(--accent)",
   max = 10,
@@ -229,7 +226,7 @@ const finite = (v: number | null | undefined): v is number =>
 /** Vertical entry/SL/TP ladder: markers positioned proportionally over the
  *  recorded price range, distances in price units, R:R as arithmetic over the
  *  three levels (null -> "—", never a guess). */
-export function PriceLadder({
+function PriceLadderBase({
   entry,
   sl,
   tp,
@@ -288,13 +285,13 @@ export function PriceLadder({
 /* ───────────────────────── small table cells ──────────────────────────── */
 
 /** Action chip with the explicit family classification (unknown -> neutral). */
-export function AaActionChip({ action }: { action: string | null | undefined }) {
+function AaActionChipBase({ action }: { action: string | null | undefined }) {
   if (!action) return <span className="aa-chip aa-fam-unknown">—</span>;
   return <span className={`aa-chip ${FAM_CLASS(actionFamily(action))}`}>{action}</span>;
 }
 
 /** Inline confidence meter cell (width IS the 0..1 backend value). */
-export function ConfCell({ value, action }: { value: number | null; action?: string | null }) {
+function ConfCellBase({ value, action }: { value: number | null; action?: string | null }) {
   if (value === null || !Number.isFinite(value)) return <span className="faint">—</span>;
   const pct = Math.max(0, Math.min(1, value)) * 100;
   const tone = actionTone(action ?? null);
@@ -307,3 +304,14 @@ export function ConfCell({ value, action }: { value: number | null; action?: str
     </span>
   );
 }
+
+/* ─────────────────────── memoized exports (wave 2) ────────────────────── *
+ * Reference-stable props + memo = the 15s latest-poll re-render skips the
+ * entire SVG/table subtrees below. Callers import timelineSeries from
+ * ./vizMath directly (memoizing the math would be pointless). */
+export const ActionDonut = memo(ActionDonutBase);
+export const ConfidenceTimeline = memo(ConfidenceTimelineBase);
+export const BarList = memo(BarListBase);
+export const PriceLadder = memo(PriceLadderBase);
+export const AaActionChip = memo(AaActionChipBase);
+export const ConfCell = memo(ConfCellBase);
