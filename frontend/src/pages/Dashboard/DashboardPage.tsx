@@ -42,6 +42,7 @@ import { AgeNote, SectionState, fmtAge, TriBadge } from "@/pages/_shared/Section
 import { InfoChip } from "@/pages/_shared/widgets";
 import { ReplayPanel } from "./ReplayPanel";
 import { PriceChart } from "./PriceChart";
+import { chartHistoryKey, chartStaleMs } from "./chart/queryPerf";
 import { MarketRadarPanel } from "./MarketRadarPanel";
 import { FeaturesGrid } from "./FeaturesGrid";
 import { PredictionsTable } from "./PredictionsTable";
@@ -89,10 +90,18 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   // 3000-bar window for deep pan/zoom (backend caps 5000); the key carries
   // the timeframe so each TF caches separately, and keepPreviousData holds
   // the old bars while the new TF loads (TradingView-like continuity).
+  // Lane C (wave 3): staleTime + the query-key/staleness helpers live in
+  // chart/queryPerf — the painter reacts to hover/zoom/crosshair with renders
+  // that re-read query options, and staleTime:0 turns each of those into a
+  // background refetch of the whole 3000-bar window. Live ticks already
+  // arrive over SSE; the 60s refetchInterval stays as the dead-stream safety
+  // net, so caching the window between beats costs nothing in accuracy and
+  // removes the fetch storm.
   const chartQuery = useQuery({
-    queryKey: ["chart-history", snapshot?.symbol ?? "", tfParam ?? "engine"],
+    queryKey: chartHistoryKey(snapshot?.symbol ?? "", tfParam),
     queryFn: ({ signal }) => chartApi.history(3000, tfParam, signal),
     refetchInterval: 60_000,
+    staleTime: chartStaleMs(),
     retry: 1,
     enabled: Boolean(snapshot),
     placeholderData: keepPreviousData,
