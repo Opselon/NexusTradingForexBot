@@ -421,7 +421,12 @@ class ModelLifecycleOrchestrator:
             try:
                 res = gate_fn()
             except Exception as e:
-                res = GateResult(gate="UNKNOWN", passed=False, reason=str(e))
+                # BUG-308C: fail closed with the offending gate identity, never
+                # an unhandled exception out of _evaluate_gates (which would
+                # abort evaluation of the remaining gates and, per
+                # orchestrator's own caller, could surface as a hard crash
+                # instead of a FAIL verdict).
+                res = GateResult(gate="UNKNOWN", passed=False, reason=f"{type(e).__name__}: {e}")
             results.append(res)
             if not res.passed:
                 all_passed = False
