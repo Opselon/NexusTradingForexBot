@@ -98,7 +98,7 @@ export function NewsTradesPanel() {
               </tr>
             ))}
           </DataTable>
-          <FreshnessNote updatedAtMs={links.dataUpdatedAt ?? null} label="links" />
+          <FreshnessNote updatedAtMs={links.dataUpdatedAt ?? null} label={t("news.fresh.links", "links")} />
         </>
       )}
     </Panel>

@@ -96,7 +96,7 @@ export function NewsKeywordsPanel() {
 
       <div className="statline" style={{ margin: "10px 0 4px" }}>
         <span>{t("news.keywords.top_coverage", "top coverage (backend scan)")}</span>
-        <FreshnessNote updatedAtMs={keywords.dataUpdatedAt ?? null} label="keywords" staleAfterMs={120_000} />
+        <FreshnessNote updatedAtMs={keywords.dataUpdatedAt ?? null} label={t("news.fresh.keywords", "keywords")} staleAfterMs={120_000} />
       </div>
       {keywords.isPending ? (
         <div className="viz-empty">{t("news.keywords.loading", "loading keyword dataset…")}</div>
