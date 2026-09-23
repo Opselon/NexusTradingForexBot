@@ -10,11 +10,23 @@ but through the safe Typer path -- LIVE never starts without confirmation.
 """
 
 from __future__ import annotations
-import contextlib
 
+import contextlib
 import sys
 
-from nexus_scalp.cli.main import app
+# WINDOWS-UX-001 (taskbar identity): the packaged EXE is the product's real
+# Windows process. Pin the AppUserModelID + console title BEFORE the CLI is
+# imported and anything renders, so the taskbar entry is created under the
+# product identity instead of falling back to the bootloader image name
+# (which is what made the taskbar show "python"). Failure-isolated: branding
+# never blocks the boot. Non-Windows: no-op.
+from nexus_scalp.platform.windows_identity import (
+    apply_windows_identity,
+)
+
+apply_windows_identity()
+
+from nexus_scalp.cli.main import app  # noqa: E402
 
 if __name__ == "__main__":
     # BUG-145: packaged EXE under a double-click console (cp1252/cp437) crashed

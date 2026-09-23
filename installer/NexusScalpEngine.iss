@@ -30,8 +30,8 @@
   #define NSE_OUTPUT_DIR "release"
 #endif
 
-#define MyAppName "Nexus Scalp Engine"
-#define MyAppPublisher "Nexus Quantitative Engineering"
+#define MyAppName "NexusTraderBot"
+#define MyAppPublisher "Opselon"
 #define MyAppExeName "NexusScalpEngine.exe"
 #define MyAppVersion NSE_VERSION
 
@@ -80,9 +80,15 @@ Source: "{#NSE_OUTPUT_DIR}\checksums\SHA256SUMS.txt"; DestDir: "{app}"; Flags: i
 Source: "{#NSE_OUTPUT_DIR}\manifests\release-manifest.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
-Name: "{group}\Nexus Scalp Engine"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Doctor (diagnostics)"; Filename: "{app}\{#MyAppExeName}"; Parameters: "doctor"
-Name: "{autodesktop}\Nexus Scalp Engine"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+; WINDOWS-UX-001: the Start Menu / desktop shortcut is the relaunch surface.
+; Its caption is what the user sees + what the taskbar pins, so it must read
+; NexusTraderBot. AppUserModelID lives in the EXE itself (set at boot by
+; nexus_scalp.platform.windows_identity), which is what Windows groups every
+; launch by — so shortcut-launched, double-clicked and `nexus start` sessions
+; all land in ONE taskbar entry under the same label.
+Name: "{group}\NexusTraderBot"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\NexusTraderBot Doctor (diagnostics)"; Filename: "{app}\{#MyAppExeName}"; Parameters: "doctor"
+Name: "{autodesktop}\NexusTraderBot"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Parameters: "health"; Description: "Run post-install health check"; Flags: nowait postinstall skipifsilent

@@ -540,6 +540,7 @@ ipch/
 build-info.json
 *.spec
 installer/*.exe
+installer/version_info.txt
 !src/nexus_scalp/release/
 !scripts/build/
 !scripts/release/
