@@ -28,7 +28,9 @@ export function useRealtimeSnapshot(restSnapshot: EngineSnapshot | undefined): {
   realtimeStatus: RealtimeStatus;
 } {
   const [socketSnapshot, setSocketSnapshot] = useState<EngineSnapshot | undefined>(undefined);
-  const [status, setStatus] = useState<RealtimeStatus>(realtimeClient.currentStatus());
+  // Lazy initializer: reads the client once on first render instead of on
+  // every re-render (the expression still evaluates per render otherwise).
+  const [status, setStatus] = useState<RealtimeStatus>(() => realtimeClient.currentStatus());
 
   useEffect(() => {
     const unsubData = realtimeClient.subscribe(setSocketSnapshot);
@@ -79,7 +81,11 @@ export function useRealtimeVersion(): { version: number | null; ageMs: number | 
     const tick = () => {
       if (!alive) return;
       const s = realtimeClient.currentStatus();
-      setState({ version: s.lastVersion, ageMs: s.lastMessageAt !== null ? Date.now() - s.lastMessageAt : null });
+      const version = s.lastVersion;
+      const ageMs = s.lastMessageAt !== null ? Date.now() - s.lastMessageAt : null;
+      // Bail out on an identical read: before the first frame (both fields
+      // null) the 1 s interval must not re-render the consumer for nothing.
+      setState((prev) => (prev.version === version && prev.ageMs === ageMs ? prev : { version, ageMs }));
     };
     tick();
     const t = window.setInterval(tick, 1000);

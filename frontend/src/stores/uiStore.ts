@@ -48,6 +48,18 @@ function writePref(key: string, value: string): void {
 let toastSeq = 0;
 /** Non-spam dedupe (4s window) — parity with legacy NX.toast (Web/ux.js). */
 const toastGuard = new Map<string, number>();
+/**
+ * Bound the dedupe map: keys are `${kind}|${text}`, so a long session with
+ * varied messages would otherwise grow it forever. Entries older than the
+ * window can never suppress anything again (the guard only honours an entry
+ * younger than 4000 ms), so dropping them is behaviour-identical.
+ */
+function pruneToastGuard(now: number): void {
+  if (toastGuard.size === 0) return;
+  for (const [key, at] of toastGuard) {
+    if (now - at >= 4_000) toastGuard.delete(key);
+  }
+}
 
 export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: readPref(STORAGE_KEYS.sidebar) === "1",
@@ -69,6 +81,7 @@ export const useUiStore = create<UiState>((set) => ({
     set((s) => {
       const key = `${kind}|${text}`;
       const now = Date.now();
+      pruneToastGuard(now);
       const last = toastGuard.get(key);
       if (last !== undefined && now - last < 4000) return s; // dedupe repeated toast
       toastGuard.set(key, now);

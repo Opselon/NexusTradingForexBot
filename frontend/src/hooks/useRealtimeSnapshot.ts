@@ -1,5 +1,11 @@
 /**
- * useRealtimeSnapshot — React binding for the realtime WebSocket.
+ * useRealtimeSnapshot — React binding for the realtime client.
+ *
+ * The implementation lives in `@/hooks/useRealtime` (the single home of the
+ * realtime hooks). This module keeps its own import path — AppShell and every
+ * lane that imported `@/hooks/useRealtimeSnapshot` must keep resolving — and
+ * delegates instead of maintaining a second copy of the subscription logic
+ * (the two bodies had already drifted; one implementation = one fix site).
  *
  * Server state comes from the backend's canonical snapshot; the REST snapshot
  * query seeds initial data and the socket keeps it live. When the socket is
@@ -7,32 +13,4 @@
  * indicators instead of pretending the data is current.
  */
 
-import { useEffect, useState } from "react";
-import { realtimeClient } from "@/core/realtime";
-import type { ConnectionState, RealtimeStatus } from "@/types/realtime";
-import type { EngineSnapshot } from "@/types/domain";
-
-export function useRealtimeSnapshot(restSnapshot: EngineSnapshot | undefined): {
-  snapshot: EngineSnapshot | undefined;
-  connectionState: ConnectionState;
-  realtimeStatus: RealtimeStatus;
-} {
-  const [socketSnapshot, setSocketSnapshot] = useState<EngineSnapshot | undefined>(undefined);
-  const [status, setStatus] = useState<RealtimeStatus>(realtimeClient.currentStatus());
-
-  useEffect(() => {
-    const unsubData = realtimeClient.subscribe((snap) => setSocketSnapshot(snap));
-    const unsubStatus = realtimeClient.subscribeStatus(setStatus);
-    realtimeClient.start();
-    return () => {
-      unsubData();
-      unsubStatus();
-      // Keep the client alive across route changes; it is app-scoped.
-    };
-  }, []);
-
-  // Prefer socket data once we have any; REST snapshot fills the gap and
-  // provides the baseline for merging tick deltas.
-  const snapshot = socketSnapshot ?? restSnapshot;
-  return { snapshot, connectionState: status.state, realtimeStatus: status };
-}
+export { useRealtimeSnapshot } from "./useRealtime";

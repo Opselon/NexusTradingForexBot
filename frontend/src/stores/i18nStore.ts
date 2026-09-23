@@ -25,13 +25,19 @@ function applyDirection(lang: Lang): void {
 export const useI18n = create<I18nState>((set, get) => {
   const initial = detectLang();
   applyDirection(initial);
+  // `t` is bound to the CURRENT language through get() (so an old reference
+  // never translates with a stale dictionary), but its identity is refreshed
+  // on every setLang: consumers that select only `s.t` re-render exactly when
+  // the language changes (a stable `t` would leave them on the old language
+  // until some unrelated state happened to re-render them).
+  const makeT = (): I18nState["t"] => (key, fallback, vars) => translate(get().lang, key, fallback, vars);
   return {
     lang: initial,
     setLang: (lang: Lang) => {
       persistLang(lang);
       applyDirection(lang);
-      set({ lang });
+      set({ lang, t: makeT() });
     },
-    t: (key, fallback, vars) => translate(get().lang, key, fallback, vars),
+    t: makeT(),
   };
 });
