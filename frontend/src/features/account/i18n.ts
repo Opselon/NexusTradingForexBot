@@ -257,6 +257,7 @@ export const MESSAGES: FeatureMessages = {
   "account.summary.recovery": { fa: "بازیابی", de: "Erholung", es: "recuperación", ar: "الاسترداد" },
   "account.summary.worker": { fa: "کارگر:", de: "Worker:", es: "trabajador:", ar: "العامل:" },
   "account.telemetry.adapter_unavailable": { fa: "مبدل در دسترس نیست", de: "Adapter nicht verfügbar", es: "adaptador no disponible", ar: "المحوّل غير متاح" },
+  "account.telemetry.aria": { fa: "وضعیت تله‌متری", de: "Telemetrie-Status", es: "estado de telemetría", ar: "حالة التليمتري" },
   "account.telemetry.clock_title": { fa: "ساعت دیواری (کلاینت)، نه داده بازار", de: "Wall-Clock (Client), nicht Marktdaten", es: "reloj de pared (cliente), no datos de mercado", ar: "ساعة الحائط (العميل) لا بيانات السوق" },
   "account.telemetry.disconnected": { fa: "قطع", de: "GETRENNT", es: "DESCONECTADO", ar: "منقطع" },
   "account.telemetry.equity": { fa: "سرمایه", de: "EQUITY", es: "PATRIMONIO", ar: "حقوق الملكية" },
@@ -270,6 +271,7 @@ export const MESSAGES: FeatureMessages = {
   "account.telemetry.tag_title": { fa: "نماد و تایم‌فریم ارائه‌شده توسط هسته حسابداری", de: "Symbol und Timeframe aus dem Accounting-Core", es: "símbolo y marco de tiempo del núcleo contable", ar: "الرمز والإطار الزمني من نواة المحاسبة" },
   "account.trades.balance_after": { fa: "موجودی پس از {balance}", de: "Kontostand danach {balance}", es: "saldo después {balance}", ar: "الرصيد بعده {balance}" },
   "account.trades.close": { fa: "بستن", de: "Schließen", es: "Cerrar", ar: "إغلاق" },
+  "account.trades.ctx_summary": { fa: "زمینه استراتژی / مدل + کیفیت (خام)", de: "Strategie-/Modellkontext + Qualität (roh)", es: "contexto de estrategia / modelo + calidad (sin procesar)", ar: "سياق الاستراتيجية / النموذج + الجودة (خام)" },
   "account.trades.drawer_aria": { fa: "شناسایی پیشینه معامله {ticket}", de: "Forensik zu Trade {ticket}", es: "forense de la operación {ticket}", ar: "تحليل صفقة {ticket}" },
   "account.trades.empty": { fa: "هنوز معامله تاریخی‌ای یافت نشده است.", de: "Noch keine historischen Trades gefunden.", es: "Aún no se hallaron operaciones históricas.", ar: "لم تُعثر على صفقات تاريخية بعد." },
   "account.trades.empty_hint": { fa: "همگام‌سازی تاریخچه بروکر در انتظار است — تا آن زمان هیچ ردیفی ساخته نمی‌شود.", de: "Broker-Historie-Sync ausstehend — bis dahin werden keine Zeilen erfunden.", es: "pendiente la sincronización del histórico del bróker; no se inventan filas mientras tanto.", ar: "مزامنة سجل الوسيط مؤجلة — ولا تُختلق أي صفوف حتى ذلك الحين." },
@@ -304,4 +306,7 @@ export const MESSAGES: FeatureMessages = {
   "account.trades.vol": { fa: "حجم {vol}", de: "Volumen {vol}", es: "volumen {vol}", ar: "الحجم {vol}" },
   "account.trades.waterfall_empty": { fa: "بلوک نتیجه موجود نیست — تجزیه‌ای برای رسم نیست", de: "Outcome-Block fehlt — keine Zerlegung zu zeichnen", es: "falta el bloque de resultado; no hay descomposición que dibujar", ar: "لا كتلة نتيجة — لا تفكيك للرسم" },
   "account.trades.waterfall_title": { fa: "آبشار PnL (اجزای بک‌اند)", de: "PnL-Wasserfall (Backend-Komponenten)", es: "cascada de PnL (componentes del backend)", ar: "شلال صافي الربح (مكوّنات الخادم)" },
+  "account.usecase.unavailable": { fa: "هسته حسابداری در دسترس نیست ({reason}) — هیچ عددی نمایش داده نمی‌شود چون سمت سرور وجود ندارد.", de: "Accounting-Core nicht verfügbar ({reason}) — es werden keine Zahlen angezeigt, weil es serverseitig keine gibt.", es: "núcleo contable no disponible ({reason}) — no se muestran cifras porque no existen en el servidor.", ar: "نواة المحاسبة غير متاحة ({reason}) — لا تُعرض أي أرقام لأنها غير موجودة على الخادم." },
+  "account.usecase.trace_notes": { fa: "ردیابی پیدا نشد — یادداشت‌های بک‌اند: {notes}", de: "Trace nicht gefunden — Backend-Notizen: {notes}", es: "traza no encontrada — notas del backend: {notes}", ar: "لم يُعثر على التتبّع — ملاحظات الخادم: {notes}" },
+  "account.usecase.trace_missing": { fa: "در دفتر حسابداری ردیابی‌ای پیدا نشد.", de: "Trace im Accounting-Ledger nicht gefunden.", es: "traza no encontrada en el libro contable.", ar: "لم يُعثر على التتبّع في سجل المحاسبة." },
 };
