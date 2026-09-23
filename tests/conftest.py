@@ -21,18 +21,23 @@ from __future__ import annotations
 
 # ---------------------------------------------------------------------------
 # Worktree import isolation (BUG-231 test harness): the dev venv's
-# __editable__ .pth pins nexus_scalp to the MAIN checkout's src/. When the
-# suite runs inside an isolated git worktree (.../.worktrees/<name>), that
-# pin would silently import the MAIN checkout's adapter instead of the
-# worktree copy under test. Prepend the worktree's src/ and purge any
-# pre-imported nexus_scalp modules BEFORE anything imports them. On the
-# main checkout and in CI the condition is false -> no-op.
+# __editable__ .pth pins nexus_scalp to the MAIN checkout's src/. Any
+# suite run from ANOTHER tree (a .worktrees/ worktree, an agent lane
+# clone such as ../nse-cc-lane) would silently import the MAIN checkout's
+# code instead of the copy under test — the branch checked out over
+# there decides what every test actually exercises, so results become
+# a verdict on someone else's WIP (observed: full-suite failures that
+# vanish when the suite binds its own src/). Prepend THIS tree's src/
+# and purge any pre-imported nexus_scalp modules BEFORE anything
+# imports them. On the main checkout the inserted path equals the
+# .pth target (no-op), and in CI the package is installed from the
+# same tree (also a no-op).
 # ---------------------------------------------------------------------------
 import os
 import sys
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if os.sep + ".worktrees" + os.sep in _ROOT + os.sep:
+if os.path.isdir(os.path.join(_ROOT, "src", "nexus_scalp")):
     _SRC = os.path.join(_ROOT, "src")
     if os.path.isdir(os.path.join(_SRC, "nexus_scalp")):
         if _SRC not in sys.path:

@@ -179,10 +179,14 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  onPrefetch,
 }: {
   options: Array<{ id: T; label: string }>;
   value: T;
   onChange: (v: T) => void;
+  /** Optional (wave 2b): fires on hover/focus of an option so the caller can
+   *  warm that section's chunk+query before the click. Inert when omitted. */
+  onPrefetch?: (v: T) => void;
 }) {
   return (
     <div className="segmented" role="tablist">
@@ -193,6 +197,8 @@ export function Segmented<T extends string>({
           aria-selected={value === o.id}
           className={value === o.id ? "active" : ""}
           onClick={() => onChange(o.id)}
+          onPointerEnter={onPrefetch ? () => onPrefetch(o.id) : undefined}
+          onFocus={onPrefetch ? () => onPrefetch(o.id) : undefined}
         >
           {o.label}
         </button>
