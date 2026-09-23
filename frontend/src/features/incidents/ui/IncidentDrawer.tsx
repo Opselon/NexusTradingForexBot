@@ -51,10 +51,11 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
       {detailQ.isPending ? (
         <Skeleton count={4} />
       ) : detailQ.isError ? (
-              <ErrorState
-                message={detailQ.error instanceof Error ? detailQ.error.message : "incident detail unavailable"}
-                onRetry={() => void detailQ.refetch()}
-              />
+        <ErrorState
+          message={detailQ.error instanceof Error ? detailQ.error.message : "incident detail unavailable"}
+          requestId={(detailQ.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void detailQ.refetch()}
+        />
       ) : detailQ.data?.available === false || !inc ? (
         <EmptyState message="incident not found" hint={str(detailQ.data?.error) ?? "the store answered available:false"} />
       ) : tab === "detail" ? (
@@ -179,6 +180,12 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
           <Panel title="Report export (secret-masked)" tight>
             {reportQ.isPending ? (
               <Skeleton count={2} />
+            ) : reportQ.isError ? (
+              <ErrorState
+                message={reportQ.error instanceof Error ? reportQ.error.message : "report export request failed"}
+                requestId={(reportQ.error as { requestId?: string } | null)?.requestId ?? null}
+                onRetry={() => void reportQ.refetch()}
+              />
             ) : reportQ.data?.available === false ? (
               <EmptyState message={str(reportQ.data?.error) ?? "report unavailable"} />
             ) : (
@@ -198,6 +205,12 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
           <Panel title="Evidence bundle" tight>
             {zipQ.isPending ? (
               <Skeleton />
+            ) : zipQ.isError ? (
+              <ErrorState
+                message={zipQ.error instanceof Error ? zipQ.error.message : "zip export request failed"}
+                requestId={(zipQ.error as { requestId?: string } | null)?.requestId ?? null}
+                onRetry={() => void zipQ.refetch()}
+              />
             ) : zipQ.data?.available === true ? (
               <dl className="kv">
                 <InfoRow label="zip_path" value={<span className="inline-mono tiny">{zipQ.data.zip_path ?? "—"}</span>} />

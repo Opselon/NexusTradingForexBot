@@ -7,7 +7,7 @@
  * value lineage / forensic probes sections.
  */
 
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -24,12 +24,83 @@ import {
 } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { useDebouncedValue } from "@/features/config/ui/kit";
 import { CommandResultLine, DistBars, FreshnessCaption, InfoRow, JsonBlock } from "../../research/ui/lane5Kit";
 import { arr, num, obj, str, type Row } from "../model";
 import { incidentsQueries, incidentsUseCases } from "../useCases";
 import IncidentDrawer from "./IncidentDrawer";
 
 type Tab = "list" | "search" | "lineage" | "forensics";
+
+/** Safe-envelope request id (error may be an object at HTTP 200 — never truthy-tested). */
+const errRequestId = (e: unknown): string | null => (e as { requestId?: string } | null)?.requestId ?? null;
+const errMessage = (e: unknown, fallback: string): string => (e instanceof Error ? e.message : fallback);
+
+/** Memoized incident row (list caps at 200). Primitive props only: the shell
+ *  re-renders every second and the list polls every 30s — leaf rows bail out
+ *  instead of re-rendering 8 cells x 200 rows. */
+const IncidentRow = memo(function IncidentRow({
+  id,
+  severity,
+  status,
+  component,
+  category,
+  repeatedCount,
+  lastSeenAt,
+  onOpen,
+}: {
+  id: string;
+  severity: string;
+  status: string;
+  component: string;
+  category: string;
+  repeatedCount: number;
+  lastSeenAt: string | null;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <tr>
+      <td className="inline-mono tiny" title={id}>
+        {id.slice(0, 14)}
+      </td>
+      <td>
+        <SeverityBadge severity={severity} />
+      </td>
+      <td>
+        <StatusBadge status={status} />
+      </td>
+      <td className="tiny">{component}</td>
+      <td className="tiny muted">{category}</td>
+      <td className="num tiny">{repeatedCount > 1 ? `×${repeatedCount}` : ""}</td>
+      <td className="tiny">{formatDateTime(lastSeenAt)}</td>
+      <td>
+        <button className="btn small ghost" onClick={() => onOpen(id)}>
+          open
+        </button>
+      </td>
+    </tr>
+  );
+});
+
+/** Memoized search-result row (bounded 50). Same bailout rule as IncidentRow. */
+const SearchRow = memo(function SearchRow({ id, severity, status, onOpen }: { id: string; severity: string; status: string; onOpen: (id: string) => void }) {
+  return (
+    <tr>
+      <td className="inline-mono tiny">{id.slice(0, 14)}</td>
+      <td>
+        <SeverityBadge severity={severity} />
+      </td>
+      <td>
+        <StatusBadge status={status} />
+      </td>
+      <td>
+        <button className="btn small ghost" onClick={() => onOpen(id)}>
+          open
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 export default function IncidentsPage(props: ShellPageProps) {
   void props;
@@ -45,6 +116,11 @@ export default function IncidentsPage(props: ShellPageProps) {
   const [confirmReconcile, setConfirmReconcile] = useState(false);
   const cmd = useMutationFeedback();
   const qc = useQueryClient();
+  // Keystrokes settle before they become query keys — one request per settled
+  // value instead of one per keystroke (the input itself stays instant).
+  const settledQ = useDebouncedValue(q, 300);
+  const settledTrace = useDebouncedValue(traceQ, 300);
+  const settledTicket = useDebouncedValue(lineageTicket, 300);
 
   const listQ = useQuery({
     queryKey: ["incidents", "list", severity, status],
@@ -59,20 +135,20 @@ export default function IncidentsPage(props: ShellPageProps) {
     retry: false,
   });
   const searchQ = useQuery({
-    queryKey: ["incidents", "search", q],
-    queryFn: ({ signal }) => incidentsQueries.search(q, signal),
+    queryKey: ["incidents", "search", settledQ],
+    queryFn: ({ signal }) => incidentsQueries.search(settledQ, signal),
     retry: false,
-    enabled: tab === "search" && q.trim().length > 0,
+    enabled: tab === "search" && settledQ.trim().length > 0,
   });
   const traceQuery = useQuery({
-    queryKey: ["incidents", "trace", traceQ],
-    queryFn: ({ signal }) => incidentsQueries.trace(traceQ, signal),
+    queryKey: ["incidents", "trace", settledTrace],
+    queryFn: ({ signal }) => incidentsQueries.trace(settledTrace, signal),
     retry: false,
-    enabled: tab === "search" && traceQ.trim().length > 0,
+    enabled: tab === "search" && settledTrace.trim().length > 0,
   });
   const lineageQ = useQuery({
-    queryKey: ["incidents", "lineage", lineageField, lineageTicket],
-    queryFn: ({ signal }) => incidentsQueries.lineage(lineageField, lineageTicket, signal),
+    queryKey: ["incidents", "lineage", lineageField, settledTicket],
+    queryFn: ({ signal }) => incidentsQueries.lineage(lineageField, settledTicket, signal),
     retry: false,
     enabled: tab === "lineage",
   });
@@ -83,9 +159,18 @@ export default function IncidentsPage(props: ShellPageProps) {
     enabled: tab === "forensics",
   });
 
-  const incidents = incidentsUseCases.voList(listQ.data?.incidents ?? []);
+  // Derived value objects are memoized: the shell re-renders every second and
+  // voList() maps up to 200 records per call.
+  const incidents = useMemo(() => incidentsUseCases.voList(listQ.data?.incidents ?? []), [listQ.data]);
+  const searchHits = useMemo(() => incidentsUseCases.voList(searchQ.data?.incidents ?? []), [searchQ.data]);
+  const recurring = useMemo(() => arr(healthQ.data?.recurring), [healthQ.data]);
+  const byComponent = useMemo(
+    () => Object.entries(obj(healthQ.data?.by_component)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
+    [healthQ.data],
+  );
   const counts = healthQ.data?.counts ?? listQ.data?.counts;
-  const worker = obj(healthQ.data?.worker);
+  const worker = useMemo(() => obj(healthQ.data?.worker), [healthQ.data]);
+  const onOpen = useCallback((id: string) => setOpen(id), []);
 
   return (
     <div>
@@ -144,17 +229,34 @@ export default function IncidentsPage(props: ShellPageProps) {
           <>
             <div className="grid cols-2">
               <Panel title="By component" tight>
-                <DistBars
-                  rows={Object.entries(obj(healthQ.data?.by_component)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
-                  tone="var(--violet)"
-                />
+                {healthQ.isPending ? (
+                  <Skeleton count={3} />
+                ) : healthQ.isError ? (
+                  <ErrorState
+                    message={errMessage(healthQ.error, "incident health request failed")}
+                    requestId={errRequestId(healthQ.error)}
+                    onRetry={() => void healthQ.refetch()}
+                  />
+                ) : byComponent.length === 0 ? (
+                  <EmptyState message="No component counts reported." hint="/api/diagnostics/incidents/health answered an empty by_component map" />
+                ) : (
+                  <DistBars rows={byComponent} tone="var(--violet)" />
+                )}
               </Panel>
               <Panel title="Recurring (fingerprint)" tight>
-                {arr(healthQ.data?.recurring).length === 0 ? (
-                  <EmptyState message="No recurring incidents." />
+                {healthQ.isPending ? (
+                  <Skeleton count={3} />
+                ) : healthQ.isError ? (
+                  <ErrorState
+                    message={errMessage(healthQ.error, "incident health request failed")}
+                    requestId={errRequestId(healthQ.error)}
+                    onRetry={() => void healthQ.refetch()}
+                  />
+                ) : recurring.length === 0 ? (
+                  <EmptyState message="No recurring incidents." hint="no fingerprint has repeated yet" />
                 ) : (
                   <DataTable headers={[{ label: "fingerprint" }, { label: "seen", num: true }, { label: "severity" }]}>
-                    {arr(healthQ.data?.recurring)
+                    {recurring
                       .slice(0, 10)
                       .map((r: Row, i: number) => (
                         <tr key={i}>
@@ -196,7 +298,11 @@ export default function IncidentsPage(props: ShellPageProps) {
               {listQ.isPending ? (
                 <Skeleton count={5} />
               ) : listQ.isError ? (
-                <ErrorState message={listQ.error instanceof Error ? listQ.error.message : "incidents failed"} onRetry={() => void listQ.refetch()} />
+                <ErrorState
+                  message={errMessage(listQ.error, "incidents failed")}
+                  requestId={errRequestId(listQ.error)}
+                  onRetry={() => void listQ.refetch()}
+                />
               ) : incidents.length === 0 ? (
                 <EmptyState message="No incidents match." hint="the store is empty or filters exclude everything" />
               ) : (
@@ -213,26 +319,17 @@ export default function IncidentsPage(props: ShellPageProps) {
                   ]}
                 >
                   {incidents.map((i) => (
-                    <tr key={i.id}>
-                      <td className="inline-mono tiny" title={i.id}>
-                        {i.id.slice(0, 14)}
-                      </td>
-                      <td>
-                        <SeverityBadge severity={i.severity} />
-                      </td>
-                      <td>
-                        <StatusBadge status={i.status} />
-                      </td>
-                      <td className="tiny">{i.component}</td>
-                      <td className="tiny muted">{i.category}</td>
-                      <td className="num tiny">{i.repeatedCount > 1 ? `×${i.repeatedCount}` : ""}</td>
-                      <td className="tiny">{formatDateTime(i.lastSeenAt)}</td>
-                      <td>
-                        <button className="btn small ghost" onClick={() => setOpen(i.id)}>
-                          open
-                        </button>
-                      </td>
-                    </tr>
+                    <IncidentRow
+                      key={i.id}
+                      id={i.id}
+                      severity={i.severity}
+                      status={i.status}
+                      component={i.component}
+                      category={i.category}
+                      repeatedCount={i.repeatedCount}
+                      lastSeenAt={i.lastSeenAt}
+                      onOpen={onOpen}
+                    />
                   ))}
                 </DataTable>
               )}
@@ -247,27 +344,20 @@ export default function IncidentsPage(props: ShellPageProps) {
               <div style={{ marginTop: 8 }}>
                 {q.trim() === "" ? (
                   <EmptyState message="Type a query — the backend answers {available:true, incidents:[]} for empty queries." />
-                ) : searchQ.isFetching ? (
+                ) : searchQ.isPending ? (
                   <Skeleton count={2} />
-                ) : incidentsUseCases.voList(searchQ.data?.incidents ?? []).length === 0 ? (
-                  <EmptyState message="No incidents matched." />
+                ) : searchQ.isError ? (
+                  <ErrorState
+                    message={errMessage(searchQ.error, "incident search request failed")}
+                    requestId={errRequestId(searchQ.error)}
+                    onRetry={() => void searchQ.refetch()}
+                  />
+                ) : searchHits.length === 0 ? (
+                  <EmptyState message="No incidents matched." hint="the bounded search found no hit — try a full incident id or a tag" />
                 ) : (
                   <DataTable headers={[{ label: "incident" }, { label: "sev" }, { label: "status" }, { label: "" }]}>
-                    {incidentsUseCases.voList(searchQ.data?.incidents ?? []).map((i) => (
-                      <tr key={i.id}>
-                        <td className="inline-mono tiny">{i.id.slice(0, 14)}</td>
-                        <td>
-                          <SeverityBadge severity={i.severity} />
-                        </td>
-                        <td>
-                          <StatusBadge status={i.status} />
-                        </td>
-                        <td>
-                          <button className="btn small ghost" onClick={() => setOpen(i.id)}>
-                            open
-                          </button>
-                        </td>
-                      </tr>
+                    {searchHits.map((i) => (
+                      <SearchRow key={i.id} id={i.id} severity={i.severity} status={i.status} onOpen={onOpen} />
                     ))}
                   </DataTable>
                 )}
@@ -284,10 +374,18 @@ export default function IncidentsPage(props: ShellPageProps) {
               <div style={{ marginTop: 8 }}>
                 {traceQ.trim() === "" ? (
                   <EmptyState message="Missing hops are reported as missing_link + reason — never fabricated." />
-                ) : traceQuery.isFetching ? (
+                ) : traceQuery.isPending ? (
                   <Skeleton count={2} />
+                ) : traceQuery.isError ? (
+                  <ErrorState
+                    message={errMessage(traceQuery.error, "trace request failed")}
+                    requestId={errRequestId(traceQuery.error)}
+                    onRetry={() => void traceQuery.refetch()}
+                  />
+                ) : traceQuery.data?.trace === undefined ? (
+                  <EmptyState message="Trace payload empty." hint="the backend returned no trace for this id" />
                 ) : (
-                  <JsonBlock value={traceQuery.data?.trace} maxChars={3000} />
+                  <JsonBlock value={traceQuery.data.trace} maxChars={3000} />
                 )}
               </div>
             </Panel>
@@ -314,7 +412,11 @@ export default function IncidentsPage(props: ShellPageProps) {
             {lineageQ.isPending ? (
               <Skeleton count={3} />
             ) : lineageQ.isError ? (
-              <EmptyState message={lineageQ.error instanceof Error ? lineageQ.error.message : "lineage failed"} />
+              <ErrorState
+                message={errMessage(lineageQ.error, "value lineage request failed")}
+                requestId={errRequestId(lineageQ.error)}
+                onRetry={() => void lineageQ.refetch()}
+              />
             ) : (
               <>
                 <dl className="kv" style={{ marginBottom: 8 }}>
@@ -359,7 +461,13 @@ export default function IncidentsPage(props: ShellPageProps) {
             {forensicsQ.isPending ? (
               <Skeleton count={3} />
             ) : forensicsQ.isError ? (
-              <EmptyState message={forensicsQ.error instanceof Error ? forensicsQ.error.message : "probe failed"} />
+              <ErrorState
+                message={errMessage(forensicsQ.error, "forensic probe request failed")}
+                requestId={errRequestId(forensicsQ.error)}
+                onRetry={() => void forensicsQ.refetch()}
+              />
+            ) : forensicsQ.data === undefined ? (
+              <EmptyState message="Probe payload empty." hint="the backend returned no probe body" />
             ) : (
               <JsonBlock value={forensicsQ.data} maxChars={5000} />
             )}
