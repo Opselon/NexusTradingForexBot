@@ -37,9 +37,9 @@ import type {
 } from "../model";
 import { TRAIN_BACKENDS, TRAIN_SOURCES } from "../model";
 import { CANDLE_OPTIONS, classNames, codeOf, errText, fmtValue, isOkValue } from "./kit";
+import { useTrainPoll } from "./useTrainPoll";
 import "./provisioning.css";
 
-const POLL_MS = 2000;
 
 
 /** The ok===false subset of the report checklist (server `failing()`). */
@@ -124,62 +124,8 @@ export default function ProvisioningPage(_props: ShellPageProps) {
     void refreshEnv(backend);
   }, [backend, refreshEnv]);
 
-  // Live event tail while a run is active.
-  // perf: pause the redundant progress GET while the tab is hidden; on
-  // visible, resume + one immediate tick so the tail is never staler than
-  // one tick on return (final result still lands via the same tick path).
-  useEffect(() => {
-    if (!training) return;
-    let cancelled = false;
-    let timer: number | null = null;
-    const tick = async () => {
-      try {
-        const p = await provisioningApi.trainProgress(seenSeq.current);
-        if (cancelled) return;
-        if (Array.isArray(p.events) && p.events.length > 0) {
-          setEvents((prev) => [...prev, ...p.events]);
-          const maxSeq = p.events.reduce((m, e) => Math.max(m, Number(e.seq ?? 0)), seenSeq.current);
-          seenSeq.current = maxSeq;
-        }
-        if (!p.active) {
-          setTraining(false);
-          setResult(p.result ?? null);
-          if (p.cancelled) setNotice("Run cancelled — observed at the epoch boundary.");
-          else if (!p.success) setError(codeOf(p));
-          else setNotice("Run finished.");
-        }
-      } catch (err) {
-        if (!cancelled) setError(errText(err));
-      }
-    };
-    const startTimer = () => {
-      if (timer === null && !cancelled) timer = window.setInterval(tick, POLL_MS);
-    };
-    const stopTimer = () => {
-      if (timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    };
-    const onVisibility = () => {
-      if (cancelled) return;
-      if (document.visibilityState === "hidden") stopTimer();
-      else {
-        startTimer();
-        void tick();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    if (document.visibilityState !== "hidden") {
-      void tick();
-      startTimer();
-    }
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisibility);
-      stopTimer();
-    };
-  }, [training]);
+  // Live event tail: extracted to useTrainPoll (same semantics, keeps this file <=500).
+  useTrainPoll(training, seenSeq, setEvents, setTraining, setResult, setNotice, setError);
 
   const onInstall = useCallback(async () => {
     setInstalling(true);
