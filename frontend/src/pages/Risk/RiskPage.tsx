@@ -1,4 +1,22 @@
 /**
+ * PURPOSE:  Risk console page — backend-state mirror with radial limit
+ *           gauges, stress/limits matrix, derived hero strip, freshness chips.
+ * OWNER:    uiux-wave5-risk  (future edits to this file belong to this lane)
+ * CONSUMES: riskApi (status/summary/runtimeRiskState), AppShell snapshot prop,
+ *           pages/_shared kit (SectionState, widgets), components/pro/RiskViz,
+ *           lib/riskGateTrace + lib/format, colocated ./riskThresholds,
+ *           ./limitRows, ./HeroStrip, ./LimitGauge, ./LimitMatrix,
+ *           ./FreshnessChip, ./risk.css
+ * PROVIDES: default <RiskPage snapshot nowMs?> (routed by app/AppShell)
+ * INVARIANTS: every verdict word is a backend string or an arithmetic
+ *             restatement of two backend numbers; missing data renders
+ *             EmptyState/ErrorState/Skeleton, never a fabricated value;
+ *             every control that existed before this pass still works.
+ * EXTEND:   new visuals belong in colocated components fed by ./limitRows —
+ *           do not fetch here, do not add thresholds inline.
+ */
+
+/**
  * Risk — dedicated risk console (backend-state mirror).
  *
  * SAFETY / ACTIVE / WARNING / BLOCKED / ERROR / UNKNOWN distinction comes from
@@ -19,15 +37,21 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { riskApi } from "@/api/riskApi";
 import type { EngineSnapshot, RiskChecks, RuntimeRiskState } from "@/types/domain";
-import { BreakerTiles, DrawdownBar, GateFunnel, GuardianHero, MarginArc } from "@/components/pro/RiskViz";
+import { BreakerTiles, GateFunnel, GuardianHero, MarginArc } from "@/components/pro/RiskViz";
 import { EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState, errorText } from "@/pages/_shared/SectionState";
-import { MeterBar, SortableTable, type Column, type MeterTone } from "@/pages/_shared/widgets";
+import { MeterBar, SortableTable, type Column } from "@/pages/_shared/widgets";
 import { gateEvidence, verdictWord, directionWord, type GateEvidenceRow } from "@/lib/riskGateTrace";
-import { limitUtilization } from "@/lib/riskVizMath";
 import { formatMoney, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import { buildLimitRows } from "./limitRows";
+import { pressureOf, rampStyle } from "./riskThresholds";
+import { HeroStrip } from "./HeroStrip";
+import { LimitGauge } from "./LimitGauge";
+import { LimitMatrix } from "./LimitMatrix";
+import { FreshnessChip } from "./FreshnessChip";
 import "@/pages/_shared/pages.css";
+import "./risk.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -42,6 +66,8 @@ interface GateRowVM {
   value: string;
   limit: string;
   reason: string;
+  /** Depth vs the gate's own limit (1.00 = at the limit) — drives the tint. */
+  pressure: number | null;
 }
 
 /**
@@ -63,6 +89,9 @@ function gateRow(row: GateEvidenceRow): GateRowVM {
     value: cell(row.value),
     limit: `${directionWord(row.direction)} ${cell(row.limit)}`,
     reason: row.detail ?? "no backend reason in payload — not a passing gate",
+    // Colour-only depth from the same two backend numbers (never a new
+    // verdict): 1.00 = at the gate's own limit, >1 = past it.
+    pressure: pressureOf(row.value, row.limit, row.direction),
   };
 }
 
@@ -87,7 +116,13 @@ function RiskMatrix({ checks }: { checks: RiskChecks }) {
           </span>
         ),
       },
-      { key: "value", label: "Value", num: true, sortValue: (r) => (r.value === "—" ? null : r.value), render: (r) => r.value },
+      {
+        key: "value",
+        label: "Value",
+        num: true,
+        sortValue: (r) => (r.value === "—" ? null : r.value),
+        render: (r) => <span className="rsk-cell" style={rampStyle(r.pressure)}>{r.value}</span>,
+      },
       { key: "limit", label: "Limit", num: true, sortValue: (r) => (r.limit === "—" ? null : r.limit), render: (r) => r.limit },
       {
         key: "reason",
@@ -168,28 +203,46 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
   const posB = acct?.open_positions ?? null;
   const crossMismatch = posA !== null && posB !== null && posA !== posB;
 
-  const drawdownActual = acct?.drawdown ?? null;
   const marginLevel = exposure?.account?.margin_level ?? acct?.margin_level ?? null;
   // Margin floor: the ONLY backend-supplied threshold we may compare against.
   // None exists in the risk payload → MarginArc renders indeterminate by design.
   const marginFloorPct: number | null = null;
 
-  const volUtil = limitUtilization(exposure?.total_volume ?? null, cfg?.max_allowed_lots ?? null);
-  const volTone: MeterTone = volUtil === null ? "unknown" : volUtil > 1 ? "bad" : volUtil > 0.8 ? "warn" : "ok";
-  const marginUsagePct =
-    exposure?.account?.margin !== null && exposure?.account?.margin !== undefined && exposure.account.equity
-      ? (exposure.account.margin / exposure.account.equity) * 100
-      : null;
-  const marginUtil = limitUtilization(marginUsagePct, cfg?.max_margin_usage_pct ?? null);
-  const marginTone: MeterTone = marginUtil === null ? "unknown" : marginUtil > 1 ? "bad" : marginUtil > 0.8 ? "warn" : "ok";
-  const spreadUtil = limitUtilization(snapshot?.spread ?? null, cfg?.max_spread_points ?? null);
-  const spreadTone: MeterTone = spreadUtil === null ? "unknown" : spreadUtil > 1 ? "bad" : spreadUtil > 0.8 ? "warn" : "ok";
+  // One derived list feeds BOTH the radial gauges and the stress/limits
+  // matrix: value vs backend limit, every field read from the existing
+  // payloads (no new endpoint, no invented number).
+  const limitRows = useMemo(
+    () => buildLimitRows({ cfg, exposure, account: acct, spread: snapshot?.spread ?? null }),
+    [cfg, exposure, acct, snapshot?.spread],
+  );
+  const ceilingRows = useMemo(() => limitRows.filter((r) => r.direction === "le"), [limitRows]);
+
+  // Freshness chips: the backend's own probed_at where the payload carries
+  // one, otherwise the query's receive time. No parsable timestamp ⇒ NO chip
+  // (an absent timestamp must never render as "0s ago = fresh").
+  const probeCandidates: Array<{ key: string; label: string; atMs: number | null }> = [
+    { key: "status", label: "risk status", atMs: statusQuery.data ? Date.parse(statusQuery.data.probed_at) : null },
+    { key: "summary", label: "risk summary", atMs: summaryQuery.data ? Date.parse(summaryQuery.data.probed_at) : null },
+    { key: "guardian", label: "guardian", atMs: runtimeQuery.dataUpdatedAt || null },
+  ];
+  const probes = probeCandidates.filter(
+    (p): p is { key: string; label: string; atMs: number } => p.atMs !== null && Number.isFinite(p.atMs),
+  );
 
   const bySymbol = exposure?.by_symbol ?? {};
   const exposureRows = Object.entries(bySymbol);
 
   return (
     <div>
+      {/* Derived breach/ok sums over the rows rendered below (hidden when empty) */}
+      <HeroStrip rows={limitRows} />
+      {probes.length > 0 && (
+        <div className="rsk-probes" aria-label="Probe freshness">
+          {probes.map((p) => (
+            <FreshnessChip key={p.key} label={p.label} atMs={p.atMs} nowMs={tickMs} />
+          ))}
+        </div>
+      )}
       <div className="grid cols-4">
         <MetricCard
           label="Safety status"
@@ -227,42 +280,36 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
           {statusQuery.isPending && !statusQuery.data ? (
             <Skeleton count={3} />
           ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              <DrawdownBar actualPct={drawdownActual} limitPct={cfg?.max_account_drawdown_pct ?? null} />
-              <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-                <MarginArc marginLevelPct={marginLevel} thresholdPct={marginFloorPct} thresholdWord={null} />
-                <div style={{ flex: 1, minWidth: 220 }}>
-                  <MeterBar label="Position volume" value={exposure?.total_volume ?? null} limit={cfg?.max_allowed_lots ?? null} unit=" lots" tone={volTone} />
-                  <div style={{ blockSize: 8 }} />
-                  <MeterBar
-                    label="Margin usage"
-                    value={marginUsagePct}
-                    limit={cfg?.max_margin_usage_pct ?? null}
-                    unit="%"
-                    digits={1}
-                    tone={marginTone}
-                    caption={
-                      marginUtil === null
-                        ? "margin usage needs both broker margin/equity and the engine's max_margin_usage_pct — a missing side means the budget is unknown"
-                        : "equity-relative margin usage (arithmetic on backend values) vs engine max_margin_usage_pct"
-                    }
-                  />
-                  <div style={{ blockSize: 8 }} />
-                  <MeterBar
-                    label="Spread"
-                    value={snapshot?.spread ?? null}
-                    limit={cfg?.max_spread_points ?? null}
-                    unit=" pts"
-                    digits={1}
-                    tone={spreadTone}
-                    caption={spreadUtil === null ? "live spread or max_spread_points missing — gate not judgeable here" : "live snapshot spread vs the engine spread gate limit"}
-                  />
-                </div>
-              </div>
+            <div className="rsk-gauges">
+              {ceilingRows.map((row) => (
+                <LimitGauge key={row.id} row={row} />
+              ))}
+              {/* Floor metric: payload carries no margin floor, so the arc is
+                  indeterminate by design — never an assumed stop-out level. */}
+              <MarginArc marginLevelPct={marginLevel} thresholdPct={marginFloorPct} thresholdWord={null} />
             </div>
           )}
         </Panel>
       </div>
+
+      {/* Stress/limits matrix: every visible value-vs-limit pair as a grid,
+          hover a cell (title attr) for the payload paths behind the numbers. */}
+      <Panel
+        title="Stress / limits matrix (value vs backend limit)"
+        right={
+          <span className="timestamp-note">
+            hover a cell for payload paths · tint = depth past the 80 % soft threshold (100 % = the backend limit)
+          </span>
+        }
+      >
+        {statusQuery.isPending && !statusQuery.data && summaryQuery.isPending && !summaryQuery.data ? (
+          <div style={{ padding: 4 }}>
+            <Skeleton count={4} />
+          </div>
+        ) : (
+          <LimitMatrix rows={limitRows} />
+        )}
+      </Panel>
 
       <div className="grid cols-2 l4-section-gap">
         <Panel title="Guardian / runtime detail">
