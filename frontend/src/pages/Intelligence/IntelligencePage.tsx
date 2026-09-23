@@ -1,9 +1,18 @@
 /**
- * Intelligence — news / market-context / trade intelligence + structure.
- *
- * Stale or unavailable information is ALWAYS labeled as such (backend
- * provides `stale`, `freshness`, `available` flags). No investment decisions
- * or interpretations are computed in the frontend — raw backend signals only.
+ * PURPOSE:  Intelligence page — news state KPIs, structure context
+ *           (liquidity governor + mSLIE), regime readout, signal feed of
+ *           articles, and trade-autopsy cards.
+ * OWNER:    uiux-wave5-intel  (future edits to this file belong to this lane)
+ * CONSUMES: intelligenceApi + _shared/edgeApi queries, EngineSnapshot prop,
+ *           components/primitives + _shared/SectionState/_shared/widgets kit,
+ *           ./SignalFeed, ./AutopsyFeed, ./signalBits (ScoreBar).
+ * PROVIDES: default IntelligencePage (routed by app/AppShell IntelRoute).
+ * INVARIANTS: honest empty states, no fabricated data — stale/unavailable
+ *           backend flags are always rendered as such; raw backend signals
+ *           only, no frontend inference or invented fields.
+ * EXTEND:   new sections = a new Panel here (queries stay in this file);
+ *           feed/autopsy visuals live in SignalFeed/AutopsyFeed and the
+ *           itl- prefixed ./intelligence.css.
  *
  * Sections:
  *  - Hero header: endpoint provenance chips, live news-state pill, refresh-all
@@ -15,6 +24,8 @@
  *    (structure/bias), liquidity map bands, last sweep
  *  - Regime readout — canonical snapshot regime + /api/v1/market/regime
  *    evidence (no inference yet renders as the backend's own note)
+ *  - Signal feed (article cards + filter chips + timeline rail) and
+ *    trade-autopsy cards (wave 5 intel upgrade)
  *  - Trade intelligence summary, articles, autopsies (parity)
  *
  * UI pass: presentation-only rework (hero, section grouping, tone badges).
@@ -27,12 +38,14 @@ import { useQuery } from "@tanstack/react-query";
 import { intelligenceApi } from "@/api/intelligenceApi";
 import { contextApi, marketApi2 } from "@/pages/_shared/edgeApi";
 import type { EngineSnapshot } from "@/types/domain";
-import { DataTable, EmptyState, ErrorState, MetricCard, Panel, SeverityBadge, Skeleton, StatusBadge } from "@/components/primitives";
+import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState, errorText, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
 import { InfoChip } from "@/pages/_shared/widgets";
-import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import SignalFeed from "@/pages/Intelligence/SignalFeed";
+import AutopsyFeed from "@/pages/Intelligence/AutopsyFeed";
+import { ScoreBar } from "@/pages/Intelligence/signalBits";
 import "@/pages/_shared/pages.css";
 import "@/pages/Intelligence/intelligence.css";
 
@@ -199,7 +212,15 @@ export default function IntelligencePage({ snapshot }: Props) {
           label="Context confidence"
           value={ns?.confidence === null || ns?.confidence === undefined ? "—" : formatPct(ns.confidence * 100, 0)}
           tone="dim"
-          sub={`XAUUSD relevance ${ns?.xauusd_relevance === null || ns?.xauusd_relevance === undefined ? "—" : formatPct(ns.xauusd_relevance * 100, 0)}`}
+          sub={
+            <>
+              <ScoreBar value={ns?.confidence ?? null} label="confidence" />
+              <div>
+                XAUUSD relevance{" "}
+                {ns?.xauusd_relevance === null || ns?.xauusd_relevance === undefined ? "—" : formatPct(ns.xauusd_relevance * 100, 0)}
+              </div>
+            </>
+          }
         />
         <MetricCard
           label="Active events"
@@ -434,81 +455,9 @@ export default function IntelligencePage({ snapshot }: Props) {
       </div>
 
       <SectionLabel>Feed &amp; forensics</SectionLabel>
-      <Panel
-        title="Latest canonical articles"
-        subtitle={<span className="inline-mono">/api/news/latest</span>}
-        tight
-        right={
-          articlesQuery.data?.articles && articlesQuery.data.articles.length > 0 ? (
-            <button
-              className="btn small ghost"
-              onClick={() =>
-                downloadCsv({
-                  filename: `nse-news-${stampForFilename()}.csv`,
-                  headers: ["article_id", "published_at", "source", "importance", "status", "title"],
-                  rows: (articlesQuery.data.articles ?? []).map((a) => [a.article_id, a.published_at ?? "", a.source_name ?? "", String(a.importance ?? ""), a.article_status ?? "", a.title]),
-                })
-              }
-              title="exports exactly the rows returned by /api/news/latest"
-            >
-              ⇩ CSV
-            </button>
-          ) : undefined
-        }
-      >
-        {articlesQuery.isPending ? (
-          <div className="ix-skel"><Skeleton count={3} /></div>
-        ) : articlesQuery.data?.available && articlesQuery.data.articles && articlesQuery.data.articles.length > 0 ? (
-          <DataTable headers={[{ label: "Published" }, { label: "Source" }, { label: "Title" }, { label: "Importance" }]}>
-            {articlesQuery.data.articles.map((a) => (
-              <tr key={a.article_id}>
-                <td className="small">{a.published_at ? formatDateTime(a.published_at) : "—"}</td>
-                <td>{a.source_name ?? "—"}</td>
-                <td className="ix-title-cell" title={a.title}>{a.title}</td>
-                <td>{a.importance === null || a.importance === undefined ? "—" : <SeverityBadge severity={String(a.importance)} />}</td>
-              </tr>
-            ))}
-          </DataTable>
-        ) : articlesQuery.isError ? (
-          <ErrorState message="News feed endpoint failed." onRetry={() => void articlesQuery.refetch()} />
-        ) : (
-          <EmptyState message="No articles available." hint="The feed endpoint answered with an empty list — the parser or the source may be warming up." />
-        )}
-      </Panel>
+      <SignalFeed query={articlesQuery} />
 
-      <Panel title="Recent trade autopsies (why trades won/lost)" subtitle={<span className="inline-mono">/api/intelligence/autopsies</span>} tight>
-        {autopsyQuery.isPending ? (
-          <div className="ix-skel"><Skeleton count={3} /></div>
-        ) : autopsyQuery.data?.available && autopsyQuery.data.autopsies && autopsyQuery.data.autopsies.length > 0 ? (
-          <DataTable
-            headers={[{ label: "Ticket" }, { label: "Strategy" }, { label: "Outcome" }, { label: "Realized R", num: true }, { label: "Exit reason" }]}
-          >
-            {autopsyQuery.data.autopsies.map((a, i) => (
-              <tr key={String(a.ticket ?? i)}>
-                <td className="small">{String(a.ticket ?? "—")}</td>
-                <td className="small">{a.strategy_id ?? "—"}</td>
-                <td>
-                  {a.outcome ? (
-                    <span className={`badge ${a.outcome.toUpperCase() === "WIN" ? "good" : a.outcome.toUpperCase() === "LOSS" ? "bad" : "neutral"}`}>
-                      {a.outcome}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className={`num ${a.realized_r !== null && a.realized_r !== undefined && a.realized_r >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-                  {a.realized_r === null || a.realized_r === undefined ? "—" : a.realized_r.toFixed(2)}
-                </td>
-                <td>{a.exit_reason ?? "—"}</td>
-              </tr>
-            ))}
-          </DataTable>
-        ) : autopsyQuery.isError ? (
-          <ErrorState message="Autopsy endpoint failed." onRetry={() => void autopsyQuery.refetch()} />
-        ) : (
-          <EmptyState message="No autopsies recorded." />
-        )}
-      </Panel>
+      <AutopsyFeed query={autopsyQuery} />
     </div>
   );
 }
