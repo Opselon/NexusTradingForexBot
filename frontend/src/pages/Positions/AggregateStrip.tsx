@@ -14,6 +14,7 @@
  */
 import type { Position } from "@/types/domain";
 import { formatNumber, formatPnl } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 
 interface Derived {
   pnl: number;
@@ -40,47 +41,48 @@ function derive(rows: Position[]): Derived {
 }
 
 export default function AggregateStrip({ rows }: { rows: Position[] }) {
+  const t = useI18n((s) => s.t);
   if (rows.length === 0) return null; // no rows → no strip (never a phantom 0)
   const d = derive(rows);
   return (
-    <div className="pos-strip" role="group" aria-label="Derived aggregates of the visible blotter rows">
+    <div className="pos-strip" role="group" aria-label={t("positions.strip.aria", "Derived aggregates of the visible blotter rows")}>
       <span className="pos-strip__item">
-        <span className="pos-strip__lab">open p&amp;l</span>
+        <span className="pos-strip__lab">{t("positions.strip.pnl", "open p&l")}</span>
         <span
           className="pos-strip__val"
           data-tone={!d.pnlProven ? "partial" : d.pnl >= 0 ? "pos" : "neg"}
-          title={d.pnlProven ? "Σ profit of the visible rows — arithmetic on backend values" : "some rows carry no profit value — sum withheld"}
+          title={d.pnlProven ? t("positions.strip.pnl_title", "Σ profit of the visible rows — arithmetic on backend values") : t("positions.metric.partial_sub", "some rows carry no profit value — sum withheld")}
         >
-          {d.pnlProven ? formatPnl(d.pnl) : "PARTIAL"}
+          {d.pnlProven ? formatPnl(d.pnl) : t("positions.status.partial", "PARTIAL")}
         </span>
-        <span className="l4-prov" title="sum computed in the browser from the rows on screen — not a backend field">
-          derived
+        <span className="l4-prov" title={t("positions.strip.pnl_prov", "sum computed in the browser from the rows on screen — not a backend field")}>
+{t("positions.strip.derived", "derived")}
         </span>
       </span>
 
       <span className="pos-strip__item">
-        <span className="pos-strip__lab">rows</span>
-        <span className="pos-strip__val" title="count of rows currently visible in the blotter — not a backend count field">
+        <span className="pos-strip__lab">{t("positions.strip.rows", "rows")}</span>
+        <span className="pos-strip__val" title={t("positions.strip.rows_title", "count of rows currently visible in the blotter — not a backend count field")}>
           {d.count}
         </span>
-        <span className="l4-prov" title="counted in the browser from the rows on screen — not a backend field">
+        <span className="l4-prov" title={t("positions.strip.rows_prov", "counted in the browser from the rows on screen — not a backend field")}>
           derived
         </span>
       </span>
 
       <span className="pos-strip__item">
-        <span className="pos-strip__lab">gross exposure</span>
+        <span className="pos-strip__lab">{t("positions.strip.exposure", "gross exposure")}</span>
         <span
           className="pos-strip__val"
           title={
             d.volumeProven
-              ? "Σ volume (lots) of the visible rows — the payload carries no contract size, so a currency notional is not computed"
-              : "some rows carry no volume value — sum withheld"
+              ? t("positions.strip.exp_title", "Σ volume (lots) of the visible rows — the payload carries no contract size, so a currency notional is not computed")
+              : t("positions.strip.exp_title_partial", "some rows carry no volume value — sum withheld")
           }
         >
-          {d.volumeProven ? `${formatNumber(d.volume)} lots` : "—"}
+          {d.volumeProven ? `${t("positions.strip.lots", "{n} lots", { n: formatNumber(d.volume) })}` : "—"}
         </span>
-        <span className="l4-prov" title="Σ volume of the rows on screen — not a backend field">
+        <span className="l4-prov" title={t("positions.strip.exp_prov", "Σ volume of the rows on screen — not a backend field")}>
           derived
         </span>
       </span>
